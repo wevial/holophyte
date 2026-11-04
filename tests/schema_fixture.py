@@ -97,7 +97,7 @@ DOCUMENTED_COLUMNS = {
     },
     "interventions": {
         "id", "runId", "projectId", "source", "trigger", "action", "question",
-        "guidance", "at", "note", "actor",
+        "guidance", "at", "note", "actor", "firingId",
     },
     "linearDeliveries": {"deliveryId", "processedAt"},
     # Store-owned, not a documented table: the supervisor sweep's per-run

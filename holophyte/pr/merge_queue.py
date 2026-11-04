@@ -23,6 +23,67 @@ query($owner: String!, $name: String!, $number: Int!) {
   }
 }"""
 
+LEFT_PULLS = """
+    pullRequests(baseRefName: $branch, first: 50, after: $after,
+                 orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title url headRefOid updatedAt author { login }
+        timelineItems(last: 20, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT,
+                      REMOVED_FROM_MERGE_QUEUE_EVENT, MERGED_EVENT]) {
+          nodes {
+            __typename
+            ... on AddedToMergeQueueEvent { createdAt }
+            ... on RemovedFromMergeQueueEvent { createdAt reason }
+            ... on MergedEvent { createdAt }
+          }
+        }
+      }
+    }"""
+QUEUE_ENTRIES = """
+      entries(first: 100, after: $entriesAfter) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          position state enqueuedAt estimatedTimeToMerge jump solo
+          pullRequest { number title url headRefOid author { login } }
+        }
+      }"""
+QUEUE_READ_QUERY = """
+query($owner: String!, $name: String!, $branch: String!, $after: String,
+      $entriesAfter: String) {
+  repository(owner: $owner, name: $name) {
+    mergeQueue(branch: $branch) {
+      configuration {
+        mergeMethod mergingStrategy maximumEntriesToBuild
+        minimumEntriesToMerge checkResponseTimeout
+      }
+""" + QUEUE_ENTRIES + """
+    }""" + LEFT_PULLS + """
+  }
+}"""
+LEFT_PAGE_QUERY = """
+query($owner: String!, $name: String!, $branch: String!, $after: String) {
+  repository(owner: $owner, name: $name) {""" + LEFT_PULLS + """
+  }
+}"""
+ENTRIES_PAGE_QUERY = """
+query($owner: String!, $name: String!, $branch: String!,
+      $entriesAfter: String) {
+  repository(owner: $owner, name: $name) {
+    mergeQueue(branch: $branch) {""" + QUEUE_ENTRIES + """
+    }
+  }
+}"""
+CONFIGURATION = (("mergeMethod", "merge_method"),
+                 ("mergingStrategy", "merging_strategy"),
+                 ("maximumEntriesToBuild", "maximum_entries_to_build"),
+                 ("minimumEntriesToMerge", "minimum_entries_to_merge"),
+                 ("checkResponseTimeout", "check_response_timeout"))
+QUEUED = "QUEUED"
+LEFT_WINDOW_MS = 2 * 60 * 60 * 1000
+MERGE_OWN_REMOVAL_MS = 60 * 1000
+ADDED, REMOVED, MERGED = ("AddedToMergeQueueEvent",
+                          "RemovedFromMergeQueueEvent", "MergedEvent")
 
 GROUP_RED = ("failure", "cancelled")
 # GitHub's largest page.
@@ -44,20 +105,34 @@ class QueueRemoved(Exception):
 
 def red_merge_group(target, pull, since):
     """`mergeQueueEntry.headCommit` is not read: GitHub leaves it undefined."""
-    since_ms = pr_status._iso_ms(since)
-    if since_ms is None:
-        return None
-    prefix = f"gh-readonly-queue/{github.BASE}/pr-{pull.number}-"
-    ours = [r for r in group_runs(target, pull, since, since_ms)
-            if str(r.get("head_branch") or "").startswith(prefix)
-            and (pr_status._iso_ms(r.get("created_at")) or 0) >= since_ms]
-    if not ours:
-        return None
-    latest = max(ours, key=lambda r: pr_status._iso_ms(r["created_at"]))
-    group = latest.get("head_sha")
-    red = any(r.get("head_sha") == group and r.get("conclusion") in GROUP_RED
-              for r in ours)
-    return group if red and isinstance(group, str) and group else None
+    group, runs = merge_groups(target, pull, {pull.number: since}).get(
+        pull.number, (None, ()))
+    red = any(r.get("conclusion") in GROUP_RED for r in runs)
+    return group if red else None
+
+
+def merge_groups(target, pull, entered):
+    sinces = {number: ms for number, since in entered.items()
+              if (ms := pr_status._iso_ms(since)) is not None}
+    if not sinces:
+        return {}
+    earliest = min(sinces.values())
+    since = next(entered[n] for n, ms in sinces.items() if ms == earliest)
+    runs = group_runs(target, pull, since, earliest)
+    groups = {}
+    for number, since_ms in sinces.items():
+        prefix = f"gh-readonly-queue/{github.BASE}/pr-{number}-"
+        ours = [r for r in runs
+                if str(r.get("head_branch") or "").startswith(prefix)
+                and (pr_status._iso_ms(r.get("created_at")) or 0) >= since_ms]
+        if not ours:
+            continue
+        latest = max(ours, key=lambda r: pr_status._iso_ms(r["created_at"]))
+        group = latest.get("head_sha")
+        if isinstance(group, str) and group:
+            groups[number] = (group, [r for r in ours
+                                      if r.get("head_sha") == group])
+    return groups
 
 
 def group_runs(target, pull, since, since_ms):
@@ -102,6 +177,155 @@ def merge_queue_required(target, pull):
     return isinstance(rules, list) and any(
         isinstance(rule, dict) and rule.get("type") == "merge_queue"
         for rule in rules)
+
+
+def queue_read(target, now_ms):
+    pull = github._origin_pull(target)
+    if pull is None:
+        raise InfraFailure(f"origin {github.origin_url(target)!r} is not a"
+                           " GitHub repository")
+    variables = {"owner": pull.owner, "name": pull.name,
+                 "branch": github.BASE, "after": None,
+                 "entriesAfter": None}
+    data = github.graphql(target, pull, QUEUE_READ_QUERY, variables)
+    repository = data.get("repository") or {}
+    queue = repository.get("mergeQueue")
+    if not isinstance(queue, dict):
+        return {"configured": False, "configuration": None, "entries": [],
+                "left": []}
+    configuration = queue.get("configuration") or {}
+    left = [row for node in _recent_pulls(target, pull, variables,
+                                          repository.get("pullRequests"),
+                                          now_ms - LEFT_WINDOW_MS)
+            if (row := _left_row(node, now_ms)) is not None]
+    return {"configured": True,
+            "configuration": {key: configuration.get(field)
+                              for field, key in CONFIGURATION},
+            "entries": _queue_entries(target, pull, _all_entries(
+                target, pull, variables, queue.get("entries"))),
+            "left": sorted(left, key=lambda row: row["at_ms"], reverse=True)}
+
+
+def _all_entries(target, pull, variables, page):
+    entries = []
+    while True:
+        entries.extend(_nodes(page))
+        info = (page or {}).get("pageInfo") or {}
+        if not info.get("hasNextPage"):
+            return entries
+        data = github.graphql(target, pull, ENTRIES_PAGE_QUERY,
+                              {"owner": variables["owner"],
+                               "name": variables["name"],
+                               "branch": variables["branch"],
+                               "entriesAfter": info.get("endCursor")})
+        page = ((data.get("repository") or {}).get("mergeQueue")
+                or {}).get("entries")
+
+
+def _recent_pulls(target, pull, variables, page, since_ms):
+    pulls = []
+    while True:
+        nodes = _nodes(page)
+        pulls.extend(nodes)
+        info = (page or {}).get("pageInfo") or {}
+        oldest = pr_status._iso_ms(nodes[-1].get("updatedAt")) if nodes else None
+        if not info.get("hasNextPage") or oldest is None or oldest < since_ms:
+            return pulls
+        data = github.graphql(target, pull, LEFT_PAGE_QUERY,
+                              {**variables, "after": info.get("endCursor")})
+        page = (data.get("repository") or {}).get("pullRequests")
+
+
+def _nodes(connection):
+    nodes = connection.get("nodes") if isinstance(connection, dict) else None
+    return [node for node in nodes or () if isinstance(node, dict)]
+
+
+def _pull_row(node):
+    return {"number": node.get("number"), "title": node.get("title"),
+            "author": (node.get("author") or {}).get("login"),
+            "url": node.get("url"), "head_oid": node.get("headRefOid")}
+
+
+def _queue_entries(target, pull, nodes):
+    nodes = sorted(nodes, key=lambda node: node.get("position") or 0)
+    building = {(node.get("pullRequest") or {}).get("number"):
+                node.get("enqueuedAt") for node in nodes
+                if node.get("state") != QUEUED}
+    groups = merge_groups(target, pull, building)
+    required = set()
+    if groups:
+        required = set(pr_status._required_contexts(
+            pr_status.main_rules(target, pull)) or ())
+    return [_queue_entry(target, pull, node, required, groups.get(
+        (node.get("pullRequest") or {}).get("number"))) for node in nodes]
+
+
+def _queue_entry(target, pull, node, required, found):
+    group, workflow_runs = found or (None, ())
+    runs = pr_status._check_runs_of(target, pull, group) if group else []
+    if runs is None:
+        raise InfraFailure(f"GitHub answered the check runs of merge group"
+                           f" {group} incompletely")
+    workflows = {run.get("check_suite_id"): run.get("name")
+                 for run in workflow_runs}
+    started = [ms for run in workflow_runs if (ms := pr_status._iso_ms(
+        run.get("run_started_at") or run.get("created_at"))) is not None]
+    checks = [_check_row(run, workflows, required) for run in runs]
+    return {"position": node.get("position"), "state": node.get("state"),
+            "enqueued_ms": pr_status._iso_ms(node.get("enqueuedAt")),
+            "estimated_s": node.get("estimatedTimeToMerge"),
+            "jump": bool(node.get("jump")), "solo": bool(node.get("solo")),
+            "pr": _pull_row(node.get("pullRequest") or {}),
+            "group_sha": group, "building_ms": min(started, default=None),
+            "checks": {"done": sum(c["status"] == "completed" for c in checks),
+                       "total": len(checks),
+                       "failed": sum(c["conclusion"] in pr_status.RED_CONCLUSIONS
+                                     for c in checks),
+                       "runs": checks}}
+
+
+def _check_row(run, workflows, required):
+    return {"name": run.get("name"),
+            "workflow": workflows.get((run.get("check_suite") or {}).get("id")),
+            "status": run.get("status"), "conclusion": run.get("conclusion"),
+            "started_ms": pr_status._iso_ms(run.get("started_at")),
+            "completed_ms": pr_status._iso_ms(run.get("completed_at")),
+            "url": run.get("html_url"), "required": run.get("name") in required}
+
+
+def _left_row(node, now_ms):
+    events = sorted(((ms, event) for event in _nodes(node.get("timelineItems"))
+                     if (ms := pr_status._iso_ms(event.get("createdAt")))
+                     is not None), key=lambda pair: pair[0])
+    stints = [[]]
+    for ms, event in events:
+        if event.get("__typename") == ADDED:
+            stints.append([])
+        stints[-1].append((ms, event))
+    departure = _departure(stints[-1], queued=len(stints) > 1)
+    if departure is None:
+        return None
+    at_ms, outcome, reason = departure
+    if at_ms < now_ms - LEFT_WINDOW_MS:
+        return None
+    return {"pr": _pull_row(node), "at_ms": at_ms, "outcome": outcome,
+            "reason": reason}
+
+
+def _departure(stint, queued):
+    merges = [ms for ms, event in stint if event.get("__typename") == MERGED]
+    removals = [(ms, event.get("reason")) for ms, event in stint
+                if event.get("__typename") == REMOVED]
+    deliberate = [(ms, reason) for ms, reason in removals
+                  if reason or not merges
+                  or abs(ms - merges[0]) > MERGE_OWN_REMOVAL_MS]
+    if queued and merges and not any(ms < merges[0]
+                                     for ms, _ in deliberate):
+        return merges[0], "merged", None
+    if deliberate:
+        return deliberate[0][0], "removed", deliberate[0][1]
+    return None
 
 
 def enqueue_pull_request(target, pull, sha):

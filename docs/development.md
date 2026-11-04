@@ -347,7 +347,9 @@ Each module, one line:
   revision and outside `report_only` a `leased` one recording the workflow
   run's `run_attempt`, whose id it adds to the caller's list as it commits,
   so a later read that fails loses none; `hold_merges()` proposes, or in
-  `act` places, the merge hold on a red head.
+  `act` places, the merge hold on a red head, and `release_held_merges()`
+  ends it on a green one and sends the runs it parked back to the
+  babysitter.
 - `holophyte/automation/limits.py` — an automation's act limits on one
   project, `QUEUED`, `PER_HOUR` and `PER_DAY`, read through `act_counts()`
   inside `reserve_firing()`'s transaction, and the host's daily GitHub
@@ -463,6 +465,9 @@ Each module, one line:
 - `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
   `POST /actions/merge`: a run parked for a human's merge read for
   readiness, and released through the store's `approve` only when ready.
+- `holophyte/serve/serve_merge_queue.py` — the daemon's `GET /merge-queue`:
+  the base branch's merge queue read from GitHub, each pull request's
+  store run joined to it, cached per project for 15 seconds.
 - `holophyte/serve/serve_ask.py` — the daemon's `POST /actions/ask` and
   `GET /runs/N/asks`: a question on a parked run's pull request, recorded
   with the park's release and answered in the console with nothing posted
@@ -1011,8 +1016,8 @@ The store is its own package:
   open and clear an automation's one pause, and `automation_pause()` reads
   the open one; and the `mergeHolds` table: `place_merge_hold()` ends an
   older hold, opens one and confirms its leased firing in one transaction,
-  `end_merge_hold()` ends one and `open_merge_hold()` reads a project's
-  open one.
+  `end_merge_hold()` ends one, `open_merge_hold()` reads a project's
+  open one and `held_runs()` the runs whose newest park names a hold.
 - `store/scouts.py` — a scout run's record: `create_scout()`,
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper

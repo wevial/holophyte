@@ -152,6 +152,7 @@ def babysit_note(conn, run_id):
         " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
         " AND e.summary LIKE i.source || ' babysit: %'"
         " WHERE i.runId = ? AND i.action = 'babysit'"
+        " AND i.source != 'automation'"
         " ORDER BY i.id DESC, e.seq DESC LIMIT 1", (run_id,)).fetchone()
     return row[0].partition(" babysit: ")[2] if row else ""
 
@@ -229,6 +230,31 @@ class EndedRun:
 def newest_run_id(conn):
     row = conn.execute("SELECT MAX(id) FROM runs").fetchone()
     return row[0] if row is not None else None
+
+
+@dataclass(frozen=True)
+class PrRun:
+    id: int
+    ticket: str
+    phase: str
+    reviewRoundCount: int
+    outcome: str | None
+
+
+def runs_for_prs(conn, urls):
+    urls = tuple(dict.fromkeys(urls))
+    if not urls:
+        return {}
+    rows = conn.execute(
+        "SELECT r.prUrl, r.id, t.linearIdentifier, r.phase,"
+        " CASE WHEN r.endedAt IS NULL THEN (SELECT COUNT(*) FROM reviewRounds rr"
+        "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
+        " ELSE r.reviewRoundCount END, r.outcome"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        f" WHERE r.prUrl IN ({', '.join('?' * len(urls))})"
+        " AND r.id = (SELECT MAX(o.id) FROM runs o WHERE o.prUrl = r.prUrl)",
+        urls).fetchall()
+    return {row[0]: PrRun(*row[1:]) for row in rows}
 
 
 def ended_runs(conn):

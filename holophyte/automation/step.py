@@ -173,6 +173,10 @@ def observe_store(name, target, watch, listed, now, greens, reruns, out):
             if store.automations.automation_pause(conn, MAIN_WATCH) is None:
                 main_watch.observe(target, conn, project, pull, checks, now,
                                    watch, listed, leased, reruns)
+            if required_green:
+                main_watch.release_held_merges(conn, project, pull,
+                                               checks["sha"], now, watch,
+                                               listed)
     finally:
         conn.close()
         start_workers(name, target, leased, out)

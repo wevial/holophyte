@@ -1,0 +1,295 @@
+{
+ "configured": true,
+ "branch": "main",
+ "now": 1750000000000,
+ "configuration": {
+  "merge_method": "SQUASH",
+  "merging_strategy": "ALLGREEN",
+  "maximum_entries_to_build": 1,
+  "minimum_entries_to_merge": 1,
+  "check_response_timeout": 60
+ },
+ "entries": [
+  {
+   "position": 1,
+   "state": "AWAITING_CHECKS",
+   "enqueued_ms": 1749998260000,
+   "estimated_s": 600,
+   "jump": false,
+   "solo": false,
+   "pr": {
+    "number": 2547,
+    "title": "pull request 2547",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2547",
+    "head_oid": "0000000000000000000000000000000000002547"
+   },
+   "group_sha": "9a0b9a0b9a0b9a0b9a0b9a0b9a0b9a0b9a0b9a0b",
+   "building_ms": 1749998860000,
+   "checks": {
+    "done": 5,
+    "total": 13,
+    "failed": 0,
+    "runs": [
+     {
+      "name": "unit",
+      "workflow": "ci",
+      "status": "completed",
+      "conclusion": "success",
+      "started_ms": 1749998860000,
+      "completed_ms": 1749999400000,
+      "url": "https://github.com/example/repo/actions/runs/7/job/900",
+      "required": true
+     },
+     {
+      "name": "lint",
+      "workflow": "ci",
+      "status": "completed",
+      "conclusion": "success",
+      "started_ms": 1749998860000,
+      "completed_ms": 1749999400000,
+      "url": "https://github.com/example/repo/actions/runs/7/job/901",
+      "required": true
+     },
+     {
+      "name": "types",
+      "workflow": "ci",
+      "status": "completed",
+      "conclusion": "success",
+      "started_ms": 1749998860000,
+      "completed_ms": 1749999400000,
+      "url": "https://github.com/example/repo/actions/runs/7/job/902",
+      "required": true
+     },
+     {
+      "name": "build",
+      "workflow": "ci",
+      "status": "completed",
+      "conclusion": "success",
+      "started_ms": 1749998860000,
+      "completed_ms": 1749999400000,
+      "url": "https://github.com/example/repo/actions/runs/7/job/903",
+      "required": true
+     },
+     {
+      "name": "docs",
+      "workflow": "ci",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/904",
+      "required": true
+     },
+     {
+      "name": "e2e",
+      "workflow": "ci",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/905",
+      "required": true
+     },
+     {
+      "name": "coverage",
+      "workflow": "extras",
+      "status": "completed",
+      "conclusion": "success",
+      "started_ms": 1749998860000,
+      "completed_ms": 1749999400000,
+      "url": "https://github.com/example/repo/actions/runs/7/job/906",
+      "required": false
+     },
+     {
+      "name": "bench",
+      "workflow": "extras",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/907",
+      "required": false
+     },
+     {
+      "name": "audit",
+      "workflow": "extras",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/908",
+      "required": false
+     },
+     {
+      "name": "links",
+      "workflow": "extras",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/909",
+      "required": false
+     },
+     {
+      "name": "size",
+      "workflow": "extras",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/910",
+      "required": false
+     },
+     {
+      "name": "preview",
+      "workflow": "extras",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/911",
+      "required": false
+     },
+     {
+      "name": "smoke",
+      "workflow": "extras",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_ms": 1749998860000,
+      "completed_ms": null,
+      "url": "https://github.com/example/repo/actions/runs/7/job/912",
+      "required": false
+     }
+    ]
+   },
+   "run": null
+  },
+  {
+   "position": 2,
+   "state": "QUEUED",
+   "enqueued_ms": 1749998320000,
+   "estimated_s": 1200,
+   "jump": false,
+   "solo": false,
+   "pr": {
+    "number": 2550,
+    "title": "pull request 2550",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2550",
+    "head_oid": "0000000000000000000000000000000000002550"
+   },
+   "group_sha": null,
+   "building_ms": null,
+   "checks": {
+    "done": 0,
+    "total": 0,
+    "failed": 0,
+    "runs": []
+   },
+   "run": {
+    "id": 1,
+    "ticket": "KO-7",
+    "phase": "working",
+    "round": 0
+   }
+  },
+  {
+   "position": 3,
+   "state": "QUEUED",
+   "enqueued_ms": 1749998380000,
+   "estimated_s": 1800,
+   "jump": false,
+   "solo": true,
+   "pr": {
+    "number": 2551,
+    "title": "pull request 2551",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2551",
+    "head_oid": "0000000000000000000000000000000000002551"
+   },
+   "group_sha": null,
+   "building_ms": null,
+   "checks": {
+    "done": 0,
+    "total": 0,
+    "failed": 0,
+    "runs": []
+   },
+   "run": null
+  },
+  {
+   "position": 4,
+   "state": "QUEUED",
+   "enqueued_ms": 1749998440000,
+   "estimated_s": 2400,
+   "jump": false,
+   "solo": false,
+   "pr": {
+    "number": 2552,
+    "title": "pull request 2552",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2552",
+    "head_oid": "0000000000000000000000000000000000002552"
+   },
+   "group_sha": null,
+   "building_ms": null,
+   "checks": {
+    "done": 0,
+    "total": 0,
+    "failed": 0,
+    "runs": []
+   },
+   "run": null
+  }
+ ],
+ "left": [
+  {
+   "pr": {
+    "number": 2560,
+    "title": "pull request 2560",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2560",
+    "head_oid": "0000000000000000000000000000000000002560"
+   },
+   "at_ms": 1749998200000,
+   "outcome": "removed",
+   "reason": "MANUAL",
+   "run": null,
+   "waits_on_you": true
+  },
+  {
+   "pr": {
+    "number": 2561,
+    "title": "pull request 2561",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2561",
+    "head_oid": "0000000000000000000000000000000000002561"
+   },
+   "at_ms": 1749997600000,
+   "outcome": "removed",
+   "reason": "FAILED_CHECKS",
+   "run": {
+    "id": 2,
+    "ticket": "KO-8",
+    "phase": "working",
+    "round": 0
+   },
+   "waits_on_you": false
+  },
+  {
+   "pr": {
+    "number": 2562,
+    "title": "pull request 2562",
+    "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2562",
+    "head_oid": "0000000000000000000000000000000000002562"
+   },
+   "at_ms": 1749996400000,
+   "outcome": "merged",
+   "reason": null,
+   "run": null,
+   "waits_on_you": false
+  }
+ ]
+}

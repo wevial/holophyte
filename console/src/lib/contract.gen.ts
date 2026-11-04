@@ -1428,3 +1428,85 @@ export const scoutRoutesSchema = z.looseObject({
   defaults: scoutDefaultsSchema,
 });
 export type ScoutRoutes = z.infer<typeof scoutRoutesSchema>;
+
+export const mergeQueueConfigurationSchema = z.looseObject({
+  merge_method: z.string().nullable(),
+  merging_strategy: z.string().nullable(),
+  maximum_entries_to_build: z.int().nullable(),
+  minimum_entries_to_merge: z.int().nullable(),
+  check_response_timeout: z.int().nullable(),
+});
+export type MergeQueueConfiguration = z.infer<typeof mergeQueueConfigurationSchema>;
+
+export const mergeQueuePullSchema = z.looseObject({
+  number: z.int(),
+  title: z.string().nullable(),
+  author: z.string().nullable(),
+  url: z.string(),
+  head_oid: z.string().nullable(),
+});
+export type MergeQueuePull = z.infer<typeof mergeQueuePullSchema>;
+
+export const mergeQueueRunSchema = z.looseObject({
+  id: z.int(),
+  ticket: z.string(),
+  phase: z.string(),
+  round: z.int(),
+});
+export type MergeQueueRun = z.infer<typeof mergeQueueRunSchema>;
+
+export const mergeQueueCheckSchema = z.looseObject({
+  name: z.string(),
+  workflow: z.string().nullable(),
+  status: z.string(),
+  conclusion: z.string().nullable(),
+  started_ms: z.int().nullable(),
+  completed_ms: z.int().nullable(),
+  url: z.string().nullable(),
+  required: z.boolean(),
+});
+export type MergeQueueCheck = z.infer<typeof mergeQueueCheckSchema>;
+
+export const mergeQueueChecksSchema = z.looseObject({
+  done: z.int(),
+  total: z.int(),
+  failed: z.int(),
+  runs: z.array(mergeQueueCheckSchema),
+});
+export type MergeQueueChecks = z.infer<typeof mergeQueueChecksSchema>;
+
+export const mergeQueueEntrySchema = z.looseObject({
+  position: z.int(),
+  state: z.string(),
+  enqueued_ms: z.int().nullable(),
+  estimated_s: z.int().nullable(),
+  jump: z.boolean(),
+  solo: z.boolean(),
+  pr: mergeQueuePullSchema,
+  group_sha: z.string().nullable(),
+  building_ms: z.int().nullable(),
+  run: mergeQueueRunSchema.nullable(),
+  checks: mergeQueueChecksSchema,
+});
+export type MergeQueueEntry = z.infer<typeof mergeQueueEntrySchema>;
+
+export const mergeQueueLeftSchema = z.looseObject({
+  pr: mergeQueuePullSchema,
+  at_ms: z.int(),
+  outcome: z.enum(["merged", "removed"]),
+  reason: z.string().nullable(),
+  run: mergeQueueRunSchema.nullable(),
+  waits_on_you: z.boolean(),
+});
+export type MergeQueueLeft = z.infer<typeof mergeQueueLeftSchema>;
+
+export const mergeQueueSchema = z.looseObject({
+  configured: z.boolean().nullable(),
+  branch: z.string(),
+  now: z.int(),
+  configuration: mergeQueueConfigurationSchema.nullable(),
+  entries: z.array(mergeQueueEntrySchema),
+  left: z.array(mergeQueueLeftSchema),
+  error: z.string().optional(),
+});
+export type MergeQueue = z.infer<typeof mergeQueueSchema>;

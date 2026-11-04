@@ -32,7 +32,8 @@ class StoreEnumTests(unittest.TestCase):
         old.executescript(PREVIOUS_SCHEMA.read_text())
         previous = enum_checks(old)
         unchanged = set(previous) - {('interventions', 'action'),
-                                     ('interventions', 'trigger')}
+                                     ('interventions', 'trigger'),
+                                     ('interventions', 'source')}
         self.assertEqual({key: actual[key].replace(", 'paused'", "")
                           for key in unchanged},
                          {key: previous[key] for key in unchanged})
@@ -44,6 +45,9 @@ class StoreEnumTests(unittest.TestCase):
         self.assertEqual(actual['interventions', 'trigger'],
                          previous['interventions', 'trigger'][:-2]
                          + ", 'board_cancelled'))")
+        self.assertEqual(actual['interventions', 'source'],
+                         previous['interventions', 'source'][:-2]
+                         + ", 'automation'))")
         self.assertEqual(set(actual), set(enums.CONSTRAINED_COLUMNS))
         self.assertEqual(actual['runs', 'parkKind'],
                          "CHECK (parkKind IN ('pull_request', 'pull_request_closed', "

@@ -78,6 +78,20 @@ class MergeHold(NamedTuple):
     endReason: str | None
 
 
+class HeldRun(NamedTuple):
+    runId: int
+    ticketId: int
+    identifier: str
+    lastRunId: int | None
+    phase: str
+    endedAt: int | None
+    touched: bool
+    reparked: bool
+
+
+SUPERSEDED = "superseded by "
+
+
 class Pause(NamedTuple):
     id: int
     automation: str
@@ -280,13 +294,29 @@ def open_merge_hold(conn, project):
 
 
 def held_runs(conn, hold_id):
-    return conn.execute(
-        "SELECT COUNT(*) FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
-        " WHERE e.kind = 'main_hold_parked' AND r.endedAt IS NULL"
-        " AND r.phase = 'awaiting_merge_approval'"
-        " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
-        " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')",
-        (hold_id,)).fetchone()[0]
+    rows = conn.execute(
+        "WITH hold AS (SELECT id, projectId FROM mergeHolds WHERE id = ?),"
+        " chain AS (SELECT m.id FROM mergeHolds AS m, hold"
+        " WHERE m.projectId = hold.projectId AND m.id <= hold.id"
+        " AND m.id > COALESCE((SELECT MAX(p.id) FROM mergeHolds AS p"
+        " WHERE p.projectId = hold.projectId AND p.id < hold.id"
+        " AND p.endReason NOT LIKE ? || '%'), 0))"
+        " SELECT e.runId, r.ticketId, t.linearIdentifier, t.lastRunId, r.phase,"
+        " r.endedAt, EXISTS (SELECT 1 FROM interventions AS i"
+        " WHERE i.runId = e.runId AND i.source = 'human' AND i.at >= e.at),"
+        " EXISTS (SELECT 1 FROM runEvents AS p WHERE p.runId = e.runId"
+        " AND p.id > e.id AND p.kind IN ('pr_wake_breaker', 'ci_expired'))"
+        " OR (SELECT COUNT(*) FROM runEvents AS p WHERE p.runId = e.runId"
+        " AND p.id > e.id AND p.kind = 'phase_change'"
+        " AND p.summary GLOB '* -> awaiting_merge_approval*') > 1"
+        " FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
+        " JOIN tickets AS t ON t.id = r.ticketId"
+        " WHERE e.kind = 'main_hold_parked'"
+        " AND json_extract(e.payload, '$.hold') IN (SELECT id FROM chain)"
+        " AND e.id = (SELECT MAX(id) FROM runEvents"
+        " WHERE runId = e.runId AND kind = 'main_hold_parked')"
+        " ORDER BY e.runId", (hold_id, SUPERSEDED)).fetchall()
+    return [HeldRun(*row[:6], bool(row[6]), bool(row[7])) for row in rows]
 
 
 def end_merge_hold(conn, hold_id, reason, *, now):
@@ -301,7 +331,7 @@ def place_merge_hold(conn, project, firing_id, sha, checks, reason, *, now):
     with store.transaction(conn):
         standing = open_merge_hold(conn, project)
         if standing is not None:
-            end_merge_hold(conn, standing.id, f"superseded by {sha[:12]}",
+            end_merge_hold(conn, standing.id, f"{SUPERSEDED}{sha[:12]}",
                            now=now)
         hold = conn.execute(
             "INSERT INTO mergeHolds (projectId, sha, checks, firingId, heldAt)"

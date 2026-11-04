@@ -48,7 +48,7 @@ ANSWERS = ("status", "attention", "host-status", "host-attention", "prefs",
            "run-transcript",
            "shipped", "history", "holds", "ledger", "findings", "board", "ticket",
            "story", "ticket-check", "ticket-search", "scouts", "scout",
-           "scout-routes")
+           "scout-routes", "merge-queue")
 ROUTE_OF = {"run-detail-unestimated": "run-detail",
             "run-merge-ready": "run-merge", "run-merge-bypassable": "run-merge"}
 PINNED_TIME = 1_750_000_000_000
@@ -143,7 +143,8 @@ class GeneratedFilesTests(unittest.TestCase):
                          [f"{stem}.schema.json" for stem in (
                              "attention", "board", "findings", "history", "holds",
                              "host-attention", "host-status", "ledger",
-                             "peers", "prefs", "run-asks", "run-detail", "run-files",
+                             "merge-queue", "peers", "prefs", "run-asks",
+                             "run-detail", "run-files",
                              "run-merge", "run-transcript", "run-turns",
                              "scout-routes", "scout", "scouts", "shipped",
                              "status", "story", "ticket-check", "ticket-search",

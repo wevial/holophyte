@@ -351,6 +351,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-603: the same.
                                                     "run_counts",
                                                     "run_snapshot",
+                                                    # HOLO-625: `/merge-queue`'s
+                                                    # run per pull request.
+                                                    "runs_for_prs",
                                                     "stranded_runs",
                                                     "stranded_tickets",
                                                     "toil_since",
@@ -451,6 +454,8 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # HOLO-620: the main watch's merge hold,
                                  # placed on its firing, ended and read by
                                  # the merge gate, its runs read by patrol.
+                                 # The release reads the runs a hold parked
+                                 # through `held_runs`.
                                  # HOLO-618: the sweep replays or settles
                                  # an expired lease, and records a
                                  # confirmed rerun's result.
