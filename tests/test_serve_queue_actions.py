@@ -285,6 +285,11 @@ class QueueActionSchemaTests(QueueActionCase):
         try:
             store.record_project_intervention(conn, "hold", "maintenance")
             store.record_intervention(conn, self.run, "pause", "lunch")
+            firing = store.automations.reserve_firing(
+                conn, 1, "main_watch", 1, "main", "o/p@abc run 7",
+                mode="dry_run", reason="would rerun", detail={}, now=1)
+            store.record_intervention(conn, self.run, "abort", "red main",
+                                      source="automation", firing_id=firing)
             before = conn.execute("SELECT * FROM interventions"
                                   " WHERE action != 'migrate'").fetchall()
         finally:
@@ -308,6 +313,7 @@ class QueueActionSchemaTests(QueueActionCase):
         self.assertEqual(conn.execute("SELECT * FROM interventions"
                                       " WHERE action != 'migrate'").fetchall(),
                          before)
+        self.assertIn(firing, [row[-1] for row in before])
         store.record_project_intervention(conn, "queue_jump", "jump #52")
         store.record_intervention(conn, self.run, "queue_remove", "remove #50")
 
