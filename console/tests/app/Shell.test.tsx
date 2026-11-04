@@ -91,7 +91,6 @@ test("the Overview badge counts the scope's Waiting on you entries, as the headi
   expect(badge()).toBeNull();
 });
 
-/** The two daemons, each answering `/merge-queue` with its own body. */
 function queueDaemons(demo: MergeQueue, writer: MergeQueue): Fetch {
   const polls = daemons([], []);
   return async (url, init) => {

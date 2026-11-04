@@ -31,7 +31,6 @@ function QueueCounts({ queue }: { queue: MergeQueue }) {
   return <Counts {...queueCounts(queue)} clears={clearsAt(queue)} />;
 }
 
-/** The queue, what left it, or the panel saying why there is none. */
 function QueueBody({ queue, project }: { queue: MergeQueue; project: string }) {
   if (queue.configured === false) return <p className={`${PANEL} text-ink-2`}>No merge queue on this repository.</p>;
   if (queue.configured == null) return <p className={`${PANEL} text-bad`}>{queue.error ?? "The merge queue could not be read."}</p>;
