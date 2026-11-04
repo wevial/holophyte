@@ -92,9 +92,8 @@ def red_merge_group(target, pull, since):
 
 
 def merge_groups(target, pull, entered):
-    sinces = {number: pr_status._iso_ms(since)
-              for number, since in entered.items()}
-    sinces = {number: ms for number, ms in sinces.items() if ms is not None}
+    sinces = {number: ms for number, since in entered.items()
+              if (ms := pr_status._iso_ms(since)) is not None}
     if not sinces:
         return {}
     earliest = min(sinces.values())
