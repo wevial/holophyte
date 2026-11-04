@@ -79,6 +79,9 @@ COVERED = {
     ("scout", "page"): ["scout", "page", "1"],
     ("scout", "ask"): ["scout", "ask", "1", "Go on"],
     ("scout", "steer"): ["scout", "steer", "1", "Go on", "--answers", "7"],
+    ("queue",): ["queue"],
+    ("queue", "jump"): ["queue", "jump", "1"],
+    ("queue", "remove"): ["queue", "remove", "1"],
 }
 
 

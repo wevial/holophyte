@@ -19,6 +19,9 @@ from holophyte.holo.grammar import (
     FOLLOW,
     JSON,
     LAUNCH,
+    QUEUE,
+    QUEUE_JUMP,
+    QUEUE_REMOVE,
     READS,
     REQUIRED,
     SCOUT_ASK,
@@ -52,6 +55,7 @@ from holophyte.holo.results import (
     human_line,
     human_text,
     parse_run,
+    queue_body,
     scout_body,
     scout_file_body,
     scout_message_body,
@@ -331,7 +335,8 @@ def render(args, code, text, tail, timezone):
         return show_body(args, body, timezone) if code == 0 else code
     elif args.command in READS:
         from holophyte.holo.reads import show
-        show(args, f"holo {' '.join(args.command.words)}", code == 0, body)
+        show(args, f"holo {' '.join(args.command.words)}", code == 0, body,
+             timezone)
     elif args.command.mode in AUTOMATION_READS:
         from holophyte.automation.audit import render as audit_text
         rendered = audit_text(args.command.mode, body, timezone)
@@ -354,6 +359,7 @@ class Route(NamedTuple):
     path: str
     body: tuple = ()
     local: tuple = ()
+    tagged: bool = True
 
 
 SCOUT_BODY = ("ask", "kind", "lead", "helper", "swarm", "minutes", "subject",
@@ -389,6 +395,10 @@ HTTP_ROUTES = {
     SCOUT_STOP: Route("POST", "/actions/scout-stop", ("scout", "note", "author")),
     SCOUT_ASK: Route("POST", "/actions/scout-message", SCOUT_MESSAGE_BODY),
     SCOUT_STEER: Route("POST", "/actions/scout-message", SCOUT_MESSAGE_BODY),
+    QUEUE: Route("GET", "/merge-queue", tagged=False),
+    QUEUE_JUMP: Route("POST", "/actions/queue-jump", ("pr", "note", "author")),
+    QUEUE_REMOVE: Route("POST", "/actions/queue-remove",
+                        ("pr", "note", "author")),
 }
 
 
@@ -500,6 +510,8 @@ def fields(args, route):
         return scout_stop_body(args)
     if route.path == HTTP_ROUTES[SCOUT_ASK].path:
         return scout_message_body(args)
+    if command.words in (QUEUE_JUMP, QUEUE_REMOVE):
+        return queue_body(args)
     if note is not None and "note" not in route.body:
         args.leaf.error(f"{route.method} {route.path} takes no note; a hold"
                         " is released over http with holo release NOTE")
@@ -559,12 +571,13 @@ def read_over(args, daemon, prefix, route, timezone):
         show_page(body, daemon.call("GET", f"{prefix}{path}/files")[1],
                   timezone)
     elif getattr(args, "json", False):
-        print(json.dumps({**body, "transport": HTTP}))
+        print(json.dumps({**body, "transport": HTTP} if route.tagged
+                         else body))
     elif code == 200 and args.command.mode == "--report":
         from holophyte.holo.report_page import show_body
         return show_body(args, body, timezone)
     else:
-        show(args, f"GET {path}", code == 200, body)
+        show(args, f"GET {path}", code == 200, body, timezone)
     return exit_code(code)
 
 

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from urllib.parse import urlencode
 
 from holophyte.config.project import Project
-from holophyte.holo.grammar import SCOUT_PAGE
+from holophyte.holo.grammar import QUEUE, SCOUT_PAGE
 from store.enums import ScoutPhase
 
 EXIT = {200: 0, 400: 2, 404: 1, 503: 1}
@@ -87,6 +87,67 @@ def thread_body(body):
 def thread_answer(args, project):
     route, (code, body) = scout_answer(args, project)
     return route, (code, thread_body(body) if code == 200 else body)
+
+
+def queue_answer(args, project):
+    from holophyte.serve.serve_merge_queue import merge_queue
+    return "GET /merge-queue", merge_queue(project)
+
+
+STRATEGIES = {"ALLGREEN": "all green", "HEADGREEN": "head green"}
+
+
+def configuration_line(body):
+    shape = body["configuration"]
+    parts = [body["branch"]]
+    if shape["merge_method"]:
+        parts.append(shape["merge_method"].lower())
+    if shape["merging_strategy"]:
+        parts.append(STRATEGIES.get(shape["merging_strategy"],
+                                    shape["merging_strategy"].lower()))
+    if shape["maximum_entries_to_build"] is not None:
+        parts.append(f"builds {shape['maximum_entries_to_build']} at a time")
+    if shape["check_response_timeout"] is not None:
+        parts.append(f"checks time out at {shape['check_response_timeout']}m")
+    return " · ".join(parts)
+
+
+def owner(row):
+    return row["run"]["ticket"] if row["run"] else row["pr"]["author"] or "-"
+
+
+def entry_line(entry):
+    checks = entry["checks"]
+    if entry["state"] == "AWAITING_CHECKS":
+        state = f"checks running {checks['done']}/{checks['total']}"
+        state += f" ({checks['failed']} failed)" if checks["failed"] else ""
+    else:
+        state = entry["state"].lower().replace("_", " ")
+    eta = ("" if entry["estimated_s"] is None
+           else f" ~{round(entry['estimated_s'] / 60)}m")
+    return (f"{entry['position']} #{entry['pr']['number']} {state}{eta}"
+            f" · {owner(entry)}")
+
+
+def left_line(row, tz):
+    from holophyte.holo.render import moment
+    why = (f": {row['reason'].lower().replace('_', ' ')}" if row["reason"]
+           else "")
+    return (f"#{row['pr']['number']} {row['outcome']}"
+            f" {moment(row['at_ms'], tz):%H:%M}{why} · {owner(row)}")
+
+
+def queue_lines(body, zone_name=None):
+    from holophyte.holo.render import zone
+    if "error" in body:
+        return [f"the merge queue on {body['branch']} was not read:"
+                f" {body['error']}"]
+    if not body["configured"]:
+        return [f"no merge queue on {body['branch']}"]
+    tz = zone(zone_name)
+    return ([configuration_line(body)]
+            + [entry_line(entry) for entry in body["entries"]]
+            + [left_line(row, tz) for row in body["left"]])
 
 
 def page_refusal(args, code, body):
@@ -224,7 +285,8 @@ READS = {("runs",): (runs_answer, runs_lines),
          ("scouts",): (scouts_answer, scouts_lines),
          ("scout", "show"): (scout_answer, scout_lines),
          ("scout", "thread"): (thread_answer, thread_lines),
-         SCOUT_PAGE: (scout_answer, page_lines)}
+         SCOUT_PAGE: (scout_answer, page_lines),
+         QUEUE: (queue_answer, queue_lines)}
 RUN_LISTINGS = {"files": files_lines, "ledger": ledger_lines,
                 "turns": turns_lines}
 
@@ -233,9 +295,11 @@ def run_part(args):
     return next((part for part in RUN_PARTS if getattr(args, part)), None)
 
 
-def listing(args, body):
+def listing(args, body, zone_name=None):
     if args.command.words == ("run",):
         return RUN_LISTINGS[run_part(args)](body)
+    if args.command.words == QUEUE:
+        return queue_lines(body, zone_name)
     return READS[args.command.words][1](body)
 
 
@@ -253,15 +317,15 @@ def read(args, target, zone_name=None):
         from holophyte.holo.run_page import show as show_page
         show_page(project, body, zone_name)
     else:
-        show(args, route, code == 200, body)
+        show(args, route, code == 200, body, zone_name)
     return exit_code(code)
 
 
-def show(args, route, ok, body):
+def show(args, route, ok, body, zone_name=None):
     if getattr(args, "json", False):
         print(json.dumps(body))
     elif ok:
-        for line in listing(args, body):
+        for line in listing(args, body, zone_name):
             print(" ".join(line.splitlines()))
     else:
         detail = f": {body['detail']}" if body.get("detail") else ""

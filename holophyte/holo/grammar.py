@@ -183,6 +183,14 @@ COMMANDS = (
     Command(("scout", "steer"), None,
             "steer a scout: a running one at its next wave, a done one by a pass",
             takes=("ID",), note=REQUIRED, flags=(ANSWERS, AUTHOR), records=()),
+    Command(("queue", "jump"), None,
+            "move a queued pull request to the front of the merge queue",
+            takes=("PR",), note=OPTIONAL, flags=(AUTHOR,),
+            records=("queue_jump",)),
+    Command(("queue", "remove"), None,
+            "take a hand pull request out of the merge queue",
+            takes=("PR",), note=OPTIONAL, flags=(AUTHOR,),
+            records=("queue_remove",)),
     Command(("bug",), None, "launch a bug scout on an ask",
             note=REQUIRED, flags=SCOUT_FLAGS, records=()),
     Command(("idea",), None, "launch a research scout on an ask",
@@ -217,6 +225,9 @@ READS = (
     Command(("scout", "page"), "GET /scouts/ID",
             "a done scout's report as a Lotuspod page, its unfiled items"
             " decisions", takes=("ID",)),
+    Command(("queue",), "GET /merge-queue",
+            "the merge queue: its configuration, entries and recent exits",
+            flags=(JSON,)),
 )
 
 COMPLETION = Command(("completion",), None,
@@ -244,7 +255,10 @@ SCOUT_STEER = ("scout", "steer")
 SCOUT_THREAD = ("scout", "thread")
 SCOUT_PAGE = ("scout", "page")
 SCOUT_KINDS = {("bug",): "bug", ("idea",): "research"}
-SHOWN = {"run": "= holo run N", "board": None, "ticket": None}
+QUEUE = ("queue",)
+QUEUE_JUMP = ("queue", "jump")
+QUEUE_REMOVE = ("queue", "remove")
+SHOWN = {"run": "= holo run N", "board": None, "ticket": None, "queue": None}
 
 NOT_EXPOSED = {"--worker": "internal: the loop's pool spawns it",
                "--witness-step": "internal: the loop's pool spawns it",
@@ -276,6 +290,8 @@ GROUPS = {
     "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
              " show ID: one scout's detail; holo scout ask ID TEXT: ask a"
              " scout; holo scout steer ID TEXT: steer one, running or done",
+    "queue": "holo queue: the merge queue; holo queue jump PR [NOTE] and"
+             " holo queue remove PR [NOTE] act on a pull request in it",
 }
 
 PROJECT_HELP = "factory.py project VERB, its arguments passed unchanged"

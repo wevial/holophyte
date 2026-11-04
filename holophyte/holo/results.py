@@ -14,6 +14,8 @@ from holophyte.holo.grammar import (
     COMMANDS,
     KIND,
     LAUNCH,
+    QUEUE_JUMP,
+    QUEUE_REMOVE,
     SCOUT_ASK,
     SCOUT_FILE,
     SCOUT_KINDS,
@@ -119,6 +121,8 @@ def call(args, target):
         return scout_stop(args, target)
     if args.command.words in (SCOUT_ASK, SCOUT_STEER):
         return scout_message(args, target)
+    if args.command.words in (QUEUE_JUMP, QUEUE_REMOVE):
+        return queue(args, target)
     from holophyte.holo.units import VERBS
     return VERBS[args.command.words](args, target)
 
@@ -261,6 +265,23 @@ def scout_message(args, target):
     return scout_action(args, target, scout_message_body(args),
                         lambda project, body, _: message_action(project, body),
                         f"holo scout {args.command.words[1]}")
+
+
+def queue_body(args):
+    values, note = arguments(args, args.command)
+    number = parse_run(values[0])
+    if number is None:
+        args.leaf.error(f"PR must be a pull request number, not {values[0]!r}")
+    body = {"pr": number, "note": note, "author": last(args, "author")}
+    return {key: value for key, value in body.items() if value is not None}
+
+
+def queue(args, target):
+    from holophyte.serve.serve_queue_actions import QUEUE_ACTIONS
+    action = QUEUE_ACTIONS[f"queue-{args.command.words[1]}"]
+    return scout_action(args, target, queue_body(args),
+                        lambda project, body, _: action(project, body),
+                        f"holo {' '.join(args.command.words)}")
 
 
 def located(target):
