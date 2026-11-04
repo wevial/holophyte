@@ -350,6 +350,17 @@ Each module, one line:
   `act` places, the merge hold on a red head, and `release_held_merges()`
   ends it on a green one and sends the runs it parked back to the
   babysitter.
+- `holophyte/automation/limits.py` — an automation's act limits on one
+  project, `QUEUED`, `PER_HOUR` and `PER_DAY`, read through `act_counts()`
+  inside `reserve_firing()`'s transaction, and the host's daily GitHub
+  reruns, `HostReruns`, counted in `sweep.json`'s `reruns`, raised at a
+  pass's start to the stores' committed rerun firings (the step's
+  `reruns_committed()`), against `reruns_per_day()`; days start at
+  midnight in `America/Los_Angeles`.
+  `self_pause()`, called after the step records a result and after the
+  worker settles a firing, writes an `automation` pause when the same
+  checks were red again twice within 24 hours or GitHub answered the two
+  newest rerun firings with an HTTP 4xx.
 - `holophyte/automation/merge_hold.py` — the merge gate while main is
   red: `held_merge()`, called by `_merge_pr()` after its behind-main check,
   reads the open hold through `open_merge_hold()` while the main watch is in
@@ -382,6 +393,10 @@ Each module, one line:
   `set_switch()` for `--automations-off` and `--automations-on`, the record
   replaced whole and a `host-actions.jsonl` line, and `pause()` and
   `resume()` for `--automation-pause` and `--automation-resume`.
+- `holophyte/automation/audit.py` — a firing's record without SQL:
+  `read()` for `--automation-list` and `--automation-show`, text or JSON,
+  `render()` the text from that JSON for `holo` over ssh, and `settle()`
+  for `--automation-settle`, which closes only an `unknown` firing.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
   `check()` before each unit of Linear or GitHub work, and `admit()`
   before each Linear or GitHub request, which past the bound fails as an
@@ -457,6 +472,11 @@ Each module, one line:
 - `holophyte/serve/serve_merge_queue.py` — the daemon's `GET /merge-queue`:
   the base branch's merge queue read from GitHub, each pull request's
   store run joined to it, cached per project for 15 seconds.
+- `holophyte/serve/serve_queue_actions.py` — the daemon's
+  `POST /actions/queue-jump` and `POST /actions/queue-remove`: a queued pull
+  request jumped to the front of the merge queue, or a hand pull request
+  removed from it, read from the queue afresh and recorded before GitHub is
+  asked.
 - `holophyte/serve/serve_ask.py` — the daemon's `POST /actions/ask` and
   `GET /runs/N/asks`: a question on a parked run's pull request, recorded
   with the park's release and answered in the console with nothing posted
@@ -998,7 +1018,11 @@ The store is its own package:
 - `store/automations.py` — the `automationFirings` table:
   `reserve_firing()` inserts a `proposed` firing, or with `lease_until` a
   `leased` one, once per key, returning its id or `None`, `firings()` reads
-  them back, newest first, and `firing()` one; `take_firing()` records a
+  them back, newest first, and `firing()` one, `firing_interventions()`
+  the interventions a firing wrote, `firing_holds()` the holds it placed or
+  ended, and `firing_counts()` a window's firings by state, holds and
+  released runs; `settle_unknown()` closes an `unknown` firing by hand;
+  `take_firing()` records a
   worker's pid on an unexpired lease no worker holds and
   `settle_firing()` settles that worker's firing; and the
   `automationPauses` table: `pause_automation()` and `resume_automation()`

@@ -53,6 +53,11 @@ def _read_only_mode(args, target):
         return lambda: patrol_report(target, as_json=args.json)
     if args.import_store is not None:
         return lambda: dry_run(target, args.import_store)
+    if args.automation_list or args.automation_show is not None:
+        from holophyte.automation.audit import LIST_MODE, SHOW_MODE, read
+        return lambda: read(
+            target, LIST_MODE if args.automation_list else SHOW_MODE,
+            args.automation_show, args.limit, args.json)
     if args.serve is not None:
         return lambda: serve(target, args.serve)
     return None

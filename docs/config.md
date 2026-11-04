@@ -1706,6 +1706,34 @@ never its `[serve] name`, whose firings the sweep reserves in dry run. A rule
 change that bumps the main watch's revision returns an `act` project to dry
 run until its `revision` names the new one.
 
+An act firing passes its limits in the transaction that reserves it. Each
+automation on each project may hold 3 firings `leased` at once and take 6
+actions in the last hour and 30 since midnight in `America/Los_Angeles`;
+across every project the host takes at most `host.toml`'s
+`[automations] reruns_per_day` reruns since that midnight, a whole number
+of at least 1, default 10, counted in `sweep.json`'s `reruns`. Each pass
+starts that count at no less than the rerun firings every registered
+project's readable store committed since midnight, a skipped one
+included, so a lease a crash kept from `sweep.json` still counts. A
+proposal promoted to a lease counts from its promotion. A firing past a
+limit is reserved `refused`, its reason the first limit that is full:
+`rate: 3 firings queued`, `rate: 6 actions in the last hour`,
+`rate: 30 actions today` or `GitHub rerun cap: N today`, and no worker
+starts. A firing a
+limit refused is not counted, and a dry-run proposal or a merge hold's
+`hold_merges` firing is neither counted nor limited. A wrong `reruns_per_day` is off for every automation on the host
+that pass, with one line naming the key; the rest of the sweep goes on.
+
+An automation pauses itself, writing the pause `holo automation pause`
+writes with actor `automation`, when two of its `red_again` results on one
+project within 24 hours name the same checks, or when GitHub refused the
+reruns of its two newest rerun firings with an HTTP 4xx answer (a recheck's
+refusal, a limit's refusal, or a rerun request GitHub never answered,
+between them breaks the run).
+The note names the rule and both firing ids, and only `holo automation
+resume` clears it. A pass whose result reading pauses the automation
+reserves nothing after it.
+
 A leased firing whose lease expires is settled from what GitHub shows,
 never by calling again. One no worker took is leased once more and its
 worker started, counting `replays` in its detail; a second expiry cancels it,

@@ -58,8 +58,10 @@ PINNED = {
     "holophyte/agents/turn_tools.py": 1,
 
     "holophyte/automation/__init__.py": 0,
+    "holophyte/automation/audit.py": 1,
     "holophyte/automation/automation_config.py": 1,
     "holophyte/automation/gate.py": 1,
+    "holophyte/automation/limits.py": 3,
     "holophyte/automation/main_watch.py": 1,
     "holophyte/automation/merge_hold.py": 1,
     "holophyte/automation/policy.py": 1,
@@ -305,6 +307,7 @@ PINNED = {
     "holophyte/serve/serve_levers.py": 1,
     "holophyte/serve/serve_merge.py": 0,
     "holophyte/serve/serve_merge_queue.py": 1,
+    "holophyte/serve/serve_queue_actions.py": 1,
     "holophyte/serve/serve_prefs.py": 1,
     "holophyte/serve/serve_runs.py": 9,
     "holophyte/serve/serve_stories.py": 0,

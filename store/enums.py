@@ -190,6 +190,8 @@ class InterventionAction(str, Enum):
     APPROVE_STORY = 'approve_story'
     DECIDE = 'decide'
     STEER = 'steer'
+    QUEUE_JUMP = 'queue_jump'
+    QUEUE_REMOVE = 'queue_remove'
 
 
 class GapLayer(str, Enum):

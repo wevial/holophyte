@@ -209,7 +209,8 @@ run started and ended, its pid, revision and exit, each project's outcome
 round-robin cursor, the GitHub rate budget, the pull-request and board
 throttles, and `main_green`, the last head of each project's main the
 automation step read with every required check's newest run a success
-(every check run completed and none red when main requires none). A missing
+(every check run completed and none red when main requires none), and
+`reruns`, the automations' GitHub reruns on the Pacific day it names. A missing
 or unreadable file is an empty state and one line. A
 run whose `started` has no `ended` did not finish; the next run says so and
 resumes at the cursor. One project's failure is that project's `error`,
@@ -532,6 +533,9 @@ max_parallel = 2
 # Repositories, as OWNER/NAME of a project's GitHub origin compared without
 # case, whose firings the sweep reserves in dry run whatever their mode.
 report_only = []
+# GitHub reruns the automations take a day on this host, across every
+# project, counted from midnight in America/Los_Angeles; at least 1.
+reruns_per_day = 10
 
 [[project]]
 path = "/path/to/holophyte"

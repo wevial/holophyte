@@ -7,12 +7,14 @@ import store
 from .enums import FiringMode, FiringState, PauseActor, check_clause
 
 PROPOSED = FiringState.PROPOSED.value
+REFUSED = FiringState.REFUSED.value
 LEASED = FiringState.LEASED.value
 CONFIRMED = FiringState.CONFIRMED.value
 UNKNOWN = FiringState.UNKNOWN.value
 CANCELED = FiringState.CANCELED.value
-SETTLED = frozenset((FiringState.REFUSED.value, CONFIRMED, UNKNOWN, CANCELED))
+SETTLED = frozenset((REFUSED, CONFIRMED, UNKNOWN, CANCELED))
 OPERATOR = PauseActor.OPERATOR.value
+AUTOMATION = PauseActor.AUTOMATION.value
 
 FIRINGS_DDL = f"""
 CREATE TABLE IF NOT EXISTS automationFirings (
@@ -90,6 +92,17 @@ class HeldRun(NamedTuple):
 SUPERSEDED = "superseded by "
 
 
+class FiringIntervention(NamedTuple):
+    id: int
+    runId: int | None
+    identifier: str | None
+    action: str
+    source: str
+    actor: str | None
+    note: str | None
+    at: int
+
+
 class Pause(NamedTuple):
     id: int
     automation: str
@@ -122,24 +135,50 @@ def _firing_key(automation, revision, project, subject, cause):
     return ":".join((automation, str(revision), str(project), subject, cause))
 
 
+class ActCounts(NamedTuple):
+    queued: int
+    hour: int
+    today: int
+
+
+def act_counts(conn, project, automation, action, *, hour_since, day_since):
+    if not _has_table(conn, "automationFirings"):
+        return ActCounts(0, 0, 0)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(state = ?), 0), COALESCE(SUM(createdAt >= ?), 0),"
+        " COALESCE(SUM(createdAt >= ?), 0) FROM automationFirings"
+        " WHERE projectId = ? AND automation = ? AND mode = 'act'"
+        " AND json_extract(detail, '$.action') = ?"
+        " AND json_extract(detail, '$.limit') IS NULL",
+        (LEASED, hour_since, day_since, project, automation, action)
+    ).fetchone()
+    return ActCounts(*row)
+
+
 def reserve_firing(conn, project, automation, revision, subject, cause, *,
-                   mode, reason, detail, now, lease_until=None):
+                   mode, reason, detail, now, lease_until=None, limit=None):
     """The id of a new row, or of a proposal on the key a lease takes over."""
     key = _firing_key(automation, revision, project, subject, cause)
-    state = PROPOSED if lease_until is None else LEASED
+    state, settled = PROPOSED if lease_until is None else LEASED, None
     with store.transaction(conn):
+        limited = None if state == PROPOSED or limit is None else limit(conn)
+        if limited is not None:
+            state, reason, settled, lease_until = REFUSED, limited, now, None
+            detail = {**detail, "limit": limited}
         row = conn.execute(
             "INSERT INTO automationFirings (projectId, automation, revision,"
             " subject, cause, firingKey, mode, state, reason, detail,"
-            " createdAt, leaseUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " createdAt, settledAt, leaseUntil)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (firingKey) DO UPDATE SET mode = excluded.mode,"
             " state = excluded.state, reason = excluded.reason,"
-            " detail = excluded.detail, leaseUntil = excluded.leaseUntil"
-            " WHERE automationFirings.state = ? AND excluded.state = ?"
+            " detail = excluded.detail, createdAt = excluded.createdAt,"
+            " settledAt = excluded.settledAt, leaseUntil = excluded.leaseUntil"
+            " WHERE automationFirings.state = ? AND excluded.state IN (?, ?)"
             " RETURNING id",
             (project, automation, revision, subject, cause, key, mode,
-             state, reason, json.dumps(detail, sort_keys=True), now,
-             lease_until, PROPOSED, LEASED)).fetchone()
+             state, reason, json.dumps(detail, sort_keys=True), now, settled,
+             lease_until, PROPOSED, LEASED, REFUSED)).fetchone()
         return None if row is None else row[0]
 
 
@@ -154,13 +193,13 @@ def _firing(row):
     return Firing(*row[:10], json.loads(row[10]), *row[11:])
 
 
-def firings(conn):
+def firings(conn, limit=-1):
     """None read from a store an older build last wrote, which lacks the table."""
     if not _has_table(conn, "automationFirings"):
         return []
     rows = conn.execute(
         f"SELECT {_selected(conn)} FROM automationFirings"
-        " ORDER BY createdAt DESC, id DESC").fetchall()
+        " ORDER BY createdAt DESC, id DESC LIMIT ?", (limit,)).fetchall()
     return [_firing(row) for row in rows]
 
 
@@ -171,9 +210,57 @@ def keyed_firing(conn, project, automation, revision, subject, cause):
 
 
 def firing(conn, firing_id):
+    if not _has_table(conn, "automationFirings"):
+        return None
     row = conn.execute(f"SELECT {_selected(conn)} FROM automationFirings"
                        " WHERE id = ?", (firing_id,)).fetchone()
     return None if row is None else _firing(row)
+
+
+def _has_column(conn, table, name):
+    return any(row[1] == name for row in
+               conn.execute(f"PRAGMA table_info({table})"))
+
+
+def firing_interventions(conn, firing_id):
+    if not _has_column(conn, "interventions", "firingId"):
+        return []
+    rows = conn.execute(
+        'SELECT i.id, i.runId, t.linearIdentifier, i."action", i.source,'
+        " i.actor, i.note, i.at FROM interventions AS i"
+        " LEFT JOIN runs AS r ON r.id = i.runId"
+        " LEFT JOIN tickets AS t ON t.id = r.ticketId"
+        " WHERE i.firingId = ? ORDER BY i.id", (firing_id,)).fetchall()
+    return [FiringIntervention(*row) for row in rows]
+
+
+def firing_counts(conn, since_ms):
+    states = dict.fromkeys((state.value for state in FiringState), 0)
+    if not _has_table(conn, "automationFirings"):
+        return {"states": states, "holds": 0, "released": 0}
+    states.update(conn.execute(
+        "SELECT state, COUNT(*) FROM automationFirings WHERE createdAt >= ?"
+        " GROUP BY state", (since_ms,)).fetchall())
+    holds = conn.execute(
+        "SELECT COUNT(*) FROM mergeHolds WHERE heldAt >= ?",
+        (since_ms,)).fetchone()[0] if _has_table(conn, "mergeHolds") else 0
+    released = conn.execute(
+        "SELECT COUNT(*) FROM interventions WHERE source = 'automation'"
+        " AND \"action\" = 'babysit' AND at >= ?", (since_ms,)).fetchone()[0]
+    return {"states": states, "holds": holds, "released": released}
+
+
+def settle_unknown(conn, firing_id, state, note, login, *, now):
+    if state not in (CONFIRMED, CANCELED):
+        raise ValueError(f"an unknown firing settles as {CONFIRMED} or"
+                         f" {CANCELED}, not {state!r}")
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE automationFirings SET state = ?, detail = json_set(detail,"
+            " '$.settled_by', json_object('note', ?, 'login', ?, 'at', ?))"
+            " WHERE id = ? AND state = ?",
+            (state, note, login, now, firing_id, UNKNOWN))
+        return cursor.rowcount == 1
 
 
 def take_firing(conn, firing_id, pid, *, now):
@@ -210,13 +297,15 @@ def replay_firing(conn, firing_id, *, lease_until, now):
         return cursor.rowcount == 1
 
 
-def record_result(conn, firing_id, result, reason, *, now):
+def record_result(conn, firing_id, result, reason, checks, *, now):
     with store.transaction(conn):
         cursor = conn.execute(
             "UPDATE automationFirings SET reason = ?, detail = json_set("
-            "detail, '$.result', ?, '$.result_at', ?) WHERE id = ?"
-            " AND state = ? AND json_extract(detail, '$.result') IS NULL",
-            (reason, result, now, firing_id, CONFIRMED))
+            "detail, '$.result', ?, '$.result_at', ?, '$.result_checks',"
+            " json(?)) WHERE id = ? AND state = ?"
+            " AND json_extract(detail, '$.result') IS NULL",
+            (reason, result, now, json.dumps(sorted(checks)), firing_id,
+             CONFIRMED))
         return cursor.rowcount == 1
 
 
@@ -261,6 +350,16 @@ def open_merge_hold(conn, project):
         " WHERE projectId = ? AND endedAt IS NULL", (project,)).fetchone()
     return None if row is None else MergeHold(*row[:3], json.loads(row[3]),
                                               *row[4:])
+
+
+def firing_holds(conn, firing):
+    if not _has_table(conn, "mergeHolds"):
+        return []
+    rows = conn.execute(
+        f"SELECT {', '.join(MergeHold._fields)} FROM mergeHolds"
+        " WHERE firingId = ? OR id = ? ORDER BY id",
+        (firing.id, firing.detail.get("hold"))).fetchall()
+    return [MergeHold(*row[:3], json.loads(row[3]), *row[4:]) for row in rows]
 
 
 def held_runs(conn, hold_id):

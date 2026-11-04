@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 67
+SCHEMA_VERSION = 68
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -462,7 +462,8 @@ def _widen_interventions_action(conn):
                           "'migrate'", "'hold'", "'release_hold'",
                           "'register_project'", "'disable'", "'pause'",
                           "'abort'", "'abort_close'", "'approve_story'",
-                          "'decide'", "'steer'")):
+                          "'decide'", "'steer'", "'queue_jump'",
+                          "'queue_remove'")):
         return
     (orphans,) = conn.execute(
         "SELECT COUNT(*) FROM interventions i LEFT JOIN runs r"
@@ -471,6 +472,9 @@ def _widen_interventions_action(conn):
         raise sqlite3.IntegrityError(
             f"{orphans} interventions row(s) reference runs that do not"
             " exist; repair them before this store can migrate")
+    firing = ", firingId" if "firingId" in {
+        column[1] for column in conn.execute("PRAGMA table_info(interventions)")
+    } else ""
     # Built beside and renamed in: SQLite rewrites keys that name a renamed
     # table, so `runs.stopRequested` would follow it to the dropped name.
     with _transaction(conn):
@@ -480,11 +484,11 @@ def _widen_interventions_action(conn):
         conn.execute(
             "INSERT INTO interventions_new"
             ' (id, runId, source, "trigger", "action", question, guidance, at,'
-            ' projectId, note, actor)'
+            f' projectId, note, actor{firing})'
             ' SELECT id, runId, source, "trigger",'
             "   CASE \"action\" WHEN 'shepherd' THEN 'babysit'"
             '   ELSE "action" END, question, guidance, at, projectId, note,'
-            "   actor"
+            f"   actor{firing}"
             " FROM interventions")
         conn.execute("DROP TABLE interventions")
         conn.execute("ALTER TABLE interventions_new RENAME TO interventions")
