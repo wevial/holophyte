@@ -22,6 +22,7 @@ from tests.main_watch_fixture import job
 from tests.test_merge_hold import URL, MergeGateFixture
 
 HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
 sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
@@ -162,6 +163,43 @@ class ReleaseTests(ReleaseFixture):
         self.assertIsNone(self.conn("alpha").execute(
             "SELECT id FROM mergeHolds WHERE endedAt IS NULL").fetchone())
         self.assertEqual(self.released(), 1)
+
+    def in_flight_green_read(self, kind, action):
+        """A green head whose check-runs read runs `action` as it arrives."""
+        self.green()
+        reads = f"GET repos/{self.repos['alpha']}/commits/{G}/check-runs"
+        self.act_github.answer(self.paths["alpha"], f"{kind} BEFORE {reads}",
+                               action)
+
+    def test_a_pause_during_the_green_read_releases_nothing(self):
+        self.parked()
+        self.in_flight_green_read("EXEC", (
+            f"import subprocess; subprocess.run([{sys.executable!r}, '-m',"
+            " 'holophyte.holo', 'automation', 'pause', 'main_watch', 'x',"
+            f" '-p', 'alpha'], cwd={str(REPO)!r}, check=True,"
+            " capture_output=True)"))
+
+        self.recorded_pass()
+
+        self.assertIsNotNone(store.automations.automation_pause(
+            self.conn("alpha"), "main_watch"))
+        self.assertEqual(self.conn("alpha").execute(
+            "SELECT endedAt FROM mergeHolds").fetchall(), [(None,)])
+        self.assertEqual(self.released(), 0)
+
+    def test_the_host_switched_off_during_the_green_read_releases_nothing(
+            self):
+        self.parked()
+        switch = self.home / "automations.json"
+        self.in_flight_green_read("WRITE", {
+            str(switch): json.dumps({"off": True, "note": "x"})})
+
+        self.recorded_pass()
+
+        self.assertTrue(json.loads(switch.read_text())["off"])
+        self.assertEqual(self.conn("alpha").execute(
+            "SELECT endedAt FROM mergeHolds").fetchall(), [(None,)])
+        self.assertEqual(self.released(), 0)
 
     def test_automation_rows_are_not_toil(self):
         self.parked()

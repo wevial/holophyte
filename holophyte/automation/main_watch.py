@@ -9,6 +9,7 @@ from holophyte.automation.automation_config import (
     MAIN_WATCH,
     unapproved,
 )
+from holophyte.automation.gate import inhibitor
 from holophyte.automation.policy import (
     HOLD_MERGES,
     RELEASE_HELD_MERGES,
@@ -16,6 +17,7 @@ from holophyte.automation.policy import (
     refusal,
     report_only_reason,
 )
+from holophyte.host.registry import home
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github, pr_status
 from holophyte.pr.check_holds import newest_runs
@@ -188,7 +190,7 @@ def release_held_merges(conn, project, pull, sha, now, watch, listed):
         return None
     with store.transaction(conn):
         hold = store.automations.open_merge_hold(conn, project)
-        if hold is None:
+        if hold is None or inhibitor(home(), conn, MAIN_WATCH) is not None:
             return None
         detail = {"action": RELEASE_HELD_MERGES, "sha": sha, "hold": hold.id}
         firing = store.automations.reserve_firing(
