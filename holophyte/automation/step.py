@@ -164,6 +164,10 @@ def observe_store(name, target, watch, listed, now, greens, out):
                 greens[name] = checks["sha"]
             main_watch.observe(target, conn, project, pull, checks, now,
                                watch, listed, leased)
+            if required_green:
+                main_watch.release_held_merges(conn, project, pull,
+                                               checks["sha"], now, watch,
+                                               listed)
     finally:
         conn.close()
         start_workers(name, target, leased, out)

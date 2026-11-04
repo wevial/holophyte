@@ -141,6 +141,17 @@ class AutomationsDocTests(unittest.TestCase):
         self.assertIn("carries main's red commit", section)
         self.assertIn("`hold_merges`", section)
 
+    def test_the_release_and_its_interventions_are_documented(self):
+        config = (DOCS / "config.md").read_text()
+        section = config.split("## `[automations]`", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("`release_held_merges`", section)
+        self.assertIn('`[merge] approve = "auto"`', section)
+        data = (DOCS / "architecture" / "data.md").read_text()
+        [row] = [line for line in data.splitlines()
+                 if line.startswith("| `interventions` |")]
+        self.assertIn("automation`", row)
+        self.assertIn("`firingId`", row)
+
 
 class LoopDocTests(unittest.TestCase):
     def test_the_trim_step_sits_between_implement_and_the_verify_gate(self):
