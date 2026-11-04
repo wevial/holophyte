@@ -275,6 +275,19 @@ class SteerParseTests(TicketHome):
         self.assertEqual(list(self.conn.iterdump()), before)
 
 
+class QueueParseTests(Home):
+    def test_queue_jump_without_a_pull_request_number_exits_two_naming_pr(self):
+        path = self.repo("repo")
+        for given in ([], ["abc"]):
+            with self.subTest(given=given):
+                result = holo("queue", "jump", *given, "-p", str(path),
+                              home=self.home)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                (line,) = [line for line in result.stderr.splitlines()
+                           if line.startswith("holo queue jump: error:")]
+                self.assertIn("PR", line)
+
+
 class HostTests(Home):
     def register(self, name):
         path = self.repo(name)
