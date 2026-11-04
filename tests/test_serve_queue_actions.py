@@ -2,13 +2,16 @@
 request jumped to the front of the merge queue, or a hand pull request
 removed from it, each recorded before GitHub is asked.
 
-GitHub is faked at `github._call`, below the GraphQL error translation;
+GitHub is faked at `github._call`, below the GraphQL error translation, or
+for the mutations by a `gh` executable on PATH answering as `gh api` does;
 `origin` is a real git remote naming a GitHub URL.
 
 Run: python3 -m unittest discover -s tests -p 'test_serve_queue_actions.py' -v
 """
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -47,6 +50,7 @@ class FakeGithub:
     def __init__(self):
         self.reads, self.mutations, self.refusal = 0, [], None
         self.on_mutation = lambda: None
+        self.transport = None
 
     def call(self, target, host, method, path, payload, accept=None):
         if path != "graphql":
@@ -57,6 +61,8 @@ class FakeGithub:
             if name in query:
                 self.mutations.append((name, variables))
                 self.on_mutation()
+                if self.transport is not None:
+                    return self.transport(target, host, method, path, payload)
                 if self.refusal is not None:
                     return {"data": {name: None},
                             "errors": [{"type": "UNPROCESSABLE",
@@ -92,6 +98,7 @@ class QueueActionCase(ServeTestCase):
         finally:
             conn.close()
         self.github = FakeGithub()
+        self.real_call = holophyte.pr.github._call
         self.enterContext(patch.object(holophyte.pr.github, "_call",
                                        self.github.call))
 
@@ -216,6 +223,39 @@ class QueueRemoveTests(QueueActionCase):
         self.assertEqual(self.github.mutations, [])
         self.assertEqual(self.dump(), before)
 
+
+
+class GhRefusalTests(QueueActionCase):
+    def setUp(self):
+        super().setUp()
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        self.calls = self.root / "gh-calls"
+        answer = json.dumps({"data": None, "errors": [
+            {"type": "UNPROCESSABLE", "message": REFUSAL}]})
+        gh = bin_dir / "gh"
+        gh.write_text("#!/bin/sh\n"
+                      f"cat >> '{self.calls}'\necho >> '{self.calls}'\n"
+                      f"echo '{answer}'\n"
+                      f"echo 'gh: {REFUSAL}' >&2\nexit 1\n")
+        gh.chmod(0o755)
+        self.enterContext(patch.dict(os.environ, {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}))
+        self.github.transport = self.real_call
+        self.start_actions()
+
+    def test_a_refusal_through_gh_answers_githubs_message_verbatim(self):
+        for action, number in (("queue-jump", 52), ("queue-remove", 51)):
+            with self.subTest(action=action):
+                code, _, body = self.post(action, pr=number)
+                self.assertEqual(code, 200)
+                self.assertEqual((body["ok"], body["reason"], body["detail"]),
+                                 (False, "refused", REFUSAL))
+                self.assertIsNotNone(body["recorded"])
+        sent = [json.loads(line)["query"] for line
+                in self.calls.read_text().splitlines() if line]
+        self.assertEqual([("enqueuePullRequest" in q, "dequeuePullRequest" in q)
+                          for q in sent], [(True, False), (False, True)])
 
 class QueueActionGateTests(QueueActionCase):
     def test_both_routes_are_404_with_actions_off(self):
