@@ -38,7 +38,7 @@ def limit_reason(counts, reruns, cap):
         return f"rate: {PER_HOUR} actions in the last hour"
     if counts.today >= PER_DAY:
         return f"rate: {PER_DAY} actions today"
-    if reruns >= cap:
+    if cap is not None and reruns >= cap:
         return f"GitHub rerun cap: {cap} today"
     return None
 
@@ -59,13 +59,14 @@ class HostReruns:
         self.state["reruns"] = {"day": midnight(now)[1],
                                 "count": self.today(now) + 1}
 
-    def limit(self, project, automation, now):
+    def limit(self, project, automation, now, action):
+        cap = self.cap if action == RERUN_FAILED_JOBS else None
+
         def limited(conn):
             counts = store.automations.act_counts(
-                conn, project, automation, RERUN_FAILED_JOBS,
-                hour_since=now - HOUR_MS,
+                conn, project, automation, hour_since=now - HOUR_MS,
                 day_since=midnight(now)[0])
-            return limit_reason(counts, self.today(now), self.cap)
+            return limit_reason(counts, self.today(now), cap)
         return limited
 
 

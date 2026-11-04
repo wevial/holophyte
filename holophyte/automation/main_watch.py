@@ -112,7 +112,7 @@ def observe(target, conn, project, pull, checks, now, watch, listed, leased,
     if watch.mode == ACT:
         held = (unapproved(watch, REVISION)
                 or report_only_reason(pull, listed))
-    hold_merges(conn, project, now, watch, held, pull, checks)
+    hold_merges(conn, project, now, watch, held, pull, checks, reruns)
     for run, jobs in failed_jobs_of_required_runs(checks).items():
         sha = checks["sha"]
         names = ", ".join(job["name"] for job in jobs)
@@ -133,14 +133,14 @@ def observe(target, conn, project, pull, checks, now, watch, listed, leased,
             reason=f"rerunning {jobs_at}",
             detail=detail, now=now,
             lease_until=int(time.time() * 1000) + LEASE_MS,
-            limit=reruns.limit(project, MAIN_WATCH, now))
+            limit=reruns.limit(project, MAIN_WATCH, now, RERUN_FAILED_JOBS))
         if (firing is not None and store.automations.firing(conn, firing)
                 .state == store.automations.LEASED):
             reruns.count(now)
             leased.append(firing)
 
 
-def hold_merges(conn, project, now, watch, held, pull, checks):
+def hold_merges(conn, project, now, watch, held, pull, checks, reruns):
     if checks["state"] != "failure":
         return
     names = list(dict.fromkeys(check["name"] for check in checks["failed"]
@@ -168,9 +168,13 @@ def hold_merges(conn, project, now, watch, held, pull, checks):
         firing = store.automations.reserve_firing(
             conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause,
             mode=ACT, reason=f"holding merges: {red}", detail=detail, now=now,
-            lease_until=int(time.time() * 1000) + LEASE_MS)
+            lease_until=int(time.time() * 1000) + LEASE_MS,
+            limit=reruns.limit(project, MAIN_WATCH, now, HOLD_MERGES))
         if firing is None:
             firing = store.automations.keyed_firing(
                 conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause)
+        if (store.automations.firing(conn, firing).state
+                == store.automations.REFUSED):
+            return
         store.automations.place_merge_hold(
             conn, project, firing, sha, names, f"held merges: {red}", now=now)

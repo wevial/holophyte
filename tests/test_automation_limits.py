@@ -57,6 +57,13 @@ class LimitFixture(ResultFixture):
                     and row.reason != "seeded"]
         return firing
 
+    def held(self, name):
+        """The merge-hold firings and the number of holds placed."""
+        conn = self.conn(name)
+        return ([firing for firing in store.automations.firings(conn)
+                 if firing.subject == "merges"],
+                conn.execute("SELECT COUNT(*) FROM mergeHolds").fetchone()[0])
+
     def red_run(self, name, run):
         self.act_github.red(self.paths[name], self.repos[name], run)
 
@@ -99,18 +106,10 @@ class RateTests(LimitFixture):
         firing = self.of_run("alpha", 7)
         self.assertEqual((firing.mode, firing.state), ("act", "refused"))
         self.assertEqual(firing.reason, "rate: 6 actions in the last hour")
-
-    def test_a_merge_hold_is_not_counted_as_a_rerun_action(self):
-        self.act("alpha")
-        for index in range(5):
-            self.seed("alpha", self.clock - (55 - 10 * index) * MINUTE,
-                      100 + index)
-
-        self.assertEqual(len(self.pass_at(self.clock)), 1)
-
-        self.assertEqual(self.of_run("alpha", 7).state, "leased")
-        self.assertEqual(self.conn("alpha").execute(
-            "SELECT COUNT(*) FROM mergeHolds").fetchone(), (1,))
+        [hold], placed = self.held("alpha")
+        self.assertEqual((hold.mode, hold.state, hold.reason),
+                         ("act", "refused", "rate: 6 actions in the last hour"))
+        self.assertEqual(placed, 0)
 
     def test_a_promoted_proposal_counts_from_its_promotion(self):
         self.act("alpha")
@@ -137,6 +136,10 @@ class RateTests(LimitFixture):
         refused = self.of_run("alpha", 7)
         self.assertEqual((refused.state, refused.reason),
                          ("refused", "rate: 30 actions today"))
+        [hold], placed = self.held("alpha")
+        self.assertEqual((hold.state, hold.reason),
+                         ("refused", "rate: 30 actions today"))
+        self.assertEqual(placed, 0)
 
         self.red_run("alpha", 8)
         self.assertEqual(len(self.pass_at(pacific(3, 0, 10))), 1)
@@ -153,6 +156,10 @@ class RateTests(LimitFixture):
         firing = self.of_run("alpha", 7)
         self.assertEqual((firing.state, firing.reason),
                          ("refused", "rate: 3 firings queued"))
+        [hold], placed = self.held("alpha")
+        self.assertEqual((hold.state, hold.reason),
+                         ("refused", "rate: 3 firings queued"))
+        self.assertEqual(placed, 0)
 
     def test_proposals_are_not_limited(self):
         automations(self.paths["alpha"], "dry_run")
