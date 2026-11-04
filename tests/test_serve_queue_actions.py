@@ -46,6 +46,7 @@ class FakeGithub:
 
     def __init__(self):
         self.reads, self.mutations, self.refusal = 0, [], None
+        self.on_mutation = lambda: None
 
     def call(self, target, host, method, path, payload, accept=None):
         if path != "graphql":
@@ -55,6 +56,7 @@ class FakeGithub:
         for name in ("enqueuePullRequest", "dequeuePullRequest"):
             if name in query:
                 self.mutations.append((name, variables))
+                self.on_mutation()
                 if self.refusal is not None:
                     return {"data": {name: None},
                             "errors": [{"type": "UNPROCESSABLE",
@@ -159,6 +161,8 @@ class QueueJumpTests(QueueActionCase):
     def test_a_github_refusal_answers_its_message_and_the_row_written_first(
             self):
         self.github.refusal = REFUSAL
+        committed = []
+        self.github.on_mutation = lambda: committed.append(self.rows())
 
         code, _, body = self.post("queue-jump", pr=52)
 
@@ -166,8 +170,10 @@ class QueueJumpTests(QueueActionCase):
         self.assertEqual((body["ok"], body["reason"], body["detail"]),
                          (False, "refused", REFUSAL))
         self.assertEqual(len(self.github.mutations), 1)
-        self.assertEqual([(row[0], row[3]) for row in self.rows()],
-                         [(body["recorded"], "queue_jump")])
+        self.assertEqual([[(row[0], row[3]) for row in rows]
+                          for rows in committed],
+                         [[(body["recorded"], "queue_jump")]])
+        self.assertEqual(self.rows(), committed[0])
 
     def test_the_front_entry_or_one_not_queued_is_refused_sending_nothing(self):
         before = self.dump()
