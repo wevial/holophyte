@@ -10,7 +10,7 @@ import { hasWork, laneGroups, RunningLanes } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
-import { useDayLedger, usePeerList } from "../queries";
+import { useDayLedger, useMergeQueues, usePeerList } from "../queries";
 import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
 
 const FOLD_KEY = "holophyte.next.fold.";
@@ -97,7 +97,8 @@ export function Overview() {
   const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
   const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
   const laneQueued = lanes.reduce((sum, group) => sum + (group.queued ?? []).length, 0);
-  const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now);
+  const queues = useMergeQueues(view.hosts, deps);
+  const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now, queues);
   const openPrs = prLanes.reduce((sum, group) => sum + group.rows.length, 0);
   const waiting = readyToMergeCount(prLanes, view.readiness);
   const [needOpen, setNeedOpen] = useState(() => readOpen("need"));
@@ -177,7 +178,7 @@ export function Overview() {
             count={openPrs}
             summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
             empty="No pull request waits on you."
-            isEmpty={openPrs === 0}
+            isEmpty={prLanes.length === 0}
           >
             <PullRequestLanes groups={prLanes} readiness={view.readiness} />
           </FoldingSection>
