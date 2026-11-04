@@ -717,6 +717,24 @@ test("the next-in-queue PR number links to GitHub without opening the line", asy
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
 });
 
+test("an open next-in-queue line closes when a poll brings a different pull request to position 1", async () => {
+  const queue = queueOf(checkedVite);
+  await mount({ items: [], actions: true, projects: ["relos", "writer"], queue });
+  await clickIn(nextButton(nextLines()[0]!));
+  expect(nextLines()[0]!.querySelector("[data-entry-detail]")).not.toBeNull();
+  queue.entries = [{ ...queue.entries[1]!, position: 1 }, ...queue.entries.slice(2)];
+  await act(async () => {
+    await client!.refetchQueries();
+    await settle();
+  });
+  for (let round = 0; round < 3; round += 1) await act(settle);
+  const [line] = nextLines() as [HTMLElement];
+  expect(within(line).getByRole("link", { name: "#2549" })).toBeTruthy();
+  expect(nextButton(line).getAttribute("aria-expanded")).toBe("false");
+  expect(line.hasAttribute("data-open")).toBe(false);
+  expect(line.querySelector("[data-entry-detail]")).toBeNull();
+});
+
 for (const actions of [true, false]) {
   test(`an open next-in-queue line with no store run ${actions ? "offers" : "has no"} Remove from queue with actions ${actions ? "on" : "off"}`, async () => {
     await mount({ items: [], actions, projects: ["relos", "writer"], queue: queueOf(checkedVite) });

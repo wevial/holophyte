@@ -199,7 +199,7 @@ function PrLane({ group, readiness }: { group: PrLaneGroup; readiness: Readiness
         {group.rows.map((row, index) => (
           <PrLaneRow key={entryKey({ item: row.item }, index)} row={row} host={group.host} readiness={readiness} />
         ))}
-        {group.next && <NextInQueue entry={group.next} now={group.queueNow} host={group.host} project={group.name} />}
+        {group.next && <NextInQueue key={group.next.pr.url} entry={group.next} now={group.queueNow} host={group.host} project={group.name} />}
       </ul>
     </div>
   );
