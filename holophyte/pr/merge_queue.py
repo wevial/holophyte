@@ -303,11 +303,10 @@ def _left_row(node, now_ms):
         if event.get("__typename") == ADDED:
             stints.append([])
         stints[-1].append((ms, event))
-    departures = [found for n, stint in enumerate(stints)
-                  if (found := _departure(stint, queued=n > 0)) is not None]
-    if not departures:
+    departure = _departure(stints[-1], queued=len(stints) > 1)
+    if departure is None:
         return None
-    at_ms, outcome, reason = departures[-1]
+    at_ms, outcome, reason = departure
     if at_ms < now_ms - LEFT_WINDOW_MS:
         return None
     return {"pr": _pull_row(node), "at_ms": at_ms, "outcome": outcome,

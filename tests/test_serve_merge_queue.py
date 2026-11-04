@@ -309,6 +309,14 @@ class MergeQueueTests(MergeQueueRouteCase):
                           row["waits_on_you"]),
                          (NOW - 20 * MIN, "merged", None, False))
 
+    def test_a_removed_pull_request_queued_again_has_not_left(self):
+        self.github.pulls.append(timeline(
+            2567, event("AddedToMergeQueueEvent", 50 * MIN),
+            event("RemovedFromMergeQueueEvent", 20 * MIN, "MANUAL"),
+            event("AddedToMergeQueueEvent", 10 * MIN)))
+        self.assertNotIn(2567, [row["pr"]["number"]
+                                for row in self.read_queue()["left"]])
+
     def test_a_queue_longer_than_one_page_answers_every_entry(self):
         self.github.queue["entries"]["nodes"] += [
             entry(position, 4000 + position, "QUEUED")
