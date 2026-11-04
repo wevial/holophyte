@@ -1,4 +1,5 @@
 """The host sweep's automation step: each opted-in project's rules, round robin."""
+import contextlib
 import subprocess
 import sys
 import time
@@ -15,6 +16,12 @@ from holophyte.automation.automation_config import (
     main_watch_config,
 )
 from holophyte.automation.gate import read_switch
+from holophyte.automation.limits import (
+    HostReruns,
+    midnight,
+    reruns_per_day,
+    self_pause,
+)
 from holophyte.automation.policy import RERUN_FAILED_JOBS, report_only
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.host.registry import Host, HostError
@@ -145,11 +152,12 @@ def read_results(target, conn, project, pull, checks, green, now):
                                          checks["sha"], green)
         except InfraFailure:
             continue
-        if found is not None:
-            store.automations.record_result(conn, firing.id, *found, now=now)
+        if found is not None and store.automations.record_result(
+                conn, firing.id, *found, now=now):
+            self_pause(conn, firing.id, now=now)
 
 
-def observe_store(name, target, watch, listed, now, greens, out):
+def observe_store(name, target, watch, listed, now, greens, reruns, out):
     leased = []
     conn = open_store(target)
     try:
@@ -162,8 +170,9 @@ def observe_store(name, target, watch, listed, now, greens, out):
                          greens.get(name), now)
             if required_green:
                 greens[name] = checks["sha"]
-            main_watch.observe(target, conn, project, pull, checks, now,
-                               watch, listed, leased)
+            if store.automations.automation_pause(conn, MAIN_WATCH) is None:
+                main_watch.observe(target, conn, project, pull, checks, now,
+                                   watch, listed, leased, reruns)
             if required_green:
                 main_watch.release_held_merges(conn, project, pull,
                                                checks["sha"], now, watch,
@@ -173,10 +182,12 @@ def observe_store(name, target, watch, listed, now, greens, out):
         start_workers(name, target, leased, out)
 
 
-def observe_one(name, target, watch, listed, now, end, stop, out, greens):
+def observe_one(name, target, watch, listed, now, end, stop, out, greens,
+                reruns):
     try:
         with deadline.bounded(end, stop) as bound:
-            observe_store(name, target, watch, listed, now, greens, out)
+            observe_store(name, target, watch, listed, now, greens, reruns,
+                          out)
     except (deadline.DeadlineReached, deadline.CallRefused) as reached:
         return str(reached), None
     except (Exception, SystemExit) as bad:  # noqa: BLE001 - the boundary
@@ -184,6 +195,25 @@ def observe_one(name, target, watch, listed, now, end, stop, out, greens):
     if bound.refused:
         return bound.refused[0], None
     return None, None
+
+
+def store_reruns(target, now):
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        project = project_of(conn, target)
+        return 0 if project is None else store.automations.act_counts(
+            conn, project, MAIN_WATCH, RERUN_FAILED_JOBS, hour_since=now,
+            day_since=midnight(now)[0]).today
+    finally:
+        conn.close()
+
+
+def reruns_committed(entries, now):
+    total = 0
+    for entry in entries:
+        with contextlib.suppress(Exception):
+            total += store_reruns(entry.target, now)
+    return total
 
 
 def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
@@ -194,7 +224,10 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
     if switch.off:
         return
     try:
-        listed = report_only(Host.locate(home))
+        host = Host.locate(home)
+        listed = report_only(host)
+        reruns = HostReruns(state, reruns_per_day(host),
+                            reruns_committed(host.projects(), now), now)
     except HostError as bad:
         print(f"{bad}; automations are off this pass", file=out)
         return
@@ -216,7 +249,8 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
         share = (end - time.monotonic()) / (len(order) - index)
         reached, bad = observe_one(name, entry.target, watch, listed, now,
                                    time.monotonic() + share, stop, out,
-                                   state.setdefault("main_green", {}))
+                                   state.setdefault("main_green", {}),
+                                   reruns)
         if reached is not None:
             print(f"[holo2] {name}: automations cut, {reached}; the next"
                   " pass starts after it", file=out)

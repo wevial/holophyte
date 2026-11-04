@@ -350,6 +350,17 @@ Each module, one line:
   `act` places, the merge hold on a red head, and `release_held_merges()`
   ends it on a green one and sends the runs it parked back to the
   babysitter.
+- `holophyte/automation/limits.py` — an automation's act limits on one
+  project, `QUEUED`, `PER_HOUR` and `PER_DAY`, read through `act_counts()`
+  inside `reserve_firing()`'s transaction, and the host's daily GitHub
+  reruns, `HostReruns`, counted in `sweep.json`'s `reruns`, raised at a
+  pass's start to the stores' committed rerun firings (the step's
+  `reruns_committed()`), against `reruns_per_day()`; days start at
+  midnight in `America/Los_Angeles`.
+  `self_pause()`, called after the step records a result and after the
+  worker settles a firing, writes an `automation` pause when the same
+  checks were red again twice within 24 hours or GitHub answered the two
+  newest rerun firings with an HTTP 4xx.
 - `holophyte/automation/merge_hold.py` — the merge gate while main is
   red: `held_merge()`, called by `_merge_pr()` after its behind-main check,
   reads the open hold through `open_merge_hold()` while the main watch is in
