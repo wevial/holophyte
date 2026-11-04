@@ -112,8 +112,8 @@ def show_lines(body, tz):
 
 
 def render(mode, body, zone_name):
-    return (list_lines(body) if mode == LIST_MODE
-            else show_lines(body, zone(zone_name)))
+    return "\n".join(list_lines(body) if mode == LIST_MODE
+                     else show_lines(body, zone(zone_name)))
 
 
 def missing(firing_id, target):
@@ -135,8 +135,7 @@ def read(target, mode, firing_id=None, limit=None, as_json=False,
     if body is None:
         print(missing(firing_id, target), file=sys.stderr)
         return 1
-    text = (json.dumps(body) if as_json
-            else "\n".join(render(mode, body, zone_name)))
+    text = json.dumps(body) if as_json else render(mode, body, zone_name)
     if text:
         print(text)
     return 0
