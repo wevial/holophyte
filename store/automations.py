@@ -83,7 +83,6 @@ class HeldRun(NamedTuple):
     lastRunId: int | None
     phase: str
     endedAt: int | None
-    parkedAt: int
     touched: bool
 
 
@@ -263,7 +262,7 @@ def open_merge_hold(conn, project):
 def held_runs(conn, hold_id):
     rows = conn.execute(
         "SELECT e.runId, r.ticketId, t.linearIdentifier, t.lastRunId, r.phase,"
-        " r.endedAt, e.at, EXISTS (SELECT 1 FROM interventions AS i"
+        " r.endedAt, EXISTS (SELECT 1 FROM interventions AS i"
         " WHERE i.runId = e.runId AND i.source = 'human' AND i.at >= e.at)"
         " FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
         " JOIN tickets AS t ON t.id = r.ticketId"
@@ -271,7 +270,7 @@ def held_runs(conn, hold_id):
         " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
         " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')"
         " ORDER BY e.runId", (hold_id,)).fetchall()
-    return [HeldRun(*row[:7], bool(row[7])) for row in rows]
+    return [HeldRun(*row[:6], bool(row[6])) for row in rows]
 
 
 def end_merge_hold(conn, hold_id, reason, *, now):
