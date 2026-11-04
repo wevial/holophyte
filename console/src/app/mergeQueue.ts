@@ -36,7 +36,7 @@ export function configurationWords(configuration: MergeQueueConfiguration | null
 }
 
 /** The run's phase in words, with its review round when it has had one. */
-export function runWords(run: MergeQueueRun, round = false): string {
+export function runWords(run: MergeQueueRun, round: boolean): string {
   const phase = phaseLabel(run.phase);
   return round && run.round > 0 ? `${phase} · round ${run.round}` : phase;
 }
