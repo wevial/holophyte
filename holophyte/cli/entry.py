@@ -6,6 +6,7 @@ from holophyte.board.projection import file_ticket
 from holophyte.board.provider import board_for
 from holophyte.cli.arguments import (
     FILE_TICKET_STATES,
+    _audit_checks,
     _author_checks,
     _board_verb_checks,
     _close_checks,
@@ -57,6 +58,10 @@ def _boardless_mode(args, target):
         return lambda: scout_probe_mode(target)
     if args.scout is not None:
         return lambda: scout_mode(target, args.scout)
+    if args.automation_settle:
+        from holophyte.automation.audit import settle
+        firing_id, state = args.automation_settle
+        return lambda: settle(target, int(firing_id), state, args.note)
     return None
 
 
@@ -80,6 +85,7 @@ def _legacy_cli(argv):
     _author_checks(parser, args)
     _close_checks(parser, args)
     _gap_layer_checks(parser, args)
+    _audit_checks(parser, args)
     if args.target is None:
         return _host_mode(parser, args)
     if args.serve == "":
@@ -88,7 +94,8 @@ def _legacy_cli(argv):
     # Modes that write nothing locate without adopting: adoption moves files.
     target = Project.locate(args.target, adopt=not (
         args.import_store is not None or args.board_diff or args.dry_run
-        or args.patrol))
+        or args.patrol or args.automation_list
+        or args.automation_show is not None))
     boardless = _checked_boardless_mode(args, target)
     if boardless is not None:
         return boardless()

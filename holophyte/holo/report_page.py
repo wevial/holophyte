@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from time import time
 
+import store.automations
 import store.read
 from holophyte.cli.report import ended_rows
 from holophyte.config.project import Project
@@ -26,6 +27,7 @@ SEND_BACK = "operator_note"
 FAILURE_NAMES = {"review_route": "review"}
 MARKS = {"merged": "✓", "failed": "✗"}
 LABEL = 10
+FIRING_STATES = ("proposed", "confirmed", "refused", "canceled", "unknown")
 
 
 def window_ms(since):
@@ -144,6 +146,7 @@ def report(conn, project, since, now):
                            "now_ms": now},
                 "shipped": shipped(rows), "failures": failures(conn, start),
                 "gaps": gaps(conn), "hands_on": hands_on(conn, start),
+                "automations": store.automations.firing_counts(conn, start),
                 "runs": rows, "notes": consumed_notes(conn, start),
                 "steers": steer_notes(conn, start)}
     finally:
@@ -185,7 +188,19 @@ def count_lines(body):
         ("Hands-on", plural(hands["interventions"], "intervention")
          + (f" ({by_action})" if by_action else "")
          + f" · {plural(hands['send_backs'], 'send-back')}"),
-    ]
+    ] + automations_lines(body.get("automations"))
+
+
+def automations_lines(counts):
+    if counts is None or not any(counts["states"].values()):
+        return []
+    states = counts["states"]
+    shown = FIRING_STATES + tuple(state for state, count in states.items()
+                                  if count and state not in FIRING_STATES)
+    return [("Automations", f"{plural(sum(states.values()), 'firing')} ("
+             + " · ".join(f"{state} {states[state]}" for state in shown)
+             + f") · {plural(counts['holds'], 'hold')}"
+             f" · {plural(counts['released'], 'run')} released")]
 
 
 def run_lines(body, colour):
@@ -230,7 +245,8 @@ def steer_lines(body, tz):
 
 
 def page(body, tz=None, colour=False, notes=False):
-    lines = [f"{label.ljust(LABEL)}{text}" for label, text in count_lines(body)]
+    lines = [f"{label.ljust(LABEL - 1)} {text}"
+             for label, text in count_lines(body)]
     if body["runs"]:
         lines += [""] + run_lines(body, colour)
     if notes:
