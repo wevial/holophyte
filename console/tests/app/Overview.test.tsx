@@ -368,9 +368,15 @@ test("a project whose merge queue is not configured or is empty draws no next-in
     const polls = fleet({ items: [] }, { items: [] });
     return async (url, init) => (url === `${DEMO}/merge-queue` ? Response.json(queue) : polls(url, init));
   };
-  for (const queue of [{ ...served, configured: false, configuration: null, entries: [] }, { ...served, configured: true, entries: [] }]) {
+  const nextLine = () => section("Pull requests").querySelector("[data-next-in-queue]");
+  await mount("#/", answering(served));
+  expect(nextLine()).not.toBeNull();
+  expect(within(section("Pull requests")).queryByText("No pull request waits on you.")).toBeNull();
+  cleanup();
+
+  for (const queue of [{ ...served, configured: false }, { ...served, configured: true, entries: [] }]) {
     await mount("#/", answering(queue));
-    expect(section("Pull requests").querySelector("[data-next-in-queue]")).toBeNull();
+    expect(nextLine()).toBeNull();
     expect(within(section("Pull requests")).getByText("No pull request waits on you.")).toBeTruthy();
     cleanup();
   }
