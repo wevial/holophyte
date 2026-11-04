@@ -76,6 +76,17 @@ class MergeHold(NamedTuple):
     endReason: str | None
 
 
+class HeldRun(NamedTuple):
+    runId: int
+    ticketId: int
+    identifier: str
+    lastRunId: int | None
+    phase: str
+    endedAt: int | None
+    parkedAt: int
+    touched: bool
+
+
 class Pause(NamedTuple):
     id: int
     automation: str
@@ -250,13 +261,17 @@ def open_merge_hold(conn, project):
 
 
 def held_runs(conn, hold_id):
-    return conn.execute(
-        "SELECT COUNT(*) FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
-        " WHERE e.kind = 'main_hold_parked' AND r.endedAt IS NULL"
-        " AND r.phase = 'awaiting_merge_approval'"
+    rows = conn.execute(
+        "SELECT e.runId, r.ticketId, t.linearIdentifier, t.lastRunId, r.phase,"
+        " r.endedAt, e.at, EXISTS (SELECT 1 FROM interventions AS i"
+        " WHERE i.runId = e.runId AND i.source = 'human' AND i.at >= e.at)"
+        " FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
+        " JOIN tickets AS t ON t.id = r.ticketId"
+        " WHERE e.kind = 'main_hold_parked'"
         " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
-        " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')",
-        (hold_id,)).fetchone()[0]
+        " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')"
+        " ORDER BY e.runId", (hold_id,)).fetchall()
+    return [HeldRun(*row[:7], bool(row[7])) for row in rows]
 
 
 def end_merge_hold(conn, hold_id, reason, *, now):

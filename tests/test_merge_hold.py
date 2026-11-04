@@ -10,6 +10,7 @@ import subprocess
 from unittest.mock import patch
 
 import holophyte.automation.merge_hold
+import holophyte.cli.patrol
 import holophyte.pr.github
 import holophyte.pr.merge_queue
 import holophyte.pr.pr_status
@@ -267,14 +268,17 @@ class MergeGateTests(MergeGateFixture):
         self.assertFalse(holophyte.automation.merge_hold.carries(
             self.wt, self.red_commit, self.early))
 
-    def test_held_runs_counts_only_runs_still_parked(self):
+    def test_patrol_counts_only_held_runs_still_parked(self):
         conn = self.conn("alpha")
+        target = Project.locate(self.paths["alpha"], adopt=False)
         run = self.merge(self.early)[0]
-        self.assertEqual(store.automations.held_runs(conn, self.hold_id()), 1)
+        self.assertEqual(holophyte.cli.patrol.merge_hold(
+            conn, target, T0)["runs_held"], 1)
 
         store.operate.release(conn, run, "abandoned", "resumed")
 
-        self.assertEqual(store.automations.held_runs(conn, self.hold_id()), 0)
+        self.assertEqual(holophyte.cli.patrol.merge_hold(
+            conn, target, T0)["runs_held"], 0)
 
     def test_an_unapproved_revision_or_report_only_repo_holds_nothing(self):
         config = Project.locate(self.paths["alpha"], adopt=False).config_path

@@ -4,7 +4,9 @@ from holophyte.host.registry import HostError
 
 RERUN_FAILED_JOBS = "rerun_failed_jobs"
 HOLD_MERGES = "hold_merges"
-CAPABILITIES = {MAIN_WATCH: (RERUN_FAILED_JOBS, HOLD_MERGES)}
+RELEASE_HELD_MERGES = "release_held_merges"
+CAPABILITIES = {MAIN_WATCH: (RERUN_FAILED_JOBS, HOLD_MERGES,
+                             RELEASE_HELD_MERGES)}
 NEVER = ("approve", "merge", "cancel", "abort", "close", "repoint", "force",
          "steer", "edit_config", "edit_ticket")
 

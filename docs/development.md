@@ -347,7 +347,9 @@ Each module, one line:
   revision and outside `report_only` a `leased` one recording the workflow
   run's `run_attempt`, whose id it adds to the caller's list as it commits,
   so a later read that fails loses none; `hold_merges()` proposes, or in
-  `act` places, the merge hold on a red head.
+  `act` places, the merge hold on a red head, and `release_held_merges()`
+  ends it on a green one and sends the runs it parked back to the
+  babysitter.
 - `holophyte/automation/merge_hold.py` — the merge gate while main is
   red: `held_merge()`, called by `_merge_pr()` after its behind-main check,
   reads the open hold through `open_merge_hold()` while the main watch is in
@@ -1000,8 +1002,8 @@ The store is its own package:
   open and clear an automation's one pause, and `automation_pause()` reads
   the open one; and the `mergeHolds` table: `place_merge_hold()` ends an
   older hold, opens one and confirms its leased firing in one transaction,
-  `end_merge_hold()` ends one and `open_merge_hold()` reads a project's
-  open one.
+  `end_merge_hold()` ends one, `open_merge_hold()` reads a project's
+  open one and `held_runs()` the runs whose newest park names a hold.
 - `store/scouts.py` — a scout run's record: `create_scout()`,
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper
