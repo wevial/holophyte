@@ -253,6 +253,8 @@ and by a fresh claim's implement stage, as `--scout` and
 | `holo automation settle ID confirmed\|canceled NOTE` | | `--automation-settle ID STATE --note NOTE PROJECT` |
 | `holo hold NOTE` | | `--hold --note NOTE PROJECT` |
 | `holo release NOTE` | | `--release-hold --note NOTE PROJECT` |
+| `holo queue jump PR [NOTE] [--author NAME]` | | none: `POST /actions/queue-jump`'s handler, called in process, moves queued pull request `PR` to the front of the merge queue, a `queue_jump` interventions row (on the run carrying `PR`, else the project's) written first; refused, writing nothing, when `PR` is not queued (`not_queued`) or already first (`at_front`); GitHub's refusal (`refused`) prints its message. A refusal prints the `detail` and exits 1 |
+| `holo queue remove PR [NOTE] [--author NAME]` | | none: `POST /actions/queue-remove`'s handler, called in process, takes hand pull request `PR` out of the merge queue, a `queue_remove` interventions row written first; refused, writing nothing, when `PR` is not queued (`not_queued`) or a store run carries it (`factory_owned`, naming the run: pause or abort it instead); GitHub's refusal (`refused`) prints its message. A refusal prints the `detail` and exits 1 |
 | `holo start [NOTE]` | `holo loop start` | none: `systemctl --user start holophyte-loop@NAME`, recorded first as the console's launch-loop is |
 | `holo start --foreground` | `holo loop start` | `PROJECT`: the loop in this terminal |
 | `holo stop NOTE [--now]` | `holo loop stop` | `--hold --note NOTE PROJECT`; with `--now`, then `--abort KEY --note NOTE PROJECT` for each live run |
@@ -401,9 +403,10 @@ included with or without `--notes`:
 | `runs` | the window's runs in end order, each with `run`, `ticket`, `actual_min`, `agent_min`, `verify_min`, `estimate_min`, `ratio`, `rounds`, `outcome`, `host`, `ended_ms`, `merge_sha` and `wall_min`, as a `GET /runs` row has them |
 | `notes` | the window's consumed notes, newest first: `run`, `ticket`, `round`, `event_id`, `author`, `note` and `consumed_ms` |
 
-Five reads are no `factory.py` mode: each calls, in process, the view
+Six reads are no `factory.py` mode: each calls, in process, the view
 function the [serve daemon](http.md) answers its route with, so the command
-and the route agree. Each opens the store read-only and writes nothing.
+and the route agree. Each opens the store read-only and writes nothing,
+but `queue` also reads GitHub and keeps the route's 15-second cache.
 `--json` prints the route's body as the daemon would send it; without it,
 `holo run N` with no `--files`, `--ledger` or `--turns` prints the page
 below, and each other read prints a compact listing, one line per run,
@@ -420,6 +423,18 @@ daemon's root `/attention` built from `host.toml` with no daemon running.
 | `holo attention [--json]` | | `GET /attention`, or the host daemon's root `GET /attention` |
 | `holo board [--json]` | | `GET /board` |
 | `holo ticket KEY [--json]` | | `GET /tickets/KEY` |
+| `holo queue [--json]` | | `GET /merge-queue` |
+
+`holo queue` without `--json` prints the merge queue of the project's base
+branch, its times in the client's zone:
+
+| Line | Form |
+| --- | --- |
+| configuration | the branch, merge method, strategy, entries built at a time and check timeout: `main · squash · all green · builds 1 at a time · checks time out at 60m` |
+| entry | one per entry in position order: its position, pull request, state (`checks running DONE/TOTAL` while its merge group builds, else GitHub's state, `queued`), estimated time to merge, then the ticket key of the run carrying it or else its author: `1 #2547 checks running 5/13 ~10m · RELOS-227` |
+| left | one per pull request that left the queue in the last two hours, newest first: `#2548 removed 15:38: failed checks · RELOS-227`, or `#2550 merged 15:12 · maintainer` |
+
+With `configured: false` it prints `no merge queue on main` and exits 0.
 
 `holo run N` without `--json` renders `GET /runs/N`'s body and
 `GET /runs/N/files`'s as one page, in the client's zone and coloured as
@@ -571,8 +586,11 @@ instead ([HTTP endpoints](http.md#the-host-daemon)), under
 KEY` and `report` (`--since` sent as `since`, `--notes` drawn here from a
 body that always holds the notes) print what the local command prints,
 `board`'s `editable` false as there; `attention` with no project is the
-root's. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`, `abort`
-and `start` post to `POST /projects/NAME/actions/...`
+root's. `queue` reads `GET /merge-queue`, its `--json` the route's body
+unchanged. `requeue`, `send-back`, `hold`, `release`, `pause`, `resume`,
+`abort`, `start`, `queue jump` and `queue remove` (`{"pr", "note",
+"author"}` to `queue-jump` and `queue-remove`) post to `POST
+/projects/NAME/actions/...`
 ([The daemon's actions](daemon.md)): `release` to `release-hold`, `start` to
 `launch-loop`, which takes no note and releases no hold, and `pause` and `abort` first read the
 ticket's live run from `GET /tickets/KEY`. A write's result is the daemon's
