@@ -33,6 +33,7 @@ from tests.test_serve_merge_queue import (
 
 REFUSAL = ("Pull request #2552 cannot jump the merge queue: the actor is not"
            " allowed to bypass the ruleset")
+UNRESOLVED = "Could not resolve to a Repository"
 FAKE_GH = '''#!{python}
 import json, sys
 sys.path.insert(0, {root!r})
@@ -193,6 +194,25 @@ class QueueReadTests(QueueCase):
         completed = self.holo("queue", "-p", "holophyte")
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, "no merge queue on main\n")
+
+    def test_a_failed_read_prints_its_error_and_exits_one_over_both(self):
+        self.github.failure = InfraFailure(
+            "GitHub GraphQL refused: " + UNRESOLVED)
+        gh = self.bin / "gh"
+        gh.write_text("#!/bin/sh\necho '"
+                      + json.dumps({"errors": [{"message": UNRESOLVED}]})
+                      + "'\n")
+        gh.chmod(0o755)
+        for name, home in (("http", None), ("local", self.host)):
+            with self.subTest(transport=name):
+                completed = self.holo("queue", "-p", "relos", home=home)
+                self.assertEqual(completed.returncode, 1, completed.stdout)
+                self.assertEqual(completed.stdout, "")
+                self.assertIn(UNRESOLVED, completed.stderr)
+                listed = self.holo("queue", "--json", "-p", "relos",
+                                   home=home)
+                self.assertEqual(listed.returncode, 1, listed.stderr)
+                self.assertIn(UNRESOLVED, json.loads(listed.stdout)["error"])
 
 
 class QueueWriteTests(QueueCase):

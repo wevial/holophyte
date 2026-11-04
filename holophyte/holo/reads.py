@@ -139,15 +139,18 @@ def left_line(row, tz):
 
 def queue_lines(body, zone_name=None):
     from holophyte.holo.render import zone
-    if "error" in body:
-        return [f"the merge queue on {body['branch']} was not read:"
-                f" {body['error']}"]
     if not body["configured"]:
         return [f"no merge queue on {body['branch']}"]
     tz = zone(zone_name)
     return ([configuration_line(body)]
             + [entry_line(entry) for entry in body["entries"]]
             + [left_line(row, tz) for row in body["left"]])
+
+
+def read_code(args, code, body):
+    if code == 200 and args.command.words == QUEUE and "error" in body:
+        return 503
+    return code
 
 
 def page_refusal(args, code, body):
@@ -309,6 +312,7 @@ def read(args, target, zone_name=None):
     else:
         project = Project.locate(Path(target), adopt=False)
         route, (code, body) = READS[args.command.words][0](args, project)
+        code = read_code(args, code, body)
     if refusal := page_refusal(args, code, body):
         print(refusal, file=sys.stderr)
         return 1

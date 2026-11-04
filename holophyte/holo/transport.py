@@ -541,7 +541,13 @@ def said(path, code, body):
 
 
 def read_over(args, daemon, prefix, route, timezone):
-    from holophyte.holo.reads import RUN_PARTS, exit_code, page_refusal, show
+    from holophyte.holo.reads import (
+        RUN_PARTS,
+        exit_code,
+        page_refusal,
+        read_code,
+        show,
+    )
     parts = [part for part in RUN_PARTS if getattr(args, part, False)]
     if len(parts) > 1:
         args.leaf.error("give at most one of --files, --ledger and --turns")
@@ -558,6 +564,7 @@ def read_over(args, daemon, prefix, route, timezone):
              if (values := getattr(args, name, None))}
     query = f"?{urlencode(given)}" if given else ""
     code, body = daemon.call("GET", prefix + path + query)
+    code = read_code(args, code, body)
     if code == 200 and args.command.words == SCOUT_THREAD:
         from holophyte.holo.reads import thread_body
         body = thread_body(body)
