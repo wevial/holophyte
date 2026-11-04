@@ -4,6 +4,7 @@ import tomllib
 from importlib import metadata
 
 from holophyte.holo.grammar import (
+    AUTOMATION_READS,
     COMPLETION,
     DRAFT,
     FOLLOW,
@@ -123,6 +124,21 @@ def status(args, target, zone_name):
                  zone_name)
 
 
+def audit(args, target, zone_name):
+    from holophyte.automation.audit import read
+    from holophyte.config.project import Project
+    firing_id = getattr(args, "arg0", None)
+    if firing_id is not None and not firing_id.isdigit():
+        args.leaf.error(f"ID is a firing id, not {firing_id!r}")
+    limit = args.limit[-1] if getattr(args, "limit", None) else None
+    if limit is not None and not (limit.isdigit() and int(limit) > 0):
+        args.leaf.error(f"--limit takes a count of 1 or more, not {limit!r}")
+    return read(Project.locate(target, adopt=False), args.command.mode,
+                None if firing_id is None else int(firing_id),
+                None if limit is None else int(limit),
+                args.json, zone_name)
+
+
 def skeleton(target):
     from holophyte.agents.harness import implementer_profiles
     template = (factory_checkout() / "holophyte" / "tickets" / "templates"
@@ -183,6 +199,8 @@ def local(args, default, zone_name):
     if args.command in READS:
         from holophyte.holo.reads import read
         return read(args, target[0] if target else None, zone_name)
+    if args.command.mode in AUTOMATION_READS:
+        return audit(args, target[0], zone_name)
     from holophyte.cli.entry import _legacy_cli
     return _legacy_cli(target + factory_argv(args))
 

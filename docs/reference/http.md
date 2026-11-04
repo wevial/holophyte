@@ -1111,6 +1111,9 @@ A missing or non-integer `since`, or a bad `limit`, is 400 with an
           "found_by": {"review": 3}},
  "hands_on": {"interventions": 4, "by_action": {"requeue": 3, "pause": 1},
               "send_backs": 1},
+ "automations": {"states": {"proposed": 2, "leased": 0, "confirmed": 3,
+                            "refused": 1, "canceled": 1, "unknown": 1},
+                 "holds": 1, "released": 2},
  "runs": [
   {"run": 312, "ticket": "KO-241", "actual_min": 8.4, "agent_min": 6.1,
    "verify_min": 2.3, "estimate_min": 10.0, "ratio": 0.84, "rounds": 1,
@@ -1145,7 +1148,10 @@ store's whole gap ledger, not the window's: `open`, the gaps with no
 layer yet, `layers`, the count per layer, and `found_by`, the count per
 finder. `hands_on` counts the window's interventions: `interventions`,
 the total less send-backs, `by_action`, the count per action, and
-`send_backs`, the `operator_note` rows. `runs` are the window's ended
+`send_backs`, the `operator_note` rows. `automations` counts the
+automation firings created in the window by state, `states`, the merge
+holds placed in it, `holds`, and the runs sent back to the babysitter by
+the `automation` source in it, `released`. `runs` are the window's ended
 runs, each as a `/runs` row without `ticket_url`: `agent_min` and
 `verify_min` are its agent's and its verify's minutes, and `wall_min` its
 wall-clock minutes.

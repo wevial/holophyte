@@ -9,6 +9,7 @@ from store.enums import GapFinder, GapLayer
 
 FILE_TICKET_STATES = ("Todo", "Backlog")
 APPROVE_DEFAULT_NOTE = "approved for merge"
+SETTLES = ("confirmed", "canceled")
 
 
 def serve_address(text):
@@ -82,15 +83,30 @@ def label_names(text):
 
 def _automation_checks(parser, args):
     host = args.automations_off or args.automations_on
-    if not (host or args.automation_pause or args.automation_resume):
+    if not (host or args.automation_pause or args.automation_resume
+            or args.automation_settle):
         return False
     if host and args.target is not None:
         parser.error("--automations-off and --automations-on are the host's;"
                      " they take no project")
+    if args.automation_settle and not args.automation_settle[0].isdigit():
+        parser.error("--automation-settle takes a firing id, not"
+                     f" {args.automation_settle[0]!r}")
+    if args.automation_settle and args.automation_settle[1] not in SETTLES:
+        parser.error(f"--automation-settle takes {' or '.join(SETTLES)},"
+                     f" not {args.automation_settle[1]!r}")
     if not (args.note or "").strip():
-        parser.error("--automations-off, --automations-on, --automation-pause"
-                     " and --automation-resume require --note TEXT")
+        parser.error("--automations-off, --automations-on, --automation-pause,"
+                     " --automation-resume and --automation-settle require"
+                     " --note TEXT")
     return True
+
+
+def _audit_checks(parser, args):
+    if args.limit is not None and not args.automation_list:
+        parser.error("--limit belongs to --automation-list")
+    if args.limit is not None and args.limit < 1:
+        parser.error(f"--limit takes a count of 1 or more, not {args.limit}")
 
 
 def _note_checks(parser, args):
@@ -168,8 +184,10 @@ def _modifier_checks(parser, args):
     if args.act and not args.sweep:
         parser.error("--act says what --sweep does with the runs it finds; "
                      "it has nothing to act on by itself")
-    if args.json and not (args.status or args.patrol):
-        parser.error("--json says how --status or --patrol prints; it prints "
+    if args.json and not (args.status or args.patrol or args.automation_list
+                          or args.automation_show is not None):
+        parser.error("--json says how --status, --patrol, --automation-list or"
+                     " --automation-show prints; it prints "
                      "nothing by itself")
     if args.once and (not args.supervise or args.target is not None):
         parser.error("--once is the host sweep's single run: --supervise "
@@ -334,8 +352,8 @@ def build_parser():
              "less the [patrol] ignore list, or one `nothing to do` line; "
              "reads only")
     parser.add_argument("--json", action="store_true",
-                        help="with --status or --patrol: print it as one "
-                             "JSON object")
+                        help="with --status, --patrol, --automation-list or "
+                             "--automation-show: print it as one JSON object")
     modes.add_argument(
         "--supervise", action="store_true",
         help="run the acting sweep on an interval ([supervisor] "
@@ -473,6 +491,22 @@ def build_parser():
     modes.add_argument(
         "--automation-resume", metavar="NAME",
         help="clear the automation's standing pause; requires --note")
+    modes.add_argument(
+        "--automation-list", action="store_true",
+        help="print the project's newest automation firings, one line each;"
+             " reads only")
+    parser.add_argument(
+        "--limit", metavar="N", type=int,
+        help="with --automation-list: how many firings (default 20)")
+    modes.add_argument(
+        "--automation-show", metavar="ID", type=int,
+        help="print automation firing ID whole: its fields, detail, hold and"
+             " interventions; an id the store does not hold exits 1")
+    modes.add_argument(
+        "--automation-settle", nargs=2, metavar=("ID", "STATE"),
+        help="settle the unknown firing ID as confirmed or canceled, its"
+             " --note, login and time in its detail's settled_by; another"
+             " state exits 1 and writes nothing")
     modes.add_argument("--hold", action="store_true",
                        help="hold project admission; requires --note")
     modes.add_argument("--release-hold", action="store_true",

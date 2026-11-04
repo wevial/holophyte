@@ -393,6 +393,10 @@ Each module, one line:
   `set_switch()` for `--automations-off` and `--automations-on`, the record
   replaced whole and a `host-actions.jsonl` line, and `pause()` and
   `resume()` for `--automation-pause` and `--automation-resume`.
+- `holophyte/automation/audit.py` — a firing's record without SQL:
+  `read()` for `--automation-list` and `--automation-show`, text or JSON,
+  `render()` the text from that JSON for `holo` over ssh, and `settle()`
+  for `--automation-settle`, which closes only an `unknown` firing.
 - `holophyte/deadline.py` — the host sweep's bound on its network calls:
   `check()` before each unit of Linear or GitHub work, and `admit()`
   before each Linear or GitHub request, which past the bound fails as an
@@ -1009,7 +1013,11 @@ The store is its own package:
 - `store/automations.py` — the `automationFirings` table:
   `reserve_firing()` inserts a `proposed` firing, or with `lease_until` a
   `leased` one, once per key, returning its id or `None`, `firings()` reads
-  them back, newest first, and `firing()` one; `take_firing()` records a
+  them back, newest first, and `firing()` one, `firing_interventions()`
+  the interventions a firing wrote, `firing_holds()` the holds it placed or
+  ended, and `firing_counts()` a window's firings by state, holds and
+  released runs; `settle_unknown()` closes an `unknown` firing by hand;
+  `take_firing()` records a
   worker's pid on an unexpired lease no worker holds and
   `settle_firing()` settles that worker's firing; and the
   `automationPauses` table: `pause_automation()` and `resume_automation()`

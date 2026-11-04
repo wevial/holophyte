@@ -15,6 +15,7 @@ from typing import NamedTuple
 from urllib.parse import quote, urlencode
 
 from holophyte.holo.grammar import (
+    AUTOMATION_READS,
     FOLLOW,
     JSON,
     LAUNCH,
@@ -331,6 +332,11 @@ def render(args, code, text, tail, timezone):
     elif args.command in READS:
         from holophyte.holo.reads import show
         show(args, f"holo {' '.join(args.command.words)}", code == 0, body)
+    elif args.command.mode in AUTOMATION_READS:
+        from holophyte.automation.audit import render as audit_text
+        rendered = audit_text(args.command.mode, body, timezone)
+        if rendered:
+            print(rendered)
     elif args.command.records is not None:
         detail = body.get("detail", "")
         said = tail.removeprefix(PREFIX) == detail.removeprefix(PREFIX)
