@@ -10,6 +10,7 @@ Run: python3 -m unittest discover -s tests -p 'test_serve_merge_queue.py' -v
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -182,11 +183,9 @@ class FakeGithub:
             case.enterContext(patch.object(module, "rest", self.rest))
         case.enterContext(patch.object(holophyte.pr.github, "graphql",
                                        self.graphql))
-        case.clock = [5000.0]
+        case.clock = [NOW / 1000]
         case.enterContext(patch.object(holophyte.serve.serve_merge_queue,
-                                       "monotonic", lambda: case.clock[0]))
-        case.enterContext(patch.object(holophyte.serve.serve_merge_queue,
-                                       "time", lambda: NOW / 1000))
+                                       "time", lambda: case.clock[0]))
 
     def reads(self):
         return [call for call in self.calls if call[0] == "graphql"]
@@ -317,6 +316,17 @@ class MergeQueueTests(MergeQueueRouteCase):
         entries = self.read_queue()["entries"]
         self.assertEqual([e["position"] for e in entries], list(range(1, 102)))
 
+    def test_a_manual_removal_just_before_a_hand_merge_stays_removed(self):
+        self.github.pulls.append(timeline(
+            2566, event("AddedToMergeQueueEvent", 50 * MIN),
+            event("RemovedFromMergeQueueEvent", 20 * MIN + 2 * SEC, "MANUAL"),
+            event("MergedEvent", 20 * MIN)))
+        (row,) = [row for row in self.read_queue()["left"]
+                  if row["pr"]["number"] == 2566]
+        self.assertEqual((row["at_ms"], row["outcome"], row["reason"],
+                          row["waits_on_you"]),
+                         (NOW - 20 * MIN - 2 * SEC, "removed", "MANUAL", True))
+
     def test_a_departure_behind_fifty_more_recently_updated_pulls_is_listed(
             self):
         self.github.pulls[:0] = [timeline(3000 + n) for n in range(50)]
@@ -345,6 +355,29 @@ class MergeQueueCacheTests(MergeQueueRouteCase):
         self.clock[0] += 11
         self.read_queue()
         self.assertEqual(len(self.github.reads()), 2)
+
+    def test_another_process_serving_the_project_answers_from_the_same_read(
+            self):
+        first = self.read_queue()
+        script = (
+            "import json, sys\n"
+            "from unittest.mock import patch\n"
+            "import holophyte.pr.github as github\n"
+            "import holophyte.serve.serve_merge_queue as route\n"
+            "from holophyte.config.project import Project\n"
+            "def refuse(*args):\n"
+            "    raise AssertionError('GitHub was read again')\n"
+            "with patch.object(route, 'time', lambda: float(sys.argv[2])), \\\n"
+            "        patch.object(github, 'graphql', refuse):\n"
+            "    print(json.dumps(route.merge_queue(\n"
+            "        Project.locate(sys.argv[1]))[1]))\n")
+        done = subprocess.run(
+            [sys.executable, "-c", script, str(self.target),
+             str(self.clock[0] + 5)], cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout), first)
+        self.assertEqual(len(self.github.reads()), 1)
 
     def test_a_failed_read_answers_its_error_and_writes_nothing(self):
         self.github.failure = InfraFailure(

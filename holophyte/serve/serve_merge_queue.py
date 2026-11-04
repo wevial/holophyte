@@ -1,5 +1,7 @@
-from threading import Lock
-from time import monotonic, time
+import fcntl
+import json
+import os
+from time import time
 from typing import Literal, NotRequired, TypedDict
 
 import store.read
@@ -11,9 +13,7 @@ from store.operate import PARKED_PHASES
 
 MERGE_QUEUE_PATH = "/merge-queue"
 CACHE_SEC = 15
-_answers = {}
-_locks = {}
-_locks_guard = Lock()
+CACHE_FILE = "merge-queue.json"
 
 
 class MergeQueueConfiguration(TypedDict):
@@ -93,18 +93,32 @@ class MergeQueue(TypedDict):
 def merge_queue(project, query=None):
     if not project.store_path.exists():
         return 503, no_store(project)
-    key = str(project.store_path)
-    with _locks_guard:
-        lock = _locks.setdefault(key, Lock())
-    # Held across the GitHub read so concurrent polls wait for one read.
-    with lock:
-        cached = _answers.get(key)
-        if cached is not None and monotonic() - cached[0] < CACHE_SEC:
-            return 200, cached[1]
-        read_at = monotonic()
+    path = project.holo_dir / CACHE_FILE
+    # Taken by every daemon process serving the project: one read for all.
+    with open(path.with_suffix(".lock"), "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        cached = _cached(path)
+        if cached is not None:
+            return 200, cached
+        read_at = time()
         answer = read_merge_queue(project)
-        _answers[key] = (read_at, answer)
+        _keep(path, read_at, answer)
     return 200, answer
+
+
+def _cached(path):
+    try:
+        kept = json.loads(path.read_text())
+        age = time() - kept["read_at"]
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+    return kept.get("answer") if 0 <= age < CACHE_SEC else None
+
+
+def _keep(path, read_at, answer):
+    partial = path.with_suffix(".partial")
+    partial.write_text(json.dumps({"read_at": read_at, "answer": answer}))
+    os.replace(partial, path)
 
 
 def read_merge_queue(project):

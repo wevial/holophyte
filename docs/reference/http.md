@@ -1402,9 +1402,11 @@ queue in the last 2 hours, read from the merge-queue timeline events of
 the pull requests updated in those 2 hours (paged 50 at a time, newest
 update first), so hand pull requests are included. Each add to the
 queue opens a stay, and a pull request's departure is its newest stay's
-end: `merged` when the stay holds a merge with no removal more than 60
-seconds before it (GitHub records a removal beside a queue merge, before
-or after it), else `removed` at the stay's first removal. It is listed
+end. GitHub records a removal with no reason beside a queue merge, before
+or after it; a removal with a reason, or more than 60 seconds from the
+merge, is a removal of its own. A stay is `merged` when it holds a merge
+and no removal of its own before it, else `removed` at its first removal
+of its own. It is listed
 when it falls in the window: `at_ms` is when, `outcome` is
 `merged` or `removed`, and `reason` GitHub's removal reason (null for a
 merge). `waits_on_you` is true for a removed pull request with no store
@@ -1414,8 +1416,10 @@ run, or whose run is now parked for the operator or ended failed.
 pull request is that `url`: its `id`, `ticket`, `phase` and `round`, null
 when no run carries it.
 
-The answer is cached per project for 15 seconds, so every console tab
-shares one GitHub read. A GitHub read that fails answers 200 with
+The answer is cached per project for 15 seconds in `merge-queue.json`
+in the project's state directory, under a file lock, so every console tab
+and every daemon process serving the project shares one GitHub read; the
+cache file is the route's only write, and the store is never written. A GitHub read that fails answers 200 with
 `configured` null, the rest empty, and an `error` naming the failure,
 cached for the same 15 seconds. The route writes nothing.
 
