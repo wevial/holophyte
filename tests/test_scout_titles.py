@@ -272,7 +272,7 @@ class ScoutTitleColumnTests(unittest.TestCase):
             conn = store.open(path)
             self.addCleanup(conn.close)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
-                             (65,))
+                             (66,))
             self.assertEqual(scout(conn, scout_id).title, None)
             self.assertEqual(scout(conn, scout_id).ask, "Why does it spin?")
 

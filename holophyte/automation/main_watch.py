@@ -1,6 +1,7 @@
 """The main watch: a red required check on main's head, one firing per workflow run."""
 import time
 
+import store
 import store.automations
 from holophyte.automation.automation_config import (
     ACT,
@@ -8,13 +9,19 @@ from holophyte.automation.automation_config import (
     MAIN_WATCH,
     unapproved,
 )
-from holophyte.automation.policy import RERUN_FAILED_JOBS, report_only_reason
+from holophyte.automation.policy import (
+    HOLD_MERGES,
+    RERUN_FAILED_JOBS,
+    refusal,
+    report_only_reason,
+)
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github, pr_status
 from holophyte.pr.check_holds import newest_runs
 
 REVISION = 1
 SUBJECT = "main"
+HOLD_SUBJECT = "merges"
 LEASE_MS = 5 * 60 * 1000
 GREEN, RED_AGAIN, SUPERSEDED = "green", "red_again", "superseded"
 COMPARE_COMMITS = 20
@@ -103,6 +110,7 @@ def observe(target, conn, project, pull, checks, now, watch, listed, leased):
     if watch.mode == ACT:
         held = (unapproved(watch, REVISION)
                 or report_only_reason(pull, listed))
+    hold_merges(conn, project, now, watch, held, pull, checks)
     for run, jobs in failed_jobs_of_required_runs(checks).items():
         sha = checks["sha"]
         names = ", ".join(job["name"] for job in jobs)
@@ -125,3 +133,39 @@ def observe(target, conn, project, pull, checks, now, watch, listed, leased):
             lease_until=int(time.time() * 1000) + LEASE_MS)
         if firing is not None:
             leased.append(firing)
+
+
+def hold_merges(conn, project, now, watch, held, pull, checks):
+    if checks["state"] != "failure":
+        return
+    names = list(dict.fromkeys(check["name"] for check in checks["failed"]
+                               if check["required"]))
+    if not names:
+        return
+    sha = checks["sha"]
+    red = f"main is red at {sha[:12]} ({', '.join(names)})"
+    cause = f"{pull.owner}/{pull.name}@{sha}"
+    detail = {"action": HOLD_MERGES, "sha": sha, "checks": names}
+    if watch.mode == ACT:
+        held = held or refusal(MAIN_WATCH, HOLD_MERGES)
+    if watch.mode != ACT or held is not None:
+        store.automations.reserve_firing(
+            conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause,
+            mode=DRY_RUN, reason=f"would hold merges: {red}" if held is None
+            else f"would hold merges: {red}; dry run: {held}", detail=detail,
+            now=now)
+        return
+    with store.transaction(conn):
+        standing = store.automations.open_merge_hold(conn, project)
+        if (standing is not None and standing.sha == sha
+                and sorted(standing.checks) == sorted(names)):
+            return
+        firing = store.automations.reserve_firing(
+            conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause,
+            mode=ACT, reason=f"holding merges: {red}", detail=detail, now=now,
+            lease_until=int(time.time() * 1000) + LEASE_MS)
+        if firing is None:
+            firing = store.automations.keyed_firing(
+                conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause)
+        store.automations.place_merge_hold(
+            conn, project, firing, sha, names, f"held merges: {red}", now=now)

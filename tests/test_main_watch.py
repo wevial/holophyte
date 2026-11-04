@@ -25,7 +25,9 @@ class MainWatchFixture(HostSweepFixture):
             self.github.origin(self.paths[name])
 
     def firings(self, name):
-        return store.automations.firings(self.conn(name))
+        """The rerun firings, less the merge hold's (subject `merges`)."""
+        return [firing for firing in store.automations.firings(self.conn(name))
+                if firing.subject == "main"]
 
     def red(self, name, sha=S, run=7):
         self.github.main(self.paths[name], sha, [

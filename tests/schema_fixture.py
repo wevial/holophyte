@@ -163,6 +163,8 @@ DOCUMENTED_COLUMNS = {
                           "leaseUntil", "workerPid"},
     "automationPauses": {"id", "automation", "note", "actor", "createdAt",
                          "clearedAt", "clearNote"},
+    "mergeHolds": {"id", "projectId", "sha", "checks", "firingId", "heldAt",
+                   "endedAt", "endReason"},
 }
 
 

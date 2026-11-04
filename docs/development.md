@@ -346,7 +346,15 @@ Each module, one line:
   `dry_run`, proposing to rerun its failed jobs, or in `act` at an approved
   revision and outside `report_only` a `leased` one recording the workflow
   run's `run_attempt`, whose id it adds to the caller's list as it commits,
-  so a later read that fails loses none.
+  so a later read that fails loses none; `hold_merges()` proposes, or in
+  `act` places, the merge hold on a red head.
+- `holophyte/automation/merge_hold.py` — the merge gate while main is
+  red: `held_merge()`, called by `_merge_pr()` after its behind-main check,
+  reads the open hold through `open_merge_hold()` while the main watch is in
+  `act` with no inhibitor, and lets a candidate merge only when it carries
+  the held commit and its head passed every held check, recording
+  `main_hold_passed`; otherwise it records `main_hold_parked` and returns
+  the park's reason.
 - `holophyte/automation/policy.py` — each automation's actions as data,
   `CAPABILITIES` and `NEVER`; `refusal()` names why an action is not
   allowed, and `report_only()` reads `host.toml`'s `[automations]
@@ -398,8 +406,8 @@ Each module, one line:
   attention items grouped by kind, the runs in flight, stranded tickets,
   quiet runs and repeat failures, less `[patrol] ignore`, then main's
   checks, the check-held pull requests, the automation firings proposed in
-  the last 24 hours, the paused automations and the host's health with its
-  kill switch; read only.
+  the last 24 hours, the paused automations, the open merge hold with the
+  runs it holds and the host's health with its kill switch; read only.
 - `holophyte/pr/check_holds.py` — the patrol's GitHub reads: `main_checks()`,
   main's head sha and the conclusion of its check runs, with each red run,
   whether main requires it and its job and workflow run ids, and
@@ -990,7 +998,10 @@ The store is its own package:
   `settle_firing()` settles that worker's firing; and the
   `automationPauses` table: `pause_automation()` and `resume_automation()`
   open and clear an automation's one pause, and `automation_pause()` reads
-  the open one.
+  the open one; and the `mergeHolds` table: `place_merge_hold()` ends an
+  older hold, opens one and confirms its leased firing in one transaction,
+  `end_merge_hold()` ends one and `open_merge_hold()` reads a project's
+  open one.
 - `store/scouts.py` — a scout run's record: `create_scout()`,
   `move_scout()`, `beat_scout()` and `end_scout()` along its phase edges,
   `ScoutRefused` for a move they do not allow, a pass's report, its helper
