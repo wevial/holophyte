@@ -46,12 +46,12 @@ export function StageChip(props: StageText & { state?: State; sub?: string | nul
 }
 
 /** A tab over the rows after it in a lane's list: `label` behind `state`'s
- *  icon, with `children` beside it. */
-export function StageTab({ label, state, children, ...item }: { label: string; state: State } & ComponentProps<"li">) {
+ *  icon, then `sub`, with `children` beside it. */
+export function StageTab({ label, state, sub, children, ...item }: { label: string; state: State; sub?: string | null } & ComponentProps<"li">) {
   return (
     <li {...item} className="flex flex-wrap items-end gap-x-3 border-b border-rule px-5 pt-1.5">
       <span className="relative -mb-px border border-b-0 border-rule bg-paper px-2 py-1">
-        <StageChip label={label} state={state} />
+        <StageChip label={label} state={state} sub={sub} />
       </span>
       {children}
     </li>

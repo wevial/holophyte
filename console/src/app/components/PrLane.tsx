@@ -206,7 +206,13 @@ function PrLane({ group, readiness }: { group: PrLaneGroup; readiness: Readiness
           <PrLaneRow key={entryKey({ item: row.item }, index)} row={row} host={group.host} readiness={readiness} />
         ))}
         {entries.length > 0 && (
-          <StageTab data-queue-tab aria-label="Queue" label="Queue" state={entries[0]!.group_sha != null ? "on_ci" : "queued"}>
+          <StageTab
+            data-queue-tab
+            aria-label="Queue"
+            label="Queue"
+            sub={entries[0]!.estimated_s == null ? null : mergesIn(entries[0]!.estimated_s)}
+            state={entries[0]!.group_sha != null ? "on_ci" : "queued"}
+          >
             {more > 0 && (
               <button
                 type="button"

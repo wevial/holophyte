@@ -651,6 +651,18 @@ const queueRows = () => [...section().querySelectorAll<HTMLElement>("[data-queue
 const queueTab = () => lane("relos").querySelector<HTMLElement>("[data-queue-tab]")!;
 const moreButton = () => within(queueTab()).getByRole("button", { name: /more$/ });
 const numbers = () => queueRows().map((row) => within(row).getAllByRole("link")[0]!.textContent);
+const tabChip = () => queueTab().firstElementChild!.textContent;
+
+test("the Queue tab reads position 1's time to merge after its label, as its row does", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
+  expect(tabChip()).toBe("Queue · ~10m");
+  expect(queueRows()[0]!.textContent).toContain("merges ~10m");
+});
+
+test("the Queue tab reads Queue alone when position 1 has no estimate", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf({ ...vite, estimated_s: null }) });
+  expect(tabChip()).toBe("Queue");
+});
 
 test("with nothing waiting on you, a project's lane shows a Queue tab over its queue's position 1 alone, the rest behind a count", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
