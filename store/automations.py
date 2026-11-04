@@ -90,6 +90,17 @@ class HeldRun(NamedTuple):
 SUPERSEDED = "superseded by "
 
 
+class FiringIntervention(NamedTuple):
+    id: int
+    runId: int | None
+    identifier: str | None
+    action: str
+    source: str
+    actor: str | None
+    note: str | None
+    at: int
+
+
 class Pause(NamedTuple):
     id: int
     automation: str
@@ -171,9 +182,49 @@ def keyed_firing(conn, project, automation, revision, subject, cause):
 
 
 def firing(conn, firing_id):
+    if not _has_table(conn, "automationFirings"):
+        return None
     row = conn.execute(f"SELECT {_selected(conn)} FROM automationFirings"
                        " WHERE id = ?", (firing_id,)).fetchone()
     return None if row is None else _firing(row)
+
+
+def firing_interventions(conn, firing_id):
+    rows = conn.execute(
+        'SELECT i.id, i.runId, t.linearIdentifier, i."action", i.source,'
+        " i.actor, i.note, i.at FROM interventions AS i"
+        " LEFT JOIN runs AS r ON r.id = i.runId"
+        " LEFT JOIN tickets AS t ON t.id = r.ticketId"
+        " WHERE i.firingId = ? ORDER BY i.id", (firing_id,)).fetchall()
+    return [FiringIntervention(*row) for row in rows]
+
+
+def firing_counts(conn, since_ms):
+    states = dict.fromkeys((state.value for state in FiringState), 0)
+    if not _has_table(conn, "automationFirings"):
+        return {"states": states, "holds": 0, "released": 0}
+    states.update(conn.execute(
+        "SELECT state, COUNT(*) FROM automationFirings WHERE createdAt >= ?"
+        " GROUP BY state", (since_ms,)).fetchall())
+    holds = conn.execute("SELECT COUNT(*) FROM mergeHolds WHERE heldAt >= ?",
+                         (since_ms,)).fetchone()[0]
+    released = conn.execute(
+        "SELECT COUNT(*) FROM interventions WHERE source = 'automation'"
+        " AND \"action\" = 'babysit' AND at >= ?", (since_ms,)).fetchone()[0]
+    return {"states": states, "holds": holds, "released": released}
+
+
+def settle_unknown(conn, firing_id, state, note, login, *, now):
+    if state not in (CONFIRMED, CANCELED):
+        raise ValueError(f"an unknown firing settles as {CONFIRMED} or"
+                         f" {CANCELED}, not {state!r}")
+    with store.transaction(conn):
+        cursor = conn.execute(
+            "UPDATE automationFirings SET state = ?, detail = json_set(detail,"
+            " '$.settled_by', json_object('note', ?, 'login', ?, 'at', ?))"
+            " WHERE id = ? AND state = ?",
+            (state, note, login, now, firing_id, UNKNOWN))
+        return cursor.rowcount == 1
 
 
 def take_firing(conn, firing_id, pid, *, now):
@@ -261,6 +312,14 @@ def open_merge_hold(conn, project):
         " WHERE projectId = ? AND endedAt IS NULL", (project,)).fetchone()
     return None if row is None else MergeHold(*row[:3], json.loads(row[3]),
                                               *row[4:])
+
+
+def firing_holds(conn, firing):
+    rows = conn.execute(
+        f"SELECT {', '.join(MergeHold._fields)} FROM mergeHolds"
+        " WHERE firingId = ? OR id = ? ORDER BY id",
+        (firing.id, firing.detail.get("hold"))).fetchall()
+    return [MergeHold(*row[:3], json.loads(row[3]), *row[4:]) for row in rows]
 
 
 def held_runs(conn, hold_id):

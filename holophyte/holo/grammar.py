@@ -139,6 +139,15 @@ COMMANDS = (
     Command(("automation", "resume"), "--automation-resume",
             "clear one automation's pause on the project", takes=("NAME",),
             note=REQUIRED, records=()),
+    Command(("automation", "list"), "--automation-list",
+            "the project's newest automation firings, one line each",
+            flags=(JSON, LIMIT)),
+    Command(("automation", "show"), "--automation-show",
+            "one automation firing whole: its detail, hold and interventions",
+            takes=("ID",), flags=(JSON,)),
+    Command(("automation", "settle"), "--automation-settle",
+            "close an unknown automation firing as confirmed or canceled",
+            takes=("ID", "confirmed|canceled"), note=REQUIRED, records=()),
     Command(("start",), None, "start the project's loop unit and return",
             note=OPTIONAL, flags=(FOREGROUND,),
             records=("release_hold", "launch_loop")),
@@ -185,6 +194,7 @@ COMMANDS = (
 )
 
 SHOW = "show"
+AUTOMATION_READS = ("--automation-list", "--automation-show")
 READS = (
     Command(("runs",), "GET /runs", "recent ended runs", flags=(JSON, LIMIT)),
     Command(("run",), "GET /runs/N",
@@ -259,7 +269,9 @@ GROUPS = {
     "automations": "the host's kill switch: holo automations off NOTE stops"
                    " every automation, holo automations on NOTE clears it",
     "automation": "one automation on the project: holo automation pause"
-                  " NAME NOTE, holo automation resume NAME NOTE",
+                  " NAME NOTE, holo automation resume NAME NOTE; its firings:"
+                  " holo automation list, holo automation show ID, holo"
+                  " automation settle ID STATE NOTE",
     "loop": "aliases: loop start and loop stop are holo start and holo stop",
     "scout": "holo scout ASK --kind K: launch a scout on an ask; holo scout"
              " show ID: one scout's detail; holo scout ask ID TEXT: ask a"

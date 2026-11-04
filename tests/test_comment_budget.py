@@ -58,6 +58,7 @@ PINNED = {
     "holophyte/agents/turn_tools.py": 1,
 
     "holophyte/automation/__init__.py": 0,
+    "holophyte/automation/audit.py": 1,
     "holophyte/automation/automation_config.py": 1,
     "holophyte/automation/gate.py": 1,
     "holophyte/automation/main_watch.py": 1,
