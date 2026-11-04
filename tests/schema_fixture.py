@@ -186,6 +186,24 @@ def move_ahead_additively(path, **floor):
     conn.close()
 
 
+def without_actions(path, version, *actions):
+    """Stamp the store at `path` `version`, its `interventions` CHECK rebuilt
+    without `actions`, as the build before them left it; rows kept."""
+    with sqlite3.connect(path) as conn:
+        (ddl,) = conn.execute("SELECT sql FROM sqlite_master"
+                              " WHERE name = 'interventions'").fetchone()
+        for action in actions:
+            ddl = ddl.replace(f", '{action}'", "")
+        conn.executescript(
+            "PRAGMA foreign_keys = OFF;\n"
+            + ddl.replace("TABLE interventions", "TABLE interventions_new", 1)
+            + ";\nINSERT INTO interventions_new SELECT * FROM interventions;\n"
+            "DROP TABLE interventions;\n"
+            "ALTER TABLE interventions_new RENAME TO interventions;\n"
+            f"PRAGMA user_version = {version:d};\n")
+    conn.close()
+
+
 # `interventions` exactly as schema version 4 shipped it: 'requeue' in the
 # action CHECK, 'approve' not yet. Kept verbatim so the migration test is
 # that a real version-4 store is carried to 5 with its rows intact.

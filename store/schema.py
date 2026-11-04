@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 66
+SCHEMA_VERSION = 67
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -461,7 +461,8 @@ def _widen_interventions_action(conn):
                           "'migrate'", "'hold'", "'release_hold'",
                           "'register_project'", "'disable'", "'pause'",
                           "'abort'", "'abort_close'", "'approve_story'",
-                          "'decide'", "'steer'")):
+                          "'decide'", "'steer'", "'queue_jump'",
+                          "'queue_remove'")):
         return
     (orphans,) = conn.execute(
         "SELECT COUNT(*) FROM interventions i LEFT JOIN runs r"

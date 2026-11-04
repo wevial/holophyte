@@ -30,7 +30,8 @@ RECORDS = {**{action: (row,) for action, (*_, row) in UNIT_ACTIONS.items()},
            "resume": ("resume",), "abort": ("abort", "abort_close"),
            "steer": ("steer", "operator_note"), "mark-ready": ("babysit",),
            "scout": (), "scout-file": (), "scout-stop": (),
-           "scout-message": ()}
+           "scout-message": (), "queue-jump": ("queue_jump",),
+           "queue-remove": ("queue_remove",)}
 ACTIONS = frozenset(RECORDS)
 # The store refuses an empty requeue note.
 DEFAULT_REQUEUE_NOTE = "requeued from the console"

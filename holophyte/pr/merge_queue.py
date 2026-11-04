@@ -9,11 +9,17 @@ from holophyte.pr import github, pr_status
 from holophyte.redact import safe_print as print
 
 ENQUEUE_MUTATION = """
-mutation($pull: ID!, $sha: GitObjectID!) {
-  enqueuePullRequest(input: {pullRequestId: $pull, expectedHeadOid: $sha}) {
+mutation($pull: ID!, $sha: GitObjectID!, $jump: Boolean!) {
+  enqueuePullRequest(input: {pullRequestId: $pull, expectedHeadOid: $sha,
+                             jump: $jump}) {
     mergeQueueEntry { enqueuedAt }
   }
 }"""
+DEQUEUE_MUTATION = """
+mutation($pull: ID!) {
+  dequeuePullRequest(input: {id: $pull}) { clientMutationId }
+}"""
+GRAPHQL_REFUSED = "GitHub GraphQL refused: "
 QUEUE_QUERY = """
 query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
@@ -328,18 +334,27 @@ def _departure(stint, queued):
     return None
 
 
-def enqueue_pull_request(target, pull, sha):
+def enqueue_pull_request(target, pull, sha, jump=False):
+    data = _queue_mutation(target, pull, ENQUEUE_MUTATION,
+                           {"sha": sha, "jump": jump})
+    entry = (data.get("enqueuePullRequest") or {}).get("mergeQueueEntry")
+    return (entry or {}).get("enqueuedAt")
+
+
+def dequeue_pull_request(target, pull):
+    _queue_mutation(target, pull, DEQUEUE_MUTATION, {})
+
+
+def _queue_mutation(target, pull, mutation, variables):
     node = github.rest(target, pull, "GET",
                    f"repos/{pull.repo}/pulls/{pull.number}")["node_id"]
     try:
-        data = github.graphql(target, pull, ENQUEUE_MUTATION,
-                          {"pull": node, "sha": sha})
+        return github.graphql(target, pull, mutation,
+                              {"pull": node, **variables})
     except InfraFailure as e:
-        if str(e).startswith("GitHub GraphQL refused"):
+        if str(e).startswith(GRAPHQL_REFUSED):
             raise github.MergeRefused(str(e)) from None
         raise
-    entry = (data.get("enqueuePullRequest") or {}).get("mergeQueueEntry")
-    return (entry or {}).get("enqueuedAt")
 
 
 def land_through_queue(target, conn, run_id, pull, sha):
