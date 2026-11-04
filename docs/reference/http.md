@@ -1397,10 +1397,12 @@ one of the group's), `status`, `conclusion`, `started_ms`,
 are zero with no `runs`.
 
 `left` is, newest first, each pull request into `main` that left the
-queue in the last 2 hours, read from the most recently updated pull
-requests' merge-queue timeline events, so hand pull requests are
-included: `at_ms` is when, `outcome` is `merged` (a merge whose previous
-queue event is an add) or `removed`, and `reason` GitHub's removal reason (null for a
+queue in the last 2 hours, read from the merge-queue timeline events of
+the pull requests updated in those 2 hours (paged 50 at a time, newest
+update first), so hand pull requests are included. A pull request's
+departure is its newest removal, or merge straight after an add, and is
+listed when it falls in the window: `at_ms` is when, `outcome` is
+`merged` or `removed`, and `reason` GitHub's removal reason (null for a
 merge). `waits_on_you` is true for a removed pull request with no store
 run, or whose run is now parked for the operator or ended failed.
 

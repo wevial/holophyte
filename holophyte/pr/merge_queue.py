@@ -23,8 +23,25 @@ query($owner: String!, $name: String!, $number: Int!) {
   }
 }"""
 
+LEFT_PULLS = """
+    pullRequests(baseRefName: $branch, first: 50, after: $after,
+                 orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title url headRefOid updatedAt author { login }
+        timelineItems(last: 20, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT,
+                      REMOVED_FROM_MERGE_QUEUE_EVENT, MERGED_EVENT]) {
+          nodes {
+            __typename
+            ... on AddedToMergeQueueEvent { createdAt }
+            ... on RemovedFromMergeQueueEvent { createdAt reason }
+            ... on MergedEvent { createdAt }
+          }
+        }
+      }
+    }"""
 QUEUE_READ_QUERY = """
-query($owner: String!, $name: String!, $branch: String!) {
+query($owner: String!, $name: String!, $branch: String!, $after: String) {
   repository(owner: $owner, name: $name) {
     mergeQueue(branch: $branch) {
       configuration {
@@ -37,22 +54,12 @@ query($owner: String!, $name: String!, $branch: String!) {
           pullRequest { number title url headRefOid author { login } }
         }
       }
-    }
-    pullRequests(baseRefName: $branch, first: 50,
-                 orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes {
-        number title url headRefOid author { login }
-        timelineItems(last: 20, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT,
-                      REMOVED_FROM_MERGE_QUEUE_EVENT, MERGED_EVENT]) {
-          nodes {
-            __typename
-            ... on AddedToMergeQueueEvent { createdAt }
-            ... on RemovedFromMergeQueueEvent { createdAt reason }
-            ... on MergedEvent { createdAt }
-          }
-        }
-      }
-    }
+    }""" + LEFT_PULLS + """
+  }
+}"""
+LEFT_PAGE_QUERY = """
+query($owner: String!, $name: String!, $branch: String!, $after: String) {
+  repository(owner: $owner, name: $name) {""" + LEFT_PULLS + """
   }
 }"""
 CONFIGURATION = (("mergeMethod", "merge_method"),
@@ -164,16 +171,18 @@ def queue_read(target, now_ms):
     if pull is None:
         raise InfraFailure(f"origin {github.origin_url(target)!r} is not a"
                            " GitHub repository")
-    data = github.graphql(target, pull, QUEUE_READ_QUERY,
-                          {"owner": pull.owner, "name": pull.name,
-                           "branch": github.BASE})
+    variables = {"owner": pull.owner, "name": pull.name,
+                 "branch": github.BASE, "after": None}
+    data = github.graphql(target, pull, QUEUE_READ_QUERY, variables)
     repository = data.get("repository") or {}
     queue = repository.get("mergeQueue")
     if not isinstance(queue, dict):
         return {"configured": False, "configuration": None, "entries": [],
                 "left": []}
     configuration = queue.get("configuration") or {}
-    left = [row for node in _nodes(repository.get("pullRequests"))
+    left = [row for node in _recent_pulls(target, pull, variables,
+                                          repository.get("pullRequests"),
+                                          now_ms - LEFT_WINDOW_MS)
             if (row := _left_row(node, now_ms)) is not None]
     return {"configured": True,
             "configuration": {key: configuration.get(field)
@@ -181,6 +190,20 @@ def queue_read(target, now_ms):
             "entries": _queue_entries(target, pull,
                                       _nodes(queue.get("entries"))),
             "left": sorted(left, key=lambda row: row["at_ms"], reverse=True)}
+
+
+def _recent_pulls(target, pull, variables, page, since_ms):
+    pulls = []
+    while True:
+        nodes = _nodes(page)
+        pulls.extend(nodes)
+        info = (page or {}).get("pageInfo") or {}
+        oldest = pr_status._iso_ms(nodes[-1].get("updatedAt")) if nodes else None
+        if not info.get("hasNextPage") or oldest is None or oldest < since_ms:
+            return pulls
+        data = github.graphql(target, pull, LEFT_PAGE_QUERY,
+                              {**variables, "after": info.get("endCursor")})
+        page = (data.get("repository") or {}).get("pullRequests")
 
 
 def _nodes(connection):
@@ -245,16 +268,16 @@ def _left_row(node, now_ms):
     events = sorted(((ms, event) for event in _nodes(node.get("timelineItems"))
                      if (ms := pr_status._iso_ms(event.get("createdAt")))
                      is not None), key=lambda pair: pair[0])
-    merged = [ms for (_, before), (ms, event) in zip(events, events[1:])
-              if event.get("__typename") == MERGED
-              and before.get("__typename") == ADDED]
-    if merged:
-        at_ms, outcome, reason = merged[-1], "merged", None
-    elif events and events[-1][1].get("__typename") == REMOVED:
-        at_ms, outcome, reason = (events[-1][0], "removed",
-                                  events[-1][1].get("reason"))
-    else:
+    departures = [
+        (ms, "removed", event.get("reason"))
+        if event.get("__typename") == REMOVED else (ms, "merged", None)
+        for (_, before), (ms, event) in zip([(None, {})] + events, events)
+        if event.get("__typename") == REMOVED
+        or (event.get("__typename") == MERGED
+            and before.get("__typename") == ADDED)]
+    if not departures:
         return None
+    at_ms, outcome, reason = departures[-1]
     if at_ms < now_ms - LEFT_WINDOW_MS:
         return None
     return {"pr": _pull_row(node), "at_ms": at_ms, "outcome": outcome,

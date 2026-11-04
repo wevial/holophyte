@@ -73,7 +73,8 @@ def event(kind, ago, reason=None):
 
 
 def timeline(number, *events):
-    return {**pull(number), "timelineItems": {"nodes": list(events)}}
+    return {**pull(number), "updatedAt": iso(NOW - MIN),
+            "timelineItems": {"nodes": list(events)}}
 
 
 def check_run(name, n, done):
@@ -141,11 +142,17 @@ class FakeGithub:
             {"type": "merge_queue", "parameters": {}}]
 
     def graphql(self, target, pull, query, variables):
+        """`pulls` in pages of 50, the queue only on the first page's read."""
         self.calls.append(("graphql", variables))
         if self.failure is not None:
             raise self.failure
-        return {"repository": {"mergeQueue": self.queue,
-                               "pullRequests": {"nodes": self.pulls}}}
+        start = int(variables["after"] or 0)
+        page = {"nodes": self.pulls[start:start + 50],
+                "pageInfo": {"hasNextPage": start + 50 < len(self.pulls),
+                             "endCursor": str(start + 50)}}
+        if variables["after"] is not None:
+            return {"repository": {"pullRequests": page}}
+        return {"repository": {"mergeQueue": self.queue, "pullRequests": page}}
 
     def rest(self, target, pull, method, path, payload=None):
         self.calls.append(("rest", path))
@@ -270,13 +277,23 @@ class MergeQueueTests(MergeQueueRouteCase):
                           (MERGED, NOW - HOUR, "merged", None, False)])
         self.assertEqual(left[1]["run"]["id"], self.factory_run)
 
-    def test_a_hand_merge_after_a_removal_did_not_leave_through_the_queue(self):
+    def test_a_hand_merge_after_a_removal_keeps_the_removal(self):
         self.github.pulls.append(timeline(
             2564, event("AddedToMergeQueueEvent", 90 * MIN),
             event("RemovedFromMergeQueueEvent", 80 * MIN, "MANUAL"),
             event("MergedEvent", 20 * MIN)))
+        (row,) = [row for row in self.read_queue()["left"]
+                  if row["pr"]["number"] == 2564]
+        self.assertEqual((row["at_ms"], row["outcome"], row["reason"]),
+                         (NOW - 80 * MIN, "removed", "MANUAL"))
+
+    def test_a_departure_behind_fifty_more_recently_updated_pulls_is_listed(
+            self):
+        self.github.pulls[:0] = [timeline(3000 + n) for n in range(50)]
         left = self.read_queue()["left"]
-        self.assertNotIn(2564, [row["pr"]["number"] for row in left])
+        self.assertEqual([row["pr"]["number"] for row in left],
+                         [HAND_REMOVED, FACTORY_REMOVED, MERGED])
+        self.assertEqual(len(self.github.reads()), 2)
 
     def test_a_removed_pull_request_whose_run_failed_waits_on_you(self):
         conn = store.open(str(self.db))
