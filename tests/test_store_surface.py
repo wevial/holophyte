@@ -351,6 +351,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-603: the same.
                                                     "run_counts",
                                                     "run_snapshot",
+                                                    # HOLO-625: `/merge-queue`'s
+                                                    # run per pull request.
+                                                    "runs_for_prs",
                                                     "stranded_runs",
                                                     "stranded_tickets",
                                                     "toil_since",

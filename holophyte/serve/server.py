@@ -66,6 +66,7 @@ from holophyte.serve.serve_merge import (
     merge_action,
     run_merge,
 )
+from holophyte.serve.serve_merge_queue import MERGE_QUEUE_PATH, merge_queue
 from holophyte.serve.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
@@ -127,7 +128,7 @@ OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
                         "/attention", "/board", "/report", "/findings",
-                        "/tickets", SCOUTS_PATH})
+                        "/tickets", SCOUTS_PATH, MERGE_QUEUE_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
     "Scope", ("project", "token", "action_token", "actions", "config_edit",
@@ -278,7 +279,7 @@ def window_report(project, query):
 QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/history": history, "/holds": holds, "/report": window_report,
                 "/findings": findings, "/tickets": ticket_search,
-                SCOUTS_PATH: scouts}
+                SCOUTS_PATH: scouts, MERGE_QUEUE_PATH: merge_queue}
 
 
 def shaped_route(path):

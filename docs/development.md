@@ -452,6 +452,9 @@ Each module, one line:
 - `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
   `POST /actions/merge`: a run parked for a human's merge read for
   readiness, and released through the store's `approve` only when ready.
+- `holophyte/serve/serve_merge_queue.py` — the daemon's `GET /merge-queue`:
+  the base branch's merge queue read from GitHub, each pull request's
+  store run joined to it, cached per project for 15 seconds.
 - `holophyte/serve/serve_ask.py` — the daemon's `POST /actions/ask` and
   `GET /runs/N/asks`: a question on a parked run's pull request, recorded
   with the park's release and answered in the console with nothing posted
