@@ -30,8 +30,7 @@ def queue_action(project, body, action):
     if not project.store_path.exists():
         return 503, no_store(project)
     jump = action == QUEUE_JUMP_ACTION
-    queue = read_merge_queue(project)
-    entry, refused = queued_entry(queue, number, jump)
+    entry, refused = queued_entry(read_merge_queue(project), number, jump)
     if refused is not None:
         reason, detail = refused
         return 200, {"action": action, "ok": False, "pr": number,
