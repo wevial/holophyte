@@ -255,6 +255,7 @@ def runs_for_prs(conn, urls):
         urls).fetchall()
     return {row[0]: PrRun(*row[1:]) for row in rows}
 
+
 def ended_runs(conn):
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"

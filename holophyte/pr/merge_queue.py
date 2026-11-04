@@ -246,9 +246,9 @@ def _left_row(node, now_ms):
     events = sorted(((ms, event) for event in _nodes(node.get("timelineItems"))
                      if (ms := pr_status._iso_ms(event.get("createdAt")))
                      is not None), key=lambda pair: pair[0])
-    added = [ms for ms, event in events if event.get("__typename") == ADDED]
-    merged = [ms for ms, event in events if event.get("__typename") == MERGED
-              and any(at < ms for at in added)]
+    merged = [ms for (_, before), (ms, event) in zip(events, events[1:])
+              if event.get("__typename") == MERGED
+              and before.get("__typename") == ADDED]
     if merged:
         at_ms, outcome, reason = merged[-1], "merged", None
     elif events and events[-1][1].get("__typename") == REMOVED:
@@ -260,6 +260,7 @@ def _left_row(node, now_ms):
         return None
     return {"pr": _pull_row(node), "at_ms": at_ms, "outcome": outcome,
             "reason": reason}
+
 
 def enqueue_pull_request(target, pull, sha):
     node = github.rest(target, pull, "GET",

@@ -270,6 +270,14 @@ class MergeQueueTests(MergeQueueRouteCase):
                           (MERGED, NOW - HOUR, "merged", None, False)])
         self.assertEqual(left[1]["run"]["id"], self.factory_run)
 
+    def test_a_hand_merge_after_a_removal_did_not_leave_through_the_queue(self):
+        self.github.pulls.append(timeline(
+            2564, event("AddedToMergeQueueEvent", 90 * MIN),
+            event("RemovedFromMergeQueueEvent", 80 * MIN, "MANUAL"),
+            event("MergedEvent", 20 * MIN)))
+        left = self.read_queue()["left"]
+        self.assertNotIn(2564, [row["pr"]["number"] for row in left])
+
     def test_a_removed_pull_request_whose_run_failed_waits_on_you(self):
         conn = store.open(str(self.db))
         try:

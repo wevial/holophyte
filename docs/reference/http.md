@@ -1399,8 +1399,8 @@ are zero with no `runs`.
 `left` is, newest first, each pull request into `main` that left the
 queue in the last 2 hours, read from the most recently updated pull
 requests' merge-queue timeline events, so hand pull requests are
-included: `at_ms` is when, `outcome` is `merged` (a merge after an add to
-the queue) or `removed`, and `reason` GitHub's removal reason (null for a
+included: `at_ms` is when, `outcome` is `merged` (a merge whose previous
+queue event is an add) or `removed`, and `reason` GitHub's removal reason (null for a
 merge). `waits_on_you` is true for a removed pull request with no store
 run, or whose run is now parked for the operator or ended failed.
 
@@ -1410,8 +1410,8 @@ when no run carries it.
 
 The answer is cached per project for 15 seconds, so every console tab
 shares one GitHub read. A GitHub read that fails answers 200 with
-`configured` null, the rest empty, and an `error` naming the failure. The
-route writes nothing.
+`configured` null, the rest empty, and an `error` naming the failure,
+cached for the same 15 seconds. The route writes nothing.
 
 ## `GET /tickets/KO-n`
 
