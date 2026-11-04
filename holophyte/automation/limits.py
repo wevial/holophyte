@@ -66,7 +66,7 @@ class HostReruns:
         return limited
 
 
-def leased_actions(conn, project, automation):
+def act_firings(conn, project, automation):
     return [firing for firing in store.automations.firings(conn)
             if firing.projectId == project and firing.automation == automation
             and firing.mode == "act" and "limit" not in firing.detail]
@@ -101,7 +101,7 @@ def refused_twice(fired, trigger):
 def self_pause(conn, firing_id, *, now):
     """Pauses the automation as a person would when either rule holds."""
     trigger = store.automations.firing(conn, firing_id)
-    fired = leased_actions(conn, trigger.projectId, trigger.automation)
+    fired = act_firings(conn, trigger.projectId, trigger.automation)
     note = (same_failure_twice(fired, trigger, now)
             or refused_twice(fired, trigger))
     if note is not None:

@@ -245,6 +245,7 @@ class SelfPauseTests(LimitFixture):
 
         self.assertEqual([firing.state for firing in self.firings("beta")],
                          ["refused"] * 3)
+        self.assertIn("403", self.of_run("beta", 9).reason)
         self.assertIsNone(self.open_pause("beta"))
 
 

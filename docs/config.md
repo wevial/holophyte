@@ -1711,11 +1711,11 @@ automation on each project may hold 3 firings `leased` at once and take 6
 actions in the last hour and 30 since midnight in `America/Los_Angeles`;
 across every project the host takes at most `host.toml`'s
 `[automations] reruns_per_day` reruns since that midnight, a whole number
-of at least 1, default 10, counted in `sweep.json`'s `reruns`. A firing past a limit is
-reserved `refused`, its reason the first limit that is full: `rate: 3
+of at least 1, default 10, counted in `sweep.json`'s `reruns`. A firing
+past a limit is reserved `refused`, its reason the first limit that is full: `rate: 3
 firings queued`, `rate: 6 actions in the last hour`, `rate: 30 actions
-today` or `GitHub rerun cap: N today`, and no worker starts. A refused
-firing is not counted, and a dry-run proposal is neither counted nor
+today` or `GitHub rerun cap: N today`, and no worker starts. A firing a
+limit refused is not counted, and a dry-run proposal is neither counted nor
 limited. A wrong `reruns_per_day` is off for every automation on the host
 that pass, with one line naming the key; the rest of the sweep goes on.
 
