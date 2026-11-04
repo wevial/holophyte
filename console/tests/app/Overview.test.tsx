@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import type { MergeQueue } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -359,4 +360,18 @@ test("Waiting on you row titles use medium reading text and the day log uses 13 
     expect(classes(within(section(name)).getByText(name))).toContain("font-sans");
   }
   expect(classes(within(dayLog()).getByRole("list"))).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "leading-[1.5]"]));
+});
+
+test("a project whose merge queue is not configured or is empty draws no next-in-queue line and the empty Pull requests text", async () => {
+  const served = (await Bun.file(new URL("merge-queue.json", SERVE)).json()) as MergeQueue;
+  const answering = (queue: MergeQueue): Fetch => {
+    const polls = fleet({ items: [] }, { items: [] });
+    return async (url, init) => (url === `${DEMO}/merge-queue` ? Response.json(queue) : polls(url, init));
+  };
+  for (const queue of [{ ...served, configured: false, configuration: null, entries: [] }, { ...served, configured: true, entries: [] }]) {
+    await mount("#/", answering(queue));
+    expect(section("Pull requests").querySelector("[data-next-in-queue]")).toBeNull();
+    expect(within(section("Pull requests")).getByText("No pull request waits on you.")).toBeTruthy();
+    cleanup();
+  }
 });
