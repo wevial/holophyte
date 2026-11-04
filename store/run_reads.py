@@ -232,6 +232,31 @@ def newest_run_id(conn):
     return row[0] if row is not None else None
 
 
+@dataclass(frozen=True)
+class PrRun:
+    id: int
+    ticket: str
+    phase: str
+    reviewRoundCount: int
+    outcome: str | None
+
+
+def runs_for_prs(conn, urls):
+    urls = tuple(dict.fromkeys(urls))
+    if not urls:
+        return {}
+    rows = conn.execute(
+        "SELECT r.prUrl, r.id, t.linearIdentifier, r.phase,"
+        " CASE WHEN r.endedAt IS NULL THEN (SELECT COUNT(*) FROM reviewRounds rr"
+        "   WHERE rr.runId = r.id AND rr.verdict != 'error')"
+        " ELSE r.reviewRoundCount END, r.outcome"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        f" WHERE r.prUrl IN ({', '.join('?' * len(urls))})"
+        " AND r.id = (SELECT MAX(o.id) FROM runs o WHERE o.prUrl = r.prUrl)",
+        urls).fetchall()
+    return {row[0]: PrRun(*row[1:]) for row in rows}
+
+
 def ended_runs(conn):
     rows = conn.execute(
         "SELECT r.id, t.linearIdentifier, r.startedAt, r.endedAt, r.timeBoxMs,"

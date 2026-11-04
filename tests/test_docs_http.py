@@ -66,6 +66,11 @@ class HttpReferenceTests(unittest.TestCase):
         assert_covers(self, section(self.document, "`GET /runs/N/asks`"),
                       "run-asks.json")
 
+    def test_merge_queue_section_names_every_pinned_key(self):
+        assert_covers(self, section(self.document, "`GET /merge-queue`"),
+                      "merge-queue.json")
+        self.assertIn("`GET /merge-queue`", self.document.split("## ")[0])
+
     def test_scout_sections_name_every_pinned_key(self):
         for heading, fixture in (("`GET /scouts`", "scouts.json"),
                                  ("`GET /scouts/ID`", "scout.json"),

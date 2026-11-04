@@ -1,0 +1,437 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MergeQueue",
+  "description": "GET /merge-queue",
+  "$ref": "#/$defs/MergeQueue",
+  "$defs": {
+    "MergeQueueConfiguration": {
+      "type": "object",
+      "properties": {
+        "merge_method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "merging_strategy": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maximum_entries_to_build": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "minimum_entries_to_merge": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "check_response_timeout": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "merge_method",
+        "merging_strategy",
+        "maximum_entries_to_build",
+        "minimum_entries_to_merge",
+        "check_response_timeout"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueuePull": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "author": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "head_oid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "author",
+        "url",
+        "head_oid"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueueRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "round": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "phase",
+        "round"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueueCheck": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "conclusion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completed_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "workflow",
+        "status",
+        "conclusion",
+        "started_ms",
+        "completed_ms",
+        "url",
+        "required"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueueChecks": {
+      "type": "object",
+      "properties": {
+        "done": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MergeQueueCheck"
+          }
+        }
+      },
+      "required": [
+        "done",
+        "total",
+        "failed",
+        "runs"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueueEntry": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string"
+        },
+        "enqueued_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "estimated_s": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jump": {
+          "type": "boolean"
+        },
+        "solo": {
+          "type": "boolean"
+        },
+        "pr": {
+          "$ref": "#/$defs/MergeQueuePull"
+        },
+        "group_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "building_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeQueueRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checks": {
+          "$ref": "#/$defs/MergeQueueChecks"
+        }
+      },
+      "required": [
+        "position",
+        "state",
+        "enqueued_ms",
+        "estimated_s",
+        "jump",
+        "solo",
+        "pr",
+        "group_sha",
+        "building_ms",
+        "run",
+        "checks"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueueLeft": {
+      "type": "object",
+      "properties": {
+        "pr": {
+          "$ref": "#/$defs/MergeQueuePull"
+        },
+        "at_ms": {
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "merged",
+            "removed"
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeQueueRun"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "waits_on_you": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pr",
+        "at_ms",
+        "outcome",
+        "reason",
+        "run",
+        "waits_on_you"
+      ],
+      "additionalProperties": true
+    },
+    "MergeQueue": {
+      "type": "object",
+      "properties": {
+        "configured": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "branch": {
+          "type": "string"
+        },
+        "now": {
+          "type": "integer"
+        },
+        "configuration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MergeQueueConfiguration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MergeQueueEntry"
+          }
+        },
+        "left": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MergeQueueLeft"
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "configured",
+        "branch",
+        "now",
+        "configuration",
+        "entries",
+        "left"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
