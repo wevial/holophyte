@@ -16,7 +16,7 @@ from .ddl import _INTERVENTIONS_DDL, INDEXES, SCHEMA
 
 # Both literals, never expressions: `fetched_schema()` in
 # holophyte/loop/pool_handoff.py reads them with `ast.literal_eval`.
-SCHEMA_VERSION = 66
+SCHEMA_VERSION = 67
 
 # The oldest version whose builds can still read and write a store at
 # SCHEMA_VERSION. On each bump keep it for an additive change, else raise it
@@ -453,7 +453,8 @@ def _widen_interventions_action(conn):
     (ddl,) = row
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
     triggers = ddl.partition('"trigger" IN (')[2].partition(")")[0]
-    if "'board_cancelled'" in triggers and all(
+    sources = ddl.partition("source IN (")[2].partition(")")[0]
+    if "'board_cancelled'" in triggers and "'automation'" in sources and all(
             value in admitted
             for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                           "'restart_supervisor'", "'launch_loop'",

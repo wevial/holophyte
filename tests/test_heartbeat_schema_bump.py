@@ -125,7 +125,7 @@ class HeartbeatSchemaBumpTests(unittest.TestCase):
                          store.SCHEMA_VERSION)
         self.assertEqual(dump(migrated, 'id, runId, projectId, source,'
                               ' "trigger", action, note, question, guidance,'
-                              ' at'), before)
+                              ' at, firingId'), before)
         self.assertEqual(migrated.execute(
             "SELECT action, actor FROM interventions WHERE action != 'migrate'"
         ).fetchall(), [('pause', None)])

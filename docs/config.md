@@ -1736,6 +1736,18 @@ passed every held check merges as usual. A paused or switched-off main
 watch, or one not in `act`, holds nothing. `holo patrol` shows the open
 hold and how many runs it holds.
 
+When a pass finds every required check on main's head green while a hold
+is open, the main watch releases it with a `confirmed`
+`release_held_merges` firing: in one transaction it ends the hold (`main
+green at SHA12`) and sends each run the hold parked back to the
+babysitter, as `holo babysit` would, with an `automation` intervention
+naming the firing. A released run then takes the project's normal path: it
+merges under `[merge] approve = "auto"` and parks for a person under
+`"human"`. A ticket a person acted on after the hold parked it, or whose
+newest run is no longer the parked one, is left where it is and listed
+under the firing's `left`. A paused or switched-off main watch releases
+nothing until it is resumed.
+
 A red optional check, a pending main and an unreadable one record nothing.
 A wrong `mode` is `off` for that project in the sweep, which prints one
 line naming `[automations.main_watch] mode` and goes on; the loop refuses

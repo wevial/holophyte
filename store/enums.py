@@ -142,6 +142,7 @@ class InterventionSource(str, Enum):
     SUPERVISOR = 'supervisor'
     HUMAN = 'human'
     FACTORY = 'factory'
+    AUTOMATION = 'automation'
 
 
 class InterventionActor(str, Enum):

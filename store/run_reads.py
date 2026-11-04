@@ -152,6 +152,7 @@ def babysit_note(conn, run_id):
         " ON e.runId = i.runId AND e.at = i.at AND e.kind = 'intervention'"
         " AND e.summary LIKE i.source || ' babysit: %'"
         " WHERE i.runId = ? AND i.action = 'babysit'"
+        " AND i.source != 'automation'"
         " ORDER BY i.id DESC, e.seq DESC LIMIT 1", (run_id,)).fetchone()
     return row[0].partition(" babysit: ")[2] if row else ""
 

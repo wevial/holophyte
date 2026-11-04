@@ -218,16 +218,18 @@ def approve(conn, ticket_id, note, now=None, run_id=None):
         " at the merge gate", now, run_id=run_id)
 
 
-def babysit(conn, ticket_id, note, now=None, source="human"):
+def babysit(conn, ticket_id, note, now=None, source="human", *,
+            firing_id=None):
     return _release_parked(
         conn, ticket_id, "babysit", note,
         "sent back to the babysitter; the next claim resumes the candidate"
-        " on its pull request", now, require_pr=True, source=source)
+        " on its pull request", now, require_pr=True, source=source,
+        firing_id=firing_id)
 
 
 def _release_parked(conn, ticket_id, action, note, reason, now,
                     require_pr=False, source="human", guidance=None,
-                    before_release=None, run_id=None):
+                    before_release=None, run_id=None, firing_id=None):
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -270,7 +272,8 @@ def _release_parked(conn, ticket_id, action, note, reason, now,
                 " there are no threads to shepherd, and a release here would"
                 " merge the candidate -- that is --approve's to say")
         record_intervention(conn, last_run_id, action, note, now=now,
-                            source=source, guidance=guidance)
+                            source=source, guidance=guidance,
+                            firing_id=firing_id)
         if before_release is not None:
             before_release()
         # Never a strike: the escalation count reads `failed` only.
@@ -522,7 +525,7 @@ def _validate_intervention(action, note, source, trigger):
 
 def record_intervention(conn, run_id, action, note, source="human",
                         trigger="manual", question=None, guidance=None,
-                        now=None, actor=None):
+                        now=None, actor=None, *, firing_id=None):
     """Record an operator or supervisor decision on a run; return its id."""
     _validate_intervention(action, note, source, trigger)
     actor = intervention_actor(source, actor)
@@ -539,10 +542,10 @@ def record_intervention(conn, run_id, action, note, source="human",
         cursor = conn.execute(
             'INSERT INTO interventions'
             ' (runId, source, "trigger", "action", question, guidance, note, at,'
-            " actor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " actor, firingId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, source, trigger, action, question, guidance,
              None if action == _enums.InterventionAction.MIGRATE else note, now,
-             actor))
+             actor, firing_id))
         _append_event(conn, run_id, "narrative", "intervention",
                       f"{source} {action}: {note}", now)
         record_ledger(conn, run_id, "intervention",

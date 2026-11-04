@@ -9,12 +9,15 @@ from holophyte.automation.automation_config import (
     MAIN_WATCH,
     unapproved,
 )
+from holophyte.automation.gate import inhibitor
 from holophyte.automation.policy import (
     HOLD_MERGES,
+    RELEASE_HELD_MERGES,
     RERUN_FAILED_JOBS,
     refusal,
     report_only_reason,
 )
+from holophyte.host.registry import home
 from holophyte.loop.gates import InfraFailure
 from holophyte.pr import github, pr_status
 from holophyte.pr.check_holds import newest_runs
@@ -169,3 +172,59 @@ def hold_merges(conn, project, now, watch, held, pull, checks):
                 conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT, cause)
         store.automations.place_merge_hold(
             conn, project, firing, sha, names, f"held merges: {red}", now=now)
+
+
+def left_reason(run):
+    if run.lastRunId != run.runId:
+        return (f"its newest run is {run.lastRunId}, not run {run.runId}"
+                " the hold parked")
+    if run.touched:
+        return f"a person acted on run {run.runId} after the hold parked it"
+    if run.reparked:
+        return f"run {run.runId} was parked again after the hold parked it"
+    return None
+
+
+def release_held_merges(conn, project, pull, sha, now, watch, listed):
+    if watch.mode != ACT or (unapproved(watch, REVISION)
+                             or report_only_reason(pull, listed)
+                             or refusal(MAIN_WATCH, RELEASE_HELD_MERGES)):
+        return None
+    with store.transaction(conn):
+        hold = store.automations.open_merge_hold(conn, project)
+        if hold is None or inhibitor(home(), conn, MAIN_WATCH) is not None:
+            return None
+        detail = {"action": RELEASE_HELD_MERGES, "sha": sha, "hold": hold.id}
+        firing = store.automations.reserve_firing(
+            conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT,
+            f"{pull.owner}/{pull.name}@{sha} hold {hold.id}", mode=ACT,
+            reason=f"releasing the merge hold at {hold.sha[:12]}",
+            detail=detail, now=now,
+            lease_until=int(time.time() * 1000) + LEASE_MS)
+        if firing is None:
+            return None
+        store.automations.end_merge_hold(conn, hold.id,
+                                         f"main green at {sha[:12]}", now=now)
+        note = (f"main is green at {sha[:12]}; main_watch firing {firing}"
+                " released the hold")
+        newest = {run.ticketId: run
+                  for run in store.automations.held_runs(conn, hold.id)}
+        released, left = [], []
+        for run in newest.values():
+            reason = left_reason(run)
+            if reason is None:
+                try:
+                    store.babysit(conn, run.ticketId, note, now=now,
+                                  source="automation", firing_id=firing)
+                except store.ApproveRefused as refused:
+                    reason = str(refused)
+            if reason is None:
+                released.append(run.identifier)
+            else:
+                left.append({"ticket": run.identifier, "reason": reason})
+        store.automations.settle_firing(
+            conn, firing, None, store.automations.CONFIRMED,
+            f"released the merge hold at {hold.sha[:12]}: main is green at"
+            f" {sha[:12]}, {len(released)} runs sent back to the babysitter",
+            now=now, detail=detail | {"released": released, "left": left})
+    return firing
