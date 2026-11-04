@@ -1753,6 +1753,17 @@ rerun's checks, once main's head is past the firing's sha.
 `holo patrol` lists an `unknown` firing until a person settles it, and a
 `red_again` result for 24 hours; a suspected flake is not listed.
 
+While a required check is red on main's head, an `act` main watch at the
+approved revision also places a merge hold naming that sha and its red
+checks, with a `confirmed` `hold_merges` firing; a newer red head moves the
+hold to the new sha, and in dry run the proposal says it `would hold
+merges`. While the hold stands, a `[merge] mode = "pr"` run parks on its
+pull request instead of merging, unless it is a fix: a candidate that
+carries main's red commit (`git merge-base --is-ancestor`) and whose head
+passed every held check merges as usual. A paused or switched-off main
+watch, or one not in `act`, holds nothing. `holo patrol` shows the open
+hold and how many runs it holds.
+
 A red optional check, a pending main and an unreadable one record nothing.
 A wrong `mode` is `off` for that project in the sweep, which prints one
 line naming `[automations.main_watch] mode` and goes on; the loop refuses

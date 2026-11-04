@@ -22,7 +22,7 @@ from holophyte.automation.limits import (
     reruns_per_day,
     self_pause,
 )
-from holophyte.automation.policy import report_only
+from holophyte.automation.policy import RERUN_FAILED_JOBS, report_only
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.host.registry import Host, HostError
 from holophyte.loop.gates import InfraFailure
@@ -99,10 +99,11 @@ def start_workers(name, target, leased, out):
               f" {started}", file=out)
 
 
-def project_firings(conn, project, state):
+def project_reruns(conn, project, state):
     return [firing for firing in store.automations.firings(conn)
             if firing.projectId == project and firing.state == state
-            and firing.automation == MAIN_WATCH]
+            and firing.automation == MAIN_WATCH
+            and firing.detail.get("action") == RERUN_FAILED_JOBS]
 
 
 def read_back(target, conn, pull, firing, now):
@@ -125,7 +126,7 @@ def read_back(target, conn, pull, firing, now):
 
 
 def settle_expired(target, conn, project, pull, now, leased):
-    for firing in project_firings(conn, project, store.automations.LEASED):
+    for firing in project_reruns(conn, project, store.automations.LEASED):
         if firing.leaseUntil is None or firing.leaseUntil > now:
             continue
         if firing.workerPid is not None:
@@ -141,7 +142,7 @@ def settle_expired(target, conn, project, pull, now, leased):
 
 
 def read_results(target, conn, project, pull, checks, green, now):
-    for firing in project_firings(conn, project, store.automations.CONFIRMED):
+    for firing in project_reruns(conn, project, store.automations.CONFIRMED):
         if "result" in firing.detail:
             continue
         if checks.get("sha") is None:

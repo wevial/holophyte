@@ -7,6 +7,7 @@ from time import monotonic
 import store
 import store.read
 from holophyte import leak_guard, note_privacy
+from holophyte.automation import merge_hold
 from holophyte.babysit import babysitter, maintainer_notes
 from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import board_mode, merge_config, sweep_config
@@ -442,6 +443,11 @@ def _merge_pr(project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
     if behind:
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                     behind, (), reviewed=reviewed)
+    with heartbeat_while(conn, run_id, beat_s):
+        held = merge_hold.held_merge(project, conn, run_id, wt, sha, pull)
+    if held:
+        _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                    held, (), reviewed=reviewed)
     try:
         with heartbeat_while(conn, run_id, beat_s):
             # A queue on main lands the PR itself, main and PR tested together.
