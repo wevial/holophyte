@@ -20,7 +20,9 @@ export function clearsAt(queue: MergeQueue): number | null {
   return last?.estimated_s == null ? null : queue.now + last.estimated_s * SECOND;
 }
 
-export const mergesIn = (seconds: number | null): string => (seconds == null ? "–" : `~${Math.max(1, Math.round(seconds / 60))}m`);
+const minutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
+
+export const mergesIn = (seconds: number | null): string => (seconds == null ? "–" : `~${minutes(seconds)}m`);
 
 /** The queue's settings in words: `squash · all green · builds 1 at a time · checks time out at 60m`. */
 export function configurationWords(configuration: MergeQueueConfiguration | null): string {
@@ -74,8 +76,6 @@ export function entryLine(entry: MergeQueueEntry, now: number): string {
   ].filter((part) => part != null).join(" · ");
 }
 
-const minutes = (ms: number): number => Math.max(1, Math.round(ms / (60 * SECOND)));
-
 /** What jumping `entry` to the front costs: the numbers ahead of it whose
  *  builds restart, position 1's estimate in minutes, and the minutes of
  *  checks position 1 drops while it builds. */
@@ -89,9 +89,9 @@ export function jumpCost(queue: MergeQueue, entry: MergeQueueEntry): JumpCost {
   const first = queue.entries.find((each) => each.position === 1);
   return {
     restarts: queue.entries.filter((each) => each.position < entry.position).map((each) => each.pr.number),
-    estimate: first?.estimated_s == null ? null : minutes(first.estimated_s * SECOND),
+    estimate: first?.estimated_s == null ? null : minutes(first.estimated_s),
     drops: first != null && isBuilding(first) && first.building_ms != null
-      ? { number: first.pr.number, minutes: minutes(queue.now - first.building_ms) }
+      ? { number: first.pr.number, minutes: minutes((queue.now - first.building_ms) / SECOND) }
       : null,
   };
 }
