@@ -98,7 +98,6 @@ def refused_twice(fired, trigger):
 
 
 def self_pause(conn, firing_id, *, now):
-    """Pauses the automation as a person would when either rule holds."""
     trigger = store.automations.firing(conn, firing_id)
     fired = act_firings(conn, trigger.projectId, trigger.automation)
     note = (same_failure_twice(fired, trigger, now)
