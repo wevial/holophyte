@@ -73,3 +73,25 @@ export function entryLine(entry: MergeQueueEntry, now: number): string {
     entry.estimated_s == null ? null : `merges ~${formatClock(now + entry.estimated_s * SECOND)}`,
   ].filter((part) => part != null).join(" · ");
 }
+
+const minutes = (ms: number): number => Math.max(1, Math.round(ms / (60 * SECOND)));
+
+/** What jumping `entry` to the front costs: the numbers ahead of it whose
+ *  builds restart, position 1's estimate in minutes, and the minutes of
+ *  checks position 1 drops while it builds. */
+export interface JumpCost {
+  restarts: number[];
+  estimate: number | null;
+  drops: { number: number; minutes: number } | null;
+}
+
+export function jumpCost(queue: MergeQueue, entry: MergeQueueEntry): JumpCost {
+  const first = queue.entries.find((each) => each.position === 1);
+  return {
+    restarts: queue.entries.filter((each) => each.position < entry.position).map((each) => each.pr.number),
+    estimate: first?.estimated_s == null ? null : minutes(first.estimated_s * SECOND),
+    drops: first != null && first !== entry && isBuilding(first) && first.building_ms != null
+      ? { number: first.pr.number, minutes: minutes(queue.now - first.building_ms) }
+      : null,
+  };
+}

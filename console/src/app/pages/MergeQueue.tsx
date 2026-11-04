@@ -5,6 +5,7 @@ import { projectName } from "../../lib/derive";
 import { formatClock } from "../../lib/format";
 import { LaneHead } from "../components/LaneHead";
 import { LeftTheQueue, QueueTable } from "../components/MergeQueueTable";
+import type { QueueDaemon } from "../components/QueueActions";
 import { clearsAt, queueCounts } from "../mergeQueue";
 import { useMergeQueues } from "../queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
@@ -32,12 +33,12 @@ function QueueCounts({ queue }: { queue: MergeQueue }) {
   return <Counts {...queueCounts(queue)} clears={clearsAt(queue)} />;
 }
 
-function QueueBody({ queue, project }: { queue: MergeQueue; project: string }) {
+function QueueBody({ queue, project, daemon }: { queue: MergeQueue; project: string; daemon: QueueDaemon }) {
   if (queue.configured === false) return <p className={`${PANEL} text-ink-2`}>No merge queue on this repository.</p>;
   if (queue.configured == null) return <p className={`${PANEL} text-bad`}>{queue.error ?? "The merge queue could not be read."}</p>;
   return (
     <div className="flex flex-col gap-8">
-      <QueueTable queue={queue} project={project} />
+      <QueueTable queue={queue} project={project} daemon={daemon} />
       <LeftTheQueue left={queue.left} project={project} />
     </div>
   );
@@ -61,6 +62,7 @@ interface Answer {
   project: string;
   key: string;
   queue: MergeQueue;
+  daemon: QueueDaemon;
 }
 
 /** One lane per answer with a queue or an error, the answers without a
@@ -79,12 +81,12 @@ function Lanes({ title, answers }: { title: ReactNode; answers: Answer[] }) {
           clears={clears.length > 0 ? Math.max(...clears) : null}
         />
       </Header>
-      {lanes.map(({ name, project, key, queue }) => (
+      {lanes.map(({ name, project, key, queue, daemon }) => (
         <div key={key} role="group" aria-label={name} data-queue-lane className="flex flex-col gap-3">
           <LaneHead name={name} held={false} attached={false} meta={queue.branch}>
             {queue.configured === true && <span><QueueCounts queue={queue} /></span>}
           </LaneHead>
-          <QueueBody queue={queue} project={project} />
+          <QueueBody queue={queue} project={project} daemon={daemon} />
         </div>
       ))}
       {without.length > 0 && <p data-no-queue className="font-mono text-[12px] leading-[1.4] text-ink-3">No merge queue on {without.join(", ")}.</p>}
@@ -99,11 +101,13 @@ export function MergeQueuePage() {
   const deps = useContext(PollDepsContext);
   const answers = useMergeQueues(scopedHosts(hosts, project), deps).map(({ host, queue }) => {
     const name = projectName(host.status?.project ?? host.project ?? host.label);
-    return { name: project == null ? name : host.label, project: name, key: host.key, queue };
+    const daemon = { project: name, base: host.base, actions: host.status?.actions === true };
+    return { name: project == null ? name : host.label, project: name, key: host.key, queue, daemon };
   });
   if (project == null) return <Lanes title="all projects" answers={answers} />;
   if (answers.length > 1 && answers.some(({ queue }) => queue.configured !== false)) return <Lanes title={project} answers={answers} />;
   const queue = answers[0]?.queue;
+  const daemon = answers[0]?.daemon;
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-4">
       <Header>
@@ -111,7 +115,7 @@ export function MergeQueuePage() {
         {queue && <> · {queue.branch}</>}
         {queue?.configured === true && <> · <QueueCounts queue={queue} /></>}
       </Header>
-      {queue && <QueueBody queue={queue} project={project} />}
+      {queue && daemon && <QueueBody queue={queue} project={project} daemon={daemon} />}
       {queue?.configured === true && <TimesShown now={queue.now} />}
     </section>
   );
