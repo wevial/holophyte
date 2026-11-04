@@ -4,11 +4,10 @@ import { phaseLabel } from "../lib/runs";
 import type { State, Tone } from "./state";
 
 const SECOND = 1000;
-const QUEUED = "QUEUED";
 
 const STRATEGY_WORDS: Record<string, string> = { ALLGREEN: "all green", HEADGREEN: "head green" };
 
-export const isBuilding = (entry: MergeQueueEntry): boolean => entry.state !== QUEUED;
+export const isBuilding = (entry: MergeQueueEntry): boolean => entry.state !== "QUEUED";
 
 export function queueCounts(queue: MergeQueue): { queued: number; building: number } {
   return { queued: queue.entries.length, building: queue.entries.filter(isBuilding).length };
