@@ -63,12 +63,12 @@ const QUEUE: MergeQueue = {
 };
 const NO_QUEUE: MergeQueue = { ...served, now: NOW, configured: false, configuration: null, entries: [], left: [] };
 
-function queueFetch(relos: MergeQueue, holo: MergeQueue = NO_QUEUE): Fetch {
+function queueFetch(relos: MergeQueue, holo: MergeQueue = NO_QUEUE, holoProject = "/srv/dev/holophyte"): Fetch {
   const daemon = (project: string) => ({
     status: { ...working, host: "writer-host", project },
     attention: { level: "none", now: NOW, project, items: [] } as Attention,
   });
-  const polls = peersFetch(RELOS, { [RELOS]: daemon("/srv/dev/relos"), [HOLO]: daemon("/srv/dev/holophyte") });
+  const polls = peersFetch(RELOS, { [RELOS]: daemon("/srv/dev/relos"), [HOLO]: daemon(holoProject) });
   return async (url, init) => {
     if (url === `${RELOS}/merge-queue`) return Response.json(relos);
     if (url === `${HOLO}/merge-queue`) return Response.json(holo);
@@ -158,6 +158,14 @@ test("a project without a merge queue reads one panel and no table, and All proj
   await mount("#/merge-queue", queueFetch(QUEUE));
   expect([...document.querySelectorAll("[data-queue-lane]")].map((lane) => lane.getAttribute("aria-label"))).toEqual(["relos"]);
   expect(document.querySelector("[data-no-queue]")!.textContent).toBe("No merge queue on holophyte.");
+});
+
+test("a project two daemons serve draws a lane per daemon and counts every queue in its header", async () => {
+  await mount("#/merge-queue?project=relos", queueFetch(NO_QUEUE, QUEUE, "/srv/dev/relos"));
+  expect(countLine()).toMatch(/^relos · 4 queued \/ 1 building \/ clears ~\d\d:\d\d$/);
+  expect([...document.querySelectorAll("[data-queue-lane]")].map((lane) => lane.getAttribute("aria-label"))).toEqual(["writer-host:7711"]);
+  expect(rows()).toHaveLength(4);
+  expect(document.querySelector("[data-no-queue]")!.textContent).toBe("No merge queue on writer-host:7710.");
 });
 
 test("at 390px the rows drop the column head and carry the PR number on the title's second line", async () => {

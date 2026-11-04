@@ -56,29 +56,16 @@ function Header({ children }: { children: ReactNode }) {
   );
 }
 
-export function MergeQueuePage() {
-  const { hosts } = useConsolePeers();
-  const { project } = useSearch({ from: "__root__" });
-  const deps = useContext(PollDepsContext);
-  const answers = useMergeQueues(scopedHosts(hosts, project), deps).map(({ host, queue }) => ({
-    name: projectName(host.status?.project ?? host.project ?? host.label),
-    key: host.key,
-    queue,
-  }));
-  if (project != null) {
-    const queue = answers[0]?.queue;
-    return (
-      <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-4">
-        <Header>
-          {project}
-          {queue && <> · {queue.branch}</>}
-          {queue?.configured === true && <> · <QueueCounts queue={queue} /></>}
-        </Header>
-        {queue && <QueueBody queue={queue} project={project} />}
-        {queue?.configured === true && <TimesShown now={queue.now} />}
-      </section>
-    );
-  }
+interface Answer {
+  name: string;
+  project: string;
+  key: string;
+  queue: MergeQueue;
+}
+
+/** One lane per answer with a queue or an error, the answers without a
+ *  queue named on one quiet line under them. */
+function Lanes({ title, answers }: { title: ReactNode; answers: Answer[] }) {
   const lanes = answers.filter(({ queue }) => queue.configured !== false);
   const without = answers.filter(({ queue }) => queue.configured === false).map(({ name }) => name);
   const queues = lanes.filter(({ queue }) => queue.configured === true).map(({ queue }) => queue);
@@ -86,22 +73,46 @@ export function MergeQueuePage() {
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-4">
       <Header>
-        all projects · <Counts
+        {title} · <Counts
           queued={queues.reduce((sum, queue) => sum + queue.entries.length, 0)}
           building={queues.reduce((sum, queue) => sum + queueCounts(queue).building, 0)}
           clears={clears.length > 0 ? Math.max(...clears) : null}
         />
       </Header>
-      {lanes.map(({ name, key, queue }) => (
+      {lanes.map(({ name, project, key, queue }) => (
         <div key={key} role="group" aria-label={name} data-queue-lane className="flex flex-col gap-3">
           <LaneHead name={name} held={false} attached={false} meta={queue.branch}>
             {queue.configured === true && <span><QueueCounts queue={queue} /></span>}
           </LaneHead>
-          <QueueBody queue={queue} project={name} />
+          <QueueBody queue={queue} project={project} />
         </div>
       ))}
       {without.length > 0 && <p data-no-queue className="font-mono text-[12px] leading-[1.4] text-ink-3">No merge queue on {without.join(", ")}.</p>}
       {queues[0] && <TimesShown now={queues[0].now} />}
+    </section>
+  );
+}
+
+export function MergeQueuePage() {
+  const { hosts } = useConsolePeers();
+  const { project } = useSearch({ from: "__root__" });
+  const deps = useContext(PollDepsContext);
+  const answers = useMergeQueues(scopedHosts(hosts, project), deps).map(({ host, queue }) => {
+    const name = projectName(host.status?.project ?? host.project ?? host.label);
+    return { name: project == null ? name : host.label, project: name, key: host.key, queue };
+  });
+  if (project == null) return <Lanes title="all projects" answers={answers} />;
+  if (answers.length > 1) return <Lanes title={project} answers={answers} />;
+  const queue = answers[0]?.queue;
+  return (
+    <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-4">
+      <Header>
+        {project}
+        {queue && <> · {queue.branch}</>}
+        {queue?.configured === true && <> · <QueueCounts queue={queue} /></>}
+      </Header>
+      {queue && <QueueBody queue={queue} project={project} />}
+      {queue?.configured === true && <TimesShown now={queue.now} />}
     </section>
   );
 }
