@@ -190,12 +190,12 @@ def release_held_merges(conn, project, pull, sha, now, watch, listed):
         hold = store.automations.open_merge_hold(conn, project)
         if hold is None:
             return None
+        detail = {"action": RELEASE_HELD_MERGES, "sha": sha, "hold": hold.id}
         firing = store.automations.reserve_firing(
             conn, project, MAIN_WATCH, REVISION, HOLD_SUBJECT,
             f"{pull.owner}/{pull.name}@{sha} hold {hold.id}", mode=ACT,
             reason=f"releasing the merge hold at {hold.sha[:12]}",
-            detail={"action": RELEASE_HELD_MERGES, "sha": sha,
-                    "hold": hold.id}, now=now,
+            detail=detail, now=now,
             lease_until=int(time.time() * 1000) + LEASE_MS)
         if firing is None:
             return None
@@ -222,7 +222,5 @@ def release_held_merges(conn, project, pull, sha, now, watch, listed):
             conn, firing, None, store.automations.CONFIRMED,
             f"released the merge hold at {hold.sha[:12]}: main is green at"
             f" {sha[:12]}, {len(released)} runs sent back to the babysitter",
-            now=now, detail={"action": RELEASE_HELD_MERGES, "sha": sha,
-                             "hold": hold.id, "released": released,
-                             "left": left})
+            now=now, detail=detail | {"released": released, "left": left})
     return firing
