@@ -79,7 +79,7 @@ const minutes = (ms: number): number => Math.max(1, Math.round(ms / (60 * SECOND
 /** What jumping `entry` to the front costs: the numbers ahead of it whose
  *  builds restart, position 1's estimate in minutes, and the minutes of
  *  checks position 1 drops while it builds. */
-export interface JumpCost {
+interface JumpCost {
   restarts: number[];
   estimate: number | null;
   drops: { number: number; minutes: number } | null;
@@ -90,7 +90,7 @@ export function jumpCost(queue: MergeQueue, entry: MergeQueueEntry): JumpCost {
   return {
     restarts: queue.entries.filter((each) => each.position < entry.position).map((each) => each.pr.number),
     estimate: first?.estimated_s == null ? null : minutes(first.estimated_s * SECOND),
-    drops: first != null && first !== entry && isBuilding(first) && first.building_ms != null
+    drops: first != null && isBuilding(first) && first.building_ms != null
       ? { number: first.pr.number, minutes: minutes(queue.now - first.building_ms) }
       : null,
   };

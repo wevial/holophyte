@@ -12,7 +12,7 @@ import { TitleText } from "./TitleText";
 
 const GRID = "grid grid-cols-[44px_64px_minmax(0,1fr)_150px_104px_64px_56px] items-start gap-x-3";
 const ACTION_GRID = "grid grid-cols-[44px_64px_minmax(0,1fr)_150px_104px_64px_56px_124px] items-start gap-x-3";
-const gridFor = (daemon: QueueDaemon | null) => (daemon?.actions ? ACTION_GRID : GRID);
+const gridFor = (daemon: QueueDaemon) => (daemon.actions ? ACTION_GRID : GRID);
 const NARROW_GRID = "grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
@@ -91,7 +91,7 @@ function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; no
   );
 }
 
-function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: number; id: string; daemon: QueueDaemon | null }) {
+function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: number; id: string; daemon: QueueDaemon }) {
   const { required, other } = splitChecks(entry.checks.runs);
   const line = entryLine(entry, now);
   return (
@@ -105,13 +105,13 @@ function EntryDetail({ entry, now, id, daemon }: { entry: MergeQueueEntry; now: 
       )}
       <div className="flex flex-wrap gap-2.5">
         <a href={entry.pr.url} target="_blank" rel="noreferrer" className="btn" data-variant="quiet">Open on GitHub</a>
-        {daemon?.actions && entry.run == null && <RemoveFromQueue entry={entry} daemon={daemon} />}
+        {daemon.actions && entry.run == null && <RemoveFromQueue entry={entry} daemon={daemon} />}
       </div>
     </div>
   );
 }
 
-function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; entry: MergeQueueEntry; project: string; wide: boolean; daemon: QueueDaemon | null }) {
+function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; entry: MergeQueueEntry; project: string; wide: boolean; daemon: QueueDaemon }) {
   const now = queue.now;
   const [open, setOpen] = useState(false);
   const detailId = useId();
@@ -134,7 +134,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
   );
   const titleText = <span data-entry-title className="font-read text-[15px] font-medium leading-[1.35] text-ink"><TitleText>{title}</TitleText></span>;
   const carrier = <Carrier project={project} run={entry.run} author={entry.pr.author} />;
-  const jump = daemon?.actions && entry.position > 1 ? <JumpToFront queue={queue} entry={entry} daemon={daemon} /> : null;
+  const jump = daemon.actions && entry.position > 1 ? <JumpToFront queue={queue} entry={entry} daemon={daemon} /> : null;
   return (
     <li data-entry={entry.position} data-open={open || undefined} className="border-b border-rule-2 last:border-b-0 data-open:bg-row-selected data-open:shadow-[inset_2px_0_0_var(--act)]">
       {wide ? (
@@ -149,7 +149,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
           <span className={`${MONO} pt-[2px]`}><ChecksDone entry={entry} /></span>
           <span className={`${MONO} pt-[2px] text-ink-2`}>{mergesIn(entry.estimated_s)}</span>
           <span className={`${MONO} pt-[2px]`}>{added}</span>
-          {daemon?.actions && <span className="justify-self-end">{jump}</span>}
+          {daemon.actions && <span className="justify-self-end">{jump}</span>}
         </div>
       ) : (
         <div data-row className={`${NARROW_GRID} px-3 py-3`}>
@@ -179,7 +179,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
 
 /** One queue's settings tab over its entries, a row each that opens onto its
  *  checks; with `daemon`, the actions its `/status` allows. */
-export function QueueTable({ queue, project, daemon = null }: { queue: MergeQueue; project: string; daemon?: QueueDaemon | null }) {
+export function QueueTable({ queue, project, daemon }: { queue: MergeQueue; project: string; daemon: QueueDaemon }) {
   const wide = useTableWidth();
   return (
     <div data-queue-table className="min-w-0">
