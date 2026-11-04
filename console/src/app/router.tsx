@@ -16,6 +16,7 @@ import { TokenPrompt } from "./components/TokenPrompt";
 import { useFleet } from "./fleet";
 import { SettingsMarksProvider } from "./settingsDraft";
 import { Findings } from "./pages/Findings";
+import { MergeQueuePage } from "./pages/MergeQueue";
 import { validateRunsSearch } from "./history";
 import { NotFound } from "./pages/Placeholder";
 import { readStoredScope } from "./projects";
@@ -77,6 +78,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", validateSearch: validateRunsSearch, component: Runs }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/history", beforeLoad: ({ location }) => redirectHistory(location.search) }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run", component: RunPage }),
+  pageRoute("/merge-queue", MergeQueuePage),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets", validateSearch: validateTicketsSearch, component: Tickets }),
   pageRoute("/tickets/$project/new", NewTicket),
   createRoute({ getParentRoute: () => rootRoute, path: "/tickets/$project/$key", component: TicketPage }),

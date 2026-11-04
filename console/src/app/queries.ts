@@ -10,6 +10,7 @@ import {
   historySchema,
   holdsSchema,
   ledgerSchema,
+  mergeQueueSchema,
   mergeReadinessSchema,
   peersSchema,
   runAsksSchema,
@@ -27,6 +28,7 @@ import {
   type History,
   type Ledger,
   type LedgerEntry,
+  type MergeQueue,
   type Peers,
   type StoryDetail,
 } from "../lib/contract.gen";
@@ -447,5 +449,24 @@ export function useHolds(base: string) {
     queryFn: () => routeOrNone(deps.fetch, `${base}/holds`, holdsSchema),
     refetchInterval: POLL_INTERVAL_MS,
     staleTime: POLL_INTERVAL_MS,
+  });
+}
+
+/** Each status-answering host's last good `/merge-queue` answer, in fleet
+ *  order, one query per host shared by the sidebar and the page; a daemon
+ *  without the route, or that never answered, is left out. */
+export function useMergeQueues<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; queue: MergeQueue }[] {
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, "/merge-queue"),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}/merge-queue`, mergeQueueSchema),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  return asked.flatMap((host, index) => {
+    const queue = results[index]?.data;
+    return queue ? [{ host, queue }] : [];
   });
 }

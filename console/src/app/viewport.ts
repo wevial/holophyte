@@ -1,18 +1,21 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
-const WIDE_QUERY = "(min-width: 1400px)";
-
-function wide(): boolean {
-  return window.matchMedia?.(WIDE_QUERY).matches ?? false;
-}
-
-function subscribeWide(listener: () => void) {
-  const query = window.matchMedia?.(WIDE_QUERY);
-  query?.addEventListener("change", listener);
-  return () => query?.removeEventListener("change", listener);
+function useMinWidth(px: number): boolean {
+  const media = `(min-width: ${px}px)`;
+  const subscribe = useCallback((listener: () => void) => {
+    const query = window.matchMedia?.(media);
+    query?.addEventListener("change", listener);
+    return () => query?.removeEventListener("change", listener);
+  }, [media]);
+  return useSyncExternalStore(subscribe, () => window.matchMedia?.(media).matches ?? false);
 }
 
 /** Whether the window is at least 1400px wide. */
 export function useWide(): boolean {
-  return useSyncExternalStore(subscribeWide, wide);
+  return useMinWidth(1400);
+}
+
+/** Whether the window is at least 1100px wide, room for a table's column head. */
+export function useTableWidth(): boolean {
+  return useMinWidth(1100);
 }
