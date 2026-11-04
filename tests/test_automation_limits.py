@@ -72,6 +72,10 @@ class LimitFixture(ResultFixture):
             sweep_pass(int(time.time() * 1000) if at is None else at)
         return [child.wait(timeout=120) for child in children]
 
+    def rerun_cap(self, cap):
+        with open(self.home / HOST_FILE, "a") as registry:
+            registry.write(f"\n[automations]\nreruns_per_day = {cap}\n")
+
     def refuse_posts(self, name, run, answer=FORBIDDEN):
         self.answer(name, f"EXEC BEFORE POST repos/o/{name}/actions/runs/{run}"
                     "/rerun-failed-jobs", answer)
@@ -164,8 +168,7 @@ class RateTests(LimitFixture):
 
 class HostRerunCapTests(LimitFixture):
     def test_the_host_rerun_cap_counts_every_project(self):
-        with open(self.home / HOST_FILE, "a") as registry:
-            registry.write("\n[automations]\nreruns_per_day = 2\n")
+        self.rerun_cap(2)
         self.act("alpha")
         repo, path = "repos/o/alpha", self.paths["alpha"]
         self.act_github.answer(path, f"GET {repo}/commits/{S}/check-runs", {
@@ -190,8 +193,7 @@ class HostRerunCapTests(LimitFixture):
         self.assertEqual(self.state()["reruns"]["count"], 2)
 
     def test_a_lease_the_sweep_state_lost_still_counts_toward_the_cap(self):
-        with open(self.home / HOST_FILE, "a") as registry:
-            registry.write("\n[automations]\nreruns_per_day = 1\n")
+        self.rerun_cap(1)
         self.act("alpha")
         self.assertEqual(len(self.pass_at(self.clock)), 1)
         saved = self.state()
@@ -206,8 +208,7 @@ class HostRerunCapTests(LimitFixture):
                          ("refused", "GitHub rerun cap: 1 today"))
 
     def test_a_skipped_projects_lease_still_counts_toward_the_cap(self):
-        with open(self.home / HOST_FILE, "a") as registry:
-            registry.write("\n[automations]\nreruns_per_day = 1\n")
+        self.rerun_cap(1)
         self.act("alpha")
         self.assertEqual(len(self.pass_at(self.clock)), 1)
         saved = self.state()
@@ -223,8 +224,7 @@ class HostRerunCapTests(LimitFixture):
                          ("refused", "GitHub rerun cap: 1 today"))
 
     def test_a_wrong_rerun_cap_is_off_and_the_sweep_goes_on(self):
-        with open(self.home / HOST_FILE, "a") as registry:
-            registry.write("\n[automations]\nreruns_per_day = 0\n")
+        self.rerun_cap(0)
         self.act("alpha")
         silent = self.a_run("alpha")
 
@@ -340,8 +340,7 @@ class SelfPauseTests(LimitFixture):
         self.assertIsNone(self.open_pause("beta"))
 
     def test_a_limit_refusal_between_github_refusals_breaks_the_run(self):
-        with open(self.home / HOST_FILE, "a") as registry:
-            registry.write("\n[automations]\nreruns_per_day = 1\n")
+        self.rerun_cap(1)
         self.act("alpha")
         self.refuse_posts("alpha", 7)
         self.assertEqual(self.worked_pass(pacific(2, 10)), [0])
