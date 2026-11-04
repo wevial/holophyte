@@ -694,6 +694,18 @@ test("clicking the next-in-queue title opens its checks, Open on GitHub and a Me
   expect(line.querySelector("[data-entry-detail]")).toBeNull();
 });
 
+test("clicking the next-in-queue line's state words opens and closes it like its title", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
+  const [line] = nextLines() as [HTMLElement];
+  const state = line.querySelector<HTMLElement>("[data-next-state]")!;
+  await clickIn(state);
+  expect(nextButton(line).getAttribute("aria-expanded")).toBe("true");
+  expect(line.hasAttribute("data-open")).toBe(true);
+  await clickIn(state);
+  expect(nextButton(line).getAttribute("aria-expanded")).toBe("false");
+  expect(line.querySelector("[data-entry-detail]")).toBeNull();
+});
+
 test("the next-in-queue PR number links to GitHub without opening the line", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
   const [line] = nextLines() as [HTMLElement];

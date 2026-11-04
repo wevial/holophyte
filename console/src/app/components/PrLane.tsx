@@ -143,7 +143,7 @@ function NextInQueue({ entry, now, host, project }: { entry: MergeQueueEntry; no
   const daemon = { project, base: host.base, actions: host.status?.actions === true };
   return (
     <li data-next-in-queue data-open={open || undefined} className={`group border-rule-2 ${OPEN_ROW} not-first:border-t`}>
-      <div className={ROW_GRID}>
+      <div className={`${ROW_GRID} cursor-pointer`} onClick={() => setOpen(!open)}>
         <a
           href={entry.pr.url}
           target="_blank"
@@ -157,7 +157,6 @@ function NextInQueue({ entry, now, host, project }: { entry: MergeQueueEntry; no
           type="button"
           aria-expanded={open}
           aria-controls={detailId}
-          onClick={() => setOpen(!open)}
           className="flex min-h-11 min-w-0 flex-col gap-1 text-left"
         >
           <span className="text-ink-3">Next in queue</span>
