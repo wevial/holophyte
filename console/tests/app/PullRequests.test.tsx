@@ -671,7 +671,8 @@ test("with nothing waiting on you, a project's lane shows a Queue tab over its q
 });
 
 test("the Queue tab's count unfolds the rest of the queue after position 1 in position order, and a second click folds it", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
+  const queue = queueOf(vite);
+  await mount({ items: [], projects: ["relos", "writer"], queue: { ...queue, entries: [...queue.entries].reverse() } });
   const more = moreButton();
   expect(document.getElementById(more.getAttribute("aria-controls")!)!.contains(queueRows()[0]!)).toBe(true);
   await clickIn(more);
