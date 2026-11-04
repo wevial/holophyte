@@ -209,6 +209,7 @@ class QueueWriteTests(QueueCase):
                    " pause or abort the run instead")
         before = self.interventions()
         over_http = self.holo("queue", "remove", "2549", "-p", "relos")
+        self.assertEqual(self.github.mutations, [])
         gh = self.bin / "gh"
         gh.write_text(FAKE_GH.format(python=sys.executable, root=str(ROOT)))
         gh.chmod(0o755)
@@ -220,7 +221,6 @@ class QueueWriteTests(QueueCase):
                 self.assertIn(refusal, completed.stderr)
         self.assertNotIn("via http", local.stderr)
         self.assertEqual(len(self.posts("queue-remove")), 1)
-        self.assertEqual(self.github.mutations, [])
         self.assertEqual(self.interventions(), before)
 
 
