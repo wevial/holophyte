@@ -6,7 +6,7 @@ import { ConsoleApp } from "../../src/app/router";
 import { THEME_KEY } from "../../src/lib/theme";
 import { APP_SHELL_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
-import type { Attention, Board, Status } from "../../src/lib/contract.gen";
+import type { Attention, Board, MergeQueue, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { needsDaemons } from "./needsFleet";
 import { declarations } from "../cssTokens";
@@ -17,6 +17,8 @@ const PEER = "http://writer-host:7711";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
 const pinned = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
+const servedQueue = (await Bun.file(new URL("merge-queue.json", SERVE)).json()) as MergeQueue;
+const noQueue: MergeQueue = { ...servedQueue, configured: false, configuration: null, entries: [], left: [] };
 
 const happyDOM = (window as unknown as {
   happyDOM: { settings: { device: { prefersColorScheme: string } }; setViewport: (viewport: { width: number }) => void };
@@ -87,6 +89,39 @@ test("the Overview badge counts the scope's Waiting on you entries, as the headi
   await mount("#/");
   expect(screen.getByRole("link", { name: "Overview" })).toBeTruthy();
   expect(badge()).toBeNull();
+});
+
+function queueDaemons(demo: MergeQueue, writer: MergeQueue): Fetch {
+  const polls = daemons([], []);
+  return async (url, init) => {
+    if (url === `${ORIGIN}/merge-queue`) return Response.json(demo);
+    if (url === `${PEER}/merge-queue`) return Response.json(writer);
+    return polls(url, init);
+  };
+}
+
+const labels = () => pages().map((link) => link.getAttribute("aria-label"));
+const queueBadge = () => screen.getByRole("link", { name: /^Merge queue/ }).querySelector("[data-badge]")!;
+
+test("the Merge queue link shows after Runs only while a polled project has a queue, its badge the entries in the live tone", async () => {
+  await mount("#/", queueDaemons(noQueue, noQueue));
+  expect(labels()).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
+  cleanup();
+
+  const quiet = { ...servedQueue, left: servedQueue.left.map((row) => ({ ...row, waits_on_you: false })) };
+  await mount("#/", queueDaemons(noQueue, quiet));
+  expect(labels()).toEqual(["Overview", "Runs", "Merge queue, 4 queued", "Tickets", "Findings", "Scouts"]);
+  expect(queueBadge().textContent).toBe("4");
+  expect(queueBadge().classList.contains("text-live")).toBe(true);
+  expect(queueBadge().classList.contains("text-need")).toBe(false);
+});
+
+test("the Merge queue badge takes the need tone while a pull request that left the queue waits on you", async () => {
+  expect(servedQueue.left.some((row) => row.waits_on_you)).toBe(true);
+  await mount("#/", queueDaemons(noQueue, servedQueue));
+  expect(queueBadge().textContent).toBe("4");
+  expect(queueBadge().classList.contains("text-need")).toBe(true);
+  expect(queueBadge().classList.contains("text-live")).toBe(false);
 });
 
 test("an unknown route links back to Overview", async () => {

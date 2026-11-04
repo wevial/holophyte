@@ -8,13 +8,14 @@ import { footerLine } from "../notices";
 import { hostsNeedingAttention, SETTINGS_TABS } from "../settings";
 import { switcherRows } from "../projects";
 import { countScouts, useScouts } from "../scouts";
-import { useBoardStories, useReadiness, type ListedStory } from "../queries";
+import { useBoardStories, useMergeQueues, useReadiness, type ListedStory } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 import { FILTER_LABELS, TICKET_FILTERS, ticketView, useTicketBoard } from "../tickets";
 import {
   ChevronIcon,
   FindingsIcon,
   Mark,
+  MergeQueueIcon,
   MoonIcon,
   OverviewIcon,
   PanelLeftIcon,
@@ -36,6 +37,7 @@ const STORIES_KEY = "holophyte.next.stories";
 const PAGES = [
   { to: "/", label: "Overview", icon: <OverviewIcon />, noun: "waiting on you" },
   { to: "/runs", label: "Runs", icon: <RunsIcon />, noun: "" },
+  { to: "/merge-queue", label: "Merge queue", icon: <MergeQueueIcon />, noun: "queued" },
   { to: "/tickets", label: "Tickets", icon: <TicketsIcon />, noun: "" },
   { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
   { to: "/scouts", label: "Scouts", icon: <ScoutsIcon />, noun: "running" },
@@ -44,8 +46,6 @@ const PAGES = [
 const SETTINGS_PATH = new RegExp(`^/settings(/(${SETTINGS_TABS.map((tab) => tab.id).join("|")}))?/?$`);
 
 type PageTo = (typeof PAGES)[number]["to"];
-
-const BADGE_TONE: Partial<Record<PageTo, string>> = { "/scouts": "text-live" };
 
 function readFolded(key = RAIL_KEY): boolean {
   try {
@@ -115,6 +115,7 @@ function PageLink({
   icon,
   noun,
   badge,
+  tone,
   folded,
   active,
 }: {
@@ -123,6 +124,7 @@ function PageLink({
   icon: ReactNode;
   noun: string;
   badge: number;
+  tone?: string;
   folded: boolean;
   active: boolean;
 }) {
@@ -140,10 +142,10 @@ function PageLink({
     >
       <span className="relative">
         {icon}
-        {folded && <LinkBadge badge={badge} folded tone={BADGE_TONE[to]} />}
+        {folded && <LinkBadge badge={badge} folded tone={tone} />}
       </span>
       {!folded && <span className="flex-1">{label}</span>}
-      {!folded && <LinkBadge badge={badge} folded={false} tone={BADGE_TONE[to]} />}
+      {!folded && <LinkBadge badge={badge} folded={false} tone={tone} />}
     </Link>
   );
 }
@@ -246,7 +248,14 @@ export function Sidebar() {
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
   const open = useOpenCount(scopedHosts(hosts, project), now);
   const scouting = countScouts(useScouts().rows, "running");
-  const badges: Partial<Record<PageTo, number>> = { "/": needs, "/findings": open, "/scouts": scouting };
+  const queues = useMergeQueues(hosts, deps);
+  const inScope = new Set(scopedHosts(hosts, project));
+  const scopedQueues = queues.filter(({ host }) => inScope.has(host));
+  const queued = scopedQueues.reduce((sum, { queue }) => sum + queue.entries.length, 0);
+  const queueWaits = scopedQueues.some(({ queue }) => queue.left.some((row) => row.waits_on_you));
+  const shown = PAGES.filter((page) => page.to !== "/merge-queue" || queues.some(({ queue }) => queue.configured === true));
+  const badges: Partial<Record<PageTo, number>> = { "/": needs, "/merge-queue": queued, "/findings": open, "/scouts": scouting };
+  const tones: Partial<Record<PageTo, string>> = { "/scouts": "text-live", "/merge-queue": queueWaits ? "text-need" : "text-live" };
   const failing = hosts.some((host) => host.error != null);
   const footer = footerLine(hosts, now);
   const polled = footer == null ? "polling…" : footer.tail == null ? footer.lead : `${footer.lead} · ${footer.tail.text}`;
@@ -327,15 +336,15 @@ export function Sidebar() {
       <ProjectSwitcher rows={rows} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
-        {PAGES.map((page) =>
+        {shown.map((page) =>
           page.to === "/tickets" ? (
             <div key={page.to}>
-              <PageLink {...page} badge={badges[page.to] ?? 0} folded={folded} active={onStory} />
+              <PageLink {...page} badge={badges[page.to] ?? 0} tone={tones[page.to]} folded={folded} active={onStory} />
               {!folded && <ViewList />}
               {!folded && stories.length > 0 && <StoryList stories={stories} />}
             </div>
           ) : (
-            <PageLink key={page.to} {...page} badge={badges[page.to] ?? 0} folded={folded} active={false} />
+            <PageLink key={page.to} {...page} badge={badges[page.to] ?? 0} tone={tones[page.to]} folded={folded} active={false} />
           ),
         )}
       </nav>

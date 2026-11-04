@@ -282,3 +282,11 @@ export function TranscriptIcon({ kind }: { kind: "prompt" | "note" | "said" | "t
   };
   return <Stroke><path d={paths[kind]} /></Stroke>;
 }
+
+export function MergeQueueIcon() {
+  return (
+    <Stroke>
+      <path d="M2 4h7M2 8h5M2 12h7M12.5 13V3M10 5.5 12.5 3 15 5.5" />
+    </Stroke>
+  );
+}
