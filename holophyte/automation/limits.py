@@ -3,6 +3,7 @@ import datetime
 import zoneinfo
 
 import store.automations
+from holophyte.automation.automation_config import ACT
 from holophyte.automation.main_watch import RED_AGAIN
 from holophyte.host.registry import HostError
 
@@ -69,7 +70,7 @@ class HostReruns:
 def act_firings(conn, project, automation):
     return [firing for firing in store.automations.firings(conn)
             if firing.projectId == project and firing.automation == automation
-            and firing.mode == "act" and "limit" not in firing.detail]
+            and firing.mode == ACT and "limit" not in firing.detail]
 
 
 def same_failure_twice(fired, trigger, now):
