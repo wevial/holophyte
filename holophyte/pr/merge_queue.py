@@ -324,7 +324,7 @@ def _departure(stint, queued):
     removals = [(ms, event.get("reason")) for ms, event in stint
                 if event.get("__typename") == REMOVED]
     deliberate = [(ms, reason) for ms, reason in removals
-                  if reason or not merges
+                  if (reason or "").lower() not in ("", "merged") or not merges
                   or abs(ms - merges[0]) > MERGE_OWN_REMOVAL_MS]
     if queued and merges and not any(ms < merges[0]
                                      for ms, _ in deliberate):
