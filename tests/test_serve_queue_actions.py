@@ -289,7 +289,7 @@ class QueueActionSchemaTests(QueueActionCase):
                                   " WHERE action != 'migrate'").fetchall()
         finally:
             conn.close()
-        without_actions(self.db, 66, "queue_jump", "queue_remove")
+        without_actions(self.db, 67, "queue_jump", "queue_remove")
         raw = sqlite3.connect(self.db)
         try:
             with self.assertRaisesRegex(sqlite3.IntegrityError, "CHECK"):
