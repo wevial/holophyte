@@ -108,4 +108,3 @@ def self_pause(conn, firing_id, *, now):
         store.automations.pause_automation(
             conn, trigger.automation, note,
             actor=store.automations.AUTOMATION, now=now)
-    return note
