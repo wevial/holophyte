@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from serve_fixture import MIN, ServeTestCase  # noqa: E402
+from serve_fixture import MIN, SEC, ServeTestCase  # noqa: E402
 
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
@@ -110,7 +110,9 @@ class FakeGithub:
         self.pulls = [
             timeline(2550, event("AddedToMergeQueueEvent", 28 * MIN)),
             timeline(MERGED, event("AddedToMergeQueueEvent", 90 * MIN),
-                     event("MergedEvent", HOUR)),
+                     event("MergedEvent", HOUR),
+                     event("RemovedFromMergeQueueEvent", HOUR - 2 * SEC,
+                           None)),
             timeline(HAND_REMOVED, event("AddedToMergeQueueEvent", 50 * MIN),
                      event("RemovedFromMergeQueueEvent", 30 * MIN, "MANUAL")),
             timeline(LONG_REMOVED, event("AddedToMergeQueueEvent", 4 * HOUR),
@@ -142,17 +144,27 @@ class FakeGithub:
             {"type": "merge_queue", "parameters": {}}]
 
     def graphql(self, target, pull, query, variables):
-        """`pulls` in pages of 50, the queue only on the first page's read."""
+        """`pulls` in pages of 50 and the queue's entries in pages of 100,
+        as GitHub's cursors page them."""
         self.calls.append(("graphql", variables))
         if self.failure is not None:
             raise self.failure
-        start = int(variables["after"] or 0)
-        page = {"nodes": self.pulls[start:start + 50],
-                "pageInfo": {"hasNextPage": start + 50 < len(self.pulls),
-                             "endCursor": str(start + 50)}}
+        if "entriesAfter" in variables and "after" not in variables:
+            return {"repository": {"mergeQueue": {"entries": self.page(
+                self.queue["entries"]["nodes"], variables["entriesAfter"],
+                100)}}}
+        pulls = self.page(self.pulls, variables["after"], 50)
         if variables["after"] is not None:
-            return {"repository": {"pullRequests": page}}
-        return {"repository": {"mergeQueue": self.queue, "pullRequests": page}}
+            return {"repository": {"pullRequests": pulls}}
+        queue = self.queue and {**self.queue, "entries": self.page(
+            self.queue["entries"]["nodes"], None, 100)}
+        return {"repository": {"mergeQueue": queue, "pullRequests": pulls}}
+
+    def page(self, nodes, after, size):
+        start = int(after or 0)
+        return {"nodes": nodes[start:start + size],
+                "pageInfo": {"hasNextPage": start + size < len(nodes),
+                             "endCursor": str(start + size)}}
 
     def rest(self, target, pull, method, path, payload=None):
         self.calls.append(("rest", path))
@@ -286,6 +298,24 @@ class MergeQueueTests(MergeQueueRouteCase):
                   if row["pr"]["number"] == 2564]
         self.assertEqual((row["at_ms"], row["outcome"], row["reason"]),
                          (NOW - 80 * MIN, "removed", "MANUAL"))
+
+    def test_a_queue_merge_whose_own_removal_comes_first_reads_merged(self):
+        self.github.pulls.append(timeline(
+            2565, event("AddedToMergeQueueEvent", 50 * MIN),
+            event("RemovedFromMergeQueueEvent", 20 * MIN + 2 * SEC, None),
+            event("MergedEvent", 20 * MIN)))
+        (row,) = [row for row in self.read_queue()["left"]
+                  if row["pr"]["number"] == 2565]
+        self.assertEqual((row["at_ms"], row["outcome"], row["reason"],
+                          row["waits_on_you"]),
+                         (NOW - 20 * MIN, "merged", None, False))
+
+    def test_a_queue_longer_than_one_page_answers_every_entry(self):
+        self.github.queue["entries"]["nodes"] += [
+            entry(position, 4000 + position, "QUEUED")
+            for position in range(5, 102)]
+        entries = self.read_queue()["entries"]
+        self.assertEqual([e["position"] for e in entries], list(range(1, 102)))
 
     def test_a_departure_behind_fifty_more_recently_updated_pulls_is_listed(
             self):

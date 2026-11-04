@@ -1379,7 +1379,8 @@ repository), with `configuration` null and `entries` and `left` empty;
 `checkResponseTimeout`, renamed to snake case, values as GitHub gives
 them.
 
-`entries` is in `position` order: `state` is GitHub's
+`entries` is the whole queue, its cursor followed past GitHub's 100 a
+page, in `position` order: `state` is GitHub's
 `MergeQueueEntryState`, `enqueued_ms` when it entered the queue,
 `estimated_s` GitHub's `estimatedTimeToMerge`, `jump` and `solo` its
 flags, and `pr` the pull request's `number`, `title`, `author`, `url`
@@ -1399,9 +1400,12 @@ are zero with no `runs`.
 `left` is, newest first, each pull request into `main` that left the
 queue in the last 2 hours, read from the merge-queue timeline events of
 the pull requests updated in those 2 hours (paged 50 at a time, newest
-update first), so hand pull requests are included. A pull request's
-departure is its newest removal, or merge straight after an add, and is
-listed when it falls in the window: `at_ms` is when, `outcome` is
+update first), so hand pull requests are included. Each add to the
+queue opens a stay, and a pull request's departure is its newest stay's
+end: `merged` when the stay holds a merge with no removal more than 60
+seconds before it (GitHub records a removal beside a queue merge, before
+or after it), else `removed` at the stay's first removal. It is listed
+when it falls in the window: `at_ms` is when, `outcome` is
 `merged` or `removed`, and `reason` GitHub's removal reason (null for a
 merge). `waits_on_you` is true for a removed pull request with no store
 run, or whose run is now parked for the operator or ended failed.

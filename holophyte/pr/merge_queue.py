@@ -40,26 +40,38 @@ LEFT_PULLS = """
         }
       }
     }"""
+QUEUE_ENTRIES = """
+      entries(first: 100, after: $entriesAfter) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          position state enqueuedAt estimatedTimeToMerge jump solo
+          pullRequest { number title url headRefOid author { login } }
+        }
+      }"""
 QUEUE_READ_QUERY = """
-query($owner: String!, $name: String!, $branch: String!, $after: String) {
+query($owner: String!, $name: String!, $branch: String!, $after: String,
+      $entriesAfter: String) {
   repository(owner: $owner, name: $name) {
     mergeQueue(branch: $branch) {
       configuration {
         mergeMethod mergingStrategy maximumEntriesToBuild
         minimumEntriesToMerge checkResponseTimeout
       }
-      entries(first: 100) {
-        nodes {
-          position state enqueuedAt estimatedTimeToMerge jump solo
-          pullRequest { number title url headRefOid author { login } }
-        }
-      }
+""" + QUEUE_ENTRIES + """
     }""" + LEFT_PULLS + """
   }
 }"""
 LEFT_PAGE_QUERY = """
 query($owner: String!, $name: String!, $branch: String!, $after: String) {
   repository(owner: $owner, name: $name) {""" + LEFT_PULLS + """
+  }
+}"""
+ENTRIES_PAGE_QUERY = """
+query($owner: String!, $name: String!, $branch: String!,
+      $entriesAfter: String) {
+  repository(owner: $owner, name: $name) {
+    mergeQueue(branch: $branch) {""" + QUEUE_ENTRIES + """
+    }
   }
 }"""
 CONFIGURATION = (("mergeMethod", "merge_method"),
@@ -69,6 +81,7 @@ CONFIGURATION = (("mergeMethod", "merge_method"),
                  ("checkResponseTimeout", "check_response_timeout"))
 QUEUED = "QUEUED"
 LEFT_WINDOW_MS = 2 * 60 * 60 * 1000
+MERGE_OWN_REMOVAL_MS = 60 * 1000
 ADDED, REMOVED, MERGED = ("AddedToMergeQueueEvent",
                           "RemovedFromMergeQueueEvent", "MergedEvent")
 
@@ -172,7 +185,8 @@ def queue_read(target, now_ms):
         raise InfraFailure(f"origin {github.origin_url(target)!r} is not a"
                            " GitHub repository")
     variables = {"owner": pull.owner, "name": pull.name,
-                 "branch": github.BASE, "after": None}
+                 "branch": github.BASE, "after": None,
+                 "entriesAfter": None}
     data = github.graphql(target, pull, QUEUE_READ_QUERY, variables)
     repository = data.get("repository") or {}
     queue = repository.get("mergeQueue")
@@ -187,9 +201,25 @@ def queue_read(target, now_ms):
     return {"configured": True,
             "configuration": {key: configuration.get(field)
                               for field, key in CONFIGURATION},
-            "entries": _queue_entries(target, pull,
-                                      _nodes(queue.get("entries"))),
+            "entries": _queue_entries(target, pull, _all_entries(
+                target, pull, variables, queue.get("entries"))),
             "left": sorted(left, key=lambda row: row["at_ms"], reverse=True)}
+
+
+def _all_entries(target, pull, variables, page):
+    entries = []
+    while True:
+        entries.extend(_nodes(page))
+        info = (page or {}).get("pageInfo") or {}
+        if not info.get("hasNextPage"):
+            return entries
+        data = github.graphql(target, pull, ENTRIES_PAGE_QUERY,
+                              {"owner": variables["owner"],
+                               "name": variables["name"],
+                               "branch": variables["branch"],
+                               "entriesAfter": info.get("endCursor")})
+        page = ((data.get("repository") or {}).get("mergeQueue")
+                or {}).get("entries")
 
 
 def _recent_pulls(target, pull, variables, page, since_ms):
@@ -268,13 +298,13 @@ def _left_row(node, now_ms):
     events = sorted(((ms, event) for event in _nodes(node.get("timelineItems"))
                      if (ms := pr_status._iso_ms(event.get("createdAt")))
                      is not None), key=lambda pair: pair[0])
-    departures = [
-        (ms, "removed", event.get("reason"))
-        if event.get("__typename") == REMOVED else (ms, "merged", None)
-        for (_, before), (ms, event) in zip([(None, {})] + events, events)
-        if event.get("__typename") == REMOVED
-        or (event.get("__typename") == MERGED
-            and before.get("__typename") == ADDED)]
+    stints = [[]]
+    for ms, event in events:
+        if event.get("__typename") == ADDED:
+            stints.append([])
+        stints[-1].append((ms, event))
+    departures = [found for n, stint in enumerate(stints)
+                  if (found := _departure(stint, queued=n > 0)) is not None]
     if not departures:
         return None
     at_ms, outcome, reason = departures[-1]
@@ -282,6 +312,18 @@ def _left_row(node, now_ms):
         return None
     return {"pr": _pull_row(node), "at_ms": at_ms, "outcome": outcome,
             "reason": reason}
+
+
+def _departure(stint, queued):
+    merges = [ms for ms, event in stint if event.get("__typename") == MERGED]
+    removals = [(ms, event.get("reason")) for ms, event in stint
+                if event.get("__typename") == REMOVED]
+    if queued and merges and not any(
+            ms < merges[0] - MERGE_OWN_REMOVAL_MS for ms, _ in removals):
+        return merges[0], "merged", None
+    if removals:
+        return removals[0][0], "removed", removals[0][1]
+    return None
 
 
 def enqueue_pull_request(target, pull, sha):
