@@ -102,7 +102,7 @@ export function MergeQueuePage() {
     return { name: project == null ? name : host.label, project: name, key: host.key, queue };
   });
   if (project == null) return <Lanes title="all projects" answers={answers} />;
-  if (answers.length > 1) return <Lanes title={project} answers={answers} />;
+  if (answers.length > 1 && answers.some(({ queue }) => queue.configured !== false)) return <Lanes title={project} answers={answers} />;
   const queue = answers[0]?.queue;
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-4">

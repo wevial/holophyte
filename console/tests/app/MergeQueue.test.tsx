@@ -168,6 +168,14 @@ test("a project two daemons serve draws a lane per daemon and counts every queue
   expect(document.querySelector("[data-no-queue]")!.textContent).toBe("No merge queue on writer-host:7710.");
 });
 
+test("a project two daemons serve without a queue reads its branch and one panel, not lanes", async () => {
+  await mount("#/merge-queue?project=relos", queueFetch(NO_QUEUE, NO_QUEUE, "/srv/dev/relos"));
+  expect(countLine()).toBe("relos · main");
+  expect(screen.getByText("No merge queue on this repository.")).toBeTruthy();
+  expect(document.querySelector("[data-queue-lane]")).toBeNull();
+  expect(document.querySelector("[data-no-queue]")).toBeNull();
+});
+
 test("at 390px the rows drop the column head and carry the PR number on the title's second line", async () => {
   await mount("#/merge-queue?project=relos", queueFetch(QUEUE), 390);
   expect(document.querySelector("[data-queue-heads]")).toBeNull();
