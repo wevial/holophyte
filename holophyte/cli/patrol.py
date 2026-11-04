@@ -121,7 +121,9 @@ def merge_hold(conn, target, now):
         return None
     return {"id": hold.id, "sha": hold.sha, "checks": hold.checks,
             "held_ms": hold.heldAt, "age_sec": (now - hold.heldAt) // 1000,
-            "runs_held": store.automations.held_runs(conn, hold.id)}
+            "runs_held": sum(
+                run.endedAt is None and run.phase == "awaiting_merge_approval"
+                for run in store.automations.held_runs(conn, hold.id))}
 
 
 def listed(firing, since):

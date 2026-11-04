@@ -7,12 +7,14 @@ import store
 from .enums import FiringMode, FiringState, PauseActor, check_clause
 
 PROPOSED = FiringState.PROPOSED.value
+REFUSED = FiringState.REFUSED.value
 LEASED = FiringState.LEASED.value
 CONFIRMED = FiringState.CONFIRMED.value
 UNKNOWN = FiringState.UNKNOWN.value
 CANCELED = FiringState.CANCELED.value
-SETTLED = frozenset((FiringState.REFUSED.value, CONFIRMED, UNKNOWN, CANCELED))
+SETTLED = frozenset((REFUSED, CONFIRMED, UNKNOWN, CANCELED))
 OPERATOR = PauseActor.OPERATOR.value
+AUTOMATION = PauseActor.AUTOMATION.value
 
 FIRINGS_DDL = f"""
 CREATE TABLE IF NOT EXISTS automationFirings (
@@ -76,6 +78,20 @@ class MergeHold(NamedTuple):
     endReason: str | None
 
 
+class HeldRun(NamedTuple):
+    runId: int
+    ticketId: int
+    identifier: str
+    lastRunId: int | None
+    phase: str
+    endedAt: int | None
+    touched: bool
+    reparked: bool
+
+
+SUPERSEDED = "superseded by "
+
+
 class Pause(NamedTuple):
     id: int
     automation: str
@@ -108,24 +124,50 @@ def _firing_key(automation, revision, project, subject, cause):
     return ":".join((automation, str(revision), str(project), subject, cause))
 
 
+class ActCounts(NamedTuple):
+    queued: int
+    hour: int
+    today: int
+
+
+def act_counts(conn, project, automation, action, *, hour_since, day_since):
+    if not _has_table(conn, "automationFirings"):
+        return ActCounts(0, 0, 0)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(state = ?), 0), COALESCE(SUM(createdAt >= ?), 0),"
+        " COALESCE(SUM(createdAt >= ?), 0) FROM automationFirings"
+        " WHERE projectId = ? AND automation = ? AND mode = 'act'"
+        " AND json_extract(detail, '$.action') = ?"
+        " AND json_extract(detail, '$.limit') IS NULL",
+        (LEASED, hour_since, day_since, project, automation, action)
+    ).fetchone()
+    return ActCounts(*row)
+
+
 def reserve_firing(conn, project, automation, revision, subject, cause, *,
-                   mode, reason, detail, now, lease_until=None):
+                   mode, reason, detail, now, lease_until=None, limit=None):
     """The id of a new row, or of a proposal on the key a lease takes over."""
     key = _firing_key(automation, revision, project, subject, cause)
-    state = PROPOSED if lease_until is None else LEASED
+    state, settled = PROPOSED if lease_until is None else LEASED, None
     with store.transaction(conn):
+        limited = None if state == PROPOSED or limit is None else limit(conn)
+        if limited is not None:
+            state, reason, settled, lease_until = REFUSED, limited, now, None
+            detail = {**detail, "limit": limited}
         row = conn.execute(
             "INSERT INTO automationFirings (projectId, automation, revision,"
             " subject, cause, firingKey, mode, state, reason, detail,"
-            " createdAt, leaseUntil) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " createdAt, settledAt, leaseUntil)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (firingKey) DO UPDATE SET mode = excluded.mode,"
             " state = excluded.state, reason = excluded.reason,"
-            " detail = excluded.detail, leaseUntil = excluded.leaseUntil"
-            " WHERE automationFirings.state = ? AND excluded.state = ?"
+            " detail = excluded.detail, createdAt = excluded.createdAt,"
+            " settledAt = excluded.settledAt, leaseUntil = excluded.leaseUntil"
+            " WHERE automationFirings.state = ? AND excluded.state IN (?, ?)"
             " RETURNING id",
             (project, automation, revision, subject, cause, key, mode,
-             state, reason, json.dumps(detail, sort_keys=True), now,
-             lease_until, PROPOSED, LEASED)).fetchone()
+             state, reason, json.dumps(detail, sort_keys=True), now, settled,
+             lease_until, PROPOSED, LEASED, REFUSED)).fetchone()
         return None if row is None else row[0]
 
 
@@ -196,13 +238,15 @@ def replay_firing(conn, firing_id, *, lease_until, now):
         return cursor.rowcount == 1
 
 
-def record_result(conn, firing_id, result, reason, *, now):
+def record_result(conn, firing_id, result, reason, checks, *, now):
     with store.transaction(conn):
         cursor = conn.execute(
             "UPDATE automationFirings SET reason = ?, detail = json_set("
-            "detail, '$.result', ?, '$.result_at', ?) WHERE id = ?"
-            " AND state = ? AND json_extract(detail, '$.result') IS NULL",
-            (reason, result, now, firing_id, CONFIRMED))
+            "detail, '$.result', ?, '$.result_at', ?, '$.result_checks',"
+            " json(?)) WHERE id = ? AND state = ?"
+            " AND json_extract(detail, '$.result') IS NULL",
+            (reason, result, now, json.dumps(sorted(checks)), firing_id,
+             CONFIRMED))
         return cursor.rowcount == 1
 
 
@@ -250,13 +294,29 @@ def open_merge_hold(conn, project):
 
 
 def held_runs(conn, hold_id):
-    return conn.execute(
-        "SELECT COUNT(*) FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
-        " WHERE e.kind = 'main_hold_parked' AND r.endedAt IS NULL"
-        " AND r.phase = 'awaiting_merge_approval'"
-        " AND json_extract(e.payload, '$.hold') = ? AND e.id = (SELECT MAX(id)"
-        " FROM runEvents WHERE runId = e.runId AND kind = 'main_hold_parked')",
-        (hold_id,)).fetchone()[0]
+    rows = conn.execute(
+        "WITH hold AS (SELECT id, projectId FROM mergeHolds WHERE id = ?),"
+        " chain AS (SELECT m.id FROM mergeHolds AS m, hold"
+        " WHERE m.projectId = hold.projectId AND m.id <= hold.id"
+        " AND m.id > COALESCE((SELECT MAX(p.id) FROM mergeHolds AS p"
+        " WHERE p.projectId = hold.projectId AND p.id < hold.id"
+        " AND p.endReason NOT LIKE ? || '%'), 0))"
+        " SELECT e.runId, r.ticketId, t.linearIdentifier, t.lastRunId, r.phase,"
+        " r.endedAt, EXISTS (SELECT 1 FROM interventions AS i"
+        " WHERE i.runId = e.runId AND i.source = 'human' AND i.at >= e.at),"
+        " EXISTS (SELECT 1 FROM runEvents AS p WHERE p.runId = e.runId"
+        " AND p.id > e.id AND p.kind IN ('pr_wake_breaker', 'ci_expired'))"
+        " OR (SELECT COUNT(*) FROM runEvents AS p WHERE p.runId = e.runId"
+        " AND p.id > e.id AND p.kind = 'phase_change'"
+        " AND p.summary GLOB '* -> awaiting_merge_approval*') > 1"
+        " FROM runEvents AS e JOIN runs AS r ON r.id = e.runId"
+        " JOIN tickets AS t ON t.id = r.ticketId"
+        " WHERE e.kind = 'main_hold_parked'"
+        " AND json_extract(e.payload, '$.hold') IN (SELECT id FROM chain)"
+        " AND e.id = (SELECT MAX(id) FROM runEvents"
+        " WHERE runId = e.runId AND kind = 'main_hold_parked')"
+        " ORDER BY e.runId", (hold_id, SUPERSEDED)).fetchall()
+    return [HeldRun(*row[:6], bool(row[6]), bool(row[7])) for row in rows]
 
 
 def end_merge_hold(conn, hold_id, reason, *, now):
@@ -271,7 +331,7 @@ def place_merge_hold(conn, project, firing_id, sha, checks, reason, *, now):
     with store.transaction(conn):
         standing = open_merge_hold(conn, project)
         if standing is not None:
-            end_merge_hold(conn, standing.id, f"superseded by {sha[:12]}",
+            end_merge_hold(conn, standing.id, f"{SUPERSEDED}{sha[:12]}",
                            now=now)
         hold = conn.execute(
             "INSERT INTO mergeHolds (projectId, sha, checks, firingId, heldAt)"

@@ -1,5 +1,6 @@
 """An act firing's worker: take the lease, recheck, rerun main's failed jobs once."""
 import os
+import re
 import time
 
 import store
@@ -10,6 +11,7 @@ from holophyte.automation.automation_config import (
     unapproved,
 )
 from holophyte.automation.gate import inhibitor
+from holophyte.automation.limits import self_pause
 from holophyte.automation.main_watch import REVISION, workflow_run_attempt
 from holophyte.automation.policy import refusal, report_only, report_only_reason
 from holophyte.babysit.check_fix import rerun_failed_jobs
@@ -20,6 +22,7 @@ from holophyte.loop.runs import open_store
 from holophyte.pr import github
 from store.enums import FiringState
 
+GITHUB_REFUSAL = re.compile(r"\bHTTP 4\d\d\b|^GitHub refused .* \(4\d\d\):")
 CANCELED = FiringState.CANCELED.value
 REFUSED = FiringState.REFUSED.value
 CONFIRMED = FiringState.CONFIRMED.value
@@ -69,9 +72,11 @@ class Worker:
         self.conn, self.target, self.firing = conn, target, firing
 
     def settle(self, state, reason, detail=None):
-        store.automations.settle_firing(
-            self.conn, self.firing.id, self.firing.workerPid, state, reason,
-            now=now_ms(), detail=detail)
+        now = now_ms()
+        if store.automations.settle_firing(
+                self.conn, self.firing.id, self.firing.workerPid, state,
+                reason, now=now, detail=detail):
+            self_pause(self.conn, self.firing.id, now=now)
         print(f"[holo2] firing {self.firing.id} {state}: {reason}", flush=True)
         return 0
 
@@ -119,7 +124,10 @@ class Worker:
             try:
                 rerun_failed_jobs(self.target, pull, run)
             except InfraFailure as bad:
-                return self.settle(REFUSED, f"GitHub refused the rerun: {bad}")
+                return self.settle(
+                    REFUSED, f"GitHub refused the rerun: {bad}",
+                    {**detail, "github_refused": bool(
+                        GITHUB_REFUSAL.search(str(bad)))})
             return self.settle(
                 CONFIRMED, f"reran the failed jobs of workflow run {run} at"
                            f" {detail['sha']}, attempt {recorded + 1}",

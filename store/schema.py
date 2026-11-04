@@ -453,7 +453,8 @@ def _widen_interventions_action(conn):
     (ddl,) = row
     admitted = ddl.partition('"action" IN (')[2].partition(")")[0]
     triggers = ddl.partition('"trigger" IN (')[2].partition(")")[0]
-    if "'board_cancelled'" in triggers and all(
+    sources = ddl.partition("source IN (")[2].partition(")")[0]
+    if "'board_cancelled'" in triggers and "'automation'" in sources and all(
             value in admitted
             for value in ("'repoint'", "'babysit'", "'reconcile'", "'operator_note'",
                           "'restart_supervisor'", "'launch_loop'",
