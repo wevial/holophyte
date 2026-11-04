@@ -45,8 +45,10 @@ def limit_reason(counts, reruns, cap):
 class HostReruns:
     """The sweep state's `reruns`, counted per Pacific day against `cap`."""
 
-    def __init__(self, state, cap):
+    def __init__(self, state, cap, committed, now):
         self.state, self.cap = state, cap
+        self.state["reruns"] = {"day": midnight(now)[1],
+                                "count": max(self.today(now), committed)}
 
     def today(self, now):
         saved = self.state.get("reruns") or {}

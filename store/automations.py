@@ -91,6 +91,8 @@ class ActCounts(NamedTuple):
 
 
 def act_counts(conn, project, automation, *, hour_since, day_since):
+    if not _has_table(conn, "automationFirings"):
+        return ActCounts(0, 0, 0)
     row = conn.execute(
         "SELECT COALESCE(SUM(state = ?), 0), COALESCE(SUM(createdAt >= ?), 0),"
         " COALESCE(SUM(createdAt >= ?), 0) FROM automationFirings"
@@ -117,8 +119,8 @@ def reserve_firing(conn, project, automation, revision, subject, cause, *,
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (firingKey) DO UPDATE SET mode = excluded.mode,"
             " state = excluded.state, reason = excluded.reason,"
-            " detail = excluded.detail, settledAt = excluded.settledAt,"
-            " leaseUntil = excluded.leaseUntil"
+            " detail = excluded.detail, createdAt = excluded.createdAt,"
+            " settledAt = excluded.settledAt, leaseUntil = excluded.leaseUntil"
             " WHERE automationFirings.state = ? AND excluded.state IN (?, ?)"
             " RETURNING id",
             (project, automation, revision, subject, cause, key, mode,

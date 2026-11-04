@@ -1711,10 +1711,13 @@ automation on each project may hold 3 firings `leased` at once and take 6
 actions in the last hour and 30 since midnight in `America/Los_Angeles`;
 across every project the host takes at most `host.toml`'s
 `[automations] reruns_per_day` reruns since that midnight, a whole number
-of at least 1, default 10, counted in `sweep.json`'s `reruns`. A firing
-past a limit is reserved `refused`, its reason the first limit that is full: `rate: 3
-firings queued`, `rate: 6 actions in the last hour`, `rate: 30 actions
-today` or `GitHub rerun cap: N today`, and no worker starts. A firing a
+of at least 1, default 10, counted in `sweep.json`'s `reruns`. Each pass
+starts that count at no less than the act firings every readable store
+committed since midnight, so a lease a crash kept from `sweep.json` still
+counts. A proposal promoted to a lease counts from its promotion. A firing
+past a limit is reserved `refused`, its reason the first limit that is
+full: `rate: 3 firings queued`, `rate: 6 actions in the last hour`,
+`rate: 30 actions today` or `GitHub rerun cap: N today`, and no worker starts. A firing a
 limit refused is not counted, and a dry-run proposal is neither counted nor
 limited. A wrong `reruns_per_day` is off for every automation on the host
 that pass, with one line naming the key; the rest of the sweep goes on.
@@ -1722,7 +1725,8 @@ that pass, with one line naming the key; the rest of the sweep goes on.
 An automation pauses itself, writing the pause `holo automation pause`
 writes with actor `automation`, when two of its `red_again` results on one
 project within 24 hours name the same checks, or when GitHub refused the
-reruns of its two newest act firings (a recheck's refusal does not count).
+reruns of its two newest act firings with an HTTP 4xx answer (a recheck's
+refusal, or a rerun request GitHub never answered, does not count).
 The note names the rule and both firing ids, and only `holo automation
 resume` clears it.
 

@@ -1,4 +1,5 @@
 """The host sweep's automation step: each opted-in project's rules, round robin."""
+import contextlib
 import subprocess
 import sys
 import time
@@ -15,7 +16,12 @@ from holophyte.automation.automation_config import (
     main_watch_config,
 )
 from holophyte.automation.gate import read_switch
-from holophyte.automation.limits import HostReruns, reruns_per_day, self_pause
+from holophyte.automation.limits import (
+    HostReruns,
+    midnight,
+    reruns_per_day,
+    self_pause,
+)
 from holophyte.automation.policy import report_only
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.host.registry import Host, HostError
@@ -185,6 +191,25 @@ def observe_one(name, target, watch, listed, now, end, stop, out, greens,
     return None, None
 
 
+def store_reruns(target, now):
+    conn = store.read.open_readonly(target.store_path)
+    try:
+        project = project_of(conn, target)
+        return 0 if project is None else store.automations.act_counts(
+            conn, project, MAIN_WATCH, hour_since=now,
+            day_since=midnight(now)[0]).today
+    finally:
+        conn.close()
+
+
+def reruns_committed(entries, now):
+    total = 0
+    for entry in entries:
+        with contextlib.suppress(Exception):
+            total += store_reruns(entry.target, now)
+    return total
+
+
 def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
                     home):
     switch = read_switch(home)
@@ -195,7 +220,8 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
     try:
         host = Host.locate(home)
         listed = report_only(host)
-        reruns = HostReruns(state, reruns_per_day(host))
+        reruns = HostReruns(state, reruns_per_day(host),
+                            reruns_committed(entries, now), now)
     except HostError as bad:
         print(f"{bad}; automations are off this pass", file=out)
         return

@@ -1,5 +1,6 @@
 """An act firing's worker: take the lease, recheck, rerun main's failed jobs once."""
 import os
+import re
 import time
 
 import store
@@ -21,6 +22,7 @@ from holophyte.loop.runs import open_store
 from holophyte.pr import github
 from store.enums import FiringState
 
+GITHUB_REFUSAL = re.compile(r"\bHTTP 4\d\d\b|^GitHub refused .* \(4\d\d\):")
 CANCELED = FiringState.CANCELED.value
 REFUSED = FiringState.REFUSED.value
 CONFIRMED = FiringState.CONFIRMED.value
@@ -122,8 +124,10 @@ class Worker:
             try:
                 rerun_failed_jobs(self.target, pull, run)
             except InfraFailure as bad:
-                return self.settle(REFUSED, f"GitHub refused the rerun: {bad}",
-                                   {**detail, "github_refused": True})
+                return self.settle(
+                    REFUSED, f"GitHub refused the rerun: {bad}",
+                    {**detail, "github_refused": bool(
+                        GITHUB_REFUSAL.search(str(bad)))})
             return self.settle(
                 CONFIRMED, f"reran the failed jobs of workflow run {run} at"
                            f" {detail['sha']}, attempt {recorded + 1}",

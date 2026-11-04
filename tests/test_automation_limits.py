@@ -5,6 +5,7 @@ go through the factory's `gh api` path to a `gh` on PATH.
 Run: python3 -m unittest discover -s tests -p 'test_automation_limits.py' -v
 """
 import datetime
+import json
 import subprocess
 import time
 import zoneinfo
@@ -22,6 +23,8 @@ HOUR = 60 * MINUTE
 PACIFIC = zoneinfo.ZoneInfo("America/Los_Angeles")
 FORBIDDEN = ("sys.exit(print('gh: Forbidden (HTTP 403)', file=sys.stderr)"
              " or 1)")
+RESET = ("sys.exit(print('Post \"https://api.github.com/\": read tcp:"
+         " connection reset by peer', file=sys.stderr) or 1)")
 
 
 def pacific(day, hour, minute=0):
@@ -68,9 +71,9 @@ class LimitFixture(ResultFixture):
             sweep_pass(int(time.time() * 1000) if at is None else at)
         return [child.wait(timeout=120) for child in children]
 
-    def refuse_posts(self, name, run):
+    def refuse_posts(self, name, run, answer=FORBIDDEN):
         self.answer(name, f"EXEC BEFORE POST repos/o/{name}/actions/runs/{run}"
-                    "/rerun-failed-jobs", FORBIDDEN)
+                    "/rerun-failed-jobs", answer)
 
     def open_pause(self, name):
         rows = self.conn(name).execute(
@@ -91,6 +94,20 @@ class RateTests(LimitFixture):
         firing = self.of_run("alpha", 7)
         self.assertEqual((firing.mode, firing.state), ("act", "refused"))
         self.assertEqual(firing.reason, "rate: 6 actions in the last hour")
+
+    def test_a_promoted_proposal_counts_from_its_promotion(self):
+        self.act("alpha")
+        for index in range(6):
+            self.seed("alpha", self.clock - 2 * 24 * HOUR, 100 + index,
+                      mode="dry_run")
+            self.seed("alpha", self.clock - (55 - 10 * index) * MINUTE,
+                      100 + index)
+
+        self.assertEqual(self.pass_at(self.clock), [])
+
+        firing = self.of_run("alpha", 7)
+        self.assertEqual((firing.state, firing.reason),
+                         ("refused", "rate: 6 actions in the last hour"))
 
     def test_the_day_count_resets_at_midnight_pacific(self):
         self.act("alpha")
@@ -158,6 +175,22 @@ class HostRerunCapTests(LimitFixture):
         [refused] = [firing for firing in fired if firing.state == "refused"]
         self.assertEqual(refused.reason, "GitHub rerun cap: 2 today")
         self.assertEqual(self.state()["reruns"]["count"], 2)
+
+    def test_a_lease_the_sweep_state_lost_still_counts_toward_the_cap(self):
+        with open(self.home / HOST_FILE, "a") as registry:
+            registry.write("\n[automations]\nreruns_per_day = 1\n")
+        self.act("alpha")
+        self.assertEqual(len(self.pass_at(self.clock)), 1)
+        saved = self.state()
+        del saved["reruns"]
+        (self.home / "sweep.json").write_text(json.dumps(saved))
+
+        self.red_run("alpha", 8)
+        self.assertEqual(self.pass_at(self.clock + MINUTE), [])
+
+        firing = self.of_run("alpha", 8)
+        self.assertEqual((firing.state, firing.reason),
+                         ("refused", "GitHub rerun cap: 1 today"))
 
     def test_a_wrong_rerun_cap_is_off_and_the_sweep_goes_on(self):
         with open(self.home / HOST_FILE, "a") as registry:
@@ -247,6 +280,16 @@ class SelfPauseTests(LimitFixture):
                          ["refused"] * 3)
         self.assertIn("403", self.of_run("beta", 9).reason)
         self.assertIsNone(self.open_pause("beta"))
+
+    def test_dispatches_github_never_answered_do_not_pause_it(self):
+        self.act("alpha")
+        for run in (7, 8):
+            self.red_run("alpha", run)
+            self.refuse_posts("alpha", run, RESET)
+            self.assertEqual(self.worked_pass(), [0])
+            self.assertIn("connection reset", self.of_run("alpha", run).reason)
+
+        self.assertIsNone(self.open_pause("alpha"))
 
 
 if __name__ == "__main__":

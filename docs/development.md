@@ -350,12 +350,14 @@ Each module, one line:
 - `holophyte/automation/limits.py` — an automation's act limits on one
   project, `QUEUED`, `PER_HOUR` and `PER_DAY`, read through `act_counts()`
   inside `reserve_firing()`'s transaction, and the host's daily GitHub
-  reruns, `HostReruns`, counted in `sweep.json`'s `reruns` against
-  `reruns_per_day()`; days start at midnight in `America/Los_Angeles`.
+  reruns, `HostReruns`, counted in `sweep.json`'s `reruns`, raised at a
+  pass's start to the stores' committed act firings (the step's
+  `reruns_committed()`), against `reruns_per_day()`; days start at
+  midnight in `America/Los_Angeles`.
   `self_pause()`, called after the step records a result and after the
   worker settles a firing, writes an `automation` pause when the same
-  checks were red again twice within 24 hours or GitHub refused the two
-  newest act firings' reruns.
+  checks were red again twice within 24 hours or GitHub answered the two
+  newest act firings' reruns with an HTTP 4xx.
 - `holophyte/automation/policy.py` — each automation's actions as data,
   `CAPABILITIES` and `NEVER`; `refusal()` names why an action is not
   allowed, and `report_only()` reads `host.toml`'s `[automations]
