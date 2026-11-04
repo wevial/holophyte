@@ -362,13 +362,13 @@ test("Waiting on you row titles use medium reading text and the day log uses 13 
   expect(classes(within(dayLog()).getByRole("list"))).toEqual(expect.arrayContaining(["font-mono", "text-[13px]", "leading-[1.5]"]));
 });
 
-test("a project whose merge queue is not configured or is empty draws no next-in-queue line and the empty Pull requests text", async () => {
+test("a project whose merge queue is not configured or is empty draws no queue row and the empty Pull requests text", async () => {
   const served = (await Bun.file(new URL("merge-queue.json", SERVE)).json()) as MergeQueue;
   const answering = (queue: MergeQueue): Fetch => {
     const polls = fleet({ items: [] }, { items: [] });
     return async (url, init) => (url === `${DEMO}/merge-queue` ? Response.json(queue) : polls(url, init));
   };
-  const nextLine = () => section("Pull requests").querySelector("[data-next-in-queue]");
+  const nextLine = () => section("Pull requests").querySelector("[data-queue-entry]");
   await mount("#/", answering(served));
   expect(nextLine()).not.toBeNull();
   expect(within(section("Pull requests")).queryByText("No pull request waits on you.")).toBeNull();
