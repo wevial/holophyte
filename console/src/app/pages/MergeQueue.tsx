@@ -8,6 +8,7 @@ import { LeftTheQueue, QueueTable } from "../components/MergeQueueTable";
 import { clearsAt, queueCounts } from "../mergeQueue";
 import { useMergeQueues } from "../queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "../scope";
+import { zoneName } from "./runShared";
 
 const PANEL = "m-0 border border-rule bg-paper px-5 py-[18px] font-mono text-[13px] leading-[1.4]";
 
@@ -42,6 +43,10 @@ function QueueBody({ queue, project }: { queue: MergeQueue; project: string }) {
   );
 }
 
+function TimesShown({ now }: { now: number }) {
+  return <p className="font-mono text-[12px] leading-[1.4] text-ink-3">times show in {zoneName(now)}</p>;
+}
+
 function Header({ children }: { children: ReactNode }) {
   return (
     <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
@@ -70,6 +75,7 @@ export function MergeQueuePage() {
           {queue?.configured === true && <> · <QueueCounts queue={queue} /></>}
         </Header>
         {queue && <QueueBody queue={queue} project={project} />}
+        {queue?.configured === true && <TimesShown now={queue.now} />}
       </section>
     );
   }
@@ -95,6 +101,7 @@ export function MergeQueuePage() {
         </div>
       ))}
       {without.length > 0 && <p data-no-queue className="font-mono text-[12px] leading-[1.4] text-ink-3">No merge queue on {without.join(", ")}.</p>}
+      {queues[0] && <TimesShown now={queues[0].now} />}
     </section>
   );
 }

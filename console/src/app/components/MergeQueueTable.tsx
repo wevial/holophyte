@@ -10,7 +10,7 @@ import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 const GRID = "grid grid-cols-[44px_64px_minmax(0,1fr)_150px_104px_64px_56px] items-start gap-x-3";
-const NARROW_GRID = "grid grid-cols-[44px_minmax(0,1fr)_auto] items-start gap-x-3";
+const NARROW_GRID = "grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-3";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
 const HEADS = ["#", "PR", "Title", "State", "Checks", "Merges", "Added"];
@@ -91,7 +91,7 @@ function EntryDetail({ entry, now, id }: { entry: MergeQueueEntry; now: number; 
   const { required, other } = splitChecks(entry.checks.runs);
   const line = entryLine(entry, now);
   return (
-    <div id={id} data-entry-detail className="flex flex-col gap-4 border-t border-dashed border-rule-2 py-4 pr-5 pl-[calc(12px+44px+12px+64px+12px)] max-[1099px]:pl-[calc(12px+44px+12px)] max-[720px]:px-3">
+    <div id={id} data-entry-detail className="flex flex-col gap-4 border-t border-dashed border-rule-2 py-4 pr-5 pl-[calc(12px+44px+12px+64px+12px)] max-[1099px]:pl-[calc(12px+28px+12px)] max-[720px]:px-3">
       {line && <p className={MONO}>{line}</p>}
       {entry.checks.runs.length > 0 && (
         <div className="grid grid-cols-2 gap-x-10 gap-y-5 max-[720px]:grid-cols-1">
@@ -129,7 +129,7 @@ function EntryRow({ entry, project, now, wide }: { entry: MergeQueueEntry; proje
   const titleText = <span data-entry-title className="font-read text-[15px] font-medium leading-[1.35] text-ink"><TitleText>{title}</TitleText></span>;
   const carrier = <Carrier project={project} run={entry.run} author={entry.pr.author} />;
   return (
-    <li data-entry={entry.position} data-open={open || undefined} className="border-b border-rule-2 last:border-b-0 data-open:bg-act-wash data-open:shadow-[inset_2px_0_0_var(--act)]">
+    <li data-entry={entry.position} data-open={open || undefined} className="border-b border-rule-2 last:border-b-0 data-open:bg-row-selected data-open:shadow-[inset_2px_0_0_var(--act)]">
       {wide ? (
         <div data-row className={`${GRID} px-3 py-3`}>
           {toggle}
@@ -155,8 +155,9 @@ function EntryRow({ entry, project, now, wide }: { entry: MergeQueueEntry; proje
             </span>
             <span className={`${MONO} [overflow-wrap:anywhere]`}>
               {entry.checks.total > 0 && <><ChecksDone entry={entry} />{DOT}</>}
-              merges {mergesIn(entry.estimated_s)}
-              {DOT}added {added}
+              <span className="whitespace-nowrap">merges {mergesIn(entry.estimated_s)}</span>
+              {DOT}
+              <span className="whitespace-nowrap">added {added}</span>
             </span>
           </span>
           <EntryState entry={entry} />
