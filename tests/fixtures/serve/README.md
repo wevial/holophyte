@@ -81,3 +81,9 @@ it depends on the host.
 `prefs.json` pins a host daemon's root `GET /prefs` after a `PUT /prefs` of
 its `day_log`, built in `tests/test_serve_prefs.py`: the answer's
 `updated_ms` is replaced by the pinned value before the comparison.
+
+`merge-queue.json` pins `GET /merge-queue` in
+`tests/test_serve_merge_queue.py` at a frozen clock, GitHub faked: four
+entries, position 1 building a merge group with 13 check runs (6 required
+by main's rules), position 2's pull request carried by the store's run 1,
+and three pull requests that left the queue in the last two hours.

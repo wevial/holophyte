@@ -14,6 +14,7 @@ from holophyte.serve.contract_routes import (
 )
 from holophyte.serve.contract_routes import RouteProbe as RouteProbe
 from holophyte.serve.contract_run import Precheck, Round
+from holophyte.serve.serve_merge_queue import MergeQueue
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = "python3 -m holophyte.serve.contract"
@@ -928,6 +929,7 @@ ROUTES = {
     "scouts": (Scouts, "GET /scouts"),
     "scout": (ScoutDetail, "GET /scouts/ID"),
     "scout-routes": (ScoutRoutes, "GET /scouts/routes"),
+    "merge-queue": (MergeQueue, "GET /merge-queue"),
 }
 
 

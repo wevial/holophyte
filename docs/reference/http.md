@@ -28,7 +28,7 @@ those writing routes. A project with no store answers 503.
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
 `GET /tickets/KEY` and `GET /tickets?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
-and `GET /scouts/routes`, and of `POST /tickets/check`: one
+and `GET /scouts/routes`, of `GET /merge-queue`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -1339,6 +1339,79 @@ lists at each claim, a valid body to `ready` and one failing the template
 to `needs_spec`, so the queue is on the board before the loop starts on
 it; a ticket the loop could not claim (Backlog, closed, blocked in Linear)
 is not.
+
+## `GET /merge-queue`
+
+The base branch's merge queue as GitHub holds it: what the console's Merge
+queue page reads.
+
+```json
+{"configured": true, "branch": "main", "now": 1750000000000,
+ "configuration": {"merge_method": "SQUASH", "merging_strategy": "ALLGREEN",
+  "maximum_entries_to_build": 1, "minimum_entries_to_merge": 1,
+  "check_response_timeout": 60},
+ "entries": [
+  {"position": 1, "state": "AWAITING_CHECKS", "enqueued_ms": 1749998260000,
+   "estimated_s": 600, "jump": false, "solo": false,
+   "pr": {"number": 2547, "title": "…", "author": "maintainer",
+    "url": "https://github.com/example/repo/pull/2547", "head_oid": "…"},
+   "group_sha": "9a0b…", "building_ms": 1749998860000, "run": null,
+   "checks": {"done": 5, "total": 13, "failed": 0, "runs": [
+    {"name": "unit", "workflow": "ci", "status": "completed",
+     "conclusion": "success", "started_ms": 1749998860000,
+     "completed_ms": 1749999400000,
+     "url": "https://github.com/example/repo/actions/runs/7/job/900",
+     "required": true}]}}],
+ "left": [
+  {"pr": {"number": 2561, "…": "…"}, "at_ms": 1749997600000,
+   "outcome": "removed", "reason": "FAILED_CHECKS",
+   "run": {"id": 2, "ticket": "KO-8", "phase": "working", "round": 0},
+   "waits_on_you": false}]}
+```
+
+The daemon reads GitHub with one GraphQL query on
+`repository.mergeQueue(branch: "main")` against the project's `origin`.
+`configured` is false when GitHub answers no merge queue (every personal
+repository), with `configuration` null and `entries` and `left` empty;
+`branch` is the base branch and `now` the read's time in epoch ms.
+`configuration` is GitHub's `mergeMethod`, `mergingStrategy`,
+`maximumEntriesToBuild`, `minimumEntriesToMerge` and
+`checkResponseTimeout`, renamed to snake case, values as GitHub gives
+them.
+
+`entries` is in `position` order: `state` is GitHub's
+`MergeQueueEntryState`, `enqueued_ms` when it entered the queue,
+`estimated_s` GitHub's `estimatedTimeToMerge`, `jump` and `solo` its
+flags, and `pr` the pull request's `number`, `title`, `author`, `url`
+and head commit (`head_oid`). An entry not `QUEUED` is building:
+`group_sha` is its merge-group commit, the head of the newest
+`merge_group` workflow run since it was enqueued on a branch starting
+`gh-readonly-queue/main/pr-N-`, and `building_ms` when that group's first
+run started; both are null while the entry is not building or no run is
+found. `checks` counts the check runs on that commit, `done` (completed),
+`total` and `failed` (a red conclusion), and lists each in `runs`: its
+`name`, `workflow` (the workflow run it belongs to, null when it is not
+one of the group's), `status`, `conclusion`, `started_ms`,
+`completed_ms`, `url` and `required`, true when main's
+`required_status_checks` rule names it. A non-building entry's `checks`
+are zero with no `runs`.
+
+`left` is, newest first, each pull request into `main` that left the
+queue in the last 2 hours, read from the most recently updated pull
+requests' merge-queue timeline events, so hand pull requests are
+included: `at_ms` is when, `outcome` is `merged` (a merge after an add to
+the queue) or `removed`, and `reason` GitHub's removal reason (null for a
+merge). `waits_on_you` is true for a removed pull request with no store
+run, or whose run is now parked for the operator or ended failed.
+
+`run`, on an entry and on a `left` row, is the newest store run whose
+pull request is that `url`: its `id`, `ticket`, `phase` and `round`, null
+when no run carries it.
+
+The answer is cached per project for 15 seconds, so every console tab
+shares one GitHub read. A GitHub read that fails answers 200 with
+`configured` null, the rest empty, and an `error` naming the failure. The
+route writes nothing.
 
 ## `GET /tickets/KO-n`
 
