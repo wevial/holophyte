@@ -400,7 +400,6 @@ const ledgerOf = (count: number): Fetch => {
 
 const STATE = { "first:": ":first-child", "last:": ":last-child", "not-last:": ":not(:last-child)" } as const;
 
-/** The `before:` line classes that apply to `item`, its `first:`/`last:` variants resolved by its place in the list. */
 function lineOf(item: Element): string[] {
   return classes(item).flatMap((name) => {
     if (name.startsWith("before:")) return [name.slice("before:".length)];
