@@ -86,6 +86,16 @@
               "type": "null"
             }
           ]
+        },
+        "probe_when": {
+          "enum": [
+            "start",
+            "inherits",
+            "first_use"
+          ]
+        },
+        "inherits": {
+          "type": "string"
         }
       },
       "required": [

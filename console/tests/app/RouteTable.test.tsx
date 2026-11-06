@@ -173,3 +173,15 @@ test("an implementer profile draws its own row and tags the implementer fallback
   expect(row("implementer_profiles.sonnet").getByText("codex")).toBeTruthy();
   expect(row("implementer_profiles.sonnet").queryByText("in use · recorded")).toBeNull();
 });
+
+test("unprobed seats say whether they use the implementer's route, wait for first use, or await the loop start", async () => {
+  const alpha = status("alpha");
+  alpha.route_labels = { ...alpha.route_labels, implementer_profiles: { sonnet: "claude sonnet" } };
+  alpha.active_routes["implementer_profiles.sonnet"] = { command: "claude" };
+  await mount([alpha]);
+  expect(row("trimmer").getByText("uses implementer route")).toBeTruthy();
+  expect(row("implementer_profiles.sonnet").getByText("probed on first use")).toBeTruthy();
+  expect(row("adjudicator").getByText("not probed yet")).toBeTruthy();
+  expect(row("trimmer").queryByText(/◷/)).toBeNull();
+  expect(row("adjudicator").getByText(/◷/)).toBeTruthy();
+});

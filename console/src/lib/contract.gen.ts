@@ -20,6 +20,8 @@ export type RouteProbe = z.infer<typeof routeProbeSchema>;
 export const seatProbesSchema = z.looseObject({
   primary: routeProbeSchema.nullable(),
   fallback: routeProbeSchema.nullable(),
+  probe_when: z.enum(["start", "inherits", "first_use"]).optional(),
+  inherits: z.string().optional(),
 });
 export type SeatProbes = z.infer<typeof seatProbesSchema>;
 

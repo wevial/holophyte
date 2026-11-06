@@ -1,4 +1,4 @@
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 
 class ActiveRoute(TypedDict):
@@ -18,6 +18,8 @@ class RouteProbe(TypedDict):
 class SeatProbes(TypedDict):
     primary: RouteProbe | None
     fallback: RouteProbe | None
+    probe_when: NotRequired[Literal["start", "inherits", "first_use"]]
+    inherits: NotRequired[str]
 
 
 class RouteLabels(TypedDict):

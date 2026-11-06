@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from "react";
-import type { RouteProbe } from "../lib/contract.gen";
+import type { RouteProbe, SeatProbes } from "../lib/contract.gen";
 import { age, formatClock } from "../lib/format";
 import { baseOf, buildLine, byDaemon, hostName, SWEEP_OK, type HostRecord } from "../lib/hosts";
 import type { ContractBodies } from "./fleet";
@@ -36,6 +36,8 @@ export interface AgentRoute {
   label: string;
   projects: string[];
   probe: RouteProbe | null;
+  probeWhen: SeatProbes["probe_when"];
+  inherits: string | undefined;
   down: boolean;
   fallbacks: { label: string; inUse: boolean }[];
 }
@@ -53,9 +55,11 @@ function routesOf(records: Record[]): AgentRoute[] {
       const profile = seat.startsWith(PROFILE_SEAT) ? seat.slice(PROFILE_SEAT.length) : null;
       const label = profile === null ? status.route_labels[seat] : status.route_labels.implementer_profiles?.[profile];
       if (!active || typeof label !== "string") continue;
-      const row = rows.get(label) ?? { seat, label, projects: [], probe: null, down: false, fallbacks: [] };
+      const probes = status.route_probes[seat];
+      const row = rows.get(label) ?? { seat, label, projects: [], probe: null, probeWhen: probes?.probe_when, inherits: probes?.inherits, down: false, fallbacks: [] };
       row.projects.push(record.name ?? status.project.split("/").filter(Boolean).pop() ?? status.project);
-      const probe = status.route_probes[seat]?.primary;
+      if (row.probeWhen !== probes?.probe_when) row.probeWhen = undefined;
+      const probe = probes?.primary;
       if (probe && (!row.probe || (row.probe.ok && !probe.ok) || (probe.ok === row.probe.ok && probe.at_ms > row.probe.at_ms))) row.probe = probe;
       row.down ||= active.down === true;
       const fallbackLabel = status.route_labels[profile === null ? `${seat}_fallback` : "implementer_fallback"];
