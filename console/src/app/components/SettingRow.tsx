@@ -26,9 +26,10 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
   const route = seat ? status?.active_routes?.[seat] : undefined;
   const label = seat ? status?.route_labels?.[seat] : undefined;
   const routeText = route?.down ? "down" : route?.fallback ? `on its fallback ${route.fallback}` : typeof label === "string" ? `runs ${label}` : null;
+  const defaulted = bound.state === "absent" && !changed && !(field.kind === "text" && field.seat);
   const buttonClass = "min-h-9 cursor-pointer px-3 font-mono text-[12px] disabled:cursor-default disabled:opacity-40";
   return (
-    <div role="group" aria-labelledby={`${id}-label`} data-setting={`${field.table}.${field.key}`} className={`flex min-w-0 flex-col gap-4 border-b border-rule-2 border-l-2 px-4 py-5 min-[860px]:flex-row min-[860px]:items-center min-[860px]:justify-between ${changed ? "border-l-act bg-paper-2" : "border-l-transparent"}`}>
+    <div role="group" aria-labelledby={`${id}-label`} data-setting={`${field.table}.${field.key}`} className={`flex min-w-0 flex-col gap-4 border-b border-rule-2 border-l-2 px-4 py-5 min-[860px]:flex-row min-[860px]:items-start min-[860px]:justify-between ${changed ? "border-l-act bg-paper-2" : "border-l-transparent"}`}>
       <div className="min-w-0">
         <h3 id={`${id}-label`} className="font-sans text-[15px] font-semibold">{field.label}</h3>
         <p className="mt-1 font-mono text-[12px] text-ink-3">{field.table}.{field.key}</p>
@@ -36,12 +37,12 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
         {changed && <p className="mt-3 flex items-center gap-2 font-mono text-[12px] text-ink-3"><svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5} className="shrink-0 text-ask-ink"><path d="M13 6a5 5 0 0 0-8.5-3.5L2 5m0-4v4h4M3 10a5 5 0 0 0 8.5 3.5L14 11m0 4v-4h-4" /></svg>applies at the {applies}</p>}
         {error && <p role="alert" className="mt-3 font-mono text-[12px] text-bad">{error}</p>}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-3 min-[860px]:max-w-[48%] min-[860px]:justify-end">
-        {bound.state === "unbound" ? <div className="min-w-0">
-          <input aria-label={field.label} readOnly value={JSON.stringify(bound.value)} className="w-full min-w-0 border border-rule bg-paper px-3 py-2 font-mono text-[12px] text-ink-2" />
+      <div className="flex w-full min-w-0 flex-col items-start gap-2 min-[860px]:w-80 min-[860px]:shrink-0">
+        {bound.state === "unbound" ? <div className="w-full min-w-0">
+          <pre aria-label={field.label} className="w-full whitespace-pre-wrap break-words border border-rule bg-paper px-3 py-2 font-mono text-[12px] text-ink-2">{JSON.stringify(bound.value, null, 2)}</pre>
           <Link to="/settings/$tab" params={{ tab: "toml" }} search={{ project }} className="mt-2 block font-mono text-[12px] text-act underline">{UNBOUND_NOTE}</Link>
-        </div> : <>
-          {field.kind === "select" ? <div className="inline-flex max-w-full flex-wrap border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
+        </div>
+          : field.kind === "select" ? <div className="inline-flex max-w-full flex-wrap border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
             {field.options.map((option) => <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => onChange(option.value, original)} className={`${buttonClass} inline-flex items-center gap-2 ${value === option.value ? "bg-act-wash text-act" : "text-ink-2 hover:text-ink"}`}>
               {option.swatch && <span data-swatch aria-hidden="true" className="size-2.5 shrink-0" style={{ background: `var(${option.swatch})` }} />}
               {option.label}
@@ -54,12 +55,13 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
             : field.kind === "lines" ? <textarea aria-label={field.label} rows={3} value={lines ?? (Array.isArray(value) ? value.join("\n") : "")} onBlur={() => setLines(null)} onChange={(event) => {
               setLines(event.target.value);
               onChange(event.target.value.split("\n").filter((line) => line.trim() !== ""), original);
-            }} className="w-80 max-w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />
-            : <input type="text" aria-label={field.label} value={String(value)} placeholder={field.seat ? "the default route" : undefined} onChange={(event) => onChange(event.target.value, original)} className="w-80 max-w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />}
-          {bound.state === "absent" && !changed && <span className="font-mono text-[12px] text-ink-3">default</span>}
-          {changed && <span className="font-mono text-[12px] text-act">was {String(original)}</span>}
-        </>}
-        {routeText && <p className={`w-full font-mono text-[12px] ${route?.down ? "text-bad" : route?.fallback ? "text-ask-ink" : "text-live"}`}>{routeText}</p>}
+            }} className="w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />
+            : <input type="text" aria-label={field.label} value={String(value)} placeholder={field.seat ? "the default route" : undefined} onChange={(event) => onChange(event.target.value, original)} className="w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />}
+        {(routeText || defaulted || changed) && <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[12px]">
+          {routeText && <span className={route?.down ? "text-bad" : route?.fallback ? "text-ask-ink" : "text-live"}>{routeText}</span>}
+          {defaulted && <span className="text-ink-3">default</span>}
+          {changed && <span className="text-act">was {String(original)}</span>}
+        </div>}
       </div>
     </div>
   );
