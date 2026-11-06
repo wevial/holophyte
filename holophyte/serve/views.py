@@ -78,7 +78,8 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
         "workers": loop_config(project).workers,
         "schema_version": schema_version,
         "active_routes": seats,
-        "route_probes": seat_probe_view(project, seats, now),
+        "route_probes": {seat: probes | probe_when(project, seat) for seat, probes
+                         in route_probe_view(project, seats, now).items()},
         "route_labels": route_labels(project),
         "workers_on_previous_build": workers_on_previous_build(project),
         "host": host_label(project, socket.gethostname()),
@@ -135,11 +136,6 @@ def route_probe_view(project, seats, now):
                           if (entry := probes.get(seat, {}).get(route)) else None)
                    for route in ("primary", "fallback")}
             for seat in seats}
-
-
-def seat_probe_view(project, seats, now):
-    return {seat: probes | probe_when(project, seat)
-            for seat, probes in route_probe_view(project, seats, now).items()}
 
 
 def probe_when(project, seat):
