@@ -6,6 +6,7 @@ import type { Holds, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
+import { LINE } from "../../src/app/components/DayLog";
 import { fakeDeps, NO_ATTENTION, settle, peersFetch } from "../harness";
 
 const BASE = "http://writer-host:7710";
@@ -125,4 +126,30 @@ test("stopped admission names its disable time and note without hold or release 
   expect(screen.getByText("stopped")).toBeTruthy();
   expect(screen.queryByRole("group", { name: "Admission" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Release" })).toBeNull();
+});
+
+test("history draws as the day log's timeline, a release after a hold naming how long it held", async () => {
+  const view = await mount({ rows: [
+    { id: 2, at: stamp(9, 12, 54), action: "release_hold", note: "Back to normal.", actor: "maintainer" },
+    { id: 1, at: stamp(9, 12, 48), action: "hold", note: "Schema bump.", actor: "operator" },
+  ] });
+  const items = [...view.container.querySelectorAll("ol > li")];
+  expect(items).toHaveLength(2);
+  for (const item of items) {
+    for (const name of LINE.split(" ")) expect(item.classList.contains(name)).toBe(true);
+    expect(item.classList.contains("border-b")).toBe(false);
+  }
+  const [release, hold] = items.map((item) => item.querySelector("[data-tone]")!);
+  expect(release.classList.contains("bg-live")).toBe(true);
+  expect(hold.classList.contains("bg-wait")).toBe(true);
+  expect(screen.getByText("released · held 6m")).toBeTruthy();
+});
+
+test("a release with no hold before it in the history names no duration", async () => {
+  await mount({ rows: [
+    { id: 2, at: stamp(9, 12, 54), action: "hold", note: "Schema bump.", actor: "operator" },
+    { id: 1, at: stamp(9, 12, 48), action: "release_hold", note: "Back to normal.", actor: "maintainer" },
+  ] });
+  expect(screen.getByText("released")).toBeTruthy();
+  expect(screen.queryByText(/released · held/)).toBeNull();
 });

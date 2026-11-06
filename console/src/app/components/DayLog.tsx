@@ -11,13 +11,14 @@ import { SettingsIcon } from "./icons";
 
 const DAY_LOG_LINES = 25;
 
-type LineTone = "live" | "bad" | "act" | "ask" | "ink-3";
+export type LineTone = "live" | "bad" | "act" | "ask" | "wait" | "ink-3";
 
-const MARK: Record<LineTone, string> = {
+export const MARK: Record<LineTone, string> = {
   live: "bg-live",
   bad: "bg-bad",
   act: "bg-act",
   ask: "bg-ask",
+  wait: "bg-wait",
   "ink-3": "bg-ink-3",
 };
 
@@ -30,7 +31,7 @@ function toneOf(entry: LedgerEntry): LineTone {
   return "ink-3";
 }
 
-const LINE = "relative before:absolute before:inset-y-0 before:-left-px before:w-px first:before:top-3 not-last:before:bg-rule last:before:bg-linear-to-b last:before:from-rule last:before:to-transparent";
+export const LINE = "relative before:absolute before:inset-y-0 before:-left-px before:w-px first:before:top-3 not-last:before:bg-rule last:before:bg-linear-to-b last:before:from-rule last:before:to-transparent";
 
 const CHIP = "border border-rule px-1.5 leading-[1.6] text-[12px] text-ink-2 hover:border-ink-3 hover:text-ink";
 
