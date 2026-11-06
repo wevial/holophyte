@@ -1062,9 +1062,9 @@ console's Findings page polls. `since` is required and is epoch
 milliseconds. `until`, optional epoch milliseconds, ends the window
 before it: runs, follow-ups and ticket defects are bounded to
 `since <= at < until`, and the body echoes it, null when absent.
-`runs` holds every run with a review round whose `ended_ms`
-is at or after `since` (and before `until`), ordered by its newest round's end, newest first,
-at most `limit` of them (default 100, capped at 500). Each carries the
+`runs` holds every run with a review round whose `ended_ms` is at or
+after `since` (and before `until`), ordered by its newest round's end,
+newest first, at most `limit` of them (default 100, capped at 500). Each carries the
 run's `run`, `ticket`, `title`, `phase`, `outcome`, `ended_ms` and
 `pr_url`; its `rounds`, every round of the run oldest first, exactly as
 `/runs/N` answers them; its `ledger`, the run's `round` and `adjudication`
@@ -1074,8 +1074,8 @@ and its `advisories`, the bot threads `/runs/N` answers as `findings`.
 
 `follow_ups` holds the FOLLOW_UP rows a merged run's fix commits left,
 every row created at or after `since` plus every row still unsettled,
-less any created at or after `until`, newest first. Each is its `id`, `run`, `ticket`, `kind` (`feature` or
-`guardrail`), `text`, `path`, `line`, `created_ms`, `settled_ms`, `state`,
+less any created at or after `until`, newest first. Each is its `id`,
+`run`, `ticket`, `kind` (`feature` or `guardrail`), `text`, `path`, `line`, `created_ms`, `settled_ms`, `state`,
 `filed_as`, `duplicate_of` and `error`. `state` is `pending` until the
 row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
 `unfiled`, read from the event that settled it; a row settled before
