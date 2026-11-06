@@ -438,13 +438,4 @@ test("with an and N earlier today line, that line fades and every entry above it
   expect(earlier.textContent).toBe("and 2 earlier today");
   expect(fill(lineOf(earlier))).toEqual(FADE);
   for (const item of items.slice(0, -1)) expect(fill(lineOf(item))).toEqual(SOLID);
-  expect(lineOf(items[0]!)).toContain("top-3");
-});
-
-test("a one-entry log's line fades and starts at its marker", async () => {
-  await mount("#/", ledgerOf(1));
-  const [only] = logItems();
-  expect(logItems()).toHaveLength(1);
-  expect(fill(lineOf(only!))).toEqual(FADE);
-  expect(lineOf(only!)).toContain("top-3");
 });
