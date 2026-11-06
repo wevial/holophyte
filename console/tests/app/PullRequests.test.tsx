@@ -659,6 +659,25 @@ test("the Queue tab reads position 1's time to merge after its label, as its row
   expect(queueRows()[0]!.textContent).toContain("merges ~10m");
 });
 
+const waited = (enqueued_ms: number | null) => queueOf({ ...vite, enqueued_ms, estimated_s: 720, checks: { done: 14, total: 17, failed: 0, runs: [] } });
+
+test("a queue row reads how long its pull request has waited between its checks and its estimate", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: waited(NOW - 23 * MINUTE) });
+  expect(queueRows()[0]!.textContent).toContain("14/17 done · in queue 23m · merges ~12m");
+});
+
+test("a queue row past an hour reads its wait in hours and padded minutes", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: waited(NOW - 65 * MINUTE) });
+  expect(queueRows()[0]!.textContent).toContain("14/17 done · in queue 1h 05m · merges ~12m");
+});
+
+test("a queue row with no enqueue time reads its checks then its estimate, with no wait and one separator", async () => {
+  await mount({ items: [], projects: ["relos", "writer"], queue: waited(null) });
+  const text = queueRows()[0]!.textContent!;
+  expect(text).toContain("14/17 done · merges ~12m");
+  expect(text).not.toContain("in queue");
+});
+
 test("the Queue tab reads Queue alone when position 1 has no estimate", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: queueOf({ ...vite, estimated_s: null }) });
   expect(tabChip()).toBe("Queue");
