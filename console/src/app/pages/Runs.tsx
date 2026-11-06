@@ -3,7 +3,7 @@ import { useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Btn } from "../components/Btn";
 import { ChevronIcon } from "../components/icons";
-import { dayRangeLabel, FilterPopover, RangeButtons, SearchField, type FilterSection } from "../components/ListFilters";
+import { dayRangeLabel, FilterChips, FilterPopover, RangeButtons, SearchField, type FilterChip, type FilterSection } from "../components/ListFilters";
 import { RunTable, RunTableHeads } from "../components/RunTable";
 import {
   DEFAULT_RANGE, DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
@@ -93,14 +93,8 @@ function useControlsShift(dock: RefObject<HTMLDivElement | null>, controls: RefO
   return shift;
 }
 
-interface Chip {
-  word: string;
-  value: string;
-  clears: Partial<typeof CLEARED>;
-}
-
-function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): Chip[] {
-  const chips: Chip[] = [];
+function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): FilterChip<Partial<typeof CLEARED>>[] {
+  const chips: FilterChip<Partial<typeof CLEARED>>[] = [];
   if (search.q) chips.push({ word: "Search", value: `“${search.q}”`, clears: { q: undefined } });
   for (const section of sections) {
     const param = section.param as keyof typeof CHIP_WORDS;
@@ -111,30 +105,6 @@ function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): C
   const started = search.from != null || search.to != null ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === search.range)?.chip;
   if (started) chips.push({ word: "Started", value: started, clears: { range: undefined, from: undefined, to: undefined } });
   return chips;
-}
-
-function Chips({ chips, onClear, onClearAll }: { chips: Chip[]; onClear: (clears: Partial<typeof CLEARED>) => void; onClearAll: () => void }) {
-  return (
-    <div data-chips className="flex flex-wrap items-center gap-2">
-      {chips.map((chip) => (
-        <span key={chip.word} className="inline-flex min-h-7 items-center gap-2 border border-rule bg-paper pr-1 pl-2.5 font-mono text-[12px] text-ink-2">
-          <span>
-            {chip.word}: <b className="font-semibold text-ink">{chip.value}</b>
-          </span>
-          <button type="button" aria-label={`Remove ${chip.word}: ${chip.value}`} onClick={() => onClear(chip.clears)}
-            className="inline-flex size-6 cursor-pointer items-center justify-center text-ink-3 hover:text-ink">
-            <svg aria-hidden="true" viewBox="0 0 10 10" width={9} height={9} stroke="currentColor" strokeWidth={1.4}>
-              <path d="M1 1l8 8M9 1l-8 8" />
-            </svg>
-          </button>
-        </span>
-      ))}
-      <button type="button" onClick={onClearAll}
-        className="ml-1 min-h-7 cursor-pointer font-sans text-[13px] font-medium text-ink underline underline-offset-2 hover:text-act">
-        Clear filters
-      </button>
-    </div>
-  );
 }
 
 export function Runs() {
@@ -230,7 +200,7 @@ export function Runs() {
                 ))}
               </select>
               </div>
-              {chips.length > 0 && <Chips chips={chips} onClear={go} onClearAll={clearAll} />}
+              {chips.length > 0 && <FilterChips chips={chips} onClear={go} onClearAll={clearAll} />}
             </div>
             <RunTableHeads sort={sort} order={order} onSort={sortBy} />
           </div>

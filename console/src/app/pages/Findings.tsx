@@ -1,9 +1,15 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CleanReviewLine, FindingRow } from "../components/FindingRow";
+import { dayLabel, dayRangeLabel, FilterChips, FilterPopover, RangeButtons, type FilterChip, type FilterSection } from "../components/ListFilters";
 import { StateDot } from "../components/StateDot";
 import { TicketDefectRow } from "../components/TicketDefectRow";
-import { byProject, useFindingsPage, type FindingRowView, type FindingsPage, type Idle, type OpenFinding } from "../findings";
+import {
+  byProject, DEFAULT_FINDINGS_RANGE, facetCounts, FINDING_STATUSES, filteredPage, SEVERITIES, useFindingsPage,
+  type FindingRowView, type FindingsPage, type FindingsSearch, type FindingStatus, type Idle, type OpenFinding,
+} from "../findings";
+import { listOf } from "../history";
+import type { FindingsRange } from "../queries";
 import { storeScope } from "../projects";
 import type { State } from "../state";
 
@@ -33,22 +39,22 @@ function openSentence(open: OpenFinding[]): string {
   return `${head} ${word(fixing)} ${plural(fixing, "is", "are")} already being fixed.`;
 }
 
-function settledSentence(page: FindingsPage): string {
-  if (page.reviews === 0) return "No reviews this week.";
-  const reviews = `${capital(word(page.reviews))} ${plural(page.reviews, "review")} this week`;
+function settledSentence(page: FindingsPage, span: string): string {
+  if (page.reviews === 0) return `No reviews ${span}.`;
+  const reviews = `${capital(word(page.reviews))} ${plural(page.reviews, "review")} ${span}`;
   if (page.findings === 0) return `No open findings. ${reviews} raised no findings.`;
   const settled = page.findings === 1 ? "and it is settled" : "and every one is settled";
   return `No open findings. ${reviews} raised ${word(page.findings)} ${plural(page.findings, "finding")}, ${settled}.`;
 }
 
-function verdictOf(page: FindingsPage): { sentence: string; state: State } {
+function verdictOf(page: FindingsPage, span: string): { sentence: string; state: State } {
   const drafts =
     page.drafts === 0
       ? ""
       : page.drafts === 1
         ? " One follow-up becomes a Backlog draft when its PR merges."
         : ` ${capital(word(page.drafts))} follow-ups become Backlog drafts when their PRs merge.`;
-  if (page.open.length === 0) return { sentence: settledSentence(page) + drafts, state: "ready_to_merge" };
+  if (page.open.length === 0) return { sentence: settledSentence(page, span) + drafts, state: "ready_to_merge" };
   const state = page.open.some((each) => each.idle != null) ? "needs_you" : "running";
   return { sentence: openSentence(page.open) + drafts, state };
 }
@@ -86,15 +92,64 @@ function Group({ label, empty, parts }: { label: string; empty: string; parts: P
   );
 }
 
+const RANGES: { value: FindingsRange; label: string; head: string; span: string }[] = [
+  { value: "7d", label: "7d", head: "last 7 days", span: "this week" },
+  { value: "30d", label: "30d", head: "last 30 days", span: "in the last 30 days" },
+  { value: "90d", label: "90d", head: "last 90 days", span: "in the last 90 days" },
+];
+
+const STATUS_LABELS: Record<FindingStatus, string> = {
+  open: "Open",
+  follow_up: "Follow-up",
+  fixed: "Fixed",
+  declined: "Declined",
+  clean: "Clean reviews",
+  defect: "Ticket defects",
+};
+
+const CLEARED = { range: undefined, from: undefined, to: undefined, severity: undefined, status: undefined } satisfies FindingsSearch;
+
+type Clears = Partial<typeof CLEARED>;
+
+/** The count line's head and the phrase naming the window in sentences. */
+function windowWords({ range, from, to }: FindingsSearch): { head: string; span: string } {
+  if (from != null && to != null) return { head: dayRangeLabel(from, to), span: `from ${dayLabel(from)} to ${dayLabel(to)}` };
+  if (from != null) return { head: dayRangeLabel(from, to), span: `since ${dayLabel(from)}` };
+  if (to != null) return { head: dayRangeLabel(from, to), span: `up to ${dayLabel(to)}` };
+  return RANGES.find((each) => each.value === (range ?? DEFAULT_FINDINGS_RANGE))!;
+}
+
+function chipsOf(search: FindingsSearch, sections: FilterSection[], head: string): FilterChip<Clears>[] {
+  const chips: FilterChip<Clears>[] = sections.flatMap((section) => {
+    const checked = listOf(search[section.param as "severity" | "status"]);
+    const labels = section.options.filter((option) => checked.includes(option.value)).map((option) => option.label);
+    return labels.length === 0 ? [] : [{ word: section.label, value: labels.join(", "), clears: { [section.param]: undefined } }];
+  });
+  if (search.range != null || search.from != null || search.to != null) chips.push({ word: "Range", value: head, clears: { range: undefined, from: undefined, to: undefined } });
+  return chips;
+}
+
 function Slash() {
   return <span className="text-ink-3"> / </span>;
 }
 
 export function Findings() {
-  const page = useFindingsPage();
+  const search = useSearch({ from: "/findings" });
+  const navigate = useNavigate();
+  const all = useFindingsPage(search);
+  const picked = { severity: listOf(search.severity), status: listOf(search.status) };
+  const page = filteredPage(all, picked);
+  const counts = facetCounts(all, picked);
   const { project } = page;
   const where = project == null ? "" : ` in ${project}`;
-  const verdict = verdictOf(page);
+  const { head, span } = windowWords(search);
+  const verdict = verdictOf(all, span);
+  const sections: FilterSection[] = [
+    { label: "Severity", param: "severity", options: SEVERITIES.map((severity) => ({ value: severity, label: severity, count: counts.severity[severity] })) },
+    { label: "Status", param: "status", options: FINDING_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status], count: counts.status[status] })) },
+  ];
+  const chips = chipsOf(search, sections, head);
+  const go = (clears: Clears) => void navigate({ to: ".", search: (previous: FindingsSearch) => ({ ...previous, ...clears }) });
   const split = <T,>(items: T[], projectOf: (item: T) => string, draw: (item: T) => ReactNode): Part[] =>
     project == null
       ? byProject(items, projectOf).map((part) => ({ project: part.project, rows: part.items.map(draw) }))
@@ -104,19 +159,19 @@ export function Findings() {
   const groups = [
     { label: "Open", empty: `Nothing open${where}.`, parts: findingRows(page.open) },
     { label: "Follow-ups", empty: `No follow-ups${where}.`, parts: findingRows(page.followUps) },
-    ...(page.defects.length === 0
+    ...(all.defects.length === 0
       ? []
       : [
           {
             label: "Ticket defects",
-            empty: "",
+            empty: `No ticket defects${where} ${span}.`,
             parts: split(page.defects, (defect) => defect.project, (defect) => <TicketDefectRow key={`${defect.base} ${defect.run} ${defect.at}`} defect={defect} />),
           },
         ]),
-    { label: "Settled this week", empty: `Nothing settled${where} this week.`, parts: findingRows(page.settled, true) },
+    { label: `Settled ${span}`, empty: `Nothing settled${where} ${span}.`, parts: findingRows(page.settled, true) },
     {
       label: "Clean reviews",
-      empty: `No clean reviews${where} this week.`,
+      empty: `No clean reviews${where} ${span}.`,
       parts: split(page.clean, (clean) => clean.project, (clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
     },
   ];
@@ -131,16 +186,23 @@ export function Findings() {
               <span>{verdict.sentence}</span>
             </p>
             <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
-              last 7 days
+              {head}
               <Slash />
-              {page.reviews} {plural(page.reviews, "review")}
+              {all.reviews} {plural(all.reviews, "review")}
               <Slash />
-              {page.findings} {plural(page.findings, "finding")}
+              {all.findings} {plural(all.findings, "finding")}
               <Slash />
               worst first
             </p>
           </>
         )}
+        <div data-controls className="flex flex-col gap-2.5 pt-1">
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2.5">
+            <RangeButtons label="Range" presets={RANGES} fallback={DEFAULT_FINDINGS_RANGE} hidden={false} />
+            <FilterPopover label="Filter findings" sections={sections} hidden={false} />
+          </div>
+          {chips.length > 0 && <FilterChips chips={chips} onClear={go} onClearAll={() => go(CLEARED)} />}
+        </div>
         {project != null && (
           <div data-scope-line className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
             <span>
@@ -148,7 +210,7 @@ export function Findings() {
             </span>
             <Link
               to="/findings"
-              search={{}}
+              search={{ ...search, project: undefined }}
               onClick={() => storeScope(null)}
               className="inline-flex min-h-8 items-center font-medium text-act underline underline-offset-2"
             >
