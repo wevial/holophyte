@@ -6,6 +6,7 @@ import { formatStamp } from "../../src/lib/format";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { dayRangeLabel } from "../../src/app/components/ListFilters";
+import { weekSince } from "../../src/app/queries";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { DEMO, MINUTE, NOW, run, SERVE, WRITER } from "./needsFleet";
@@ -81,10 +82,10 @@ const live7 = [run(7, "DEMO-7")];
 const writerDaemon: Daemon = { followUps: [followUp("WRITER-3", { kind: "feature", state: "pending" })] };
 const demoDaemon = (runs: FindingsRun[]): Daemon => ({ runs, live: live7 });
 
-async function mount(hash: string, fetchImpl: Fetch) {
+async function mount(hash: string, fetchImpl: Fetch, now = NOW) {
   window.location.hash = hash;
   const fake = fakeDeps(fetchImpl);
-  fake.clock.now = NOW;
+  fake.clock.now = now;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
       <ConsoleApp base={DEMO} pollDeps={fake.deps} />
@@ -187,6 +188,19 @@ test("with no filter, 7d is pressed and each host is asked since local midnight 
   const since = new Date(2026, 9, 9).getTime();
   for (const base of [DEMO, WRITER]) expect(asked).toContain(`${base}/findings?since=${since}&limit=500`);
   expect(findingsAsked(asked).filter((url) => url.includes("until="))).toEqual([]);
+});
+
+test("where today's midnight falls in a clock change, the default window still starts at weekSince, shared with the badge", async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Santiago";
+  try {
+    const now = new Date(2026, 8, 6, 12).getTime();
+    const { fetch, asked } = fleet({}, {});
+    await mount("#/findings", fetch, now);
+    expect([...new Set(findingsAsked(asked).map((url) => url.slice(url.indexOf("/findings"))))]).toEqual([`/findings?since=${weekSince(now)}&limit=500`]);
+  } finally {
+    process.env.TZ = zone;
+  }
 });
 
 test("range 30d asks since local midnight 29 days before today and names the last 30 days in the count, verdict and empty lines", async () => {

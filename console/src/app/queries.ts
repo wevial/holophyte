@@ -269,8 +269,12 @@ const FINDINGS_LIMIT = 500;
 /** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
  *  days before it. */
 export function weekSince(now: number): number {
+  return daysBefore(now, WINDOW_DAYS - 1);
+}
+
+function daysBefore(now: number, days: number): number {
   const day = new Date(localMidnight(now));
-  day.setDate(day.getDate() - (WINDOW_DAYS - 1));
+  day.setDate(day.getDate() - days);
   return day.getTime();
 }
 
@@ -297,7 +301,7 @@ export function findingsWindow({ range, from, to }: { range?: FindingsRange; fro
   if (from != null || to != null) {
     return { since: from == null ? 0 : midnightOf(from).getTime(), until: to == null ? null : dayAfter(midnightOf(to), 1) };
   }
-  return { since: dayAfter(new Date(localMidnight(now)), 1 - RANGE_DAYS[range ?? "7d"]), until: null };
+  return { since: daysBefore(now, RANGE_DAYS[range ?? "7d"] - 1), until: null };
 }
 
 /** Each scoped host's last good `/findings` answer in `window`, in fleet
