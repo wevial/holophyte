@@ -303,7 +303,6 @@ export interface FilterChip<C> {
   clears: C;
 }
 
-/** Each active filter as a chip whose button clears it, then Clear filters. */
 export function FilterChips<C>({ chips, onClear, onClearAll }: { chips: FilterChip<C>[]; onClear: (clears: C) => void; onClearAll: () => void }) {
   return (
     <div data-chips className="flex flex-wrap items-center gap-2">

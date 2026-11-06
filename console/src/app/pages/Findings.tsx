@@ -210,7 +210,7 @@ export function Findings() {
             </span>
             <Link
               to="/findings"
-              search={{}}
+              search={{ ...search, project: undefined }}
               onClick={() => storeScope(null)}
               className="inline-flex min-h-8 items-center font-medium text-act underline underline-offset-2"
             >

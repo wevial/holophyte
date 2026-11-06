@@ -150,6 +150,17 @@ test("a picked project scopes every group and the scope line, whose link clears 
   expect(counts()).toEqual(["02", "01", "01", "02"]);
 });
 
+test("clearing the project scope keeps the range and facet filters", async () => {
+  sessionStorage.setItem("holophyte.next.project", "writer");
+  await mount("#/findings?project=writer&range=30d&severity=must", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
+  fireEvent.click(screen.getByRole("link", { name: "Show all projects" }));
+  for (let step = 0; step < 2; step += 1) await act(settle);
+  const params = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect(params.get("project")).toBeNull();
+  expect(params.get("range")).toBe("30d");
+  expect(params.get("severity")).toBe("must");
+});
+
 test("a finding adjudicated FOLLOW_UP is counted once, as its follow-up row", async () => {
   const ledger = [{ ...pinnedRun.ledger[0]!, text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nFOLLOW_UP(feature): validate at the edge @ app.py:3" }];
   const deferred = runOf(8, "DEMO-8", [round(1, [finding("app.py", "p2")])], { ledger });

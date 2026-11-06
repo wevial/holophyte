@@ -444,7 +444,6 @@ const settledFacet = (each: TaggedFinding): Facet => ({ severity: each.row.sever
 const CLEAN: Facet = { severity: null, status: "clean" };
 const DEFECT: Facet = { severity: null, status: "defect" };
 
-/** `page` with only the rows whose severity and status `picked` keeps; an empty pick keeps every row. */
 export function filteredPage(page: FindingsPage, picked: Picked): FindingsPage {
   return {
     ...page,
@@ -456,7 +455,6 @@ export function filteredPage(page: FindingsPage, picked: Picked): FindingsPage {
   };
 }
 
-/** Each severity's rows under the picked statuses, and each status's rows under the picked severities. */
 export function facetCounts(page: FindingsPage, picked: Picked): { severity: Record<Severity, number>; status: Record<FindingStatus, number> } {
   const facets = [
     ...page.open.map(openFacet),
