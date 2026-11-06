@@ -953,6 +953,7 @@ export type TicketDefect = z.infer<typeof ticketDefectSchema>;
 
 export const findingsSchema = z.looseObject({
   since: z.int(),
+  until: z.int().nullable(),
   limit: z.int(),
   runs: z.array(findingsRunSchema),
   follow_ups: z.array(followUpRowSchema),

@@ -694,6 +694,16 @@
         "since": {
           "type": "integer"
         },
+        "until": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "limit": {
           "type": "integer"
         },
@@ -719,6 +729,7 @@
       },
       "required": [
         "since",
+        "until",
         "limit",
         "runs",
         "follow_ups",

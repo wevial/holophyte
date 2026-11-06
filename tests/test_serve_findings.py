@@ -79,6 +79,7 @@ class FindingsWindowTests(FindingsCase):
             "GET", f"/findings?since={self.now - 7 * DAY}")
 
         self.assertEqual(code, 200)
+        self.assertIsNone(body["until"])
         self.assertEqual([r["run"] for r in body["runs"]], [a])
         [run] = body["runs"]
         self.assertEqual(run["ticket"], "KO-1")
@@ -166,16 +167,82 @@ class FindingsWindowTests(FindingsCase):
                          ("KO-1", "pending text", self.now - DAY, None))
 
 
+class FindingsUntilTests(FindingsCase):
+
+    def contradicted_and_revised(self, n, at):
+        """Writes a contradiction stop on KO-n's run at `at`, then a revision
+        of KO-n a minute later."""
+        def write(run):
+            store.record_event(self.conn, run, "contradiction",
+                               "implementer: criterion C1 cannot be met",
+                               now=at)
+            store.tickets.mirror_ticket(
+                self.conn, self.project_id, linear_issue_id=f"issue-{n}",
+                linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                acceptance_criteria=[f"Given ticket {n}, then it is worked"],
+                verification_commands=["echo ok"], time_box_ms=25 * MIN,
+                body="revised", now=at + MIN)
+        return write
+
+    def follow_up_at(self, name, at):
+        def write(run):
+            store.follow_ups.record_follow_up(
+                self.conn, run, "f" * 40, "feature", True, f"{name} text",
+                fingerprint=name, now=at)
+        return write
+
+    def test_until_bounds_runs_follow_ups_and_ticket_defects_before_it(self):
+        old = self.ended_run(1, [("pass", [], self.now - 10 * DAY)],
+                             started=self.now - 10 * DAY - 30 * MIN)
+        mid = self.ended_run(2, [("pass", [], self.now - 5 * DAY)],
+                             started=self.now - 5 * DAY - 30 * MIN,
+                             write=self.follow_up_at("inside",
+                                                     self.now - 5 * DAY))
+        self.ended_run(3, [("pass", [], self.now - DAY)],
+                       started=self.now - DAY - 30 * MIN,
+                       write=self.follow_up_at("after", self.now - DAY))
+        self.ended_run(4, [], started=self.now - DAY - 30 * MIN,
+                       write=self.contradicted_and_revised(4,
+                                                           self.now - DAY))
+        self.start()
+        since, until = self.now - 11 * DAY, self.now - 3 * DAY
+
+        code, _, bounded = self.request(
+            "GET", f"/findings?since={since}&until={until}")
+        _, _, unbounded = self.request("GET", f"/findings?since={since}")
+
+        self.assertEqual(code, 200)
+        self.assertEqual(bounded["until"], until)
+        self.assertEqual([r["run"] for r in bounded["runs"]], [mid, old])
+        self.assertEqual([f["text"] for f in bounded["follow_ups"]],
+                         ["inside text"])
+        self.assertEqual(bounded["ticket_defects"], [])
+        self.assertEqual([f["text"] for f in unbounded["follow_ups"]],
+                         ["after text", "inside text"])
+        self.assertEqual([d["ticket"] for d in unbounded["ticket_defects"]],
+                         ["KO-4"])
+
+
 class FindingsWindowParameterTests(FindingsCase):
 
     def test_a_missing_or_bad_parameter_is_400_naming_it(self):
         self.start()
         for query, name in (("", "since"), ("since=abc", "since"),
-                            (f"since={self.now}&limit=0", "limit")):
+                            (f"since={self.now}&limit=0", "limit"),
+                            (f"since={self.now}&until=abc", "until")):
             with self.subTest(query=query):
                 code, _, body = self.request("GET", f"/findings?{query}")
                 self.assertEqual(code, 400)
                 self.assertIn(name, body["error"])
+
+    def test_an_until_at_or_before_since_is_400(self):
+        self.start()
+        for until in (self.now, self.now - 1):
+            with self.subTest(until=until):
+                code, _, body = self.request(
+                    "GET", f"/findings?since={self.now}&until={until}")
+                self.assertEqual(code, 400)
+                self.assertEqual(body["error"], "until must be after since")
 
     def test_no_store_is_503(self):
         self.conn.close()
