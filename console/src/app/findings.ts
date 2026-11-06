@@ -47,6 +47,7 @@ export type RowAction =
 export interface FindingRowView {
   key: string;
   severity: Severity | null;
+  category: FindingCategory;
   tag: { text: string; filled: boolean } | null;
   title: string;
   text: string;
@@ -235,6 +236,7 @@ function findingRow(project: string, base: string, run: FindingsRun, found: Entr
   return {
     key: `${base} ${run.run} ${findingKey(finding)}`,
     severity: severityOf(finding),
+    category: categoryOf(finding),
     tag: finding.criterion ? { text: finding.criterion, filled: false } : null,
     ...titled(finding.message),
     project,
@@ -275,6 +277,7 @@ function followUpRow(project: string, base: string, row: FollowUpRow, run: Findi
   return {
     key: `${base} follow-up ${row.id}`,
     severity: source == null ? null : severityOf(source),
+    category: source == null ? "uncategorized" : categoryOf(source),
     tag: { text: row.kind, filled: true },
     title,
     text,
@@ -304,6 +307,7 @@ function advisoryRow(project: string, base: string, run: FindingsRun, advisory: 
   return {
     key: `${base} ${run.run} advisory ${index}`,
     severity: null,
+    category: "uncategorized",
     tag: { text: "bot thread", filled: true },
     ...titled(advisory.message),
     project,
@@ -398,6 +402,14 @@ export function useOpenCount(hosts: Host[], now: number): number {
 export const SEVERITIES = ["must", "should", "nit"] as const satisfies readonly Severity[];
 export const FINDING_STATUSES = ["open", "follow_up", "fixed", "declined", "clean", "defect"] as const;
 export type FindingStatus = (typeof FINDING_STATUSES)[number];
+export const FINDING_CATEGORIES = ["correctness", "security", "tests", "performance", "maintainability", "docs", "uncategorized"] as const;
+export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
+
+/** A category outside the reviewers' closed list reads as uncategorized. */
+function categoryOf({ category }: Finding): FindingCategory {
+  return FINDING_CATEGORIES.includes(category as FindingCategory) ? (category as FindingCategory) : "uncategorized";
+}
+
 export const FINDINGS_RANGES = ["7d", "30d", "90d"] as const satisfies readonly FindingsRange[];
 export const DEFAULT_FINDINGS_RANGE: FindingsRange = "7d";
 
@@ -406,11 +418,12 @@ export interface FindingsSearch {
   from?: string;
   to?: string;
   severity?: string;
+  category?: string;
   status?: string;
 }
 
 export function validateFindingsSearch(search: Record<string, unknown>): FindingsSearch {
-  const { range, severity, status } = search;
+  const { range, severity, category, status } = search;
   const from = validDay(search.from);
   const to = validDay(search.to);
   return {
@@ -418,6 +431,7 @@ export function validateFindingsSearch(search: Record<string, unknown>): Finding
     from,
     to: to != null && (from == null || to >= from) ? to : undefined,
     severity: keptList(severity, SEVERITIES),
+    category: keptList(category, FINDING_CATEGORIES),
     status: keptList(status, FINDING_STATUSES),
   };
 }
@@ -427,22 +441,25 @@ const settledStatus = ({ entry }: TaggedFinding): FindingStatus => (entry.fate =
 
 interface Facet {
   severity: Severity | null;
+  category: FindingCategory | null;
   status: FindingStatus;
 }
 
 interface Picked {
   severity: string[];
+  category: string[];
   status: string[];
 }
 
 const passes = (picked: string[], value: string | null) => picked.length === 0 || (value != null && picked.includes(value));
-const kept = (picked: Picked, facet: Facet) => passes(picked.severity, facet.severity) && passes(picked.status, facet.status);
+const kept = (picked: Picked, facet: Facet, skip?: keyof Picked) =>
+  (Object.keys(picked) as (keyof Picked)[]).every((key) => key === skip || passes(picked[key], facet[key]));
 
-const openFacet = ({ row }: OpenFinding): Facet => ({ severity: row.severity, status: "open" });
-const followUpFacet = ({ row }: FollowUp): Facet => ({ severity: row.severity, status: "follow_up" });
-const settledFacet = (each: TaggedFinding): Facet => ({ severity: each.row.severity, status: settledStatus(each) });
-const CLEAN: Facet = { severity: null, status: "clean" };
-const DEFECT: Facet = { severity: null, status: "defect" };
+const openFacet = ({ row }: OpenFinding): Facet => ({ severity: row.severity, category: row.category, status: "open" });
+const followUpFacet = ({ row }: FollowUp): Facet => ({ severity: row.severity, category: row.category, status: "follow_up" });
+const settledFacet = (each: TaggedFinding): Facet => ({ severity: each.row.severity, category: each.row.category, status: settledStatus(each) });
+const CLEAN: Facet = { severity: null, category: null, status: "clean" };
+const DEFECT: Facet = { severity: null, category: null, status: "defect" };
 
 export function filteredPage(page: FindingsPage, picked: Picked): FindingsPage {
   return {
@@ -455,7 +472,11 @@ export function filteredPage(page: FindingsPage, picked: Picked): FindingsPage {
   };
 }
 
-export function facetCounts(page: FindingsPage, picked: Picked): { severity: Record<Severity, number>; status: Record<FindingStatus, number> } {
+export function facetCounts(page: FindingsPage, picked: Picked): {
+  severity: Record<Severity, number>;
+  category: Record<FindingCategory, number>;
+  status: Record<FindingStatus, number>;
+} {
   const facets = [
     ...page.open.map(openFacet),
     ...page.followUps.map(followUpFacet),
@@ -466,7 +487,8 @@ export function facetCounts(page: FindingsPage, picked: Picked): { severity: Rec
   const tally = <K extends string>(keys: readonly K[], match: (facet: Facet, key: K) => boolean) =>
     Object.fromEntries(keys.map((key) => [key, facets.filter((facet) => match(facet, key)).length])) as Record<K, number>;
   return {
-    severity: tally(SEVERITIES, (facet, key) => facet.severity === key && passes(picked.status, facet.status)),
-    status: tally(FINDING_STATUSES, (facet, key) => facet.status === key && passes(picked.severity, facet.severity)),
+    severity: tally(SEVERITIES, (facet, key) => facet.severity === key && kept(picked, facet, "severity")),
+    category: tally(FINDING_CATEGORIES, (facet, key) => facet.category === key && kept(picked, facet, "category")),
+    status: tally(FINDING_STATUSES, (facet, key) => facet.status === key && kept(picked, facet, "status")),
   };
 }

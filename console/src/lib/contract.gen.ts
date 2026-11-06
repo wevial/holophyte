@@ -477,6 +477,7 @@ export const roundFindingSchema = z.looseObject({
   path: z.string(),
   line: z.int().nullable().optional(),
   severity: z.string(),
+  category: z.string().optional(),
   criterion: z.string().nullable().optional(),
   title: z.string().optional(),
   message: z.string(),

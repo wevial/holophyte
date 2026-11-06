@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -75,6 +76,23 @@ SEVERITY_RE = re.compile(
 
 
 DEFAULT_SEVERITY = "p2"
+
+
+FINDING_CATEGORIES = ("correctness", "security", "tests", "performance",
+                      "maintainability", "docs")
+
+
+CATEGORY_TAG_RE = re.compile(
+    r"^(?P<head>\s*(?:(?:[-*+]|\d+[.)])\s+)?"
+    r"(?:\[[^\]\n]*\]\([^)\s]*\)|`[^`\s]+`|[^\s\[`]+)?[ \t]*)"
+    r"(?:[\[(]\s*(?:p0|p1|p2|nit|blocker)\s*[\])][ \t]*)?"
+    rf"\[\s*(?P<category>{'|'.join(FINDING_CATEGORIES)})\s*\](?!\()[ \t]*",
+    re.I)
+
+
+FINDING_FORMAT = (
+    "`- PATH:LINE [p0|p1|p2] [CATEGORY] what goes wrong`, the severity first, "
+    f"then one CATEGORY of: {', '.join(FINDING_CATEGORIES)}")
 
 
 # A prefix: `unparsed_path()` keys each pathless finding apart.
@@ -163,7 +181,9 @@ def parse_findings(reply):
         path, line = ((match.group(1), match.group(2)) if match
                       else (unparsed_path(message), None))
         finding = {"path": path, "severity": finding_severity(block),
-                   "message": message}
+                   "message": without_category(message)}
+        if category := finding_category(block):
+            finding["category"] = category
         if line and int(line) > 0:
             finding["line"] = int(line)
         findings.append(finding)
@@ -188,6 +208,20 @@ def finding_severity(block):
         return DEFAULT_SEVERITY
     marker = (match.group(1) or match.group(2)).lower()
     return "p0" if marker == "blocker" else marker
+
+
+def _first_line(block):
+    return block.split("\n", 1)[0]
+
+
+def finding_category(block):
+    match = CATEGORY_TAG_RE.search(_first_line(sanitize_findings(block, math.inf)))
+    return match["category"].lower() if match else None
+
+
+def without_category(message):
+    first = _first_line(message)
+    return CATEGORY_TAG_RE.sub(r"\g<head>", first, count=1) + message[len(first):]
 
 
 # The separator is loose; the status word is not: only `met` clears the gate.
@@ -281,6 +315,7 @@ _WITNESS_RESOLVER = r"""
 import contextlib
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 

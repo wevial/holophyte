@@ -67,6 +67,14 @@ class PassOneTests(unittest.TestCase):
         self.assertIn('    EVIDENCE: reproduced \u2014 input: load("empty.json"); '
                       "observed: TypeError", consolidate.fix_list(merged))
 
+    def test_merged_duplicates_keep_the_first_ones_category(self):
+        primary = parse_findings("- src/app.py:3 [p2] [tests] load() returns None\n")
+        found = adversary.parse("- src/app.py:3 [p1] [docs] load() returns None\n"
+                                "EVIDENCE: traced\nADVERSARY: DONE")
+        [item] = consolidate.exact(consolidate.items(primary, found))
+        self.assertEqual((item["found_by"], item["category"]),
+                         (["primary", "adversary"], "tests"))
+
 
 def pass_one():
     return consolidate.items(
@@ -99,6 +107,16 @@ class PassTwoTests(unittest.TestCase):
                       "    src/app.py:9: the caller indexes a None",
                       consolidate.fix_list(final))
         self.assertEqual(record["pass2"], "merged")
+
+    def test_a_consolidator_merge_keeps_the_first_items_category_either_way(self):
+        primary = parse_findings("- src/app.py:3 [p1] [tests] load() is untested\n"
+                                 "- src/app.py:9 [p1] [docs] no test covers load()\n")
+        for reply in ("MERGE: F1 INTO F2 — same gap\nCONSOLIDATED",
+                      "MERGE: F2 INTO F1 — same gap\nCONSOLIDATED"):
+            with self.subTest(reply=reply.splitlines()[0]):
+                merged = consolidate.exact(consolidate.items(primary, []))
+                [item], _ = consolidate.apply(merged, reply)
+                self.assertEqual(item["category"], "tests")
 
     def test_unknown_and_self_merges_are_set_aside_and_nothing_weakens(self):
         before = pass_one()

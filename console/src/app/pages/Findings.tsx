@@ -5,7 +5,7 @@ import { dayLabel, dayRangeLabel, FilterChips, FilterPopover, RangeButtons, type
 import { StateDot } from "../components/StateDot";
 import { TicketDefectRow } from "../components/TicketDefectRow";
 import {
-  byProject, DEFAULT_FINDINGS_RANGE, facetCounts, FINDING_STATUSES, filteredPage, SEVERITIES, useFindingsPage,
+  byProject, DEFAULT_FINDINGS_RANGE, facetCounts, FINDING_CATEGORIES, FINDING_STATUSES, filteredPage, SEVERITIES, useFindingsPage,
   type FindingRowView, type FindingsPage, type FindingsSearch, type FindingStatus, type Idle, type OpenFinding,
 } from "../findings";
 import { listOf } from "../history";
@@ -107,7 +107,7 @@ const STATUS_LABELS: Record<FindingStatus, string> = {
   defect: "Ticket defects",
 };
 
-const CLEARED = { range: undefined, from: undefined, to: undefined, severity: undefined, status: undefined } satisfies FindingsSearch;
+const CLEARED = { range: undefined, from: undefined, to: undefined, severity: undefined, category: undefined, status: undefined } satisfies FindingsSearch;
 
 type Clears = Partial<typeof CLEARED>;
 
@@ -121,7 +121,7 @@ function windowWords({ range, from, to }: FindingsSearch): { head: string; span:
 
 function chipsOf(search: FindingsSearch, sections: FilterSection[], head: string): FilterChip<Clears>[] {
   const chips: FilterChip<Clears>[] = sections.flatMap((section) => {
-    const checked = listOf(search[section.param as "severity" | "status"]);
+    const checked = listOf(search[section.param as "severity" | "category" | "status"]);
     const labels = section.options.filter((option) => checked.includes(option.value)).map((option) => option.label);
     return labels.length === 0 ? [] : [{ word: section.label, value: labels.join(", "), clears: { [section.param]: undefined } }];
   });
@@ -137,7 +137,7 @@ export function Findings() {
   const search = useSearch({ from: "/findings" });
   const navigate = useNavigate();
   const all = useFindingsPage(search);
-  const picked = { severity: listOf(search.severity), status: listOf(search.status) };
+  const picked = { severity: listOf(search.severity), category: listOf(search.category), status: listOf(search.status) };
   const page = filteredPage(all, picked);
   const counts = facetCounts(all, picked);
   const { project } = page;
@@ -146,6 +146,7 @@ export function Findings() {
   const verdict = verdictOf(all, span);
   const sections: FilterSection[] = [
     { label: "Severity", param: "severity", options: SEVERITIES.map((severity) => ({ value: severity, label: severity, count: counts.severity[severity] })) },
+    { label: "Category", param: "category", options: FINDING_CATEGORIES.map((category) => ({ value: category, label: category === "uncategorized" ? "Uncategorized" : category, count: counts.category[category] })) },
     { label: "Status", param: "status", options: FINDING_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status], count: counts.status[status] })) },
   ];
   const chips = chipsOf(search, sections, head);

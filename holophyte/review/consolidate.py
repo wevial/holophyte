@@ -60,7 +60,8 @@ def _item(finding, found_by, evidence):
             "evidence": evidence if evidence in EVIDENCE else "concern",
             "found_by": [found_by], "messages": [_body(finding)],
             "places": [(finding["path"], finding.get("line") or None)],
-            "notes": [note] if (note := VERDICT_RE.sub("", _note(finding))) else []}
+            "notes": [note] if (note := VERDICT_RE.sub("", _note(finding))) else [],
+            "category": finding.get("category")}
 
 
 def items(primary, adversary):
@@ -86,6 +87,7 @@ def _absorb(into, other, messages):
                         if who in into["found_by"] + other["found_by"]]
     into["notes"] = into["notes"] + [note for note in other["notes"]
                                      if note not in into["notes"]]
+    into["category"] = into["category"] or other["category"]
     if messages:
         into["messages"] = into["messages"] + other["messages"]
         into["places"] = into["places"] + other["places"]
@@ -213,6 +215,10 @@ def apply(merged, reply):
         elif ordering or line.upper().startswith("MERGE"):
             ignored.append(line)
     kept = [name for name in ids if name not in into]
+    for name in kept:
+        copies[name]["category"] = next(
+            (item["category"] for other, item in zip(ids, merged)
+             if _root(into, other) == name and item["category"]), None)
     final = [name for name in order or () if name in kept]
     final += [name for name in kept if name not in final]
     return [copies[name] for name in final], {
@@ -279,7 +285,8 @@ def _recorded(item, rnd):
     return {"path": item["path"], "line": item["line"],
             "severity": item["severity"], "evidence": item["evidence"],
             "found_by": item["found_by"], "message": "\n".join(_texts(item)),
-            "notes": item["notes"], "round": rnd}
+            "notes": item["notes"], "round": rnd,
+            **({"category": item["category"]} if item["category"] else {})}
 
 
 def _events(conn, run_id, kind):

@@ -28,6 +28,7 @@ class RoundFinding(TypedDict):
     path: str
     line: NotRequired[int | None]
     severity: str
+    category: NotRequired[str]
     criterion: NotRequired[str | None]
     title: NotRequired[str]
     message: str

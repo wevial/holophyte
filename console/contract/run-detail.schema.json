@@ -347,6 +347,9 @@
         "severity": {
           "type": "string"
         },
+        "category": {
+          "type": "string"
+        },
         "criterion": {
           "anyOf": [
             {
