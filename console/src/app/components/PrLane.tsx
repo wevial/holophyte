@@ -169,10 +169,10 @@ function QueueRow({ entry, now, host, project }: { entry: MergeQueueEntry; now: 
           <span data-queue-state className={`font-sans text-[14px] font-semibold leading-[1.3] ${building ? TONE_TEXT.wait : "text-ink-2"}`}>
             {building ? "checks running" : "queued"}
           </span>
-          <span className="whitespace-nowrap">
-            {entry.checks.done}/{entry.checks.total} done
-            {entry.enqueued_ms != null && ` · in queue ${formatSettled(now - entry.enqueued_ms)}`} · merges {mergesIn(entry.estimated_s)}
+          <span data-queue-checks className="whitespace-nowrap">
+            {entry.checks.done}/{entry.checks.total} done · merges {mergesIn(entry.estimated_s)}
           </span>
+          {entry.enqueued_ms != null && <span data-queue-wait className="whitespace-nowrap">in queue {formatSettled(now - entry.enqueued_ms)}</span>}
         </span>
       </div>
       {open && (
