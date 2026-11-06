@@ -195,7 +195,7 @@ export function Overview() {
           </div>
         </div>
       </div>
-      <div className="min-w-0 max-w-[880px] min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:self-start min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:col-start-3 min-[1600px]:row-span-2 min-[1600px]:row-start-1 min-[1600px]:w-[330px]">
+      <div className="hidden min-w-0 min-[1200px]:block min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:self-start min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:col-start-3 min-[1600px]:row-span-2 min-[1600px]:row-start-1 min-[1600px]:w-[330px]">
         <DayLog entries={log.entries} />
       </div>
     </div>

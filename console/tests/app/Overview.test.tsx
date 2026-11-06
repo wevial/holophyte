@@ -321,10 +321,17 @@ test("every grid, track and span class is behind 1600 px, so below it the Overvi
   }
   expect(classes(root)).toEqual(expect.arrayContaining(["flex", "flex-col", "min-[1200px]:flex-row"]));
   expect(classes(root.firstElementChild)).toEqual(expect.arrayContaining(["flex", "max-w-[880px]", WIDE + "contents"]));
-  expect(classes(dayLog().parentElement)).toEqual(expect.arrayContaining(["max-w-[880px]", "min-[1200px]:flex-[0_0_290px]"]));
+  expect(classes(dayLog().parentElement)).toEqual(expect.arrayContaining(["min-[1200px]:flex-[0_0_290px]"]));
   for (const element of [dayLog(), dayLog().parentElement!]) {
     expect(classes(element).filter((name) => name.endsWith("sticky"))).toEqual(element === dayLog() ? [] : [WIDE + "sticky"]);
   }
+});
+
+const DISPLAY = /^(?:.+:)?(?:hidden|block|inline|inline-block|flex|inline-flex|grid|inline-grid|contents|flow-root|table|list-item)$/;
+
+test("below 1200 px Today's log is not displayed, and from 1200 px its wrapper is a block", async () => {
+  await mount("#/", busy);
+  expect(classes(dayLog().parentElement).filter((name) => DISPLAY.test(name))).toEqual(["hidden", "min-[1200px]:block"]);
 });
 
 test("from 1600 px each column is the ov-col container and a Running row narrows under 640 px of it", async () => {
