@@ -238,7 +238,7 @@ export function FilterPopover({ label, sections, hidden }: { label: string; sect
 
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
-function dayLabel(day: string): string {
+export function dayLabel(day: string): string {
   return DAY_LABEL.format(dayStart(day));
 }
 
@@ -293,6 +293,36 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+export interface FilterChip<C> {
+  word: string;
+  value: string;
+  clears: C;
+}
+
+export function FilterChips<C>({ chips, onClear, onClearAll }: { chips: FilterChip<C>[]; onClear: (clears: C) => void; onClearAll: () => void }) {
+  return (
+    <div data-chips className="flex flex-wrap items-center gap-2">
+      {chips.map((chip) => (
+        <span key={chip.word} className="inline-flex min-h-7 items-center gap-2 border border-rule bg-paper pr-1 pl-2.5 font-mono text-[12px] text-ink-2">
+          <span>
+            {chip.word}: <b className="font-semibold text-ink">{chip.value}</b>
+          </span>
+          <button type="button" aria-label={`Remove ${chip.word}: ${chip.value}`} onClick={() => onClear(chip.clears)}
+            className="inline-flex size-6 cursor-pointer items-center justify-center text-ink-3 hover:text-ink">
+            <svg aria-hidden="true" viewBox="0 0 10 10" width={9} height={9} stroke="currentColor" strokeWidth={1.4}>
+              <path d="M1 1l8 8M9 1l-8 8" />
+            </svg>
+          </button>
+        </span>
+      ))}
+      <button type="button" onClick={onClearAll}
+        className="ml-1 min-h-7 cursor-pointer font-sans text-[13px] font-medium text-ink underline underline-offset-2 hover:text-act">
+        Clear filters
+      </button>
     </div>
   );
 }

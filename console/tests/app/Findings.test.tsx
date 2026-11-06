@@ -5,6 +5,8 @@ import type { Findings, FindingsRun, FollowUpRow, Round, Status, TicketDefect } 
 import { formatStamp } from "../../src/lib/format";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
+import { dayRangeLabel } from "../../src/app/components/ListFilters";
+import { weekSince } from "../../src/app/queries";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { DEMO, MINUTE, NOW, run, SERVE, WRITER } from "./needsFleet";
@@ -80,10 +82,10 @@ const live7 = [run(7, "DEMO-7")];
 const writerDaemon: Daemon = { followUps: [followUp("WRITER-3", { kind: "feature", state: "pending" })] };
 const demoDaemon = (runs: FindingsRun[]): Daemon => ({ runs, live: live7 });
 
-async function mount(hash: string, fetchImpl: Fetch) {
+async function mount(hash: string, fetchImpl: Fetch, now = NOW) {
   window.location.hash = hash;
   const fake = fakeDeps(fetchImpl);
-  fake.clock.now = NOW;
+  fake.clock.now = now;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
       <ConsoleApp base={DEMO} pollDeps={fake.deps} />
@@ -148,6 +150,17 @@ test("a picked project scopes every group and the scope line, whose link clears 
   expect(counts()).toEqual(["02", "01", "01", "02"]);
 });
 
+test("clearing the project scope keeps the range and facet filters", async () => {
+  sessionStorage.setItem("holophyte.next.project", "writer");
+  await mount("#/findings?project=writer&range=30d&severity=must", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
+  fireEvent.click(screen.getByRole("link", { name: "Show all projects" }));
+  for (let step = 0; step < 2; step += 1) await act(settle);
+  const params = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect(params.get("project")).toBeNull();
+  expect(params.get("range")).toBe("30d");
+  expect(params.get("severity")).toBe("must");
+});
+
 test("a finding adjudicated FOLLOW_UP is counted once, as its follow-up row", async () => {
   const ledger = [{ ...pinnedRun.ledger[0]!, text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nFOLLOW_UP(feature): validate at the edge @ app.py:3" }];
   const deferred = runOf(8, "DEMO-8", [round(1, [finding("app.py", "p2")])], { ledger });
@@ -167,11 +180,111 @@ test("a clean week reads as no open findings, and a daemon without the route lea
   expect(counts()).toEqual(["02", null, "01", "02"]);
 });
 
-test("each host is asked for its findings since local midnight six days before today", async () => {
+const pressed = () => within(screen.getByRole("group", { name: "Range" })).getAllByRole("button", { pressed: true }).map((button) => button.textContent);
+const findingsAsked = (asked: string[]) => asked.filter((url) => url.includes("/findings?"));
+
+async function choose(...names: string[]) {
+  fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+  const dialog = screen.getByRole("dialog", { name: "Filter findings" });
+  for (const name of names) {
+    fireEvent.click(within(dialog).getByRole("checkbox", { name }));
+    for (let step = 0; step < 2; step += 1) await act(settle);
+  }
+}
+
+test("with no filter, 7d is pressed and each host is asked since local midnight six days before today, with no until", async () => {
   const { fetch, asked } = fleet({}, {});
   await mount("#/findings", fetch);
+  expect(pressed()).toEqual(["7d"]);
   const since = new Date(2026, 9, 9).getTime();
-  for (const base of [DEMO, WRITER]) expect(asked).toContain(`${base}/findings?since=${since}`);
+  for (const base of [DEMO, WRITER]) expect(asked).toContain(`${base}/findings?since=${since}&limit=500`);
+  expect(findingsAsked(asked).filter((url) => url.includes("until="))).toEqual([]);
+});
+
+test("where today's midnight falls in a clock change, range 30d still starts at local midnight 29 days before today", async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Santiago";
+  try {
+    const { fetch, asked } = fleet({}, {});
+    await mount("#/findings?range=30d", fetch, new Date(2026, 8, 6, 12).getTime());
+    expect(asked).toContain(`${DEMO}/findings?since=${new Date(2026, 7, 8).getTime()}&limit=500`);
+  } finally {
+    process.env.TZ = zone;
+  }
+});
+
+test("where today's midnight falls in a clock change, the default window still starts at weekSince, shared with the badge", async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Santiago";
+  try {
+    const now = new Date(2026, 8, 6, 12).getTime();
+    const { fetch, asked } = fleet({}, {});
+    await mount("#/findings", fetch, now);
+    expect([...new Set(findingsAsked(asked).map((url) => url.slice(url.indexOf("/findings"))))]).toEqual([`/findings?since=${weekSince(now)}&limit=500`]);
+  } finally {
+    process.env.TZ = zone;
+  }
+});
+
+test("range 30d asks since local midnight 29 days before today and names the last 30 days in the count, verdict and empty lines", async () => {
+  const { fetch, asked } = fleet({}, {});
+  await mount("#/findings?range=30d", fetch);
+  expect(pressed()).toEqual(["30d"]);
+  expect(asked).toContain(`${DEMO}/findings?since=${new Date(2026, 8, 16).getTime()}&limit=500`);
+  expect(countLine()).toStartWith("last 30 days / ");
+  expect(verdict()).toBe("No reviews in the last 30 days.");
+  const settled = "Settled in the last 30 days";
+  expect([settled, "Clean reviews"].map(emptyOf)).toEqual(["Nothing settled in the last 30 days.", "No clean reviews in the last 30 days."]);
+});
+
+test("a custom range from 1 to 15 October asks since midnight 1 October until midnight 16 October and heads the count line with its label", async () => {
+  const { fetch, asked } = fleet({}, {});
+  await mount("#/findings?from=2026-10-01&to=2026-10-15", fetch);
+  const since = new Date(2026, 9, 1).getTime();
+  const until = new Date(2026, 9, 16).getTime();
+  expect(asked).toContain(`${DEMO}/findings?since=${since}&limit=500&until=${until}`);
+  expect(countLine()).toStartWith(`${dayRangeLabel("2026-10-01", "2026-10-15")} / `);
+});
+
+const openTitles = () => [...group("Open").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);
+
+test("choosing severities must and should leaves only those open rows, counted 02", async () => {
+  const runs = [
+    runOf(1, "DEMO-1", [round(1, [finding("must.py", "p1")])]),
+    runOf(2, "DEMO-2", [round(1, [finding("should.py", "p2")])]),
+    runOf(3, "DEMO-3", [round(1, [finding("nit.py", "nit")])]),
+  ];
+  await mount("#/findings", fleet({ runs, live: live7 }, {}).fetch);
+  expect(openTitles()).toHaveLength(3);
+  await choose("must", "should");
+  expect(openTitles()).toEqual(["must.py needs care", "should.py needs care"]);
+  expect(group("Open").querySelector("[data-count]")!.textContent).toBe("02");
+});
+
+test("choosing status Fixed alone leaves Settled with only the fixed row and every other group empty", async () => {
+  const ledger = [{ ...pinnedRun.ledger[0]!, text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nDECLINE cli.py:3 — the caller validates it" }];
+  const declined = runOf(12, "DEMO-12", [round(1, [finding("cli.py", "p2")])], { ledger });
+  await mount("#/findings", fleet(demoDaemon([demo7, demo5, declined]), writerDaemon).fetch);
+  expect(emptyOf("Open")).toBeNull();
+  const settled = () => [...group("Settled this week").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);
+  expect(settled()).toEqual(["db.py needs care", "cli.py needs care"]);
+  await choose("Fixed");
+  expect(settled()).toEqual(["db.py needs care"]);
+  expect(["Open", "Follow-ups", "Clean reviews"].map(emptyOf)).toEqual(["Nothing open.", "No follow-ups.", "No clean reviews this week."]);
+});
+
+test("a linked range and severity press 30d, show only must rows under a Severity chip, and clearing the chip drops severity from the URL", async () => {
+  const runs = [runOf(1, "DEMO-1", [round(1, [finding("must.py", "p0")])]), runOf(2, "DEMO-2", [round(1, [finding("should.py", "p2")])])];
+  await mount("#/findings?range=30d&severity=must", fleet({ runs, live: live7 }, writerDaemon).fetch);
+  expect(pressed()).toEqual(["30d"]);
+  expect(openTitles()).toEqual(["must.py needs care"]);
+  expect(emptyOf("Follow-ups")).toBe("No follow-ups.");
+  const chip = screen.getByRole("button", { name: "Remove Severity: must" });
+  fireEvent.click(chip);
+  for (let step = 0; step < 2; step += 1) await act(settle);
+  expect(window.location.hash).toContain("range=30d");
+  expect(window.location.hash).not.toContain("severity");
+  expect(openTitles()).toEqual(["must.py needs care", "should.py needs care"]);
 });
 
 const subheadings = (label: string) => [...group(label).querySelectorAll("h3")].map((heading) => heading.textContent);

@@ -170,7 +170,7 @@ test("the new console's root names the daemon's host once its first poll answers
     [`${ORIGIN}/runs/4/merge`]: 1,
     [`${ORIGIN}/scouts`]: 1,
     [`${ORIGIN}/shipped?limit=50`]: 1,
-    [`${ORIGIN}/findings?since=${weekSince(0)}`]: 1,
+    [`${ORIGIN}/findings?since=${weekSince(0)}&limit=500`]: 1,
   });
 });
 
