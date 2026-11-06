@@ -42,6 +42,15 @@ class ParsedCategoryTests(unittest.TestCase):
         self.assertNotIn("category", findings[1])
         self.assertIn("[style]", findings[1]["message"])
 
+    def test_a_listed_word_in_brackets_later_in_the_sentence_is_not_the_tag(self):
+        reply = ("- a/one.py:1 [p1] the [docs] section is stale\n"
+                 "- a/two.py:2 [p1] `x[tests]` indexes past the end\n")
+        findings = parse_findings(reply)
+        self.assertEqual([finding.get("category") for finding in findings],
+                         [None, None])
+        self.assertEqual([finding["message"] for finding in findings],
+                         reply.splitlines())
+
 
 class BriefTests(unittest.TestCase):
     def setUp(self):

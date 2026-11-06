@@ -82,8 +82,10 @@ FINDING_CATEGORIES = ("correctness", "security", "tests", "performance",
 
 
 CATEGORY_TAG_RE = re.compile(
+    r"^(?P<head>(?:[^\[`\n]|\[[^\]\n]*\]\([^)\s]*\))*?)"
     r"(?:[\[(]\s*(?:p0|p1|p2|nit|blocker)\s*[\])][ \t]*)?"
-    rf"\[\s*({'|'.join(FINDING_CATEGORIES)})\s*\](?!\()[ \t]*", re.I)
+    rf"\[\s*(?P<category>{'|'.join(FINDING_CATEGORIES)})\s*\](?!\()[ \t]*",
+    re.I)
 
 
 FINDING_FORMAT = (
@@ -212,12 +214,12 @@ def _first_line(block):
 
 def finding_category(block):
     match = CATEGORY_TAG_RE.search(_first_line(block))
-    return match.group(1).lower() if match else None
+    return match["category"].lower() if match else None
 
 
 def without_category(message):
     first = _first_line(message)
-    return CATEGORY_TAG_RE.sub("", first, count=1) + message[len(first):]
+    return CATEGORY_TAG_RE.sub(r"\g<head>", first, count=1) + message[len(first):]
 
 
 # The separator is loose; the status word is not: only `met` clears the gate.
