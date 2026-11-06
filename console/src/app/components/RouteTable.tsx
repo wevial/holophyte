@@ -7,7 +7,8 @@ function probeText(route: AgentRoute, stale: boolean) {
     ? `unknown · ${probe.ok ? "ok" : "failed"} at ${formatClock(probe.at_ms)}${probe.ok ? " · not probed since" : ""}`
     : "unknown · not probed yet";
   if (route.down) return "down · its fallback failed too";
-  if (!probe) return "not probed yet";
+  if (!probe) return route.probeWhen === "inherits" ? `uses ${route.inherits ?? "another seat's"} route`
+    : route.probeWhen === "first_use" ? "probed on first use" : "not probed yet";
   return probe.ok ? `ok · ${age(probe.age_ms)} ago · ${(probe.duration_ms / 1000).toFixed(1)}s`
     : `down · failed ${age(probe.age_ms)} ago${probe.why ? ` · ${probe.why}` : ""}`;
 }
@@ -27,13 +28,14 @@ export function RouteTable({ host }: { host: HostCard }) {
         <tbody className="block min-[700px]:table-row-group">
           {host.routes.map((route) => {
             const failed = route.probe?.ok === false;
-            const [tone, glyph] = host.down || (!route.probe && !route.down) ? ["text-ink-3", "◷"] : failed || route.down ? ["text-bad", "×"] : ["text-live", "✓"];
+            const deferred = !host.down && !route.probe && !route.down && (route.probeWhen === "inherits" || route.probeWhen === "first_use");
+            const [tone, glyph] = deferred ? ["text-ink-3", ""] : host.down || (!route.probe && !route.down) ? ["text-ink-3", "◷"] : failed || route.down ? ["text-bad", "×"] : ["text-live", "✓"];
             const cell = "block min-w-0 px-3 py-2 [overflow-wrap:anywhere] min-[700px]:table-cell";
             return (
               <tr key={`${route.seat}:${route.label}`} className={`mb-3 block border-l-2 min-[700px]:table-row ${failed ? "border-bad bg-bad-wash" : "border-transparent"}`}>
                 <th scope="row" className={`${cell} text-left font-normal text-ink`}>{route.seat}{route.projects.length < host.projects.length ? ` · ${route.projects.join(", ")}` : ""}</th>
                 <td className={`${cell} text-ink-2`}>{route.label}</td>
-                <td className={`${cell} text-ink-2`}><span aria-hidden="true" className={tone}>{glyph} </span><span>{probeText(route, host.down)}</span></td>
+                <td className={`${cell} ${deferred ? "text-ink-3" : "text-ink-2"}`}>{glyph && <span aria-hidden="true" className={tone}>{glyph} </span>}<span>{probeText(route, host.down)}</span></td>
                 <td className={`${cell} text-ink-2`}>{route.fallbacks.map((fallback) => <div key={fallback.label}>
                   {fallback.label}{fallback.inUse && <span className="ml-2 inline-block border border-wait px-1.5 py-0.5 text-[11px] text-wait">in use · recorded</span>}
                 </div>)}</td>

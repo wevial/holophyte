@@ -14,6 +14,7 @@ from holophyte.config.reader import (
     REVIEW_MODES,
     REVIEW_ROUTE_KEYS,
     REVIEW_TIER_KEYS,
+    SHA_ROLES,
     TURN_CAP_MIN,
     TURN_QUIET_SEC,
     config_table,
@@ -61,6 +62,11 @@ def agent_command(project, role, goal, *, fallback=False, entry=0):
             f"[holo2] {project.config_path}: [agents] {key}"
             " is empty")
     return argv + [goal]
+
+
+def runs_implementer_route(project, role, *, fallback=False):
+    return (role not in ("implement", *SHA_ROLES)
+            and agent_command(project, role, "", fallback=fallback) is None)
 
 
 def fallback_entries(project, role):

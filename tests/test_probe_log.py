@@ -138,8 +138,9 @@ class ProbeLogTests(ServeTestCase):
         self.assertFalse(served["ok"])
         self.assertEqual(served["why"], "exit 1")
         self.assertEqual(served["age_ms"], status["now"] - failed["at_ms"])
-        self.assertEqual(status["route_probes"]["reviewer"],
-                         {"primary": None, "fallback": None})
+        reviewer = status["route_probes"]["reviewer"]
+        self.assertEqual((reviewer["primary"], reviewer["fallback"]),
+                         (None, None))
         self.assertEqual(status["route_labels"]["implementer_fallback"],
                          "backup-agent spare")
         self.assertIsNone(status["route_labels"]["adjudicator_fallback"])
@@ -195,4 +196,5 @@ class ProbeLogTests(ServeTestCase):
                 self.assertEqual(set(status["route_probes"]),
                                  set(status["active_routes"]))
                 for seat in status["route_probes"].values():
-                    self.assertEqual(seat, {"primary": None, "fallback": None})
+                    self.assertEqual((seat["primary"], seat["fallback"]),
+                                     (None, None))

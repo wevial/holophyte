@@ -200,6 +200,11 @@ commands and output tails are never recorded. Probes run at loop start
 and before a fallback is used, not on a timer. The loop keeps the newest
 entry per seat and route in `route-probes.json` under the project’s
 `holo_dir`, using a lock and atomic replacement.
+Each seat also carries `probe_when`, saying when its route is probed:
+`start` at loop start; `inherits` for an unset `writer` or `trimmer`, which
+runs the seat named by `inherits` (`implementer`) and is not probed apart
+from it; `first_use` for an implementer profile, probed by the claim that
+asks for it. An older daemon leaves both out.
 `active_routes` holds one entry per seat
 (`implementer`, `reviewer`, `adjudicator`, `writer`, `trimmer`) naming what the seat
 runs now: `command` is the executable alone, never its arguments, null for

@@ -23,6 +23,7 @@ from holophyte.config.agent_settings import (
     fallback_entries,
     review_route,
     review_tier,
+    runs_implementer_route,
 )
 from holophyte.config.reader import (
     ADVERSARY_CLAUDE,
@@ -151,6 +152,8 @@ def launch_failure_reason(error):
 
 
 def probe_route(project, role, fallback, timeout, entry):
+    if runs_implementer_route(project, role, fallback=fallback):
+        return None
     goal = REVIEW_PROBE_GOAL if role in SHA_ROLES else PROBE_GOAL
     cmd = agent_command(project, role, goal, fallback=fallback, entry=entry)
     default = cmd is None
@@ -162,8 +165,7 @@ def probe_route(project, role, fallback, timeout, entry):
         cmd = [DEFAULT_IMPLEMENTER, "-p", PROBE_GOAL, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif default:
-        pair = (review_route(project, fallback=fallback)
-                if role in SHA_ROLES else None)
+        pair = review_route(project, fallback=fallback)
         if pair is None or not (fallback or container_fallback_profile(project, role)
                                 or agent_command(project, role, "", fallback=True)):
             return None

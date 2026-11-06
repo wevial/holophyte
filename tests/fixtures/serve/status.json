@@ -161,27 +161,35 @@
   "route_probes": {
     "implementer": {
       "primary": null,
-      "fallback": null
+      "fallback": null,
+      "probe_when": "start"
     },
     "reviewer": {
       "primary": null,
-      "fallback": null
+      "fallback": null,
+      "probe_when": "start"
     },
     "adjudicator": {
       "primary": null,
-      "fallback": null
+      "fallback": null,
+      "probe_when": "start"
     },
     "writer": {
       "primary": null,
-      "fallback": null
+      "fallback": null,
+      "probe_when": "inherits",
+      "inherits": "implementer"
     },
     "trimmer": {
       "primary": null,
-      "fallback": null
+      "fallback": null,
+      "probe_when": "inherits",
+      "inherits": "implementer"
     },
     "implementer_profiles.sonnet": {
       "primary": null,
-      "fallback": null
+      "fallback": null,
+      "probe_when": "first_use"
     }
   }
 }

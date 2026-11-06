@@ -9,10 +9,12 @@ from urllib.parse import parse_qs
 
 import store.criteria
 import store.read
+from holophyte.agents.harness import PROFILES_KEY
 from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.report import host_label, toil_status
-from holophyte.config.agent_settings import budget_scale
+from holophyte.config.agent_settings import budget_scale, runs_implementer_route
 from holophyte.config.config_tables import board_mode, loop_config, sweep_config
+from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.config.serve_settings import console_colour, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
@@ -76,7 +78,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
         "workers": loop_config(project).workers,
         "schema_version": schema_version,
         "active_routes": seats,
-        "route_probes": route_probe_view(project, seats, now),
+        "route_probes": seat_probe_view(project, seats, now),
         "route_labels": route_labels(project),
         "workers_on_previous_build": workers_on_previous_build(project),
         "host": host_label(project, socket.gethostname()),
@@ -133,6 +135,20 @@ def route_probe_view(project, seats, now):
                           if (entry := probes.get(seat, {}).get(route)) else None)
                    for route in ("primary", "fallback")}
             for seat in seats}
+
+
+def seat_probe_view(project, seats, now):
+    return {seat: probes | probe_when(project, seat)
+            for seat, probes in route_probe_view(project, seats, now).items()}
+
+
+def probe_when(project, seat):
+    if seat.startswith(PROFILES_KEY + "."):
+        return {"probe_when": "first_use"}
+    role = {key: role for role, key in AGENT_CONFIG_KEYS.items()}[seat]
+    if runs_implementer_route(project, role):
+        return {"probe_when": "inherits", "inherits": "implementer"}
+    return {"probe_when": "start"}
 
 
 def supervisor_view(project, beat, now, knobs, stale_ms=None):
