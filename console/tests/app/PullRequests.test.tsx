@@ -664,7 +664,7 @@ const waited = (enqueued_ms: number | null) => queueOf({ ...vite, enqueued_ms, e
 const checksLine = () => queueRows()[0]!.querySelector("[data-queue-checks]")!.textContent;
 const waitLine = () => queueRows()[0]!.querySelector("[data-queue-wait]");
 
-test("a queue row reads its checks then its estimate, and how long its pull request has waited on a line of its own", async () => {
+test("a queue row reads its checks then its estimate, and how long its pull request has waited in a separate element", async () => {
   await mount({ items: [], projects: ["relos", "writer"], queue: waited(NOW - 23 * MINUTE) });
   expect(checksLine()).toBe("14/17 done · merges ~12m");
   expect(waitLine()!.textContent).toBe("in queue 23m");
