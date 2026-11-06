@@ -273,6 +273,24 @@ test("choosing status Fixed alone leaves Settled with only the fixed row and eve
   expect(["Open", "Follow-ups", "Clean reviews"].map(emptyOf)).toEqual(["Nothing open.", "No follow-ups.", "No clean reviews this week."]);
 });
 
+test("choosing Category security shows only the security finding, and Uncategorized only the untagged one", async () => {
+  const runs = [
+    runOf(1, "DEMO-1", [round(1, [{ ...finding("auth.py", "p1"), category: "security" }])]),
+    runOf(2, "DEMO-2", [round(1, [finding("plain.py", "p1")])]),
+  ];
+  await mount("#/findings", fleet({ runs, live: live7 }, {}).fetch);
+  expect(openTitles()).toEqual(["auth.py needs care", "plain.py needs care"]);
+  await choose("security");
+  expect(openTitles()).toEqual(["auth.py needs care"]);
+  const dialog = screen.getByRole("dialog", { name: "Filter findings" });
+  for (const name of ["security", "Uncategorized"]) {
+    fireEvent.click(within(dialog).getByRole("checkbox", { name }));
+    for (let step = 0; step < 2; step += 1) await act(settle);
+  }
+  expect(openTitles()).toEqual(["plain.py needs care"]);
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("category")).toBe("uncategorized");
+});
+
 test("a linked range and severity press 30d, show only must rows under a Severity chip, and clearing the chip drops severity from the URL", async () => {
   const runs = [runOf(1, "DEMO-1", [round(1, [finding("must.py", "p0")])]), runOf(2, "DEMO-2", [round(1, [finding("should.py", "p2")])])];
   await mount("#/findings?range=30d&severity=must", fleet({ runs, live: live7 }, writerDaemon).fetch);

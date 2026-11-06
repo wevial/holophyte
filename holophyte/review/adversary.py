@@ -19,12 +19,15 @@ from holophyte.review.blast_radius import continued_runs, high_path
 from holophyte.review.briefs import _changed_files
 from holophyte.review.reply_parsing import (
     BLOCK_BREAK_RE,
+    FINDING_FORMAT,
     FINDING_PATH_RE,
     citation,
     finding_blocks,
+    finding_category,
     finding_message,
     finding_severity,
     unparsed_path,
+    without_category,
 )
 from store.working import working
 
@@ -176,8 +179,8 @@ def brief(plan, ticket, run_id):
         "read-only against the candidate and leaves the checkout as it found "
         "it. Do not modify anything.\n\n"
         f"The ticket the change implements:\n\n{ticket}\n\n"
-        "Report each finding as one list item, `- PATH:LINE [p0|p1|p2] what "
-        "goes wrong`, followed by one line naming its evidence level:\n"
+        f"Report each finding as one list item, {FINDING_FORMAT}, followed by "
+        "one line naming its evidence level:\n"
         "EVIDENCE: reproduced — give the input and the observed bad result.\n"
         "EVIDENCE: traced — give file:line for each step from the input to "
         "the harm.\n"
@@ -236,11 +239,15 @@ def parse(reply):
             continue
         message = finding_message(block)
         line = int(match.group(2)) if match and match.group(2) else None
-        findings.append({
+        finding = {
             "path": match.group(1) if match else unparsed_path(message),
             "line": line if line else None,
-            "severity": finding_severity(parts[0]), "message": message,
-            "evidence": _evidence(block)})
+            "severity": finding_severity(parts[0]),
+            "message": without_category(message),
+            "evidence": _evidence(block)}
+        if category := finding_category(parts[0]):
+            finding["category"] = category
+        findings.append(finding)
     return findings
 
 

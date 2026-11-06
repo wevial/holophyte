@@ -6,6 +6,7 @@ import io
 import json
 import sys
 import threading
+import unittest
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
@@ -28,7 +29,7 @@ from loop_fixture import BRANCH, LoopFixture, StubProvider, a_task  # noqa: E402
 
 from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
-from holophyte.review.adversary import Family, Pass, brief  # noqa: E402
+from holophyte.review.adversary import Family, Pass, brief, parse  # noqa: E402
 
 ON = "[review]\nadversary = true\n"
 LEVELS = ("EVIDENCE: reproduced", "EVIDENCE: traced", "EVIDENCE: concern")
@@ -184,6 +185,14 @@ class BriefWordingTests(AdversaryFixture):
             self.assertIn("no per-module subagents", briefs[name])
             self.assertNotIn("per risky module", briefs[name])
         self.assertIn("- a symlink may slip by", briefs["fix"])
+
+
+class ParseTests(unittest.TestCase):
+    def test_the_category_after_the_severity_is_kept_on_the_finding(self):
+        [found] = parse("- src/app.py:3 [p0] [correctness] load() returns None\n"
+                        "EVIDENCE: reproduced\nADVERSARY: DONE")
+        self.assertEqual((found["severity"], found["category"], found["evidence"]),
+                         ("p0", "correctness", "reproduced"))
 
 
 class BlockingTests(AdversaryFixture):

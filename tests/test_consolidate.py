@@ -67,6 +67,14 @@ class PassOneTests(unittest.TestCase):
         self.assertIn('    EVIDENCE: reproduced \u2014 input: load("empty.json"); '
                       "observed: TypeError", consolidate.fix_list(merged))
 
+    def test_merged_duplicates_keep_the_first_ones_category(self):
+        primary = parse_findings("- src/app.py:3 [p2] [tests] load() returns None\n")
+        found = adversary.parse("- src/app.py:3 [p1] [docs] load() returns None\n"
+                                "EVIDENCE: traced\nADVERSARY: DONE")
+        [item] = consolidate.exact(consolidate.items(primary, found))
+        self.assertEqual((item["found_by"], item["category"]),
+                         (["primary", "adversary"], "tests"))
+
 
 def pass_one():
     return consolidate.items(

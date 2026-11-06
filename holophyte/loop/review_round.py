@@ -48,6 +48,7 @@ from holophyte.review.briefs import (
 )
 from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
+    FINDING_FORMAT,
     _review_reply,
     cited_approval,
     criteria_findings,
@@ -148,7 +149,8 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + "Do not modify anything. End your reply with exactly one "
         "line:\n"
         "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-        "If REQUEST_CHANGES, list only concrete blockers.")
+        "If REQUEST_CHANGES, list only concrete blockers, each as one list "
+        f"item, {FINDING_FORMAT}.")
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
