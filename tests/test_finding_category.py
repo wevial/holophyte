@@ -32,6 +32,13 @@ class ParsedCategoryTests(unittest.TestCase):
         self.assertNotIn("[p1]", finding["message"])
         self.assertNotIn("[security]", finding["message"])
 
+    def test_a_heading_finding_keeps_the_category_it_strips(self):
+        (finding,) = parse_findings(
+            "# app/auth.py:12 [p1] [security] token compared with ==\n\n"
+            "VERDICT: REQUEST_CHANGES")
+        self.assertEqual(finding["category"], "security")
+        self.assertNotIn("[security]", finding["message"])
+
     def test_a_tag_outside_the_list_or_no_tag_stores_no_category(self):
         findings = parse_findings(
             "- a/one.py:1 [p2] [Tests] the new branch has no test\n"

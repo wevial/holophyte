@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -214,7 +215,7 @@ def _first_line(block):
 
 
 def finding_category(block):
-    match = CATEGORY_TAG_RE.search(_first_line(block))
+    match = CATEGORY_TAG_RE.search(_first_line(sanitize_findings(block, math.inf)))
     return match["category"].lower() if match else None
 
 
@@ -314,6 +315,7 @@ _WITNESS_RESOLVER = r"""
 import contextlib
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 
