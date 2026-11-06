@@ -702,7 +702,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "default": null
         },
         "limit": {
           "type": "integer"
