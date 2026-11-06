@@ -190,6 +190,18 @@ test("with no filter, 7d is pressed and each host is asked since local midnight 
   expect(findingsAsked(asked).filter((url) => url.includes("until="))).toEqual([]);
 });
 
+test("where today's midnight falls in a clock change, range 30d still starts at local midnight 29 days before today", async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Santiago";
+  try {
+    const { fetch, asked } = fleet({}, {});
+    await mount("#/findings?range=30d", fetch, new Date(2026, 8, 6, 12).getTime());
+    expect(asked).toContain(`${DEMO}/findings?since=${new Date(2026, 7, 8).getTime()}&limit=500`);
+  } finally {
+    process.env.TZ = zone;
+  }
+});
+
 test("where today's midnight falls in a clock change, the default window still starts at weekSince, shared with the badge", async () => {
   const zone = process.env.TZ;
   process.env.TZ = "America/Santiago";

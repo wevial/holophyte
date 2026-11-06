@@ -269,12 +269,8 @@ const FINDINGS_LIMIT = 500;
 /** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
  *  days before it. */
 export function weekSince(now: number): number {
-  return daysBefore(now, WINDOW_DAYS - 1);
-}
-
-function daysBefore(now: number, days: number): number {
   const day = new Date(localMidnight(now));
-  day.setDate(day.getDate() - days);
+  day.setDate(day.getDate() - (WINDOW_DAYS - 1));
   return day.getTime();
 }
 
@@ -285,7 +281,7 @@ export interface FindingsWindow {
   until: number | null;
 }
 
-const RANGE_DAYS: Record<FindingsRange, number> = { "7d": WINDOW_DAYS, "30d": 30, "90d": 90 };
+const RANGE_DAYS: Record<Exclude<FindingsRange, "7d">, number> = { "30d": 30, "90d": 90 };
 
 const dayAfter = (day: Date, days: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate() + days).getTime();
 
@@ -301,7 +297,8 @@ export function findingsWindow({ range, from, to }: { range?: FindingsRange; fro
   if (from != null || to != null) {
     return { since: from == null ? 0 : midnightOf(from).getTime(), until: to == null ? null : dayAfter(midnightOf(to), 1) };
   }
-  return { since: daysBefore(now, RANGE_DAYS[range ?? "7d"] - 1), until: null };
+  if (range == null || range === "7d") return { since: weekSince(now), until: null };
+  return { since: dayAfter(new Date(now), 1 - RANGE_DAYS[range]), until: null };
 }
 
 /** Each scoped host's last good `/findings` answer in `window`, in fleet
