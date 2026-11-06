@@ -274,14 +274,14 @@ export interface RunsFilters {
 
 /** `value`'s comma list without blanks, repeats or values outside `allowed`,
  *  in `allowed`'s order when given; undefined when nothing is left. */
-function keptList(value: unknown, allowed?: readonly string[]): string | undefined {
+export function keptList(value: unknown, allowed?: readonly string[]): string | undefined {
   if (typeof value !== "string") return undefined;
   const given = [...new Set(value.split(",").map((each) => each.trim()).filter((each) => each !== ""))];
   const kept = allowed ? allowed.filter((each) => given.includes(each)) : given;
   return kept.length > 0 ? kept.join(",") : undefined;
 }
 
-function validDay(value: unknown): string | undefined {
+export function validDay(value: unknown): string | undefined {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
   const day = dayStart(value);
   const written = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;

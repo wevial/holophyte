@@ -11,7 +11,8 @@ import { prLabel } from "../lib/shipped";
 import type { Finding, Round } from "../lib/types";
 import { reviewRound } from "./components/StageChip";
 import type { ContractBodies } from "./fleet";
-import { useFindings, weekSince } from "./queries";
+import { keptList, validDay } from "./history";
+import { findingsWindow, useFindings, weekSince, type FindingsRange, type FindingsWindow } from "./queries";
 import type { ScoutTarget } from "./scouts";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State, type Tone } from "./state";
@@ -113,7 +114,10 @@ export interface FindingsPage {
 
 type Host = HostRecord<ContractBodies>;
 
-const inWindow = (round: Round, since: number) => (round.ended_ms ?? round.started_ms) >= since;
+function inWindow(round: Round, { since, until }: FindingsWindow): boolean {
+  const at = round.ended_ms ?? round.started_ms;
+  return at >= since && (until == null || at < until);
+}
 
 function ledgerRows(run: FindingsRun): LedgerRow[] {
   return run.ledger.map((row) => ({ ...row, run: run.run, ticket: run.ticket }));
@@ -128,8 +132,8 @@ interface Entry {
 }
 
 /** Each finding of `run` once, at the newest round in the window that raised it. */
-function newestEntries(run: FindingsRun, since: number): Entry[] {
-  const windowed = new Map(run.rounds.filter((round) => inWindow(round, since)).map((round) => [round.round, round]));
+function newestEntries(run: FindingsRun, window: FindingsWindow): Entry[] {
+  const windowed = new Map(run.rounds.filter((round) => inWindow(round, window)).map((round) => [round.round, round]));
   const numbers = run.rounds.map((round) => round.round).sort((a, b) => a - b);
   const seen = new Set<string>();
   const entries: Entry[] = [];
@@ -314,12 +318,12 @@ function advisoryRow(project: string, base: string, run: FindingsRun, advisory: 
 
 const newestRound = (run: FindingsRun) => Math.max(0, ...run.rounds.map((round) => round.ended_ms ?? round.started_ms));
 
-function addHost(page: FindingsPage, host: Host, answer: Findings, since: number): void {
+function addHost(page: FindingsPage, host: Host, answer: Findings, window: FindingsWindow): void {
   const project = host.project == null ? host.label : projectName(host.project);
   const status = host.contract_error ? undefined : (host.status ?? undefined);
   const actions = host.status?.actions === true;
   for (const run of answer.runs) {
-    const windowed = run.rounds.filter((round) => inWindow(round, since));
+    const windowed = run.rounds.filter((round) => inWindow(round, window));
     page.reviews += windowed.length;
     for (const round of windowed) {
       if (round.verdict === "pass" && round.findings.length === 0) {
@@ -327,7 +331,7 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
       }
     }
     const merged = run.outcome === "merged";
-    const entries = newestEntries(run, since);
+    const entries = newestEntries(run, window);
     page.findings += entries.length;
     const live = liveRunsOf(run.ticket, status);
     for (const found of entries) {
@@ -357,11 +361,10 @@ function addHost(page: FindingsPage, host: Host, answer: Findings, since: number
   for (const defect of answer.ticket_defects) page.defects.push({ ...defect, project, base: host.base, actions });
 }
 
-function useSortedPage(hosts: Host[], now: number, project: string | undefined): FindingsPage {
-  const { answered, answers } = useFindings(hosts, now, useContext(PollDepsContext));
-  const since = weekSince(now);
+function useSortedPage(hosts: Host[], window: FindingsWindow, project: string | undefined): FindingsPage {
+  const { answered, answers } = useFindings(hosts, window, useContext(PollDepsContext));
   const page: FindingsPage = { project, answered, reviews: 0, findings: 0, drafts: 0, open: [], followUps: [], settled: [], clean: [], defects: [] };
-  for (const { host, findings } of answers) addHost(page, host, findings, since);
+  for (const { host, findings } of answers) addHost(page, host, findings, window);
   page.open.sort(worstFirst);
   page.settled.sort(worstFirst);
   page.followUps.sort(pendingFirst);
@@ -380,14 +383,92 @@ export function byProject<T>(items: T[], projectOf: (item: T) => string): { proj
   return [...split].map(([project, items]) => ({ project, items })).sort((a, b) => b.items.length - a.items.length || a.project.localeCompare(b.project));
 }
 
-/** The scoped fleet's week of findings and ticket defects, sorted into the page's groups. */
-export function useFindingsPage(): FindingsPage {
+/** The scoped fleet's findings and ticket defects in `search`'s window, sorted into the page's groups. */
+export function useFindingsPage(search: FindingsSearch): FindingsPage {
   const peers = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
-  return useSortedPage(scopedHosts(peers.hosts, project), peers.now, project);
+  return useSortedPage(scopedHosts(peers.hosts, project), findingsWindow(search, peers.now), project);
 }
 
 /** The size of the page's Open group for `hosts`' week before `now`. */
 export function useOpenCount(hosts: Host[], now: number): number {
-  return useSortedPage(hosts, now, undefined).open.length;
+  return useSortedPage(hosts, { since: weekSince(now), until: null }, undefined).open.length;
+}
+
+export const SEVERITIES = ["must", "should", "nit"] as const satisfies readonly Severity[];
+export const FINDING_STATUSES = ["open", "follow_up", "fixed", "declined", "clean", "defect"] as const;
+export type FindingStatus = (typeof FINDING_STATUSES)[number];
+export const FINDINGS_RANGES = ["7d", "30d", "90d"] as const satisfies readonly FindingsRange[];
+export const DEFAULT_FINDINGS_RANGE: FindingsRange = "7d";
+
+export interface FindingsSearch {
+  range?: FindingsRange;
+  from?: string;
+  to?: string;
+  severity?: string;
+  status?: string;
+}
+
+export function validateFindingsSearch(search: Record<string, unknown>): FindingsSearch {
+  const { range, severity, status } = search;
+  const from = validDay(search.from);
+  const to = validDay(search.to);
+  return {
+    range: range !== DEFAULT_FINDINGS_RANGE && FINDINGS_RANGES.includes(range as FindingsRange) ? (range as FindingsRange) : undefined,
+    from,
+    to: to != null && (from == null || to >= from) ? to : undefined,
+    severity: keptList(severity, SEVERITIES),
+    status: keptList(status, FINDING_STATUSES),
+  };
+}
+
+/** A merged finding left open counts as open. */
+const settledStatus = ({ entry }: TaggedFinding): FindingStatus => (entry.fate === "declined" ? "declined" : entry.fate === "open" ? "open" : "fixed");
+
+interface Facet {
+  severity: Severity | null;
+  status: FindingStatus;
+}
+
+interface Picked {
+  severity: string[];
+  status: string[];
+}
+
+const passes = (picked: string[], value: string | null) => picked.length === 0 || (value != null && picked.includes(value));
+const kept = (picked: Picked, facet: Facet) => passes(picked.severity, facet.severity) && passes(picked.status, facet.status);
+
+const openFacet = ({ row }: OpenFinding): Facet => ({ severity: row.severity, status: "open" });
+const followUpFacet = ({ row }: FollowUp): Facet => ({ severity: row.severity, status: "follow_up" });
+const settledFacet = (each: TaggedFinding): Facet => ({ severity: each.row.severity, status: settledStatus(each) });
+const CLEAN: Facet = { severity: null, status: "clean" };
+const DEFECT: Facet = { severity: null, status: "defect" };
+
+/** `page` with only the rows whose severity and status `picked` keeps; an empty pick keeps every row. */
+export function filteredPage(page: FindingsPage, picked: Picked): FindingsPage {
+  return {
+    ...page,
+    open: page.open.filter((each) => kept(picked, openFacet(each))),
+    followUps: page.followUps.filter((each) => kept(picked, followUpFacet(each))),
+    settled: page.settled.filter((each) => kept(picked, settledFacet(each))),
+    clean: page.clean.filter(() => kept(picked, CLEAN)),
+    defects: page.defects.filter(() => kept(picked, DEFECT)),
+  };
+}
+
+/** Each severity's rows under the picked statuses, and each status's rows under the picked severities. */
+export function facetCounts(page: FindingsPage, picked: Picked): { severity: Record<Severity, number>; status: Record<FindingStatus, number> } {
+  const facets = [
+    ...page.open.map(openFacet),
+    ...page.followUps.map(followUpFacet),
+    ...page.settled.map(settledFacet),
+    ...page.clean.map(() => CLEAN),
+    ...page.defects.map(() => DEFECT),
+  ];
+  const tally = <K extends string>(keys: readonly K[], match: (facet: Facet, key: K) => boolean) =>
+    Object.fromEntries(keys.map((key) => [key, facets.filter((facet) => match(facet, key)).length])) as Record<K, number>;
+  return {
+    severity: tally(SEVERITIES, (facet, key) => facet.severity === key && passes(picked.status, facet.status)),
+    status: tally(FINDING_STATUSES, (facet, key) => facet.status === key && passes(picked.severity, facet.severity)),
+  };
 }

@@ -13,6 +13,7 @@ import { APP_DRAG, inMacApp } from "../lib/view";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
+import { validateFindingsSearch } from "./findings";
 import { useFleet } from "./fleet";
 import { SettingsMarksProvider } from "./settingsDraft";
 import { Findings } from "./pages/Findings";
@@ -86,7 +87,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$project/$run/turns/$turn", component: TurnPage }),
   pageRoute("/stories", StoriesIndex),
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
-  pageRoute("/findings", Findings),
+  createRoute({ getParentRoute: () => rootRoute, path: "/findings", validateSearch: validateFindingsSearch, component: Findings }),
   createRoute({ getParentRoute: () => rootRoute, path: "/scouts", validateSearch: validateScoutsSearch, component: Scouts }),
   createRoute({ getParentRoute: () => rootRoute, path: "/scouts/$project/$scout", component: ScoutPage }),
   pageRoute("/settings", Settings),

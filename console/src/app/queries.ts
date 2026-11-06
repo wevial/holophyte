@@ -264,6 +264,7 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
 }
 
 const WINDOW_DAYS = 7;
+const FINDINGS_LIMIT = 500;
 
 /** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
  *  days before it. */
@@ -273,16 +274,42 @@ export function weekSince(now: number): number {
   return day.getTime();
 }
 
-/** Each scoped host's last good `/findings` answer for the week before
- *  `now`, in fleet order; a host whose daemon lacks the route, or that
- *  never answered, is left out. `answered` is whether any host settled. */
+export type FindingsRange = "7d" | "30d" | "90d";
+
+export interface FindingsWindow {
+  since: number;
+  until: number | null;
+}
+
+const RANGE_DAYS: Record<FindingsRange, number> = { "7d": WINDOW_DAYS, "30d": 30, "90d": 90 };
+
+const dayAfter = (day: Date, days: number) => new Date(day.getFullYear(), day.getMonth(), day.getDate() + days).getTime();
+
+function midnightOf(day: string): Date {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  return new Date(year, month - 1, date);
+}
+
+/** The window a Findings view asks for: `from` and `to`, local
+ *  `YYYY-MM-DD` days, run from the midnight of `from` to the one after
+ *  `to` and win over `range`, whose days end today. */
+export function findingsWindow({ range, from, to }: { range?: FindingsRange; from?: string; to?: string }, now: number): FindingsWindow {
+  if (from != null || to != null) {
+    return { since: from == null ? 0 : midnightOf(from).getTime(), until: to == null ? null : dayAfter(midnightOf(to), 1) };
+  }
+  return { since: dayAfter(new Date(localMidnight(now)), 1 - RANGE_DAYS[range ?? "7d"]), until: null };
+}
+
+/** Each scoped host's last good `/findings` answer in `window`, in fleet
+ *  order; a host whose daemon lacks the route, or that never answered, is
+ *  left out. `answered` is whether any host settled. */
 export function useFindings<R extends HostRecord<PollBodies>>(
   hosts: R[],
-  now: number,
+  window: FindingsWindow,
   deps: { fetch: Fetch } = defaultPollDeps,
 ): { answered: boolean; answers: { host: R; findings: Findings }[] } {
   const asked = hosts.filter((host) => host.status != null);
-  const path = `/findings?since=${weekSince(now)}`;
+  const path = `/findings?since=${window.since}&limit=${FINDINGS_LIMIT}${window.until == null ? "" : `&until=${window.until}`}`;
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
