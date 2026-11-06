@@ -192,6 +192,7 @@ class FindingsUntilTests(FindingsCase):
         return write
 
     def test_until_bounds_runs_follow_ups_and_ticket_defects_before_it(self):
+        since, until = self.now - 11 * DAY, self.now - 3 * DAY
         old = self.ended_run(1, [("pass", [], self.now - 10 * DAY)],
                              started=self.now - 10 * DAY - 30 * MIN,
                              write=self.follow_up_at("before",
@@ -200,14 +201,12 @@ class FindingsUntilTests(FindingsCase):
                              started=self.now - 5 * DAY - 30 * MIN,
                              write=self.follow_up_at("inside",
                                                      self.now - 5 * DAY))
-        self.ended_run(3, [("pass", [], self.now - DAY)],
-                       started=self.now - DAY - 30 * MIN,
-                       write=self.follow_up_at("after", self.now - DAY))
-        self.ended_run(4, [], started=self.now - DAY - 30 * MIN,
-                       write=self.contradicted_and_revised(4,
-                                                           self.now - DAY))
+        self.ended_run(3, [("pass", [], until)],
+                       started=until - 30 * MIN,
+                       write=self.follow_up_at("at until", until))
+        self.ended_run(4, [], started=until - 30 * MIN,
+                       write=self.contradicted_and_revised(4, until))
         self.start()
-        since, until = self.now - 11 * DAY, self.now - 3 * DAY
 
         code, _, bounded = self.request(
             "GET", f"/findings?since={since}&until={until}")
@@ -220,7 +219,7 @@ class FindingsUntilTests(FindingsCase):
                          ["inside text"])
         self.assertEqual(bounded["ticket_defects"], [])
         self.assertEqual([f["text"] for f in unbounded["follow_ups"]],
-                         ["after text", "inside text", "before text"])
+                         ["at until text", "inside text", "before text"])
         self.assertEqual([d["ticket"] for d in unbounded["ticket_defects"]],
                          ["KO-4"])
 
