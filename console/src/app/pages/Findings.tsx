@@ -6,7 +6,7 @@ import { StateDot } from "../components/StateDot";
 import { TicketDefectRow } from "../components/TicketDefectRow";
 import {
   byProject, DEFAULT_FINDINGS_RANGE, facetCounts, FINDING_CATEGORIES, FINDING_STATUSES, filteredPage, SEVERITIES, useFindingsPage,
-  type FindingCategory, type FindingRowView, type FindingsPage, type FindingsSearch, type FindingStatus, type Idle, type OpenFinding,
+  type FindingRowView, type FindingsPage, type FindingsSearch, type FindingStatus, type Idle, type OpenFinding,
 } from "../findings";
 import { listOf } from "../history";
 import type { FindingsRange } from "../queries";
@@ -107,16 +107,6 @@ const STATUS_LABELS: Record<FindingStatus, string> = {
   defect: "Ticket defects",
 };
 
-const CATEGORY_LABELS: Record<FindingCategory, string> = {
-  correctness: "correctness",
-  security: "security",
-  tests: "tests",
-  performance: "performance",
-  maintainability: "maintainability",
-  docs: "docs",
-  uncategorized: "Uncategorized",
-};
-
 const CLEARED = { range: undefined, from: undefined, to: undefined, severity: undefined, category: undefined, status: undefined } satisfies FindingsSearch;
 
 type Clears = Partial<typeof CLEARED>;
@@ -156,7 +146,7 @@ export function Findings() {
   const verdict = verdictOf(all, span);
   const sections: FilterSection[] = [
     { label: "Severity", param: "severity", options: SEVERITIES.map((severity) => ({ value: severity, label: severity, count: counts.severity[severity] })) },
-    { label: "Category", param: "category", options: FINDING_CATEGORIES.map((category) => ({ value: category, label: CATEGORY_LABELS[category], count: counts.category[category] })) },
+    { label: "Category", param: "category", options: FINDING_CATEGORIES.map((category) => ({ value: category, label: category === "uncategorized" ? "Uncategorized" : category, count: counts.category[category] })) },
     { label: "Status", param: "status", options: FINDING_STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status], count: counts.status[status] })) },
   ];
   const chips = chipsOf(search, sections, head);
