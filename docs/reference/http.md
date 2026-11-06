@@ -1074,10 +1074,11 @@ and its `advisories`, the bot threads `/runs/N` answers as `findings`.
 
 `follow_ups` holds the FOLLOW_UP rows a merged run's fix commits left,
 every row created at or after `since` plus every row still unsettled,
-less any created at or after `until`, newest first. Each is its `id`,
-`run`, `ticket`, `kind` (`feature` or `guardrail`), `text`, `path`, `line`, `created_ms`, `settled_ms`, `state`,
-`filed_as`, `duplicate_of` and `error`. `state` is `pending` until the
-row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
+newest first; with `until`, only the rows created from `since` to before
+`until`, settled or not. Each is its `id`, `run`, `ticket`, `kind`
+(`feature` or `guardrail`), `text`, `path`, `line`, `created_ms`,
+`settled_ms`, `state`, `filed_as`, `duplicate_of` and `error`. `state`
+is `pending` until the row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
 `unfiled`, read from the event that settled it; a row settled before
 those events named their row reads `ledger` for a `guardrail` and
 `superseded` for a `feature`. The route serves rows, not fates: which

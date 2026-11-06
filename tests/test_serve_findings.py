@@ -193,7 +193,9 @@ class FindingsUntilTests(FindingsCase):
 
     def test_until_bounds_runs_follow_ups_and_ticket_defects_before_it(self):
         old = self.ended_run(1, [("pass", [], self.now - 10 * DAY)],
-                             started=self.now - 10 * DAY - 30 * MIN)
+                             started=self.now - 10 * DAY - 30 * MIN,
+                             write=self.follow_up_at("before",
+                                                     self.now - 20 * DAY))
         mid = self.ended_run(2, [("pass", [], self.now - 5 * DAY)],
                              started=self.now - 5 * DAY - 30 * MIN,
                              write=self.follow_up_at("inside",
@@ -218,7 +220,7 @@ class FindingsUntilTests(FindingsCase):
                          ["inside text"])
         self.assertEqual(bounded["ticket_defects"], [])
         self.assertEqual([f["text"] for f in unbounded["follow_ups"]],
-                         ["after text", "inside text"])
+                         ["after text", "inside text", "before text"])
         self.assertEqual([d["ticket"] for d in unbounded["ticket_defects"]],
                          ["KO-4"])
 
