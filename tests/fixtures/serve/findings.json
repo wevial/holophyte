@@ -1,5 +1,6 @@
 {
   "since": 0,
+  "until": null,
   "limit": 100,
   "runs": [
     {

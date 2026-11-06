@@ -726,6 +726,7 @@ class TicketDefect(TypedDict):
 
 class Findings(TypedDict):
     since: int
+    until: Annotated[int | None, ClientDefault(None)]
     limit: int
     runs: list[FindingsRun]
     follow_ups: list[FollowUpRow]

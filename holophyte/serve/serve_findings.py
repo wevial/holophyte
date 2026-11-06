@@ -16,6 +16,7 @@ from holophyte.serve.serve_runs import (
     no_store,
     parse_limit,
     parse_since,
+    parse_until,
     run_rounds,
 )
 from store.follow_ups import follow_ups_since
@@ -30,6 +31,9 @@ SWEEP_ACTED = "; failing the run and releasing its leases"
 def findings(project, query):
     try:
         since = parse_since(query)
+        until = parse_until(query)
+        if until is not None and until <= since:
+            raise ValueError("until must be after since")
         limit = parse_limit(query, default=FINDINGS_LIMIT, cap=FINDINGS_CAP)
     except ValueError as bad:
         return 400, {"error": str(bad)}
@@ -39,21 +43,22 @@ def findings(project, query):
     try:
         run_ids = [run_id for (run_id,) in conn.execute(
             "SELECT runId FROM reviewRounds WHERE endedAt >= ?"
+            " AND (? IS NULL OR endedAt < ?)"
             " GROUP BY runId ORDER BY max(endedAt) DESC, runId DESC LIMIT ?",
-            (since, limit))]
+            (since, until, until, limit))]
         runs = [window_run(conn, project, run_id) for run_id in run_ids]
         follow_ups = [follow_up_body(row)
-                      for row in follow_ups_since(conn, since)]
+                      for row in follow_ups_since(conn, since, until)]
         defects = ticket_defects(
-            conn, since, limit,
+            conn, since, until, limit,
             sweep_config(project).review_overlap_threshold)
     finally:
         conn.close()
-    return 200, {"since": since, "limit": limit, "runs": runs,
+    return 200, {"since": since, "until": until, "limit": limit, "runs": runs,
                  "follow_ups": follow_ups, "ticket_defects": defects}
 
 
-def ticket_defects(conn, since, limit, threshold):
+def ticket_defects(conn, since, until, limit, threshold):
     stops = conn.execute(
         "SELECT e.runId, e.kind, e.summary, e.payload, e.at, r.ticketId,"
         " r.revision, t.linearIdentifier FROM runs r"
@@ -62,8 +67,9 @@ def ticket_defects(conn, since, limit, threshold):
         " WHERE r.revision IS NOT NULL AND EXISTS (SELECT 1 FROM"
         " ticketRevisions v WHERE v.ticketId = r.ticketId"
         " AND v.revision > r.revision)"
-        " AND e.kind IN (?, ?) AND e.at >= ?"
-        " ORDER BY e.at DESC, e.id DESC", (CONTRADICTION, SWEEP_EVENT, since))
+        " AND e.kind IN (?, ?) AND e.at >= ? AND (? IS NULL OR e.at < ?)"
+        " ORDER BY e.at DESC, e.id DESC",
+        (CONTRADICTION, SWEEP_EVENT, since, until, until))
     defects, seen = [], set()
     for run_id, event, summary, payload, at, ticket_id, claimed, ticket in stops:
         kind = stop_kind(event, summary)

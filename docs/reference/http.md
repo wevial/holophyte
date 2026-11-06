@@ -1022,10 +1022,10 @@ or kinds other than `intervention`; it is included for unfiltered requests.
 Launch-loop interventions at or after an ongoing outage's start are suppressed
 from history.
 
-## `GET /findings?since=MS`
+## `GET /findings?since=MS[&until=MS]`
 
 ```json
-{"since": 1788450000000, "limit": 100,
+{"since": 1788450000000, "until": null, "limit": 100,
  "runs": [
   {"run": 52, "ticket": "KO-219", "title": "Serve the findings window",
    "phase": "done", "outcome": "merged", "ended_ms": 1788451661675,
@@ -1059,9 +1059,12 @@ from history.
 
 Review findings across runs, from `since` on, in one read: what the
 console's Findings page polls. `since` is required and is epoch
-milliseconds. `runs` holds every run with a review round whose `ended_ms`
-is at or after `since`, ordered by its newest round's end, newest first,
-at most `limit` of them (default 100, capped at 500). Each carries the
+milliseconds. `until`, optional epoch milliseconds, ends the window
+before it: runs, follow-ups and ticket defects are bounded to
+`since <= at < until`, and the body echoes it, null when absent.
+`runs` holds every run with a review round whose `ended_ms` is at or
+after `since` (and before `until`), ordered by its newest round's end,
+newest first, at most `limit` of them (default 100, capped at 500). Each carries the
 run's `run`, `ticket`, `title`, `phase`, `outcome`, `ended_ms` and
 `pr_url`; its `rounds`, every round of the run oldest first, exactly as
 `/runs/N` answers them; its `ledger`, the run's `round` and `adjudication`
@@ -1071,10 +1074,11 @@ and its `advisories`, the bot threads `/runs/N` answers as `findings`.
 
 `follow_ups` holds the FOLLOW_UP rows a merged run's fix commits left,
 every row created at or after `since` plus every row still unsettled,
-newest first. Each is its `id`, `run`, `ticket`, `kind` (`feature` or
-`guardrail`), `text`, `path`, `line`, `created_ms`, `settled_ms`, `state`,
-`filed_as`, `duplicate_of` and `error`. `state` is `pending` until the
-row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
+newest first; with `until`, only the rows created from `since` to before
+`until`, settled or not. Each is its `id`, `run`, `ticket`, `kind`
+(`feature` or `guardrail`), `text`, `path`, `line`, `created_ms`,
+`settled_ms`, `state`, `filed_as`, `duplicate_of` and `error`. `state`
+is `pending` until the row settles, then `filed`, `duplicate`, `ledger`, `superseded` or
 `unfiled`, read from the event that settled it; a row settled before
 those events named their row reads `ledger` for a `guardrail` and
 `superseded` for a `feature`. The route serves rows, not fates: which
@@ -1084,7 +1088,8 @@ group a finding falls in is the console's to work out.
 wrong, newest stop first, at most `limit` of them. A run is one when it
 recorded a `contradiction` event, or a supervisor sweep that failed it for
 `criterion_stuck` or `review_stuck` (a sweep that took no action, or one
-for `stale_heartbeat` or `time_box`, does not count), at or after `since`,
+for `stale_heartbeat` or `time_box`, does not count), at or after `since`
+and before `until`,
 and its ticket then gained a revision above the one the run was claimed
 at, written at or after the stop and, when the ticket has a later run, at
 or below the revision that run was claimed at. A run claimed at no
@@ -1096,8 +1101,10 @@ stop event's text as `reason` and its time as `at`, the lowest qualifying
 `revision` and its time as `revised_ms`, and `requeue_note`, the note of
 the run's first requeue, or null. A run's newest stop gives its one entry.
 
-A missing or non-integer `since`, or a bad `limit`, is 400 with an
-`error` naming the parameter; a project with no store is 503.
+A missing or non-integer `since`, a non-integer `until`, or a bad
+`limit`, is 400 with an `error` naming the parameter; an `until` at or
+before `since` is 400 with `until must be after since`; a project with
+no store is 503.
 
 ## `GET /report?since=SPAN`
 

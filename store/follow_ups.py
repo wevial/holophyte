@@ -170,7 +170,7 @@ class WindowFollowUp:
     state: str
 
 
-def follow_ups_since(conn, since):
+def follow_ups_since(conn, since, until=None):
     marks = ", ".join("?" for _ in _SETTLED_STATES)
     rows = conn.execute(
         "SELECT f.id, f.runId, t.linearIdentifier, f.kind, f.text, f.path,"
@@ -180,9 +180,10 @@ def follow_ups_since(conn, since):
         "  THEN json_extract(e.payload, '$.id') END = f.id"
         "  ORDER BY e.seq DESC LIMIT 1)"
         " FROM followUps f JOIN tickets t ON t.id = f.ticketId"
-        " WHERE f.createdAt >= ? OR f.settledAt IS NULL"
+        " WHERE (f.createdAt >= ? OR (? IS NULL AND f.settledAt IS NULL))"
+        " AND (? IS NULL OR f.createdAt < ?)"
         " ORDER BY f.createdAt DESC, f.id DESC",
-        (*_SETTLED_STATES, since)).fetchall()
+        (*_SETTLED_STATES, since, until, until, until)).fetchall()
     return [WindowFollowUp(*row[:12], state=(
         "pending" if row[8] is None
         else _SETTLED_STATES.get(row[12], _EVENTLESS_SETTLE_STATES[row[3]])))
