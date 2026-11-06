@@ -215,6 +215,10 @@ def apply(merged, reply):
         elif ordering or line.upper().startswith("MERGE"):
             ignored.append(line)
     kept = [name for name in ids if name not in into]
+    for name in kept:
+        copies[name]["category"] = next(
+            (item["category"] for other, item in zip(ids, merged)
+             if _root(into, other) == name and item["category"]), None)
     final = [name for name in order or () if name in kept]
     final += [name for name in kept if name not in final]
     return [copies[name] for name in final], {

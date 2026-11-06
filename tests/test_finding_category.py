@@ -44,10 +44,11 @@ class ParsedCategoryTests(unittest.TestCase):
 
     def test_a_listed_word_in_brackets_later_in_the_sentence_is_not_the_tag(self):
         reply = ("- a/one.py:1 [p1] the [docs] section is stale\n"
-                 "- a/two.py:2 [p1] `x[tests]` indexes past the end\n")
+                 "- a/two.py:2 [p1] `x[tests]` indexes past the end\n"
+                 "- a/three.py:3 the [docs] section is stale\n")
         findings = parse_findings(reply)
         self.assertEqual([finding.get("category") for finding in findings],
-                         [None, None])
+                         [None, None, None])
         self.assertEqual([finding["message"] for finding in findings],
                          reply.splitlines())
 

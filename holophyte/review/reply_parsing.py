@@ -82,7 +82,8 @@ FINDING_CATEGORIES = ("correctness", "security", "tests", "performance",
 
 
 CATEGORY_TAG_RE = re.compile(
-    r"^(?P<head>(?:[^\[`\n]|\[[^\]\n]*\]\([^)\s]*\))*?)"
+    r"^(?P<head>\s*(?:(?:[-*+]|\d+[.)])\s+)?"
+    r"(?:\[[^\]\n]*\]\([^)\s]*\)|`[^`\s]+`|[^\s\[`]+)?[ \t]*)"
     r"(?:[\[(]\s*(?:p0|p1|p2|nit|blocker)\s*[\])][ \t]*)?"
     rf"\[\s*(?P<category>{'|'.join(FINDING_CATEGORIES)})\s*\](?!\()[ \t]*",
     re.I)
