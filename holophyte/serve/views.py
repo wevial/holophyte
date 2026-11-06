@@ -202,6 +202,10 @@ def triage_view(triage):
             ("choice", "confidence", "backend", "model", "requeued")}
 
 
+def parked_asks_operator(ticket):
+    return ticket.boardState not in ("Backlog", "Canceled", "Done")
+
+
 def attention(project, now=None, beat_stale_ms=None):
     """Never `critical`, a client's level for a daemon it cannot reach."""
     now = int(time() * 1000) if now is None else now
@@ -222,7 +226,7 @@ def attention(project, now=None, beat_stale_ms=None):
                     key=lambda run: (run.endedAt, run.id))
     knobs = sweep_config(project)
     items = [parked_item(ticket) for ticket in blocked
-             if ticket.boardState not in ("Backlog", "Canceled", "Done")]
+             if parked_asks_operator(ticket)]
     for run in runs:
         age = now - run.lastHeartbeat
         if (age > knobs.heartbeat_stale_ms

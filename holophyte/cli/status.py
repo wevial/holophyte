@@ -19,7 +19,7 @@ from holophyte.loop.stop import pending_requests
 from holophyte.serve.console_build import console_state
 from holophyte.serve.serve_runs import json_host
 from holophyte.serve.server import CONSOLE_DIR
-from holophyte.serve.views import stuck_wait_items
+from holophyte.serve.views import parked_asks_operator, stuck_wait_items
 from holophyte.story.story_views import story_facts, story_lines
 from store.steer_notes import steers
 
@@ -50,7 +50,8 @@ def snapshot(target, conn, now=None):
                  for run in store.read.live_runs(conn, SWEEPABLE_PHASES)],
         "parked": [{"run": ticket.runId, "ticket": ticket.linearIdentifier,
                     "question": ticket.blockedQuestion}
-                   for ticket in store.read.blocked_tickets(conn)],
+                   for ticket in store.read.blocked_tickets(conn)
+                   if parked_asks_operator(ticket)],
         "stories": story_facts(target, conn, now),
         "stranded": [{"run": run.id, "ticket": run.linearIdentifier,
                       "reason": run.outcomeReason, "ended_ms": run.endedAt}
