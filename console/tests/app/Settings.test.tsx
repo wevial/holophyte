@@ -132,6 +132,15 @@ test("the footer names the browser only on Appearance", async () => {
   expect(footer.textContent).toBe("appearance stays in this browser");
 });
 
+test("the footer leaves the project settings line off the Hosts and Today's log tabs", async () => {
+  for (const hash of ["#/settings/hosts", "#/settings/log"]) {
+    await mount(hash);
+    expect(screen.queryByText(/project settings live in/)).toBeNull();
+    expect(screen.queryByText("appearance stays in this browser")).toBeNull();
+    cleanup();
+  }
+});
+
 const AGENTS = { agents: { implementer: { command: "claude --model opus -p", profile: "opus", fallback: "codex exec" }, adjudicator: "claude -p" } };
 const agentsConfig = async () => Response.json({ text: "", values: AGENTS, path: "/srv/demo/config.toml", applies: "next loop start", revision: "a".repeat(64) });
 const valueSide = (name: string) => screen.getByRole("group", { name }).children[1] as HTMLElement;
