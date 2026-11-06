@@ -116,8 +116,7 @@ function windowWords({ range, from, to }: FindingsSearch): { head: string; span:
   if (from != null && to != null) return { head: dayRangeLabel(from, to), span: `from ${dayLabel(from)} to ${dayLabel(to)}` };
   if (from != null) return { head: dayRangeLabel(from, to), span: `since ${dayLabel(from)}` };
   if (to != null) return { head: dayRangeLabel(from, to), span: `up to ${dayLabel(to)}` };
-  const { head, span } = RANGES.find((each) => each.value === (range ?? DEFAULT_FINDINGS_RANGE))!;
-  return { head, span };
+  return RANGES.find((each) => each.value === (range ?? DEFAULT_FINDINGS_RANGE))!;
 }
 
 function chipsOf(search: FindingsSearch, sections: FilterSection[], head: string): FilterChip<Clears>[] {
