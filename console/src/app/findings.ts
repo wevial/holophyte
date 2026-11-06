@@ -406,11 +406,8 @@ export const FINDING_CATEGORIES = ["correctness", "security", "tests", "performa
 export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
 
 /** A category outside the reviewers' closed list reads as uncategorized. */
-function categoryOf(finding: Finding): FindingCategory {
-  const { category } = finding;
-  return typeof category === "string" && FINDING_CATEGORIES.includes(category as FindingCategory)
-    ? (category as FindingCategory)
-    : "uncategorized";
+function categoryOf({ category }: Finding): FindingCategory {
+  return FINDING_CATEGORIES.includes(category as FindingCategory) ? (category as FindingCategory) : "uncategorized";
 }
 
 export const FINDINGS_RANGES = ["7d", "30d", "90d"] as const satisfies readonly FindingsRange[];
