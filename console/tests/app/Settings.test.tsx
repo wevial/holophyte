@@ -242,6 +242,19 @@ test("the head and project subtitles use the filename returned by config and fac
   }
 });
 
+test("Raw TOML drops the page's width cap and sizes its editor to the viewport with a 360px floor, while General keeps the cap", async () => {
+  const toml = async () => Response.json({ text: "[loop]\nworkers = 2\n", values: {}, path: "/srv/demo/config.toml", applies: "next loop start", revision: "3f9a2c1b" + "a".repeat(56), saved: null, modified_ms: null });
+  await mount("#/settings/toml?project=demo", fleet(toml));
+  const classes = (element: Element) => element.className.split(/\s+/);
+  expect(classes(screen.getByRole("region", { name: "Raw TOML" }))).not.toContain("max-w-[1180px]");
+  const scroller = classes(screen.getByRole("textbox", { name: "config.toml for demo" }).closest("[data-toml-scroller]")!);
+  expect(scroller).not.toContain("h-[360px]");
+  expect(scroller.filter((name) => /^h-\[max\(360px,calc\(100dvh-\d+px\)\)\]$/.test(name))).toHaveLength(1);
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "General" }));
+  await act(settle);
+  expect(classes(screen.getByRole("region", { name: "General" }))).toContain("max-w-[1180px]");
+});
+
 test("on Appearance the sidebar holds Back and the grouped sections in place of the switcher and Pages, and the page holds only that section", async () => {
   await mount("#/settings/appearance");
   const sidebar = screen.getByRole("complementary", { name: "Console" });

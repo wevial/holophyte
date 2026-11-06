@@ -149,7 +149,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
   </>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   return (
-    <section aria-labelledby="page-title" className="max-w-[1180px] px-5 pt-3.5 pb-7 min-[720px]:px-8">
+    <section aria-labelledby="page-title" className={`${tab.id === "toml" ? "" : "max-w-[1180px] "}px-5 pt-3.5 pb-7 min-[720px]:px-8`}>
       <div className="min-w-0 pb-6">
         {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 pb-5">{heading}</header>}
         {banner && <div role="status" className="mt-6 border border-live bg-paper p-5">
