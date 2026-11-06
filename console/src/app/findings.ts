@@ -12,7 +12,7 @@ import type { Finding, Round } from "../lib/types";
 import { reviewRound } from "./components/StageChip";
 import type { ContractBodies } from "./fleet";
 import { keptList, validDay } from "./history";
-import { findingsWindow, useFindings, weekSince, type FindingsRange, type FindingsWindow } from "./queries";
+import { findingsWindow, useFindings, type FindingsRange, type FindingsWindow } from "./queries";
 import type { ScoutTarget } from "./scouts";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, type State, type Tone } from "./state";
@@ -392,7 +392,7 @@ export function useFindingsPage(search: FindingsSearch): FindingsPage {
 
 /** The size of the page's Open group for `hosts`' week before `now`. */
 export function useOpenCount(hosts: Host[], now: number): number {
-  return useSortedPage(hosts, { since: weekSince(now), until: null }, undefined).open.length;
+  return useSortedPage(hosts, findingsWindow({}, now), undefined).open.length;
 }
 
 export const SEVERITIES = ["must", "should", "nit"] as const satisfies readonly Severity[];
