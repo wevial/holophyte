@@ -417,8 +417,7 @@ const logItems = () => [...within(dayLog()).getByRole("list").children];
 
 test("Today's log draws its line per entry, solid beside each entry and fading to transparent beside the last, from the first marker down", async () => {
   await mount("#/", ledgerOf(2));
-  const list = within(dayLog()).getByRole("list");
-  expect(classes(list).filter((name) => name.startsWith("border"))).toEqual([]);
+  expect(classes(within(dayLog()).getByRole("list")).filter((name) => name.startsWith("border"))).toEqual([]);
   const [first, last] = logItems();
   expect(logItems()).toHaveLength(2);
   expect(fill(lineOf(first!))).toEqual(SOLID);
