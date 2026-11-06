@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
 import type { Status } from "../../lib/contract.gen";
-import { formatStamp } from "../../lib/format";
+import { formatSettled, formatStamp } from "../../lib/format";
 import { useAction } from "../actions";
 import { useHolds } from "../queries";
 import { Btn } from "./Btn";
+import { LINE, MARK, type LineTone } from "./DayLog";
 
 const WORDS = { hold: "held", release_hold: "released", disable: "stopped" };
 const COLOURS = { hold: "text-wait", release_hold: "text-live", disable: "text-ink-3" };
+const TONES: Record<keyof typeof WORDS, LineTone> = { hold: "wait", release_hold: "live", disable: "ink-3" };
 const ACTORS = { maintainer: "you", operator: "the operator seat", supervisor: "the supervisor" };
 
 export function HoldTab({ base, project, status }: { base: string; project: string; status: Status }) {
@@ -39,11 +41,18 @@ export function HoldTab({ base, project, status }: { base: string; project: stri
     {history.isError ? <p role="alert" className="mt-4 font-read text-[14px] text-ink-2">Could not read hold history: {history.error.message}</p>
       : history.isPending ? <p className="mt-4 font-read text-[14px] text-ink-3">Reading history…</p>
         : rows.length === 0 ? <p className="mt-4 font-read text-[14px] text-ink-3">Never held. It has taken work since it was added.</p>
-          : <ol>{rows.map((row) => <li key={row.id} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 border-b border-rule-2 py-4 min-[600px]:grid-cols-[120px_65px_1fr]">
-            <time dateTime={new Date(row.at).toISOString()} className="font-mono text-[13px] text-ink-2">{formatStamp(row.at)}</time>
-            <span className={`font-mono text-[13px] ${COLOURS[row.action]}`}>{WORDS[row.action]}</span>
-            <p className="col-span-2 min-w-0 break-words font-read text-[14px] min-[600px]:col-span-1">{row.note}{row.actor && <span className="text-ink-3"> · {ACTORS[row.actor]}</span>}</p>
-          </li>)}</ol>}
+          : <ol className="ml-[5px] mt-3 font-mono text-[13px] leading-[1.5]">{rows.map((row, index) => {
+            const before = rows[index + 1];
+            const lasted = row.action === "release_hold" && before?.action === "hold" ? ` · held ${formatSettled(row.at - before.at)}` : "";
+            return <li key={row.id} className={`${LINE} grid gap-x-4 gap-y-1 py-[7px] pl-4 min-[600px]:grid-cols-[120px_minmax(0,1fr)]`}>
+              <span data-tone={TONES[row.action]} aria-hidden="true" className={`absolute top-3 -left-1 size-[7px] ${MARK[TONES[row.action]]}`} />
+              <time dateTime={new Date(row.at).toISOString()} className="text-ink-3">{formatStamp(row.at)}</time>
+              <p className="min-w-0 break-words">
+                <span className={COLOURS[row.action]}>{WORDS[row.action]}{lasted}</span>
+                <span className="ml-3 font-read text-[14px] text-ink">{row.note}{row.actor && <span className="text-ink-3"> · {ACTORS[row.actor]}</span>}</span>
+              </p>
+            </li>;
+          })}</ol>}
   </div>;
 }
 
