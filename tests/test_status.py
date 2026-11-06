@@ -123,6 +123,44 @@ class StatusTests(SweepTestCase):
         self.assertEqual(digests(), before)
 
 
+class ParkedBoardStateTests(SweepTestCase):
+    """Two tickets parked on a question: one in Todo, the other moved to a
+    column where it asks nothing of the operator."""
+
+    status = StatusTests.status
+
+    def setUp(self):
+        super().setUp()
+        self.runs = {}
+        for key in ("KO-1", "KO-2"):
+            run = self.a_run(claimed_at=T0)
+            ticket = self.ticket_of[run]
+            store.tickets.transition(self.conn, ticket, "blocked_on_operator")
+            self.conn.execute(
+                "UPDATE tickets SET blockedQuestion = ? WHERE id = ?",
+                (f"{key}: {QUESTION}", ticket))
+            self.conn.commit()
+            park_run(self.conn, run, "blocked_on_operator",
+                     "asked the operator", now=T0 + MINUTE)
+            self.runs[key] = run
+        store.set_board_state(self.conn, self.ticket_of[self.runs["KO-1"]],
+                              "Todo")
+
+    def test_only_the_todo_ticket_is_listed_parked(self):
+        for state in ("Backlog", "Canceled", "Done"):
+            with self.subTest(state=state):
+                store.set_board_state(
+                    self.conn, self.ticket_of[self.runs["KO-2"]], state)
+                snap = json.loads(self.status("--json"))
+                self.assertEqual(snap["parked"], [{
+                    "run": self.runs["KO-1"], "ticket": "KO-1",
+                    "question": f"KO-1: {QUESTION}"}])
+                parked = [line for line in self.status().splitlines()
+                          if line.startswith("parked ")]
+                self.assertEqual(parked, [
+                    f"parked KO-1 run {self.runs['KO-1']}: KO-1: {QUESTION}"])
+
+
 class StoreModeReadyTests(SweepTestCase):
     """A native board's store: `ready` counts what the claim would take,
     not a `ready` ticket shelved in the backlog column."""
