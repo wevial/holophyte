@@ -30,6 +30,8 @@ function toneOf(entry: LedgerEntry): LineTone {
   return "ink-3";
 }
 
+const LINE = "relative before:absolute before:inset-y-0 before:-left-px before:w-px first:before:top-3 not-last:before:bg-rule last:before:bg-linear-to-b last:before:from-rule last:before:to-transparent";
+
 const CHIP = "border border-rule px-1.5 leading-[1.6] text-[12px] text-ink-2 hover:border-ink-3 hover:text-ink";
 
 function Chips({ entry }: { entry: LedgerEntry }) {
@@ -81,7 +83,7 @@ function DayLogEntry({ entry, quiet, colour }: { entry: LedgerEntry; quiet: bool
   const tone = quiet ? "ink-3" : toneOf(entry);
   const phraseTone = quiet ? "text-ink-3" : tone === "ask" ? "text-ask-ink" : "";
   return (
-    <li data-quiet={quiet || undefined} className={`relative grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-[7px] pl-4 ${quiet ? "text-ink-3" : ""}`}>
+    <li data-quiet={quiet || undefined} className={`${LINE} grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-[7px] pl-4 ${quiet ? "text-ink-3" : ""}`}>
       <span data-tone={tone} aria-hidden="true" className={`absolute top-3 -left-1 size-[7px] ${MARK[tone]}`} />
       <time dateTime={new Date(entry.at).toISOString()} className="text-ink-3">
         {formatClock(entry.at)}
@@ -169,12 +171,12 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
       {shown.length === 0 ? (
         <p className="font-mono text-[12.5px] text-ink-3">{entries.length === 0 ? "Nothing logged since midnight." : "Nothing in the filter since midnight."}</p>
       ) : (
-        <ol className="ml-1 border-l border-rule pt-1 font-mono text-[13px] leading-[1.5] text-ink-2">
+        <ol className="ml-[5px] pt-1 font-mono text-[13px] leading-[1.5] text-ink-2">
           {shown.map((entry, index) => (
             <DayLogEntry key={keys[index]} entry={entry} quiet={!keeps(filter, entry)}
               colour={entry.project == null ? undefined : colours.get(projectName(entry.project))} />
           ))}
-          {earlier > 0 && <li className="py-[7px] pl-4 text-ink-3">and {earlier} earlier today</li>}
+          {earlier > 0 && <li className={`${LINE} py-[7px] pl-4 text-ink-3`}>and {earlier} earlier today</li>}
         </ol>
       )}
     </aside>
