@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { PrFacts } from "./PrFacts";
 import { describe, entryKey, orderByAge, prTitle, type Fact, type ReadinessMap } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
+import { formatSettled } from "../../lib/format";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
@@ -169,7 +170,8 @@ function QueueRow({ entry, now, host, project }: { entry: MergeQueueEntry; now: 
             {building ? "checks running" : "queued"}
           </span>
           <span className="whitespace-nowrap">
-            {entry.checks.done}/{entry.checks.total} done · merges {mergesIn(entry.estimated_s)}
+            {entry.checks.done}/{entry.checks.total} done
+            {entry.enqueued_ms != null && ` · in queue ${formatSettled(now - entry.enqueued_ms)}`} · merges {mergesIn(entry.estimated_s)}
           </span>
         </span>
       </div>
