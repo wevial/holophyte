@@ -227,7 +227,8 @@ test("choosing severities must and should leaves only those open rows, counted 0
 test("choosing status Fixed alone leaves Settled with only the fixed row and every other group empty", async () => {
   const ledger = [{ ...pinnedRun.ledger[0]!, text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nDECLINE cli.py:3 — the caller validates it" }];
   const declined = runOf(12, "DEMO-12", [round(1, [finding("cli.py", "p2")])], { ledger });
-  await mount("#/findings", fleet({ runs: [demo5, declined] }, writerDaemon).fetch);
+  await mount("#/findings", fleet(demoDaemon([demo7, demo5, declined]), writerDaemon).fetch);
+  expect(emptyOf("Open")).toBeNull();
   const settled = () => [...group("Settled this week").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);
   expect(settled()).toEqual(["db.py needs care", "cli.py needs care"]);
   await choose("Fixed");
