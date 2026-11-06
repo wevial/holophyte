@@ -388,3 +388,61 @@ test("a project whose merge queue is not configured or is empty draws no queue r
     cleanup();
   }
 });
+
+const ledgerOf = (count: number): Fetch => {
+  const hosts = fleet({ items: [] }, { items: [] });
+  const entries = Array.from({ length: count }, (_, index) => ({
+    at: NOW - (index + 1) * MINUTE, run: index + 1, ticket: `DEMO-${index + 1}`, pr_url: null, kind: "merge", source: "loop", text: `MERGED to main as ${index + 1}.`,
+  }));
+  const ledger = (url: string) => Response.json({ active_outages: [], since: 0, limit: 200, entries: url.startsWith(`${DEMO}/`) ? entries : [] });
+  return async (url, init) => (url.includes("/ledger?") ? ledger(url) : hosts(url, init));
+};
+
+const STATE = { "first:": ":first-child", "last:": ":last-child", "not-last:": ":not(:last-child)" } as const;
+
+function lineOf(item: Element): string[] {
+  return classes(item).flatMap((name) => {
+    if (name.startsWith("before:")) return [name.slice("before:".length)];
+    const state = Object.entries(STATE).find(([prefix]) => name.startsWith(prefix + "before:"));
+    if (!state || !item.matches(state[1])) return [];
+    return [name.slice(state[0].length + "before:".length)];
+  });
+}
+
+const SOLID = ["bg-rule"];
+const FADE = ["bg-linear-to-b", "from-rule", "to-transparent"];
+const fill = (line: string[]) => line.filter((name) => name.startsWith("bg-") || name.startsWith("from-") || name.startsWith("to-"));
+const logItems = () => [...within(dayLog()).getByRole("list").children];
+
+test("Today's log draws its line per entry, solid beside each entry and fading to transparent beside the last, from the first marker down", async () => {
+  await mount("#/", ledgerOf(2));
+  expect(classes(within(dayLog()).getByRole("list")).filter((name) => name.startsWith("border"))).toEqual([]);
+  const [first, last] = logItems();
+  expect(logItems()).toHaveLength(2);
+  expect(fill(lineOf(first!))).toEqual(SOLID);
+  expect(fill(lineOf(last!))).toEqual(FADE);
+  for (const item of logItems()) {
+    expect(classes(item)).toContain("relative");
+    expect(lineOf(item)).toEqual(expect.arrayContaining(["absolute", "-left-px", "w-px", "inset-y-0"]));
+    expect(classes(item.querySelector("[data-tone]"))).toEqual(expect.arrayContaining(["top-3", "-left-1"]));
+  }
+  expect(lineOf(first!)).toContain("top-3");
+  expect(lineOf(last!)).not.toContain("top-3");
+});
+
+test("with an and N earlier today line, that line fades and every entry above it is solid", async () => {
+  await mount("#/", ledgerOf(27));
+  const items = logItems();
+  const earlier = items.at(-1)!;
+  expect(earlier.textContent).toBe("and 2 earlier today");
+  expect(fill(lineOf(earlier))).toEqual(FADE);
+  for (const item of items.slice(0, -1)) expect(fill(lineOf(item))).toEqual(SOLID);
+});
+
+test("a one-entry log's line fades and starts at its marker", async () => {
+  await mount("#/", ledgerOf(1));
+  const [only] = logItems();
+  expect(logItems()).toHaveLength(1);
+  expect(fill(lineOf(only!))).toEqual(FADE);
+  expect(lineOf(only!)).toContain("top-3");
+});
