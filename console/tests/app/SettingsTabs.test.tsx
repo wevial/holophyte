@@ -83,7 +83,6 @@ test("Agents show live, fallback and down routes beside commands and reject an e
   const reviewer = row("Reviewer").getByRole("textbox") as HTMLInputElement;
   expect(reviewer.value).toBe("");
   expect(reviewer.placeholder).toBe("the default route");
-  expect(row("Reviewer").getByText("default")).toBeTruthy();
   expect(row("Reviewer").getByText("on its fallback codex exec").className).toContain("text-ask-ink");
   expect(row("Adjudicator").getByText("down").className).toContain("text-bad");
   fireEvent.change(implementer, { target: { value: "" } });

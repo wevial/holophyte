@@ -200,9 +200,8 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
           <p className="mt-2 font-read text-[14px] text-ink-3">Runs in flight keep the settings they started with.</p>
         </ConfirmDialog>}
       </div>
-      <footer className="flex flex-wrap gap-x-6 gap-y-2 border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
-        <p>project settings live in {file} on its host; each save keeps the previous text as a backup</p>
-        <p>appearance stays in this browser</p>
+      <footer className="border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
+        <p>{tab.id === "appearance" ? "appearance stays in this browser" : `project settings live in ${file} on its host; each save keeps the previous text as a backup`}</p>
       </footer>
     </section>
   );

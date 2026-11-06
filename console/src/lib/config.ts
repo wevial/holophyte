@@ -13,7 +13,7 @@ export type PatchValue = string | number | boolean | string[];
  *  here and never parses TOML itself. */
 export type ConfigValues = Record<string, Record<string, unknown>>;
 
-export const UNBOUND_NOTE = "edit this one in Raw TOML";
+export const UNBOUND_NOTE = "Edit in Raw TOML";
 
 export type Bound = { state: "absent" } | { state: "bound"; value: PatchValue } | { state: "unbound"; value: unknown };
 

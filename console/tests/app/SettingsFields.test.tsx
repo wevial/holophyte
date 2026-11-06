@@ -129,11 +129,10 @@ test("missing workers uses its bounded default and an incompatible merge value l
   expect(within(row("Workers")).getByText("default")).toBeTruthy();
   expect((screen.getByRole("button", { name: "One fewer worker" }) as HTMLButtonElement).disabled).toBe(true);
   const mode = within(row("Merge mode"));
-  const input = mode.getByRole("textbox", { name: "Merge mode" }) as HTMLInputElement;
-  expect(JSON.parse(input.value)).toEqual({ strategy: "pr" });
-  expect(input.readOnly).toBe(true);
+  expect(JSON.parse(mode.getByLabelText("Merge mode").textContent!)).toEqual({ strategy: "pr" });
+  expect(mode.queryByRole("textbox")).toBeNull();
   expect(mode.queryAllByRole("button")).toHaveLength(0);
-  expect((mode.getByRole("link", { name: "edit this one in Raw TOML" }) as HTMLAnchorElement).hash).toBe("#/settings/toml?project=demo");
+  expect((mode.getByRole("link", { name: "Edit in Raw TOML" }) as HTMLAnchorElement).hash).toBe("#/settings/toml?project=demo");
 });
 
 test("each project keeps its own edits and discarding one leaves the other's draft intact", async () => {
@@ -170,12 +169,10 @@ test("workers outside the positive integer shape are read-only with Raw TOML nav
   for (const value of [0, 1.5]) {
     await mount({ merge: { mode: "pr", approve: "auto" }, loop: { workers: value } });
     const field = within(row("Workers"));
-    const input = field.queryByRole("textbox", { name: "Workers" }) as HTMLInputElement | null;
-    expect(input).not.toBeNull();
-    expect(input!.value).toBe(String(value));
-    expect(input!.readOnly).toBe(true);
+    expect(field.getByLabelText("Workers").textContent).toBe(String(value));
+    expect(field.queryByRole("textbox")).toBeNull();
     expect(field.queryAllByRole("button")).toHaveLength(0);
-    expect((field.getByRole("link", { name: "edit this one in Raw TOML" }) as HTMLAnchorElement).hash).toBe("#/settings/toml?project=demo");
+    expect((field.getByRole("link", { name: "Edit in Raw TOML" }) as HTMLAnchorElement).hash).toBe("#/settings/toml?project=demo");
     cleanup();
   }
 });

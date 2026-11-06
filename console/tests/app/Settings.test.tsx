@@ -123,7 +123,44 @@ test("Review presents the project file and ordered grouped sections with matchin
   expect(footer.getAttribute("aria-current")).toBe("page");
   expect(footer.getAttribute("href")).toMatch(/#\/settings\/general\?project=demo$/);
   expect(screen.getByText("project settings live in config.toml on its host; each save keeps the previous text as a backup")).toBeTruthy();
-  expect(screen.getByText("appearance stays in this browser")).toBeTruthy();
+  expect(screen.queryByText("appearance stays in this browser")).toBeNull();
+});
+
+test("the footer names the browser only on Appearance", async () => {
+  await mount("#/settings/appearance");
+  const footer = screen.getByText("appearance stays in this browser").closest("footer")!;
+  expect(footer.textContent).toBe("appearance stays in this browser");
+});
+
+const AGENTS = { agents: { implementer: { command: "claude --model opus -p", profile: "opus", fallback: "codex exec" }, adjudicator: "claude -p" } };
+const agentsConfig = async () => Response.json({ text: "", values: AGENTS, path: "/srv/demo/config.toml", applies: "next loop start", revision: "a".repeat(64) });
+const valueSide = (name: string) => screen.getByRole("group", { name }).children[1] as HTMLElement;
+
+test("Agents rows share one fixed-width value column with each route line directly under its field", async () => {
+  await mount("#/settings/agents?project=demo", fleet(agentsConfig));
+  const routes = { Implementer: "runs claude opus", Reviewer: "runs codex gpt-6-astra", Adjudicator: "runs codex gpt-6-astra" };
+  const widths = Object.keys(routes).map((name) => valueSide(name).className.split(" ").filter((name) => name.startsWith("min-[860px]:w-")));
+  expect(widths[0]).toEqual(["min-[860px]:w-80"]);
+  expect(widths.slice(1)).toEqual([widths[0]!, widths[0]!]);
+  for (const [name, route] of Object.entries(routes)) {
+    const [field, status, ...rest] = Array.from(valueSide(name).children);
+    expect(rest).toHaveLength(0);
+    expect(field!.matches("input, pre") || field!.querySelector("pre") !== null).toBe(true);
+    expect(within(status as HTMLElement).getByText(route)).toBeTruthy();
+    expect(screen.getByRole("group", { name }).querySelector("p.w-full")).toBeNull();
+  }
+});
+
+test("an implementer inline table shows read-only in full in a pre with a link to Raw TOML, and an absent reviewer shows no default tag", async () => {
+  await mount("#/settings/agents?project=demo", fleet(agentsConfig));
+  const implementer = within(screen.getByRole("group", { name: "Implementer" }));
+  expect(JSON.parse(implementer.getByLabelText("Implementer").textContent!)).toEqual(AGENTS.agents.implementer);
+  expect(implementer.getByLabelText("Implementer").tagName).toBe("PRE");
+  expect(screen.getByRole("group", { name: "Implementer" }).querySelector("input, textarea")).toBeNull();
+  expect((implementer.getByRole("link", { name: "Edit in Raw TOML" }) as HTMLAnchorElement).hash).toBe("#/settings/toml?project=demo");
+  const reviewer = within(screen.getByRole("group", { name: "Reviewer" }));
+  expect((reviewer.getByRole("textbox", { name: "Reviewer" }) as HTMLInputElement).placeholder).toBe("the default route");
+  expect(reviewer.queryByText("default")).toBeNull();
 });
 
 test("the sidebar's project picker preserves the current tab, remembers the choice and names held projects; an unscoped Settings uses the first without rewriting", async () => {
