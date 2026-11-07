@@ -128,6 +128,11 @@ class PriorJudgement(TypedDict):
     why: str
 
 
+class WriteupSection(TypedDict):
+    heading: str
+    text: str
+
+
 class ScoutReport(TypedDict):
     headline: str | None
     summary: str
@@ -137,6 +142,7 @@ class ScoutReport(TypedDict):
     reproduction: Reproduction | None
     cut: list[str] | None
     prior: list[PriorJudgement] | None
+    writeup: list[WriteupSection] | None
 
 
 ScoutReportPass = TypedDict("ScoutReportPass", {

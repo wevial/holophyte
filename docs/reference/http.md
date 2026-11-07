@@ -1738,7 +1738,9 @@ time budget, or null; and `prior`, or null when the report has none: the
 lead's judgement of each finding of the earlier scouts its plan goal
 offered, those whose reports or sub-tasks named the same paths, each its
 `scout`, the `finding` numbered from 1, a `verdict` of `holds`, `fixed` or
-`unchecked`, and `why`. An evidence item is one of a file item, `file`,
+`unchecked`, and `why`; and `writeup`, 2 to 5 plain-language sections for
+the maintainer, each a `heading` and its `text`, or null for a report
+stored without one. An evidence item is one of a file item, `file`,
 `line`, `verified` (whether the file and line resolve in the base commit)
 and `why` it did not (null when it did); a command item, `command` and
 `output`; a `url`; or a `text` item, `text`. A report stored before the

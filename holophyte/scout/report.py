@@ -1,4 +1,5 @@
 import copy
+import re
 import subprocess
 from pathlib import PurePosixPath
 from typing import NamedTuple, get_args
@@ -26,6 +27,11 @@ URL = Rule(lambda value: isinstance(value, str)
            and value.startswith(("http://", "https://")),
            "a URL starting http:// or https://", "URL")
 TITLE_CHARS, LINE_CHARS, BULLETS = 70, 120, (3, 5)
+HEADING_CHARS, WRITEUP_CHARS, SECTIONS = 60, 600, (2, 5)
+SENTENCES = (1, 4)
+SENTENCE_END = re.compile(r"[.!?]+[\"'”’)\]]*\s+(?=[\"'“‘(\[]*[A-Z0-9])")
+ABBREVIATIONS = {"dr", "mr", "mrs", "ms", "prof", "st", "jr", "sr", "vs",
+                 "etc", "inc", "ltd", "co", "no", "fig", "approx"}
 
 
 def short(limit):
@@ -33,6 +39,26 @@ def short(limit):
                 and len(value) <= limit
                 and not any(mark in value for mark in "\r\n"),
                 f"text of at most {limit} characters on one line", "TEXT")
+
+
+def abbreviated(text, end):
+    words = text[:end].split()
+    word = words[-1].lstrip("\"'“‘([") if words else ""
+    return (text[end] == "." and (len(word) <= 1 or "." in word
+                                  or word.lower() in ABBREVIATIONS))
+
+
+def sentence_count(text):
+    text = text.strip()
+    return 1 + sum(not abbreviated(text, found.start())
+                   for found in SENTENCE_END.finditer(text))
+
+
+def sentences(limit, low, high):
+    within = short(limit)
+    return Rule(lambda value: within.check(value)
+                and low <= sentence_count(value) <= high,
+                f"{within.must} in {low} to {high} sentences", "TEXT")
 
 
 TASK_IDS = Rule(lambda value: isinstance(value, list)
@@ -112,6 +138,10 @@ FIELDS = {
     "actions": Each({"title": TEXT, "why": TEXT,
                      "kind": one_of(*KINDS, REVISE, GUARDRAIL),
                      "body": TEXT}),
+    "writeup": Omittable(Each({"heading": short(HEADING_CHARS),
+                               "text": sentences(WRITEUP_CHARS,
+                                                 *SENTENCES)},
+                              count=SECTIONS)),
 }
 PRIOR = Each({"scout": LINE, "finding": LINE, "verdict": one_of(*VERDICTS),
               "why": TEXT})

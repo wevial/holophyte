@@ -50,6 +50,10 @@ PASS_1 = report("Save notifies everyone.", [
          "verdict": "holds"}]})
 PASS_2 = report("The tracker agrees.", [
     finding("Reported upstream", {"url": LINK})])
+WRITEUP = [{"heading": "What was asked",
+            "text": "Whether a private task stays quiet when it is saved."},
+           {"heading": "What the scout suggests",
+            "text": "Stop notifying on private saves. Add a test for it."}]
 ITEMS = [
     {"title": "Fix | the save path", "why": "Private tasks leak.\nOn save.",
      "kind": "fix", "body": DRAFT},
@@ -111,6 +115,9 @@ class ScoutPageCase(unittest.TestCase):
         move_scout(conn, self.swarming, "swarming")
         self.empty = self.done(conn, project_id, "research",
                                [(1, report("Nothing found.", []), [])])
+        self.written = self.done(conn, project_id, "research", [
+            (1, report("Looked first.", []), []),
+            (2, {**PASS_2, "writeup": WRITEUP}, [])])
 
     def done(self, conn, project_id, kind, passes):
         scout_id = create_scout(conn, project_id, ASK, kind, 30)
@@ -200,6 +207,24 @@ class ScoutPageTests(ScoutPageCase):
         self.assertIn("## Findings", lines)
         self.assertIn("## Action items", lines)
         self.assertNotIn(DECISIONS, lines)
+
+    def test_the_latest_passs_writeup_leads_the_page_before_its_findings(self):
+        lines = self.printed(self.written)
+        start = lines.index("## Write-up")
+        self.assertLess(start, lines.index("## Report"))
+        self.assertLess(start, lines.index("## Findings"))
+        for part in WRITEUP:
+            heading = lines.index(f"### {part['heading']}")
+            self.assertLess(start, heading)
+            self.assertIn(part["text"], lines[heading:lines.index("## Report")])
+
+    def test_a_page_without_a_writeup_keeps_its_sections(self):
+        lines = self.printed(self.bug)
+        self.assertNotIn("## Write-up", lines)
+        self.assertEqual([line for line in lines
+                          if line.startswith("## ")][:4],
+                         ["## Report", "## Findings", "## Reproduction",
+                          "## Action items"])
 
     def test_a_scout_not_done_is_refused_with_nothing_on_stdout(self):
         code, out, err = self.page(self.swarming)
