@@ -254,6 +254,13 @@ test("a pattern the tree cannot show is kept from text while checking docs/ adds
   expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\n*.css\ndocs/*");
 });
 
+test("a pattern no regular expression can hold, such as a reversed range, still shows the tree and is kept from text", async () => {
+  await mountTree(treeFleet(["[z-a].ts"]));
+  pick("Tree");
+  expect(patterns()).toEqual(["[z-a].ts · kept from text"]);
+  expect(treeBox("console/").getAttribute("aria-checked")).toBe("false");
+});
+
 test("unchecking one file under a checked folder writes its remaining siblings in place of the folder", async () => {
   await mountTree(treeFleet(["console/*"]));
   pick("Tree");

@@ -58,12 +58,16 @@ function fnmatch(pattern: string): RegExp {
         source += "\\[";
         continue;
       }
-      const set = pattern.slice(at + 1, end).replace(/\\/g, "\\\\");
+      const set = pattern.slice(at + 1, end).replace(/[\\\]]/g, "\\$&");
       source += `[${set.startsWith("!") ? `^${set.slice(1)}` : set.startsWith("^") ? `\\${set}` : set}]`;
       at = end;
     } else source += char.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   }
-  return new RegExp(`^${source}$`, "s");
+  try {
+    return new RegExp(`^${source}$`, "s");
+  } catch {
+    return /(?!)/;
+  }
 }
 
 const folderOf = (model: Model, pattern: string) => {
