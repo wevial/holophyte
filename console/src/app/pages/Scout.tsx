@@ -93,7 +93,7 @@ export function ScoutPage() {
           </nav>
           <ScoutHead detail={page.detail} project={project} state={page.state} now={page.now} pass={page.pass} level={1} headingRef={heading} buttons={null} />
           <div data-scout-buttons className="mt-4 flex flex-wrap gap-2 empty:hidden">
-            {page.stoppable && <ScoutStop key={`${page.base}/${scout.id}`} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
+            {page.stoppable && <ScoutStop key={at} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
             {threaded && takesMessages(scout.phase) && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
               event.preventDefault();
               askOrSteer();
