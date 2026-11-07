@@ -1,5 +1,4 @@
 import copy
-import re
 import subprocess
 from pathlib import PurePosixPath
 from typing import NamedTuple, get_args
@@ -28,8 +27,6 @@ URL = Rule(lambda value: isinstance(value, str)
            "a URL starting http:// or https://", "URL")
 TITLE_CHARS, LINE_CHARS, BULLETS = 70, 120, (3, 5)
 HEADING_CHARS, WRITEUP_CHARS, SECTIONS = 60, 600, (2, 5)
-SENTENCES = (1, 4)
-SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)")
 
 
 def short(limit):
@@ -37,18 +34,6 @@ def short(limit):
                 and len(value) <= limit
                 and not any(mark in value for mark in "\r\n"),
                 f"text of at most {limit} characters on one line", "TEXT")
-
-
-def sentence_count(text):
-    text = text.strip()
-    return len(SENTENCE_END.findall(text)) + (text[-1] not in ".!?")
-
-
-def sentences(limit, low, high):
-    within = short(limit)
-    return Rule(lambda value: within.check(value)
-                and low <= sentence_count(value) <= high,
-                f"{within.must} in {low} to {high} sentences", "TEXT")
 
 
 TASK_IDS = Rule(lambda value: isinstance(value, list)
@@ -129,8 +114,7 @@ FIELDS = {
                      "kind": one_of(*KINDS, REVISE, GUARDRAIL),
                      "body": TEXT}),
     "writeup": Omittable(Each({"heading": short(HEADING_CHARS),
-                               "text": sentences(WRITEUP_CHARS,
-                                                 *SENTENCES)},
+                               "text": short(WRITEUP_CHARS)},
                               count=SECTIONS)),
 }
 PRIOR = Each({"scout": LINE, "finding": LINE, "verdict": one_of(*VERDICTS),
