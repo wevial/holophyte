@@ -57,7 +57,7 @@ def _main_sha(root, ref):
     return found.stdout.strip() if found.returncode == 0 else None
 
 
-@functools.lru_cache(maxsize=64)
+@functools.lru_cache(maxsize=4)
 def _tracked(root, sha):
     listed = subprocess.run(["git", "ls-tree", "-r", "--name-only", "-z", sha],
                             cwd=root, capture_output=True)
@@ -66,17 +66,30 @@ def _tracked(root, sha):
     return tuple(os.fsdecode(path) for path in listed.stdout.split(b"\0") if path)
 
 
-def _main(project):
+def _main_sha_of(project):
     root = Path(project.path).resolve()
     try:
         ref = main_ref(root)
         sha = _main_sha(root, ref)
     except OSError:
         return None
-    if sha is None:
+    return None if sha is None else (str(root), ref, sha)
+
+
+def _main(project):
+    found = _main_sha_of(project)
+    if found is None:
         return None
-    files = _tracked(str(root), sha)
+    root, ref, sha = found
+    files = _tracked(root, sha)
     return None if files is None else (ref, sha, files)
+
+
+@functools.lru_cache(maxsize=64)
+def _stale(root, sha, entries):
+    files = _tracked(root, sha) or ()
+    return tuple((key, entry) for key, values in entries for entry in values
+                 if not any(PATH_MATCHERS[key][1](entry, path) for path in files))
 
 
 def path_matches(project, key, entries):
@@ -95,11 +108,12 @@ def stale_paths(project):
     entries = _entries(project)
     if not any(values for _, values in entries):
         return []
-    main = _main(project)
-    if main is None:
+    found = _main_sha_of(project)
+    if found is None:
         return []
-    ref, sha, files = main
+    root, ref, sha = found
+    if _tracked(root, sha) is None:
+        return []
     return [{"key": PATH_MATCHERS[key][0], "entry": entry, "ref": ref,
              "sha": sha[:12]}
-            for key, values in entries for entry in values
-            if not any(PATH_MATCHERS[key][1](entry, path) for path in files)]
+            for key, entry in _stale(root, sha, entries)]
