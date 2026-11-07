@@ -18,12 +18,14 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # `-m unittest tests.<name>` resolves the sibling fixtures as discovery does.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import test_serve  # noqa: E402 - after the insert; TokenTests' TOKEN and BEARER
+from host_fixture import git  # noqa: E402 - after the insert
 from serve_fixture import ServeTestCase  # noqa: E402 - after the insert
 
 import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
@@ -896,6 +898,61 @@ class ConfigPatchTests(ServeTestCase):
         message = str(raised.exception)
         self.assertIn("tomlkit", message)
         self.assertIn("pip install --user -r requirements.txt", message)
+
+
+class PathMatchesTests(ServeTestCase):
+    """`GET /config/path-matches` over a real repository whose main tracks
+    console/src/a.ts, console/src/b.ts and console/build.ts."""
+
+    TOKEN = ConfigEditTests.TOKEN
+    BEARER = ConfigEditTests.BEARER
+    SECRET = ConfigEditTests.SECRET
+    HOOK_TOKENS = ConfigEditTests.HOOK_TOKENS
+
+    def setUp(self):
+        super().setUp()
+        git(self.target, "init", "-q", "-b", "main")
+        names = ("console/src/a.ts", "console/src/b.ts", "console/build.ts")
+        for name in names:
+            path = self.target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("export {};\n")
+        git(self.target, "add", *names)
+        git(self.target, "commit", "-q", "-m", "three files")
+        self.seed()
+        self.start(ConfigEditTests.config(self, "config_edit = true\n"))
+
+    def counts(self, key, *entries):
+        query = urlencode([("key", key), *(("entry", e) for e in entries)])
+        return self.request("GET", f"/config/path-matches?{query}", self.BEARER)
+
+    def test_ui_paths_count_each_entry_by_fnmatch_on_main(self):
+        code, _, body = self.counts(
+            "merge.ui_paths", "console/src/*", "console/build.ts", "nope/*",
+            "build.ts")
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {
+            "ref": "main",
+            "sha": git(self.target, "rev-parse", "--short=12", "main"),
+            "matches": [{"entry": "console/src/*", "count": 2},
+                        {"entry": "console/build.ts", "count": 1},
+                        {"entry": "nope/*", "count": 0},
+                        {"entry": "build.ts", "count": 0}]})
+
+    def test_review_paths_count_a_bare_name_by_its_basename(self):
+        code, _, body = self.counts(
+            "review.high_paths", "console/src/*", "build.ts", "nope/*")
+        self.assertEqual(code, 200)
+        self.assertEqual([item["count"] for item in body["matches"]], [2, 1, 0])
+
+    def test_an_unknown_key_or_an_oversized_ask_is_400(self):
+        for key, entries in (("merge.mode", ["x"]),
+                             ("merge.ui_paths", ["x"] * 101),
+                             ("merge.ui_paths", ["x" * 513])):
+            with self.subTest(key=key, entries=len(entries)):
+                code, _, body = self.counts(key, *entries)
+                self.assertEqual(code, 400)
+                self.assertIn("error", body)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,8 @@ those writing routes. A project with no store answers 503.
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
 `GET /tickets/KEY` and `GET /tickets?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
-and `GET /scouts/routes`, of `GET /merge-queue`, and of `POST /tickets/check`: one
+and `GET /scouts/routes`, of `GET /merge-queue`, of `GET /config/path-matches`,
+and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -1440,6 +1441,33 @@ and every daemon process serving the project shares one GitHub read; the
 cache file is the route's only write, and the store is never written. A GitHub read that fails answers 200 with
 `configured` null, the rest empty, and an `error` naming the failure,
 cached for the same 15 seconds. The route writes nothing.
+
+## `GET /config/path-matches?key=KEY&entry=E&entry=E…`
+
+How many files tracked on the project's main each entry of a path-list
+setting matches: what the console's Settings shows under a path list as
+it is typed.
+
+```json
+{"ref": "main", "sha": "0123456789ab",
+ "matches": [{"entry": "console/src/*", "count": 214},
+             {"entry": "nope/*", "count": 0}]}
+```
+
+`key` is one of `merge.ui_paths` (matched with `fnmatch`),
+`review.high_paths` and `review.medium_paths` (matched as review's blast
+radius matches, a pattern with no `/` also against the file's name) and
+`worktree.setup.inputs` (an exact path or a directory prefix): the rules
+`stale_config_paths` in `--status` uses. Each `entry` is matched as given,
+saved or not; `matches` keeps their order, each with its `entry` and
+`count`. `ref` is the main the daemon reads (`origin/main`, else `main`)
+and `sha` its commit, short to 12. The listing is `git ls-tree` of that
+commit, cached per commit; no checkout is touched.
+
+The route opens with `GET /config` (`[serve] config_edit = true`, 404
+otherwise) and answers to the same bearer. An unknown `key`, more than
+100 entries or an entry over 512 characters is 400 with an `error`; a
+project with no readable main is 503.
 
 ## `GET /tickets/KO-n`
 

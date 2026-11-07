@@ -143,7 +143,8 @@ class GeneratedFilesTests(unittest.TestCase):
                          [f"{stem}.schema.json" for stem in (
                              "attention", "board", "findings", "history", "holds",
                              "host-attention", "host-status", "ledger",
-                             "merge-queue", "peers", "prefs", "run-asks",
+                             "merge-queue", "path-matches", "peers", "prefs",
+                             "run-asks",
                              "run-detail", "run-files",
                              "run-merge", "run-transcript", "run-turns",
                              "scout-routes", "scout", "scouts", "shipped",

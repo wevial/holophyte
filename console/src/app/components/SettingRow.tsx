@@ -1,11 +1,31 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { bind, UNBOUND_NOTE, type ConfigValues, type PatchValue } from "../../lib/config";
+import { bind, PATH_LIST_KEYS, PATH_MATCH_DEBOUNCE_MS, UNBOUND_NOTE, type ConfigValues, type PatchValue } from "../../lib/config";
 import type { Status } from "../../lib/contract.gen";
+import { usePathMatches } from "../queries";
 import type { SettingsField } from "../settings";
 
-export function SettingRow({ field, values, value: draft, onChange, project, host, applies, error, status, disabled = false }: {
+function PathMatches({ base, settingKey, label, entries }: { base: string; settingKey: string; label: string; entries: string[] }) {
+  const listed = JSON.stringify(entries);
+  const [asked, setAsked] = useState(entries);
+  useEffect(() => {
+    const timer = setTimeout(() => setAsked(JSON.parse(listed) as string[]), PATH_MATCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [listed]);
+  const { data } = usePathMatches(base, settingKey, asked);
+  if (!data || entries.length === 0) return null;
+  return (
+    <ul aria-label={`${label} matches`} className="flex w-full min-w-0 flex-col gap-1 font-mono text-[12px]">
+      {data.matches.map((match, index) => <li key={index} className={`break-words ${match.count === 0 ? "text-bad" : "text-ink-3"}`}>
+        {match.entry} · {match.count === 0 ? "matches nothing" : `${match.count} ${match.count === 1 ? "file" : "files"}`}
+      </li>)}
+    </ul>
+  );
+}
+
+export function SettingRow({ field, values, value: draft, onChange, base, project, host, applies, error, status, disabled = false }: {
   field: SettingsField;
+  base: string;
   values: ConfigValues | null;
   value?: PatchValue;
   onChange: (value: PatchValue, original: PatchValue) => void;
@@ -57,6 +77,8 @@ export function SettingRow({ field, values, value: draft, onChange, project, hos
               onChange(event.target.value.split("\n").filter((line) => line.trim() !== ""), original);
             }} className="w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />
             : <input type="text" aria-label={field.label} value={String(value)} placeholder={field.seat ? "the default route" : undefined} onChange={(event) => onChange(event.target.value, original)} className="w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />}
+        {field.kind === "lines" && bound.state !== "unbound" && PATH_LIST_KEYS.has(`${field.table}.${field.key}`) && Array.isArray(value) &&
+          <PathMatches base={base} settingKey={`${field.table}.${field.key}`} label={field.label} entries={value} />}
         {(routeText || defaulted || changed) && <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[12px]">
           {routeText && <span className={route?.down ? "text-bad" : route?.fallback ? "text-ask-ink" : "text-live"}>{routeText}</span>}
           {defaulted && <span className="text-ink-3">default</span>}
