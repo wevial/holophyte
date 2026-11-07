@@ -66,23 +66,15 @@ def _tracked(root, sha):
     return tuple(os.fsdecode(path) for path in listed.stdout.split(b"\0") if path)
 
 
-def _main_sha_of(project):
+def _main(project):
     root = Path(project.path).resolve()
     try:
         ref = main_ref(root)
         sha = _main_sha(root, ref)
     except OSError:
         return None
-    return None if sha is None else (str(root), ref, sha)
-
-
-def _main(project):
-    found = _main_sha_of(project)
-    if found is None:
-        return None
-    root, ref, sha = found
-    files = _tracked(root, sha)
-    return None if files is None else (ref, sha, files)
+    files = None if sha is None else _tracked(str(root), sha)
+    return None if files is None else (str(root), ref, sha, files)
 
 
 @functools.lru_cache(maxsize=64)
@@ -97,7 +89,7 @@ def path_matches(project, key, entries):
     main = _main(project)
     if main is None:
         return None
-    ref, sha, files = main
+    _, ref, sha, files = main
     return {"ref": ref, "sha": sha[:12],
             "matches": [{"entry": entry,
                          "count": sum(1 for path in files if match(entry, path))}
@@ -108,12 +100,10 @@ def stale_paths(project):
     entries = _entries(project)
     if not any(values for _, values in entries):
         return []
-    found = _main_sha_of(project)
-    if found is None:
+    main = _main(project)
+    if main is None:
         return []
-    root, ref, sha = found
-    if _tracked(root, sha) is None:
-        return []
+    root, ref, sha, _ = main
     return [{"key": PATH_MATCHERS[key][0], "entry": entry, "ref": ref,
              "sha": sha[:12]}
             for key, entry in _stale(root, sha, entries)]
