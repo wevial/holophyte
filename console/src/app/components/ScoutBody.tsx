@@ -147,7 +147,6 @@ const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-in
 export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: Ref<HTMLTextAreaElement> }) {
   const { detail, base } = page;
   const { scout } = detail;
-  const key = `${base}/${scout.id}`;
   const prefix = useId();
   const [chosen, setChosen] = useState<TabId | null>(null);
   const writeup = newestReport(detail)?.writeup ?? [];
@@ -155,7 +154,7 @@ export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: R
     ...(writeup.length > 0 ? [{ id: "writeup" as const, label: "Write-up", body: <ScoutWriteup sections={writeup} /> }] : []),
     ...(detail.reports.length > 0 ? [{
       id: "findings" as const, label: "Findings", count: numberFindings(detail.reports).length,
-      body: <ScoutReport key={`${key}/findings`} reports={detail.reports} baseSha={scout.base_sha} />,
+      body: <ScoutReport reports={detail.reports} baseSha={scout.base_sha} />,
     }] : []),
     { id: "activity", label: "Activity", body: <Progress page={page} /> },
   ];
@@ -189,7 +188,7 @@ export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: R
           {tab.body}
         </div>
       ))}
-      {hasThread(detail) && <ScoutThread key={`${key}/thread`} base={base} detail={detail} actions={page.actions} ref={composeRef} />}
+      {hasThread(detail) && <ScoutThread base={base} detail={detail} actions={page.actions} ref={composeRef} />}
     </>
   );
 }
