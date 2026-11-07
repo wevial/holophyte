@@ -117,11 +117,17 @@ const openEveryGroup = async () => {
   for (const fold of folds) if (fold != null) await click(fold);
 };
 
-const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+const happyDOM = (window as unknown as {
+  happyDOM: { setURL: (url: string) => void; setViewport: (viewport: { width: number; height: number }) => void };
+}).happyDOM;
 
-beforeAll(() => happyDOM.setURL(`${DEMO}/`));
+beforeAll(() => {
+  happyDOM.setURL(`${DEMO}/`);
+  happyDOM.setViewport({ width: 1600, height: 900 });
+});
 afterAll(() => {
   happyDOM.setURL("about:blank");
+  happyDOM.setViewport({ width: 1024, height: 768 });
   if (zone == null) delete process.env.TZ;
   else process.env.TZ = zone;
 });
