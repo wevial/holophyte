@@ -26,6 +26,7 @@ URL = Rule(lambda value: isinstance(value, str)
            and value.startswith(("http://", "https://")),
            "a URL starting http:// or https://", "URL")
 TITLE_CHARS, LINE_CHARS, BULLETS = 70, 120, (3, 5)
+HEADING_CHARS, WRITEUP_CHARS, SECTIONS = 60, 600, (2, 5)
 
 
 def short(limit):
@@ -112,6 +113,9 @@ FIELDS = {
     "actions": Each({"title": TEXT, "why": TEXT,
                      "kind": one_of(*KINDS, REVISE, GUARDRAIL),
                      "body": TEXT}),
+    "writeup": Omittable(Each({"heading": short(HEADING_CHARS),
+                               "text": short(WRITEUP_CHARS)},
+                              count=SECTIONS)),
 }
 PRIOR = Each({"scout": LINE, "finding": LINE, "verdict": one_of(*VERDICTS),
               "why": TEXT})

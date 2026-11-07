@@ -109,10 +109,20 @@ def section(title, lines):
     return [f"## {title}", "", *lines]
 
 
+def writeup_lines(reports):
+    writeup = reports[-1]["report"]["writeup"] if reports else None
+    if not writeup:
+        return []
+    return section("Write-up", [line for part in writeup for line in
+                                [f"### {one_line(part['heading'])}", "",
+                                 *prose(part["text"]), ""]])
+
+
 def page_lines(body):
     scout, reports = body["scout"], body["reports"]
     lines = [f"# Scout {scout['id']}: {one_line(scout['ask'])}", "",
              heading_line(scout), ""]
+    lines += writeup_lines(reports)
     lines += section("Report", per_pass(
         reports, lambda report: [*prose(report["summary"]), ""]))
     lines += section("Findings", findings_lines(reports))

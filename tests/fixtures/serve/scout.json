@@ -172,7 +172,8 @@
             "verdict": "holds",
             "why": "app/retry.py still loops without a delay"
           }
-        ]
+        ],
+        "writeup": null
       }
     }
   ],

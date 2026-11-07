@@ -24,12 +24,15 @@ from holophyte.scout.proposals import card_line
 from holophyte.scout.report import (
     BULLETS,
     GUARDRAIL,
+    HEADING_CHARS,
     LAYERS,
     LINE_CHARS,
     PRIOR,
     REPRODUCTION,
     REVISE,
+    SECTIONS,
     TITLE_CHARS,
+    WRITEUP_CHARS,
     fields_shape,
     offered_fields,
     offers_revise,
@@ -78,7 +81,14 @@ BRIEF_SENTENCE = (
     f"characters, its headline gives the answer in one sentence of at most "
     f"{LINE_CHARS} characters, and its bullets are {BULLETS[0]} to "
     f"{BULLETS[1]} lines of at most {LINE_CHARS} characters each, each of "
-    "the three on one line. ")
+    "the three on one line. "
+    f"Its writeup is {SECTIONS[0]} to {SECTIONS[1]} sections written for the "
+    "maintainer in plain language: what was asked, what was found, what it "
+    "means and what the scout suggests. Each section's heading is at most "
+    f"{HEADING_CHARS} characters and its text one to four plain sentences "
+    f"of at most {WRITEUP_CHARS} characters, each on one line. The writeup "
+    "holds no file paths, line numbers or code identifiers; evidence stays "
+    "in the findings. ")
 REPRODUCTION_SHAPE = ",\n" + fields_shape({"reproduction": REPRODUCTION})
 PRIOR_SHAPE = ",\n" + fields_shape({"prior": PRIOR})
 MEASURE_SENTENCE = (

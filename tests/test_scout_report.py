@@ -27,6 +27,7 @@ from holophyte.scout.report import (
     report_problems,
     resolve_evidence,
 )
+from holophyte.scout.views import scout_parts
 from holophyte.tickets import ticket_template
 from store.scouts import create_scout, move_scout, scout
 from tests.host_fixture import git
@@ -52,6 +53,10 @@ BUG = {
     "extra": {"kept": True},
 }
 RESEARCH = {key: value for key, value in BUG.items() if key != "reproduction"}
+WRITEUP = [{"heading": "What was asked",
+            "text": "Why the retry loop spins when the server is down."},
+           {"heading": "What was found",
+            "text": "It retries at once, with no pause between attempts."}]
 
 
 def changed(path, value):
@@ -147,6 +152,24 @@ class ReportProblemsTests(unittest.TestCase):
             with self.subTest(field=field):
                 self.assertEqual(starts(report_problems(
                     changed((field,), None), "bug")), [field])
+
+    def test_a_writeup_past_its_section_count_or_lengths_is_named(self):
+        section = {"heading": "h" * 60, "text": "t" * 600}
+        self.assertEqual(report_problems(
+            changed(("writeup",), [section] * 5), "bug"), [])
+        for path, value, field in (
+                (("writeup",), [section] * 6, "writeup"),
+                (("writeup",), [section], "writeup"),
+                (("writeup", 1, "heading"), "h" * 61, "writeup[1].heading"),
+                (("writeup", 0, "text"), "t" * 601, "writeup[0].text")):
+            with self.subTest(field=field, value=value):
+                report = changed(("writeup",), copy.deepcopy(WRITEUP))
+                holder = report
+                for key in path[:-1]:
+                    holder = holder[key]
+                holder[path[-1]] = value
+                self.assertEqual(starts(report_problems(report, "bug")),
+                                 [field])
 
     def test_a_bug_report_needs_a_reproduction_in_its_shape(self):
         for path, value, field in (
@@ -311,6 +334,20 @@ class ReportRepairTests(ScoutFixture):
                          ("notes.txt", True))
         self.assertEqual(actions, list(enumerate(BUG["actions"], 1)))
         self.assertEqual(scout(conn, scout_id).phase, "done")
+
+    def stored_writeups(self, written):
+        conn, scout_id = self.run_bug_scout(written, written)
+        self.assertEqual(self.stubs.turns("repair"), [])
+        (report,), _ = self.stored(conn, scout_id)
+        (served,) = scout_parts(conn, scout_id)["reports"]
+        return report.get("writeup"), served["report"]["writeup"]
+
+    def test_a_two_section_writeup_is_stored_and_served(self):
+        self.assertEqual(self.stored_writeups(changed(("writeup",), WRITEUP)),
+                         (WRITEUP, WRITEUP))
+
+    def test_a_report_without_a_writeup_loads_it_null(self):
+        self.assertEqual(self.stored_writeups(BUG), (None, None))
 
     def test_a_report_still_malformed_after_its_repair_fails_the_scout(self):
         missing = changed(("summary",), None)

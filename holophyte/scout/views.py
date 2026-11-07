@@ -170,7 +170,8 @@ def served_report(report):
             "cut": report.get("cut"),
             "prior": (None if report.get("prior") is None
                       else [{key: judgement[key] for key in PRIOR_KEYS}
-                            for judgement in report["prior"]])}
+                            for judgement in report["prior"]]),
+            "writeup": report.get("writeup")}
 
 
 def served_task(task):

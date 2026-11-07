@@ -672,6 +672,22 @@
       ],
       "additionalProperties": true
     },
+    "WriteupSection": {
+      "type": "object",
+      "properties": {
+        "heading": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "heading",
+        "text"
+      ],
+      "additionalProperties": true
+    },
     "ScoutReport": {
       "type": "object",
       "properties": {
@@ -748,6 +764,19 @@
               "type": "null"
             }
           ]
+        },
+        "writeup": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WriteupSection"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -758,7 +787,8 @@
         "actions",
         "reproduction",
         "cut",
-        "prior"
+        "prior",
+        "writeup"
       ],
       "additionalProperties": true
     },

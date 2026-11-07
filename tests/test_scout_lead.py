@@ -10,6 +10,7 @@ import time
 import unittest
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import holophyte.scout.lead as lead
@@ -234,6 +235,22 @@ class ScoutLeadTests(ScoutFixture):
                           "synthesis", "report"])
         self.assertFalse([arg for call in calls for arg in call["argv"]
                           if SECRET in arg])
+
+
+class ReportBriefTests(unittest.TestCase):
+    def test_the_report_goal_asks_for_a_bounded_plain_writeup(self):
+        row = SimpleNamespace(kind="research", subject_kind=None,
+                              subject_ref=None)
+        goal = lead.report_goal(row, SimpleNamespace(tasks=[]), None, False)
+        shape = goal[goal.index("```json"):]
+        self.assertIn('"writeup": [{"heading": TEXT, "text": TEXT}, ...]',
+                      shape)
+        prose = goal[:goal.index("```json")]
+        for phrase in ("writeup is 2 to 5 sections",
+                       "heading is at most 60 characters",
+                       "one to four plain sentences of at most 600 characters",
+                       "no file paths, line numbers"):
+            self.assertIn(phrase, prose)
 
 
 class AnswerReaderTests(unittest.TestCase):

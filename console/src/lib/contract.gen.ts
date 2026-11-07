@@ -1310,6 +1310,12 @@ export const priorJudgementSchema = z.looseObject({
 });
 export type PriorJudgement = z.infer<typeof priorJudgementSchema>;
 
+export const writeupSectionSchema = z.looseObject({
+  heading: z.string(),
+  text: z.string(),
+});
+export type WriteupSection = z.infer<typeof writeupSectionSchema>;
+
 export const scoutReportSchema = z.looseObject({
   headline: z.string().nullable(),
   summary: z.string(),
@@ -1319,6 +1325,7 @@ export const scoutReportSchema = z.looseObject({
   reproduction: reproductionSchema.nullable(),
   cut: z.array(z.string()).nullable(),
   prior: z.array(priorJudgementSchema).nullable(),
+  writeup: z.array(writeupSectionSchema).nullable(),
 });
 export type ScoutReport = z.infer<typeof scoutReportSchema>;
 
