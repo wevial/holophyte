@@ -75,12 +75,8 @@ export function ScoutPage() {
     flushSync(() => showChat(false));
     chatButton.current?.focus();
   };
-  const reopenChat = () => {
-    flushSync(() => showChat(true));
-    focusComposer();
-  };
   const chat = threaded
-    ? { count: page.detail.thread.length, tab: wide ? null : thread, onOpen: wide && !chatOpen ? reopenChat : null, openRef: chatButton }
+    ? { count: page.detail.thread.length, tab: wide ? null : thread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton }
     : null;
   return (
     <section aria-label={label} data-scout-layout

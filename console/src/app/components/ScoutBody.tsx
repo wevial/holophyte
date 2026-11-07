@@ -146,7 +146,7 @@ const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-in
 export const CHAT_SLOT = "[&>section]:mt-0 [&>section>h2]:sr-only";
 
 /** The chat's place in the document: `tab` holds the Thread as a tab, and `onOpen` shows a button that docks it. */
-export interface DocumentChat {
+interface DocumentChat {
   count: number;
   tab: ReactNode | null;
   onOpen: (() => void) | null;
