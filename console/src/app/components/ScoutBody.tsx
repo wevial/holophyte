@@ -184,7 +184,7 @@ export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: R
         ))}
       </div>
       {tabs.map((tab) => (
-        <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} hidden={tab !== current}
+        <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} tabIndex={0} hidden={tab !== current}
           className="pt-8 [&>:first-child]:mt-0">
           {tab.body}
         </div>
