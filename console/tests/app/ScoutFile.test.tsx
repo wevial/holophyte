@@ -93,7 +93,7 @@ const click = async (element: Element) => {
   await settled();
 };
 
-const region = () => screen.getByRole("region", { name: "Action items" });
+const region = () => screen.getByRole("region", { name: "Decide" });
 const heading = () => within(region()).getByRole("heading").textContent;
 const rows = () => Array.from(within(region()).getByRole("list", { name: "Action items" }).children) as HTMLElement[];
 const rowOf = (id: string) => rows().find((row) => row.querySelector("[data-action-id]")!.textContent === id)!;
@@ -117,7 +117,7 @@ afterEach(() => {
 
 test("a done scout's Action items count the unfiled, list A1 to A4 in order and stamp the filed one", async () => {
   await mount(scoutFetch({ scout: done([...items].reverse()) }).fetch);
-  expect(heading()).toBe("Action items3 to file");
+  expect(heading()).toBe("Decide3 to file");
   expect(rows().map((row) => [
     row.querySelector("[data-action-id]")!.textContent,
     row.querySelector("[data-action-kind]")!.textContent,
@@ -148,7 +148,7 @@ test("File posts the scout and item, reads Filing… while out, toasts the key a
   expect(toast()).toBe("Filed DEMO-214 in demo Backlog.");
   expect(reads(seen)).toBeGreaterThan(before);
   expect(rowOf("A1").querySelector("[data-filed]")!.textContent).toStartWith("Filed DEMO-214");
-  expect(heading()).toBe("Action items2 to file");
+  expect(heading()).toBe("Decide2 to file");
 });
 
 test("a checker refusal toasts its first problem and opens New ticket with the item's draft, the stored draft untouched", async () => {
@@ -284,11 +284,11 @@ test("actions off disables each File with the actions-off title", async () => {
   for (const id of ["A1", "A3", "A4"]) expect([fileOf(id).disabled, fileOf(id).title]).toEqual([true, ACTIONS_OFF]);
 });
 
-test("a swarming scout with no actions has no Action items region", async () => {
+test("a swarming scout with no actions has no Decide region", async () => {
   const swarming = { ...done([]), scout: { ...done().scout, phase: "swarming" as const, ended_ms: null } };
   await mount(scoutFetch({ scout: swarming }).fetch);
-  expect(screen.getByRole("region", { name: "Progress" })).toBeTruthy();
-  expect(screen.queryByRole("region", { name: "Action items" })).toBeNull();
+  expect(screen.getByRole("region", { name: "Verdict" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Decide" })).toBeNull();
 });
 
 test("an action of pass 2 reads pass 2 and a pass-1 action reads no pass", async () => {

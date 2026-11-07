@@ -103,7 +103,7 @@ const click = async (element: Element) => {
 };
 
 const facts = () => document.querySelector<HTMLElement>("[data-scout-facts]")!;
-const region = () => screen.getByRole("region", { name: "Action items" });
+const region = () => screen.getByRole("region", { name: "Decide" });
 const rowOf = (id: string) =>
   Array.from(within(region()).getByRole("list", { name: "Action items" }).children).find((row) => row.querySelector("[data-action-id]")!.textContent === id) as HTMLElement;
 const reviseButton = () => within(rowOf("A2")).getByRole<HTMLButtonElement>("button", { name: "Revise" });
@@ -145,7 +145,7 @@ test("the facts line links a run, defect, ticket or pull request subject and rea
 
 test("a revise item reads its tag and Revise in place of File and is not counted to file", async () => {
   await mount(demo().fetch);
-  expect(within(region()).getByRole("heading").textContent).toBe("Action items1 to file");
+  expect(within(region()).getByRole("heading").textContent).toBe("Decide1 to file");
   expect(within(rowOf("A1")).getByRole("button").textContent).toBe("File");
   expect(rowOf("A2").querySelector("[data-action-kind]")!.textContent).toBe("revise");
   expect(reviseButton().disabled).toBe(false);

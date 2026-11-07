@@ -1,15 +1,19 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import type { ScoutDetail } from "../../lib/contract.gen";
 import { formatSpan } from "../../lib/format";
-import type { ScoutPage } from "../scout";
+import { numberFindings, type ScoutPage } from "../scout";
 import { hasThread } from "../scoutThread";
 import { SECTION_LABEL } from "./Criteria";
 import { ScoutActions } from "./ScoutActions";
 import { ScoutActivity } from "./ScoutActivity";
 import { ScoutReport } from "./ScoutReport";
 import { ScoutThread } from "./ScoutThread";
+import { ScoutWriteup } from "./ScoutWriteup";
 import { StateDot } from "./StateDot";
 
 type Shown = Extract<ScoutPage, { kind: "scout" }>;
+
+const newestReport = (detail: ScoutDetail) => [...detail.reports].sort((a, b) => a.pass - b.pass).at(-1)?.report;
 
 /** `text` clamped to three lines, with More shown only when the clamp hides some of it. */
 function Sentence({ text }: { text: string }) {
@@ -47,7 +51,7 @@ function Sentence({ text }: { text: string }) {
  *  state sentence. */
 function Verdict({ page }: { page: Shown }) {
   const { detail } = page;
-  const report = detail.scout.phase === "done" ? [...detail.reports].sort((a, b) => a.pass - b.pass).at(-1)?.report : undefined;
+  const report = detail.scout.phase === "done" ? newestReport(detail) : undefined;
   let body: ReactNode;
   if (report?.headline != null) {
     body = (
@@ -109,6 +113,82 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
     <>
       <Verdict page={page} />
       {page.live ? [progress, ...found] : [...found, progress]}
+      {hasThread(detail) && <ScoutThread key={`${key}/thread`} base={base} detail={detail} actions={page.actions} ref={composeRef} />}
+    </>
+  );
+}
+
+/** A scout's page rail below its head: Summary, the Verdict, then Decide, its action items. */
+export function ScoutRail({ page, project }: { page: Shown; project: string }) {
+  const { detail, base } = page;
+  const { scout } = detail;
+  const summary = useId();
+  return (
+    <>
+      <section aria-labelledby={summary} className="mt-8">
+        <h2 id={summary} className={`m-0 ${SECTION_LABEL}`}>Summary</h2>
+        <div className="mt-4"><Verdict page={page} /></div>
+      </section>
+      <div className="mt-8 empty:hidden">
+        <ScoutActions key={`${base}/${scout.id}/actions`} title="Decide" compact items={detail.actions} base={base} project={project} scout={scout.id} actions={page.actions} />
+      </div>
+    </>
+  );
+}
+
+type TabId = "writeup" | "findings" | "activity";
+
+const TAB = "-mb-px inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 border-b-2 bg-transparent px-4 font-sans text-[12px] font-medium uppercase tracking-[0.12em]";
+const TAB_ON = "border-act bg-act-wash text-act";
+const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink";
+
+/** A scout's page document: tabs Write-up (when the newest report has one), Findings (when there is a report) and
+ *  Activity, opening on the first of them, then the Thread. */
+export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: Ref<HTMLTextAreaElement> }) {
+  const { detail, base } = page;
+  const { scout } = detail;
+  const key = `${base}/${scout.id}`;
+  const prefix = useId();
+  const [chosen, setChosen] = useState<TabId | null>(null);
+  const writeup = newestReport(detail)?.writeup ?? [];
+  const tabs: { id: TabId; label: string; count?: number; body: ReactNode }[] = [
+    ...(writeup.length > 0 ? [{ id: "writeup" as const, label: "Write-up", body: <ScoutWriteup sections={writeup} /> }] : []),
+    ...(detail.reports.length > 0 ? [{
+      id: "findings" as const, label: "Findings", count: numberFindings(detail.reports).length,
+      body: <ScoutReport key={`${key}/findings`} reports={detail.reports} baseSha={scout.base_sha} />,
+    }] : []),
+    { id: "activity", label: "Activity", body: <Progress page={page} /> },
+  ];
+  const current = tabs.find((tab) => tab.id === chosen) ?? tabs[0]!;
+  const tabRefs = useRef(new Map<TabId, HTMLButtonElement>());
+  const onKeyDown = (event: KeyboardEvent) => {
+    const at = tabs.indexOf(current);
+    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
+    if (to == null) return;
+    event.preventDefault();
+    const next = tabs[(to + tabs.length) % tabs.length]!;
+    setChosen(next.id);
+    tabRefs.current.get(next.id)?.focus();
+  };
+  return (
+    <>
+      <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap border-b border-rule">
+        {tabs.map((tab) => (
+          <button key={tab.id} ref={(node) => void (node ? tabRefs.current.set(tab.id, node) : tabRefs.current.delete(tab.id))}
+            type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
+            tabIndex={tab === current ? 0 : -1} onClick={() => setChosen(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF}`}>
+            {tab.label}
+            {tab.count != null && " "}
+            {tab.count != null && <span data-tab-count className="font-mono text-[11px] tracking-normal">{tab.count}</span>}
+          </button>
+        ))}
+      </div>
+      {tabs.map((tab) => (
+        <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} hidden={tab !== current}
+          className="pt-8 [&>:first-child]:mt-0">
+          {tab.body}
+        </div>
+      ))}
       {hasThread(detail) && <ScoutThread key={`${key}/thread`} base={base} detail={detail} actions={page.actions} ref={composeRef} />}
     </>
   );

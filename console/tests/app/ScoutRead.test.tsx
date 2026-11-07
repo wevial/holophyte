@@ -190,6 +190,7 @@ const region = (name: string, inside: HTMLElement = document.body) => within(ins
 const inOrder = (elements: HTMLElement[]) =>
   elements.every((element, index) => index === 0 || (elements[index - 1]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
 const BODY = ["Verdict", "Action items", "Findings", "Progress", "Thread"];
+const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
 const groups = () => Array.from(screen.getByRole("list", { name: "Scout activity" }).children) as HTMLElement[];
 const groupNamed = (title: string) => groups().find((group) => group.querySelector("[data-group-title] b")!.textContent === title)!;
 const fold = (group: HTMLElement) => group.querySelector(":scope > div > button[aria-expanded]");
@@ -255,12 +256,15 @@ test("the Verdict reads the newest report's headline over its bullets, or its su
   expect(within(region("Verdict")).queryByRole("list")).toBeNull();
 });
 
-test("a done scout's body reads Verdict, Action items, Findings, Progress and Thread; a live pass puts Progress second with its pass open", async () => {
+test("a done scout's rail reads Verdict then Decide and its document Findings then Thread; a live pass's Activity has its pass open", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
-  expect(inOrder(BODY.map((name) => region(name, region("scout 31"))))).toBe(true);
+  const rail = document.querySelector<HTMLElement>("[data-scout-rail]")!;
+  const body = document.querySelector<HTMLElement>("[data-scout-body]")!;
+  expect(inOrder(["Verdict", "Decide"].map((name) => region(name, rail)))).toBe(true);
+  expect(inOrder(["Findings", "Thread"].map((name) => region(name, body)))).toBe(true);
   cleanup();
   await mount("#/scouts/demo/31", scoutFetch(swarming), PASS_THREE + 3 * 60_000);
-  expect(inOrder(["Verdict", "Progress", "Action items", "Findings"].map((name) => region(name)))).toBe(true);
+  await showActivity();
   expect(fold(groupNamed("Pass 3"))!.getAttribute("aria-expanded")).toBe("true");
 });
 
@@ -290,11 +294,13 @@ test("the reproduction folds its hypotheses into one counted line, and a report 
 
 test("Progress lists one closed row per group with only the waves folding and no steps, and a wave counts its failed helpers in the bad tone, running or not", async () => {
   await mount("#/scouts/demo/31", scoutFetch(twoWaves));
+  await showActivity();
   expect(groups().map((group) => group.querySelector("[data-group-title] b")!.textContent)).toEqual(["Plan", "Wave 1", "Synthesis", "Wave 2", "Report"]);
   expect(groups().map((group) => fold(group)?.getAttribute("aria-expanded") ?? null)).toEqual([null, "false", null, "false", null]);
   expect(document.querySelectorAll("[data-step-text]")).toHaveLength(0);
   cleanup();
   await mount("#/scouts/demo/31", scoutFetch(scout31));
+  await showActivity();
   expect(within(region("Progress")).getByRole("heading").textContent).toBe("Progress3m 51s");
   const sub = groupNamed("Wave 1").querySelector("[data-group-title]")!;
   expect(sub.lastElementChild!.hasAttribute("data-failed")).toBe(true);
@@ -302,6 +308,7 @@ test("Progress lists one closed row per group with only the waves folding and no
   cleanup();
   const stoppedToo = { ...scout31, tasks: scout31.tasks.map((each, index) => (index === 4 ? { ...each, phase: "stopped" as const } : each)) };
   await mount("#/scouts/demo/31", scoutFetch(stoppedToo));
+  await showActivity();
   expect(groupNamed("Wave 1").querySelector("[data-badge]")!.getAttribute("data-badge")).toBe("bad");
   cleanup();
   const swarmingWithFailures: ScoutDetail = {
@@ -318,6 +325,7 @@ test("Progress lists one closed row per group with only the waves folding and no
 
 test("an opened wave's task rows read title, a failed one's reason and a meta line, and a pressed row shows its question", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
+  await showActivity();
   await click(fold(groupNamed("Wave 1"))!);
   const rows = taskRows(groupNamed("Wave 1"));
   const read = (li: HTMLElement) => [
