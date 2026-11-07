@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { fetchConfig, pathMatchesPath } from "../lib/config";
+import { fetchConfig, pathMatchesPath, TRACKED_TREE_PATH } from "../lib/config";
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
@@ -13,6 +13,7 @@ import {
   mergeQueueSchema,
   mergeReadinessSchema,
   pathMatchesSchema,
+  trackedTreeSchema,
   peersSchema,
   runAsksSchema,
   runDetailSchema,
@@ -480,6 +481,24 @@ export function usePathMatches(base: string, key: string, entries: string[]) {
     queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, pathMatchesSchema),
     enabled: entries.length > 0,
     placeholderData: keepPreviousData,
+  });
+}
+
+/** Main's tracked directories at `base`; null when the daemon lacks the
+ *  route or main tracks more files than it answers (413). */
+export function useTrackedTree(base: string, enabled: boolean) {
+  const deps = useContext(PollDepsContext);
+  return useQuery({
+    queryKey: routeKey(base, TRACKED_TREE_PATH),
+    queryFn: async () => {
+      try {
+        return await fetchRoute(deps.fetch, `${base}${TRACKED_TREE_PATH}`, trackedTreeSchema);
+      } catch (failure) {
+        if (failure instanceof AnswerError && (failure.status === 404 || failure.status === 413)) return null;
+        throw failure;
+      }
+    },
+    enabled,
   });
 }
 

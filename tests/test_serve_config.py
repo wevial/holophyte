@@ -955,5 +955,52 @@ class PathMatchesTests(ServeTestCase):
                 self.assertIn("error", body)
 
 
+class TrackedTreeTests(ServeTestCase):
+    """`GET /config/tracked-tree` over a real repository whose main tracks
+    console/src/a.ts, console/src/b.ts, console/build.ts and docs/x.md."""
+
+    TOKEN = ConfigEditTests.TOKEN
+    BEARER = ConfigEditTests.BEARER
+    SECRET = ConfigEditTests.SECRET
+    HOOK_TOKENS = ConfigEditTests.HOOK_TOKENS
+
+    def setUp(self):
+        super().setUp()
+        git(self.target, "init", "-q", "-b", "main")
+        names = ("console/src/a.ts", "console/src/b.ts", "console/build.ts",
+                 "docs/x.md")
+        for name in names:
+            path = self.target / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("export {};\n")
+        git(self.target, "add", *names)
+        git(self.target, "commit", "-q", "-m", "four files")
+        self.seed()
+        self.start(ConfigEditTests.config(self, "config_edit = true\n"))
+
+    def test_the_tree_counts_each_directory_s_tracked_files_on_main(self):
+        code, _, body = self.request("GET", "/config/tracked-tree", self.BEARER)
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {
+            "ref": "main",
+            "sha": git(self.target, "rev-parse", "--short=12", "main"),
+            "files": 4,
+            "dirs": [
+                {"path": "", "files": 4, "dirs": ["console", "docs"],
+                 "leaves": []},
+                {"path": "console", "files": 3, "dirs": ["src"],
+                 "leaves": ["build.ts"]},
+                {"path": "console/src", "files": 2, "dirs": [],
+                 "leaves": ["a.ts", "b.ts"]},
+                {"path": "docs", "files": 1, "dirs": [], "leaves": ["x.md"]}]})
+
+    def test_a_main_over_the_file_bound_is_413(self):
+        with patch("holophyte.serve.serve_config.MAX_TREE_FILES", 3):
+            code, _, body = self.request("GET", "/config/tracked-tree",
+                                         self.BEARER)
+        self.assertEqual(code, 413)
+        self.assertEqual((body["files"], body["limit"]), (4, 3))
+
+
 if __name__ == "__main__":
     unittest.main()

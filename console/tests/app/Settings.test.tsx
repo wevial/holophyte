@@ -195,6 +195,96 @@ test("each UI paths line is followed by its count on main, a line matching nothi
   expect(matchLines().map((line) => line.textContent)).toEqual(["console/src/* · 214 files", "console/build.ts · 1 file"]);
 });
 
+const TREE = {
+  ref: "main", sha: "0123456789ab", files: 4,
+  dirs: [
+    { path: "", files: 4, dirs: ["console", "docs"], leaves: [] },
+    { path: "console", files: 3, dirs: ["src"], leaves: ["build.ts"] },
+    { path: "console/src", files: 2, dirs: [], leaves: ["a.ts", "b.ts"] },
+    { path: "docs", files: 1, dirs: [], leaves: ["x.md"] },
+  ],
+};
+
+function treeFleet(uiPaths: string[], tree: () => Response = () => Response.json(TREE)) {
+  const source = fleet(async () => Response.json({ text: "", values: { merge: { ui_paths: uiPaths } }, path: "/srv/demo/config.toml", applies: "next loop start", revision: "a".repeat(64) }));
+  const fetch: Fetch = async (url, init) => {
+    if (url === `${ORIGIN}/config/tracked-tree`) return tree();
+    if (!url.startsWith(`${ORIGIN}/config/path-matches?`)) return source.fetch(url, init);
+    const entries = new URL(url).searchParams.getAll("entry");
+    return Response.json({ ref: "main", sha: "0123456789ab", matches: entries.map((entry) => ({ entry, count: COUNTS[entry] ?? 0 })) });
+  };
+  return { ...source, fetch };
+}
+
+async function mountTree(source: ReturnType<typeof treeFleet>) {
+  await mount("#/settings/capture?project=demo", source);
+  await act(settle);
+}
+
+const pick = (name: string) => fireEvent.click(within(screen.getByRole("group", { name: "UI paths view" })).getByRole("button", { name }));
+const treeBox = (name: string) => screen.getByRole("checkbox", { name });
+const patterns = () => within(screen.getByRole("list", { name: "UI paths patterns" })).getAllByRole("listitem").map((item) => item.textContent);
+
+test("in Tree view checking console/src/ then console/build.ts writes those two lines with console/ mixed and 3 of 4 covered, and checking console/ folds them to console/*", async () => {
+  await mountTree(treeFleet([]));
+  pick("Tree");
+  expect(screen.queryByRole("textbox", { name: "UI paths" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open console/" }));
+  fireEvent.click(treeBox("console/src/"));
+  fireEvent.click(treeBox("console/build.ts"));
+  expect(patterns()).toEqual(["console/src/* · 2 files", "console/build.ts · 1 file"]);
+  expect(treeBox("console/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeBox("docs/").getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("3 of 4 tracked files");
+  pick("Text");
+  expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\nconsole/build.ts");
+  pick("Tree");
+  fireEvent.click(treeBox("console/"));
+  expect(patterns()).toEqual(["console/* · 3 files"]);
+  expect(treeBox("console/").getAttribute("aria-checked")).toBe("true");
+});
+
+test("a pattern the tree cannot show is kept from text while checking docs/ adds docs/*", async () => {
+  await mountTree(treeFleet(["console/src/*", "*.css"]));
+  pick("Tree");
+  expect(patterns()).toEqual(["console/src/* · 2 files", "*.css · kept from text"]);
+  fireEvent.click(treeBox("docs/"));
+  expect(patterns()).toEqual(["console/src/* · 2 files", "*.css · kept from text", "docs/* · 1 file"]);
+  pick("Text");
+  expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\n*.css\ndocs/*");
+});
+
+test("unchecking one file under a checked folder writes its remaining siblings in place of the folder", async () => {
+  await mountTree(treeFleet(["console/*"]));
+  pick("Tree");
+  fireEvent.click(screen.getByRole("button", { name: "Open console/" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open console/src/" }));
+  fireEvent.click(treeBox("console/src/a.ts"));
+  expect(patterns()).toEqual(["console/src/b.ts · 1 file", "console/build.ts · 1 file"]);
+  expect(treeBox("console/").getAttribute("aria-checked")).toBe("mixed");
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("2 of 4 tracked files");
+});
+
+test("switching Tree to Text shows the same lines with their counts on main, the view is remembered, and a 413 tree offers Text only", async () => {
+  await mountTree(treeFleet(["console/src/*", "console/build.ts"]));
+  pick("Tree");
+  expect(screen.queryByRole("list", { name: "UI paths matches" })).toBeNull();
+  pick("Text");
+  await act(settle);
+  expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\nconsole/build.ts");
+  expect(matchLines().map((line) => line.textContent)).toEqual(["console/src/* · 214 files", "console/build.ts · 1 file"]);
+  pick("Tree");
+  cleanup();
+  await mountTree(treeFleet(["console/src/*"]));
+  expect(screen.getByRole("button", { name: "Tree" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("list", { name: "UI paths tree" })).toBeTruthy();
+  cleanup();
+  await mountTree(treeFleet(["console/src/*"], () => Response.json({ error: "main tracks 20001 files", files: 20001, limit: 20000 }, { status: 413 })));
+  expect(screen.queryByRole("group", { name: "UI paths view" })).toBeNull();
+  expect(screen.queryByRole("list", { name: "UI paths tree" })).toBeNull();
+  expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*");
+});
+
 test("an implementer inline table shows read-only in full in a pre with a link to Raw TOML, and an absent reviewer shows no default tag", async () => {
   await mount("#/settings/agents?project=demo", fleet(agentsConfig));
   const implementer = within(screen.getByRole("group", { name: "Implementer" }));

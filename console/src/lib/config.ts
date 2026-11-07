@@ -23,6 +23,8 @@ export const PATH_MATCH_DEBOUNCE_MS = 300;
 export const pathMatchesPath = (key: string, entries: readonly string[]) =>
   `/config/path-matches?${new URLSearchParams([["key", key], ...entries.map((entry) => ["entry", entry])]).toString()}`;
 
+export const TRACKED_TREE_PATH = "/config/tracked-tree";
+
 export type Bound = { state: "absent" } | { state: "bound"; value: PatchValue } | { state: "unbound"; value: unknown };
 
 export const isLines = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");

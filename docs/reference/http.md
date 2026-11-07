@@ -29,7 +29,7 @@ those writing routes. A project with no store answers 503.
 `GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
 `GET /tickets/KEY` and `GET /tickets?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
 and `GET /scouts/routes`, of `GET /merge-queue`, of `GET /config/path-matches`,
-and of `POST /tickets/check`: one
+of `GET /config/tracked-tree`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
 
 ## `GET /status`
@@ -1468,6 +1468,32 @@ The route opens with `GET /config` (`[serve] config_edit = true`, 404
 otherwise) and answers to the same bearer. An unknown `key`, more than
 100 entries or an entry over 512 characters is 400 with an `error`; a
 project with no readable main is 503.
+
+## `GET /config/tracked-tree`
+
+The directories and files tracked on the project's main, as the tree
+Settings › Capture picks `[merge] ui_paths` from.
+
+```json
+{"ref": "main", "sha": "0123456789ab", "files": 4,
+ "dirs": [{"path": "", "files": 4, "dirs": ["console", "docs"], "leaves": []},
+          {"path": "console", "files": 3, "dirs": ["src"], "leaves": ["build.ts"]},
+          {"path": "console/src", "files": 2, "dirs": [], "leaves": ["a.ts", "b.ts"]},
+          {"path": "docs", "files": 1, "dirs": [], "leaves": ["x.md"]}]}
+```
+
+`dirs` holds every tracked directory once, the root first as `""`, in
+`git ls-tree` order: each with its `path`, the count of tracked `files`
+under it at any depth, and the names of its child directories (`dirs`) and
+of the files directly in it (`leaves`). `files` at the top counts the whole
+main. `ref` and `sha` are as in `GET /config/path-matches`, and the listing
+is the same cached `git ls-tree` of that commit.
+
+The route opens with `GET /config` (`[serve] config_edit = true`, 404
+otherwise) and answers to the same bearer. A main tracking more than 20,000
+files is 413 with an `error` and its `files` and `limit`, and the console
+then offers the setting as text only; a project with no readable main is
+503.
 
 ## `GET /tickets/KO-n`
 

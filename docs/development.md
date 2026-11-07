@@ -1270,7 +1270,8 @@ and `#/settings/$tab`: `general`, `review`, `agents`, `capture`, `hold`,
 `toml`, `hosts`, `appearance` and `log`; an unknown tab is a not-found page.
 `console/src/app/settingsDraft.ts` holds per-project field and raw drafts for the Settings page.
 `console/src/app/components/TomlEditor.tsx` edits and checks the whole TOML file with a line gutter.
-`console/src/app/components/SettingRow.tsx` binds the shared field rows, and
+`console/src/app/components/SettingRow.tsx` binds the shared field rows,
+`console/src/app/components/PathTree.tsx` picks `[merge] ui_paths` from main's tracked tree, and
 `console/src/app/components/UnsavedBar.tsx` lists and discards pending changes.
 `console/src/app/hosts.ts` derives the unscoped daemon cards from the shared fleet poll;
 `console/src/app/components/HostsTab.tsx` renders their health, projects and last reports.

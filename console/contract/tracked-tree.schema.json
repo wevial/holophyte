@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrackedTree",
+  "description": "GET /config/tracked-tree",
+  "$ref": "#/$defs/TrackedTree",
+  "$defs": {
+    "TrackedDir": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "dirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "leaves": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "path",
+        "files",
+        "dirs",
+        "leaves"
+      ],
+      "additionalProperties": true
+    },
+    "TrackedTree": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "dirs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TrackedDir"
+          }
+        }
+      },
+      "required": [
+        "ref",
+        "sha",
+        "files",
+        "dirs"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

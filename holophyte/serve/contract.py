@@ -915,6 +915,20 @@ class PathMatches(TypedDict):
     matches: list[PathMatch]
 
 
+class TrackedDir(TypedDict):
+    path: str
+    files: int
+    dirs: list[str]
+    leaves: list[str]
+
+
+class TrackedTree(TypedDict):
+    ref: str
+    sha: str
+    files: int
+    dirs: list[TrackedDir]
+
+
 ROUTES = {
     "status": (Status, "GET /status"),
     "attention": (Attention, "GET /attention"),
@@ -943,6 +957,7 @@ ROUTES = {
     "scout-routes": (ScoutRoutes, "GET /scouts/routes"),
     "merge-queue": (MergeQueue, "GET /merge-queue"),
     "path-matches": (PathMatches, "GET /config/path-matches?key=KEY&entry=E"),
+    "tracked-tree": (TrackedTree, "GET /config/tracked-tree"),
 }
 
 
