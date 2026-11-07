@@ -533,7 +533,6 @@ test("the rail is sticky at 320px beside the document from the wide breakpoint a
   expect(rail().classList.contains("sticky")).toBe(false);
 });
 
-/** `writtenUp` with the served thread's first two messages. */
 const chatty: ScoutDetail = { ...writtenUp, thread: served.thread.slice(0, 2) };
 const wideView = () => happyDOM.setViewport({ width: 1600, height: 900 });
 const chat = () => screen.queryByRole("region", { name: "Chat with the scout" });
