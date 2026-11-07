@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { fetchConfig } from "../lib/config";
+import { fetchConfig, pathMatchesPath } from "../lib/config";
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
@@ -12,6 +12,7 @@ import {
   ledgerSchema,
   mergeQueueSchema,
   mergeReadinessSchema,
+  pathMatchesSchema,
   peersSchema,
   runAsksSchema,
   runDetailSchema,
@@ -467,6 +468,18 @@ export function useConfig(base: string | null) {
     queryKey: routeKey(base ?? "", "/config"),
     queryFn: () => fetchConfig(base!, deps.fetch),
     enabled: base != null,
+  });
+}
+
+/** Each of `entries`' count of files on main under `key`'s matcher; idle with no entries. */
+export function usePathMatches(base: string, key: string, entries: string[]) {
+  const deps = useContext(PollDepsContext);
+  const path = pathMatchesPath(key, entries);
+  return useQuery({
+    queryKey: routeKey(base, path),
+    queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, pathMatchesSchema),
+    enabled: entries.length > 0,
+    placeholderData: keepPreviousData,
   });
 }
 

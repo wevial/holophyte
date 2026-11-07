@@ -4,7 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import { readStoredScope } from "../../src/app/projects";
-import { CONFIG_EDIT_OFF } from "../../src/lib/config";
+import { CONFIG_EDIT_OFF, PATH_MATCH_DEBOUNCE_MS } from "../../src/lib/config";
 import type { DayLogPrefs, LedgerEntry, Status } from "../../src/lib/contract.gen";
 import { addressOf } from "../../src/lib/hosts";
 import { tokenedFetch, type Fetch } from "../../src/lib/poll";
@@ -158,6 +158,41 @@ test("Agents rows share one fixed-width value column with each route line direct
     expect(within(status as HTMLElement).getByText(route)).toBeTruthy();
     expect(screen.getByRole("group", { name }).querySelector("p.w-full")).toBeNull();
   }
+});
+
+const COUNTS: Record<string, number> = { "console/src/*": 214, "nope/*": 0, "console/build.ts": 1 };
+
+function pathMatchesFleet() {
+  const asked: { key: string | null; entries: string[] }[] = [];
+  const source = fleet(async () => Response.json({ text: "", values: { merge: { ui_paths: ["console/src/*", "nope/*"] } }, path: "/srv/demo/config.toml", applies: "next loop start", revision: "a".repeat(64) }));
+  const fetch: Fetch = async (url, init) => {
+    if (!url.startsWith(`${ORIGIN}/config/path-matches?`)) return source.fetch(url, init);
+    const query = new URL(url).searchParams;
+    const entries = query.getAll("entry");
+    asked.push({ key: query.get("key"), entries });
+    return Response.json({ ref: "main", sha: "0123456789ab", matches: entries.map((entry) => ({ entry, count: COUNTS[entry] ?? 0 })) });
+  };
+  return { source: { ...source, fetch }, asked };
+}
+
+const matchLines = () => within(screen.getByRole("list", { name: "UI paths matches" })).getAllByRole("listitem");
+
+test("each UI paths line is followed by its count on main, a line matching nothing in the danger ink, and an edit asks again after the debounce", async () => {
+  const { source, asked } = pathMatchesFleet();
+  await mount("#/settings/capture?project=demo", source);
+  await act(settle);
+  const area = screen.getByRole("textbox", { name: "UI paths" });
+  expect(area.nextElementSibling).toBe(screen.getByRole("list", { name: "UI paths matches" }));
+  expect(matchLines().map((line) => line.textContent)).toEqual(["console/src/* · 214 files", "nope/* · matches nothing"]);
+  expect(matchLines().map((line) => line.classList.contains("text-bad"))).toEqual([false, true]);
+  expect(asked).toEqual([{ key: "merge.ui_paths", entries: ["console/src/*", "nope/*"] }]);
+  fireEvent.change(area, { target: { value: "console/src/*\nconsole/build.ts" } });
+  await act(settle);
+  expect(asked).toHaveLength(1);
+  await act(() => new Promise((resolve) => setTimeout(resolve, PATH_MATCH_DEBOUNCE_MS + 50)));
+  await act(settle);
+  expect(asked.at(-1)).toEqual({ key: "merge.ui_paths", entries: ["console/src/*", "console/build.ts"] });
+  expect(matchLines().map((line) => line.textContent)).toEqual(["console/src/* · 214 files", "console/build.ts · 1 file"]);
 });
 
 test("an implementer inline table shows read-only in full in a pre with a link to Raw TOML, and an absent reviewer shows no default tag", async () => {

@@ -904,6 +904,17 @@ class StoryDetail(TypedDict):
     decisions: list[StoryDecisionRow]
 
 
+class PathMatch(TypedDict):
+    entry: str
+    count: int
+
+
+class PathMatches(TypedDict):
+    ref: str
+    sha: str
+    matches: list[PathMatch]
+
+
 ROUTES = {
     "status": (Status, "GET /status"),
     "attention": (Attention, "GET /attention"),
@@ -931,6 +942,7 @@ ROUTES = {
     "scout": (ScoutDetail, "GET /scouts/ID"),
     "scout-routes": (ScoutRoutes, "GET /scouts/routes"),
     "merge-queue": (MergeQueue, "GET /merge-queue"),
+    "path-matches": (PathMatches, "GET /config/path-matches?key=KEY&entry=E"),
 }
 
 

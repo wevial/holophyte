@@ -53,6 +53,8 @@ from holophyte.serve.serve_ask import (
 )
 from holophyte.serve.serve_config import (
     CONFIG_PATH,
+    PATH_MATCHES_PATH,
+    config_path_matches,
     read_config,
     require_tomlkit,
     write_config,
@@ -292,7 +294,7 @@ def shaped_route(path):
 
 
 def is_json_route(path):
-    return (path in JSON_PATHS or path == CONFIG_PATH
+    return (path in JSON_PATHS or path in (CONFIG_PATH, PATH_MATCHES_PATH)
             or path.startswith(ACTIONS_PREFIX)
             or shaped_route(path) is not None)
 
@@ -325,7 +327,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.get(self.server.scope, parts.path, parts.query)
 
     def get(self, scope, path, query):
-        token = (scope.action_token if path == CONFIG_PATH
+        token = (scope.action_token if path in (CONFIG_PATH, PATH_MATCHES_PATH)
                  and scope.config_edit else scope.token)
         if token is not None and not self.open_route(path) \
                 and not authorized(self.headers.get("Authorization"), token):
@@ -356,6 +358,10 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == CONFIG_PATH:
             code, body = ((404, {"error": "not found", "path": path})
                           if not scope.config_edit else read_config(project))
+        elif path == PATH_MATCHES_PATH:
+            code, body = ((404, {"error": "not found", "path": path})
+                          if not scope.config_edit
+                          else config_path_matches(project, query))
         elif (shaped := shaped_route(path)) is not None:
             handler, segment = shaped
             code, body = handler(project, segment)

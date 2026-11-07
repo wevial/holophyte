@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PathMatches",
+  "description": "GET /config/path-matches?key=KEY&entry=E",
+  "$ref": "#/$defs/PathMatches",
+  "$defs": {
+    "PathMatch": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entry",
+        "count"
+      ],
+      "additionalProperties": true
+    },
+    "PathMatches": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PathMatch"
+          }
+        }
+      },
+      "required": [
+        "ref",
+        "sha",
+        "matches"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -1514,3 +1514,16 @@ export const mergeQueueSchema = z.looseObject({
   error: z.string().optional(),
 });
 export type MergeQueue = z.infer<typeof mergeQueueSchema>;
+
+export const pathMatchSchema = z.looseObject({
+  entry: z.string(),
+  count: z.int(),
+});
+export type PathMatch = z.infer<typeof pathMatchSchema>;
+
+export const pathMatchesSchema = z.looseObject({
+  ref: z.string(),
+  sha: z.string(),
+  matches: z.array(pathMatchSchema),
+});
+export type PathMatches = z.infer<typeof pathMatchesSchema>;

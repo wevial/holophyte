@@ -15,6 +15,14 @@ export type ConfigValues = Record<string, Record<string, unknown>>;
 
 export const UNBOUND_NOTE = "Edit in Raw TOML";
 
+/** The path-list settings `GET /config/path-matches` counts, each by its own matcher. */
+export const PATH_LIST_KEYS: ReadonlySet<string> = new Set(["merge.ui_paths", "review.high_paths", "review.medium_paths", "worktree.setup.inputs"]);
+
+export const PATH_MATCH_DEBOUNCE_MS = 300;
+
+export const pathMatchesPath = (key: string, entries: readonly string[]) =>
+  `/config/path-matches?${new URLSearchParams([["key", key], ...entries.map((entry) => ["entry", entry])]).toString()}`;
+
 export type Bound = { state: "absent" } | { state: "bound"; value: PatchValue } | { state: "unbound"; value: unknown };
 
 export const isLines = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");

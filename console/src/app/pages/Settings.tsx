@@ -175,7 +175,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
                     setErrors(({ [key]: _cleared, ...rest }) => rest);
                     draft.edit(project, key, original, value);
                   }}
-                  project={project} host={hostLabel} applies={answer.config.applies} />;
+                  base={host.base} project={project} host={hostLabel} applies={answer.config.applies} />;
               })}
               </fieldset>
             </div>

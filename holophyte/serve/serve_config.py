@@ -11,15 +11,20 @@ import threading
 import tomllib
 from contextlib import closing
 from datetime import datetime, timezone
+from urllib.parse import parse_qs
 
 import store.read
 from holophyte.admission import project_of
 from holophyte.agents.probes import probe_implementer
+from holophyte.cli.stale_paths import PATH_MATCHERS, path_matches
 from holophyte.config.checks import check_document
 from holophyte.config.reader import KNOWN_KEYS
 from holophyte.redact import RedactionError, redact, restore, spans
 
 CONFIG_PATH = "/config"
+PATH_MATCHES_PATH = "/config/path-matches"
+MAX_PATH_ENTRIES = 100
+MAX_PATH_ENTRY = 512
 CONFIG_ACTION = "config_edit"
 CONFIG_APPLIES = "next loop start"
 # The server is threaded: one PUT holds this from its read to its rename.
@@ -68,6 +73,22 @@ def read_config(project):
                  "revision": config_revision(current), "modified_ms": modified_ms,
                  "saved": config_saved(project),
                  "path": str(project.config_path), "applies": CONFIG_APPLIES}
+
+
+def config_path_matches(project, query):
+    asked = parse_qs(query, keep_blank_values=True)
+    keys = asked.get("key", [])
+    entries = asked.get("entry", [])
+    if len(keys) != 1 or keys[0] not in PATH_MATCHERS:
+        return 400, {"error": "key must be one of " + ", ".join(PATH_MATCHERS)}
+    if len(entries) > MAX_PATH_ENTRIES:
+        return 400, {"error": f"at most {MAX_PATH_ENTRIES} entries"}
+    if any(len(entry) > MAX_PATH_ENTRY for entry in entries):
+        return 400, {"error": f"an entry is at most {MAX_PATH_ENTRY} characters"}
+    found = path_matches(project, keys[0], entries)
+    if found is None:
+        return 503, {"error": "the project has no readable main"}
+    return 200, found
 
 
 def config_values(text):

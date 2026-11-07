@@ -12,16 +12,24 @@ from holophyte.review.blast_radius import matching
 from holophyte.review.briefs import main_ref
 
 
-def _ui_matches(entry, files):
-    return any(fnmatch.fnmatchcase(path, entry) for path in files)
+def _ui_match(entry, path):
+    return fnmatch.fnmatchcase(path, entry)
 
 
-def _review_matches(entry, files):
-    return any(matching(path, (entry,)) for path in files)
+def _review_match(entry, path):
+    return matching(path, (entry,)) is not None
 
 
-def _input_matches(entry, files):
-    return any(path == entry or path.startswith(entry + "/") for path in files)
+def _input_match(entry, path):
+    return path == entry or path.startswith(entry + "/")
+
+
+PATH_MATCHERS = {
+    "merge.ui_paths": ("[merge] ui_paths", _ui_match),
+    "review.high_paths": ("[review] high_paths", _review_match),
+    "review.medium_paths": ("[review] medium_paths", _review_match),
+    "worktree.setup.inputs": ("[worktree] setup inputs", _input_match),
+}
 
 
 def _read(reader):
@@ -32,16 +40,14 @@ def _read(reader):
 
 
 def _entries(project):
-    return (
-        ("[merge] ui_paths", _ui_matches,
-         _read(lambda: merge_config(project).ui_paths)),
-        ("[review] high_paths", _review_matches,
-         _read(lambda: review_config(project).high_paths)),
-        ("[review] medium_paths", _review_matches,
-         _read(lambda: review_config(project).medium_paths)),
-        ("[worktree] setup inputs", _input_matches, _read(lambda: dict.fromkeys(
-            path for step in setup_steps(project) for path in step.inputs or ()))),
-    )
+    values = {
+        "merge.ui_paths": lambda: merge_config(project).ui_paths,
+        "review.high_paths": lambda: review_config(project).high_paths,
+        "review.medium_paths": lambda: review_config(project).medium_paths,
+        "worktree.setup.inputs": lambda: dict.fromkeys(
+            path for step in setup_steps(project) for path in step.inputs or ()),
+    }
+    return tuple((key, _read(reader)) for key, reader in values.items())
 
 
 def _main_sha(root, ref):
@@ -51,28 +57,53 @@ def _main_sha(root, ref):
     return found.stdout.strip() if found.returncode == 0 else None
 
 
-@functools.lru_cache(maxsize=64)
-def _stale(root, ref, sha, entries):
+@functools.lru_cache(maxsize=4)
+def _tracked(root, sha):
     listed = subprocess.run(["git", "ls-tree", "-r", "--name-only", "-z", sha],
                             cwd=root, capture_output=True)
     if listed.returncode != 0:
-        return ()
-    files = [os.fsdecode(path) for path in listed.stdout.split(b"\0") if path]
-    return tuple((key, entry) for key, matches, values in entries
-                 for entry in values if not matches(entry, files))
+        return None
+    return tuple(os.fsdecode(path) for path in listed.stdout.split(b"\0") if path)
 
 
-def stale_paths(project):
+def _main(project):
     root = Path(project.path).resolve()
-    entries = _entries(project)
-    if not any(values for _, _, values in entries):
-        return []
     try:
         ref = main_ref(root)
         sha = _main_sha(root, ref)
     except OSError:
+        return None
+    files = None if sha is None else _tracked(str(root), sha)
+    return None if files is None else (str(root), ref, sha, files)
+
+
+@functools.lru_cache(maxsize=64)
+def _stale(root, sha, entries):
+    files = _tracked(root, sha) or ()
+    return tuple((key, entry) for key, values in entries for entry in values
+                 if not any(PATH_MATCHERS[key][1](entry, path) for path in files))
+
+
+def path_matches(project, key, entries):
+    _, match = PATH_MATCHERS[key]
+    main = _main(project)
+    if main is None:
+        return None
+    _, ref, sha, files = main
+    return {"ref": ref, "sha": sha[:12],
+            "matches": [{"entry": entry,
+                         "count": sum(1 for path in files if match(entry, path))}
+                        for entry in entries]}
+
+
+def stale_paths(project):
+    entries = _entries(project)
+    if not any(values for _, values in entries):
         return []
-    if sha is None:
+    main = _main(project)
+    if main is None:
         return []
-    return [{"key": key, "entry": entry, "ref": ref, "sha": sha[:12]}
-            for key, entry in _stale(str(root), ref, sha, entries)]
+    root, ref, sha, _ = main
+    return [{"key": PATH_MATCHERS[key][0], "entry": entry, "ref": ref,
+             "sha": sha[:12]}
+            for key, entry in _stale(root, sha, entries)]
