@@ -22,7 +22,7 @@ export function writePathView(view: PathView): void {
   }
 }
 
-type Model = { dirs: Map<string, TrackedTree["dirs"][number]>; under: Map<string, string[]>; total: number };
+type Model = { dirs: Map<string, TrackedTree["dirs"][number]>; under: Map<string, string[]>; patterns: Map<string, string>; total: number };
 type Split = { selected: Set<string>; kept: string[]; keptCovered: Set<string> };
 type Checked = "true" | "false" | "mixed";
 
@@ -39,7 +39,46 @@ function modelOf(tree: TrackedTree): Model {
     return files;
   };
   collect("");
-  return { dirs, under, total: under.get("")?.length ?? 0 };
+  const patterns = new Map<string, string>();
+  for (const [path, files] of under) {
+    if (path !== "") patterns.set(`${literal(path)}/*`, path);
+    for (const file of files) patterns.set(literal(file), file);
+  }
+  return { dirs, under, patterns, total: under.get("")?.length ?? 0 };
+}
+
+const inSet = (text: string) => text.replace(/[\\\]-]/g, "\\$&");
+
+/** A bracket set's body as Python's `fnmatch.translate` reads it: a
+ *  reversed range is dropped rather than refused. */
+function bracket(pattern: string, start: number, end: number): string {
+  const body = pattern.slice(start, end);
+  let set = inSet(body);
+  if (body.includes("-")) {
+    const chunks: string[] = [];
+    let from = start;
+    let at = pattern[start] === "!" ? start + 2 : start + 1;
+    for (;;) {
+      at = pattern.indexOf("-", at);
+      if (at < 0 || at >= end) break;
+      chunks.push(pattern.slice(from, at));
+      from = at + 1;
+      at += 3;
+    }
+    const rest = pattern.slice(from, end);
+    if (rest) chunks.push(rest);
+    else chunks[chunks.length - 1] += "-";
+    for (let k = chunks.length - 1; k > 0; k--) {
+      if (chunks[k - 1]!.slice(-1) > chunks[k]![0]!) {
+        chunks[k - 1] = chunks[k - 1]!.slice(0, -1) + chunks[k]!.slice(1);
+        chunks.splice(k, 1);
+      }
+    }
+    set = chunks.map(inSet).join("-");
+  }
+  if (set === "") return "(?!)";
+  if (set === "!") return ".";
+  return `[${set.startsWith("!") ? `^${set.slice(1)}` : set.startsWith("^") || set.startsWith("[") ? `\\${set}` : set}]`;
 }
 
 /** Python's `fnmatch.fnmatchcase`, the matcher `[merge] ui_paths` is read with. */
@@ -58,38 +97,33 @@ function fnmatch(pattern: string): RegExp {
         source += "\\[";
         continue;
       }
-      const set = pattern.slice(at + 1, end).replace(/[\\\]]/g, "\\$&");
-      source += `[${set.startsWith("!") ? `^${set.slice(1)}` : set.startsWith("^") ? `\\${set}` : set}]`;
+      source += bracket(pattern, at + 1, end);
       at = end;
     } else source += char.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   }
-  try {
-    return new RegExp(`^${source}$`, "s");
-  } catch {
-    return /(?!)/;
-  }
+  return new RegExp(`^${source}$`, "s");
 }
 
-const folderOf = (model: Model, pattern: string) => {
-  const dir = pattern.endsWith("/*") ? pattern.slice(0, -2) : "";
-  return dir !== "" && model.dirs.has(dir) ? dir : null;
-};
+/** `path` as a pattern matching only itself under `fnmatchcase`. */
+const literal = (path: string) => path.replace(/[[*?]/g, "[$&]");
+
+const nodeOf = (model: Model, pattern: string) => model.patterns.get(pattern) ?? null;
 
 const ancestors = (path: string) => path.split("/").slice(0, -1).map((_, at, parts) => parts.slice(0, at + 1).join("/"));
 const picked = (selected: Set<string>, path: string) => selected.has(path) || ancestors(path).some((each) => selected.has(each));
 
 function split(model: Model, value: readonly string[]): Split {
-  const files = new Set(model.under.get("") ?? []);
+  const files = model.under.get("") ?? [];
   const selected = new Set<string>();
   const kept: string[] = [];
   for (const pattern of value) {
-    const folder = folderOf(model, pattern);
-    if (folder !== null) selected.add(folder);
-    else if (files.has(pattern)) selected.add(pattern);
+    const node = nodeOf(model, pattern);
+    if (node !== null) selected.add(node);
     else kept.push(pattern);
   }
+  for (const each of [...selected]) if (ancestors(each).some((above) => selected.has(above))) selected.delete(each);
   const matchers = kept.map(fnmatch);
-  const keptCovered = new Set([...files].filter((file) => matchers.some((matcher) => matcher.test(file))));
+  const keptCovered = new Set(files.filter((file) => matchers.some((matcher) => matcher.test(file))));
   return { selected, kept, keptCovered };
 }
 
@@ -97,9 +131,9 @@ function written(model: Model, selected: Set<string>, path = ""): string[] {
   const dir = model.dirs.get(path)!;
   const folders = dir.dirs.flatMap((name) => {
     const child = join(path, name);
-    return selected.has(child) ? [`${child}/*`] : written(model, selected, child);
+    return selected.has(child) ? [`${literal(child)}/*`] : written(model, selected, child);
   });
-  return [...folders, ...dir.leaves.map((leaf) => join(path, leaf)).filter((file) => selected.has(file))];
+  return [...folders, ...dir.leaves.map((leaf) => join(path, leaf)).filter((file) => selected.has(file)).map(literal)];
 }
 
 function uncheck(model: Model, selected: Set<string>, path: string) {
@@ -224,9 +258,9 @@ export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; 
       <ul aria-label={`${label} tree`} className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1">{rows("", 0)}</ul>
       {value.length > 0 && <ul aria-label={`${label} patterns`} className="flex w-full min-w-0 flex-col gap-1">
         {value.map((pattern, index) => {
-          const folder = folderOf(model, pattern);
+          const node = nodeOf(model, pattern);
           return <li key={index} className="break-words text-ink-2">
-            {pattern} · <span className="text-ink-3">{kept.has(pattern) ? "kept from text" : plural(folder === null ? 1 : model.under.get(folder)!.length)}</span>
+            {pattern} · <span className="text-ink-3">{kept.has(pattern) ? "kept from text" : plural(node === null ? 0 : model.under.get(node)?.length ?? 1)}</span>
           </li>;
         })}
       </ul>}

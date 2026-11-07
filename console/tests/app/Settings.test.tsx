@@ -254,11 +254,49 @@ test("a pattern the tree cannot show is kept from text while checking docs/ adds
   expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\n*.css\ndocs/*");
 });
 
-test("a pattern no regular expression can hold, such as a reversed range, still shows the tree and is kept from text", async () => {
-  await mountTree(treeFleet(["[z-a].ts"]));
+test("a kept pattern covers what Python's fnmatchcase covers, a reversed range dropped rather than refused", async () => {
+  await mountTree(treeFleet(["docs/[z-ax].md", "[z-a].ts"]));
   pick("Tree");
-  expect(patterns()).toEqual(["[z-a].ts · kept from text"]);
-  expect(treeBox("console/").getAttribute("aria-checked")).toBe("false");
+  expect(patterns()).toEqual(["docs/[z-ax].md · kept from text", "[z-a].ts · kept from text"]);
+  expect(treeBox("docs/").getAttribute("aria-checked")).toBe("mixed");
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("1 of 4 tracked files");
+});
+
+test("unchecking a folder a checked folder above it repeats unchecks it, and unchecking the outer one leaves nothing under it", async () => {
+  await mountTree(treeFleet(["console/*", "console/src/*"]));
+  pick("Tree");
+  fireEvent.click(screen.getByRole("button", { name: "Open console/" }));
+  fireEvent.click(treeBox("console/src/"));
+  expect(treeBox("console/src/").getAttribute("aria-checked")).toBe("false");
+  expect(patterns()).toEqual(["console/build.ts · 1 file"]);
+  cleanup();
+  await mountTree(treeFleet(["console/*", "console/src/*"]));
+  fireEvent.click(treeBox("console/"));
+  expect(screen.queryByRole("list", { name: "UI paths patterns" })).toBeNull();
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("0 of 4 tracked files");
+});
+
+test("a tracked path holding glob characters is written escaped, so the written pattern matches it", async () => {
+  const tree = {
+    ref: "main", sha: "0123456789ab", files: 2,
+    dirs: [
+      { path: "", files: 2, dirs: ["app"], leaves: [] },
+      { path: "app", files: 2, dirs: ["[slug]"], leaves: ["a?.ts"] },
+      { path: "app/[slug]", files: 1, dirs: [], leaves: ["page.tsx"] },
+    ],
+  };
+  await mountTree(treeFleet([], () => Response.json(tree)));
+  pick("Tree");
+  fireEvent.click(screen.getByRole("button", { name: "Open app/" }));
+  fireEvent.click(treeBox("app/[slug]/"));
+  fireEvent.click(treeBox("app/a?.ts"));
+  expect(patterns()).toEqual(["app/[[]slug]/* · 1 file", "app/a[?].ts · 1 file"]);
+  expect(treeBox("app/").getAttribute("aria-checked")).toBe("mixed");
+  pick("Text");
+  expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("app/[[]slug]/*\napp/a[?].ts");
+  pick("Tree");
+  fireEvent.click(screen.getByRole("button", { name: "Open app/" }));
+  expect(treeBox("app/[slug]/").getAttribute("aria-checked")).toBe("true");
 });
 
 test("unchecking one file under a checked folder writes its remaining siblings in place of the folder", async () => {
