@@ -19,7 +19,12 @@ interface Scope {
   actions: boolean;
 }
 
-function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
+const ROW = "grid grid-cols-[2.375rem_minmax(0,1fr)_auto] items-center gap-x-2 border-b border-rule-2 py-3.5 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]";
+const CONTROL = "justify-self-end max-[720px]:col-start-2 max-[720px]:mt-2 max-[720px]:justify-self-start";
+const COMPACT_ROW = "grid grid-cols-[2.375rem_minmax(0,1fr)] items-center gap-x-2 border-b border-rule-2 py-3";
+const COMPACT_CONTROL = "col-start-2 mt-2 justify-self-start";
+
+function ActionRow({ item, scope, compact }: { item: ScoutAction; scope: Scope; compact: boolean }) {
   const { base, project, scout, actions } = scope;
   const action = useAction();
   const client = useQueryClient();
@@ -51,7 +56,7 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
     }
   };
   return (
-    <li data-scout-action className="grid grid-cols-[2.375rem_minmax(0,1fr)_auto] items-center gap-x-2 border-b border-rule-2 py-3.5 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]">
+    <li data-scout-action className={compact ? COMPACT_ROW : ROW}>
       <span data-action-id className="font-mono text-[11px] font-semibold leading-none text-ink-3">{id}</span>
       <div className="min-w-0">
         <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-sans text-[15px] font-semibold leading-[1.45] text-ink [overflow-wrap:anywhere]">
@@ -72,7 +77,7 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
           <p role="alert" className={`m-0 mt-1.5 ${refused.ticket == null ? "text-bad" : "text-ink-2"} ${detailLine}`}>{refused.detail}</p>
         )}
       </div>
-      <div className="justify-self-end max-[720px]:col-start-2 max-[720px]:mt-2 max-[720px]:justify-self-start">
+      <div className={compact ? COMPACT_CONTROL : CONTROL}>
         {item.kind === "revise" ? (
           <Btn variant="primary" disabled={!actions || revise == null} title={actions ? undefined : ACTIONS_OFF} onClick={() => revise && void navigate(revise)}>
             Revise
@@ -94,20 +99,21 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   );
 }
 
-/** A scout's action items: each with File, or its Filed stamp once filed, and a
- *  revise item with Revise, which opens its ticket's edit page with the item's draft. */
-export function ScoutActions({ items, ...scope }: { items: ScoutAction[] } & Scope) {
+/** A scout's action items under `title`: each with File, or its Filed stamp once filed, and a
+ *  revise item with Revise, which opens its ticket's edit page with the item's draft; `compact` puts each control
+ *  under its item. */
+export function ScoutActions({ items, title = "Action items", compact = false, ...scope }: { items: ScoutAction[]; title?: string; compact?: boolean } & Scope) {
   if (items.length === 0) return null;
   const rows = [...items].sort((a, b) => a.position - b.position);
   const open = rows.filter((item) => item.kind !== "revise" && item.ticket == null).length;
   return (
-    <section aria-label="Action items" className="mt-10">
+    <section aria-label={title} className={compact ? "" : "mt-10"}>
       <h2 className={`m-0 ${SECTION_LABEL}`}>
-        Action items
+        {title}
         {open > 0 && <span data-to-file className="text-need">{open} to file</span>}
       </h2>
       <ol aria-label="Action items" className="m-0 mt-2 list-none p-0">
-        {rows.map((item) => <ActionRow key={item.position} item={item} scope={scope} />)}
+        {rows.map((item) => <ActionRow key={item.position} item={item} scope={scope} compact={compact} />)}
       </ol>
     </section>
   );

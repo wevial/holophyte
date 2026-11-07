@@ -100,7 +100,7 @@ async function mount(id: number, shown = scouts) {
     </QueryClientProvider>,
   );
   for (let round = 0; round < 6; round += 1) await act(settle);
-  await screen.findByRole("region", { name: "Progress" });
+  await screen.findByRole("region", { name: "Verdict" });
 }
 
 const report = () => screen.getByRole("region", { name: "Findings" });

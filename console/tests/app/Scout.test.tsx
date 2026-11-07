@@ -82,6 +82,19 @@ const twoWaves: ScoutDetail = {
   events: [],
 };
 
+const HEADLINE = "Two writers share one connection without a busy timeout.";
+const WRITEUP = [
+  { heading: "What locks the database", text: "The listener and the loop write through one connection." },
+  { heading: "What to change", text: "Give each writer its own connection with a busy timeout." },
+];
+
+/** `twoWaves` with a headline, a two-section write-up and the served action items. */
+const writtenUp: ScoutDetail = {
+  ...twoWaves,
+  reports: [{ ...twoWaves.reports[0]!, report: { ...twoWaves.reports[0]!.report, headline: HEADLINE, bullets: ["One connection", "No busy timeout"], writeup: WRITEUP } }],
+  actions: served.actions,
+};
+
 interface Daemon {
   scouts?: Record<number, ScoutDetail>;
   actions?: boolean;
@@ -131,6 +144,10 @@ const click = async (element: Element) => {
   await settled();
 };
 
+const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
+const rail = () => document.querySelector<HTMLElement>("[data-scout-rail]")!;
+const tabs = () => screen.getAllByRole("tab").map((tab) => [tab.textContent, tab.getAttribute("aria-selected")]);
+const shown = () => screen.getByRole("tabpanel");
 const status = () => within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent;
 const what = () => document.querySelector("[data-scout-facts] [data-scout-what]")!.textContent;
 const cost = () => document.querySelector("[data-scout-facts] [data-scout-cost]")?.textContent ?? null;
@@ -279,6 +296,7 @@ test("the open wave lists its helpers in plan order with state, title, mode, rou
 
 test("a done scout of two waves reads Plan, Wave 1, Synthesis, Wave 2 and Report, all closed until the reader opens Wave 2's helpers", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  await showActivity();
   expect(groups().map((group) => [row(group).title, row(group).span])).toEqual([
     ["Plan · opus · 10 sub-tasks", "1m 12s"],
     ["Wave 1 · luna ×4 · 10 of 10 back", "16m 20s"],
@@ -305,6 +323,7 @@ test("a scout with no tasks ends Plan on the lead's first turn and Report spans 
     ],
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: bare } }).fetch);
+  await showActivity();
   expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 00s"], ["Report", "1m 00s"]]);
   expect([fold(groupTitled("Plan")), fold(groupTitled("Report"))]).toEqual([null, null]);
   expect(activity().querySelector("[data-step-text]")).toBeNull();
@@ -366,6 +385,7 @@ test("a wave whose helpers never started leaves the lead's turn after it to Synt
   cleanup();
   const done: ScoutDetail = { ...synthesizing, scout: { ...live.scout, phase: "done", ended_ms: at(11, 50) }, reports: [report("Nothing came back.")] };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: done } }).fetch);
+  await showActivity();
   expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 00s"], ["Wave 1", ""], ["Report", "3m 00s"]]);
 });
 
@@ -378,6 +398,7 @@ test("a done scout's wave ends on its last helper back, past one never started, 
     events: [{ id: 5, at: at(11, 52), kind: "scout_report", summary: "the lead wrote its report" }],
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: done } }).fetch);
+  await showActivity();
   expect(groups().map((group) => [row(group).title.split(" · ")[0], row(group).span])).toEqual([["Plan", "1m 12s"], ["Wave 1", "3m 00s"], ["Report", "4m 48s"]]);
 });
 
@@ -466,4 +487,44 @@ test("a row of the Scouts list links to its scout's page", async () => {
   const link = within(screen.getByRole("list", { name: "Scouts, newest first" })).getByRole("link");
   expect(link.getAttribute("href")).toBe("/#/scouts/demo/31");
   expect(link.textContent).toContain(listed.title);
+});
+
+test("a done scout with a write-up keeps its head, Summary and Decide in the rail and opens on the Write-up tab", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
+  expect(within(rail()).getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
+  expect(within(within(rail()).getByRole("region", { name: "Summary" })).getByRole("status").textContent).toBe(HEADLINE);
+  expect(within(within(rail()).getByRole("region", { name: "Decide" })).getAllByRole("button", { name: "File" })).toHaveLength(2);
+  expect(tabs()).toEqual([["Write-up", "true"], ["Findings 4", "false"], ["Activity", "false"]]);
+  expect(within(shown()).getAllByRole("heading").map((heading) => [heading.textContent, heading.nextElementSibling!.textContent]))
+    .toEqual(WRITEUP.map((section) => [section.heading, section.text]));
+});
+
+test("choosing Findings then Activity shows the findings then the activity groups while the rail stays", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
+  await click(screen.getByRole("tab", { name: "Findings 4" }));
+  expect(within(within(shown()).getByRole("list", { name: "Findings" })).getAllByRole("listitem")).toHaveLength(4);
+  expect(within(shown()).queryByText(WRITEUP[0]!.heading)).toBeNull();
+  await showActivity();
+  expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
+  expect(within(shown()).getByRole("list", { name: "Scout activity" }).children).toHaveLength(5);
+  expect(within(rail()).getByRole("region", { name: "Summary" })).toBeTruthy();
+  expect(within(rail()).getByRole("region", { name: "Decide" })).toBeTruthy();
+});
+
+test("a report with no write-up opens on Findings with no Write-up tab, and a running scout with no report opens on Activity", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  expect(tabs()).toEqual([["Findings 4", "true"], ["Activity", "false"]]);
+  cleanup();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
+  expect(tabs()).toEqual([["Activity", "true"]]);
+  expect(within(rail()).getByRole("status").textContent).toBe("Wave 1: 5 of 10 helpers are back, 4 are running, and 1 waits for a slot.");
+});
+
+test("the rail is sticky at 320px beside the document from the wide breakpoint and stacks above it below", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
+  const layout = document.querySelector("[data-scout-layout]")!;
+  expect(layout.firstElementChild).toBe(rail());
+  expect(["grid-cols-1", "min-[1100px]:grid-cols-[320px_minmax(0,1fr)]"].map((name) => layout.classList.contains(name))).toEqual([true, true]);
+  expect(rail().classList.contains("min-[1100px]:sticky")).toBe(true);
+  expect(rail().classList.contains("sticky")).toBe(false);
 });

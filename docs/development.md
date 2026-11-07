@@ -1379,9 +1379,13 @@ beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `sc
 same header and body as its page, or the New scout form, each list row reading the scout's title.
 `console/src/app/components/ScoutHead.tsx` is the header the Scout page and the pane share: the state dot, the
 scout's title, the what and cost lines of `console/src/app/components/ScoutFacts.tsx` and the ask behind Ask.
-`console/src/app/components/ScoutBody.tsx` is the body they share: the Verdict, the newest report's headline over
+`console/src/app/components/ScoutBody.tsx` is the pane's body: the Verdict, the newest report's headline over
 its bullets or else its summary, or a scout's state sentence while it has no report; then Action items, Findings,
 Progress and Thread, with Progress second while the scout is live.
+The Scout page puts the header, Summary (the Verdict) and Decide (the action items) in a rail, sticky at 320px
+from 1100px and stacked above below it, beside tabs Write-up, Findings and Activity (Progress) and then the Thread;
+it opens on the first of them it has. `console/src/app/components/ScoutWriteup.tsx` draws the newest report's
+write-up sections.
 A failed run's page, open findings, follow-ups and ticket defect rows on Findings, and a ticket's actions each carry a
 Scout button (`console/src/app/components/ScoutThis.tsx`) that opens `#/scouts` with search `new`, `about`, `kind`
 and `ask`, which the Scouts page reads into a filled New scout form whose launch sends `about` as `subject`.

@@ -91,6 +91,7 @@ async function mount(scout: ScoutDetail, now: number) {
     </QueryClientProvider>,
   );
   for (let round = 0; round < 6; round += 1) await act(settle);
+  await act(async () => void fireEvent.click(screen.getByRole("tab", { name: "Activity" })));
   return { queries, bodies };
 }
 
