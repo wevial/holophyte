@@ -226,7 +226,8 @@ Each module, one line:
 - `holophyte/scout/scout_probes.py` — `--scout-probe`: one probe of each
   scout route in a detached checkout of main, recorded in `route-probes.json`.
 - `holophyte/scout/scout_page.py` — `holo scout page`: a done scout's
-  `GET /scouts/ID` body as Lotuspod markdown, its findings numbered as the
+  `GET /scouts/ID` body as Lotuspod markdown, led by its latest pass's
+  plain-language write-up when it has one, its findings numbered as the
   thread's labels are, its action items with their drafts, and a
   "Decisions for the maintainer" table of its unfiled items, with fenced
   lines and table cells escaped for Lotuspod's converter.
