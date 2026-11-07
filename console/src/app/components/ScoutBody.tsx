@@ -177,8 +177,7 @@ export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: R
             type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
             tabIndex={tab === current ? 0 : -1} onClick={() => setChosen(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF}`}>
             {tab.label}
-            {tab.count != null && " "}
-            {tab.count != null && <span data-tab-count className="font-mono text-[11px] tracking-normal">{tab.count}</span>}
+            {tab.count != null && <> <span data-tab-count className="font-mono text-[11px] tracking-normal">{tab.count}</span></>}
           </button>
         ))}
       </div>
