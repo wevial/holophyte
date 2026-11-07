@@ -358,17 +358,14 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}
+        elif path in CONFIG_READS and not scope.config_edit:
+            code, body = 404, {"error": "not found", "path": path}
         elif path == CONFIG_PATH:
-            code, body = ((404, {"error": "not found", "path": path})
-                          if not scope.config_edit else read_config(project))
+            code, body = read_config(project)
         elif path == PATH_MATCHES_PATH:
-            code, body = ((404, {"error": "not found", "path": path})
-                          if not scope.config_edit
-                          else config_path_matches(project, query))
+            code, body = config_path_matches(project, query)
         elif path == TRACKED_TREE_PATH:
-            code, body = ((404, {"error": "not found", "path": path})
-                          if not scope.config_edit
-                          else config_tracked_tree(project))
+            code, body = config_tracked_tree(project)
         elif (shaped := shaped_route(path)) is not None:
             handler, segment = shaped
             code, body = handler(project, segment)

@@ -76,6 +76,7 @@ const folderOf = (model: Model, pattern: string) => {
 };
 
 const ancestors = (path: string) => path.split("/").slice(0, -1).map((_, at, parts) => parts.slice(0, at + 1).join("/"));
+const picked = (selected: Set<string>, path: string) => selected.has(path) || ancestors(path).some((each) => selected.has(each));
 
 function split(model: Model, value: readonly string[]): Split {
   const files = new Set(model.under.get("") ?? []);
@@ -118,7 +119,7 @@ function uncheck(model: Model, selected: Set<string>, path: string) {
  *  the tree cannot show kept in its place. */
 function toggled(model: Model, value: readonly string[], path: string): string[] {
   const { selected, kept } = split(model, value);
-  if (selected.has(path) || ancestors(path).some((each) => selected.has(each))) uncheck(model, selected, path);
+  if (picked(selected, path)) uncheck(model, selected, path);
   else {
     for (const each of [...selected]) if (each.startsWith(`${path}/`)) selected.delete(each);
     selected.add(path);
@@ -133,7 +134,7 @@ function coveredBy(model: Model, selected: Set<string>): Set<string> {
 }
 
 function checkedOf(path: string, files: readonly string[], { selected, keptCovered }: Split): Checked {
-  if (selected.has(path) || ancestors(path).some((each) => selected.has(each))) return "true";
+  if (picked(selected, path)) return "true";
   const inside = [...selected].some((each) => each.startsWith(`${path}/`));
   return inside || files.some((file) => keptCovered.has(file)) ? "mixed" : "false";
 }
