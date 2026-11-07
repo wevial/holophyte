@@ -63,13 +63,10 @@ export function ScoutPage() {
     setChatOpen(open);
     writeChatOpen(open);
   };
-  const focusComposer = () => {
-    composeRef.current?.focus();
-    composeRef.current?.scrollIntoView({ block: "nearest" });
-  };
   const askOrSteer = () => {
     flushSync(() => (wide ? showChat(true) : setTab({ at, id: "chat" })));
-    focusComposer();
+    composeRef.current?.focus();
+    composeRef.current?.scrollIntoView({ block: "nearest" });
   };
   const closeChat = () => {
     flushSync(() => showChat(false));
