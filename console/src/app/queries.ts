@@ -1,5 +1,5 @@
 import { useContext } from "react";
-import { fetchConfig, PATH_LIST_KEYS, pathMatchesPath } from "../lib/config";
+import { fetchConfig, pathMatchesPath } from "../lib/config";
 import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import type { z } from "zod";
 import type { ReadinessMap } from "../lib/attention";
@@ -471,15 +471,14 @@ export function useConfig(base: string | null) {
   });
 }
 
-/** Each of `entries`' count of files on main under `key`'s matcher; idle
- *  for a key that is no path list or with no entries. */
+/** Each of `entries`' count of files on main under `key`'s matcher; idle with no entries. */
 export function usePathMatches(base: string, key: string, entries: string[]) {
   const deps = useContext(PollDepsContext);
   const path = pathMatchesPath(key, entries);
   return useQuery({
     queryKey: routeKey(base, path),
     queryFn: () => routeOrNone(deps.fetch, `${base}${path}`, pathMatchesSchema),
-    enabled: PATH_LIST_KEYS.has(key) && entries.length > 0,
+    enabled: entries.length > 0,
     placeholderData: keepPreviousData,
   });
 }
