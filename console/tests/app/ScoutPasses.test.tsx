@@ -123,11 +123,17 @@ const FIRST_RUN = [
 const ANSWERED = ["Answer · opus", "52s"];
 const PASS_TWO = ["Pass 2 · luna ×2 · 2 of 2 back · 1 finding · 1 action item", "7m 10s"];
 
-const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+const happyDOM = (window as unknown as {
+  happyDOM: { setURL: (url: string) => void; setViewport: (viewport: { width: number; height: number }) => void };
+}).happyDOM;
 
-beforeAll(() => happyDOM.setURL(`${DEMO}/`));
+beforeAll(() => {
+  happyDOM.setURL(`${DEMO}/`);
+  happyDOM.setViewport({ width: 1600, height: 900 });
+});
 afterAll(() => {
   happyDOM.setURL("about:blank");
+  happyDOM.setViewport({ width: 1024, height: 768 });
   if (zone == null) delete process.env.TZ;
   else process.env.TZ = zone;
 });

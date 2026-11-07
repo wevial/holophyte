@@ -197,11 +197,17 @@ const fold = (group: HTMLElement) => group.querySelector(":scope > div > button[
 const findingRows = () => within(screen.getByRole("list", { name: "Findings" })).getAllByRole("listitem").filter((li) => li.hasAttribute("data-scout-finding"));
 const taskRows = (group: HTMLElement) => Array.from(group.querySelectorAll<HTMLElement>("li[data-helper]"));
 
-const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+const happyDOM = (window as unknown as {
+  happyDOM: { setURL: (url: string) => void; setViewport: (viewport: { width: number; height: number }) => void };
+}).happyDOM;
 
-beforeAll(() => happyDOM.setURL(`${DEMO}/`));
+beforeAll(() => {
+  happyDOM.setURL(`${DEMO}/`);
+  happyDOM.setViewport({ width: 1600, height: 900 });
+});
 afterAll(() => {
   happyDOM.setURL("about:blank");
+  happyDOM.setViewport({ width: 1024, height: 768 });
   if (zone == null) delete process.env.TZ;
   else process.env.TZ = zone;
 });
@@ -256,12 +262,13 @@ test("the Verdict reads the newest report's headline over its bullets, or its su
   expect(within(region("Verdict")).queryByRole("list")).toBeNull();
 });
 
-test("a done scout's rail reads Verdict then Decide and its document Findings then Thread; a live pass's Activity has its pass open", async () => {
+test("a done scout's rail reads Verdict then Decide, its document Findings and its chat the Thread; a live pass's Activity has its pass open", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
   const rail = document.querySelector<HTMLElement>("[data-scout-rail]")!;
   const body = document.querySelector<HTMLElement>("[data-scout-body]")!;
   expect(inOrder(["Verdict", "Decide"].map((name) => region(name, rail)))).toBe(true);
-  expect(inOrder(["Findings", "Thread"].map((name) => region(name, body)))).toBe(true);
+  expect(region("Findings", body)).toBeTruthy();
+  expect(region("Thread", region("Chat with the scout"))).toBeTruthy();
   cleanup();
   await mount("#/scouts/demo/31", scoutFetch(swarming), PASS_THREE + 3 * 60_000);
   await showActivity();
@@ -344,11 +351,9 @@ test("an opened wave's task rows read title, a failed one's reason and a meta li
   expect(rows[4]!.querySelector("[data-question]")!.textContent).toBe("Question 5 about tests/loop_fixture.py");
 });
 
-test("the Thread ends the body with its composer and no lead or compose line, and Steer renames the box", async () => {
+test("the chat holds the Thread with its composer and no lead or compose line, and Steer renames the box", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
-  const body = document.querySelector<HTMLElement>("[data-scout-body]")!;
-  const thread = region("Thread");
-  expect(within(body).getAllByRole("region").at(-1)).toBe(thread);
+  const thread = region("Thread", region("Chat with the scout"));
   expect(within(thread).getByRole("textbox", { name: "Question for the scout" })).toBeTruthy();
   expect(document.querySelector("[data-thread-lead], [data-compose-line]")).toBeNull();
   expect(document.body.textContent).not.toContain("Answers from the report.");

@@ -136,27 +136,45 @@ export function ScoutRail({ page, project }: { page: Shown; project: string }) {
   );
 }
 
-type TabId = "writeup" | "findings" | "activity";
+export type TabId = "writeup" | "findings" | "activity" | "chat";
 
 const TAB = "-mb-px inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 border-b-2 bg-transparent px-4 font-sans text-[12px] font-medium uppercase tracking-[0.12em]";
 const TAB_ON = "border-act bg-act-wash text-act";
 const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink";
 
-/** A scout's page document: tabs Write-up (when the newest report has one), Findings (when there is a report) and
- *  Activity, opening on the first of them, then the Thread. */
-export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: Ref<HTMLTextAreaElement> }) {
-  const { detail, base } = page;
+/** Spaces the Thread as a chat: its own heading kept for readers only, under the slot's title. */
+export const CHAT_SLOT = "[&>section]:mt-0 [&>section>h2]:sr-only";
+
+/** The chat's place in the document: `tab` holds the Thread as a tab, and `onOpen` shows a button that docks it. */
+export interface DocumentChat {
+  count: number;
+  tab: ReactNode | null;
+  onOpen: (() => void) | null;
+}
+
+/** A scout's page document: tabs Write-up (when the newest report has one), Findings (when there is a report),
+ *  Activity and the chat's tab, opening on the first of them, with the chat's button at the tab bar's end. */
+export function ScoutDocument({ page, chat, chosen, onChoose }: {
+  page: Shown;
+  chat: DocumentChat | null;
+  chosen: TabId | null;
+  onChoose: (tab: TabId) => void;
+}) {
+  const { detail } = page;
   const { scout } = detail;
   const prefix = useId();
-  const [chosen, setChosen] = useState<TabId | null>(null);
   const writeup = newestReport(detail)?.writeup ?? [];
-  const tabs: { id: TabId; label: string; count?: number; body: ReactNode }[] = [
+  const chatLabel = chat == null ? "" : `Chat · ${chat.count}`;
+  const tabs: { id: TabId; label: string; count?: number; className?: string; body: ReactNode }[] = [
     ...(writeup.length > 0 ? [{ id: "writeup" as const, label: "Write-up", body: <ScoutWriteup sections={writeup} /> }] : []),
     ...(detail.reports.length > 0 ? [{
       id: "findings" as const, label: "Findings", count: numberFindings(detail.reports).length,
       body: <ScoutReport reports={detail.reports} baseSha={scout.base_sha} />,
     }] : []),
     { id: "activity", label: "Activity", body: <Progress page={page} /> },
+    ...(chat?.tab != null ? [{
+      id: "chat" as const, label: chatLabel, className: "min-[1440px]:hidden", body: <div className={CHAT_SLOT}>{chat.tab}</div>,
+    }] : []),
   ];
   const current = tabs.find((tab) => tab.id === chosen) ?? tabs[0]!;
   const tabRefs = useRef(new Map<TabId, HTMLButtonElement>());
@@ -166,20 +184,28 @@ export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: R
     if (to == null) return;
     event.preventDefault();
     const next = tabs[(to + tabs.length) % tabs.length]!;
-    setChosen(next.id);
+    onChoose(next.id);
     tabRefs.current.get(next.id)?.focus();
   };
   return (
     <>
-      <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap border-b border-rule">
-        {tabs.map((tab) => (
-          <button key={tab.id} ref={(node) => void (node ? tabRefs.current.set(tab.id, node) : tabRefs.current.delete(tab.id))}
-            type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
-            tabIndex={tab === current ? 0 : -1} onClick={() => setChosen(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF}`}>
-            {tab.label}
-            {tab.count != null && <> <span data-tab-count className="font-mono text-[11px] tracking-normal">{tab.count}</span></>}
+      <div data-scout-tabbar className="flex items-end justify-between gap-4 border-b border-rule">
+        <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap">
+          {tabs.map((tab) => (
+            <button key={tab.id} ref={(node) => void (node ? tabRefs.current.set(tab.id, node) : tabRefs.current.delete(tab.id))}
+              type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
+              tabIndex={tab === current ? 0 : -1} onClick={() => onChoose(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF} ${tab.className ?? ""}`}>
+              {tab.label}
+              {tab.count != null && <> <span data-tab-count className="font-mono text-[11px] tracking-normal">{tab.count}</span></>}
+            </button>
+          ))}
+        </div>
+        {chat?.onOpen != null && (
+          <button type="button" onClick={chat.onOpen}
+            className="inline-flex min-h-9 shrink-0 cursor-pointer items-center self-center border border-ink-3 bg-transparent px-3.5 font-sans text-[13px] font-medium text-ink-2 hover:bg-side-hover hover:text-ink">
+            {chatLabel}
           </button>
-        ))}
+        )}
       </div>
       {tabs.map((tab) => (
         <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} tabIndex={0} hidden={tab !== current}
@@ -187,7 +213,6 @@ export function ScoutDocument({ page, composeRef }: { page: Shown; composeRef: R
           {tab.body}
         </div>
       ))}
-      {hasThread(detail) && <ScoutThread base={base} detail={detail} actions={page.actions} ref={composeRef} />}
     </>
   );
 }
