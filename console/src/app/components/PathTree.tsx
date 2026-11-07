@@ -57,20 +57,22 @@ function bracket(pattern: string, start: number, end: number): string {
   if (body.includes("-")) {
     const chunks: string[] = [];
     let from = start;
-    let at = pattern[start] === "!" ? start + 2 : start + 1;
+    const step = (index: number) => index + ((pattern.codePointAt(index) ?? 0) > 0xffff ? 2 : 1);
+    let at = pattern[start] === "!" ? step(start + 1) : step(start);
     for (;;) {
       at = pattern.indexOf("-", at);
       if (at < 0 || at >= end) break;
       chunks.push(pattern.slice(from, at));
       from = at + 1;
-      at += 3;
+      at = step(step(from));
     }
     const rest = pattern.slice(from, end);
     if (rest) chunks.push(rest);
     else chunks[chunks.length - 1] += "-";
     for (let k = chunks.length - 1; k > 0; k--) {
-      if (chunks[k - 1]!.slice(-1) > chunks[k]![0]!) {
-        chunks[k - 1] = chunks[k - 1]!.slice(0, -1) + chunks[k]!.slice(1);
+      const [before, after] = [Array.from(chunks[k - 1]!), Array.from(chunks[k]!)];
+      if (before.at(-1)!.codePointAt(0)! > after[0]!.codePointAt(0)!) {
+        chunks[k - 1] = before.slice(0, -1).join("") + after.slice(1).join("");
         chunks.splice(k, 1);
       }
     }
@@ -101,7 +103,7 @@ function fnmatch(pattern: string): RegExp {
       at = end;
     } else source += char.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
   }
-  return new RegExp(`^${source}$`, "s");
+  return new RegExp(`^${source}$`, "su");
 }
 
 /** `path` as a pattern matching only itself under `fnmatchcase`. */

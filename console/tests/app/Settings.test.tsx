@@ -262,6 +262,20 @@ test("a kept pattern covers what Python's fnmatchcase covers, a reversed range d
   expect(screen.getByLabelText("UI paths covered").textContent).toBe("1 of 4 tracked files");
 });
 
+test("a kept ? matches one character outside the Basic Multilingual Plane, as fnmatchcase does", async () => {
+  const tree = {
+    ref: "main", sha: "0123456789ab", files: 2,
+    dirs: [
+      { path: "", files: 2, dirs: ["styles"], leaves: [] },
+      { path: "styles", files: 2, dirs: [], leaves: ["😀.css", "ab.css"] },
+    ],
+  };
+  await mountTree(treeFleet(["styles/?.css"], () => Response.json(tree)));
+  pick("Tree");
+  expect(treeBox("styles/").getAttribute("aria-checked")).toBe("mixed");
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("1 of 2 tracked files");
+});
+
 test("unchecking a folder a checked folder above it repeats unchecks it, and unchecking the outer one leaves nothing under it", async () => {
   await mountTree(treeFleet(["console/*", "console/src/*"]));
   pick("Tree");
