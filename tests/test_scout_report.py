@@ -171,6 +171,22 @@ class ReportProblemsTests(unittest.TestCase):
                 self.assertEqual(starts(report_problems(report, "bug")),
                                  [field])
 
+    def test_a_writeup_text_holds_one_to_four_sentences(self):
+        for text, problems in (
+                ("Dr. Smith reviewed the result. The risk is low. We suggest"
+                 " proceeding, e.g. today. We can check again later.", []),
+                ('He said "Wait." She said "Go." They ran. It held.', []),
+                ("We checked retries. They run immediately. They consume"
+                 " capacity. They need a pause. We suggest a delay.",
+                 ["writeup[1].text"]),
+                ('"One." "Two." "Three." "Four." "Five."',
+                 ["writeup[1].text"])):
+            with self.subTest(text=text):
+                report = changed(("writeup",), copy.deepcopy(WRITEUP))
+                report["writeup"][1]["text"] = text
+                self.assertEqual(starts(report_problems(report, "bug")),
+                                 problems)
+
     def test_a_bug_report_needs_a_reproduction_in_its_shape(self):
         for path, value, field in (
                 (("reproduction",), None, "reproduction"),
