@@ -1,6 +1,6 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { useEffect, useId, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
 import { CHAT_SLOT, ScoutDocument, ScoutRail, type TabId } from "../components/ScoutBody";
 import { ScoutHead } from "../components/ScoutHead";
 import { ScoutStop } from "../components/ScoutStop";
@@ -41,6 +41,8 @@ export function ScoutPage() {
   const [chatOpen, setChatOpen] = useState(readChatOpen);
   const [tab, setTab] = useState<{ at: string; id: TabId } | null>(null);
   const chatTitle = useId();
+  const [threadHost] = useState(() => Object.assign(document.createElement("div"), { style: "display: contents" }));
+  const holdThread = useCallback((slot: HTMLDivElement | null) => void slot?.append(threadHost), [threadHost]);
   const stoppable = page.kind === "scout" && page.stoppable;
   useEffect(() => {
     if (stoppable || !stopSent.current) return;
@@ -73,7 +75,7 @@ export function ScoutPage() {
     chatButton.current?.focus();
   };
   const chat = threaded
-    ? { count: page.detail.thread.length, tab: wide ? null : thread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton }
+    ? { count: page.detail.thread.length, slot: wide ? null : holdThread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton }
     : null;
   return (
     <section aria-label={label} data-scout-layout
@@ -112,11 +114,10 @@ export function ScoutPage() {
               ✕
             </button>
           </header>
-          <div className={`flex min-h-0 flex-1 flex-col px-[18px] py-4 ${CHAT_SLOT} [&>section]:flex [&>section]:min-h-0 [&>section]:flex-1 [&>section]:flex-col [&>section>ol]:mt-0 [&>section>ol]:min-h-0 [&>section>ol]:overflow-y-auto [&>section>div]:mt-auto [&>section>div]:pt-4`}>
-            {thread}
-          </div>
+          <div ref={holdThread} className={`flex min-h-0 flex-1 flex-col px-[18px] py-4 ${CHAT_SLOT} [&>div>section]:flex [&>div>section]:min-h-0 [&>div>section]:flex-1 [&>div>section]:flex-col [&>div>section>ol]:mt-0 [&>div>section>ol]:min-h-0 [&>div>section>ol]:overflow-y-auto [&>div>section>div]:mt-auto [&>div>section>div]:pt-4`} />
         </section>
       )}
+      {thread && createPortal(thread, threadHost)}
     </section>
   );
 }

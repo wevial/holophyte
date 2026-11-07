@@ -143,12 +143,12 @@ const TAB_ON = "border-act bg-act-wash text-act";
 const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink";
 
 /** Spaces the Thread as a chat: its own heading kept for readers only, under the slot's title. */
-export const CHAT_SLOT = "[&>section]:mt-0 [&>section>h2]:sr-only";
+export const CHAT_SLOT = "[&>div>section]:mt-0 [&>div>section>h2]:sr-only";
 
-/** The chat's place in the document: `tab` holds the Thread as a tab, and `onOpen` shows a button that docks it. */
+/** The chat's place in the document: `slot` takes the Thread as a tab, and `onOpen` shows a button that docks it. */
 interface DocumentChat {
   count: number;
-  tab: ReactNode | null;
+  slot: Ref<HTMLDivElement> | null;
   onOpen: (() => void) | null;
   openRef: Ref<HTMLButtonElement>;
 }
@@ -173,8 +173,8 @@ export function ScoutDocument({ page, chat, chosen, onChoose }: {
       body: <ScoutReport reports={detail.reports} baseSha={scout.base_sha} />,
     }] : []),
     { id: "activity", label: "Activity", body: <Progress page={page} /> },
-    ...(chat?.tab != null ? [{
-      id: "chat" as const, label: chatLabel, className: "min-[1440px]:hidden", body: <div className={CHAT_SLOT}>{chat.tab}</div>,
+    ...(chat?.slot != null ? [{
+      id: "chat" as const, label: chatLabel, className: "min-[1440px]:hidden", body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
   const current = tabs.find((tab) => tab.id === chosen) ?? tabs[0]!;

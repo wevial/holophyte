@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
@@ -613,5 +613,37 @@ test("a scout with no thread has no chat sidebar, Chat button or Chat tab", asyn
     expect(screen.queryByRole("button", { name: /^Chat/ })).toBeNull();
     expect(screen.queryByRole("tab", { name: /^Chat/ })).toBeNull();
     cleanup();
+  }
+});
+
+test("a draft and its Steer mode survive closing and reopening the chat and crossing the 1440px breakpoint", async () => {
+  let width = 1600;
+  const listeners = new Set<() => void>();
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    get matches() {
+      const least = /min-width: (\d+)px/.exec(query);
+      return least != null && width >= Number(least[1]);
+    },
+    media: query,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }) as unknown as MediaQueryList);
+  try {
+    await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
+    await click(within(chat()!).getByRole("button", { name: "Steer" }));
+    const note = () => within(screen.getByRole("region", { name: "Thread" })).getByRole("textbox", { name: "Note to the scout" }) as HTMLTextAreaElement;
+    await act(async () => void fireEvent.change(note(), { target: { value: "Check the digest too" } }));
+    await click(within(chat()!).getByRole("button", { name: "Close chat" }));
+    await click(within(tabBar()).getByRole("button", { name: "Chat · 2" }));
+    expect(note().value).toBe("Check the digest too");
+    width = 1280;
+    await act(async () => listeners.forEach((listener) => listener()));
+    await settled();
+    expect(chat()).toBeNull();
+    await click(screen.getByRole("tab", { name: "Chat · 2" }));
+    expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(note());
+    expect(note().value).toBe("Check the digest too");
+  } finally {
+    media.mockRestore();
   }
 });
