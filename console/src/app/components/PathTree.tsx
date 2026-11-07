@@ -89,7 +89,7 @@ function split(model: Model, value: readonly string[]): Split {
     else kept.push(pattern);
   }
   const matchers = kept.map(fnmatch);
-  const keptCovered = new Set(matchers.length === 0 ? [] : [...files].filter((file) => matchers.some((matcher) => matcher.test(file))));
+  const keptCovered = new Set([...files].filter((file) => matchers.some((matcher) => matcher.test(file))));
   return { selected, kept, keptCovered };
 }
 

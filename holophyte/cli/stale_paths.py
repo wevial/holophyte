@@ -118,10 +118,8 @@ def tracked_tree(project, limit):
     if main is None:
         return None
     _, ref, sha, files = main
-    if len(files) > limit:
-        return {"ref": ref, "sha": sha[:12], "files": len(files), "dirs": None}
     return {"ref": ref, "sha": sha[:12], "files": len(files),
-            "dirs": _tree(files)}
+            "dirs": _tree(files) if len(files) <= limit else None}
 
 
 def stale_paths(project):
