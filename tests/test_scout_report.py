@@ -155,13 +155,17 @@ class ReportProblemsTests(unittest.TestCase):
 
     def test_a_writeup_past_its_section_count_or_lengths_is_named(self):
         section = {"heading": "h" * 60, "text": "t" * 600}
+        four = {"heading": "Four", "text": "One. Two? Three! Four"}
         self.assertEqual(report_problems(
-            changed(("writeup",), [section] * 5), "bug"), [])
+            changed(("writeup",), [section] * 4 + [four]), "bug"), [])
         for path, value, field in (
                 (("writeup",), [section] * 6, "writeup"),
                 (("writeup",), [section], "writeup"),
                 (("writeup", 1, "heading"), "h" * 61, "writeup[1].heading"),
-                (("writeup", 0, "text"), "t" * 601, "writeup[0].text")):
+                (("writeup", 0, "text"), "t" * 601, "writeup[0].text"),
+                (("writeup", 1, "text"), "We checked retries. They run"
+                 " immediately. They consume capacity. They need a pause."
+                 " We suggest a delay.", "writeup[1].text")):
             with self.subTest(field=field, value=value):
                 report = changed(("writeup",), copy.deepcopy(WRITEUP))
                 holder = report
