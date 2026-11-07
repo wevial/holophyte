@@ -83,27 +83,47 @@ function bracket(pattern: string, start: number, end: number): string {
   return `[${set.startsWith("!") ? `^${set.slice(1)}` : set.startsWith("^") || set.startsWith("[") ? `\\${set}` : set}]`;
 }
 
-/** Python's `fnmatch.fnmatchcase`, the matcher `[merge] ui_paths` is read with. */
-function fnmatch(pattern: string): RegExp {
-  let source = "";
+type Glob = "*" | ((char: string) => boolean);
+
+/** Python's `fnmatch.fnmatchcase`, the matcher `[merge] ui_paths` is read
+ *  with, over code points. A mismatch resumes only at the latest `*`, so
+ *  a match costs at most the path's length times the pattern's. */
+function fnmatch(pattern: string): { test: (path: string) => boolean } {
+  const globs: Glob[] = [];
   for (let at = 0; at < pattern.length; at++) {
-    const char = pattern[at]!;
-    if (char === "*") source += ".*";
-    else if (char === "?") source += ".";
+    const char = String.fromCodePoint(pattern.codePointAt(at)!);
+    at += char.length - 1;
+    if (char === "*") globs.push("*");
+    else if (char === "?") globs.push(() => true);
     else if (char === "[") {
       let end = at + 1;
       if (pattern[end] === "!") end++;
       if (pattern[end] === "]") end++;
       end = pattern.indexOf("]", end);
       if (end < 0) {
-        source += "\\[";
+        globs.push((each) => each === "[");
         continue;
       }
-      source += bracket(pattern, at + 1, end);
+      const set = new RegExp(`^${bracket(pattern, at + 1, end)}$`, "su");
+      globs.push((each) => set.test(each));
       at = end;
-    } else source += char.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+    } else globs.push((each) => each === char);
   }
-  return new RegExp(`^${source}$`, "su");
+  return {
+    test: (path) => {
+      const chars = Array.from(path);
+      let [glob, at, star, resume] = [0, 0, -1, 0];
+      while (at < chars.length) {
+        const here = globs[glob];
+        if (here === "*") [star, resume, glob] = [glob, at, glob + 1];
+        else if (here !== undefined && here(chars[at]!)) [glob, at] = [glob + 1, at + 1];
+        else if (star >= 0) [glob, at, resume] = [star + 1, resume + 1, resume + 1];
+        else return false;
+      }
+      while (globs[glob] === "*") glob++;
+      return glob === globs.length;
+    },
+  };
 }
 
 /** `path` as a pattern matching only itself under `fnmatchcase`. */

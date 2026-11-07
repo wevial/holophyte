@@ -276,6 +276,16 @@ test("a kept ? matches one character outside the Basic Multilingual Plane, as fn
   expect(screen.getByLabelText("UI paths covered").textContent).toBe("1 of 2 tracked files");
 });
 
+test("a kept pattern of many stars against a long tracked name renders the tree without backtracking for seconds", async () => {
+  const name = `${"a".repeat(60)}.tsx`;
+  const tree = { ref: "main", sha: "0123456789ab", files: 1, dirs: [{ path: "", files: 1, dirs: ["src"], leaves: [] }, { path: "src", files: 1, dirs: [], leaves: [name] }] };
+  await mountTree(treeFleet([`${"*a".repeat(8)}b`], () => Response.json(tree)));
+  const started = performance.now();
+  pick("Tree");
+  expect(performance.now() - started).toBeLessThan(1000);
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("0 of 1 tracked file");
+});
+
 test("unchecking a folder a checked folder above it repeats unchecks it, and unchecking the outer one leaves nothing under it", async () => {
   await mountTree(treeFleet(["console/*", "console/src/*"]));
   pick("Tree");
