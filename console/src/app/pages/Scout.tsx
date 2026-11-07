@@ -36,6 +36,7 @@ export function ScoutPage() {
   const heading = useRef<HTMLHeadingElement>(null);
   const stopSent = useRef(false);
   const composeRef = useRef<HTMLTextAreaElement>(null);
+  const chatButton = useRef<HTMLButtonElement>(null);
   const wide = useChatWidth();
   const [chatOpen, setChatOpen] = useState(readChatOpen);
   const [tab, setTab] = useState<{ at: string; id: TabId } | null>(null);
@@ -62,12 +63,25 @@ export function ScoutPage() {
     setChatOpen(open);
     writeChatOpen(open);
   };
-  const askOrSteer = () => {
-    flushSync(() => (wide ? showChat(true) : setTab({ at, id: "chat" })));
+  const focusComposer = () => {
     composeRef.current?.focus();
     composeRef.current?.scrollIntoView({ block: "nearest" });
   };
-  const chat = threaded ? { count: page.detail.thread.length, tab: wide ? null : thread, onOpen: wide && !chatOpen ? () => showChat(true) : null } : null;
+  const askOrSteer = () => {
+    flushSync(() => (wide ? showChat(true) : setTab({ at, id: "chat" })));
+    focusComposer();
+  };
+  const closeChat = () => {
+    flushSync(() => showChat(false));
+    chatButton.current?.focus();
+  };
+  const reopenChat = () => {
+    flushSync(() => showChat(true));
+    focusComposer();
+  };
+  const chat = threaded
+    ? { count: page.detail.thread.length, tab: wide ? null : thread, onOpen: wide && !chatOpen ? reopenChat : null, openRef: chatButton }
+    : null;
   return (
     <section aria-label={label} data-scout-layout
       className={`grid grid-cols-1 items-start min-[1100px]:grid-cols-[320px_minmax(0,1fr)] ${docked ? "min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]" : ""}`}>
@@ -100,7 +114,7 @@ export function ScoutPage() {
           className="hidden min-w-0 flex-col border-l border-rule bg-paper min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:flex min-[1440px]:h-screen">
           <header className="flex items-center justify-between gap-2 border-b border-rule px-[18px] py-4">
             <h2 id={chatTitle} className="m-0 font-sans text-[14px] font-semibold text-ink">Chat with the scout</h2>
-            <button type="button" aria-label="Close chat" title="Close chat" onClick={() => showChat(false)}
+            <button type="button" aria-label="Close chat" title="Close chat" onClick={closeChat}
               className="inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center text-[18px] leading-none text-ink-3 hover:text-ink">
               ✕
             </button>

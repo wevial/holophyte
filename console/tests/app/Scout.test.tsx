@@ -552,18 +552,20 @@ test("a done scout's two-message thread and its composer sit in a closable Chat 
   expect(screen.queryByRole("tab", { name: /^Chat/ })).toBeNull();
 });
 
-test("closing the chat leaves a Chat · 2 button in the tab bar that reopens it, and each choice survives a remount", async () => {
+test("closing the chat leaves a focused Chat · 2 button in the tab bar that reopens it at the composer, and each choice survives a remount", async () => {
   wideView();
   const { fetch } = scoutFetch({ scouts: { 31: chatty } });
   await mount("#/scouts/demo/31", fetch);
   expect(within(tabBar()).queryByRole("button", { name: "Chat · 2" })).toBeNull();
   await click(within(chat()!).getByRole("button", { name: "Close chat" }));
   expect(chat()).toBeNull();
+  expect(document.activeElement).toBe(within(tabBar()).getByRole("button", { name: "Chat · 2" }));
   cleanup();
   await mount("#/scouts/demo/31", fetch);
   expect(chat()).toBeNull();
   await click(within(tabBar()).getByRole("button", { name: "Chat · 2" }));
   expect(chat()).toBeTruthy();
+  expect(document.activeElement).toBe(composer(chat()!));
   expect(screen.queryByRole("button", { name: "Chat · 2" })).toBeNull();
   cleanup();
   await mount("#/scouts/demo/31", fetch);

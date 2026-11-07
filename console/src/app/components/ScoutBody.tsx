@@ -150,6 +150,7 @@ export interface DocumentChat {
   count: number;
   tab: ReactNode | null;
   onOpen: (() => void) | null;
+  openRef: Ref<HTMLButtonElement>;
 }
 
 /** A scout's page document: tabs Write-up (when the newest report has one), Findings (when there is a report),
@@ -201,7 +202,7 @@ export function ScoutDocument({ page, chat, chosen, onChoose }: {
           ))}
         </div>
         {chat?.onOpen != null && (
-          <button type="button" onClick={chat.onOpen}
+          <button ref={chat.openRef} type="button" onClick={chat.onOpen}
             className="inline-flex min-h-9 shrink-0 cursor-pointer items-center self-center border border-ink-3 bg-transparent px-3.5 font-sans text-[13px] font-medium text-ink-2 hover:bg-side-hover hover:text-ink">
             {chatLabel}
           </button>
