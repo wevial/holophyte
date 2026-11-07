@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { TrackedTree } from "../../lib/contract.gen";
 import { FoldChevron, FolderIcon } from "./icons";
 
-export type PathView = "text" | "tree";
+type PathView = "text" | "tree";
 
 const VIEW_KEY = "holophyte.next.settings.ui-paths.view";
 
