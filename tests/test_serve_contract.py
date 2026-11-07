@@ -149,7 +149,7 @@ class GeneratedFilesTests(unittest.TestCase):
                              "run-merge", "run-transcript", "run-turns",
                              "scout-routes", "scout", "scouts", "shipped",
                              "status", "story", "ticket-check", "ticket-search",
-                             "ticket")])
+                             "ticket", "tracked-tree")])
 
     def test_an_edited_zod_file_and_a_stale_schema_fail_naming_both(self):
         with tempfile.TemporaryDirectory() as tmp:

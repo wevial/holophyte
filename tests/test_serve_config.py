@@ -900,27 +900,34 @@ class ConfigPatchTests(ServeTestCase):
         self.assertIn("pip install --user -r requirements.txt", message)
 
 
-class PathMatchesTests(ServeTestCase):
-    """`GET /config/path-matches` over a real repository whose main tracks
-    console/src/a.ts, console/src/b.ts and console/build.ts."""
+class TrackedMainTestCase(ServeTestCase):
+    """A config-editing daemon over a real repository whose main tracks
+    `NAMES`."""
 
     TOKEN = ConfigEditTests.TOKEN
     BEARER = ConfigEditTests.BEARER
     SECRET = ConfigEditTests.SECRET
     HOOK_TOKENS = ConfigEditTests.HOOK_TOKENS
+    NAMES = ()
 
     def setUp(self):
         super().setUp()
         git(self.target, "init", "-q", "-b", "main")
-        names = ("console/src/a.ts", "console/src/b.ts", "console/build.ts")
-        for name in names:
+        for name in self.NAMES:
             path = self.target / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("export {};\n")
-        git(self.target, "add", *names)
-        git(self.target, "commit", "-q", "-m", "three files")
+        git(self.target, "add", *self.NAMES)
+        git(self.target, "commit", "-q", "-m", "tracked files")
         self.seed()
         self.start(ConfigEditTests.config(self, "config_edit = true\n"))
+
+
+class PathMatchesTests(TrackedMainTestCase):
+    """`GET /config/path-matches` over a real repository whose main tracks
+    console/src/a.ts, console/src/b.ts and console/build.ts."""
+
+    NAMES = ("console/src/a.ts", "console/src/b.ts", "console/build.ts")
 
     def counts(self, key, *entries):
         query = urlencode([("key", key), *(("entry", e) for e in entries)])
@@ -953,6 +960,37 @@ class PathMatchesTests(ServeTestCase):
                 code, _, body = self.counts(key, *entries)
                 self.assertEqual(code, 400)
                 self.assertIn("error", body)
+
+
+class TrackedTreeTests(TrackedMainTestCase):
+    """`GET /config/tracked-tree` over a real repository whose main tracks
+    console/src/a.ts, console/src/b.ts, console/build.ts and docs/x.md."""
+
+    NAMES = ("console/src/a.ts", "console/src/b.ts", "console/build.ts",
+             "docs/x.md")
+
+    def test_the_tree_counts_each_directory_s_tracked_files_on_main(self):
+        code, _, body = self.request("GET", "/config/tracked-tree", self.BEARER)
+        self.assertEqual(code, 200)
+        self.assertEqual(body, {
+            "ref": "main",
+            "sha": git(self.target, "rev-parse", "--short=12", "main"),
+            "files": 4,
+            "dirs": [
+                {"path": "", "files": 4, "dirs": ["console", "docs"],
+                 "leaves": []},
+                {"path": "console", "files": 3, "dirs": ["src"],
+                 "leaves": ["build.ts"]},
+                {"path": "console/src", "files": 2, "dirs": [],
+                 "leaves": ["a.ts", "b.ts"]},
+                {"path": "docs", "files": 1, "dirs": [], "leaves": ["x.md"]}]})
+
+    def test_a_main_over_the_file_bound_is_413(self):
+        with patch("holophyte.serve.serve_config.MAX_TREE_FILES", 3):
+            code, _, body = self.request("GET", "/config/tracked-tree",
+                                         self.BEARER)
+        self.assertEqual(code, 413)
+        self.assertEqual((body["files"], body["limit"]), (4, 3))
 
 
 if __name__ == "__main__":

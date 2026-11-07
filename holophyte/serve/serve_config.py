@@ -16,7 +16,7 @@ from urllib.parse import parse_qs
 import store.read
 from holophyte.admission import project_of
 from holophyte.agents.probes import probe_implementer
-from holophyte.cli.stale_paths import PATH_MATCHERS, path_matches
+from holophyte.cli.stale_paths import PATH_MATCHERS, path_matches, tracked_tree
 from holophyte.config.checks import check_document
 from holophyte.config.reader import KNOWN_KEYS
 from holophyte.redact import RedactionError, redact, restore, spans
@@ -25,6 +25,8 @@ CONFIG_PATH = "/config"
 PATH_MATCHES_PATH = "/config/path-matches"
 MAX_PATH_ENTRIES = 100
 MAX_PATH_ENTRY = 512
+TRACKED_TREE_PATH = "/config/tracked-tree"
+MAX_TREE_FILES = 20_000
 CONFIG_ACTION = "config_edit"
 CONFIG_APPLIES = "next loop start"
 # The server is threaded: one PUT holds this from its read to its rename.
@@ -88,6 +90,17 @@ def config_path_matches(project, query):
     found = path_matches(project, keys[0], entries)
     if found is None:
         return 503, {"error": "the project has no readable main"}
+    return 200, found
+
+
+def config_tracked_tree(project):
+    found = tracked_tree(project, MAX_TREE_FILES)
+    if found is None:
+        return 503, {"error": "the project has no readable main"}
+    if found["dirs"] is None:
+        return 413, {"error": f"main tracks {found['files']} files, over"
+                              f" the tree's {MAX_TREE_FILES}",
+                     "files": found["files"], "limit": MAX_TREE_FILES}
     return 200, found
 
 

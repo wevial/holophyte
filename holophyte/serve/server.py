@@ -54,7 +54,9 @@ from holophyte.serve.serve_ask import (
 from holophyte.serve.serve_config import (
     CONFIG_PATH,
     PATH_MATCHES_PATH,
+    TRACKED_TREE_PATH,
     config_path_matches,
+    config_tracked_tree,
     read_config,
     require_tomlkit,
     write_config,
@@ -132,6 +134,7 @@ TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
                         "/attention", "/board", "/report", "/findings",
                         "/tickets", SCOUTS_PATH, MERGE_QUEUE_PATH})
+CONFIG_READS = frozenset({CONFIG_PATH, PATH_MATCHES_PATH, TRACKED_TREE_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
     "Scope", ("project", "token", "action_token", "actions", "config_edit",
@@ -294,7 +297,7 @@ def shaped_route(path):
 
 
 def is_json_route(path):
-    return (path in JSON_PATHS or path in (CONFIG_PATH, PATH_MATCHES_PATH)
+    return (path in JSON_PATHS or path in CONFIG_READS
             or path.startswith(ACTIONS_PREFIX)
             or shaped_route(path) is not None)
 
@@ -327,7 +330,7 @@ class StatusHandler(BaseHTTPRequestHandler):
         self.get(self.server.scope, parts.path, parts.query)
 
     def get(self, scope, path, query):
-        token = (scope.action_token if path in (CONFIG_PATH, PATH_MATCHES_PATH)
+        token = (scope.action_token if path in CONFIG_READS
                  and scope.config_edit else scope.token)
         if token is not None and not self.open_route(path) \
                 and not authorized(self.headers.get("Authorization"), token):
@@ -355,13 +358,14 @@ class StatusHandler(BaseHTTPRequestHandler):
         elif path == "/peers":
             code, body = 200, {"self": self.server.self_address,
                                "peers": list(self.server.peers)}
+        elif path in CONFIG_READS and not scope.config_edit:
+            code, body = 404, {"error": "not found", "path": path}
         elif path == CONFIG_PATH:
-            code, body = ((404, {"error": "not found", "path": path})
-                          if not scope.config_edit else read_config(project))
+            code, body = read_config(project)
         elif path == PATH_MATCHES_PATH:
-            code, body = ((404, {"error": "not found", "path": path})
-                          if not scope.config_edit
-                          else config_path_matches(project, query))
+            code, body = config_path_matches(project, query)
+        elif path == TRACKED_TREE_PATH:
+            code, body = config_tracked_tree(project)
         elif (shaped := shaped_route(path)) is not None:
             handler, segment = shaped
             code, body = handler(project, segment)

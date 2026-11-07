@@ -1527,3 +1527,19 @@ export const pathMatchesSchema = z.looseObject({
   matches: z.array(pathMatchSchema),
 });
 export type PathMatches = z.infer<typeof pathMatchesSchema>;
+
+export const trackedDirSchema = z.looseObject({
+  path: z.string(),
+  files: z.int(),
+  dirs: z.array(z.string()),
+  leaves: z.array(z.string()),
+});
+export type TrackedDir = z.infer<typeof trackedDirSchema>;
+
+export const trackedTreeSchema = z.looseObject({
+  ref: z.string(),
+  sha: z.string(),
+  files: z.int(),
+  dirs: z.array(trackedDirSchema),
+});
+export type TrackedTree = z.infer<typeof trackedTreeSchema>;

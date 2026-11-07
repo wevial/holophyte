@@ -96,6 +96,32 @@ def path_matches(project, key, entries):
                         for entry in entries]}
 
 
+def _tree(files):
+    dirs = {"": {"path": "", "files": 0, "dirs": [], "leaves": []}}
+    for path in files:
+        parent = ""
+        *folders, leaf = path.split("/")
+        for name in folders:
+            here = f"{parent}/{name}" if parent else name
+            if here not in dirs:
+                dirs[here] = {"path": here, "files": 0, "dirs": [], "leaves": []}
+                dirs[parent]["dirs"].append(name)
+            dirs[parent]["files"] += 1
+            parent = here
+        dirs[parent]["files"] += 1
+        dirs[parent]["leaves"].append(leaf)
+    return list(dirs.values())
+
+
+def tracked_tree(project, limit):
+    main = _main(project)
+    if main is None:
+        return None
+    _, ref, sha, files = main
+    return {"ref": ref, "sha": sha[:12], "files": len(files),
+            "dirs": _tree(files) if len(files) <= limit else None}
+
+
 def stale_paths(project):
     entries = _entries(project)
     if not any(values for _, values in entries):

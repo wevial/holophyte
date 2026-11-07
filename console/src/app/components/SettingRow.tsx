@@ -2,7 +2,8 @@ import { useEffect, useId, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { bind, PATH_LIST_KEYS, PATH_MATCH_DEBOUNCE_MS, UNBOUND_NOTE, type ConfigValues, type PatchValue } from "../../lib/config";
 import type { Status } from "../../lib/contract.gen";
-import { usePathMatches } from "../queries";
+import { usePathMatches, useTrackedTree } from "../queries";
+import { PathTree, PathViewSwitch, readPathView, writePathView } from "./PathTree";
 import type { SettingsField } from "../settings";
 
 function PathMatches({ base, settingKey, label, entries }: { base: string; settingKey: string; label: string; entries: string[] }) {
@@ -41,6 +42,11 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
   const bound = bind(field, values);
   const original = bound.state === "bound" ? bound.value : field.default;
   const value = draft ?? original;
+  const settingKey = `${field.table}.${field.key}`;
+  const treeable = settingKey === "merge.ui_paths" && bound.state !== "unbound";
+  const { data: tree } = useTrackedTree(base, treeable);
+  const [view, setView] = useState(readPathView);
+  const showTree = treeable && tree != null && view === "tree" && Array.isArray(value);
   const changed = draft !== undefined;
   const seat = field.table === "agents" && ["implementer", "reviewer", "adjudicator"].includes(field.key) ? field.key : null;
   const route = seat ? status?.active_routes?.[seat] : undefined;
@@ -58,6 +64,10 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
         {error && <p role="alert" className="mt-3 font-mono text-[12px] text-bad">{error}</p>}
       </div>
       <div className="flex w-full min-w-0 flex-col items-start gap-2 min-[860px]:w-80 min-[860px]:shrink-0">
+        {treeable && tree != null && <PathViewSwitch label={field.label} view={view} onPick={(next) => {
+          setView(next);
+          writePathView(next);
+        }} />}
         {bound.state === "unbound" ? <div className="w-full min-w-0">
           <pre aria-label={field.label} className="w-full whitespace-pre-wrap break-words border border-rule bg-paper px-3 py-2 font-mono text-[12px] text-ink-2">{JSON.stringify(bound.value, null, 2)}</pre>
           <Link to="/settings/$tab" params={{ tab: "toml" }} search={{ project }} className="mt-2 block font-mono text-[12px] text-act underline">{UNBOUND_NOTE}</Link>
@@ -72,13 +82,14 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
             <output aria-label={field.label} className="min-w-10 border-x border-rule px-3 py-2 text-center font-mono text-[13px]">{String(value)}</output>
             <button type="button" aria-label={field.key === "workers" ? "One more worker" : `Increase ${field.label.toLowerCase()}`} onClick={() => onChange(Number(value) + 1, original)} className={`${buttonClass} text-ink-2`}>+</button>
           </div> : field.kind === "boolean" ? <button type="button" role="switch" aria-label={field.label} aria-checked={value === true} disabled={disabled} onClick={() => onChange(!value, original)} className={`${buttonClass} border border-rule ${value === true ? "bg-act-wash text-act" : "bg-paper text-ink-2"}`}>{value === true ? "On" : "Off"}</button>
+            : showTree ? <PathTree tree={tree} value={value} label={field.label} onChange={(next) => onChange(next, original)} />
             : field.kind === "lines" ? <textarea aria-label={field.label} rows={3} value={lines ?? (Array.isArray(value) ? value.join("\n") : "")} onBlur={() => setLines(null)} onChange={(event) => {
               setLines(event.target.value);
               onChange(event.target.value.split("\n").filter((line) => line.trim() !== ""), original);
             }} className="w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />
             : <input type="text" aria-label={field.label} value={String(value)} placeholder={field.seat ? "the default route" : undefined} onChange={(event) => onChange(event.target.value, original)} className="w-full border border-rule bg-paper px-3 py-2 font-mono text-[13px] text-ink" />}
-        {field.kind === "lines" && bound.state !== "unbound" && PATH_LIST_KEYS.has(`${field.table}.${field.key}`) && Array.isArray(value) &&
-          <PathMatches base={base} settingKey={`${field.table}.${field.key}`} label={field.label} entries={value} />}
+        {field.kind === "lines" && !showTree && bound.state !== "unbound" && PATH_LIST_KEYS.has(settingKey) && Array.isArray(value) &&
+          <PathMatches base={base} settingKey={settingKey} label={field.label} entries={value} />}
         {(routeText || defaulted || changed) && <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[12px]">
           {routeText && <span className={route?.down ? "text-bad" : route?.fallback ? "text-ask-ink" : "text-live"}>{routeText}</span>}
           {defaulted && <span className="text-ink-3">default</span>}
