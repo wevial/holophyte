@@ -62,6 +62,11 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
       void navigate({ to: "/tickets/$project/new", params: { project }, search: {}, state: { draft: item.body } });
     }
   };
+  const notNow = (
+    <Btn disabled={!actions || action.isPending || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => setAside(true)}>
+      Not now
+    </Btn>
+  );
   if (item.set_aside_ms != null && item.ticket == null) {
     return (
       <li data-scout-action className="border-b border-rule-2 py-2.5">
@@ -103,17 +108,18 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
       </div>
       <div className={CONTROL}>
         {item.kind === "revise" ? (
-          <Btn variant="primary" disabled={!actions || revise == null} title={actions ? undefined : ACTIONS_OFF} onClick={() => revise && void navigate(revise)}>
-            Revise
-          </Btn>
+          <span className="flex gap-2">
+            <Btn variant="primary" disabled={!actions || revise == null} title={actions ? undefined : ACTIONS_OFF} onClick={() => revise && void navigate(revise)}>
+              Revise
+            </Btn>
+            {notNow}
+          </span>
         ) : item.ticket == null ? (
           <span className="flex gap-2">
             <Btn variant="need" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
               File
             </Btn>
-            <Btn disabled={!actions || action.isPending || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => setAside(true)}>
-              Not now
-            </Btn>
+            {notNow}
           </span>
         ) : (
           <span data-filed className="whitespace-nowrap font-mono text-[12px] text-ok-ink">
@@ -133,7 +139,7 @@ export const toFile = (items: ScoutAction[]) =>
   items.filter((item) => item.kind !== "revise" && item.ticket == null && item.set_aside_ms == null).length;
 
 /** A scout's action items under `title`, kept for readers only when `titleHidden`: each with File and Not now, its
- *  Filed stamp once filed, one `A2 not now · Undo` line once set aside, and a revise item with Revise, which opens its
+ *  Filed stamp once filed, one `A2 not now · Undo` line once set aside, and a revise item with Revise and Not now; Revise opens its
  *  ticket's edit page with the item's draft. */
 export function ScoutActions({ items, title = "Action items", titleHidden = false, ...scope }: { items: ScoutAction[]; title?: string; titleHidden?: boolean } & Scope) {
   if (items.length === 0) return null;
