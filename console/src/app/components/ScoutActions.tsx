@@ -41,12 +41,15 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   } as const;
   const aside = useAction();
   const refused = [action.data, aside.data].find((data) => data != null && !data.ok) ?? null;
-  const setAside = (value: boolean) =>
+  const setAside = (value: boolean) => {
+    action.reset();
     void aside.mutateAsync({
       label: value ? "Not now" : "Undo", base, route: "/actions/scout-set-aside", body: { scout, item: item.position, aside: value },
       said: value ? `${id} set aside.` : `${id} is back.`,
     });
+  };
   const file = async () => {
+    aside.reset();
     const result = await action.mutateAsync({
       label: "File", base, route: "/actions/scout-file", body: { scout, item: item.position },
       said: (_detail, answer) => `Filed ${answer.ticket} in ${project} Backlog.`,

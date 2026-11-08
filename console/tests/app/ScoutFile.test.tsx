@@ -162,6 +162,24 @@ test("Not now collapses A2 into one quiet line, drops the count by one, and Undo
   expect(heading()).toBe("Decide4 to file");
 });
 
+test("Not now after a refused File collapses A2 to its one line, the File refusal gone", async () => {
+  const unfiled = items.map((each) => ({ ...each, ticket: null, filed_ms: null }));
+  const daemon: Daemon = {
+    scout: done(unfiled),
+    file: refusal("demo has no [board]"),
+    aside: ({ item }) => {
+      daemon.scout = done(daemon.scout.actions.map((each) => (each.position === item ? { ...each, set_aside_ms: at(11, 59) } : each)));
+      return Response.json({ ok: true, scout: 31, item, set_aside_ms: at(11, 59), detail: "done" });
+    },
+  };
+  await mount(scoutFetch(daemon).fetch);
+  await click(fileOf("A2"));
+  expect(within(rowOf("A2")).getByRole("alert").textContent).toBe("demo has no [board]");
+  await click(within(rowOf("A2")).getByRole("button", { name: "Not now" }));
+  expect(within(rowOf("A2")).queryByRole("alert")).toBeNull();
+  expect(rowOf("A2").textContent).toBe("A2 not now · Undo");
+});
+
 test("File posts the scout and item, reads Filing… while out, toasts the key and reads the scout again", async () => {
   let answer: (response: Response) => void = () => {};
   const daemon: Daemon = { scout: done(), file: () => new Promise((resolve) => (answer = resolve)) };
