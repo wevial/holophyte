@@ -728,8 +728,8 @@ class CandidateImageTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v14_and_every_tracked_reference_names_it(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v14")
+    def test_image_tag_is_v15_and_every_tracked_reference_names_it(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v15")
         tracked = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
         ).stdout.decode().split("\0")
@@ -739,11 +739,26 @@ class ReviewerImageTests(unittest.TestCase):
             if (ROOT / path).is_file()
             for tag in re.findall(rb"ubuntu24\.04-v\d+", (ROOT / path).read_bytes())
         }
-        self.assertIn(("holophyte/review/review_runner.py", "ubuntu24.04-v14"),
+        self.assertIn(("holophyte/review/review_runner.py", "ubuntu24.04-v15"),
                       references)
-        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v14"), references)
+        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v15"), references)
         self.assertEqual(
-            {ref for ref in references if ref[1] != "ubuntu24.04-v14"}, set())
+            {ref for ref in references if ref[1] != "ubuntu24.04-v15"}, set())
+
+    def test_base_moves_off_v14_digest_and_first_step_upgrades_before_install(self):
+        text = self.DOCKERFILE.read_text()
+        base = re.search(r"(?m)^FROM ubuntu@sha256:([0-9a-f]{64})$", text)
+        self.assertIsNotNone(base, "Dockerfile pins no ubuntu digest")
+        self.assertFalse(base.group(1).startswith("33ceb71981b6"))
+        first_run = re.search(r"(?m)^RUN (?:.*\\\n)*.*$", text).group(0)
+        update = first_run.find("apt-get update")
+        upgrade = first_run.find(
+            "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
+        install = first_run.find("apt-get install")
+        self.assertNotEqual(update, -1, "first RUN runs no apt-get update")
+        self.assertNotEqual(upgrade, -1, "first RUN runs no apt-get upgrade -y")
+        self.assertLess(update, upgrade)
+        self.assertLess(upgrade, install)
 
     def test_dockerfile_installs_pinned_checksummed_bun_on_path(self):
         text = self.DOCKERFILE.read_text()
