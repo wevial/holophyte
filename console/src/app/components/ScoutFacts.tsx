@@ -45,7 +45,7 @@ export function ScoutRunFacts({ detail, project, pass }: {
   const tasks = detail.tasks.filter((task) => task.pass === 1);
   const stopped = stoppedCount(tasks);
   const tokens = tasks.flatMap((task) => (task.tokens == null ? [] : [task.tokens]));
-  const facts: [string, ReactNode][] = ([
+  const facts = ([
     ["base", scout.base_sha == null ? null : shortSha(scout.base_sha)],
     ["helpers", scout.helper == null ? null : `${scout.helper}${scout.swarm == null ? "" : ` ×${scout.swarm}`}`],
     ["back", tasks.length === 0 ? null : `${backCount(tasks)} of ${tasks.length}${stopped ? `, ${stopped} stopped` : ""}`],
