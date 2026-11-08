@@ -61,7 +61,7 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   };
   if (item.set_aside_ms != null && item.ticket == null) {
     return (
-      <li data-scout-action data-set-aside className="border-b border-rule-2 py-2.5">
+      <li data-scout-action className="border-b border-rule-2 py-2.5">
         <p className="m-0 font-mono text-[12px] text-ink-3">
           <span data-action-id className="font-semibold">{id}</span>
           {" not now · "}
