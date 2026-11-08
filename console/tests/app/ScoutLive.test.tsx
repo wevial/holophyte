@@ -136,10 +136,9 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a swarming scout with no thread holds the Thread, an enabled composer and Ask or steer", async () => {
+test("a swarming scout with no thread holds the Thread and an enabled composer", async () => {
   await mount(scoutFetch({ scout: swarming }).fetch);
   const panel = within(region());
-  expect(screen.getByRole("link", { name: "Ask or steer" })).toBeTruthy();
   expect((panel.getByRole("textbox", { name: "Question for the scout" }) as HTMLTextAreaElement).disabled).toBe(false);
 });
 

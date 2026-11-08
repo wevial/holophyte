@@ -83,7 +83,7 @@ function AskFold({ ask }: { ask: string }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
-    <div className="mb-4">
+    <div className="mt-6">
       <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
         className="group inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-mono text-[12px] leading-[1.7] text-ink-3 hover:text-ink">
         <FoldChevron open={open} />
@@ -99,7 +99,6 @@ function Progress({ page, project }: { page: Shown; project: string }) {
   const span = scout.started_ms == null || scout.ended_ms == null ? null : formatSpan(scout.ended_ms - scout.started_ms);
   return (
     <section aria-label="Progress" className="mt-10">
-      <AskFold key={`${project}/${scout.id}`} ask={scout.ask} />
       <ScoutRunFacts detail={page.detail} project={project} pass={page.pass} />
       <h2 className={`m-0 ${SECTION_LABEL}`}>
         Progress
@@ -114,6 +113,7 @@ function Progress({ page, project }: { page: Shown; project: string }) {
       </h2>
       <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)}
         stop={scout.phase === "swarming" ? { base: page.base, scout: scout.id, actions: page.actions } : null} />
+      <AskFold key={`${project}/${scout.id}`} ask={scout.ask} />
     </section>
   );
 }

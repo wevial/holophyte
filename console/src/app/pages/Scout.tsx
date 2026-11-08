@@ -10,7 +10,7 @@ import { ScoutStop } from "../components/ScoutStop";
 import { ScoutThread } from "../components/ScoutThread";
 import { ScoutsBeside, ShowScoutList } from "../components/ScoutsSidebar";
 import { scoutNotice, useScoutPage } from "../scout";
-import { hasThread, takesMessages } from "../scoutThread";
+import { hasThread } from "../scoutThread";
 import { useChatWidth } from "../viewport";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
@@ -85,10 +85,9 @@ export function ScoutView({ project, param }: { project: string; param: string }
     setChatOpen(open);
     writeChatOpen(open);
   };
-  const askOrSteer = () => {
-    flushSync(() => (wide ? showChat(true) : setTab({ at, id: "chat" })));
+  const openChat = () => {
+    flushSync(() => showChat(true));
     composeRef.current?.focus();
-    composeRef.current?.scrollIntoView({ block: "nearest" });
   };
   const runAgain = () => void navigate({ to: "/scouts", search: {
     new: project, kind: scout.kind, ask: scout.ask, about: scout.subject == null ? undefined : `${scout.subject.kind}:${scout.subject.ref}`,
@@ -112,12 +111,8 @@ export function ScoutView({ project, param }: { project: string; param: string }
           </nav>
           {page.stoppable ? <ScoutStop key={at} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />
             : <Btn disabled={!page.actions} title={page.actions ? undefined : ACTIONS_OFF} onClick={runAgain}>Run again</Btn>}
-          {threaded && takesMessages(scout.phase) && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
-            event.preventDefault();
-            askOrSteer();
-          }}>Ask or steer</a>}
           {threaded && wide && !chatOpen && (
-            <button ref={chatButton} type="button" aria-expanded={false} aria-controls={drawerId} onClick={askOrSteer} className="btn shrink-0 gap-1.5" data-variant="quiet">
+            <button ref={chatButton} type="button" aria-expanded={false} aria-controls={drawerId} onClick={openChat} className="btn shrink-0 gap-1.5" data-variant="quiet">
               <ChatIcon />
               Chat
             </button>

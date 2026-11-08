@@ -270,7 +270,7 @@ test("the Activity tab opens on the run's base, helpers, tasks back and tokens a
   const facts = document.querySelector<HTMLElement>("[data-scout-facts]")!;
   expect(Array.from(facts.children, (fact) => [fact.querySelector("dt")!.textContent, fact.querySelector("dd")!.textContent]))
     .toEqual([["base", "d149ad5"], ["helpers", "luna ×3"], ["back", "12 of 12"], ["tokens", "280k"]]);
-  expect(screen.getByRole("tabpanel").contains(facts)).toBe(true);
+  expect(screen.getByRole("tabpanel").querySelector("section")!.firstElementChild).toBe(facts);
   expect(inOrder([facts, screen.getByRole("list", { name: "Scout activity" })])).toBe(true);
   expect(document.querySelector("header [data-scout-meta]")!.textContent).toBe(META);
   expect(document.querySelector("header")!.textContent).not.toMatch(/d149ad5|luna|12 of 12|280k/);

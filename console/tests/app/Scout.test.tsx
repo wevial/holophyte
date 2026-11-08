@@ -634,20 +634,6 @@ test("folding the chat leaves a focused, outlined Chat button in the top bar tha
   expect(chat()).toBeTruthy();
 });
 
-test("Ask or steer opens the folded chat and focuses its composer, and below the breakpoint selects the Chat tab", async () => {
-  wideView();
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  await click(within(chat()!).getByRole("button", { name: "Hide chat" }));
-  await click(screen.getByRole("link", { name: "Ask or steer" }));
-  expect(document.activeElement).toBe(composer(chat()!));
-  cleanup();
-  happyDOM.setViewport({ width: 1280, height: 800 });
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  await click(screen.getByRole("link", { name: "Ask or steer" }));
-  expect(screen.getByRole("tab", { name: "Chat · 2" }).getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(composer(shown()));
-});
-
 test("the chat drawer docks from 1440px with the scout list shown or hidden, and below it a Chat · 2 tab holds the thread", async () => {
   happyDOM.setViewport({ width: 1440, height: 900 });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
