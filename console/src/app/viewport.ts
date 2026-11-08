@@ -10,7 +10,6 @@ function useMinWidth(px: number): boolean {
   return useSyncExternalStore(subscribe, () => window.matchMedia?.(media).matches ?? false);
 }
 
-
 /** Whether the window is at least 1100px wide, room for a table's column head. */
 export function useTableWidth(): boolean {
   return useMinWidth(1100);
