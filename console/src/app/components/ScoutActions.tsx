@@ -105,7 +105,7 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
           </Btn>
         ) : item.ticket == null ? (
           <span className="flex gap-2">
-            <Btn variant="need" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
+            <Btn variant="need" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
               File
             </Btn>
             <Btn disabled={!actions || action.isPending || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => setAside(true)}>
