@@ -1,7 +1,8 @@
 import type { ReactNode, Ref } from "react";
 
-/** `primary` is one per row or dialog; `danger` opens a confirm whose own button is `danger-fill`. */
-export type BtnVariant = "primary" | "quiet" | "danger" | "danger-fill";
+/** `primary` is one per row or dialog; `need` is an outlined primary that fills on hover; `danger` opens a confirm
+ *  whose own button is `danger-fill`. */
+export type BtnVariant = "primary" | "need" | "quiet" | "danger" | "danger-fill";
 
 export function Btn({
   variant = "quiet",

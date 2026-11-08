@@ -4,8 +4,9 @@ import { formatSpan } from "../../lib/format";
 import { numberFindings, type ScoutPage } from "../scout";
 import { hasThread } from "../scoutThread";
 import { SECTION_LABEL } from "./Criteria";
-import { ScoutActions } from "./ScoutActions";
+import { ScoutActions, toFile } from "./ScoutActions";
 import { ScoutActivity } from "./ScoutActivity";
+import { ScoutRunFacts } from "./ScoutFacts";
 import { ScoutReport } from "./ScoutReport";
 import { ScoutThread } from "./ScoutThread";
 import { ScoutWriteup } from "./ScoutWriteup";
@@ -49,16 +50,16 @@ function Sentence({ text }: { text: string }) {
 
 /** A done scout's answer from its newest report, its headline over its bullets or else its summary; any other scout's
  *  state sentence. */
-function Verdict({ page }: { page: Shown }) {
+export function Verdict({ page }: { page: Shown }) {
   const { detail } = page;
   const report = detail.scout.phase === "done" ? newestReport(detail) : undefined;
   let body: ReactNode;
   if (report?.headline != null) {
     body = (
       <>
-        <p role="status" className="m-0 max-w-[70ch] font-read text-[20px] font-semibold leading-[1.35] text-ink [overflow-wrap:anywhere]">{report.headline}</p>
+        <p role="status" className="m-0 max-w-[66ch] font-read text-[18px] font-medium leading-[1.45] text-ink [overflow-wrap:anywhere]">{report.headline}</p>
         {report.bullets != null && report.bullets.length > 0 && (
-          <ul className="m-0 mt-4 flex max-w-[70ch] list-none flex-col gap-2 p-0">
+          <ul className="m-0 mt-2.5 flex max-w-[70ch] list-none flex-col gap-1.5 p-0">
             {report.bullets.map((bullet, index) => (
               <li key={index} className="flex gap-4 font-read text-[15px] leading-[1.5] text-ink-2 [overflow-wrap:anywhere] before:mt-[0.6em] before:size-[5px] before:shrink-0 before:bg-ink-3 before:content-['']">
                 {bullet}
@@ -76,11 +77,12 @@ function Verdict({ page }: { page: Shown }) {
   return <section aria-label="Verdict">{body}</section>;
 }
 
-function Progress({ page }: { page: Shown }) {
+function Progress({ page, project }: { page: Shown; project: string }) {
   const { scout } = page.detail;
   const span = scout.started_ms == null || scout.ended_ms == null ? null : formatSpan(scout.ended_ms - scout.started_ms);
   return (
     <section aria-label="Progress" className="mt-10">
+      <ScoutRunFacts detail={page.detail} project={project} pass={page.pass} />
       <h2 className={`m-0 ${SECTION_LABEL}`}>
         Progress
         {page.live ? (
@@ -104,7 +106,7 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
   const { detail, base } = page;
   const { scout } = detail;
   const key = `${base}/${scout.id}`;
-  const progress = <Progress key="progress" page={page} />;
+  const progress = <Progress key="progress" page={page} project={project} />;
   const found = [
     <ScoutActions key={`${key}/actions`} items={detail.actions} base={base} project={project} scout={scout.id} actions={page.actions} />,
     <ScoutReport key={`${key}/findings`} reports={detail.reports} baseSha={scout.base_sha} />,
@@ -118,25 +120,7 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
   );
 }
 
-/** A scout's page rail below its head: Summary, the Verdict, then Decide, its action items. */
-export function ScoutRail({ page, project }: { page: Shown; project: string }) {
-  const { detail, base } = page;
-  const { scout } = detail;
-  const summary = useId();
-  return (
-    <>
-      <section aria-labelledby={summary} className="mt-8">
-        <h2 id={summary} className={`m-0 ${SECTION_LABEL}`}>Summary</h2>
-        <div className="mt-4"><Verdict page={page} /></div>
-      </section>
-      <div className="mt-8 empty:hidden">
-        <ScoutActions key={`${base}/${scout.id}/actions`} title="Decide" compact items={detail.actions} base={base} project={project} scout={scout.id} actions={page.actions} />
-      </div>
-    </>
-  );
-}
-
-export type TabId = "writeup" | "findings" | "activity" | "chat";
+export type TabId = "decide" | "writeup" | "findings" | "activity" | "chat";
 
 const TAB = "-mb-px inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 border-b-2 bg-transparent px-4 font-sans text-[12px] font-medium uppercase tracking-[0.12em]";
 const TAB_ON = "border-act bg-act-wash text-act";
@@ -145,41 +129,41 @@ const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-in
 /** Spaces the Thread as a chat: its own heading kept for readers only, under the slot's title. */
 export const CHAT_SLOT = "[&>div>section]:mt-0 [&>div>section>h2]:sr-only";
 
-/** The chat's place in the document: `slot` takes the Thread as a tab, and `onOpen` shows a button that docks it. */
-interface DocumentChat {
-  count: number;
-  slot: Ref<HTMLDivElement> | null;
-  onOpen: (() => void) | null;
-  openRef: Ref<HTMLButtonElement>;
-  /** Hides the chat's tab from the breakpoint its column docks at. */
-  tabClass: string;
-}
+/** Hides the chat's tab from the breakpoint the chat's drawer opens at, which `useChatWidth` matches. */
+const CHAT_TAB = "min-[1440px]:hidden";
 
-/** A scout's page document: tabs Write-up (when the newest report has one), Findings (when there is a report),
- *  Activity and the chat's tab, opening on the first of them, with the chat's button at the tab bar's end. */
-export function ScoutDocument({ page, chat, chosen, onChoose }: {
+/** A scout's page document: tabs Decide (when it has action items), Write-up (when the newest report has one),
+ *  Findings (when there is a report), Activity, and Chat when `chat` takes the Thread as a tab. It opens on Decide
+ *  while an item is left to file, else on the first of the rest. */
+export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
   page: Shown;
-  chat: DocumentChat | null;
+  project: string;
+  chat: { count: number; slot: Ref<HTMLDivElement> } | null;
   chosen: TabId | null;
   onChoose: (tab: TabId) => void;
 }) {
-  const { detail } = page;
+  const { detail, base } = page;
   const { scout } = detail;
   const prefix = useId();
   const writeup = newestReport(detail)?.writeup ?? [];
-  const chatLabel = chat == null ? "" : `Chat · ${chat.count}`;
+  const open = toFile(detail.actions);
   const tabs: { id: TabId; label: string; count?: number; className?: string; body: ReactNode }[] = [
+    ...(detail.actions.length > 0 ? [{
+      id: "decide" as const, label: "Decide", count: open > 0 ? open : undefined,
+      body: <ScoutActions key={`${base}/${scout.id}/actions`} title="Decide" titleHidden items={detail.actions} base={base} project={project} scout={scout.id} actions={page.actions} />,
+    }] : []),
     ...(writeup.length > 0 ? [{ id: "writeup" as const, label: "Write-up", body: <ScoutWriteup sections={writeup} /> }] : []),
     ...(detail.reports.length > 0 ? [{
       id: "findings" as const, label: "Findings", count: numberFindings(detail.reports).length,
       body: <ScoutReport reports={detail.reports} baseSha={scout.base_sha} />,
     }] : []),
-    { id: "activity", label: "Activity", body: <Progress page={page} /> },
-    ...(chat?.slot != null ? [{
-      id: "chat" as const, label: chatLabel, className: chat.tabClass, body: <div ref={chat.slot} className={CHAT_SLOT} />,
+    { id: "activity", label: "Activity", body: <Progress page={page} project={project} /> },
+    ...(chat != null ? [{
+      id: "chat" as const, label: `Chat · ${chat.count}`, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
-  const current = tabs.find((tab) => tab.id === chosen) ?? tabs[0]!;
+  const opening = open > 0 ? tabs[0]! : tabs.find((tab) => tab.id !== "decide")!;
+  const current = tabs.find((tab) => tab.id === chosen) ?? opening;
   const tabRefs = useRef(new Map<TabId, HTMLButtonElement>());
   const onKeyDown = (event: KeyboardEvent) => {
     const at = tabs.indexOf(current);
@@ -192,7 +176,7 @@ export function ScoutDocument({ page, chat, chosen, onChoose }: {
   };
   return (
     <>
-      <div data-scout-tabbar className="flex items-end justify-between gap-4 border-b border-rule">
+      <div data-scout-tabbar className="sticky top-0 z-[1] border-b border-rule bg-paper">
         <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap">
           {tabs.map((tab) => (
             <button key={tab.id} ref={(node) => void (node ? tabRefs.current.set(tab.id, node) : tabRefs.current.delete(tab.id))}
@@ -203,12 +187,6 @@ export function ScoutDocument({ page, chat, chosen, onChoose }: {
             </button>
           ))}
         </div>
-        {chat?.onOpen != null && (
-          <button ref={chat.openRef} type="button" onClick={chat.onOpen}
-            className="inline-flex min-h-9 shrink-0 cursor-pointer items-center self-center border border-ink-3 bg-transparent px-3.5 font-sans text-[13px] font-medium text-ink-2 hover:bg-side-hover hover:text-ink">
-            {chatLabel}
-          </button>
-        )}
       </div>
       {tabs.map((tab) => (
         <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} tabIndex={0} hidden={tab !== current}

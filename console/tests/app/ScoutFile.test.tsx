@@ -236,7 +236,7 @@ test("a refusal under scout 31's A1 does not read under a cached scout 32's A1",
   await click(fileOf("A1"));
   expect(within(rowOf("A1")).getByRole("alert").textContent).toBe("demo has no [board]");
   await visit("#/scouts/demo/32");
-  expect(document.querySelector("[data-scout-facts]")!.textContent).toStartWith("scout 32");
+  expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toEndWith("scout 32");
   expect(within(rowOf("A1")).queryByRole("alert")).toBeNull();
 });
 

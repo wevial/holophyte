@@ -31,8 +31,7 @@ const BULLETS = [
 ];
 const SUMMARY = "Every timing helper failed to start, so nothing was measured.";
 const REASON = "could not start: implementer credential not set";
-const WHAT = "scout 31 · bug · demo · base d149ad5 · started Sat 02:23 PDT";
-const COST = "3m of 20m · lead opus · helpers luna ×3 · 12 of 12 back · 280k tok";
+const META = "bug · 3m of 20m · Sat 02:23 PDT · lead opus";
 
 const STARTED = new Date(2026, 9, 24, 2, 23).getTime();
 const WAVE = STARTED + 60_000;
@@ -190,6 +189,7 @@ const region = (name: string, inside: HTMLElement = document.body) => within(ins
 const inOrder = (elements: HTMLElement[]) =>
   elements.every((element, index) => index === 0 || (elements[index - 1]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
 const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
+const showFindings = () => click(screen.getByRole("tab", { name: /^Findings/ }));
 const groups = () => Array.from(screen.getByRole("list", { name: "Scout activity" }).children) as HTMLElement[];
 const groupNamed = (title: string) => groups().find((group) => group.querySelector("[data-group-title] b")!.textContent === title)!;
 const fold = (group: HTMLElement) => group.querySelector(":scope > div > button[aria-expanded]");
@@ -215,11 +215,10 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a done scout's header reads its title, a what line and a cost line, keeps its ask behind Ask, and has no Stage", async () => {
+test("a done scout's header reads its title and a meta line of kind, time, start and lead, keeps its ask behind Ask, and has no Stage", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
-  expect(document.querySelector("[data-scout-what]")!.textContent).toBe(WHAT);
-  expect(document.querySelector("[data-scout-cost]")!.textContent).toBe(COST);
+  expect(within(document.querySelector("header")!).getByText(META)).toBeTruthy();
   const ask = within(document.querySelector("header")!).getByRole("button", { name: "Ask" });
   expect(ask.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText(ASK)).toBeNull();
@@ -261,12 +260,24 @@ test("the Verdict reads the newest report's headline over its bullets, or its su
   expect(within(region("Verdict")).queryByRole("list")).toBeNull();
 });
 
-test("a done scout's rail reads Verdict then Decide, its document Findings and its chat the Thread; a live pass's Activity has its pass open", async () => {
+test("the Activity tab opens on the run's base, helpers, tasks back and tokens above the activity, none of them in the header", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
-  const rail = document.querySelector<HTMLElement>("[data-scout-rail]")!;
+  await showActivity();
+  const facts = document.querySelector<HTMLElement>("[data-scout-facts]")!;
+  expect(Array.from(facts.children, (fact) => [fact.querySelector("dt")!.textContent, fact.querySelector("dd")!.textContent]))
+    .toEqual([["base", "d149ad5"], ["helpers", "luna ×3"], ["back", "12 of 12"], ["tokens", "280k"]]);
+  expect(screen.getByRole("tabpanel").contains(facts)).toBe(true);
+  expect(inOrder([facts, screen.getByRole("list", { name: "Scout activity" })])).toBe(true);
+  expect(document.querySelector("header [data-scout-meta]")!.textContent).toBe(META);
+  expect(document.querySelector("header")!.textContent).not.toMatch(/d149ad5|luna|12 of 12|280k/);
+});
+
+test("a done scout's lead reads above its Decide tab, its Findings sit in their tab and its chat holds the Thread; a live pass's Activity has its pass open", async () => {
+  await mount("#/scouts/demo/31", scoutFetch(scout31));
   const body = document.querySelector<HTMLElement>("[data-scout-body]")!;
-  expect(inOrder(["Verdict", "Decide"].map((name) => region(name, rail)))).toBe(true);
-  expect(region("Findings", body)).toBeTruthy();
+  expect(inOrder([region("Verdict", body), region("Decide", screen.getByRole("tabpanel"))])).toBe(true);
+  await showFindings();
+  expect(region("Findings", screen.getByRole("tabpanel"))).toBeTruthy();
   expect(region("Thread", region("Chat with the scout"))).toBeTruthy();
   cleanup();
   await mount("#/scouts/demo/31", scoutFetch(swarming), PASS_THREE + 3 * 60_000);
@@ -276,6 +287,7 @@ test("a done scout's rail reads Verdict then Decide, its document Findings and i
 
 test("a finding's citations stay folded behind a count until pressed", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
+  await showFindings();
   const [first, second] = findingRows();
   const toggle = within(first!).getByRole("button", { name: "5 citations" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -288,12 +300,14 @@ test("a finding's citations stay folded behind a count until pressed", async () 
 
 test("the reproduction folds its hypotheses into one counted line, and a report with no reproduction has none", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
+  await showFindings();
   const line = screen.getByRole("button", { name: "not reproduced · 5 hypotheses · 2 ruled out · 3 open" });
   expect(screen.queryByRole("list", { name: "Hypotheses" })).toBeNull();
   await click(line);
   expect(within(screen.getByRole("list", { name: "Hypotheses" })).getAllByRole("listitem")).toHaveLength(5);
   cleanup();
   await mount("#/scouts/demo/31", scoutFetch(research));
+  await showFindings();
   expect(screen.queryByRole("button", { name: /hypothes/ })).toBeNull();
   expect(region("Findings").querySelector("[data-reproduction]")).toBeNull();
 });
@@ -324,6 +338,7 @@ test("Progress lists one closed row per group with only the waves folding and no
     reports: [],
   };
   await mount("#/scouts/demo/31", scoutFetch(swarmingWithFailures), WAVE + 60_000);
+  await showActivity();
   const running = groupNamed("Wave 1");
   expect([running.hasAttribute("data-running"), running.querySelector("[data-badge]")!.getAttribute("data-badge")]).toEqual([true, "bad"]);
   expect(within(running.querySelector("[data-badge]") as HTMLElement).queryByRole("img")).toBeNull();
