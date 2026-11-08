@@ -10,6 +10,7 @@ import { ScoutRunFacts } from "./ScoutFacts";
 import { ScoutReport } from "./ScoutReport";
 import { ScoutThread } from "./ScoutThread";
 import { ScoutWriteup } from "./ScoutWriteup";
+import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
 
 type Shown = Extract<ScoutPage, { kind: "scout" }>;
@@ -77,11 +78,28 @@ export function Verdict({ page }: { page: Shown }) {
   return <section aria-label="Verdict">{body}</section>;
 }
 
+/** The full ask behind a closed Ask disclosure. */
+function AskFold({ ask }: { ask: string }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="mb-4">
+      <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
+        className="group inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-mono text-[12px] leading-[1.7] text-ink-3 hover:text-ink">
+        <FoldChevron open={open} />
+        Ask
+      </button>
+      {open && <p id={id} data-scout-ask className="m-0 mt-2 max-w-[70ch] whitespace-pre-wrap font-read text-[15px] leading-[1.55] text-ink-2 [overflow-wrap:anywhere]">{ask}</p>}
+    </div>
+  );
+}
+
 function Progress({ page, project }: { page: Shown; project: string }) {
   const { scout } = page.detail;
   const span = scout.started_ms == null || scout.ended_ms == null ? null : formatSpan(scout.ended_ms - scout.started_ms);
   return (
     <section aria-label="Progress" className="mt-10">
+      <AskFold key={`${project}/${scout.id}`} ask={scout.ask} />
       <ScoutRunFacts detail={page.detail} project={project} pass={page.pass} />
       <h2 className={`m-0 ${SECTION_LABEL}`}>
         Progress
@@ -123,7 +141,7 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
 export type TabId = "decide" | "writeup" | "findings" | "activity" | "chat";
 
 const TAB = "-mb-px inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 border-b-2 bg-transparent px-4 font-sans text-[12px] font-medium uppercase tracking-[0.12em]";
-const TAB_ON = "border-act bg-act-wash text-act";
+const TAB_ON = "border-act text-ink";
 const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink";
 
 /** Spaces the Thread as a chat: its own heading kept for readers only, under the slot's title. */

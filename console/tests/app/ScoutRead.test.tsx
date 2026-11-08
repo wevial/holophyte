@@ -215,11 +215,13 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a done scout's header reads its title and a meta line of kind, time, start and lead, keeps its ask behind Ask, and has no Stage", async () => {
+test("a done scout's header reads only its title and a meta line of kind, time, start and lead, its Activity keeps its ask behind Ask, and it has no Stage", async () => {
   await mount("#/scouts/demo/31", scoutFetch(scout31));
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
-  expect(within(document.querySelector("header")!).getByText(META)).toBeTruthy();
-  const ask = within(document.querySelector("header")!).getByRole("button", { name: "Ask" });
+  const header = document.querySelector("header")!;
+  expect(within(header).getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
+  expect(header.textContent).toBe(TITLE + META);
+  await showActivity();
+  const ask = within(screen.getByRole("tabpanel")).getByRole("button", { name: "Ask" });
   expect(ask.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText(ASK)).toBeNull();
   expect(screen.queryByRole("group", { name: "Stage" })).toBeNull();
@@ -239,12 +241,14 @@ test("an Ask opened on one scout's page stays closed on another scout's page", a
     });
     for (let round = 0; round < 6; round += 1) await act(settle);
   };
-  const ask = () => within(document.querySelector("header")!).getByRole("button", { name: "Ask" });
+  const ask = () => within(screen.getByRole("tabpanel")).getByRole("button", { name: "Ask" });
   await go("#/scouts/demo/31");
+  await showActivity();
   await click(ask());
   expect(screen.getByText(ASK)).toBeTruthy();
   await go("#/scouts/demo/29");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Which writer holds the lock?");
+  await showActivity();
   expect(ask().getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText(scout29.scout.ask)).toBeNull();
 });

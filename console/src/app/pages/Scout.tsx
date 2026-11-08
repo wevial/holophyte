@@ -118,7 +118,7 @@ export function ScoutView({ project, param }: { project: string; param: string }
         </div>
         <div className="flex max-w-[820px] flex-col gap-5 px-9 pt-7 pb-12 max-[720px]:p-4">
           <header>
-            <ScoutHead detail={page.detail} project={project} state={page.state} now={page.now} headingRef={heading} />
+            <ScoutHead detail={page.detail} state={page.state} now={page.now} headingRef={heading} />
           </header>
           <Verdict page={page} />
           <div>

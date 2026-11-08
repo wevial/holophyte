@@ -19,7 +19,7 @@ interface Scope {
   actions: boolean;
 }
 
-const ROW = "grid grid-cols-[2.375rem_minmax(0,1fr)_auto] items-center gap-x-2 border-b border-rule-2 py-3.5 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]";
+const ROW = "grid grid-cols-[2.375rem_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-rule-2 py-4 max-[720px]:grid-cols-[2.375rem_minmax(0,1fr)]";
 const CONTROL = "justify-self-end max-[720px]:col-start-2 max-[720px]:mt-2 max-[720px]:justify-self-start";
 
 function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
@@ -57,8 +57,11 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
     <li data-scout-action className={ROW}>
       <span data-action-id className="font-mono text-[11px] font-semibold leading-none text-ink-3">{id}</span>
       <div className="min-w-0">
-        <p className="m-0 flex flex-wrap items-baseline gap-x-2 gap-y-1 font-sans text-[15px] font-semibold leading-[1.45] text-ink [overflow-wrap:anywhere]">
+        <p className="m-0 flex flex-wrap gap-1.5">
           <span data-action-kind className={TAG}>{item.kind}</span>
+          {item.pass > 1 && <span data-action-pass className={TAG}>pass {item.pass}</span>}
+        </p>
+        <p className="m-0 mt-1.5 font-sans text-[15px] font-semibold leading-[1.35] text-ink [overflow-wrap:anywhere]">
           {item.kind === "revise" ? (
             revise == null ? <span data-action-title>{item.title}</span> : (
               <Link {...revise} data-action-title className="text-ink hover:underline">{item.title}</Link>
@@ -68,9 +71,8 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
               {item.title}
             </Link>
           )}
-          {item.pass > 1 && <span data-action-pass className={TAG}>pass {item.pass}</span>}
         </p>
-        <p data-action-why className="m-0 mt-0.5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{item.why}</p>
+        <p data-action-why className="m-0 mt-1.5 font-sans text-[14px] leading-[1.45] text-ink-2 [overflow-wrap:anywhere]">{item.why}</p>
         {refused != null && (
           <p role="alert" className={`m-0 mt-1.5 ${refused.ticket == null ? "text-bad" : "text-ink-2"} ${detailLine}`}>{refused.detail}</p>
         )}
