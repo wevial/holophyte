@@ -101,6 +101,13 @@ async function mount(id: number, shown = scouts) {
   );
   for (let round = 0; round < 6; round += 1) await act(settle);
   await screen.findByRole("region", { name: "Verdict" });
+  await showFindings();
+}
+
+/** Opens the Findings tab when the scout has one; an unfiled action item opens the page on Decide instead. */
+async function showFindings() {
+  const tab = screen.queryByRole("tab", { name: /^Findings\b/ });
+  if (tab != null) await act(async () => void fireEvent.click(tab));
 }
 
 const report = () => screen.getByRole("region", { name: "Findings" });
@@ -170,6 +177,7 @@ test("an opened command closes when the page moves to another scout", async () =
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     for (let round = 0; round < 6; round += 1) await act(settle);
+    await showFindings();
   };
   const commandChip = () => within(findingRows()[0]!).getByRole("button", { name: new RegExp(`^${COMMAND}`) });
   await mount(33);

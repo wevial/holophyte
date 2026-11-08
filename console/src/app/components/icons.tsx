@@ -117,6 +117,22 @@ export function PanelLeftIcon() {
   );
 }
 
+export function ChatIcon() {
+  return (
+    <Stroke>
+      <path d="M2.5 3h11v7.5H6l-3.5 3z" />
+    </Stroke>
+  );
+}
+
+export function FoldRightIcon() {
+  return (
+    <Stroke>
+      <path d="M7.5 4l4 4-4 4M3.5 4l4 4-4 4" />
+    </Stroke>
+  );
+}
+
 export function SignalIcon({ className }: { className?: string }) {
   return (
     <Stroke className={className}>

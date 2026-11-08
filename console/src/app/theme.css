@@ -800,6 +800,11 @@ body {
   --btn-wipe: var(--act); --btn-wipe-ink: var(--act-ink);
 }
 
+.btn[data-variant="need"] {
+  --btn-edge: var(--need); --btn-face: transparent; --btn-ink: var(--need);
+  --btn-wipe: var(--need); --btn-wipe-ink: var(--act-ink);
+}
+
 .btn[data-variant="quiet"] {
   --btn-edge: var(--ink-3); --btn-face: transparent; --btn-ink: var(--ink);
   --btn-wipe: var(--ink-3); --btn-wipe-ink: var(--paper);

@@ -144,9 +144,9 @@ test("hiding the list leaves a Scouts button at the top left of the scout's page
   expect(sidebar()).toBeNull();
   const show = screen.getByRole("button", { name: "Scouts", expanded: false });
   expect(document.activeElement).toBe(show);
-  const rail = screen.getByRole("complementary", { name: "Summary and decisions" });
-  expect(rail.contains(show)).toBe(true);
-  expect(show.compareDocumentPosition(within(rail).getByRole("navigation", { name: "Breadcrumb" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const topbar = document.querySelector<HTMLElement>("[data-scout-topbar]")!;
+  expect(topbar.contains(show)).toBe(true);
+  expect(show.compareDocumentPosition(within(topbar).getByRole("navigation", { name: "Breadcrumb" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   cleanup();
   await mount("#/scouts/demo/31");
   expect(sidebar()).toBeNull();

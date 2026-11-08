@@ -136,11 +136,30 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a swarming scout with no thread holds the Thread, an enabled composer and Ask or steer", async () => {
+test("a swarming scout with no thread holds the Thread and an enabled composer", async () => {
   await mount(scoutFetch({ scout: swarming }).fetch);
   const panel = within(region());
-  expect(screen.getByRole("link", { name: "Ask or steer" })).toBeTruthy();
   expect((panel.getByRole("textbox", { name: "Question for the scout" }) as HTMLTextAreaElement).disabled).toBe(false);
+});
+
+const tabs = () => screen.getAllByRole("tab").map((tab) => [tab.textContent, tab.getAttribute("aria-selected")]);
+
+test("a running scout with no report opens on Activity under its live sentence; a done scout with nothing left to file opens on its Write-up", async () => {
+  await mount(scoutFetch({ scout: swarming }).fetch);
+  expect(tabs()).toEqual([["Activity", "true"]]);
+  expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent)
+    .toBe("Wave 1: 1 of 3 helpers are back, 1 is running, and 1 waits for a slot.");
+  cleanup();
+  const writeup = [{ heading: "What locks the database", text: "The listener and the loop write through one connection." }];
+  const filed = { ...served.actions[0]!, kind: "fix" as const, ticket: "DEMO-213", filed_ms: at(11, 52) };
+  const done: ScoutDetail = {
+    ...swarming, scout: { ...swarming.scout, phase: "done", ended_ms: at(11, 52) },
+    reports: [{ ...servedReport, report: { ...servedReport.report, writeup } }], actions: [filed],
+  };
+  await mount(scoutFetch({ scout: done }).fetch);
+  expect(tabs().map(([label, selected]) => [label!.replace(/ \d+$/, ""), selected]))
+    .toEqual([["Decide", "false"], ["Write-up", "true"], ["Findings", "false"], ["Activity", "false"]]);
+  expect(within(screen.getByRole("tabpanel")).getByRole("heading", { name: writeup[0]!.heading })).toBeTruthy();
 });
 
 test("a steer sent to a swarming scout posts once, waits for the next wave, and reads as taken once a wave takes it", async () => {

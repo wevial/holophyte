@@ -104,7 +104,9 @@ const click = async (element: Element) => {
 };
 
 const status = () => within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent;
-const cost = () => document.querySelector("[data-scout-facts] [data-scout-cost]")!.textContent!;
+const facts = () =>
+  Array.from(document.querySelectorAll("[data-scout-facts] > div"), (pair) => [pair.querySelector("dt")!.textContent, pair.querySelector("dd")!.textContent]);
+const meta = () => document.querySelector("[data-scout-meta]")!.textContent!;
 const noStage = () => screen.queryByRole("group", { name: "Stage" });
 const groups = () => Array.from(screen.getByRole("list", { name: "Scout activity" }).children) as HTMLElement[];
 const row = (group: HTMLElement) => [group.querySelector("[data-group-title]")!.textContent, group.querySelector("[data-group-span]")!.textContent];
@@ -153,17 +155,19 @@ test("a done scout's Progress ends on its Answer, with nothing to fold, then its
   expect(helpers(pass!)).toEqual([DIGEST.title, JOBS.title]);
 });
 
-test("a done scout's cost line ends on its newest pass and its minutes after the first run's helpers, with no stage", async () => {
+test("a done scout's run facts end on its newest pass and its minutes after the first run's helpers, with no stage", async () => {
   await mount(done, at(15, 0));
-  expect(cost().endsWith(" · lead opus · helpers luna ×4 · 1 of 1 back · pass 2 7m")).toBe(true);
+  expect(meta().endsWith(" · lead opus")).toBe(true);
+  expect(facts().filter(([name]) => name === "helpers" || name === "back")).toEqual([["helpers", "luna ×4"], ["back", "1 of 1"]]);
+  expect(facts().at(-1)).toEqual(["pass", "2 · 7m"]);
   expect(noStage()).toBeNull();
 });
 
-test("a scout swarming in pass 3 reads the pass in its verdict status, cost line and a live last group, with Stop", async () => {
+test("a scout swarming in pass 3 reads the pass in its verdict status, run facts and a live last group, with Stop", async () => {
   await mount(swarming, PASS_THREE + 3 * 60_000);
   expect(status()).toBe("Pass 3: 1 of 2 helpers are back, and 1 is running.");
   expect(noStage()).toBeNull();
-  expect(cost().endsWith(" · pass 3 3m")).toBe(true);
+  expect(facts().at(-1)).toEqual(["pass", "3 · 3m"]);
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   expect(screen.getByRole("region", { name: "Progress" }).querySelector("[data-live]")).toBeTruthy();
   const last = groups().at(-1)!;

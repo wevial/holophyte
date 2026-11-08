@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ScoutDetail, ScoutRow, Scouts, ScoutTask } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
+import { ACTIONS_OFF } from "../../src/lib/actions";
 import { ACTIONS_OFF_LINE } from "../../src/app/components/CardActions";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -145,12 +146,10 @@ const click = async (element: Element) => {
 };
 
 const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
-const rail = () => document.querySelector<HTMLElement>("[data-scout-rail]")!;
 const tabs = () => screen.getAllByRole("tab").map((tab) => [tab.textContent, tab.getAttribute("aria-selected")]);
 const shown = () => screen.getByRole("tabpanel");
 const status = () => within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent;
-const what = () => document.querySelector("[data-scout-facts] [data-scout-what]")!.textContent;
-const cost = () => document.querySelector("[data-scout-facts] [data-scout-cost]")?.textContent ?? null;
+const meta = () => document.querySelector("header [data-scout-meta]")!.textContent;
 const activity = () => screen.getByRole("list", { name: "Scout activity" });
 const groups = () => Array.from(activity().children) as HTMLElement[];
 const row = (group: HTMLElement) => ({
@@ -189,12 +188,11 @@ afterEach(() => {
   localStorage.clear();
 });
 
-test("a swarming scout's page reads its title, breadcrumb, what and cost lines and wave sentence, with no stage", async () => {
+test("a swarming scout's page reads its title, breadcrumb, meta line and wave sentence, with no stage", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
   expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe("Scouts / demo / scout 31");
-  expect(what()).toBe("scout 31 · bug · demo · about ALPHA-1 · base a41c9e2 · started Thu 11:46 PDT");
-  expect(cost()).toBe("14m of 30m · lead opus · helpers luna ×4 · 5 of 10 back");
+  expect(meta()).toBe("bug · 14m of 30m · Thu 11:46 PDT · lead opus");
   expect(status()).toBe("Wave 1: 5 of 10 helpers are back, 4 are running, and 1 waits for a slot.");
   expect(screen.queryByRole("group", { name: "Stage" })).toBeNull();
 });
@@ -219,11 +217,17 @@ test("a done, failed, stopped or queued scout's status says its report, failure,
   }
 });
 
-test("a queued scout's facts end on the weekday and time it was queued, with no cost line", async () => {
+test("a queued scout's meta line reads the weekday and time it was queued, and its Activity facts hold only its subject link", async () => {
   const queued = { ...live, scout: { ...live.scout, id: 29, kind: "research" as const, phase: "queued" as const, started_ms: null, created_ms: at(11, 58) }, tasks: [] };
   await mount("#/scouts/demo/29", scoutFetch({ scouts: { 29: queued } }).fetch);
-  expect(what()).toBe("scout 29 · research · demo · about ALPHA-1 · queued Thu 11:58 PDT");
-  expect(cost()).toBeNull();
+  expect(meta()).toBe("research · queued Thu 11:58 PDT · lead opus");
+  await showActivity();
+  const facts = document.querySelector<HTMLElement>("[data-scout-facts]")!;
+  expect(Array.from(facts.children, (fact) => fact.textContent)).toEqual(["aboutALPHA-1"]);
+  expect(within(facts).getByRole("link", { name: "ALPHA-1" }).getAttribute("href")).toEndWith("#/tickets/demo/ALPHA-1");
+  cleanup();
+  await mount("#/scouts/demo/29", scoutFetch({ scouts: { 29: { ...queued, scout: { ...queued.scout, subject: null } } } }).fetch);
+  expect(document.querySelector("[data-scout-facts]")).toBeNull();
 });
 
 test("a scout the project lacks and a project the console lacks each read their notice", async () => {
@@ -485,6 +489,26 @@ test("with actions off Stop is disabled under the actions-off line", async () =>
   expect(stop.getAttribute("title")).toBe(ACTIONS_OFF_LINE);
 });
 
+test("an ended scout's top bar has Run again in place of Stop, opening New scout filled with its kind, ask and subject", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  const topBar = document.querySelector<HTMLElement>("[data-scout-topbar]")!;
+  expect(within(topBar).queryByRole("button", { name: "Stop" })).toBeNull();
+  await click(within(topBar).getByRole("button", { name: "Run again" }));
+  const form = screen.getByRole("form", { name: "New scout" });
+  expect(within(form).getByDisplayValue(ASK)).toBeTruthy();
+  expect(within(within(form).getByRole("group", { name: "Kind" })).getByRole("button", { name: "Bug" }).getAttribute("aria-pressed")).toBe("true");
+  expect(form.querySelector("[data-about]")!.textContent).toBe("About ALPHA-1");
+  cleanup();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
+  expect(screen.queryByRole("button", { name: "Run again" })).toBeNull();
+});
+
+test("with actions off Run again is disabled with the actions-off title", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves }, actions: false }).fetch);
+  const again = screen.getByRole("button", { name: "Run again" });
+  expect([again.hasAttribute("disabled"), again.getAttribute("title")]).toEqual([true, ACTIONS_OFF]);
+});
+
 test("a row of the Scouts list links to its scout's page", async () => {
   const listed = { ...servedScouts.scouts[0]!, id: 31, ask: ASK };
   await mount("#/scouts", scoutFetch({ list: [listed] }).fetch);
@@ -493,44 +517,37 @@ test("a row of the Scouts list links to its scout's page", async () => {
   expect(link.textContent).toContain(listed.title);
 });
 
-test("a done scout with a write-up keeps its head, Summary and Decide in the rail and opens on the Write-up tab", async () => {
+test("a done scout with items to file reads its title, meta line and lead, then tabs Decide, Write-up, Findings and Activity on Decide, with no rail", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
-  expect(within(rail()).getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
-  expect(within(within(rail()).getByRole("region", { name: "Summary" })).getByRole("status").textContent).toBe(HEADLINE);
-  expect(within(within(rail()).getByRole("region", { name: "Decide" })).getAllByRole("button", { name: "File" })).toHaveLength(2);
-  expect(tabs()).toEqual([["Write-up", "true"], ["Findings 4", "false"], ["Activity", "false"], ["Chat · 3", "false"]]);
-  expect(within(shown()).getAllByRole("heading").map((heading) => [heading.textContent, heading.nextElementSibling!.textContent]))
-    .toEqual(WRITEUP.map((section) => [section.heading, section.text]));
+  const title = screen.getByRole("heading", { level: 1 });
+  const lead = within(screen.getByRole("region", { name: "Verdict" })).getByRole("status");
+  expect([title.textContent, meta(), lead.textContent]).toEqual([TITLE, "bug · 33m of 30m · Thu 11:00 PDT · lead opus", HEADLINE]);
+  const order = [title, document.querySelector<HTMLElement>("[data-scout-meta]")!, lead, screen.getByRole("tablist")];
+  expect(order.every((element, index) => index === 0 || (order[index - 1]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0)).toBe(true);
+  expect(tabs()).toEqual([["Decide 2", "true"], ["Write-up", "false"], ["Findings 4", "false"], ["Activity", "false"], ["Chat · 3", "false"]]);
+  expect(within(shown()).getAllByRole("button", { name: "File" })).toHaveLength(2);
+  expect(screen.queryByRole("complementary", { name: "Summary and decisions" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
 });
 
-test("choosing Findings then Activity shows the findings then the activity groups while the rail stays", async () => {
+test("choosing Write-up, Findings then Activity shows the write-up, the findings then the activity groups below the same head and lead", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
+  await click(screen.getByRole("tab", { name: "Write-up" }));
+  expect(within(shown()).getAllByRole("heading").map((heading) => [heading.textContent, heading.nextElementSibling!.textContent]))
+    .toEqual(WRITEUP.map((section) => [section.heading, section.text]));
   await click(screen.getByRole("tab", { name: "Findings 4" }));
   expect(within(within(shown()).getByRole("list", { name: "Findings" })).getAllByRole("listitem")).toHaveLength(4);
   expect(within(shown()).queryByText(WRITEUP[0]!.heading)).toBeNull();
   await showActivity();
   expect(screen.queryByRole("region", { name: "Findings" })).toBeNull();
   expect(within(shown()).getByRole("list", { name: "Scout activity" }).children).toHaveLength(5);
-  expect(within(rail()).getByRole("region", { name: "Summary" })).toBeTruthy();
-  expect(within(rail()).getByRole("region", { name: "Decide" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
+  expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent).toBe(HEADLINE);
 });
 
-test("a report with no write-up opens on Findings with no Write-up tab, and a running scout with no report opens on Activity", async () => {
+test("a report with no write-up and nothing to file opens on Findings with no Decide or Write-up tab", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
   expect(tabs()).toEqual([["Findings 4", "true"], ["Activity", "false"], ["Chat · 3", "false"]]);
-  cleanup();
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
-  expect(tabs()).toEqual([["Activity", "true"], ["Chat · 3", "false"]]);
-  expect(within(rail()).getByRole("status").textContent).toBe("Wave 1: 5 of 10 helpers are back, 4 are running, and 1 waits for a slot.");
-});
-
-test("the rail is sticky at 320px beside the document from the wide breakpoint and stacks above it below", async () => {
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
-  const layout = document.querySelector("[data-scout-layout]")!;
-  expect(layout.firstElementChild).toBe(rail());
-  expect(["grid-cols-1", "min-[1100px]:grid-cols-[320px_minmax(0,1fr)]"].map((name) => layout.classList.contains(name))).toEqual([true, true]);
-  expect(rail().classList.contains("min-[1100px]:sticky")).toBe(true);
-  expect(rail().classList.contains("sticky")).toBe(false);
 });
 
 test("the scout list sits beside the scout's page only from the 1100px breakpoint, and below it the page stands alone with its Scouts breadcrumb", async () => {
@@ -538,7 +555,7 @@ test("the scout list sits beside the scout's page only from the 1100px breakpoin
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp }, list: [{ ...servedScouts.scouts[0]!, id: 31 }] }).fetch);
   const list = screen.getByRole("complementary", { name: "Scout list" });
   expect(["hidden", "min-[1100px]:flex", "w-[330px]", "bg-canvas"].map((name) => list.classList.contains(name))).toEqual([true, true, true, true]);
-  expect(list.nextElementSibling!.contains(rail())).toBe(true);
+  expect(list.nextElementSibling!.contains(screen.getByRole("region", { name: "scout 31" }))).toBe(true);
   cleanup();
   happyDOM.setViewport({ width: 1024, height: 768 });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp }, list: [{ ...servedScouts.scouts[0]!, id: 31 }] }).fetch);
@@ -576,93 +593,69 @@ test("crossing the 1100px breakpoint keeps the chosen tab while the scout list c
 const chatty: ScoutDetail = { ...writtenUp, thread: served.thread.slice(0, 2) };
 const wideView = () => happyDOM.setViewport({ width: 1800, height: 900 });
 const chat = () => screen.queryByRole("region", { name: "Chat with the scout" });
-const tabBar = () => document.querySelector<HTMLElement>("[data-scout-tabbar]")!;
+const topBar = () => document.querySelector<HTMLElement>("[data-scout-topbar]")!;
+const layout = () => document.querySelector("[data-scout-layout]")!;
+const DOCKED = "min-[1440px]:grid-cols-[minmax(0,1fr)_320px]";
 const composer = (inside: HTMLElement) => within(inside).getByRole("textbox", { name: "Question for the scout" });
 
-test("a done scout's two-message thread and its composer sit in a closable Chat with the scout sidebar outside the document", async () => {
+test("a done scout's two-message thread and its composer sit in a 320px Chat with the scout drawer beside the report, with an expanded fold button", async () => {
   wideView();
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  const sidebar = chat()!;
-  const thread = within(sidebar).getByRole("region", { name: "Thread" });
+  const drawer = chat()!;
+  const thread = within(drawer).getByRole("region", { name: "Thread" });
   expect(within(thread).getByRole("list", { name: "Thread" }).children).toHaveLength(2);
   expect(composer(thread)).toBeTruthy();
-  expect(within(sidebar).getByRole("button", { name: "Close chat" })).toBeTruthy();
-  expect(document.querySelector("[data-scout-body]")!.contains(sidebar)).toBe(false);
+  expect(within(drawer).getByRole("button", { name: "Hide chat" }).getAttribute("aria-expanded")).toBe("true");
+  expect(layout().classList.contains(DOCKED)).toBe(true);
+  expect(document.querySelector("[data-scout-body]")!.contains(drawer)).toBe(false);
   expect(screen.queryByRole("tab", { name: /^Chat/ })).toBeNull();
+  expect(within(topBar()).queryByRole("button", { name: "Chat" })).toBeNull();
 });
 
-test("closing the chat leaves a focused Chat · 2 button in the tab bar that reopens it at the composer, and each choice survives a remount", async () => {
+test("folding the chat leaves a focused, outlined Chat button in the top bar that reopens it at the composer, and each choice survives a remount", async () => {
   wideView();
   const { fetch } = scoutFetch({ scouts: { 31: chatty } });
   await mount("#/scouts/demo/31", fetch);
-  expect(within(tabBar()).queryByRole("button", { name: "Chat · 2" })).toBeNull();
-  await click(within(chat()!).getByRole("button", { name: "Close chat" }));
+  await click(within(chat()!).getByRole("button", { name: "Hide chat" }));
   expect(chat()).toBeNull();
-  expect(document.activeElement).toBe(within(tabBar()).getByRole("button", { name: "Chat · 2" }));
+  expect(layout().classList.contains(DOCKED)).toBe(false);
+  const button = within(topBar()).getByRole("button", { name: "Chat", expanded: false });
+  expect(document.activeElement).toBe(button);
+  expect([button.classList.contains("btn"), button.getAttribute("data-variant")]).toEqual([true, "quiet"]);
   cleanup();
   await mount("#/scouts/demo/31", fetch);
   expect(chat()).toBeNull();
-  await click(within(tabBar()).getByRole("button", { name: "Chat · 2" }));
+  await click(within(topBar()).getByRole("button", { name: "Chat" }));
   expect(chat()).toBeTruthy();
   expect(document.activeElement).toBe(composer(chat()!));
-  expect(screen.queryByRole("button", { name: "Chat · 2" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
   cleanup();
   await mount("#/scouts/demo/31", fetch);
   expect(chat()).toBeTruthy();
 });
 
-test("Ask or steer opens the closed chat and focuses its composer, and below the breakpoint selects the Chat tab", async () => {
-  wideView();
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  await click(within(chat()!).getByRole("button", { name: "Close chat" }));
-  await click(screen.getByRole("link", { name: "Ask or steer" }));
-  expect(document.activeElement).toBe(composer(chat()!));
-  cleanup();
-  happyDOM.setViewport({ width: 1280, height: 800 });
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  await click(screen.getByRole("link", { name: "Ask or steer" }));
-  expect(screen.getByRole("tab", { name: "Chat · 2" }).getAttribute("aria-selected")).toBe("true");
-  expect(document.activeElement).toBe(composer(shown()));
-});
-
-test("beside the scout list the rail splits from 1440px and the chat docks from 1780px, between them a Chat · 2 tab holds the thread", async () => {
-  const layout = () => document.querySelector("[data-scout-layout]")!;
-  wideView();
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  expect(screen.getByRole("complementary", { name: "Scout list" })).toBeTruthy();
-  expect(layout().classList.contains("min-[1780px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(true);
-  expect(["hidden", "min-[1780px]:flex"].map((name) => chat()!.classList.contains(name))).toEqual([true, true]);
-  cleanup();
+test("the chat drawer docks from 1440px with the scout list shown or hidden, and below it a Chat · 2 tab holds the thread", async () => {
   happyDOM.setViewport({ width: 1440, height: 900 });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  expect(chat()).toBeNull();
-  expect(["min-[1440px]:grid-cols-[320px_minmax(0,1fr)]", "min-[1100px]:grid-cols-[320px_minmax(0,1fr)]"].map((name) => layout().classList.contains(name))).toEqual([true, false]);
-  const tab = screen.getByRole("tab", { name: "Chat · 2" });
-  expect(tab.classList.contains("min-[1780px]:hidden")).toBe(true);
-  await click(tab);
-  expect(composer(within(shown()).getByRole("region", { name: "Thread" }))).toBeTruthy();
-});
-
-test("alone the chat column docks from 1440px, and below it a Chat · 2 tab holds the thread", async () => {
-  const layout = () => document.querySelector("[data-scout-layout]")!;
-  wideView();
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  await click(screen.getByRole("button", { name: "Hide scout list" }));
-  expect(layout().classList.contains("min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(true);
+  expect(screen.getByRole("complementary", { name: "Scout list" })).toBeTruthy();
+  expect(layout().classList.contains(DOCKED)).toBe(true);
   expect(["hidden", "min-[1440px]:flex"].map((name) => chat()!.classList.contains(name))).toEqual([true, true]);
+  await click(screen.getByRole("button", { name: "Hide scout list" }));
+  expect(layout().classList.contains(DOCKED)).toBe(true);
   cleanup();
-  happyDOM.setViewport({ width: 1024, height: 768 });
+  happyDOM.setViewport({ width: 1439, height: 900 });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
   expect(chat()).toBeNull();
-  expect(layout().classList.contains("min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(false);
+  expect(layout().classList.contains(DOCKED)).toBe(false);
+  expect(within(topBar()).queryByRole("button", { name: "Chat" })).toBeNull();
   const tab = screen.getByRole("tab", { name: "Chat · 2" });
   expect(tab.classList.contains("min-[1440px]:hidden")).toBe(true);
-  expect(tabs().map(([label]) => label)).toEqual(["Write-up", "Findings 4", "Activity", "Chat · 2"]);
+  expect(tabs().map(([label]) => label)).toEqual(["Decide 2", "Write-up", "Findings 4", "Activity", "Chat · 2"]);
   await click(tab);
   expect(composer(within(shown()).getByRole("region", { name: "Thread" }))).toBeTruthy();
 });
 
-test("a scout with no thread has no chat sidebar, Chat button or Chat tab", async () => {
+test("a scout with no thread has no chat drawer, Chat button or Chat tab", async () => {
   const silent: ScoutDetail = { ...twoWaves, scout: { ...twoWaves.scout, phase: "failed", reason: "lead route opus is down" }, thread: [] };
   for (const width of [1800, 1280]) {
     happyDOM.setViewport({ width, height: 900 });
@@ -675,7 +668,7 @@ test("a scout with no thread has no chat sidebar, Chat button or Chat tab", asyn
   }
 });
 
-test("a draft and its Steer mode survive closing and reopening the chat and crossing the chat's breakpoint", async () => {
+test("a draft and its Steer mode survive folding and reopening the chat and crossing the chat's breakpoint", async () => {
   let width = 1800;
   const listeners = new Set<() => void>();
   const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
@@ -692,8 +685,8 @@ test("a draft and its Steer mode survive closing and reopening the chat and cros
     await click(within(chat()!).getByRole("button", { name: "Steer" }));
     const note = () => within(screen.getByRole("region", { name: "Thread" })).getByRole("textbox", { name: "Note to the scout" }) as HTMLTextAreaElement;
     await act(async () => void fireEvent.change(note(), { target: { value: "Check the digest too" } }));
-    await click(within(chat()!).getByRole("button", { name: "Close chat" }));
-    await click(within(tabBar()).getByRole("button", { name: "Chat · 2" }));
+    await click(within(chat()!).getByRole("button", { name: "Hide chat" }));
+    await click(within(topBar()).getByRole("button", { name: "Chat" }));
     expect(note().value).toBe("Check the digest too");
     width = 1280;
     await act(async () => listeners.forEach((listener) => listener()));

@@ -176,7 +176,6 @@ test("an answering scout's newest line runs now, its Verdict says the lead is an
   expect(rows().at(-1)).toBe("answer turn · opus · now");
   expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent).toBe("The lead is answering.");
   expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Ask or steer" })).toBeNull();
   expect(send().disabled).toBe(true);
   expect(send().title).toBe("Scout 31 is answering.");
 });
@@ -243,10 +242,4 @@ test("with actions off the composer is disabled, and a failed scout with no thre
   await mount(scoutFetch({ scout: { ...done, scout: { ...done.scout, phase: "failed" }, thread: [] } }).fetch);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
   expect(screen.queryByRole("region", { name: "Thread" })).toBeNull();
-});
-
-test("Ask or steer moves focus to the composer's box", async () => {
-  await mount(scoutFetch({ scout: done }).fetch);
-  await click(screen.getByRole("link", { name: "Ask or steer" }));
-  expect(document.activeElement).toBe(within(region()).getByRole("textbox", { name: "Question for the scout" }));
 });

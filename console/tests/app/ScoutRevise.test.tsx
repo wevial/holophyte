@@ -103,6 +103,8 @@ const click = async (element: Element) => {
 };
 
 const facts = () => document.querySelector<HTMLElement>("[data-scout-facts]")!;
+const factPairs = () => Array.from(facts().children, (pair) => [pair.querySelector("dt")!.textContent, pair.querySelector("dd")!.textContent]);
+const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
 const region = () => screen.getByRole("region", { name: "Decide" });
 const rowOf = (id: string) =>
   Array.from(within(region()).getByRole("list", { name: "Action items" }).children).find((row) => row.querySelector("[data-action-id]")!.textContent === id) as HTMLElement;
@@ -124,7 +126,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("the facts line links a run, defect, ticket or pull request subject and reads no about without one", async () => {
+test("the run facts link a run, defect, ticket or pull request subject and read no about without one", async () => {
   const cases: [ScoutSubject, string, string][] = [
     [{ kind: "defect", ref: "812" }, "the defect in run 812", "#/runs/demo/812"],
     [{ kind: "run", ref: "812" }, "run 812", "#/runs/demo/812"],
@@ -133,14 +135,16 @@ test("the facts line links a run, defect, ticket or pull request subject and rea
   ];
   for (const [subject, words, href] of cases) {
     await mount(demo({ subject }).fetch);
-    expect(facts().textContent).toContain(`· about ${words}`);
-    const link = within(facts()).getByRole<HTMLAnchorElement>("link", { name: `about ${words}` });
+    await showActivity();
+    expect(factPairs()).toContainEqual(["about", words]);
+    const link = within(facts()).getByRole<HTMLAnchorElement>("link", { name: words });
     expect(link.getAttribute("href")!.endsWith(href)).toBe(true);
     cleanup();
   }
   await mount(demo({ subject: null }).fetch);
-  expect(facts().textContent).toStartWith("scout 31");
-  expect(facts().textContent).not.toContain("about");
+  await showActivity();
+  expect(factPairs().map(([name]) => name)).toContain("base");
+  expect(factPairs().map(([name]) => name)).not.toContain("about");
 });
 
 test("a revise item reads its tag and Revise in place of File and is not counted to file", async () => {
