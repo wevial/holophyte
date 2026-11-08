@@ -159,6 +159,16 @@ test("hiding the list leaves a Scouts button at the top left of the scout's page
   expect(sidebar()!.contains(list())).toBe(true);
 });
 
+test("hiding the list on a Scouts page with no scout shown still leaves the Scouts button that brings it back", async () => {
+  await mount("#/scouts", wideFetch([]));
+  await click(screen.getByRole("button", { name: "Hide scout list" }));
+  expect(sidebar()).toBeNull();
+  const show = screen.getByRole("button", { name: "Scouts", expanded: false });
+  expect(document.activeElement).toBe(show);
+  await click(show);
+  expect(sidebar()!.textContent).toContain("No scouts in any project.");
+});
+
 test("New scout opens the form in place of the scout beside the list with no row current, and Cancel brings the scout back", async () => {
   await mount("#/scouts");
   await click(screen.getByRole("button", { name: "New scout" }));

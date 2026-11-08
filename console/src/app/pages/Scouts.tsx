@@ -143,12 +143,12 @@ export function Scouts() {
   if (wide) {
     return (
       <ScoutsBeside search={search} current={launching || first == null ? null : scoutKey(first)} newScout={newScout}>
-        {launching ? (
+        {launching || first == null ? (
           <div className="max-w-[820px]">
-            <div className="px-6 pt-6 empty:hidden"><ShowScoutList /></div>
-            {form(true)}
+            <ShowScoutList row />
+            {launching && form(true)}
           </div>
-        ) : first != null && <ScoutView key={scoutKey(first)} project={first.project} param={String(first.id)} />}
+        ) : <ScoutView key={scoutKey(first)} project={first.project} param={String(first.id)} />}
       </ScoutsBeside>
     );
   }

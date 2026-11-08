@@ -136,16 +136,17 @@ function writeHidden(hidden: boolean): void {
 
 const ShowListContext = createContext<{ show: () => void; ref: Ref<HTMLButtonElement> } | null>(null);
 
-/** The button that brings a hidden scout list back; nothing while the list shows. */
-export function ShowScoutList() {
+/** The button that brings a hidden scout list back, on a padded row of its own when `row`; nothing while the list shows. */
+export function ShowScoutList({ row = false }: { row?: boolean }) {
   const list = useContext(ShowListContext);
   if (list == null) return null;
-  return (
+  const button = (
     <button ref={list.ref} type="button" aria-expanded={false} aria-controls={LIST_ID} onClick={list.show} className="btn shrink-0 gap-1.5" data-variant="quiet">
       <PanelLeftIcon />
       Scouts
     </button>
   );
+  return row ? <div className="px-6 pt-5 max-[720px]:px-4">{button}</div> : button;
 }
 
 function NewScout({ project, current }: { project: string | undefined; current: string | null }) {
@@ -162,7 +163,8 @@ function NewScout({ project, current }: { project: string | undefined; current: 
 }
 
 /** The scout list beside `children` from the 1100px breakpoint, `current` (a scout key) marked;
- *  `newScout` replaces the button that opens New scout on the Scouts page. Below it, `children` alone. */
+ *  `newScout` replaces the button that opens New scout on the Scouts page. Below it, `children` alone,
+ *  in the same tree so that crossing the breakpoint keeps their state. */
 export function ScoutsBeside({ search, current, newScout, children }: {
   search: ScoutsSearch; current: string | null; newScout?: ReactNode; children: ReactNode;
 }) {
@@ -171,8 +173,6 @@ export function ScoutsBeside({ search, current, newScout, children }: {
   const [hidden, setHidden] = useState(readHidden);
   const hideButton = useRef<HTMLButtonElement>(null);
   const showButton = useRef<HTMLButtonElement>(null);
-  const page = <div data-scout-page className="min-h-full min-w-0 flex-1 bg-paper">{children}</div>;
-  if (!wide) return page;
   const toggle = (next: boolean) => {
     flushSync(() => setHidden(next));
     writeHidden(next);
@@ -182,7 +182,7 @@ export function ScoutsBeside({ search, current, newScout, children }: {
   const narrowed = search.q != null || search.filter != null || search.type != null;
   return (
     <div data-scouts-beside className="flex min-h-full items-stretch">
-      {!hidden && (
+      {wide && !hidden && (
         <aside id={LIST_ID} aria-label="Scout list" data-scout-list
           className="sticky top-0 hidden h-screen w-[330px] shrink-0 flex-col border-r border-rule bg-canvas min-[1100px]:flex">
           <div className="flex flex-col gap-3 border-b border-rule-2 px-4 pt-4 pb-3">
@@ -208,7 +208,9 @@ export function ScoutsBeside({ search, current, newScout, children }: {
           </div>
         </aside>
       )}
-      <ShowListContext.Provider value={hidden ? { show: () => toggle(false), ref: showButton } : null}>{page}</ShowListContext.Provider>
+      <ShowListContext.Provider value={wide && hidden ? { show: () => toggle(false), ref: showButton } : null}>
+        <div data-scout-page className="min-h-full min-w-0 flex-1 bg-paper">{children}</div>
+      </ShowListContext.Provider>
     </div>
   );
 }

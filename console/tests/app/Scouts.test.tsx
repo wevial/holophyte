@@ -177,6 +177,7 @@ test("a wide list row reads its title, then one mono line of kind, time taken, s
     scout(31, "done", 1, { title: "Loop runs crash with database is locked", kind: "bug", elapsed_ms: 13 * MINUTE, started_ms: started, findings: 7, actions: 4, filed: 1, to_file: 3 }),
     scout(30, "done", 2, { ...counts, kind: "research", elapsed_ms: 8 * MINUTE, started_ms: started, findings: 11 }),
     scout(29, "stopped", 3, { ...counts, kind: "recon", elapsed_ms: 8 * MINUTE, started_ms: started, findings: 2, actions: 2, to_file: 2 }),
+    scout(28, "swarming", 4, { ...counts, kind: "bug", elapsed_ms: 4 * MINUTE, started_ms: started, lead: "opus", helper: "luna", tasks_done: 5, tasks_total: 10 }),
   ];
   const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
     matches: query === "(min-width: 1100px)", media: query, addEventListener: () => {}, removeEventListener: () => {},
@@ -194,6 +195,8 @@ test("a wide list row reads its title, then one mono line of kind, time taken, s
     expect(line(30).textContent).toBe("research · 8m · Sat 02:28 · 11 findings");
     expect(line(29).textContent).toBe("recon · 8m · Sat 02:28 · 2 findings · 2 actions");
     expect(line(29).querySelector("[data-to-file]")).toBeNull();
+    expect(line(28).textContent).toBe("bug · 4m · Sat 02:28 · 5 of 10 back");
+    expect(row(28).textContent).not.toMatch(/opus|luna/);
   } finally {
     media.mockRestore();
   }

@@ -64,8 +64,12 @@ export function ScoutView({ project, param }: { project: string; param: string }
   const label = `scout ${shown}`;
   if (page.kind !== "scout") {
     const notice = scoutNotice(page, project, shown);
-    if (!notice.loading) return <Notice label={label} text={notice.text} back={{ to: "/scouts", search: { project } }} backLabel="Back to Scouts" />;
-    return <Page label={label}><Loading /></Page>;
+    return (
+      <>
+        <ShowScoutList row />
+        {notice.loading ? <Page label={label}><Loading /></Page> : <Notice label={label} text={notice.text} back={{ to: "/scouts", search: { project } }} backLabel="Back to Scouts" />}
+      </>
+    );
   }
   const { scout } = page.detail;
   const at = `${page.base}/${scout.id}`;

@@ -547,6 +547,32 @@ test("the scout list sits beside the scout's page only from the 1100px breakpoin
   expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Scouts" }).getAttribute("href")).toBe("/#/scouts");
 });
 
+test("crossing the 1100px breakpoint keeps the chosen tab while the scout list comes and goes", async () => {
+  let width = 1280;
+  const listeners = new Set<() => void>();
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    get matches() {
+      const least = /min-width: (\d+)px/.exec(query);
+      return least != null && width >= Number(least[1]);
+    },
+    media: query,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }) as unknown as MediaQueryList);
+  try {
+    await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
+    await click(screen.getByRole("tab", { name: "Findings 4" }));
+    expect(screen.getByRole("complementary", { name: "Scout list" })).toBeTruthy();
+    width = 1024;
+    await act(async () => listeners.forEach((listener) => listener()));
+    await settled();
+    expect(screen.queryByRole("complementary", { name: "Scout list" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Findings 4" }).getAttribute("aria-selected")).toBe("true");
+  } finally {
+    media.mockRestore();
+  }
+});
+
 const chatty: ScoutDetail = { ...writtenUp, thread: served.thread.slice(0, 2) };
 const wideView = () => happyDOM.setViewport({ width: 1600, height: 900 });
 const chat = () => screen.queryByRole("region", { name: "Chat with the scout" });
