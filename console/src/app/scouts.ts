@@ -9,7 +9,7 @@ import { prLabel } from "../lib/shipped";
 import type { ContractBodies } from "./fleet";
 import { firstLine } from "./history";
 import { routeKey, routeOrNone } from "./queries";
-import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
+import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "./scope";
 
 export interface ScoutListRow extends ScoutRow {
   base: string;
@@ -56,7 +56,7 @@ export function scoutGroups(rows: ScoutListRow[]): ScoutGroup[] {
 
 /** The rows the search keeps: `q` in the title or ask, ignoring case, of
  *  the `filter` state and the `type` kind. */
-export function shownScouts(rows: ScoutListRow[], { q, filter, type }: ScoutsSearch): ScoutListRow[] {
+export function shownScouts(rows: ScoutListRow[], { q, filter, type }: ScoutListSearch): ScoutListRow[] {
   const text = q?.toLowerCase();
   return rows.filter(
     (row) =>
@@ -146,38 +146,44 @@ const SCOUT_KINDS: ScoutKind[] = ["bug", "research", "recon"];
 
 export const LISTED_KINDS: ScoutKind[] = [...SCOUT_KINDS, "guardrails"];
 
-/** The Scouts page's search: `new` opens the New scout form for that
- *  project, filled from `about`, `kind` and `ask`; `scout`, as
- *  `PROJECT/ID`, is the scout the wide page's pane shows; `q`, `filter`
- *  and `type` narrow the list by text, state and kind. */
-export interface ScoutsSearch {
-  new?: string;
-  about?: string;
-  kind?: ScoutKind;
-  ask?: string;
-  scout?: string;
+/** What narrows the scout list by text, state and kind, on the Scouts page and a scout's page. */
+export interface ScoutListSearch {
   q?: string;
   filter?: ScoutState;
   type?: ScoutKind;
 }
 
+/** The Scouts page's search: `new` opens the New scout form for that
+ *  project, filled from `about`, `kind` and `ask`. */
+export interface ScoutsSearch extends ScoutListSearch {
+  new?: string;
+  about?: string;
+  kind?: ScoutKind;
+  ask?: string;
+}
+
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
 
-const SELECTION = /^[^/]+\/\d+$/;
-
-export function validateScoutsSearch(search: Record<string, unknown>): ScoutsSearch {
-  const kind = SCOUT_KINDS.find((each) => each === search.kind);
-  const scout = text(search.scout);
+export function validateScoutListSearch(search: Record<string, unknown>): ScoutListSearch {
   const q = text(search.q)?.trim();
   return {
-    new: text(search.new), about: text(search.about), kind, ask: text(search.ask), scout: scout != null && SELECTION.test(scout) ? scout : undefined,
     q: q === "" ? undefined : q,
     filter: SCOUT_STATES.find((each) => each === search.filter),
     type: LISTED_KINDS.find((each) => each === search.type),
   };
 }
 
-/** A row's `scout` search value. */
+export function validateScoutsSearch(search: Record<string, unknown>): ScoutsSearch {
+  const kind = SCOUT_KINDS.find((each) => each === search.kind);
+  return { new: text(search.new), about: text(search.about), kind, ask: text(search.ask), ...validateScoutListSearch(search) };
+}
+
+/** The search a move between scout pages keeps: its scope and what narrows the list. */
+export const keepList = (previous: ScoutListSearch & ScopeSearch): ScoutListSearch & ScopeSearch => ({
+  ...keepScope(previous), q: previous.q, filter: previous.filter, type: previous.type,
+});
+
+/** A row's key, as `PROJECT/ID`. */
 export const scoutKey = (row: { project: string; id: number }) => `${row.project}/${row.id}`;
 
 interface OutcomePart {

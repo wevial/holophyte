@@ -1,16 +1,35 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { CHAT_SLOT, ScoutDocument, ScoutRail, type TabId } from "../components/ScoutBody";
 import { ScoutHead } from "../components/ScoutHead";
 import { ScoutStop } from "../components/ScoutStop";
 import { ScoutThread } from "../components/ScoutThread";
+import { ScoutsBeside, ShowScoutList, useScoutListShown } from "../components/ScoutsSidebar";
 import { scoutNotice, useScoutPage } from "../scout";
 import { hasThread, takesMessages } from "../scoutThread";
 import { useChatWidth } from "../viewport";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
 const CHAT_KEY = "holophyte.next.scout-chat";
+
+/** The page's breakpoints alone and beside the scout list, which takes 330px of the window. */
+const LAYOUT = {
+  alone: {
+    split: "min-[1100px]:grid-cols-[320px_minmax(0,1fr)]",
+    rail: "min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:h-screen min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-b-0",
+    docked: "min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]",
+    chat: "min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:flex min-[1440px]:h-screen",
+    chatTab: "min-[1440px]:hidden",
+  },
+  besideList: {
+    split: "min-[1440px]:grid-cols-[320px_minmax(0,1fr)]",
+    rail: "min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:h-screen min-[1440px]:overflow-y-auto min-[1440px]:border-r min-[1440px]:border-b-0",
+    docked: "min-[1780px]:grid-cols-[320px_minmax(0,1fr)_360px]",
+    chat: "min-[1780px]:sticky min-[1780px]:top-0 min-[1780px]:flex min-[1780px]:h-screen",
+    chatTab: "min-[1780px]:hidden",
+  },
+};
 
 function readChatOpen(): boolean {
   try {
@@ -30,14 +49,26 @@ function writeChatOpen(open: boolean): void {
 }
 
 export function ScoutPage() {
-  const { project, scout: param } = useParams({ from: "/scouts/$project/$scout" });
+  const { project, scout } = useParams({ from: "/scouts/$project/$scout" });
+  const search = useSearch({ from: "/scouts/$project/$scout" });
+  return (
+    <ScoutsBeside search={search} current={`${project}/${scout}`}>
+      <ScoutView project={project} param={scout} />
+    </ScoutsBeside>
+  );
+}
+
+/** Scout `param` of `project`: its rail, document and chat. */
+export function ScoutView({ project, param }: { project: string; param: string }) {
   const id = /^\d+$/.test(param) ? Number(param) : null;
   const page = useScoutPage(project, id);
   const heading = useRef<HTMLHeadingElement>(null);
   const stopSent = useRef(false);
   const composeRef = useRef<HTMLTextAreaElement>(null);
   const chatButton = useRef<HTMLButtonElement>(null);
-  const wide = useChatWidth();
+  const besideList = useScoutListShown();
+  const layout = besideList ? LAYOUT.besideList : LAYOUT.alone;
+  const wide = useChatWidth(besideList);
   const [chatOpen, setChatOpen] = useState(readChatOpen);
   const [tab, setTab] = useState<{ at: string; id: TabId } | null>(null);
   const chatTitle = useId();
@@ -53,8 +84,12 @@ export function ScoutPage() {
   const label = `scout ${shown}`;
   if (page.kind !== "scout") {
     const notice = scoutNotice(page, project, shown);
-    if (!notice.loading) return <Notice label={label} text={notice.text} back={{ to: "/scouts", search: { project } }} backLabel="Back to Scouts" />;
-    return <Page label={label}><Loading /></Page>;
+    return (
+      <>
+        <ShowScoutList row />
+        {notice.loading ? <Page label={label}><Loading /></Page> : <Notice label={label} text={notice.text} back={{ to: "/scouts", search: { project } }} backLabel="Back to Scouts" />}
+      </>
+    );
   }
   const { scout } = page.detail;
   const at = `${page.base}/${scout.id}`;
@@ -75,21 +110,24 @@ export function ScoutPage() {
     chatButton.current?.focus();
   };
   const chat = threaded
-    ? { count: page.detail.thread.length, slot: wide ? null : holdThread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton }
+    ? { count: page.detail.thread.length, slot: wide ? null : holdThread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton, tabClass: layout.chatTab }
     : null;
   return (
     <section aria-label={label} data-scout-layout
-      className={`grid grid-cols-1 items-start min-[1100px]:grid-cols-[320px_minmax(0,1fr)] ${docked ? "min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]" : ""}`}>
+      className={`grid grid-cols-1 items-start ${layout.split} ${docked ? layout.docked : ""}`}>
       <aside data-scout-rail aria-label="Summary and decisions"
-        className="min-w-0 border-b border-rule bg-paper px-[22px] py-7 max-[720px]:p-4 min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:h-screen min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-b-0">
+        className={`min-w-0 border-b border-rule bg-paper px-[22px] py-7 max-[720px]:p-4 ${layout.rail}`}>
         <header>
-          <nav aria-label="Breadcrumb" className="mb-2 font-mono text-[12px] leading-none text-ink-3">
-            <Link to="/scouts" search={{}} className={CRUMB_LINK}>Scouts</Link>
-            {" / "}
-            <Link to="/scouts" search={{ project }} className={CRUMB_LINK}>{project}</Link>
-            {" / "}
-            <span>scout {scout.id}</span>
-          </nav>
+          <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-3">
+            <ShowScoutList />
+            <nav aria-label="Breadcrumb" className="whitespace-nowrap font-mono text-[12px] leading-none text-ink-3">
+              <Link to="/scouts" search={{}} className={CRUMB_LINK}>Scouts</Link>
+              {" / "}
+              <Link to="/scouts" search={{ project }} className={CRUMB_LINK}>{project}</Link>
+              {" / "}
+              <span>scout {scout.id}</span>
+            </nav>
+          </div>
           <ScoutHead detail={page.detail} project={project} state={page.state} now={page.now} pass={page.pass} level={1} headingRef={heading} buttons={null} />
           <div data-scout-buttons className="mt-4 flex flex-wrap gap-2 empty:hidden">
             {page.stoppable && <ScoutStop key={at} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
@@ -106,7 +144,7 @@ export function ScoutPage() {
       </div>
       {docked && (
         <section data-scout-chat aria-labelledby={chatTitle}
-          className="hidden min-w-0 flex-col border-l border-rule bg-paper min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:flex min-[1440px]:h-screen">
+          className={`hidden min-w-0 flex-col border-l border-rule bg-paper ${layout.chat}`}>
           <header className="flex items-center justify-between gap-2 border-b border-rule px-[18px] py-4">
             <h2 id={chatTitle} className="m-0 font-sans text-[14px] font-semibold text-ink">Chat with the scout</h2>
             <button type="button" aria-label="Close chat" title="Close chat" onClick={closeChat}
