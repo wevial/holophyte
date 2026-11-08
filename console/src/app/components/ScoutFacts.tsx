@@ -33,26 +33,27 @@ export function scoutMeta(detail: ScoutDetail, now: number): string {
   return [scout.kind, ...when, ...(scout.lead == null ? [] : [`lead ${scout.lead}`])].join(" · ");
 }
 
-/** The run's base, helpers, tasks back and tokens, the first run's, then its subject and newest follow-up pass; null
- *  for a queued scout. */
+/** The run's base, helpers, tasks back and tokens, the first run's, then its subject and newest follow-up pass, each
+ *  the scout has; a queued scout has only its subject. Null when it has none. */
 export function ScoutRunFacts({ detail, project, pass }: {
   detail: ScoutDetail;
   project: string;
   pass: { pass: number; ms: number | null } | null;
 }) {
   const { scout } = detail;
-  if (scout.phase === "queued" || scout.started_ms == null) return null;
-  const tasks = detail.tasks.filter((task) => task.pass === 1);
+  const queued = scout.phase === "queued" || scout.started_ms == null;
+  const tasks = queued ? [] : detail.tasks.filter((task) => task.pass === 1);
   const stopped = stoppedCount(tasks);
   const tokens = tasks.flatMap((task) => (task.tokens == null ? [] : [task.tokens]));
   const facts = ([
-    ["base", scout.base_sha == null ? null : shortSha(scout.base_sha)],
-    ["helpers", scout.helper == null ? null : `${scout.helper}${scout.swarm == null ? "" : ` ×${scout.swarm}`}`],
+    ["base", queued || scout.base_sha == null ? null : shortSha(scout.base_sha)],
+    ["helpers", queued || scout.helper == null ? null : `${scout.helper}${scout.swarm == null ? "" : ` ×${scout.swarm}`}`],
     ["back", tasks.length === 0 ? null : `${backCount(tasks)} of ${tasks.length}${stopped ? `, ${stopped} stopped` : ""}`],
     ["tokens", tokens.length === 0 ? null : `${Math.round(tokens.reduce((sum, each) => sum + each, 0) / 1000)}k`],
     ["about", aboutLink(scout.subject, project)],
-    ["pass", pass == null ? null : pass.ms == null ? String(pass.pass) : `${pass.pass} · ${formatSettled(pass.ms)}`],
+    ["pass", queued || pass == null ? null : pass.ms == null ? String(pass.pass) : `${pass.pass} · ${formatSettled(pass.ms)}`],
   ] satisfies [string, ReactNode][]).filter(([, value]) => value != null);
+  if (facts.length === 0) return null;
   return (
     <dl data-scout-facts className="m-0 mb-6 flex flex-wrap gap-x-5 gap-y-1.5 font-mono text-[12px] leading-[1.6] text-ink-2">
       {facts.map(([name, value]) => (

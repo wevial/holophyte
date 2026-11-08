@@ -208,7 +208,7 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
       </div>
       {tabs.map((tab) => (
         <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} tabIndex={0} hidden={tab !== current}
-          className="pt-8 [&>:first-child]:mt-0">
+          className="pt-5 [&>:first-child]:mt-0">
           {tab.body}
         </div>
       ))}

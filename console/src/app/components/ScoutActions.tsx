@@ -114,7 +114,7 @@ export function ScoutActions({ items, title = "Action items", titleHidden = fals
         {title}
         {open > 0 && <span data-to-file className="text-need">{open} to file</span>}
       </h2>
-      <ol aria-label="Action items" className="m-0 mt-2 list-none p-0">
+      <ol aria-label="Action items" className={`m-0 list-none p-0 ${titleHidden ? "" : "mt-2"}`}>
         {rows.map((item) => <ActionRow key={item.position} item={item} scope={scope} />)}
       </ol>
     </section>

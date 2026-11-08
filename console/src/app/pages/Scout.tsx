@@ -1,6 +1,8 @@
-import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { ACTIONS_OFF } from "../../lib/actions";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { Btn } from "../components/Btn";
 import { ChatIcon, FoldRightIcon } from "../components/icons";
 import { CHAT_SLOT, ScoutDocument, Verdict, type TabId } from "../components/ScoutBody";
 import { ScoutHead } from "../components/ScoutHead";
@@ -49,6 +51,7 @@ export function ScoutView({ project, param }: { project: string; param: string }
   const stopSent = useRef(false);
   const composeRef = useRef<HTMLTextAreaElement>(null);
   const chatButton = useRef<HTMLButtonElement>(null);
+  const navigate = useNavigate();
   const wide = useChatWidth();
   const [chatOpen, setChatOpen] = useState(readChatOpen);
   const [tab, setTab] = useState<{ at: string; id: TabId } | null>(null);
@@ -87,6 +90,9 @@ export function ScoutView({ project, param }: { project: string; param: string }
     composeRef.current?.focus();
     composeRef.current?.scrollIntoView({ block: "nearest" });
   };
+  const runAgain = () => void navigate({ to: "/scouts", search: {
+    new: project, kind: scout.kind, ask: scout.ask, about: scout.subject == null ? undefined : `${scout.subject.kind}:${scout.subject.ref}`,
+  } });
   const foldChat = () => {
     flushSync(() => showChat(false));
     chatButton.current?.focus();
@@ -104,7 +110,8 @@ export function ScoutView({ project, param }: { project: string; param: string }
             {" / "}
             <span>scout {scout.id}</span>
           </nav>
-          {page.stoppable && <ScoutStop key={at} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}
+          {page.stoppable ? <ScoutStop key={at} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />
+            : <Btn disabled={!page.actions} title={page.actions ? undefined : ACTIONS_OFF} onClick={runAgain}>Run again</Btn>}
           {threaded && takesMessages(scout.phase) && <a href="#thread" className="btn" data-variant="quiet" onClick={(event) => {
             event.preventDefault();
             askOrSteer();

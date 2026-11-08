@@ -1382,7 +1382,8 @@ meta line of `console/src/app/components/ScoutFacts.tsx` (kind, time, start and 
 `console/src/app/components/ScoutBody.tsx` is the pane's body: the Verdict, the newest report's headline over
 its bullets or else its summary, or a scout's state sentence while it has no report; then Action items, Findings,
 Progress and Thread, with Progress second while the scout is live.
-The Scout page is one report column: a top bar with the breadcrumb, then the header and the Verdict, then tabs
+The Scout page is one report column: a top bar with the breadcrumb and Stop, or once the scout has ended Run
+again, which opens New scout filled with its kind, ask and subject; then the header and the Verdict, then tabs
 Decide (the action items), Write-up, Findings and Activity (the run facts of `ScoutFacts.tsx`, then Progress). It
 opens on Decide while an item is left to file, else on the first of the rest. From 1440px the Thread sits in a
 320px chat drawer that folds into a Chat button in the top bar; below it the Thread is a Chat tab. `console/src/app/components/ScoutWriteup.tsx` draws the newest report's

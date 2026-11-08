@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ScoutDetail, ScoutRow, Scouts, ScoutTask } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
+import { ACTIONS_OFF } from "../../src/lib/actions";
 import { ACTIONS_OFF_LINE } from "../../src/app/components/CardActions";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -216,10 +217,16 @@ test("a done, failed, stopped or queued scout's status says its report, failure,
   }
 });
 
-test("a queued scout's meta line reads the weekday and time it was queued, and its Activity has no run facts", async () => {
+test("a queued scout's meta line reads the weekday and time it was queued, and its Activity facts hold only its subject link", async () => {
   const queued = { ...live, scout: { ...live.scout, id: 29, kind: "research" as const, phase: "queued" as const, started_ms: null, created_ms: at(11, 58) }, tasks: [] };
   await mount("#/scouts/demo/29", scoutFetch({ scouts: { 29: queued } }).fetch);
   expect(meta()).toBe("research · queued Thu 11:58 PDT · lead opus");
+  await showActivity();
+  const facts = document.querySelector<HTMLElement>("[data-scout-facts]")!;
+  expect(Array.from(facts.children, (fact) => fact.textContent)).toEqual(["aboutALPHA-1"]);
+  expect(within(facts).getByRole("link", { name: "ALPHA-1" }).getAttribute("href")).toEndWith("#/tickets/demo/ALPHA-1");
+  cleanup();
+  await mount("#/scouts/demo/29", scoutFetch({ scouts: { 29: { ...queued, scout: { ...queued.scout, subject: null } } } }).fetch);
   expect(document.querySelector("[data-scout-facts]")).toBeNull();
 });
 
@@ -480,6 +487,26 @@ test("with actions off Stop is disabled under the actions-off line", async () =>
   const stop = screen.getByRole("button", { name: "Stop" });
   expect(stop.hasAttribute("disabled")).toBe(true);
   expect(stop.getAttribute("title")).toBe(ACTIONS_OFF_LINE);
+});
+
+test("an ended scout's top bar has Run again in place of Stop, opening New scout filled with its kind, ask and subject", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  const topBar = document.querySelector<HTMLElement>("[data-scout-topbar]")!;
+  expect(within(topBar).queryByRole("button", { name: "Stop" })).toBeNull();
+  await click(within(topBar).getByRole("button", { name: "Run again" }));
+  const form = screen.getByRole("form", { name: "New scout" });
+  expect(within(form).getByDisplayValue(ASK)).toBeTruthy();
+  expect(within(within(form).getByRole("group", { name: "Kind" })).getByRole("button", { name: "Bug" }).getAttribute("aria-pressed")).toBe("true");
+  expect(form.querySelector("[data-about]")!.textContent).toBe("About ALPHA-1");
+  cleanup();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
+  expect(screen.queryByRole("button", { name: "Run again" })).toBeNull();
+});
+
+test("with actions off Run again is disabled with the actions-off title", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves }, actions: false }).fetch);
+  const again = screen.getByRole("button", { name: "Run again" });
+  expect([again.hasAttribute("disabled"), again.getAttribute("title")]).toEqual([true, ACTIONS_OFF]);
 });
 
 test("a row of the Scouts list links to its scout's page", async () => {
