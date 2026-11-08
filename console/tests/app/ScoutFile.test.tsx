@@ -27,7 +27,7 @@ const A4_TITLE = "Route the digest's writes through the store writer";
 const REFUSAL = "'Depends on' names no ticket of this project: DEMO-9";
 
 const item = (position: number, kind: ScoutAction["kind"], title: string, why: string, fields: Partial<ScoutAction> = {}): ScoutAction => ({
-  position, pass: 1, title, why, kind, body: draft(title), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, ...fields,
+  position, pass: 1, title, why, kind, body: draft(title), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, set_aside_ms: null, ...fields,
 });
 
 const items: ScoutAction[] = [
@@ -47,6 +47,7 @@ interface Daemon {
   scout: ScoutDetail;
   actions?: boolean;
   file?: () => Response | Promise<Response>;
+  aside?: (body: { item: number; aside: boolean }) => Response;
   check?: () => Response;
   filing?: () => Response;
   other?: ScoutDetail;
@@ -62,6 +63,7 @@ function scoutFetch(daemon: Daemon) {
     if (url === `${DEMO}/scouts/32` && daemon.other) return Response.json(daemon.other);
     if (url === `${DEMO}/tickets` && daemon.filing) return daemon.filing();
     if (url === `${DEMO}/actions/scout-file` && daemon.file) return daemon.file();
+    if (url === `${DEMO}/actions/scout-set-aside` && daemon.aside) return daemon.aside(JSON.parse(init!.body as string));
     if (url === `${DEMO}/board`) return Response.json({ ...board, editable: true });
     if (url === `${DEMO}/tickets/check` && daemon.check) return daemon.check();
     const answer = await polls(url);
@@ -97,7 +99,8 @@ const region = () => screen.getByRole("region", { name: "Decide" });
 const heading = () => within(region()).getByRole("heading").textContent;
 const rows = () => Array.from(within(region()).getByRole("list", { name: "Action items" }).children) as HTMLElement[];
 const rowOf = (id: string) => rows().find((row) => row.querySelector("[data-action-id]")!.textContent === id)!;
-const fileOf = (id: string) => within(rowOf(id)).getByRole("button") as HTMLButtonElement;
+const buttonsOf = (id: string) => within(rowOf(id)).queryAllByRole("button") as HTMLButtonElement[];
+const fileOf = (id: string) => buttonsOf(id)[0]!;
 const toast = () => document.querySelector("[data-toast]")?.textContent;
 const reads = (seen: { url: string }[]) => seen.filter((each) => each.url === `${DEMO}/scouts/31`).length;
 const posts = (seen: { url: string; method: string; body: unknown }[]) => seen.filter((each) => each.url === `${DEMO}/actions/scout-file` && each.method === "POST");
@@ -129,6 +132,52 @@ test("a done scout's Action items count the unfiled, list A1 to A4 in order and 
   expect(within(rowOf("A2")).queryByRole("button")).toBeNull();
   expect(within(filed as HTMLElement).getByRole("link", { name: "DEMO-213" }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-213");
   for (const id of ["A1", "A3", "A4"]) expect(fileOf(id).textContent).toBe("File");
+});
+
+test("Not now collapses A2 into one quiet line, drops the count by one, and Undo brings File and Not now back", async () => {
+  const unfiled = items.map((each) => ({ ...each, ticket: null, filed_ms: null }));
+  const daemon: Daemon = {
+    scout: done(unfiled),
+    aside: ({ item, aside }) => {
+      const set_aside_ms = aside ? at(11, 59) : null;
+      daemon.scout = done(daemon.scout.actions.map((each) => (each.position === item ? { ...each, set_aside_ms } : each)));
+      return Response.json({ ok: true, scout: 31, item, set_aside_ms, detail: "done" });
+    },
+  };
+  const { fetch, seen } = scoutFetch(daemon);
+  await mount(fetch);
+  expect(heading()).toBe("Decide4 to file");
+  expect(buttonsOf("A2").map((button) => button.textContent)).toEqual(["File", "Not now"]);
+
+  await click(within(rowOf("A2")).getByRole("button", { name: "Not now" }));
+  const asides = () => seen.filter((each) => each.url === `${DEMO}/actions/scout-set-aside`).map((each) => each.body);
+  expect(asides()).toEqual([{ scout: 31, item: 2, aside: true }]);
+  expect(rowOf("A2").textContent).toBe("A2 not now · Undo");
+  expect(heading()).toBe("Decide3 to file");
+  expect(buttonsOf("A3").map((button) => button.textContent)).toEqual(["File", "Not now"]);
+
+  await click(within(rowOf("A2")).getByRole("button", { name: "Undo" }));
+  expect(asides().at(-1)).toEqual({ scout: 31, item: 2, aside: false });
+  expect(buttonsOf("A2").map((button) => button.textContent)).toEqual(["File", "Not now"]);
+  expect(heading()).toBe("Decide4 to file");
+});
+
+test("Not now after a refused File collapses A2 to its one line, the File refusal gone", async () => {
+  const unfiled = items.map((each) => ({ ...each, ticket: null, filed_ms: null }));
+  const daemon: Daemon = {
+    scout: done(unfiled),
+    file: refusal("demo has no [board]"),
+    aside: ({ item }) => {
+      daemon.scout = done(daemon.scout.actions.map((each) => (each.position === item ? { ...each, set_aside_ms: at(11, 59) } : each)));
+      return Response.json({ ok: true, scout: 31, item, set_aside_ms: at(11, 59), detail: "done" });
+    },
+  };
+  await mount(scoutFetch(daemon).fetch);
+  await click(fileOf("A2"));
+  expect(within(rowOf("A2")).getByRole("alert").textContent).toBe("demo has no [board]");
+  await click(within(rowOf("A2")).getByRole("button", { name: "Not now" }));
+  expect(within(rowOf("A2")).queryByRole("alert")).toBeNull();
+  expect(rowOf("A2").textContent).toBe("A2 not now · Undo");
 });
 
 test("File posts the scout and item, reads Filing… while out, toasts the key and reads the scout again", async () => {
@@ -279,9 +328,14 @@ test("a 404 or a board refusal reads under the row in the bad tone and File is e
   }
 });
 
-test("actions off disables each File with the actions-off title", async () => {
+test("actions off disables each File and Not now with the actions-off title", async () => {
   await mount(scoutFetch({ scout: done(), actions: false }).fetch);
-  for (const id of ["A1", "A3", "A4"]) expect([fileOf(id).disabled, fileOf(id).title]).toEqual([true, ACTIONS_OFF]);
+  for (const id of ["A1", "A3", "A4"]) {
+    expect(buttonsOf(id).map((button) => [button.textContent, button.disabled, button.title])).toEqual([
+      ["File", true, ACTIONS_OFF],
+      ["Not now", true, ACTIONS_OFF],
+    ]);
+  }
 });
 
 test("a swarming scout with no actions has no Decide region", async () => {

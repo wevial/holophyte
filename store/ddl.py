@@ -595,13 +595,14 @@ CREATE TABLE IF NOT EXISTS scoutTasks (
 
 -- scoutActions: a scout's action item; `position` counts across passes.
 CREATE TABLE IF NOT EXISTS scoutActions (
-    id        INTEGER PRIMARY KEY,
-    scoutId   INTEGER NOT NULL REFERENCES scouts (id),
-    pass      INTEGER NOT NULL CHECK (pass > 0),
-    position  INTEGER NOT NULL CHECK (position > 0),
-    item      TEXT    NOT NULL,  -- JSON
-    ticketKey TEXT,
-    filedAt   INTEGER,
+    id         INTEGER PRIMARY KEY,
+    scoutId    INTEGER NOT NULL REFERENCES scouts (id),
+    pass       INTEGER NOT NULL CHECK (pass > 0),
+    position   INTEGER NOT NULL CHECK (position > 0),
+    item       TEXT    NOT NULL,  -- JSON
+    ticketKey  TEXT,
+    filedAt    INTEGER,
+    setAsideAt INTEGER,
     UNIQUE (scoutId, position)
 );
 

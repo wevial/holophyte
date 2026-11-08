@@ -1354,6 +1354,7 @@ export const scoutActionSchema = z.looseObject({
   revises: revisesSchema.nullable(),
   ticket: z.string().nullable(),
   filed_ms: z.int().nullable(),
+  set_aside_ms: z.int().nullable(),
 });
 export type ScoutAction = z.infer<typeof scoutActionSchema>;
 

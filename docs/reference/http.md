@@ -1626,8 +1626,8 @@ helpers at once. `tasks_done` counts its helper tasks that have ended and
 `tasks_total` all of them, over every pass. `findings` counts the
 findings over every stored report pass, 0 before the first report.
 `actions` counts the scout's stored action items, `filed` those with a
-ticket key, and `to_file` those with no ticket key whose `kind` is not
-`revise`; a report's own `actions` with no stored items count 0.
+ticket key, and `to_file` those with no ticket key, not set aside, whose
+`kind` is not `revise`; a report's own `actions` with no stored items count 0.
 `created_ms`, `started_ms` and
 `ended_ms` are epoch milliseconds, each null until it happens;
 `elapsed_ms` runs from the start to the end, or to now while the scout
@@ -1686,7 +1686,8 @@ One scout whole: what the console's Scout page draws.
    "prior": [{"scout": 4, "finding": 1, "verdict": "holds", "why": "…"}]}}],
  "actions": [{"position": 1, "pass": 1, "title": "…", "why": "…",
               "kind": "fix", "body": "…", "layer": null, "covers": null,
-              "revises": null, "ticket": null, "filed_ms": null}],
+              "revises": null, "ticket": null, "filed_ms": null,
+              "set_aside_ms": null}],
  "events": [{"id": 1, "at": 1791568800000, "kind": "scout_queued",
              "summary": "bug scout queued by maintainer (holo scout)"}],
  "thread": [{"id": 1, "author": "maintainer", "mode": "ask", "text": "…",
@@ -1764,7 +1765,10 @@ table:
 passes: each its `pass`, `title`, `why`, `kind` (`fix`, `test`,
 `investigate`, `decide`, `revise` or `guardrail`), `body`, `layer`,
 `covers` and `revises`, the
-`ticket` key it was filed as and `filed_ms`, both null until it is filed. A
+`ticket` key it was filed as and `filed_ms`, both null until it is filed,
+and `set_aside_ms`, when it was set aside with
+[`POST /actions/scout-set-aside`](daemon.md#post-actionsscout-set-aside),
+null while it is not. A
 `revise` item, offered only to a scout whose `subject` is a `defect`, is
 the defect ticket's whole body rewritten, and its `revises` is
 `{"ticket": KEY, "revision": N}`: the defect run's ticket and that

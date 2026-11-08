@@ -334,6 +334,33 @@ def file_scout_action(conn, scout_id, position, ticket_key, now=None):
                      (ticket_key, _now(now), scout_id, position))
 
 
+def _unfiled_action(conn, scout_id, position):
+    row = conn.execute("SELECT ticketKey FROM scoutActions"
+                       " WHERE scoutId = ? AND position = ?",
+                       (scout_id, position)).fetchone()
+    if row is None:
+        raise ValueError(f"scout {scout_id} has no item {position}")
+    if row[0] is not None:
+        raise ScoutRefused(scout_id, _phase(conn, scout_id),
+                           f"item {position} is already filed as {row[0]}")
+
+
+def set_scout_action_aside(conn, scout_id, position, now=None):
+    with _transaction(conn):
+        _unfiled_action(conn, scout_id, position)
+        conn.execute("UPDATE scoutActions SET setAsideAt = ?"
+                     " WHERE scoutId = ? AND position = ?",
+                     (_now(now), scout_id, position))
+
+
+def clear_scout_action_aside(conn, scout_id, position):
+    with _transaction(conn):
+        _unfiled_action(conn, scout_id, position)
+        conn.execute("UPDATE scoutActions SET setAsideAt = NULL"
+                     " WHERE scoutId = ? AND position = ?",
+                     (scout_id, position))
+
+
 def record_scout_event(conn, scout_id, kind, summary, level="narrative",
                        payload=None, now=None):
     if level not in EVENT_LEVELS:

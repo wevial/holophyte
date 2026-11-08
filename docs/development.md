@@ -175,7 +175,9 @@ Each module, one line:
   file` and the `holo mcp` `scout_file` tool: a done scout's action item
   judged by the ticket checker for Backlog, filed to Backlog through the
   project's board (as a draft whose first note lists the checker's
-  problems, when it has any), and its filed key recorded on the item.
+  problems, when it has any), and its filed key recorded on the item;
+  and `POST /actions/scout-set-aside`, an unfiled item set aside or
+  brought back.
 - `holophyte/scout/follow_up.py` — a steered scout's follow-up pass: the
   lead's session resumed to plan one wave on the steer, the helpers under
   the pass's own small budget, and the pass's report and action items

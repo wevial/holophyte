@@ -23,17 +23,17 @@ const A2_TITLE = "Retry a locked write within the store's busy_timeout";
 const A2_DRAFT = body(A2_TITLE, "A locked write waits on the store's busy_timeout, not a loop of its own.");
 
 const item = (position: number, kind: ScoutAction["kind"], title: string, fields: Partial<ScoutAction> = {}): ScoutAction => ({
-  position, pass: 1, title, why: `Why ${title}.`, kind, body: body(title, "A draft."), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, ...fields,
+  position, pass: 1, title, why: `Why ${title}.`, kind, body: body(title, "A draft."), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, set_aside_ms: null, ...fields,
 });
 const items: ScoutAction[] = [
   item(1, "fix", "Commit the listener's write before it calls publish"),
   item(2, "revise", A2_TITLE, { body: A2_DRAFT, revises: { ticket: "DEMO-7", revision: 2 } }),
 ];
 
-const scout = (subject: ScoutSubject | null): ScoutDetail => ({
+const scout = (subject: ScoutSubject | null, asideA2: number | null = null): ScoutDetail => ({
   ...served,
   scout: { ...served.scout, id: 31, phase: "done", subject, started_ms: NOW - 3_600_000, ended_ms: NOW - 1_800_000 },
-  actions: items,
+  actions: items.map((each) => (each.position === 2 ? { ...each, set_aside_ms: asideA2 } : each)),
 });
 
 const ticket = (revision: number, current: string): TicketDetail => ({
@@ -66,10 +66,15 @@ interface Daemon {
 function demo({ subject = { kind: "defect", ref: "812" }, revision = 2, actions = true, current = CURRENT }: Daemon = {}) {
   const seen: { url: string; method: string; ifMatch: string | null; body: unknown }[] = [];
   const polls = fleet({ items: [] }, { items: [] });
+  let asideA2: number | null = null;
   const fetch: Fetch = async (url, init) => {
     const method = init?.method ?? "GET";
+    if (url === `${DEMO}/actions/scout-set-aside`) {
+      asideA2 = (JSON.parse(init!.body as string) as { aside: boolean }).aside ? NOW : null;
+      return Response.json({ ok: true, scout: 31, item: 2, set_aside_ms: asideA2, detail: "done" });
+    }
     seen.push({ url, method, ifMatch: new Headers(init?.headers).get("if-match"), body: typeof init?.body === "string" ? JSON.parse(init.body) : null });
-    if (url === `${DEMO}/scouts/31`) return Response.json(scout(subject));
+    if (url === `${DEMO}/scouts/31`) return Response.json(scout(subject, asideA2));
     if (url === `${DEMO}/tickets/DEMO-7` && method === "PUT") return Response.json({ ticket: "DEMO-7", revision: revision + 1 });
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticket(revision, current));
     if (url === `${DEMO}/board`) return Response.json(board(revision));
@@ -150,10 +155,20 @@ test("the run facts link a run, defect, ticket or pull request subject and read 
 test("a revise item reads its tag and Revise in place of File and is not counted to file", async () => {
   await mount(demo().fetch);
   expect(within(region()).getByRole("heading").textContent).toBe("Decide1 to file");
-  expect(within(rowOf("A1")).getByRole("button").textContent).toBe("File");
+  expect(within(rowOf("A1")).getByRole("button", { name: "File" }).textContent).toBe("File");
   expect(rowOf("A2").querySelector("[data-action-kind]")!.textContent).toBe("revise");
   expect(reviseButton().disabled).toBe(false);
   expect(within(rowOf("A2")).queryByRole("button", { name: "File" })).toBeNull();
+});
+
+test("an unfiled revise item has Not now beside Revise, collapses to its one line, and Undo brings both back", async () => {
+  await mount(demo().fetch);
+  const buttons = () => within(rowOf("A2")).getAllByRole("button").map((button) => button.textContent);
+  expect(buttons()).toEqual(["Revise", "Not now"]);
+  await click(within(rowOf("A2")).getByRole("button", { name: "Not now" }));
+  expect(rowOf("A2").textContent).toBe("A2 not now · Undo");
+  await click(within(rowOf("A2")).getByRole("button", { name: "Undo" }));
+  expect(buttons()).toEqual(["Revise", "Not now"]);
 });
 
 test("Revise opens DEMO-7's edit page with the draft over revision 2, the changed fields marked, and files nothing", async () => {

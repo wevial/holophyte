@@ -20,7 +20,7 @@ from holophyte.config.serve_settings import console_config, serve_config
 from holophyte.holo.report_page import DEFAULT_SINCE, FORMS, report, window_ms
 from holophyte.host.supervisor import factory_revision
 from holophyte.loop.reexec import reexec_self
-from holophyte.scout.filing import SCOUT_FILE_ACTION, file_action
+from holophyte.scout.filing import SCOUT_ITEM_ACTIONS
 from holophyte.scout.launch import SCOUT_ACTION, launch
 from holophyte.scout.stop import SCOUT_STOP_ACTION, stop
 from holophyte.scout.thread_action import SCOUT_MESSAGE_ACTION, message_action
@@ -437,13 +437,12 @@ class StatusHandler(BaseHTTPRequestHandler):
             return ask_action(project, body)
         if action == SCOUT_ACTION:
             return launch(project, body)
-        if action == SCOUT_FILE_ACTION:
-            return file_action(project, body)
         if action == SCOUT_STOP_ACTION:
             return stop(project, body)
         if action == SCOUT_MESSAGE_ACTION:
             return message_action(project, body)
-        handler = LEVERS.get(action) or QUEUE_ACTIONS.get(action)
+        handler = (LEVERS.get(action) or QUEUE_ACTIONS.get(action)
+                   or SCOUT_ITEM_ACTIONS.get(action))
         if handler is not None:
             return handler(project, body)
         return unit_action(project, action, scope.unit_name)
