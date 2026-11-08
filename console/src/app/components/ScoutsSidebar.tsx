@@ -135,6 +135,10 @@ function writeHidden(hidden: boolean): void {
 }
 
 const ShowListContext = createContext<{ show: () => void; ref: Ref<HTMLButtonElement> } | null>(null);
+const ListShownContext = createContext(false);
+
+/** Whether the scout list is drawn beside the page, taking 330px of its width. */
+export const useScoutListShown = () => useContext(ListShownContext);
 
 /** The button that brings a hidden scout list back, on a padded row of its own when `row`; nothing while the list shows. */
 export function ShowScoutList({ row = false }: { row?: boolean }) {
@@ -209,7 +213,9 @@ export function ScoutsBeside({ search, current, newScout, children }: {
         </aside>
       )}
       <ShowListContext.Provider value={wide && hidden ? { show: () => toggle(false), ref: showButton } : null}>
-        <div data-scout-page className="min-h-full min-w-0 flex-1 bg-paper">{children}</div>
+        <ListShownContext.Provider value={wide && !hidden}>
+          <div data-scout-page className="min-h-full min-w-0 flex-1 bg-paper">{children}</div>
+        </ListShownContext.Provider>
       </ShowListContext.Provider>
     </div>
   );

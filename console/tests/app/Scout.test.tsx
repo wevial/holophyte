@@ -574,7 +574,7 @@ test("crossing the 1100px breakpoint keeps the chosen tab while the scout list c
 });
 
 const chatty: ScoutDetail = { ...writtenUp, thread: served.thread.slice(0, 2) };
-const wideView = () => happyDOM.setViewport({ width: 1600, height: 900 });
+const wideView = () => happyDOM.setViewport({ width: 1800, height: 900 });
 const chat = () => screen.queryByRole("region", { name: "Chat with the scout" });
 const tabBar = () => document.querySelector<HTMLElement>("[data-scout-tabbar]")!;
 const composer = (inside: HTMLElement) => within(inside).getByRole("textbox", { name: "Question for the scout" });
@@ -625,17 +625,36 @@ test("Ask or steer opens the closed chat and focuses its composer, and below the
   expect(document.activeElement).toBe(composer(shown()));
 });
 
-test("the chat column shows only from the 1440px breakpoint, and below it a Chat · 2 tab holds the thread", async () => {
+test("beside the scout list the rail splits from 1440px and the chat docks from 1780px, between them a Chat · 2 tab holds the thread", async () => {
+  const layout = () => document.querySelector("[data-scout-layout]")!;
   wideView();
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
-  const layout = document.querySelector("[data-scout-layout]")!;
-  expect(layout.classList.contains("min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(true);
-  expect(["hidden", "min-[1440px]:flex"].map((name) => chat()!.classList.contains(name))).toEqual([true, true]);
+  expect(screen.getByRole("complementary", { name: "Scout list" })).toBeTruthy();
+  expect(layout().classList.contains("min-[1780px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(true);
+  expect(["hidden", "min-[1780px]:flex"].map((name) => chat()!.classList.contains(name))).toEqual([true, true]);
   cleanup();
-  happyDOM.setViewport({ width: 1280, height: 800 });
+  happyDOM.setViewport({ width: 1440, height: 900 });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
   expect(chat()).toBeNull();
-  expect(document.querySelector("[data-scout-layout]")!.classList.contains("min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(false);
+  expect(["min-[1440px]:grid-cols-[320px_minmax(0,1fr)]", "min-[1100px]:grid-cols-[320px_minmax(0,1fr)]"].map((name) => layout().classList.contains(name))).toEqual([true, false]);
+  const tab = screen.getByRole("tab", { name: "Chat · 2" });
+  expect(tab.classList.contains("min-[1780px]:hidden")).toBe(true);
+  await click(tab);
+  expect(composer(within(shown()).getByRole("region", { name: "Thread" }))).toBeTruthy();
+});
+
+test("alone the chat column docks from 1440px, and below it a Chat · 2 tab holds the thread", async () => {
+  const layout = () => document.querySelector("[data-scout-layout]")!;
+  wideView();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
+  await click(screen.getByRole("button", { name: "Hide scout list" }));
+  expect(layout().classList.contains("min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(true);
+  expect(["hidden", "min-[1440px]:flex"].map((name) => chat()!.classList.contains(name))).toEqual([true, true]);
+  cleanup();
+  happyDOM.setViewport({ width: 1024, height: 768 });
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
+  expect(chat()).toBeNull();
+  expect(layout().classList.contains("min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]")).toBe(false);
   const tab = screen.getByRole("tab", { name: "Chat · 2" });
   expect(tab.classList.contains("min-[1440px]:hidden")).toBe(true);
   expect(tabs().map(([label]) => label)).toEqual(["Write-up", "Findings 4", "Activity", "Chat · 2"]);
@@ -645,7 +664,7 @@ test("the chat column shows only from the 1440px breakpoint, and below it a Chat
 
 test("a scout with no thread has no chat sidebar, Chat button or Chat tab", async () => {
   const silent: ScoutDetail = { ...twoWaves, scout: { ...twoWaves.scout, phase: "failed", reason: "lead route opus is down" }, thread: [] };
-  for (const width of [1600, 1280]) {
+  for (const width of [1800, 1280]) {
     happyDOM.setViewport({ width, height: 900 });
     await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: silent } }).fetch);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
@@ -656,8 +675,8 @@ test("a scout with no thread has no chat sidebar, Chat button or Chat tab", asyn
   }
 });
 
-test("a draft and its Steer mode survive closing and reopening the chat and crossing the 1440px breakpoint", async () => {
-  let width = 1600;
+test("a draft and its Steer mode survive closing and reopening the chat and crossing the chat's breakpoint", async () => {
+  let width = 1800;
   const listeners = new Set<() => void>();
   const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
     get matches() {

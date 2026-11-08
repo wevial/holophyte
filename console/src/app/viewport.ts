@@ -15,9 +15,10 @@ export function useTableWidth(): boolean {
   return useMinWidth(1100);
 }
 
-/** Whether the window is at least 1440px wide, room for the scout page's chat column. */
-export function useChatWidth(): boolean {
-  return useMinWidth(1440);
+/** Whether the window is wide enough for the scout page's chat column: 1440px, or 1780px
+ *  `besideList`, the scout list's 330px and the rest. */
+export function useChatWidth(besideList = false): boolean {
+  return useMinWidth(besideList ? 1780 : 1440);
 }
 
 /** Whether the window is at least 1100px wide, room for the scout list beside a scout. */

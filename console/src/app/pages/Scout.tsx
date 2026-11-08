@@ -5,13 +5,31 @@ import { CHAT_SLOT, ScoutDocument, ScoutRail, type TabId } from "../components/S
 import { ScoutHead } from "../components/ScoutHead";
 import { ScoutStop } from "../components/ScoutStop";
 import { ScoutThread } from "../components/ScoutThread";
-import { ScoutsBeside, ShowScoutList } from "../components/ScoutsSidebar";
+import { ScoutsBeside, ShowScoutList, useScoutListShown } from "../components/ScoutsSidebar";
 import { scoutNotice, useScoutPage } from "../scout";
 import { hasThread, takesMessages } from "../scoutThread";
 import { useChatWidth } from "../viewport";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
 const CHAT_KEY = "holophyte.next.scout-chat";
+
+/** The page's breakpoints alone and beside the scout list, which takes 330px of the window. */
+const LAYOUT = {
+  alone: {
+    split: "min-[1100px]:grid-cols-[320px_minmax(0,1fr)]",
+    rail: "min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:h-screen min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-b-0",
+    docked: "min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]",
+    chat: "min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:flex min-[1440px]:h-screen",
+    chatTab: "min-[1440px]:hidden",
+  },
+  besideList: {
+    split: "min-[1440px]:grid-cols-[320px_minmax(0,1fr)]",
+    rail: "min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:h-screen min-[1440px]:overflow-y-auto min-[1440px]:border-r min-[1440px]:border-b-0",
+    docked: "min-[1780px]:grid-cols-[320px_minmax(0,1fr)_360px]",
+    chat: "min-[1780px]:sticky min-[1780px]:top-0 min-[1780px]:flex min-[1780px]:h-screen",
+    chatTab: "min-[1780px]:hidden",
+  },
+};
 
 function readChatOpen(): boolean {
   try {
@@ -48,7 +66,9 @@ export function ScoutView({ project, param }: { project: string; param: string }
   const stopSent = useRef(false);
   const composeRef = useRef<HTMLTextAreaElement>(null);
   const chatButton = useRef<HTMLButtonElement>(null);
-  const wide = useChatWidth();
+  const besideList = useScoutListShown();
+  const layout = besideList ? LAYOUT.besideList : LAYOUT.alone;
+  const wide = useChatWidth(besideList);
   const [chatOpen, setChatOpen] = useState(readChatOpen);
   const [tab, setTab] = useState<{ at: string; id: TabId } | null>(null);
   const chatTitle = useId();
@@ -90,13 +110,13 @@ export function ScoutView({ project, param }: { project: string; param: string }
     chatButton.current?.focus();
   };
   const chat = threaded
-    ? { count: page.detail.thread.length, slot: wide ? null : holdThread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton }
+    ? { count: page.detail.thread.length, slot: wide ? null : holdThread, onOpen: wide && !chatOpen ? askOrSteer : null, openRef: chatButton, tabClass: layout.chatTab }
     : null;
   return (
     <section aria-label={label} data-scout-layout
-      className={`grid grid-cols-1 items-start min-[1100px]:grid-cols-[320px_minmax(0,1fr)] ${docked ? "min-[1440px]:grid-cols-[320px_minmax(0,1fr)_360px]" : ""}`}>
+      className={`grid grid-cols-1 items-start ${layout.split} ${docked ? layout.docked : ""}`}>
       <aside data-scout-rail aria-label="Summary and decisions"
-        className="min-w-0 border-b border-rule bg-paper px-[22px] py-7 max-[720px]:p-4 min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:h-screen min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-b-0">
+        className={`min-w-0 border-b border-rule bg-paper px-[22px] py-7 max-[720px]:p-4 ${layout.rail}`}>
         <header>
           <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-3">
             <ShowScoutList />
@@ -124,7 +144,7 @@ export function ScoutView({ project, param }: { project: string; param: string }
       </div>
       {docked && (
         <section data-scout-chat aria-labelledby={chatTitle}
-          className="hidden min-w-0 flex-col border-l border-rule bg-paper min-[1440px]:sticky min-[1440px]:top-0 min-[1440px]:flex min-[1440px]:h-screen">
+          className={`hidden min-w-0 flex-col border-l border-rule bg-paper ${layout.chat}`}>
           <header className="flex items-center justify-between gap-2 border-b border-rule px-[18px] py-4">
             <h2 id={chatTitle} className="m-0 font-sans text-[14px] font-semibold text-ink">Chat with the scout</h2>
             <button type="button" aria-label="Close chat" title="Close chat" onClick={closeChat}

@@ -151,6 +151,8 @@ interface DocumentChat {
   slot: Ref<HTMLDivElement> | null;
   onOpen: (() => void) | null;
   openRef: Ref<HTMLButtonElement>;
+  /** Hides the chat's tab from the breakpoint its column docks at. */
+  tabClass: string;
 }
 
 /** A scout's page document: tabs Write-up (when the newest report has one), Findings (when there is a report),
@@ -174,7 +176,7 @@ export function ScoutDocument({ page, chat, chosen, onChoose }: {
     }] : []),
     { id: "activity", label: "Activity", body: <Progress page={page} /> },
     ...(chat?.slot != null ? [{
-      id: "chat" as const, label: chatLabel, className: "min-[1440px]:hidden", body: <div ref={chat.slot} className={CHAT_SLOT} />,
+      id: "chat" as const, label: chatLabel, className: chat.tabClass, body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
   const current = tabs.find((tab) => tab.id === chosen) ?? tabs[0]!;

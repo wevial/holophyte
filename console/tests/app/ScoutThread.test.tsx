@@ -127,7 +127,7 @@ const happyDOM = (window as unknown as {
 
 beforeAll(() => {
   happyDOM.setURL(`${DEMO}/`);
-  happyDOM.setViewport({ width: 1600, height: 900 });
+  happyDOM.setViewport({ width: 1800, height: 900 });
 });
 afterAll(() => {
   happyDOM.setURL("about:blank");
