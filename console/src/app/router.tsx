@@ -33,7 +33,7 @@ import { TicketPage } from "./pages/Ticket";
 import { NewTicket } from "./pages/NewTicket";
 import { EditTicket } from "./pages/EditTicket";
 import { Tickets } from "./pages/Tickets";
-import { validateScoutsSearch } from "./scouts";
+import { validateScoutListSearch, validateScoutsSearch } from "./scouts";
 import { validateTicketsSearch } from "./tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
@@ -89,7 +89,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/stories/$project/$key", component: Story }),
   createRoute({ getParentRoute: () => rootRoute, path: "/findings", validateSearch: validateFindingsSearch, component: Findings }),
   createRoute({ getParentRoute: () => rootRoute, path: "/scouts", validateSearch: validateScoutsSearch, component: Scouts }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/scouts/$project/$scout", component: ScoutPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/scouts/$project/$scout", validateSearch: validateScoutListSearch, component: ScoutPage }),
   pageRoute("/settings", Settings),
   pageRoute("/settings/$tab", Settings),
 ]);

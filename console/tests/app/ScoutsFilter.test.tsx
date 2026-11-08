@@ -16,12 +16,13 @@ const scout = (id: number, phase: ScoutRow["phase"], minutesAgo: number, row: Pa
   ...swarming, id, phase, created_ms: NOW - minutesAgo * MINUTE, ...row,
 });
 
-/** DEMO and WRITER answering `/scouts` with their rows, and DEMO `/scouts/31` with scout 31;
+/** DEMO and WRITER answering `/scouts` with their rows, and DEMO `/scouts/N` with scout N;
  *  WRITER without rows answers 404. */
 function scoutFetch(demo: ScoutRow[], writer?: ScoutRow[]): Fetch {
   const polls = fleet({ items: [] }, { items: [] });
   return async (url) => {
-    if (url === `${DEMO}/scouts/31`) return Response.json({ ...served, scout: { ...served.scout, id: 31 } });
+    const id = new RegExp(`^${DEMO}/scouts/(\\d+)$`).exec(url)?.[1];
+    if (id != null) return Response.json({ ...served, scout: { ...served.scout, id: Number(id) } });
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: demo });
     if (url === `${WRITER}/scouts` && writer) return Response.json({ ...servedScouts, scouts: writer });
     const answer = await polls(url);
@@ -73,7 +74,7 @@ async function search(text: string) {
 
 function wideScreen() {
   return spyOn(window, "matchMedia").mockImplementation((query: string) => ({
-    matches: query === "(min-width: 1400px)",
+    matches: query === "(min-width: 1100px)",
     media: query,
     addEventListener: () => {},
     removeEventListener: () => {},
@@ -116,7 +117,7 @@ test("the narrow list draws one group per project, newest group first, under a l
   expect(groups().map(rowsOf)).toEqual([["31", "29", "27"]]);
 });
 
-test("the wide list draws the same groups with no id cell and the first group's first scout in the pane", async () => {
+test("the wide list draws the same groups with no id cell and the first group's first scout beside it", async () => {
   const media = wideScreen();
   try {
     await mount("#/scouts", scoutFetch(demo, writer));
@@ -124,8 +125,8 @@ test("the wide list draws the same groups with no id cell and the first group's 
     expect(groups().map(rowsOf)).toEqual([["31", "29", "27"], ["30"]]);
     expect(document.querySelector('[data-scout-list] [data-cell="id"]')).toBeNull();
     expect(document.querySelector("[data-scout-list] li[aria-current]")!.getAttribute("data-scout")).toBe("31");
-    const pane = document.querySelector("[data-scout-pane]") as HTMLElement;
-    expect(pane.contains(screen.getByRole("region", { name: "scout 31" }))).toBe(true);
+    const page = document.querySelector("[data-scout-page]") as HTMLElement;
+    expect(page.contains(screen.getByRole("region", { name: "scout 31" }))).toBe(true);
   } finally {
     media.mockRestore();
   }
@@ -191,12 +192,32 @@ test("a search matching no scout reads No scouts match alone, and an empty scope
   expect(screen.queryByText("No scouts match")).toBeNull();
 });
 
-test("pressing a wide row and closing New scout keep q and filter, and a Scout button's kind leaves the Kind select alone", async () => {
+test("choosing another row under a search and a Kind keeps both on the scout's page, whose list still shows only matching rows", async () => {
+  const media = wideScreen();
+  const kinds = locks.map((row) => ({ ...row, kind: row.id === 27 ? ("research" as const) : ("bug" as const) }));
+  try {
+    await mount("#/scouts?q=lock&type=bug", scoutFetch([...kinds, scout(25, "done", 5, { title: "Lock-free reads", kind: "research" })]));
+    expect(ids()).toEqual(["31", "29"]);
+    await click(within(document.querySelector('[data-scout="29"]') as HTMLElement).getByRole("link"));
+    expect(window.location.hash.split("?")[0]).toBe("#/scouts/demo/29");
+    expect([searchParam("q"), searchParam("type")]).toEqual(["lock", "bug"]);
+    expect(field().value).toBe("lock");
+    expect(select("Kind").selectedOptions[0]!.textContent).toBe("Bug");
+    expect(ids()).toEqual(["31", "29"]);
+    expect(document.querySelector("[data-scout-list] li[aria-current]")!.getAttribute("data-scout")).toBe("29");
+    await click(within(document.querySelector('[data-scout="31"]') as HTMLElement).getByRole("link"));
+    expect(window.location.hash.split("?")[0]).toBe("#/scouts/demo/31");
+    expect([searchParam("q"), searchParam("type")]).toEqual(["lock", "bug"]);
+    expect(ids()).toEqual(["31", "29"]);
+  } finally {
+    media.mockRestore();
+  }
+});
+
+test("closing New scout keeps q and filter, and a Scout button's kind leaves the Kind select alone", async () => {
   const media = wideScreen();
   try {
     await mount("#/scouts?q=lock&filter=running", scoutFetch(locks));
-    await click(within(document.querySelector('[data-scout="31"]') as HTMLElement).getByRole("link"));
-    expect([searchParam("scout"), searchParam("q"), searchParam("filter")]).toEqual(["demo/31", "lock", "running"]);
     await click(screen.getByRole("button", { name: "New scout" }));
     await click(within(screen.getByRole("form", { name: "New scout" })).getByRole("button", { name: "Cancel" }));
     expect([searchParam("q"), searchParam("filter")]).toEqual(["lock", "running"]);

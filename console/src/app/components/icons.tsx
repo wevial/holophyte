@@ -117,15 +117,6 @@ export function PanelLeftIcon() {
   );
 }
 
-export function ClassicIcon() {
-  return (
-    <Stroke>
-      <path d="M6.5 3H3v10h10V9.5" />
-      <path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5" />
-    </Stroke>
-  );
-}
-
 export function SignalIcon({ className }: { className?: string }) {
   return (
     <Stroke className={className}>

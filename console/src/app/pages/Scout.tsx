@@ -1,10 +1,11 @@
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { CHAT_SLOT, ScoutDocument, ScoutRail, type TabId } from "../components/ScoutBody";
 import { ScoutHead } from "../components/ScoutHead";
 import { ScoutStop } from "../components/ScoutStop";
 import { ScoutThread } from "../components/ScoutThread";
+import { ScoutsBeside, ShowScoutList } from "../components/ScoutsSidebar";
 import { scoutNotice, useScoutPage } from "../scout";
 import { hasThread, takesMessages } from "../scoutThread";
 import { useChatWidth } from "../viewport";
@@ -30,7 +31,17 @@ function writeChatOpen(open: boolean): void {
 }
 
 export function ScoutPage() {
-  const { project, scout: param } = useParams({ from: "/scouts/$project/$scout" });
+  const { project, scout } = useParams({ from: "/scouts/$project/$scout" });
+  const search = useSearch({ from: "/scouts/$project/$scout" });
+  return (
+    <ScoutsBeside search={search} current={`${project}/${scout}`}>
+      <ScoutView project={project} param={scout} />
+    </ScoutsBeside>
+  );
+}
+
+/** Scout `param` of `project`: its rail, document and chat. */
+export function ScoutView({ project, param }: { project: string; param: string }) {
   const id = /^\d+$/.test(param) ? Number(param) : null;
   const page = useScoutPage(project, id);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -83,13 +94,16 @@ export function ScoutPage() {
       <aside data-scout-rail aria-label="Summary and decisions"
         className="min-w-0 border-b border-rule bg-paper px-[22px] py-7 max-[720px]:p-4 min-[1100px]:sticky min-[1100px]:top-0 min-[1100px]:h-screen min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-b-0">
         <header>
-          <nav aria-label="Breadcrumb" className="mb-2 font-mono text-[12px] leading-none text-ink-3">
-            <Link to="/scouts" search={{}} className={CRUMB_LINK}>Scouts</Link>
-            {" / "}
-            <Link to="/scouts" search={{ project }} className={CRUMB_LINK}>{project}</Link>
-            {" / "}
-            <span>scout {scout.id}</span>
-          </nav>
+          <div className="mb-2 flex flex-wrap items-center gap-x-2.5 gap-y-3">
+            <ShowScoutList />
+            <nav aria-label="Breadcrumb" className="whitespace-nowrap font-mono text-[12px] leading-none text-ink-3">
+              <Link to="/scouts" search={{}} className={CRUMB_LINK}>Scouts</Link>
+              {" / "}
+              <Link to="/scouts" search={{ project }} className={CRUMB_LINK}>{project}</Link>
+              {" / "}
+              <span>scout {scout.id}</span>
+            </nav>
+          </div>
           <ScoutHead detail={page.detail} project={project} state={page.state} now={page.now} pass={page.pass} level={1} headingRef={heading} buttons={null} />
           <div data-scout-buttons className="mt-4 flex flex-wrap gap-2 empty:hidden">
             {page.stoppable && <ScoutStop key={at} base={page.base} project={project} scout={scout.id} pass={page.pass?.live ? page.pass.pass : null} actions={page.actions} onSent={() => (stopSent.current = true)} />}

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
@@ -189,7 +189,6 @@ const click = async (element: Element) => {
 const region = (name: string, inside: HTMLElement = document.body) => within(inside).getByRole("region", { name });
 const inOrder = (elements: HTMLElement[]) =>
   elements.every((element, index) => index === 0 || (elements[index - 1]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
-const BODY = ["Verdict", "Action items", "Findings", "Progress", "Thread"];
 const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
 const groups = () => Array.from(screen.getByRole("list", { name: "Scout activity" }).children) as HTMLElement[];
 const groupNamed = (title: string) => groups().find((group) => group.querySelector("[data-group-title] b")!.textContent === title)!;
@@ -371,25 +370,5 @@ test("the Scout, Run and Turn pages wait for their first answer behind a wordles
     expect([placeholder.getAttribute("aria-busy"), placeholder.textContent]).toEqual(["true", ""]);
     expect(main.textContent).not.toMatch(/Asking demo/);
     cleanup();
-  }
-});
-
-test("the wide Scouts page's row reads the title and its pane holds the page's header and body", async () => {
-  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
-    matches: query === "(min-width: 1400px)",
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  }) as unknown as MediaQueryList);
-  try {
-    await mount("#/scouts", scoutFetch(scout31));
-    const row = within(screen.getByRole("list", { name: "Scouts, newest first" })).getByRole("link");
-    expect(row.querySelector("[data-cell='title']")!.textContent).toBe(TITLE);
-    const pane = region("scout 31");
-    expect(within(pane).getAllByRole("heading", { level: 2 })[0]!.textContent).toBe(TITLE);
-    expect([pane.querySelector("[data-scout-what]")!.textContent, pane.querySelector("[data-scout-cost]")!.textContent]).toEqual([WHAT, COST]);
-    expect(inOrder(BODY.map((name) => region(name, pane)))).toBe(true);
-  } finally {
-    media.mockRestore();
   }
 });

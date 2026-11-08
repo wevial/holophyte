@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
@@ -168,6 +168,35 @@ test("a row reads its state, title not ask, kind, routes, helper progress and ti
   expect(fail).toMatchObject({ state: "failed", reason: "lead route opus is down: probe timed out" });
   expect(fail.text).not.toContain("more");
   expect([readRow(24).state, readRow(23).state]).toEqual(["done", "stopped"]);
+});
+
+test("a wide list row reads its title, then one mono line of kind, time taken, start and what it found, to file in the need colour", async () => {
+  const counts = { findings: 0, actions: 0, filed: 0, to_file: 0 };
+  const started = new Date(2026, 9, 24, 2, 28).getTime();
+  const rows = [
+    scout(31, "done", 1, { title: "Loop runs crash with database is locked", kind: "bug", elapsed_ms: 13 * MINUTE, started_ms: started, findings: 7, actions: 4, filed: 1, to_file: 3 }),
+    scout(30, "done", 2, { ...counts, kind: "research", elapsed_ms: 8 * MINUTE, started_ms: started, findings: 11 }),
+    scout(29, "stopped", 3, { ...counts, kind: "recon", elapsed_ms: 8 * MINUTE, started_ms: started, findings: 2, actions: 2, to_file: 2 }),
+  ];
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    matches: query === "(min-width: 1100px)", media: query, addEventListener: () => {}, removeEventListener: () => {},
+  }) as unknown as MediaQueryList);
+  try {
+    await mount("#/scouts", scoutFetch({ demo: rows }).fetch);
+    const row = (id: number) => list().querySelector(`[data-scout="${id}"]`)!;
+    const line = (id: number) => row(id).querySelector("[data-scout-row-facts]")!;
+    expect(row(31).querySelector("[data-cell='title']")!.textContent).toBe("Loop runs crash with database is locked");
+    expect(row(31).querySelector("[data-cell='title']")!.classList.contains("line-clamp-2")).toBe(true);
+    expect(line(31).classList.contains("font-mono")).toBe(true);
+    expect(line(31).textContent).toBe("bug · 13m · Sat 02:28 · 7 findings · 4 actions · 1 filed · 3 to file");
+    const toFile = line(31).querySelector("[data-to-file]")!;
+    expect([toFile.textContent, toFile.classList.contains("text-need")]).toEqual(["3 to file", true]);
+    expect(line(30).textContent).toBe("research · 8m · Sat 02:28 · 11 findings");
+    expect(line(29).textContent).toBe("recon · 8m · Sat 02:28 · 2 findings · 2 actions");
+    expect(line(29).querySelector("[data-to-file]")).toBeNull();
+  } finally {
+    media.mockRestore();
+  }
 });
 
 test("with no scouts the page says so for its scope", async () => {

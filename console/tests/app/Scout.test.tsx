@@ -533,6 +533,20 @@ test("the rail is sticky at 320px beside the document from the wide breakpoint a
   expect(rail().classList.contains("sticky")).toBe(false);
 });
 
+test("the scout list sits beside the scout's page only from the 1100px breakpoint, and below it the page stands alone with its Scouts breadcrumb", async () => {
+  happyDOM.setViewport({ width: 1280, height: 900 });
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp }, list: [{ ...servedScouts.scouts[0]!, id: 31 }] }).fetch);
+  const list = screen.getByRole("complementary", { name: "Scout list" });
+  expect(["hidden", "min-[1100px]:flex", "w-[330px]", "bg-canvas"].map((name) => list.classList.contains(name))).toEqual([true, true, true, true]);
+  expect(list.nextElementSibling!.contains(rail())).toBe(true);
+  cleanup();
+  happyDOM.setViewport({ width: 1024, height: 768 });
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp }, list: [{ ...servedScouts.scouts[0]!, id: 31 }] }).fetch);
+  expect(screen.queryByRole("complementary", { name: "Scout list" })).toBeNull();
+  expect(document.querySelector("[data-scout-list]")).toBeNull();
+  expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole("link", { name: "Scouts" }).getAttribute("href")).toBe("/#/scouts");
+});
+
 const chatty: ScoutDetail = { ...writtenUp, thread: served.thread.slice(0, 2) };
 const wideView = () => happyDOM.setViewport({ width: 1600, height: 900 });
 const chat = () => screen.queryByRole("region", { name: "Chat with the scout" });
