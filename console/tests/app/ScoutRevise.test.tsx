@@ -23,7 +23,7 @@ const A2_TITLE = "Retry a locked write within the store's busy_timeout";
 const A2_DRAFT = body(A2_TITLE, "A locked write waits on the store's busy_timeout, not a loop of its own.");
 
 const item = (position: number, kind: ScoutAction["kind"], title: string, fields: Partial<ScoutAction> = {}): ScoutAction => ({
-  position, pass: 1, title, why: `Why ${title}.`, kind, body: body(title, "A draft."), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, ...fields,
+  position, pass: 1, title, why: `Why ${title}.`, kind, body: body(title, "A draft."), layer: null, covers: null, revises: null, ticket: null, filed_ms: null, set_aside_ms: null, ...fields,
 });
 const items: ScoutAction[] = [
   item(1, "fix", "Commit the listener's write before it calls publish"),
@@ -150,7 +150,7 @@ test("the run facts link a run, defect, ticket or pull request subject and read 
 test("a revise item reads its tag and Revise in place of File and is not counted to file", async () => {
   await mount(demo().fetch);
   expect(within(region()).getByRole("heading").textContent).toBe("Decide1 to file");
-  expect(within(rowOf("A1")).getByRole("button").textContent).toBe("File");
+  expect(within(rowOf("A1")).getByRole("button", { name: "File" }).textContent).toBe("File");
   expect(rowOf("A2").querySelector("[data-action-kind]")!.textContent).toBe("revise");
   expect(reviseButton().disabled).toBe(false);
   expect(within(rowOf("A2")).queryByRole("button", { name: "File" })).toBeNull();

@@ -154,7 +154,7 @@ DOCUMENTED_COLUMNS = {
                    "paths", "mode", "route", "phase", "startedAt", "endedAt",
                    "durationMs", "tokens", "costUsd", "excerpt"},
     "scoutActions": {"id", "scoutId", "pass", "position", "item", "ticketKey",
-                     "filedAt"},
+                     "filedAt", "setAsideAt"},
     "threadMessages": {"id", "projectId", "scoutId", "author", "mode", "text",
                        "blocks", "answersId", "at", "consumedBy", "consumedAt"},
     "automationFirings": {"id", "projectId", "automation", "revision",

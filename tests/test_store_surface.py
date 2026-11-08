@@ -419,7 +419,11 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # scout's pid.
                                  # HOLO-585: `record_scout_title`, the
                                  # title a cheap model gave a scout at start.
+                                 # HOLO-654: `set_scout_action_aside` and
+                                 # `clear_scout_action_aside`, an action item
+                                 # set aside with Not now and brought back.
                                  (store.scouts, ["beat_scout", "claim_scout",
+                                                 "clear_scout_action_aside",
                                                  "create_scout",
                                                  "end_scout", "end_scout_task",
                                                  "file_scout_action",
@@ -431,6 +435,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "record_scout_tasks",
                                                  "record_scout_title",
                                                  "scout", "scouts",
+                                                 "set_scout_action_aside",
                                                  "set_scout_session",
                                                  "start_scout_task"]),
                                  # HOLO-522: a scout's thread, its messages

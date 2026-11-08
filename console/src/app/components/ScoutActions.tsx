@@ -39,7 +39,13 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
     to: "/tickets/$project/$key/edit", params: { project, key: revises.ticket }, search: {},
     state: { draft: item.body, scout, revision: revises.revision },
   } as const;
-  const refused = action.data != null && !action.data.ok ? action.data : null;
+  const aside = useAction();
+  const refused = [action.data, aside.data].find((data) => data != null && !data.ok) ?? null;
+  const setAside = (value: boolean) =>
+    void aside.mutateAsync({
+      label: value ? "Not now" : "Undo", base, route: "/actions/scout-set-aside", body: { scout, item: item.position, aside: value },
+      said: value ? `${id} set aside.` : `${id} is back.`,
+    });
   const file = async () => {
     const result = await action.mutateAsync({
       label: "File", base, route: "/actions/scout-file", body: { scout, item: item.position },
@@ -53,6 +59,21 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
       void navigate({ to: "/tickets/$project/new", params: { project }, search: {}, state: { draft: item.body } });
     }
   };
+  if (item.set_aside_ms != null && item.ticket == null) {
+    return (
+      <li data-scout-action data-set-aside className="border-b border-rule-2 py-2.5">
+        <p className="m-0 font-mono text-[12px] text-ink-3">
+          <span data-action-id className="font-semibold">{id}</span>
+          {" not now · "}
+          <button type="button" disabled={!actions || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => setAside(false)}
+            className="cursor-pointer border-0 bg-transparent p-0 font-mono text-[12px] text-ink-2 underline underline-offset-2 hover:text-ink disabled:cursor-default disabled:no-underline">
+            Undo
+          </button>
+        </p>
+        {refused != null && <p role="alert" className={`m-0 mt-1.5 text-bad ${detailLine}`}>{refused.detail}</p>}
+      </li>
+    );
+  }
   return (
     <li data-scout-action className={ROW}>
       <span data-action-id className="font-mono text-[11px] font-semibold leading-none text-ink-3">{id}</span>
@@ -83,9 +104,14 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
             Revise
           </Btn>
         ) : item.ticket == null ? (
-          <Btn variant="need" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
-            File
-          </Btn>
+          <span className="flex gap-2">
+            <Btn variant="need" busy={action.isPending} busyLabel="Filing…" disabled={!actions || action.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => void file()}>
+              File
+            </Btn>
+            <Btn disabled={!actions || action.isPending || aside.isPending} title={actions ? undefined : ACTIONS_OFF} onClick={() => setAside(true)}>
+              Not now
+            </Btn>
+          </span>
         ) : (
           <span data-filed className="whitespace-nowrap font-mono text-[12px] text-ok-ink">
             Filed{" "}
@@ -99,11 +125,13 @@ function ActionRow({ item, scope }: { item: ScoutAction; scope: Scope }) {
   );
 }
 
-/** How many of `items` are left to file. */
-export const toFile = (items: ScoutAction[]) => items.filter((item) => item.kind !== "revise" && item.ticket == null).length;
+/** How many of `items` are left to file: neither filed nor set aside. */
+export const toFile = (items: ScoutAction[]) =>
+  items.filter((item) => item.kind !== "revise" && item.ticket == null && item.set_aside_ms == null).length;
 
-/** A scout's action items under `title`, kept for readers only when `titleHidden`: each with File, or its Filed stamp
- *  once filed, and a revise item with Revise, which opens its ticket's edit page with the item's draft. */
+/** A scout's action items under `title`, kept for readers only when `titleHidden`: each with File and Not now, its
+ *  Filed stamp once filed, one `A2 not now · Undo` line once set aside, and a revise item with Revise, which opens its
+ *  ticket's edit page with the item's draft. */
 export function ScoutActions({ items, title = "Action items", titleHidden = false, ...scope }: { items: ScoutAction[]; title?: string; titleHidden?: boolean } & Scope) {
   if (items.length === 0) return null;
   const rows = [...items].sort((a, b) => a.position - b.position);

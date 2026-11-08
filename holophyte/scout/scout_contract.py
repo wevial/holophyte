@@ -158,7 +158,8 @@ ScoutAction = TypedDict("ScoutAction", {
     "position": int, "pass": int, "title": str, "why": str,
     "kind": ActionKind, "body": str, "layer": Layer | None,
     "covers": list[str] | None, "revises": Revises | None,
-    "ticket": str | None, "filed_ms": int | None})
+    "ticket": str | None, "filed_ms": int | None,
+    "set_aside_ms": int | None})
 
 
 class ScoutEvent(TypedDict):

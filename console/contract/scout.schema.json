@@ -914,6 +914,16 @@
               "type": "null"
             }
           ]
+        },
+        "set_aside_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -927,7 +937,8 @@
         "covers",
         "revises",
         "ticket",
-        "filed_ms"
+        "filed_ms",
+        "set_aside_ms"
       ],
       "additionalProperties": true
     },

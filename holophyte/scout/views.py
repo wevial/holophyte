@@ -41,7 +41,7 @@ ROWS = (f"SELECT {', '.join(f's.{column}' for column in ROW_COLUMNS)},"
         " (SELECT COUNT(a.ticketKey) FROM scoutActions a"
         " WHERE a.scoutId = s.id),"
         " (SELECT COUNT(*) FROM scoutActions a WHERE a.scoutId = s.id"
-        " AND a.ticketKey IS NULL"
+        " AND a.ticketKey IS NULL AND a.setAsideAt IS NULL"
         " AND json_extract(a.item, '$.kind') IS NOT 'revise'),"
         " (SELECT json_extract(r.report, '$.title') FROM scoutReports r"
         " WHERE r.scoutId = s.id AND r.pass = 1), s.title"
@@ -202,7 +202,8 @@ def scout_parts(conn, scout_id):
         "SELECT pass, at, report FROM scoutReports WHERE scoutId = ?"
         " ORDER BY pass", (scout_id,)).fetchall()
     actions = conn.execute(
-        "SELECT position, pass, item, ticketKey, filedAt FROM scoutActions"
+        "SELECT position, pass, item, ticketKey, filedAt, setAsideAt"
+        " FROM scoutActions"
         " WHERE scoutId = ? ORDER BY position", (scout_id,)).fetchall()
     events = conn.execute(
         "SELECT id, at, kind, summary FROM runEvents WHERE scoutId = ?"
@@ -214,8 +215,10 @@ def scout_parts(conn, scout_id):
                     for number, at, report in reports],
         "actions": [{"position": position, "pass": number,
                      **served_action(json.loads(item)),
-                     "ticket": ticket, "filed_ms": filed}
-                    for position, number, item, ticket, filed in actions],
+                     "ticket": ticket, "filed_ms": filed,
+                     "set_aside_ms": aside}
+                    for position, number, item, ticket, filed, aside
+                    in actions],
         "events": [{"id": event_id, "at": at, "kind": kind,
                     "summary": summary}
                    for event_id, at, kind, summary in events],

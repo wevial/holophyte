@@ -480,6 +480,30 @@ A body that is not a JSON object, a `scout` or `item` that is not a
 positive integer, or a `note` or `author` that is not text is 400 naming
 the field. A project with no store is 503.
 
+## `POST /actions/scout-set-aside`
+
+Body: a JSON object with `scout` and `item` (required, positive
+integers: the scout's id and the action item's position) and `aside`
+(required, `true` or `false`). `aside: true` sets the unfiled item aside,
+recording the time; `aside: false` clears it. A set-aside item keeps its
+place but no longer counts in `to_file`
+([`GET /scouts`](http.md#get-scouts)). On a host daemon it is
+`/projects/NAME/actions/scout-set-aside`, admitted as the other project
+actions are.
+
+```json
+{"action": "scout-set-aside", "ok": true, "scout": 14, "item": 2,
+ "set_aside_ms": 1791569100000, "detail": "scout 14 item 2 set aside",
+ "recorded": null}
+```
+
+`set_aside_ms` is null after `aside: false`. An item already filed, an
+unknown scout or an unknown item is 200 with `ok: false`, `scout`, `item`
+and a `detail` naming why, and nothing is written. A body that is not a
+JSON object, a `scout` or `item` that is not a positive integer, or an
+`aside` that is not a boolean is 400 naming the field. A project with no
+store is 503.
+
 ## `POST /actions/scout-stop`
 
 Body: a JSON object with `scout` (required, a positive integer: the

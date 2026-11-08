@@ -10,9 +10,16 @@ from holophyte.serve.serve_levers import console_author
 from holophyte.serve.serve_runs import no_store
 from holophyte.tickets import ticket_header, ticket_template
 from store.enums import ScoutPhase
-from store.scouts import ScoutRefused, file_scout_action, scout
+from store.scouts import (
+    ScoutRefused,
+    clear_scout_action_aside,
+    file_scout_action,
+    scout,
+    set_scout_action_aside,
+)
 
 SCOUT_FILE_ACTION = "scout-file"
+SCOUT_SET_ASIDE_ACTION = "scout-set-aside"
 BACKLOG = "Backlog"
 FILING_LOCK = "scout-file.lock"
 ROW_ID_LIMIT = 2**63
@@ -191,3 +198,38 @@ def drafted(board, key, named, problems):
     except Exception as unposted:
         return f"; its problems note was not posted: {unposted}"
     return ""
+
+
+def set_aside_action(project, body):
+    refused = refusal(body)
+    if refused is None and type(body.get("aside")) is not bool:
+        refused = "aside must be true or false"
+    if refused is not None:
+        return 400, {"error": refused}
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    scout_id, position = body["scout"], body["item"]
+    named = {"scout": scout_id, "item": position}
+    if max(scout_id, position) >= ROW_ID_LIMIT:
+        return 200, {"ok": False, **named,
+                     "detail": f"scout {scout_id} has no item {position}"}
+    conn = open_store(project)
+    try:
+        if body["aside"]:
+            set_scout_action_aside(conn, scout_id, position)
+        else:
+            clear_scout_action_aside(conn, scout_id, position)
+        (aside,) = conn.execute("SELECT setAsideAt FROM scoutActions"
+                                " WHERE scoutId = ? AND position = ?",
+                                (scout_id, position)).fetchone()
+    except (ScoutRefused, ValueError) as refused:
+        return 200, {"ok": False, **named, "detail": str(refused)}
+    finally:
+        conn.close()
+    said = "set aside" if body["aside"] else "brought back"
+    return 200, {"ok": True, **named, "set_aside_ms": aside,
+                 "detail": f"scout {scout_id} item {position} {said}"}
+
+
+SCOUT_ITEM_ACTIONS = {SCOUT_FILE_ACTION: file_action,
+                      SCOUT_SET_ASIDE_ACTION: set_aside_action}
