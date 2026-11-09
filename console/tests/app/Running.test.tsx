@@ -89,7 +89,13 @@ const running = () => screen.getByRole("region", { name: "Running" });
 const lanes = () => within(running()).queryAllByRole("group").map((lane) => lane.getAttribute("aria-label"));
 const lane = (name: string) => within(running()).getByRole("group", { name });
 const head = (name: string) => lane(name).querySelector("[data-lane-head]")!.textContent;
-const queueButton = (name: string) => within(lane(name)).getByRole("button", { name: /queued$/ });
+const onCiRows = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-on-ci]")];
+const laneItem = (item: Element) =>
+  item.hasAttribute("data-on-ci-divider") || item.hasAttribute("data-queued-divider") ? item.getAttribute("aria-label")
+  : item.hasAttribute("data-on-ci") ? "on-ci"
+  : item.hasAttribute("data-queued") ? item.getAttribute("data-queued")
+  : item.querySelector("a[data-row]") ? "run" : item.textContent;
+const laneItems = (name: string) => within(lane(name)).getAllByRole("list").map((list) => [...list.children].map(laneItem));
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -165,32 +171,20 @@ test("the Running summary sums busy runs and workers over the lanes in scope bef
   expect(summary()).toContain("1 of 2 workers busy · nothing queued");
 });
 
-test("the queue count unfolds into a row per queued ticket and folds them away again", async () => {
+test("a lane lists its live row, its CI tab and row, then a Queued tab and a row per queued ticket in its one list, with no toggle in its head", async () => {
   const queued = [
     queuedOf("DEMO-2", { reason: "approved for merge\nthe next claim resumes it", pr_url: "https://github.com/example/repo/pull/41", waiting_ms: 12 * MINUTE + 4_000 }),
     queuedOf("DEMO-4"),
-    queuedOf("DEMO-5"),
   ];
-  await mount("#/", statusOf("/srv/dev/demo", [demoRun], { queued }), statusOf("/srv/dev/writer", []));
-  const button = queueButton("demo");
-  expect(button.textContent).toBe("3 queued");
-  expect(button.getAttribute("aria-expanded")).toBe("false");
-  expect(within(lane("demo")).queryByRole("list", { name: "demo queued" })).toBeNull();
-
-  fireEvent.click(button);
-  expect(button.getAttribute("aria-expanded")).toBe("true");
-  const rows = within(within(lane("demo")).getByRole("list", { name: "demo queued" })).getAllByRole("listitem");
-  expect(rows).toHaveLength(3);
-  const first = within(rows[0]!);
-  const reason = rows[0]!.querySelector("[title]")!;
+  await mountAll("#/", [statusOf("/srv/dev/demo", [demoRun], { workers: 2, queued }), statusOf("/srv/dev/writer", [])], {}, [ciPark]);
+  expect(laneItems("demo")).toEqual([["run", "On CI", "on-ci", "Queued", "DEMO-2", "DEMO-4"]]);
+  expect(within(lane("demo")).queryAllByRole("button")).toEqual([]);
+  const first = lane("demo").querySelector("[data-queued='DEMO-2']") as HTMLElement;
+  const reason = first.querySelector("[title]")!;
   expect(reason.getAttribute("title")).toBe("approved for merge\nthe next claim resumes it");
   expect(reason.textContent).toBe("approved for merge");
-  expect(first.getByRole("link", { name: "PR #41" })).toBeTruthy();
-  expect(first.getByText("waiting 12m 4s")).toBeTruthy();
-
-  fireEvent.click(button);
-  expect(button.getAttribute("aria-expanded")).toBe("false");
-  expect(within(lane("demo")).queryByRole("list", { name: "demo queued" })).toBeNull();
+  expect(within(first).getByRole("link", { name: "PR #41" })).toBeTruthy();
+  expect(within(first).getByText("waiting 12m 4s")).toBeTruthy();
 });
 
 test("a held project's head carries its hold note and each queued reason ends held", async () => {
@@ -200,20 +194,19 @@ test("a held project's head carries its hold note and each queued reason ends he
   await mount("#/", demo, statusOf("/srv/dev/writer", [writerRun]));
   expect(head("demo")).toContain("held · deploy freeze");
   expect(head("writer")).not.toContain("held");
-
-  fireEvent.click(queueButton("demo"));
   const reasons = within(lane("demo")).getAllByRole("listitem")
     .filter((row) => row.hasAttribute("data-queued"))
     .map((row) => row.querySelector("[title]")!.textContent);
   expect(reasons).toEqual(["approved · held", "ready · held"]);
 });
 
-test("with no run anywhere, a project with a queued ticket keeps its lane and an idle one draws none", async () => {
+test("with no run anywhere, a project with a queued ticket keeps its lane, its head naming nothing running and its box the Queued tab, and an idle one draws none", async () => {
   await mount("#/", statusOf("/srv/dev/demo", [], { queued: [queuedOf("DEMO-2")] }), statusOf("/srv/dev/writer", []));
   expect(lanes()).toEqual(["demo"]);
-  expect(queueButton("demo").textContent).toBe("1 queued");
+  expect(head("demo")).toContain("0 of 1 workers busy");
   expect(head("demo")).toContain("· Nothing running.");
-  expect(within(lane("demo")).queryByRole("list", { name: "demo running" })).toBeNull();
+  expect(laneItems("demo")).toEqual([["Queued", "DEMO-2"]]);
+  expect(within(lane("demo")).queryAllByRole("button")).toEqual([]);
   expect(running().querySelector("header")!.textContent).toEndWith("1 queued");
 });
 
@@ -235,7 +228,7 @@ test("a lane is drawn only for a project with a run or a queued ticket, while th
   const gamma = statusOf("/srv/dev/gamma", [], { workers: 2, queued: [queuedOf("GAMMA-1")] });
   await mountAll("#/", [alpha, beta, gamma]);
   expect(lanes()).toEqual(["alpha", "gamma"]);
-  expect(queueButton("gamma").textContent).toBe("1 queued");
+  expect(laneItems("gamma")).toEqual([["Queued", "GAMMA-1"]]);
   expect(running().textContent).not.toContain("beta");
   expect(running().querySelector("header")!.textContent).toContain("1 of 6 workers busy · 1 queued");
 });
@@ -260,12 +253,6 @@ test("a backticked span in a running row's title shows as inline code, and its a
   const row = within(lane("demo")).getByRole("link", { name: "DEMO-7 Read a +++ TOML header, reviewing, round 2 of 2, 16 of 25 minutes" });
   expect([...row.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
 });
-
-const onCiRows = (name: string) => [...lane(name).querySelectorAll<HTMLElement>("[data-on-ci]")];
-const laneItems = (name: string) =>
-  within(lane(name)).getAllByRole("list").map((list) =>
-    [...list.children].map((item) => (item.hasAttribute("data-on-ci-divider") ? item.getAttribute("aria-label") : item.hasAttribute("data-on-ci") ? "on-ci" : item.querySelector("a[data-row]") ? "run" : item.textContent)),
-  );
 
 test("a run fixing a pull request names it under its title, and the lane lists its pull requests on CI in its one list under the runs without counting them busy", async () => {
   const fixing = runOf(20, "DEMO-20", "Fix the slot", { phase: "working", round: 1, max_rounds: 3, pr_url: "https://github.com/example/demo/pull/77" });

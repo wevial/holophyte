@@ -299,7 +299,7 @@ test("an ok Mark ready moves #45 to its project's On CI list at once, and the re
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(readsAfterPost).toBe(1);
   expect(onCiRows()).toEqual([]);
-  expect(within(screen.getByRole("group", { name: "demo" })).getByRole("button", { name: "1 queued" })).toBeTruthy();
+  expect(screen.getByRole("group", { name: "demo" }).querySelector("[data-queued='DEMO-12']")).toBeTruthy();
 });
 
 test("Mark ready for review is absent on a ready pull request and on a daemon without actions", async () => {
