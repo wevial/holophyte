@@ -210,7 +210,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
         )}
       </LaneHead>
       {listed && (
-        <ul aria-label={`${group.name} running`} className="border border-rule bg-paper">
+        <ul aria-label={`${group.name} work`} className="border border-rule bg-paper">
           {live.map((run) => (
             <RunLaneRow key={run.id} run={run} project={group.path} sinceMs={sinceMs} />
           ))}

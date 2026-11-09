@@ -200,12 +200,13 @@ test("a held project's head carries its hold note and each queued reason ends he
   expect(reasons).toEqual(["approved · held", "ready · held"]);
 });
 
-test("with no run anywhere, a project with a queued ticket keeps its lane, its head naming nothing running and its box the Queued tab, and an idle one draws none", async () => {
+test("with no run anywhere, a project with a queued ticket keeps its lane, its head naming nothing running and its box, named for its work, the Queued tab, and an idle one draws none", async () => {
   await mount("#/", statusOf("/srv/dev/demo", [], { queued: [queuedOf("DEMO-2")] }), statusOf("/srv/dev/writer", []));
   expect(lanes()).toEqual(["demo"]);
   expect(head("demo")).toContain("0 of 1 workers busy");
   expect(head("demo")).toContain("· Nothing running.");
   expect(laneItems("demo")).toEqual([["Queued", "DEMO-2"]]);
+  expect(within(lane("demo")).getByRole("list").getAttribute("aria-label")).toBe("demo work");
   expect(within(lane("demo")).queryAllByRole("button")).toEqual([]);
   expect(running().querySelector("header")!.textContent).toEndWith("1 queued");
 });
