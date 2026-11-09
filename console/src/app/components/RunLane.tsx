@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import { useId, useState } from "react";
 import { TicketLink } from "./TicketLink";
 import { ageOf, orderByAge, prTitle } from "../../lib/attention";
 import { isStale } from "../../lib/derive";
@@ -189,10 +188,8 @@ function QueuedLaneRow({ entry, held, sinceMs }: { entry: Queued; held: boolean;
 }
 
 /** One project's live runs, the runs that went quiet named instead of
- *  drawn, its pull requests on CI, and its queue behind a count that unfolds. */
+ *  drawn, its pull requests on CI, and its queue, all in one list. */
 function RunLane({ group, now }: { group: LaneGroup; now: number }) {
-  const [open, setOpen] = useState(false);
-  const queueId = useId();
   const sinceMs = sinceSeen(group.seen_ms, now);
   const threshold = group.status.thresholds.heartbeat_stale_ms;
   const quiet = (run: StatusRun) => isStale(run.heartbeat_age_ms + sinceMs, threshold);
@@ -200,7 +197,7 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
   const stale = group.runs.filter(quiet);
   const queued = group.queued ?? [];
   const held = group.status.admission === "held";
-  const listed = live.length > 0 || group.onCi.length > 0;
+  const listed = live.length > 0 || group.onCi.length > 0 || queued.length > 0;
   return (
     <div role="group" aria-label={group.name}>
       <LaneHead name={group.name} held={held} holdNote={group.status.hold_note} meta={`${group.runs.length} of ${group.workers} workers busy`} attached={listed}>
@@ -211,20 +208,9 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
         ) : (
           !group.witnesses && <span>· Nothing running.</span>
         )}
-        {queued.length > 0 && (
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={queueId}
-            onClick={() => setOpen(!open)}
-            className="ml-auto border-b border-rule text-ink-2 transition-colors duration-(--motion-colour) hover:border-ink hover:text-ink"
-          >
-            {queued.length} queued
-          </button>
-        )}
       </LaneHead>
       {listed && (
-        <ul aria-label={`${group.name} running`} className="border border-rule bg-paper">
+        <ul aria-label={`${group.name} work`} className="border border-rule bg-paper">
           {live.map((run) => (
             <RunLaneRow key={run.id} run={run} project={group.path} sinceMs={sinceMs} />
           ))}
@@ -234,6 +220,10 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
           {group.onCi.map((row, index) => (
             <OnCiLaneRow key={row.item.pr_url ?? index} row={row} />
           ))}
+          {queued.length > 0 && <StageTab data-queued-divider aria-label="Queued" label="Queued" state="queued" />}
+          {queued.map((entry) => (
+            <QueuedLaneRow key={entry.ticket} entry={entry} held={held} sinceMs={sinceMs} />
+          ))}
         </ul>
       )}
       {group.witnesses && (
@@ -241,11 +231,6 @@ function RunLane({ group, now }: { group: LaneGroup; now: number }) {
           Witnesses · {group.witnesses.story} · {witnessKeys(group.witnesses.keys)} · running{" "}
           {formatSettled(group.witnesses.elapsed_ms + sinceMs)}
         </p>
-      )}
-      {queued.length > 0 && (
-        <ul id={queueId} hidden={!open} aria-label={`${group.name} queued`} className="mt-2 border border-rule bg-paper">
-          {open && queued.map((entry) => <QueuedLaneRow key={entry.ticket} entry={entry} held={held} sinceMs={sinceMs} />)}
-        </ul>
       )}
     </div>
   );

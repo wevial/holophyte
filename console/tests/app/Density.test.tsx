@@ -95,7 +95,6 @@ test("every Overview running, queued and pull request row and Runs and Tickets t
   const liveRows = within(running).getAllByRole("link", { name: /^DEMO-(3|7) / });
   expect(liveRows).toHaveLength(2);
   for (const row of liveRows) expect(row.hasAttribute("data-row")).toBe(true);
-  fireEvent.click(within(running).getByRole("button", { name: "1 queued" }));
   const queued = running.querySelectorAll("[data-queued]");
   expect(queued).toHaveLength(1);
   for (const row of queued) expect(row.hasAttribute("data-row")).toBe(true);
