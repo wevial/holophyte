@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -164,6 +165,87 @@ class RepeatedPassTests(unittest.TestCase):
             self.assertFalse(holophyte.loop.gates.run_verify(
                 cmd, self.wt, run_id=7, rerun=False)[0])
         self.assertEqual(self.runs(), 2)
+
+
+class ImportingTestsTests(unittest.TestCase):
+    """After the ticket's unittest verify passes, the gate runs the test
+    modules that import a changed module, at most `IMPORTER_CAP` of them."""
+
+    VERIFY = "python3 -m unittest discover -s tests -p 'test_unrelated.py'"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.wt = Path(tmp.name, "wt")
+        self.log = Path(tmp.name, "ran")
+        self.log.write_text("")
+        self.target = SimpleNamespace(config=lambda: {})
+        self.write("pkg/__init__.py", "")
+        self.write("pkg/a.py", "VALUE = 1\n")
+        self.write("pkg/b.py", "VALUE = 1\n")
+        self.add_test("test_unrelated", "pkg.b")
+        self.add_test("test_a", "pkg.a")
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("checkout", "-q", "-b", "task")
+
+    def write(self, path, text):
+        (self.wt / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.wt / path).write_text(text)
+
+    def add_test(self, name, module):
+        self.write(f"tests/{name}.py", (
+            f"import unittest\nimport {module}\n\n\n"
+            f"class T(unittest.TestCase):\n"
+            f"    def test_value(self):\n"
+            f"        with open({str(self.log)!r}, 'a') as log:\n"
+            f"            log.write({name!r} + '\\n')\n"
+            f"        self.assertEqual({module}.VALUE, 1)\n"))
+
+    def git(self, *args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com",
+                        *args], cwd=self.wt, check=True, capture_output=True)
+
+    def change_a(self, value):
+        self.write("pkg/a.py", f"VALUE = {value}\n")
+        self.git("commit", "-q", "-am", "change pkg.a")
+
+    def gate(self):
+        ok, out = holophyte.loop.gates.run_verify(self.VERIFY, self.wt)
+        self.assertTrue(ok, out)
+        return holophyte.loop.gates.with_baseline(
+            self.target, self.wt, self.VERIFY, ok, out)
+
+    def ran(self):
+        return sorted(self.log.read_text().split())
+
+    def test_a_test_importing_the_changed_module_runs_too(self):
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
+
+    def test_a_failing_importer_is_a_verify_failure_naming_it(self):
+        self.change_a(2)
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertEqual(set(self.ran()), {"test_a", "test_unrelated"})
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+        self.assertEqual(out.failure["exit_status"], 1)
+        self.assertEqual(out.results[-1]["exitCode"], 1)
+
+    def test_only_the_capped_number_of_importers_run(self):
+        cap = holophyte.loop.gates.IMPORTER_CAP
+        for n in range(cap + 2):
+            self.add_test(f"test_a{n:02}", "pkg.a")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "more importers")
+        self.git("branch", "-f", "main")
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertTrue(ok, out)
+        self.assertEqual(len(self.ran()), cap + 1, self.ran())
 
 
 class MergeLockTests(unittest.TestCase):

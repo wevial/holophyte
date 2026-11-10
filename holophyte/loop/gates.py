@@ -784,6 +784,87 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
     return ok, VerificationOutput("\n".join(reports), results, failure=failure)
 
 
+IMPORTER_CAP = 10
+_TEST_MODULE_FILE = re.compile(r"test_\w*\.py|\w+_test\.py")
+
+
+def _unittest_prefix(command):
+    for line in (command or "").splitlines():
+        for clause in split_and_clauses(line, allow_or=True) or ():
+            try:
+                tokens = shlex.split(clause)
+            except ValueError:
+                continue
+            for index in range(1, len(tokens) - 1):
+                if tokens[index:index + 2] == ["-m", "unittest"]:
+                    return shlex.join(tokens[:index])
+    return None
+
+
+def _named_by(command, path):
+    from holophyte.review.blast_radius import module_name
+
+    words = set(re.findall(r"[\w./-]+", command))
+    return (path in words or module_name(path) in words
+            or os.path.basename(path) in {os.path.basename(w) for w in words})
+
+
+def _distance(one, other):
+    one, other = one.split("/")[:-1], other.split("/")[:-1]
+    shared = len(os.path.commonprefix([one, other]))
+    return len(one) + len(other) - 2 * shared
+
+
+def _importing_tests(root, command, cap=IMPORTER_CAP):
+    from holophyte.review.blast_radius import importers, module_names, package_dirs
+    from holophyte.review.briefs import _changed_files, main_ref
+
+    try:
+        base = sh(["git", "merge-base", main_ref(root), "HEAD"], cwd=root)
+        changed = [path for path in _changed_files(root, base, "HEAD")
+                   if path.endswith(".py")]
+        packages = package_dirs(root, "HEAD") if changed else set()
+        modules = {name: path for path in changed
+                   for name in module_names(path, packages)}
+        found = importers(root, "HEAD", modules) if modules else {}
+    except (RuntimeError, OSError, subprocess.CalledProcessError):
+        return []
+    nearest = {}
+    for source, files in found.items():
+        for test in files:
+            if (_TEST_MODULE_FILE.fullmatch(os.path.basename(test))
+                    and not _named_by(command, test)):
+                distance = _distance(test, source)
+                nearest[test] = min(distance, nearest.get(test, distance))
+    return sorted(nearest, key=lambda test: (nearest[test], test))[:cap]
+
+
+def _run_importing_tests(project, wt, command, conn=None, run_id=None):
+    from holophyte.config.config_tables import verify_config
+
+    prefix = _unittest_prefix(command)
+    tests = _importing_tests(wt, command) if prefix else []
+    if not tests:
+        return True, None
+    clauses = [f"{prefix} -m unittest discover -s "
+               f"{shlex.quote(os.path.dirname(test) or '.')} "
+               f"-p {shlex.quote(os.path.basename(test))}" for test in tests]
+    joined = " && ".join(clauses)
+    ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,
+                         conn=conn, run_id=run_id, project=project)
+    if ok:
+        return True, {"source": "importers", "command": joined, "exitCode": 0,
+                      "output": f"[verify] tests importing a changed module "
+                                f"passed: {', '.join(tests)}\n{out}"}
+    failure = getattr(out, "failure", None) or {}
+    index = failure.get("command_index") or 1
+    named = tests[index - 1] if 1 <= index <= len(tests) else ", ".join(tests)
+    report = (f"[verify] FAILED: {named} imports a changed module and failed\n"
+              f"{out}")
+    return False, {"source": "importers", "command": joined, "exitCode": 1,
+                   "output": report, "failure": failure or None}
+
+
 def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                   *, before_merge=False):
     import json
@@ -795,6 +876,13 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                if command else [])
     failure = getattr(out, "failure", None)
     reports = [str(out)]
+    if ok and command:
+        ok, importing = _run_importing_tests(project, wt, command, conn,
+                                                run_id)
+        if importing is not None:
+            failure = importing.pop("failure", failure)
+            results.append(importing)
+            reports.append(importing["output"])
     for tier in (("always", "before_merge") if before_merge else ("always",)):
         if not ok:
             break
