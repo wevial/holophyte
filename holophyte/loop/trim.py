@@ -2,6 +2,7 @@
 import json
 import re
 import subprocess
+from collections import Counter
 from fnmatch import fnmatchcase
 from functools import partial
 from pathlib import Path, PurePosixPath
@@ -35,7 +36,7 @@ from holophyte.loop.trim_brief import (
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
-from holophyte.review.reply_parsing import missing_witnesses
+from holophyte.review.reply_parsing import _GO_STRING
 from holophyte.review.witness_precheck import named_files
 
 LINE_FLOOR = 50
@@ -43,13 +44,11 @@ TEST_RATIO = 3
 TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
-REMOVED_TESTS = {
-    ".py": re.compile(r"^-\s*(?:async\s+)?def (test\w*)\(", re.M),
-    ".go": re.compile(r"^-\s*func (Test\w*)\("
-                      r"|^-.*\.Run\([ \t]*\"((?:[^\"\\\n]|\\.)+)\"", re.M),
+TEST_IDS = {
+    ".py": re.compile(r"^[ \t]*(?:async[ \t]+)?def (test\w*)\(", re.M),
+    ".go": re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING),
 }
-REMOVED_SPEC = re.compile(
-    r"^-.*\b(?:it|test)\([ \t]*(['\"`])((?:(?!\1)[^\\\n]|\\.)+)\1", re.M)
+SPEC_IDS = re.compile(r"\b(?:it|test)\(\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -152,7 +151,7 @@ def _green(project, conn, run_id, beat_s, wt, verify_cmd, contracts):
 
 def _judge(wt, base_sha, sha, commits, green, untracked, protected):
     scoped, stray = _scoped(wt, base_sha, sha, commits)
-    scoped, unwitnessed = _witnessed(wt, sha, scoped, protected, untracked)
+    scoped, unwitnessed = _witnessed(wt, sha, scoped, protected)
     _land(wt, scoped[-1][0] if scoped else sha, untracked)
     kept = _green_prefix(wt, scoped, green, untracked)
     red = scoped[len(kept):]
@@ -177,29 +176,25 @@ def _protected(conn, run_id, wt, base_sha, sha):
                   | {path for path in added if _is_test(path)})
 
 
-def _witnessed(wt, sha, commits, protected, untracked):
+def _witnessed(wt, sha, commits, protected):
     parent = sha
     for n, (commit, subject) in enumerate(commits):
-        removed = _removed_tests(wt, parent, commit, protected)
-        _land(wt, commit, untracked)
-        missing = missing_witnesses(removed, wt)
-        if missing:
+        removed = [f"{path}::{name}" for path in protected
+                   for name in (_test_ids(wt, parent, path)
+                                - _test_ids(wt, commit, path))]
+        if removed:
             return commits[:n], (f"criterion witness: {subject} removed "
-                                 + ", ".join(missing))
+                                 + ", ".join(removed))
         parent = commit
     return commits, None
 
 
-def _removed_tests(wt, parent, commit, protected):
-    removed = []
-    for path in protected:
-        diff = sh(["git", "--literal-pathspecs", "diff", "--no-renames",
-                   "--no-textconv", "--no-ext-diff", "--text", "-U0", parent,
-                   commit, "--", path], cwd=wt)
-        pattern = REMOVED_TESTS.get(PurePosixPath(path).suffix, REMOVED_SPEC)
-        removed += [(path, None, match[match.lastindex])
-                    for match in pattern.finditer(diff)]
-    return list(dict.fromkeys(removed))
+def _test_ids(wt, commit, path):
+    shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=wt,
+                           capture_output=True)
+    text = shown.stdout.decode(errors="replace") if not shown.returncode else ""
+    pattern = TEST_IDS.get(PurePosixPath(path).suffix, SPEC_IDS)
+    return Counter(match[match.lastindex] for match in pattern.finditer(text))
 
 
 def _scoped(wt, base_sha, sha, commits):

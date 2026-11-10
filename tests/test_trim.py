@@ -44,6 +44,12 @@ WORK = Commit("work", path="work.txt", body=lines(60))
 PAIR = ("def test_a():\n    assert {a}\n\n\ndef test_b():\n    value = {b}\n"
         "    assert value\n")
 SHORTENED_PAIR = "def test_a():\n    assert 3\n\n\ndef test_b():\n    pass\n"
+JS_PAIR = ('test("test_a", () => expect({a}));\n\ntest(\n  "test_b",\n'
+           '  () => expect({b}),\n);\n')
+GO_PAIR = ("package pair\n\nfunc TestFooBar(t *testing.T) {{ _ = {a} }}\n\n"
+           "func TestFoo(t *testing.T) {{ _ = {b} }}\n")
+ASYNC_PAIR = ("async def test_a(): assert {a}\n\n\n"
+              "async def test_b(): assert {b}\n")
 NAMES_PAIR = "Given a pair, then both hold. (`test_pair.py` witnesses it.)"
 
 
@@ -304,13 +310,13 @@ class TrimLoopTests(TrimFixture):
         [result] = self.results()
         self.assertIn("vendor outside the run's diff", result["reason"])
 
-    def trimmed_pair(self, criterion, trimmed_pair):
-        self.on_main("test_pair.py", PAIR.format(a="1", b="2"))
+    def trimmed_pair(self, criterion, trimmed_pair, path="test_pair.py",
+                     pair=PAIR):
+        self.on_main(path, pair.format(a="1", b="2"))
         task = dict(a_task(), criteria=[criterion])
         fake = self.trimmed(
-            Commits(WORK, Commit("work tests", "test_pair.py",
-                                 PAIR.format(a="3", b="4"))),
-            Commits(Commit("trim: tests", "test_pair.py", trimmed_pair)),
+            Commits(WORK, Commit("work tests", path, pair.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", path, trimmed_pair)),
             APPROVE, task=task)
         self.assert_merged()
         return fake
@@ -322,6 +328,31 @@ class TrimLoopTests(TrimFixture):
         self.assertEqual(result["outcome"], "reverted")
         self.assertIn("criterion witness", result["reason"])
         self.assertIn("def test_b(", self.git("show", "main:test_pair.py"))
+
+    def assert_witness_reverted(self, path, pair, trimmed_pair):
+        fake = self.trimmed_pair(f"Given a pair, then both hold. (`{path}` "
+                                 "witnesses it.)", trimmed_pair, path, pair)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertIn("criterion witness", result["reason"])
+
+    def test_deleting_a_multiline_js_test_from_a_named_file_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", JS_PAIR, 'test("test_a", () => expect(3));\n')
+
+    def test_a_deleted_go_test_whose_name_prefixes_a_kept_one_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair_test.go", GO_PAIR,
+            "package pair\n\nfunc TestFooBar(t *testing.T) { _ = 3 }\n")
+
+    def test_shortening_a_one_line_async_witness_test_is_kept(self):
+        fake = self.trimmed_pair(
+            "Given a pair, then both hold. (`test_async.py` witnesses it.)",
+            "async def test_a(): assert 3\n\n\nasync def test_b(): pass\n",
+            "test_async.py", ASYNC_PAIR)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
 
     def test_the_same_deletion_in_a_file_no_criterion_names_is_kept(self):
         fake = self.trimmed_pair(a_task()["criteria"][0],
