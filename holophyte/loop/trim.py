@@ -182,7 +182,7 @@ def _witnessed(wt, sha, commits, protected, untracked):
     for n, (commit, subject) in enumerate(commits):
         removed = _removed_tests(wt, parent, commit, protected)
         _land(wt, commit, untracked)
-        missing = missing_witnesses(removed, wt) if removed else []
+        missing = missing_witnesses(removed, wt)
         if missing:
             return commits[:n], (f"criterion witness: {subject} removed "
                                  + ", ".join(missing))
