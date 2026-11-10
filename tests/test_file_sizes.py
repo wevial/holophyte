@@ -43,18 +43,23 @@ def line_count(path):
     return text.count("\n") + bool(text and not text.endswith("\n"))
 
 
+def python_files(root=ROOT):
+    """Tracked and untracked Python files, ignored files left out."""
+    return subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard",
+         "*.py"], cwd=root, text=True).splitlines()
+
+
 def tracked_counts(root=ROOT):
-    """Repo-relative path to line count for every tracked Python file."""
-    names = subprocess.check_output(
-        ["git", "ls-files", "*.py"], cwd=root, text=True).splitlines()
+    """Repo-relative path to line count for every listed Python file."""
+    names = python_files(root)
     return {name: line_count(root / name) for name in sorted(names)}
 
 
 def wc_counts(root=ROOT):
-    """Every tracked Python file's line count the way the table was
+    """Every listed Python file's line count the way the table was
     measured: `wc -l`, one subprocess for the lot."""
-    names = subprocess.check_output(
-        ["git", "ls-files", "*.py"], cwd=root, text=True).splitlines()
+    names = python_files(root)
     out = subprocess.check_output(
         ["wc", "-l", *sorted(names)], cwd=root, text=True)
     counts = {}
@@ -224,6 +229,17 @@ class RatchetSelfTests(unittest.TestCase):
         (msg,) = bad
         self.assertIn("pkg/mod.py", msg)
         self.assertIn("stale", msg)
+
+    def test_an_untracked_file_over_the_ceiling_fails_and_an_ignored_one_does_not(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.check_call(["git", "init", "-q"], cwd=root)
+            (root / ".gitignore").write_text("ignored.py\n")
+            (root / "new.py").write_text("x = 1\n" * 1001)
+            (root / "ignored.py").write_text("x = 1\n" * 1001)
+            bad = violations(tracked_counts(root), over={}, pinned={})
+        self.assertEqual(bad, ["new.py: 1001 lines is over the 1000-line "
+                               "ceiling with no table entry"])
 
 
 if __name__ == "__main__":
