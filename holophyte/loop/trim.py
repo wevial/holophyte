@@ -197,8 +197,7 @@ def _removed_tests(wt, parent, commit, protected):
                    "--no-textconv", "--no-ext-diff", "--text", "-U0", parent,
                    commit, "--", path], cwd=wt)
         pattern = REMOVED_TESTS.get(PurePosixPath(path).suffix, REMOVED_SPEC)
-        removed += [(path, None, match.groups()[-1] if pattern is REMOVED_SPEC
-                     else next(filter(None, match.groups())))
+        removed += [(path, None, match[match.lastindex])
                     for match in pattern.finditer(diff)]
     return list(dict.fromkeys(removed))
 
