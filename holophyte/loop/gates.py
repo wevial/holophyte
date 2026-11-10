@@ -807,7 +807,7 @@ def _unittest_runs(command):
                     args = tokens[index + 2:]
                     cut = next((n for n, word in enumerate(args)
                                 if word[:1] in "|<>" or ">" in word), len(args))
-                    runs.append((shlex.join(tokens[:index]), args[:cut]))
+                    runs.append((tokens[:index], args[:cut]))
                     break
     return runs
 
@@ -827,7 +827,16 @@ def _discovery(args):
     return found
 
 
-def _covers(args, test):
+def _discovered(start, test, packages):
+    folders = os.path.relpath(os.path.dirname(test) or ".", start).split("/")
+    if folders[0] == "..":
+        return False
+    return folders == ["."] or all(
+        os.path.normpath(os.path.join(start, *folders[:depth])) in packages
+        for depth in range(1, len(folders) + 1))
+
+
+def _covers(args, test, packages):
     from holophyte.review.blast_radius import module_name
 
     named = [word for word in args if not word.startswith("-")]
@@ -836,7 +845,7 @@ def _covers(args, test):
     if args[:1] == ["discover"] or not named:
         found = _discovery(args)
         start = os.path.normpath(found["start"] or ".")
-        return ((start == "." or test.startswith(start + "/"))
+        return (_discovered(start, test, packages)
                 and fnmatch.fnmatchcase(os.path.basename(test),
                                         found["pattern"] or "test*.py"))
     return module_name(test) in {module_name(word) for word in named}
@@ -855,9 +864,20 @@ def _module_clause(prefix, top, test):
 
     relative = os.path.relpath(test, top)
     if top == "." or relative.startswith(".."):
-        return f"{prefix} -m unittest {module_name(test)}"
-    return (f"PYTHONPATH={shlex.quote(top)}${{PYTHONPATH:+:$PYTHONPATH}} "
-            f"{prefix} -m unittest {module_name(relative)}")
+        return f"{shlex.join(prefix)} -m unittest {module_name(test)}"
+    return f"{_with_path(prefix, top)} -m unittest {module_name(relative)}"
+
+
+def _with_path(prefix, top):
+    assigned = [n for n, word in enumerate(prefix)
+                if word.startswith("PYTHONPATH=")]
+    if not assigned:
+        return (f"PYTHONPATH={shlex.quote(top)}${{PYTHONPATH:+:$PYTHONPATH}} "
+                f"{shlex.join(prefix)}")
+    words, last = list(prefix), assigned[-1]
+    value = words[last].partition("=")[2]
+    words[last] = f"PYTHONPATH={top}" + (f":{value}" if value else "")
+    return shlex.join(words)
 
 
 def _test_module(path):
@@ -892,7 +912,8 @@ def _importing_tests(root, runs):
     for source, files in found.items():
         for test in files:
             if (_test_module(test)
-                    and not any(_covers(args, test) for _, args in runs)):
+                    and not any(_covers(args, test, packages)
+                                for _, args in runs)):
                 distance = _distance(test, source)
                 nearest[test] = min(distance, nearest.get(test, distance))
     return sorted(nearest, key=lambda test: (nearest[test], test))[:IMPORTER_CAP]

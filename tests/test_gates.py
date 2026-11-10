@@ -299,6 +299,25 @@ class ImportingTestsTests(unittest.TestCase):
                 self.assertTrue(ok, out)
                 self.assertIn("test_relative", self.ran())
 
+    def test_discovery_does_not_cover_a_folder_that_is_not_a_package(self):
+        self.add_test("test_unrelated_a", "pkg.a", "tests/integration",
+                      label="integration")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate("python3 -m unittest discover -s tests -p 'test_un*.py'")
+        self.assertTrue(ok, out)
+        self.assertIn("integration", self.ran())
+
+    def test_a_verify_python_path_is_kept_beside_the_test_directory(self):
+        self.write("src/helper.py", "")
+        self.add_test("test_src", "pkg.a", preamble="import helper\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate("PYTHONPATH=src python3 -m unittest discover"
+                            " -s tests -p test_unrelated.py")
+        self.assertTrue(ok, out)
+        self.assertIn("test_src", self.ran())
+
 
 class MergeLockTests(unittest.TestCase):
     def setUp(self):
