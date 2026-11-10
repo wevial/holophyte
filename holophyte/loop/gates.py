@@ -789,7 +789,7 @@ _TEST_MODULE_FILE = re.compile(r"test_\w*\.py|\w+_test\.py")
 
 
 def _unittest_prefix(command):
-    for line in (command or "").splitlines():
+    for line in command.splitlines():
         for clause in split_and_clauses(line, allow_or=True) or ():
             try:
                 tokens = shlex.split(clause)
@@ -805,7 +805,7 @@ def _named_by(command, path):
     from holophyte.review.blast_radius import module_name
 
     words = set(re.findall(r"[\w./-]+", command))
-    return (path in words or module_name(path) in words
+    return (module_name(path) in words
             or os.path.basename(path) in {os.path.basename(w) for w in words})
 
 
@@ -815,7 +815,7 @@ def _distance(one, other):
     return len(one) + len(other) - 2 * shared
 
 
-def _importing_tests(root, command, cap=IMPORTER_CAP):
+def _importing_tests(root, command):
     from holophyte.review.blast_radius import importers, module_names, package_dirs
     from holophyte.review.briefs import _changed_files, main_ref
 
@@ -836,7 +836,7 @@ def _importing_tests(root, command, cap=IMPORTER_CAP):
                     and not _named_by(command, test)):
                 distance = _distance(test, source)
                 nearest[test] = min(distance, nearest.get(test, distance))
-    return sorted(nearest, key=lambda test: (nearest[test], test))[:cap]
+    return sorted(nearest, key=lambda test: (nearest[test], test))[:IMPORTER_CAP]
 
 
 def _run_importing_tests(project, wt, command, conn=None, run_id=None):
