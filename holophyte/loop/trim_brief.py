@@ -108,6 +108,13 @@ covers; fold fixtures and factories down to the fields the code under test
 reads; reuse the repository's existing test helpers rather than new ones.
 Every deleted test still needs its Proof line."""
 
+PROTECTED_BRIEF = """
+
+These files witness the ticket's acceptance criteria or were added by this
+run. Remove or rename no test in them; a pass that does is reverted whole.
+You may still shorten a test's body:
+{files}"""
+
 
 PASSES = ("delete", "merge", "flatten", "comments", "tests")
 

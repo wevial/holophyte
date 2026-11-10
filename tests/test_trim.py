@@ -41,6 +41,9 @@ def lines(count):
 
 TRIMMED = "[trim]\nbudget_min = 1\n"
 WORK = Commit("work", path="work.txt", body=lines(60))
+PAIR = ("def test_a():\n    assert {a}\n\n\ndef test_b():\n    value = {b}\n"
+        "    assert value\n")
+NAMES_PAIR = "Given a pair, then both hold. (`test_pair.py` witnesses it.)"
 
 
 class Commits:
@@ -299,6 +302,40 @@ class TrimLoopTests(TrimFixture):
         self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
         [result] = self.results()
         self.assertIn("vendor outside the run's diff", result["reason"])
+
+    def trimmed_pair(self, criterion, trimmed_pair):
+        self.on_main("test_pair.py", PAIR.format(a="1", b="2"))
+        task = dict(a_task(), criteria=[criterion])
+        fake = self.trimmed(
+            Commits(WORK, Commit("work tests", "test_pair.py",
+                                 PAIR.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", "test_pair.py", trimmed_pair)),
+            APPROVE, task=task)
+        self.assert_merged()
+        return fake
+
+    def test_a_pass_deleting_a_test_from_a_criterion_named_file_is_reverted(self):
+        fake = self.trimmed_pair(NAMES_PAIR, "def test_a():\n    assert 3\n")
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("criterion witness", result["reason"])
+        self.assertIn("def test_b(", self.git("show", "main:test_pair.py"))
+
+    def test_the_same_deletion_in_a_file_no_criterion_names_is_kept(self):
+        fake = self.trimmed_pair(a_task()["criteria"][0],
+                                 "def test_a():\n    assert 3\n")
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+
+    def test_a_pass_that_only_shortens_a_witness_tests_body_is_kept(self):
+        fake = self.trimmed_pair(
+            NAMES_PAIR, "def test_a():\n    assert 3\n\n\ndef test_b():\n"
+                        "    pass\n")
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
 
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()
