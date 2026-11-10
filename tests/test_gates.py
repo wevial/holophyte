@@ -243,13 +243,35 @@ class ImportingTestsTests(unittest.TestCase):
 
     def test_only_the_capped_number_of_importers_run(self):
         cap = holophyte.loop.gates.IMPORTER_CAP
-        for n in range(cap + 2):
-            self.add_test(f"test_a{n:02}", "pkg.a")
+        for depth in range(1, cap + 3):
+            self.write("tests" + "/nested" * depth + "/__init__.py", "")
+            self.add_test("test_deep", "pkg.a", "tests" + "/nested" * depth,
+                          label=f"deep{depth:02}")
         self.onto_main()
         self.change_a("1  # touched")
         ok, out = self.gate()
         self.assertTrue(ok, out)
-        self.assertEqual(len(self.ran()), cap + 1, self.ran())
+        self.assertEqual(self.ran(), sorted(
+            ["test_a", "test_unrelated", *(f"deep{d:02}" for d in range(1, cap))]))
+
+    def test_a_filtered_verify_does_not_cover_the_whole_module(self):
+        self.change_a("1  # touched")
+        for verify in ("python3 -m unittest tests.test_a.T.test_value",
+                       "python3 -m unittest discover -s tests -p test_a.py"
+                       " -k test_value"):
+            with self.subTest(verify=verify):
+                self.log.write_text("")
+                ok, out = self.gate(verify)
+                self.assertTrue(ok, out)
+                self.assertEqual(self.ran(), ["test_a", "test_a"])
+
+    def test_an_importer_named_as_default_discovery_finds_it_runs(self):
+        self.add_test("testImporter", "pkg.a")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertTrue(ok, out)
+        self.assertIn("testImporter", self.ran())
 
     def test_a_same_named_importer_outside_the_verified_directory_runs(self):
         self.add_test("test_shared", "pkg.b", "tests/unit", label="unit")
@@ -268,10 +290,14 @@ class ImportingTestsTests(unittest.TestCase):
         self.add_test("test_relative", "pkg.a", preamble="from . import support\n")
         self.onto_main()
         self.change_a("1  # touched")
-        ok, out = self.gate(
-            "python3 -m unittest discover -s tests -t . -p test_unrelated.py")
-        self.assertTrue(ok, out)
-        self.assertIn("test_relative", self.ran())
+        for verify in ("python3 -m unittest discover -s tests -t ."
+                       " -p test_unrelated.py",
+                       "python3 -m unittest tests.test_unrelated"):
+            with self.subTest(verify=verify):
+                self.log.write_text("")
+                ok, out = self.gate(verify)
+                self.assertTrue(ok, out)
+                self.assertIn("test_relative", self.ran())
 
 
 class MergeLockTests(unittest.TestCase):

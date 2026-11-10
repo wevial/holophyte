@@ -786,7 +786,6 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
 
 
 IMPORTER_CAP = 10
-_TEST_MODULE_FILE = re.compile(r"test_\w*\.py|\w+_test\.py")
 
 
 _DISCOVER_OPTIONS = {"-s": "start", "--start-directory": "start",
@@ -832,15 +831,41 @@ def _covers(args, test):
     from holophyte.review.blast_radius import module_name
 
     named = [word for word in args if not word.startswith("-")]
+    if any(word.startswith("-k") for word in args):
+        return False
     if args[:1] == ["discover"] or not named:
         found = _discovery(args)
         start = os.path.normpath(found["start"] or ".")
         return ((start == "." or test.startswith(start + "/"))
                 and fnmatch.fnmatchcase(os.path.basename(test),
                                         found["pattern"] or "test*.py"))
-    dotted = module_name(test)
-    return any(module_name(word) == dotted
-               or module_name(word).startswith(dotted + ".") for word in named)
+    return module_name(test) in {module_name(word) for word in named}
+
+
+def _top_level(runs):
+    for _, args in runs:
+        if args[:1] == ["discover"] or all(word.startswith("-") for word in args):
+            found = _discovery(args)
+            return os.path.normpath(found["top"] or found["start"] or ".")
+    return "."
+
+
+def _module_clause(prefix, top, test):
+    from holophyte.review.blast_radius import module_name
+
+    relative = os.path.relpath(test, top)
+    if top == "." or relative.startswith(".."):
+        return f"{prefix} -m unittest {module_name(test)}"
+    return (f"PYTHONPATH={shlex.quote(top)}${{PYTHONPATH:+:$PYTHONPATH}} "
+            f"{prefix} -m unittest {module_name(relative)}")
+
+
+def _test_module(path):
+    from holophyte.review.blast_radius import module_name
+
+    name = os.path.basename(path)
+    return ((fnmatch.fnmatchcase(name, "test*.py") or name.endswith("_test.py"))
+            and all(part.isidentifier() for part in module_name(path).split(".")))
 
 
 def _distance(one, other):
@@ -866,7 +891,7 @@ def _importing_tests(root, runs):
     nearest = {}
     for source, files in found.items():
         for test in files:
-            if (_TEST_MODULE_FILE.fullmatch(os.path.basename(test))
+            if (_test_module(test)
                     and not any(_covers(args, test) for _, args in runs)):
                 distance = _distance(test, source)
                 nearest[test] = min(distance, nearest.get(test, distance))
@@ -880,13 +905,8 @@ def _run_importing_tests(project, wt, command, conn=None, run_id=None):
     tests = _importing_tests(wt, runs) if runs else []
     if not tests:
         return True, None
-    top = next((found["top"] for _, args in runs
-                if (found := _discovery(args))["top"]), None)
-    clauses = [f"{runs[0][0]} -m unittest discover -s "
-               f"{shlex.quote(os.path.dirname(test) or '.')} "
-               f"-p {shlex.quote(os.path.basename(test))}"
-               + (f" -t {shlex.quote(top)}" if top else "") for test in tests]
-    joined = " && ".join(clauses)
+    top = _top_level(runs)
+    joined = " && ".join(_module_clause(runs[0][0], top, test) for test in tests)
     ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,
                          conn=conn, run_id=run_id, project=project)
     if ok:
