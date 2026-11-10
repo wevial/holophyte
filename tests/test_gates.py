@@ -194,13 +194,13 @@ class ImportingTestsTests(unittest.TestCase):
         (self.wt / path).parent.mkdir(parents=True, exist_ok=True)
         (self.wt / path).write_text(text)
 
-    def add_test(self, name, module):
-        self.write(f"tests/{name}.py", (
-            f"import unittest\nimport {module}\n\n\n"
+    def add_test(self, name, module, directory="tests", preamble="", label=None):
+        self.write(f"{directory}/{name}.py", (
+            f"import unittest\nimport {module}\n{preamble}\n\n"
             f"class T(unittest.TestCase):\n"
             f"    def test_value(self):\n"
             f"        with open({str(self.log)!r}, 'a') as log:\n"
-            f"            log.write({name!r} + '\\n')\n"
+            f"            log.write({label or name!r} + '\\n')\n"
             f"        self.assertEqual({module}.VALUE, 1)\n"))
 
     def git(self, *args):
@@ -211,11 +211,17 @@ class ImportingTestsTests(unittest.TestCase):
         self.write("pkg/a.py", f"VALUE = {value}\n")
         self.git("commit", "-q", "-am", "change pkg.a")
 
-    def gate(self):
-        ok, out = holophyte.loop.gates.run_verify(self.VERIFY, self.wt)
+    def onto_main(self):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "more tests")
+        self.git("branch", "-f", "main")
+
+    def gate(self, verify=None):
+        verify = verify or self.VERIFY
+        ok, out = holophyte.loop.gates.run_verify(verify, self.wt)
         self.assertTrue(ok, out)
         return holophyte.loop.gates.with_baseline(
-            self.target, self.wt, self.VERIFY, ok, out)
+            self.target, self.wt, verify, ok, out)
 
     def ran(self):
         return sorted(self.log.read_text().split())
@@ -239,13 +245,33 @@ class ImportingTestsTests(unittest.TestCase):
         cap = holophyte.loop.gates.IMPORTER_CAP
         for n in range(cap + 2):
             self.add_test(f"test_a{n:02}", "pkg.a")
-        self.git("add", "-A")
-        self.git("commit", "-q", "-m", "more importers")
-        self.git("branch", "-f", "main")
+        self.onto_main()
         self.change_a("1  # touched")
         ok, out = self.gate()
         self.assertTrue(ok, out)
         self.assertEqual(len(self.ran()), cap + 1, self.ran())
+
+    def test_a_same_named_importer_outside_the_verified_directory_runs(self):
+        self.add_test("test_shared", "pkg.b", "tests/unit", label="unit")
+        self.add_test("test_shared", "pkg.a", "tests/integration",
+                      label="integration")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate(
+            "python3 -m unittest discover -s tests/unit -p test_shared.py")
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), ["integration", "test_a", "unit"])
+
+    def test_the_verify_top_level_directory_carries_to_importers(self):
+        self.write("tests/__init__.py", "")
+        self.write("tests/support.py", "")
+        self.add_test("test_relative", "pkg.a", preamble="from . import support\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate(
+            "python3 -m unittest discover -s tests -t . -p test_unrelated.py")
+        self.assertTrue(ok, out)
+        self.assertIn("test_relative", self.ran())
 
 
 class MergeLockTests(unittest.TestCase):

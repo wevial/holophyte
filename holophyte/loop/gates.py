@@ -1,5 +1,6 @@
 import contextlib
 import fcntl
+import fnmatch
 import os
 import re
 import shlex
@@ -788,7 +789,14 @@ IMPORTER_CAP = 10
 _TEST_MODULE_FILE = re.compile(r"test_\w*\.py|\w+_test\.py")
 
 
-def _unittest_prefix(command):
+_DISCOVER_OPTIONS = {"-s": "start", "--start-directory": "start",
+                     "-p": "pattern", "--pattern": "pattern",
+                     "-t": "top", "--top-level-directory": "top"}
+_DISCOVER_POSITIONS = ("start", "pattern", "top")
+
+
+def _unittest_runs(command):
+    runs = []
     for line in command.splitlines():
         for clause in split_and_clauses(line, allow_or=True) or ():
             try:
@@ -797,16 +805,42 @@ def _unittest_prefix(command):
                 continue
             for index in range(1, len(tokens) - 1):
                 if tokens[index:index + 2] == ["-m", "unittest"]:
-                    return shlex.join(tokens[:index])
-    return None
+                    args = tokens[index + 2:]
+                    cut = next((n for n, word in enumerate(args)
+                                if word[:1] in "|<>" or ">" in word), len(args))
+                    runs.append((shlex.join(tokens[:index]), args[:cut]))
+                    break
+    return runs
 
 
-def _named_by(command, path):
+def _discovery(args):
+    found, positional = {"start": ".", "pattern": "test*.py", "top": None}, []
+    words = iter(args[1:] if args[:1] == ["discover"] else args)
+    for word in words:
+        name, eq, value = word.partition("=")
+        if name in _DISCOVER_OPTIONS:
+            found[_DISCOVER_OPTIONS[name]] = value if eq else next(words, None)
+        elif word == "-k":
+            next(words, None)
+        elif not word.startswith("-"):
+            positional.append(word)
+    found.update(zip(_DISCOVER_POSITIONS, positional))
+    return found
+
+
+def _covers(args, test):
     from holophyte.review.blast_radius import module_name
 
-    words = set(re.findall(r"[\w./-]+", command))
-    return (module_name(path) in words
-            or os.path.basename(path) in {os.path.basename(w) for w in words})
+    named = [word for word in args if not word.startswith("-")]
+    if args[:1] == ["discover"] or not named:
+        found = _discovery(args)
+        start = os.path.normpath(found["start"] or ".")
+        return ((start == "." or test.startswith(start + "/"))
+                and fnmatch.fnmatchcase(os.path.basename(test),
+                                        found["pattern"] or "test*.py"))
+    dotted = module_name(test)
+    return any(module_name(word) == dotted
+               or module_name(word).startswith(dotted + ".") for word in named)
 
 
 def _distance(one, other):
@@ -815,7 +849,7 @@ def _distance(one, other):
     return len(one) + len(other) - 2 * shared
 
 
-def _importing_tests(root, command):
+def _importing_tests(root, runs):
     from holophyte.review.blast_radius import importers, module_names, package_dirs
     from holophyte.review.briefs import _changed_files, main_ref
 
@@ -833,7 +867,7 @@ def _importing_tests(root, command):
     for source, files in found.items():
         for test in files:
             if (_TEST_MODULE_FILE.fullmatch(os.path.basename(test))
-                    and not _named_by(command, test)):
+                    and not any(_covers(args, test) for _, args in runs)):
                 distance = _distance(test, source)
                 nearest[test] = min(distance, nearest.get(test, distance))
     return sorted(nearest, key=lambda test: (nearest[test], test))[:IMPORTER_CAP]
@@ -842,13 +876,16 @@ def _importing_tests(root, command):
 def _run_importing_tests(project, wt, command, conn=None, run_id=None):
     from holophyte.config.config_tables import verify_config
 
-    prefix = _unittest_prefix(command)
-    tests = _importing_tests(wt, command) if prefix else []
+    runs = _unittest_runs(command)
+    tests = _importing_tests(wt, runs) if runs else []
     if not tests:
         return True, None
-    clauses = [f"{prefix} -m unittest discover -s "
+    top = next((found["top"] for _, args in runs
+                if (found := _discovery(args))["top"]), None)
+    clauses = [f"{runs[0][0]} -m unittest discover -s "
                f"{shlex.quote(os.path.dirname(test) or '.')} "
-               f"-p {shlex.quote(os.path.basename(test))}" for test in tests]
+               f"-p {shlex.quote(os.path.basename(test))}"
+               + (f" -t {shlex.quote(top)}" if top else "") for test in tests]
     joined = " && ".join(clauses)
     ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,
                          conn=conn, run_id=run_id, project=project)
