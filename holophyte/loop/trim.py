@@ -48,7 +48,8 @@ TEST_IDS = {
     ".py": re.compile(r"^[ \t]*(?:async[ \t]+)?def (test\w*)\(", re.M),
     ".go": re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING),
 }
-SPEC_IDS = re.compile(r"\b(?:it|test)\(\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
+SPEC_IDS = re.compile(r"(?<![.\w$])(?:it|test)\(\s*(?:(['\"])((?:(?!\1)[^\\\n]|\\.)*)\1"
+                      r"|`((?:[^`\\]|\\.)*)`)")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
