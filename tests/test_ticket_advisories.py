@@ -23,6 +23,7 @@ NO_RUFF = 'ruff is not on PATH'
 OUTPUT = "and that run's output is in the implementer output."
 ONLY_ON_MAIN = 'the factory makes only on-main runs'
 NO_TEST_FILE = 'names no test file for the factory to run'
+PULL_REQUEST_WITNESS = 'reads as a pull request or CI witness'
 
 
 def ticket(verify=VERIFY, in_scope=IN_SCOPE, criterion=CRITERION_2):
@@ -213,6 +214,24 @@ class BaselineRunTests(unittest.TestCase):
                      f"{OUTPUT}")
         self.assertEqual(self.advised(criterion, ONLY_ON_MAIN), [])
         self.assertEqual(self.advised(criterion, NO_TEST_FILE), [])
+
+
+class PullRequestWitnessTests(unittest.TestCase):
+    def advised(self, criterion):
+        return matching(tt.validate(ticket(criterion=criterion)),
+                        PULL_REQUEST_WITNESS)
+
+    def test_a_pull_request_description_or_github_check_witness_is_advised(self):
+        for criterion in ('then the PR description lists the changes.',
+                          'then the `e2e` GitHub check passes.'):
+            with self.subTest(criterion=criterion):
+                (advice,) = self.advised(criterion)
+                self.assertIn('criterion 2 ', advice)
+
+    def test_a_criterion_witnessed_by_a_test_file_is_not_advised(self):
+        self.assertEqual(self.advised(
+            'then the header row lists the changes. '
+            '(`tests/test_orders_export.py` witnesses it.)'), [])
 
 
 class ScriptTests(unittest.TestCase):
