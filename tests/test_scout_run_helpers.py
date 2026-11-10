@@ -50,6 +50,7 @@ MEASURE_SENTENCE = (
     "and timing commands in its own worktree and reports each command's "
     "exit status, wall time and output.")
 VITEST = "vitest run: exit 0, 41.2s"
+SECRET = "serve-env-only-credential"
 DOCKER = """#!{python}
 import json, subprocess, sys
 with open({log!r}, "a") as log:
@@ -347,7 +348,7 @@ class ScoutRunHelperTests(ScoutFixture):
                 self.assertIn('(mode "run")', goal)
 
     def container_scout(self, probe="ready", probe_exit=0, config="",
-                        helper_sh=None, kind="bug"):
+                        helper_sh=None, kind="bug", helper=""):
         """A container scout of `kind` with one run task, run against a stub
         `docker` that answers the helper probe with `probe` and
         `probe_exit`, and with `helper_sh` runs the stub helper in the
@@ -366,7 +367,7 @@ class ScoutRunHelperTests(ScoutFixture):
             helper=str(self.stubs.directory / "claude") if helper_sh else ""))
         docker.chmod(docker.stat().st_mode | stat.S_IXUSR)
         self.stubs.answer(plan=plan((RUN_Q, "run")), report=fenced(REPORT),
-                          helper_sh=helper_sh or [])
+                          helper_sh=helper_sh or [], helper=helper)
         with patch.object(launcher, "image_ready", lambda route: None), \
                 patch.object(os, "defpath", f"{bin_dir}{os.pathsep}{os.defpath}"):
             self.run_scout(path, scout_id)
@@ -418,6 +419,36 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
         self.assertEqual(self.report(conn, scout_id)["reproduction"]["level"],
                          "test")
+
+    def serve_env_scout(self):
+        """A container scout whose credential is set only in the project's
+        `serve.env`, with a run helper that prints the credential's value."""
+        unit_dir = self.home / "alpha"
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        (unit_dir / "serve.env").write_text(f"SCOUT_CREDENTIAL={SECRET}\n")
+        os.environ.pop("SCOUT_CREDENTIAL", None)
+        _, conn, scout_id, _, goals = self.container_scout(
+            config='implementer_credential = { env = "SCOUT_CREDENTIAL" }\n',
+            helper_sh=["true"], helper=f"the token is {SECRET}")
+        return conn, scout_id, goals
+
+    def test_a_container_run_helper_gets_the_credential_from_serve_env(self):
+        conn, scout_id, goals = self.serve_env_scout()
+        self.assertEqual(len(goals), 1)
+        self.assertIn("--env=SCOUT_CREDENTIAL", goals[0])
+        self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
+        self.assertNotIn("SCOUT_CREDENTIAL", os.environ)
+
+    def test_a_serve_env_credential_is_in_no_stored_excerpt_or_turn(self):
+        conn, scout_id, _ = self.serve_env_scout()
+        self.assertEqual(self.task(conn, scout_id, RUN_Q)[1],
+                         "the token is [redacted]\n")
+        turns = [payload for (payload,) in conn.execute(
+            "SELECT payload FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'agent_turn'", (scout_id,))]
+        self.assertTrue(turns)
+        for payload in turns:
+            self.assertNotIn(SECRET, payload)
 
     def test_a_run_route_down_in_the_container_fails_its_task_unlaunched(self):
         _, conn, scout_id, runs, goals = self.container_scout(
