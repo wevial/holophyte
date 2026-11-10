@@ -43,11 +43,13 @@ TEST_RATIO = 3
 TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
-REMOVED_TEST = re.compile(
-    r"^-\s*(?:async\s+)?def (test\w*)\("
-    r"|^-\s*func (Test\w*)\("
-    r"|^-.*\.Run\(\"((?:[^\"\\\n]|\\.)+)\""
-    r"|^-.*\b(?:it|test)\(\s*(['\"`])((?:(?!\4)[^\\\n]|\\.)+)\4", re.M)
+REMOVED_TESTS = {
+    ".py": re.compile(r"^-\s*(?:async\s+)?def (test\w*)\(", re.M),
+    ".go": re.compile(r"^-\s*func (Test\w*)\("
+                      r"|^-.*\.Run\([ \t]*\"((?:[^\"\\\n]|\\.)+)\"", re.M),
+}
+REMOVED_SPEC = re.compile(
+    r"^-.*\b(?:it|test)\([ \t]*(['\"`])((?:(?!\1)[^\\\n]|\\.)+)\1", re.M)
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -68,9 +70,10 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
     goal = TRIM_BRIEF.format(base=base_sha,
                              commands=_commands_brief(project, verify_cmd).strip(),
                              tests=_tests_brief(wt, base_sha),
-                             protected=protected and PROTECTED_BRIEF.format(
+                             protected=PROTECTED_BRIEF.format(
                                  files="\n".join(f"- `{path}`"
-                                                  for path in protected)))
+                                                  for path in protected))
+                             if protected else "")
     out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min, goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
     commits = _commits(wt, sha)
@@ -193,8 +196,10 @@ def _removed_tests(wt, parent, commit, protected):
         diff = sh(["git", "--literal-pathspecs", "diff", "--no-renames",
                    "--no-textconv", "--no-ext-diff", "--text", "-U0", parent,
                    commit, "--", path], cwd=wt)
-        removed += [(path, None, next(filter(None, match.group(1, 2, 3, 5))))
-                    for match in REMOVED_TEST.finditer(diff)]
+        pattern = REMOVED_TESTS.get(PurePosixPath(path).suffix, REMOVED_SPEC)
+        removed += [(path, None, match.groups()[-1] if pattern is REMOVED_SPEC
+                     else next(filter(None, match.groups())))
+                    for match in pattern.finditer(diff)]
     return list(dict.fromkeys(removed))
 
 

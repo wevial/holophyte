@@ -15,7 +15,7 @@ baseline, run from the worktree root:
 {commands}
 
 If the diff holds under about 50 non-test lines and nothing obvious, reply
-"nothing worth trimming" and commit nothing.{tests}
+"nothing worth trimming" and commit nothing.{tests}{protected}
 
 Run the passes below in order. After each pass, run the check command; if
 it fails, discard that pass's edits and go on to the next pass. Commit each

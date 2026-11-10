@@ -43,6 +43,7 @@ TRIMMED = "[trim]\nbudget_min = 1\n"
 WORK = Commit("work", path="work.txt", body=lines(60))
 PAIR = ("def test_a():\n    assert {a}\n\n\ndef test_b():\n    value = {b}\n"
         "    assert value\n")
+SHORTENED_PAIR = "def test_a():\n    assert 3\n\n\ndef test_b():\n    pass\n"
 NAMES_PAIR = "Given a pair, then both hold. (`test_pair.py` witnesses it.)"
 
 
@@ -329,10 +330,13 @@ class TrimLoopTests(TrimFixture):
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")
 
+    def test_the_brief_lists_a_criterion_named_file_as_protected(self):
+        fake = self.trimmed_pair(NAMES_PAIR, SHORTENED_PAIR)
+        self.assertIn("witness the ticket's acceptance criteria", fake.turns[1].goal)
+        self.assertIn("- `test_pair.py`", fake.turns[1].goal)
+
     def test_a_pass_that_only_shortens_a_witness_tests_body_is_kept(self):
-        fake = self.trimmed_pair(
-            NAMES_PAIR, "def test_a():\n    assert 3\n\n\ndef test_b():\n"
-                        "    pass\n")
+        fake = self.trimmed_pair(NAMES_PAIR, SHORTENED_PAIR)
         self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")
