@@ -230,7 +230,7 @@ class PullRequestWitnessTests(unittest.TestCase):
 
     def test_a_criterion_witnessed_by_a_test_file_is_not_advised(self):
         self.assertEqual(self.advised(
-            'then the header row lists the changes. '
+            'then the PR description lists the changes. '
             '(`tests/test_orders_export.py` witnesses it.)'), [])
 
 

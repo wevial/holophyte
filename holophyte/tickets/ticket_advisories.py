@@ -246,8 +246,10 @@ def _pull_request_witness_advisories(t):
     return [f"{tt.ADVISORY_PREFIX}criterion {i} reads as a pull request or "
             f"CI witness; the reviewer can only witness the candidate branch, "
             f"before any pull request exists"
-            for i, text in enumerate(t.acceptance_boxes, 1)
-            if PULL_REQUEST_WITNESS_RE.search(" ".join(text.split()))]
+            for i, (text, files) in enumerate(
+                zip(t.acceptance_boxes, named_files(t.acceptance_boxes)), 1)
+            if not files
+            and PULL_REQUEST_WITNESS_RE.search(" ".join(text.split()))]
 
 
 def advisories(t, repo=None):
