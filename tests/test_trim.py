@@ -50,7 +50,7 @@ GO_PAIR = ("package pair\n\nfunc TestFooBar(t *testing.T) {{ _ = {a} }}\n\n"
            "func TestFoo(t *testing.T) {{ _ = {b} }}\n")
 ASYNC_PAIR = ("async def test_a(): assert {a}\n\n\n"
               "async def test_b(): assert {b}\n")
-REGEX_SPEC = 'test("checks", () => {{ {a}expect({b}); }});\n'
+JS_BODY_SPEC = 'test("checks", () => {{ {a}expect({b}); }});\n'
 NAMES_PAIR = "Given a pair, then both hold. (`test_pair.py` witnesses it.)"
 
 
@@ -367,11 +367,12 @@ class TrimLoopTests(TrimFixture):
         [result] = self.results()
         self.assertIn("criterion witness", result["reason"])
 
-    def test_dropping_a_regex_test_call_from_a_js_witness_body_is_kept(self):
+    def test_dropping_test_like_calls_and_comments_from_a_js_body_is_kept(self):
         fake = self.trimmed_pair(
-            "Given a spec, then it holds. (`regex.test.js` witnesses it.)",
-            REGEX_SPEC.format(a="", b="1"), "regex.test.js",
-            REGEX_SPEC.replace("{a}", '/x/.test("abc"); '))
+            "Given a spec, then it holds. (`body.test.js` witnesses it.)",
+            JS_BODY_SPEC.format(a="", b="1"), "body.test.js",
+            JS_BODY_SPEC.replace("{a}", '/x/.test("abc");\n'
+                                      '  // test("example", () => {{}});\n  '))
         self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
 
     def test_the_same_deletion_in_a_file_no_criterion_names_is_kept(self):

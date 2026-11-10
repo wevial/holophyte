@@ -36,7 +36,7 @@ from holophyte.loop.trim_brief import (
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
-from holophyte.review.reply_parsing import _GO_STRING
+from holophyte.review.reply_parsing import _GO_STRING, _GO_TOKEN, _JS_SKIPPED
 from holophyte.review.witness_precheck import named_files
 
 LINE_FLOOR = 50
@@ -45,11 +45,14 @@ TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
 TEST_IDS = {
-    ".py": re.compile(r"^[ \t]*(?:async[ \t]+)?def (test\w*)\(", re.M),
-    ".go": re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING),
+    ".py": (re.compile(r"^[ \t]*(?:async[ \t]+)?def (test\w*)\(", re.M), (1,)),
+    ".go": (re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING + "|"
+                       + _GO_TOKEN.pattern, re.S), (1, 2)),
 }
-SPEC_IDS = re.compile(r"(?<![.\w$])(?:it|test)\(\s*(?:(['\"])((?:(?!\1)[^\\\n]|\\.)*)\1"
-                      r"|`((?:[^`\\]|\\.)*)`)")
+SPEC_IDS = (re.compile(_JS_SKIPPED.pattern + r"|`(?:[^`\\]|\\.)*`"
+                       r"|(?<![.\w$])(?:it|test)\(\s*(?:(['\"])"
+                       r"((?:(?!\2)[^\\\n]|\\.)*)\2|`((?:[^`\\]|\\.)*)`)", re.S),
+            (3, 4))
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -194,8 +197,9 @@ def _test_ids(wt, commit, path):
     shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=wt,
                            capture_output=True)
     text = shown.stdout.decode(errors="replace") if not shown.returncode else ""
-    pattern = TEST_IDS.get(PurePosixPath(path).suffix, SPEC_IDS)
-    return Counter(match[match.lastindex] for match in pattern.finditer(text))
+    pattern, names = TEST_IDS.get(PurePosixPath(path).suffix, SPEC_IDS)
+    return Counter(match[n] for match in pattern.finditer(text)
+                   for n in names if match[n] is not None)
 
 
 def _scoped(wt, base_sha, sha, commits):
