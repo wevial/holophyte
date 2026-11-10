@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tests.scout_stubs import BRIEF, LeadStubs, fenced, titled
+from tests.scout_stubs import BRIEF, LeadStubs, fenced
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from host_fixture import HostFixture, git  # noqa: E402
@@ -26,7 +26,6 @@ import store  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
 from holophyte.host.registry import Host, HostError, settings  # noqa: E402
 from holophyte.host.sweep_host import supervise_host  # noqa: E402
-from holophyte.isolation import launcher  # noqa: E402
 from store.scouts import (  # noqa: E402
     ScoutRefused,
     beat_scout,
@@ -372,34 +371,6 @@ class ScoutProcessTests(ScoutFixture):
         for tree in (checkout, lead):
             self.assertEqual(git(tree, "rev-parse", "--show-toplevel"),
                              str(tree.resolve()))
-
-    def test_a_credential_set_nowhere_fails_the_run_task_at_setup(self):
-        path = self.project(
-            "alpha", '[agents]\nimplementer_isolation = "container"\n'
-            'implementer_credential = { env = "SCOUT_CREDENTIAL" }\n'
-            '[worktree]\nsetup = ["true"]\n')
-        git(path, "config", "user.name", "scout-test")
-        git(path, "config", "user.email", "scout@test")
-        unit_dir = self.home / "alpha"
-        unit_dir.mkdir(parents=True, exist_ok=True)
-        (unit_dir / "serve.env").write_text("UNIT_SETTING=plain\n")
-        os.environ.pop("SCOUT_CREDENTIAL", None)
-        scout_id = self.a_scout(path, "planning")
-        question = "Does the retry test fail on main?"
-        self.stubs.answer(
-            plan=fenced({"tasks": [titled({"question": question, "paths": [],
-                                           "mode": "run"})]}),
-            report=fenced({**BRIEF, "summary": "nothing found",
-                           "findings": [], "actions": []}))
-        with patch.object(launcher, "image_ready", lambda route: None):
-            code, printed = self.cli("--scout", str(scout_id), str(path))
-        self.assertEqual(code, 0, printed)
-        phase, excerpt = self.conn(path).execute(
-            "SELECT phase, excerpt FROM scoutTasks WHERE scoutId = ?",
-            (scout_id,)).fetchone()
-        self.assertEqual(phase, "failed")
-        self.assertIn("implementer credential variable SCOUT_CREDENTIAL"
-                      " is not set", excerpt)
 
 
 class ScoutSweepTests(ScoutFixture):

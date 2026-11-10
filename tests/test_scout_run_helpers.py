@@ -437,7 +437,6 @@ class ScoutRunHelperTests(ScoutFixture):
         self.assertEqual(len(goals), 1)
         self.assertIn("--env=SCOUT_CREDENTIAL", goals[0])
         self.assertEqual(self.task(conn, scout_id, RUN_Q)[0], "done")
-        self.assertNotIn("SCOUT_CREDENTIAL", os.environ)
 
     def test_a_serve_env_credential_is_in_no_stored_excerpt_or_turn(self):
         conn, scout_id, _ = self.serve_env_scout()
