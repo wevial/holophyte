@@ -253,7 +253,7 @@ export function Sidebar() {
   const scopedQueues = queues.filter(({ host }) => inScope.has(host));
   const queued = scopedQueues.reduce((sum, { queue }) => sum + queue.entries.length, 0);
   const queueWaits = scopedQueues.some(({ queue }) => queue.left.some((row) => row.waits_on_you));
-  const shown = PAGES.filter((page) => page.to !== "/merge-queue" || queues.some(({ queue }) => queue.configured === true));
+  const shown = PAGES.filter((page) => page.to !== "/merge-queue" || scopedQueues.some(({ queue }) => queue.configured === true));
   const badges: Partial<Record<PageTo, number>> = { "/": needs, "/merge-queue": queued, "/findings": open, "/scouts": scouting };
   const tones: Partial<Record<PageTo, string>> = { "/scouts": "text-live", "/merge-queue": queueWaits ? "text-need" : "text-live" };
   const failing = hosts.some((host) => host.error != null);
