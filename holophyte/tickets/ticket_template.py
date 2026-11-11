@@ -396,6 +396,8 @@ def _gitignored(repo, token):
 
 
 def _gitignored_path_problems(t, repo):
+    if repo is None:
+        return []
     problems = []
     unchecked = False
     for label, text in _witnessable_texts(t):
@@ -682,6 +684,8 @@ def _path_problem(repo, path, declarations, label, prefix=ADVISORY_PREFIX):
 
 
 def _repository_problems(t, repo):
+    if repo is None:
+        return []
     repo = Path(repo)
     declarations = _new_paths(t)
     problems = []
@@ -747,153 +751,149 @@ def _operator_witness_advisories(t):
     return out
 
 
-def validate(t, repo=None):  # noqa: C901 -- one pass over every rule; split at a rule registry
-    """Valid iff blocking(validate(t)) is empty; `repo` enables repository checks."""
-    p = []
+def _structure_problems(t):
     if not t.title:
-        p.append("missing H1 title ('# ...' on the first heading line)")
+        yield "missing H1 title ('# ...' on the first heading line)"
     if t.stray_h1s:
-        p.append(f"{len(t.stray_h1s)} extra H1 heading(s); exactly one allowed")
-
-    seen_first = {}
-    for idx, name in enumerate(t.order):
-        seen_first.setdefault(name, idx)
+        yield f"{len(t.stray_h1s)} extra H1 heading(s); exactly one allowed"
+    seen_first = {name: idx for idx, name in reversed(list(enumerate(t.order)))}
     # Only sections present are compared, so an absent optional one opens no gap.
     present = [n for n in TEMPLATE_ORDER if n in seen_first]
     for a, b in zip(present, present[1:]):
         if seen_first[a] >= seen_first[b]:
-            p.append(
-                f"sections out of template order: '## {a}' must come before '## {b}'"
-            )
+            yield f"sections out of template order: '## {a}' must come before '## {b}'"
     for name in TEMPLATE_ORDER:
         n = t.order.count(name)
         if n == 0 and name not in OPTIONAL_SECTIONS and name != ESTIMATE:
-            p.append(f"missing section '## {name}'")
+            yield f"missing section '## {name}'"
         elif n > 1:
-            p.append(f"duplicate section '## {name}' ({n}x)")
+            yield f"duplicate section '## {name}' ({n}x)"
     for u in sorted(set(t.order) - set(TEMPLATE_ORDER)):
-        p.append(f"unknown section '## {u}' (not in ticketTemplate.md)")
-
+        yield f"unknown section '## {u}' (not in ticketTemplate.md)"
     for label, text in _labeled_texts(t):
-        m = PLACEHOLDER_RE.search(text)
-        if m:
-            p.append(f"unfilled template placeholder in {label}: {m.group(0)}")
+        if m := PLACEHOLDER_RE.search(text):
+            yield f"unfilled template placeholder in {label}: {m.group(0)}"
 
+
+def _evidence_problems(t):
     if len(t.evidence_states) > 6:
-        p.append("'Evidence' has more than 6 states; the limit is 6")
+        yield "'Evidence' has more than 6 states; the limit is 6"
     if "Reproduce" in t.order and not t.reproduce:
-        p.append("'Reproduce' is empty; give the steps and where the "
-                 "behaviour was seen, or omit the section")
+        yield ("'Reproduce' is empty; give the steps and where the "
+               "behaviour was seen, or omit the section")
     if ("Evidence" in t.order and not t.evidence_states
             and (t.ui_change or "").lower() != "none"):
-        p.append("'Evidence' is empty; list states or omit the section")
+        yield "'Evidence' is empty; list states or omit the section"
     for index, state in enumerate(t.evidence_states, 1):
         if not state:
-            p.append(f"Evidence state #{index} is empty")
+            yield f"Evidence state #{index} is empty"
         elif EVIDENCE_OUTPUT_RE.search(state):
-            p.append(f"Evidence state #{index} {state!r}: Evidence lists UI states "
-                     "to screenshot or record; a test's result belongs in an "
-                     "acceptance criterion.")
+            yield (f"Evidence state #{index} {state!r}: Evidence lists UI states "
+                   "to screenshot or record; a test's result belongs in an "
+                   "acceptance criterion.")
 
+
+def _scope_and_criteria_problems(t):
     if not t.summary:
-        p.append("'Summary' is empty")
+        yield "'Summary' is empty"
     if not t.what:
-        p.append("'**What:**' line missing under 'What / Why / How'")
+        yield "'**What:**' line missing under 'What / Why / How'"
     if not t.how:
-        p.append("'**How:**' line missing under 'What / Why / How' "
-                 "('Why' is optional)")
+        yield "'**How:**' line missing under 'What / Why / How' ('Why' is optional)"
     if not t.in_scope:
-        p.append("'In scope' has no entries")
+        yield "'In scope' has no entries"
     elif len(t.in_scope) > MAX_IN_SCOPE:
-        p.append(f"'In scope' has {len(t.in_scope)} entries; the cap is "
-                 f"{MAX_IN_SCOPE} — split the ticket")
+        yield (f"'In scope' has {len(t.in_scope)} entries; the cap is "
+               f"{MAX_IN_SCOPE} — split the ticket")
     if not t.out_of_scope:
-        p.append("'Out of scope' has no entries")
-
+        yield "'Out of scope' has no entries"
     if not t.acceptance and not t.acceptance_done:
-        p.append("'Acceptance criteria' has no '- [ ] Given/when/then' items")
+        yield "'Acceptance criteria' has no '- [ ] Given/when/then' items"
     elif not t.acceptance:
-        p.append("all acceptance criteria are already checked off")
-    for i, ac in enumerate(t.acceptance, 1):
-        if not ac:
-            p.append(f"acceptance criterion #{i} is empty")
-    for item in t.acceptance_other:
-        p.append(f"acceptance criterion is not a '- [ ] ...' checkbox: {item}")
-    n_criteria = (len(t.acceptance) + len(t.acceptance_done)
-                  + len(t.acceptance_other))
+        yield "all acceptance criteria are already checked off"
+    yield from (f"acceptance criterion #{i} is empty"
+                for i, ac in enumerate(t.acceptance, 1) if not ac)
+    yield from (f"acceptance criterion is not a '- [ ] ...' checkbox: {item}"
+                for item in t.acceptance_other)
+    n_criteria = len(t.acceptance) + len(t.acceptance_done) + len(t.acceptance_other)
     if n_criteria > MAX_CRITERIA:
-        p.append(f"'Acceptance criteria' has {n_criteria} items; the cap is "
-                 f"{MAX_CRITERIA} — split the ticket")
+        yield (f"'Acceptance criteria' has {n_criteria} items; the cap is "
+               f"{MAX_CRITERIA} — split the ticket")
 
+
+def _verify_problems(t):
     if not t.verify_commands:
-        p.append("'Verify command(s)' has no runnable command lines inside "
-                 "a ``` fence")
-    for cmd in t.verify_commands:
-        if _has_nonrelative_path(cmd):
-            p.append(f"verify command uses a non-relative path "
-                     f"(template rule: relative only): {cmd}")
-
+        yield "'Verify command(s)' has no runnable command lines inside a ``` fence"
+    yield from (f"verify command uses a non-relative path (template rule: "
+                f"relative only): {cmd}"
+                for cmd in t.verify_commands if _has_nonrelative_path(cmd))
     if "Contract checks" in t.order and not t.contract_checks:
-        p.append("'Contract checks' section has no 'relative/path: expected "
-                 "literal' declarations inside a ``` fence")
+        yield ("'Contract checks' section has no 'relative/path: expected "
+               "literal' declarations inside a ``` fence")
     for path, literal in t.contract_checks:
-        problem = contract_path_problem(path)
-        if problem:
-            p.append(f"contract check {problem}: {path or literal}")
+        if problem := contract_path_problem(path):
+            yield f"contract check {problem}: {path or literal}"
         elif not literal:
-            p.append(f"contract check has an empty expected literal: {path}")
+            yield f"contract check has an empty expected literal: {path}"
 
+
+def _estimate_problems(t):
     if t.header_problems is not None:
-        p.extend(t.header_problems)
+        yield from t.header_problems
     elif t.estimate_min is None:
-        p.append("'Estimate & dependencies' must read "
-                 "'Estimate: N min · Depends on: <ticket IDs or \"none\">'")
+        yield ("'Estimate & dependencies' must read "
+               "'Estimate: N min · Depends on: <ticket IDs or \"none\">'")
     else:
         if t.estimate_min > MAX_ESTIMATE_MIN:
-            p.append(f"estimate is {t.estimate_min} min; the cap is "
-                     f"{MAX_ESTIMATE_MIN} min — split the ticket")
-        for d in t.depends_on:
-            if not LINEAR_ID_RE.match(d):
-                p.append(f"'Depends on' entry is not a ticket ID or \"none\": {d}")
-
+            yield (f"estimate is {t.estimate_min} min; the cap is "
+                   f"{MAX_ESTIMATE_MIN} min — split the ticket")
+        yield from (f"'Depends on' entry is not a ticket ID or \"none\": {d}"
+                    for d in t.depends_on if not LINEAR_ID_RE.match(d))
     if t.orchestration is not None and t.orchestration not in ORCHESTRATION_MODES:
-        p.append(f"'Estimate & dependencies' line 'Orchestration: "
-                 f"{t.orchestration}' must name one of "
-                 f"{', '.join(ORCHESTRATION_MODES)}")
+        yield (f"'Estimate & dependencies' line 'Orchestration: "
+               f"{t.orchestration}' must name one of "
+               f"{', '.join(ORCHESTRATION_MODES)}")
     if (t.implementer is not None
             and not IMPLEMENTER_NAME_RE.fullmatch(t.implementer)):
-        p.append(f"'Estimate & dependencies' line 'Implementer: "
-                 f"{t.implementer}' must name one profile of letters, "
-                 f"digits, _ and -")
-
+        yield (f"'Estimate & dependencies' line 'Implementer: "
+               f"{t.implementer}' must name one profile of letters, "
+               f"digits, _ and -")
     if not t.open_questions_none:
-        p.append("'Open questions' must read exactly '- None' before the "
-                 "ticket enters the pickable queue")
+        yield ("'Open questions' must read exactly '- None' before the "
+               "ticket enters the pickable queue")
 
-    chained = next((m for m in SCOPE_CHAINING if m in t.what.lower()), None)
-    if chained:
-        p.append(f"{ADVISORY_PREFIX}'**What:**' chains scope on {chained!r}; "
-                 f"consider splitting it into one ticket per deliverable")
+
+def _wording_advisories(t):
+    if chained := next((m for m in SCOPE_CHAINING if m in t.what.lower()), None):
+        yield (f"{ADVISORY_PREFIX}'**What:**' chains scope on {chained!r}; "
+               f"consider splitting it into one ticket per deliverable")
     for cmd in t.verify_commands:
-        token = _bare_interpreter(cmd)
-        if token:
-            p.append(f"{ADVISORY_PREFIX}verify command uses bare {token!r} "
-                     f"(template rule: activate the venv or use "
-                     f".venv/bin/{token} if the project has one): {cmd}")
-    p.extend(_blank_template_problems(t))
-    p.extend(_fence_advisories(t))
+        if token := _bare_interpreter(cmd):
+            yield (f"{ADVISORY_PREFIX}verify command uses bare {token!r} "
+                   f"(template rule: activate the venv or use "
+                   f".venv/bin/{token} if the project has one): {cmd}")
+
+
+def _ticket_advisories(t, repo):
     from holophyte.tickets import ticket_advisories
-    p.extend(ticket_advisories.advisories(t, repo))
-    p.extend(_schema_version_advisories(t))
-    p.extend(_operator_witness_advisories(t))
-    p.extend(_ui_change_problems(t))
-    p.extend(_blast_radius_problems(t))
-    p.extend(_mockup_problems(t))
-    p.extend(_mockup_advisories(t))
-    if repo is not None:
-        p.extend(_gitignored_path_problems(t, repo))
-        p.extend(_repository_problems(t, repo))
-    return p
+    return ticket_advisories.advisories(t, repo)
+
+
+RULES = (
+    _structure_problems, _evidence_problems, _scope_and_criteria_problems,
+    _verify_problems, _estimate_problems, _wording_advisories,
+    _blank_template_problems, _fence_advisories, _ticket_advisories,
+    _schema_version_advisories, _operator_witness_advisories, _ui_change_problems,
+    _blast_radius_problems, _mockup_problems, _mockup_advisories,
+    _gitignored_path_problems, _repository_problems,
+)
+REPOSITORY_RULES = {_ticket_advisories, _gitignored_path_problems, _repository_problems}
+
+
+def validate(t, repo=None):
+    """Valid iff blocking(validate(t)) is empty; `repo` enables repository checks."""
+    return [problem for rule in RULES for problem in
+            (rule(t, repo) if rule in REPOSITORY_RULES else rule(t))]
 
 
 def blocking(problems):
