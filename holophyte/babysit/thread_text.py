@@ -9,12 +9,22 @@ CONVENTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
 CONVENTIONS_CAP = 4000
 
 VERDICTS = ("ADDRESS", "DECLINE", "HUMAN")
-VERDICT_LINE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(ADDRESS|DECLINE|HUMAN)\b"
-    r"\s*(?:[-–—:,]+\s*)?(.*?)\s*$", re.IGNORECASE | re.MULTILINE)
-SUMMARY_LINE_RE = re.compile(
-    r"^\s*(?:[-*]\s*)?THREAD\s+(\d+)\s*[:.)-]\s*(.+?)\s*$",
-    re.IGNORECASE | re.MULTILINE)
+
+
+def thread_prefix(space):
+    return rf"^{space}*(?:[-*]{space}*)?THREAD{space}+(\d+){space}*[:.)-]{space}*"
+
+
+def thread_word_re(words, space):
+    return re.compile(
+        thread_prefix(space) + rf"({'|'.join(words)})\b"
+        rf"{space}*(?:[-–—:,]+{space}*)?(.*?){space}*$",
+        re.IGNORECASE | re.MULTILINE)
+
+
+VERDICT_LINE_RE = thread_word_re(VERDICTS, r"\s")
+SUMMARY_LINE_RE = re.compile(thread_prefix(r"\s") + r"(.+?)\s*$",
+                             re.IGNORECASE | re.MULTILINE)
 COMMENT_HEADER = "---- Comment by {model} ----"
 GIST_CHARS = 200
 
