@@ -349,7 +349,7 @@ class ImportingTestsTests(unittest.TestCase):
                 self.assertTrue(ok, out)
                 self.assertIn("test_src", self.ran())
 
-    def test_an_importer_named_like_a_test_but_holding_none_is_skipped(self):
+    def test_an_importer_named_like_a_test_but_holding_none_leaves_the_gate_green(self):
         self.write("tests/test_helpers.py", "import pkg.a\n")
         self.onto_main()
         self.change_a("1  # touched")
