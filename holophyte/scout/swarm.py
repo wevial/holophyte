@@ -1,4 +1,3 @@
-import hashlib
 import json
 import os
 import re
@@ -7,9 +6,8 @@ import signal
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from functools import partial
-from pathlib import Path
 from time import monotonic
 from typing import NamedTuple
 
@@ -18,7 +16,7 @@ from holophyte.agents.agent_output import claude_result
 from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_HELPER
 from holophyte.agents.probes import PROBE_TIMEOUT
-from holophyte.agents.review_workspace import review_scratch, scratch_git_environment
+from holophyte.agents.review_workspace import scratch_git_environment
 from holophyte.isolation import launcher
 from holophyte.loop.gates import run_capped, sh
 from holophyte.redact import known_secrets, outbound, redact_prose
@@ -103,10 +101,16 @@ class ScoutStopped(BaseException):
     pass
 
 
-def scout_scratch_prefix(project_path, scout_id):
-    project = hashlib.sha256(
-        str(Path(project_path).resolve()).encode()).hexdigest()[:12]
-    return f"holophyte-scout-{int(scout_id)}-{project}-"
+@contextmanager
+def helper_scratch(repo, scratch):
+    shutil.rmtree(scratch, ignore_errors=True)
+    scratch.mkdir(parents=True)
+    try:
+        yield scratch
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+        sh(["git", "worktree", "prune"], cwd=repo,
+           env=scratch_git_environment())
 
 
 def kill_group(proc):
@@ -202,9 +206,10 @@ class Swarm:
         self.probing, self.downs = threading.Lock(), {}
         self.halting, self.halted, self.procs = threading.Lock(), set(), {}
         self.stack = ExitStack()
-        from holophyte.scout.scout_process import scout_sources
+        from holophyte.scout.scout_process import scout_dir, scout_sources
 
         self.sources = scout_sources(project, row.id)
+        self.scratch_dir = scout_dir(project, row.id) / "scratch"
 
     def __enter__(self):
         return self
@@ -277,9 +282,7 @@ class Swarm:
         self.launched += len(launch)
         if self.scratch is None:
             self.scratch = self.stack.enter_context(
-                review_scratch(self.project.path,
-                               prefix=scout_scratch_prefix(
-                                   self.project.path, self.row.id)))
+                helper_scratch(self.project.path, self.scratch_dir))
         starts = [threading.Event() for _ in launch]
         done, ready, failed = threading.Event(), threading.Event(), []
         watcher = threading.Thread(target=self.watch,

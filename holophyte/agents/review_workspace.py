@@ -77,9 +77,9 @@ def publish_review_refs(repo, base_sha, candidate_sha, run_id=None):
 
 
 @contextlib.contextmanager
-def review_scratch(repo, prefix="holophyte-review-"):
+def review_scratch(repo):
     env = scratch_git_environment()
-    with tempfile.TemporaryDirectory(prefix=prefix) as scratch:
+    with tempfile.TemporaryDirectory(prefix="holophyte-review-") as scratch:
         try:
             yield Path(scratch)
         finally:

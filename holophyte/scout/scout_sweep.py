@@ -5,7 +5,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -26,7 +25,6 @@ from holophyte.loop.reexec import (
 from holophyte.scout.answer import current_ask, fail_answer
 from holophyte.scout.follow_up import current_pass, fail_pass
 from holophyte.scout.scout_process import scout_dir
-from holophyte.scout.swarm import scout_scratch_prefix
 from store.enums import ScoutPhase
 from store.scout_thread import (
     ASK,
@@ -111,34 +109,12 @@ def _signal_until_gone(pid, scout_id, signum):
     return False
 
 
-def _scout_temp(pid, scout_id):
-    temp = tempfile.gettempdir()
-    flags = os.O_RDONLY | os.O_DIRECTORY
-    if pid is not None:
-        try:
-            seen = os.open(f"/proc/{pid}/root{temp}", flags)
-        except OSError:
-            pass
-        else:
-            if _runs_scout(pid, scout_id):
-                return seen, True
-            os.close(seen)
-    return os.open(temp, flags), False
-
-
-def stop_scout(project_path, pid, scout_id):
-    temp, running = _scout_temp(pid, scout_id)
-    try:
-        if running and not any(
-                _signal_until_gone(pid, scout_id, signum)
-                for signum in (signal.SIGTERM, signal.SIGKILL)):
-            return
-        prefix = scout_scratch_prefix(project_path, scout_id)
-        for name in os.listdir(temp):
-            if name.startswith(prefix):
-                shutil.rmtree(name, ignore_errors=True, dir_fd=temp)
-    finally:
-        os.close(temp)
+def stop_scout(target, pid, scout_id):
+    if pid is not None and _runs_scout(pid, scout_id) and not any(
+            _signal_until_gone(pid, scout_id, signum)
+            for signum in (signal.SIGTERM, signal.SIGKILL)):
+        return
+    shutil.rmtree(scout_dir(target, scout_id) / "scratch", ignore_errors=True)
 
 
 def end_stale(name, target, conn, now, out):
@@ -158,7 +134,7 @@ def end_stale(name, target, conn, now, out):
             print(f"[holo2] {name}: scout {row.id} {ended}: {reason}",
                   file=out)
         if ended == ENDED_FAILED:
-            stop_scout(target.path, row.pid, row.id)
+            stop_scout(target, row.pid, row.id)
 
 
 def scout_unit(name, scout_id):

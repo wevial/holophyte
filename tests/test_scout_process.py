@@ -7,10 +7,8 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_process.py' -v
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -24,7 +22,6 @@ from host_fixture import HostFixture, git  # noqa: E402
 
 import holophyte.scout.scout_process as scout_process  # noqa: E402
 import holophyte.scout.scout_sweep as scout_sweep  # noqa: E402
-import holophyte.scout.swarm as swarm  # noqa: E402
 import store  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
 from holophyte.host.registry import Host, HostError, settings  # noqa: E402
@@ -532,32 +529,32 @@ class ScoutSweepTests(ScoutFixture):
         target = Project.locate(path, adopt=False)
         return target, conn, stale, child
 
-    def helper_scratch(self, path, scout_id):
-        scratch = Path(tempfile.mkdtemp(
-            prefix=swarm.scout_scratch_prefix(path, scout_id)))
-        (scratch / "helper").mkdir()
-        self.addCleanup(shutil.rmtree, scratch, True)
+    def helper_scratch(self, target, scout_id):
+        scratch = scout_process.scout_dir(target, scout_id) / "scratch"
+        (scratch / "helper").mkdir(parents=True)
         return scratch
 
     def test_a_scout_ended_stale_loses_its_process_and_helper_scratch(self):
         target, conn, stale, child = self.stale_with_process(
             lambda scout_id: ["--scout", str(scout_id)])
-        self.helper_scratch(target.path, stale)
+        scratch = self.helper_scratch(target, stale)
         scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
         self.assertEqual(scout(conn, stale).phase, "failed")
         child.wait(timeout=5)
         self.assertFalse(Path(f"/proc/{child.pid}").exists())
-        self.assertEqual(list(Path(tempfile.gettempdir()).glob(
-            f"holophyte-scout-{stale}-*")), [])
+        self.assertTrue(scratch.parent.is_dir())
+        self.assertFalse(scratch.exists())
 
     def test_a_stale_scout_spares_another_projects_scout_of_its_id(self):
         target, conn, stale, child = self.stale_with_process(
             lambda scout_id: ["--scout", str(scout_id)])
         beta = self.project("beta")
         self.assertEqual(self.a_scout(beta, "planning"), stale)
-        kept = self.helper_scratch(beta, stale)
+        swept = self.helper_scratch(target, stale)
+        kept = self.helper_scratch(Project.locate(beta, adopt=False), stale)
         scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
         child.wait(timeout=5)
+        self.assertFalse(swept.exists())
         self.assertTrue((kept / "helper").is_dir())
 
     def test_a_stale_scout_pid_now_running_something_else_is_left(self):
