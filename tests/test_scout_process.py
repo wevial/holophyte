@@ -524,7 +524,12 @@ class ScoutSweepTests(ScoutFixture):
         self.addCleanup(child.wait)
         self.addCleanup(child.kill)
         cmdline = Path(f"/proc/{child.pid}/cmdline")
+        deadline = time.monotonic() + 10
         while not cmdline.read_bytes().endswith(f"\0{tail[-1]}\0".encode()):
+            if child.poll() is not None:
+                self.fail("child exited before its command line matched")
+            if time.monotonic() >= deadline:
+                self.fail("timed out waiting for the child's command line")
             time.sleep(0.01)
         claim_scout(conn, stale, child.pid)
         move_scout(conn, stale, "swarming")
