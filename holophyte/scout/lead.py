@@ -137,16 +137,6 @@ def task_titled(title):
             and not any(mark in title for mark in "\r\n"))
 
 
-def shortened_title(task):
-    if not isinstance(task, dict):
-        return task
-    title = task.get("title")
-    if not isinstance(title, str) or not title.strip() or task_titled(title):
-        return task
-    words = " ".join(title.split()[:TASK_TITLE_WORDS])
-    return dict(task, title=trimmed(words, TASK_TITLE_CHARS))
-
-
 def relative_path(path):
     return (isinstance(path, str) and bool(path.strip())
             and not PurePosixPath(path).is_absolute()
@@ -156,8 +146,13 @@ def relative_path(path):
 def plan_tasks(answer):
     if not isinstance(answer, dict) or not isinstance(answer.get("tasks"), list):
         return None, "the answer holds no tasks list"
-    tasks = [shortened_title(task) for task in answer["tasks"]]
+    tasks = answer["tasks"]
     for number, task in enumerate(tasks, 1):
+        title = task.get("title") if isinstance(task, dict) else None
+        if (isinstance(title, str) and title.strip()
+                and not task_titled(title)):
+            tasks[number - 1] = task = dict(task, title=trimmed(
+                " ".join(title.split()[:TASK_TITLE_WORDS]), TASK_TITLE_CHARS))
         problem = task_problem(number, task)
         if problem is not None:
             return None, problem
