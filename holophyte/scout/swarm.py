@@ -97,12 +97,6 @@ def helper_goal(row, task, github):
         "commands you ran with excerpts of their output, or links.\n")
 
 
-def scout_sources(project, scout_id):
-    from holophyte.scout.scout_process import scout_sources
-
-    return scout_sources(project, scout_id)
-
-
 class ScoutStopped(BaseException):
     pass
 
@@ -200,6 +194,8 @@ class Swarm:
         self.probing, self.downs = threading.Lock(), {}
         self.halting, self.halted, self.procs = threading.Lock(), set(), {}
         self.stack = ExitStack()
+        from holophyte.scout.scout_process import scout_sources
+
         self.sources = scout_sources(project, row.id)
 
     def __enter__(self):
