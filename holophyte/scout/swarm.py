@@ -36,6 +36,7 @@ from holophyte.scout.run_helpers import (
     task_fields,
 )
 from holophyte.scout.scout_probes import in_critic_workspace, probe_scout_route
+from holophyte.scout.sources import place_sources
 from holophyte.scout.telemetry import turn_cost, usage_tokens
 from store.enums import ScoutTaskPhase
 from store.scouts import (
@@ -94,6 +95,12 @@ def helper_goal(row, task, github):
         f"{TOOLS_SENTENCE if github else ''}"
         "Answer the question with evidence: path:line at the base commit, "
         "commands you ran with excerpts of their output, or links.\n")
+
+
+def scout_sources(project, scout_id):
+    from holophyte.scout.scout_process import scout_sources
+
+    return scout_sources(project, scout_id)
 
 
 class ScoutStopped(BaseException):
@@ -193,6 +200,7 @@ class Swarm:
         self.probing, self.downs = threading.Lock(), {}
         self.halting, self.halted, self.procs = threading.Lock(), set(), {}
         self.stack = ExitStack()
+        self.sources = scout_sources(project, row.id)
 
     def __enter__(self):
         return self
@@ -337,6 +345,7 @@ class Swarm:
             self.row.base_sha], cwd=self.project.path,
            env=scratch_git_environment())
         self.refuse_push(path)
+        place_sources(path, self.sources)
         return path
 
     def prepared(self, task):
@@ -401,7 +410,7 @@ class Swarm:
             return
         try:
             checkout = run_clone(self.project, self.row.id, task.id,
-                                 self.row.base_sha)
+                                 self.row.base_sha, self.sources)
         except (RuntimeError, OSError) as error:
             with store.transaction(conn):
                 if self.halted_now(conn, task):

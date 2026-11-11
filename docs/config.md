@@ -2107,6 +2107,7 @@ With no `[scout]` table the defaults below apply.
 | `steer_budget_min` | Default: `10` minutes | Integer of at least 1; a steered follow-up pass's time budget, counted from its plan turn. |
 | `steer_helpers` | Default: `4` | Integer of at least 1, at most `helper_turns`; the helpers a steered follow-up pass starts in all, in one wave. |
 | `github` | Default: `false` | `true` or `false`; `true` hands every lead turn and read helper turn the read-only GitHub tools below. |
+| `sources` | Default: none | Outside sources, one `[scout.sources.NAME]` table each with `url` and `ref` (a tag or branch); see below. |
 
 ```toml
 [scout]
@@ -2128,6 +2129,33 @@ integer of at least 1, a `swarm` or `steer_helpers` above `helper_turns`, a
 0 is a startup error naming the table and the key.
 `factory.py --scout-probe PROJECT` probes each route; see
 [the CLI reference](reference/cli.md).
+
+A `[scout.sources.NAME]` table pins an outside project a scout reads and
+cites:
+
+```toml
+[scout.sources.t3code]
+url = "https://github.com/pingdotgg/t3code"
+ref = "v0.1.7"
+```
+
+As a scout's run starts, before any agent turn, its own process
+shallow-clones each source (`git clone --depth 1 --branch REF`, git's
+template directory off, no credential prompt) into the scout's directory
+and records one detail `scout_sources` event whose payload maps each NAME to
+its `url`, `ref` and `commit`; an answer turn or a steered pass reuses that
+clone. The source's tree, without its `.git`, is copied to `NAME/` in the
+lead's worktree and in every read and run helper's checkout, kept out of git
+status (through the clone's `info/exclude`, or a linked worktree's own
+`core.excludesFile`). Helpers keep their sandbox and get no network. The
+lead's plan goal names each source with its URL, ref and commit; a plan's
+task paths may start with `NAME/`, and report evidence `NAME/path:line` is
+verified at the source's commit. A ref that cannot be fetched ends the scout
+`failed` with a `scout_failed` event naming the source and ref, before any
+turn runs. A source NAME takes letters, digits, `_` and `-`; a table with
+any key but `url` and `ref`, a `url` or `ref` that is not a non-empty string
+or starts with `-`, or a NAME the base commit already holds is refused.
+Sources that need credentials are not supported.
 
 With `github = true` and a GitHub `origin`, every lead turn (plan,
 synthesis, report, repair, answer and a steered pass's) and every read

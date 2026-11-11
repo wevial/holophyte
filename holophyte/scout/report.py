@@ -356,27 +356,37 @@ def line_count(repo, spec):
     return lines + 1 if content and not content.endswith(b"\n") else lines
 
 
-def resolution(repo, base_sha, path, line, counts):
+def cited_tree(repo, base_sha, parts, sources):
+    source = sources.get(parts.parts[0]) if parts.parts else None
+    if source is None:
+        return repo, f"{base_sha}:{parts}", (
+            f"not in the base commit {base_sha[:12]}")
+    inside = PurePosixPath(*parts.parts[1:])
+    return source.path, f"{source.commit}:{inside}", (
+        f"not in source {source.name} at {source.commit[:12]}")
+
+
+def resolution(repo, base_sha, path, line, counts, sources):
     parts = PurePosixPath(path)
     if parts.is_absolute() or ".." in parts.parts:
         return {"verified": False, "why": "outside the repository"}
+    tree, spec, absent = cited_tree(repo, base_sha, parts, sources)
     if parts not in counts:
-        counts[parts] = line_count(repo, f"{base_sha}:{parts}")
+        counts[parts] = line_count(tree, spec)
     if counts[parts] is None:
-        return {"verified": False,
-                "why": f"not in the base commit {base_sha[:12]}"}
+        return {"verified": False, "why": absent}
     if line > counts[parts]:
         return {"verified": False,
                 "why": f"past the end of the file ({counts[parts]} lines)"}
     return {"verified": True}
 
 
-def resolve_evidence(repo, base_sha, report):
+def resolve_evidence(repo, base_sha, report, sources=None):
     resolved, counts = copy.deepcopy(report), {}
     for finding in resolved.get("findings", ()):
         for item in finding.get("evidence", ()):
             if "file" in item:
                 item.pop("why", None)
                 item.update(resolution(repo, base_sha, item["file"],
-                                       item["line"], counts))
+                                       item["line"], counts, sources or {}))
     return resolved
