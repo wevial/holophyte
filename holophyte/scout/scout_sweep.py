@@ -95,14 +95,14 @@ def _reap(pid):
         pass
 
 
-def _signal_until_gone(pid, scout_id, signum, grace_s):
+def _signal_until_gone(pid, scout_id, signum):
     try:
         os.kill(pid, signum)
     except ProcessLookupError:
         return True
     except PermissionError:
         return False
-    deadline = time.monotonic() + grace_s
+    deadline = time.monotonic() + STOP_GRACE_S
     while time.monotonic() < deadline:
         _reap(pid)
         if not _runs_scout(pid, scout_id):
@@ -113,7 +113,7 @@ def _signal_until_gone(pid, scout_id, signum, grace_s):
 
 def stop_scout(pid, scout_id):
     if pid is not None and _runs_scout(pid, scout_id) and not any(
-            _signal_until_gone(pid, scout_id, signum, STOP_GRACE_S)
+            _signal_until_gone(pid, scout_id, signum)
             for signum in (signal.SIGTERM, signal.SIGKILL)):
         return
     for scratch in Path(tempfile.gettempdir()).glob(
