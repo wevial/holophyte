@@ -23,6 +23,7 @@ import store
 import store.tickets
 from holophyte.config.project import Project
 from holophyte.holo.cli import package_version
+from holophyte.holo.mcp_tools import document
 
 ROOT = Path(__file__).resolve().parent.parent
 MINUTE = 60_000
@@ -31,6 +32,14 @@ TOOLS = {"status", "attention", "report", "runs", "run", "board", "ticket",
          "scouts", "scout_show", "board_diff", "sweep_preview"}
 INSTALL = "python3 -m pip install --user -r requirements.txt"
 PROTOCOL = "2025-11-25"
+
+
+class DocumentTests(unittest.TestCase):
+    def test_only_a_json_object_is_a_document(self):
+        self.assertEqual(document('{"ok": true}'), {"ok": True})
+        for text in ("[1, 2]", "not json {", ""):
+            with self.subTest(text=text):
+                self.assertIsNone(document(text))
 
 
 class McpCase(unittest.TestCase):

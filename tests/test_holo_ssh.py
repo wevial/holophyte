@@ -283,6 +283,14 @@ class RemoteCommandTests(SshTests):
         self.assertEqual((result["ok"], result["transport"]), (False, "ssh"))
         self.assertIn(REFUSED, result["detail"])
 
+    def test_host_output_that_is_no_json_object_is_printed_verbatim(self):
+        for output in ("[1, 2]", "not json {"):
+            with self.subTest(output=output):
+                self.fake(f"#!/bin/sh\necho {shlex.quote(output)}\n")
+                completed = self.holo("status", "--json", "-p", "alpha")
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, output + "\n")
+
 
 class FileOverSshTests(SshTests):
     def test_a_ticket_file_on_the_client_is_filed_on_the_host_through_stdin(self):

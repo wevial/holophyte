@@ -21,7 +21,7 @@ import store
 import store.tickets
 from holophyte.config.project import Project
 from holophyte.holo.cli import main
-from holophyte.holo.run_page import page
+from holophyte.holo.run_page import first_line, page
 from holophyte.loop.gates import RunFailure
 from holophyte.loop.implement import _check_run_cap
 from holophyte.serve.serve_runs import run_detail, run_files
@@ -52,6 +52,17 @@ def git(cwd, *args):
 def lines_of(count, changed=()):
     return "".join(f"{'new ' if n in changed else ''}line {n}\n"
                    for n in range(count))
+
+
+class FirstLineTests(unittest.TestCase):
+    def test_the_first_line_is_taken_after_leading_whitespace(self):
+        self.assertEqual(first_line("\n  one\ntwo"), "one")
+
+    def test_empty_or_missing_text_is_the_fallback_or_empty(self):
+        for text in ("", None, " \n "):
+            with self.subTest(text=text):
+                self.assertEqual(first_line(text), "")
+                self.assertEqual(first_line(text, "(no note)"), "(no note)")
 
 
 class RunPageCase(unittest.TestCase):

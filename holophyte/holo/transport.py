@@ -34,6 +34,7 @@ from holophyte.holo.grammar import (
     SHOW,
     arguments,
 )
+from holophyte.holo.mcp_tools import document
 from holophyte.holo.resolve import (
     DEFAULT,
     ENVIRONMENT,
@@ -303,14 +304,6 @@ def run_page(args):
     from holophyte.holo.reads import run_part
     return (args.command.words == ("run",) and not args.json
             and run_part(args) is None)
-
-
-def document(text):
-    try:
-        body = json.loads(text)
-    except ValueError:
-        return None
-    return body if isinstance(body, dict) else None
 
 
 def render(args, code, text, tail, timezone):
