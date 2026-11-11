@@ -80,8 +80,10 @@ def _end_one_stale(conn, row, reason, now):
 def _runs_scout(pid, scout_id, project_path):
     try:
         argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-    except OSError:
+    except FileNotFoundError:
         return False
+    except OSError:
+        return None
     wanted = Path(project_path).resolve()
     return any(arg == b"--scout" and value == str(scout_id).encode()
                and Path(os.fsdecode(path)).resolve() == wanted
@@ -101,22 +103,34 @@ def _signal_until_gone(pid, scout_id, project_path, signum):
     except ProcessLookupError:
         return True
     except PermissionError:
-        return False
+        return None
     deadline = time.monotonic() + STOP_GRACE_S
     while time.monotonic() < deadline:
         _reap(pid)
-        if not _runs_scout(pid, scout_id, project_path):
-            return True
+        running = _runs_scout(pid, scout_id, project_path)
+        if running is not True:
+            return None if running is None else True
         time.sleep(0.05)
     return False
 
 
+def _stopped(target, pid, scout_id):
+    if pid is None:
+        return True
+    running = _runs_scout(pid, scout_id, target.path)
+    if running is not True:
+        return running is False
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        gone = _signal_until_gone(pid, scout_id, target.path, signum)
+        if gone is not False:
+            return gone
+    return False
+
+
 def stop_scout(target, pid, scout_id):
-    if pid is not None and _runs_scout(pid, scout_id, target.path) and not any(
-            _signal_until_gone(pid, scout_id, target.path, signum)
-            for signum in (signal.SIGTERM, signal.SIGKILL)):
-        return
-    shutil.rmtree(scout_dir(target, scout_id) / "scratch", ignore_errors=True)
+    if _stopped(target, pid, scout_id):
+        shutil.rmtree(scout_dir(target, scout_id) / "scratch",
+                      ignore_errors=True)
 
 
 def end_stale(name, target, conn, now, out):

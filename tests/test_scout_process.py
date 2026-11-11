@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_process.py' -v
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -513,14 +514,13 @@ class ScoutSweepTests(ScoutFixture):
         self.assertTrue(row.reason.startswith("heartbeat stale"), row.reason)
         self.assertEqual(scout(conn, fresh), before)
 
-    def stale_with_process(self, argv):
+    def stale_with_process(self, argv, code="import time; time.sleep(120)"):
         path = self.project("alpha",
                             "[supervisor]\nheartbeat_stale_min = 1\n")
         stale = self.a_scout(path, "planning")
         conn = self.conn(path)
         tail = argv(stale, path)
-        child = subprocess.Popen([sys.executable, "-c",
-                                  "import time; time.sleep(120)", *tail])
+        child = subprocess.Popen([sys.executable, "-c", code, *tail])
         self.addCleanup(child.wait)
         self.addCleanup(child.kill)
         cmdline = Path(f"/proc/{child.pid}/cmdline")
@@ -566,6 +566,37 @@ class ScoutSweepTests(ScoutFixture):
             child.wait(timeout=1)
         self.assertFalse(swept.exists())
         self.assertTrue((kept / "helper").is_dir())
+
+    def test_a_stale_scout_whose_command_line_turns_unreadable_keeps_scratch(
+            self):
+        target, conn, stale, child = self.stale_with_process(
+            lambda scout_id, path: ["--scout", str(scout_id), str(path)],
+            "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+            " time.sleep(120)")
+        status = Path(f"/proc/{child.pid}/status")
+        deadline = time.monotonic() + 10
+        while not int(dict(line.split(":\t") for line in
+                           status.read_text().splitlines())["SigIgn"], 16) & (
+                1 << (signal.SIGTERM - 1)):
+            if time.monotonic() >= deadline:
+                self.fail("timed out waiting for the child to ignore SIGTERM")
+            time.sleep(0.01)
+        scratch = self.helper_scratch(target, stale)
+        read_bytes, reads = Path.read_bytes, []
+
+        def denied_after_first_read(path):
+            reads.append(path)
+            if len(reads) > 1:
+                raise PermissionError(str(path))
+            return read_bytes(path)
+
+        with patch.object(Path, "read_bytes", denied_after_first_read):
+            scout_sweep.end_stale("alpha", target, conn, now_ms(),
+                                  io.StringIO())
+        self.assertEqual(scout(conn, stale).phase, "failed")
+        self.assertGreater(len(reads), 1)
+        self.assertIsNone(child.poll())
+        self.assertTrue((scratch / "helper").is_dir())
 
     def test_a_stale_scout_pid_now_running_something_else_is_left(self):
         target, conn, stale, child = self.stale_with_process(
