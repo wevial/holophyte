@@ -420,9 +420,9 @@ def run_scout(conn, project, row, stopping):
                            f"scout {scout_id} started as pid {os.getpid()}")
         try:
             with scout_heartbeat(conn, scout_id, interval_s):
+                sources = fetched_sources(conn, project, scout_id)
                 if row.title is None:
                     title_scout(conn, project.config(), row)
-                sources = fetched_sources(conn, project, scout_id)
                 lead = lead_checkout(project, scout_id, row.base_sha, sources)
                 phase, reason = run_lead(conn, project, row, lead,
                                          row.budget_min * 60, stopping)

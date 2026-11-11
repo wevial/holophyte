@@ -2139,7 +2139,8 @@ url = "https://github.com/pingdotgg/t3code"
 ref = "v0.1.7"
 ```
 
-As a scout's run starts, before any agent turn, its own process
+As a scout's run starts, before its title question and any agent turn,
+its own process
 shallow-clones each source (`git clone --depth 1 --branch REF`, git's
 template directory off, no credential prompt) into the scout's directory
 and records one detail `scout_sources` event whose payload maps each NAME to
@@ -2149,8 +2150,8 @@ lead's worktree and in every read and run helper's checkout, kept out of git
 status (through the clone's `info/exclude`, or a linked worktree's own
 `core.excludesFile`). Helpers keep their sandbox and get no network. The
 lead's plan goal names each source with its URL, ref and commit; a plan's
-task paths may start with `NAME/`, and the run's report evidence
-`NAME/path:line` is verified at the source's commit. A ref that cannot be fetched ends the scout
+task paths may start with `NAME/`, and report evidence `NAME/path:line`, in
+the run's report or a steered pass's, is verified at the source's commit. A ref that cannot be fetched ends the scout
 `failed` with a `scout_failed` event naming the source and ref, before any
 turn runs. A source NAME takes letters, digits, `_` and `-`; a table with
 any key but `url` and `ref`, a `url` or `ref` that is not a non-empty string

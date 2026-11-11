@@ -142,8 +142,8 @@ def run_pass(conn, project, row, steered, worktree, budget_s, stopping):
         if problems:
             return PassOutcome(number, message,
                                failure=f"{MALFORMED}: {problems[0]}")
-        report = reproduced(row, swarm, resolve_evidence(project.path,
-                                                         row.base_sha, report))
+        report = reproduced(row, swarm, resolve_evidence(
+            project.path, row.base_sha, report, swarm.sources))
         return PassOutcome(number, message, dict(report, cut=swarm.cut()))
 
 

@@ -395,7 +395,8 @@ class ScoutProcessTests(ScoutFixture):
 
     def test_a_source_ref_that_cannot_be_fetched_fails_before_any_turn(self):
         _, _, table = self.a_source()
-        path = self.project("alpha", table.replace('"v1"', '"v9"'))
+        path = self.project("alpha", "[questions.titles]\n"
+                            + table.replace('"v1"', '"v9"'))
         scout_id = self.a_scout(path, "planning")
         code, printed = self.cli("--scout", str(scout_id), str(path))
         self.assertEqual(code, 1, printed)

@@ -290,6 +290,26 @@ class FailedPassTests(PassCase):
         self.first_pass_kept(scout_id)
 
 
+class SourcedPassTests(PassCase):
+    def test_a_pass_report_verifies_evidence_at_the_source_commit(self):
+        _, _, table = self.a_source()
+        config = self.target.config_path
+        config.write_text(config.read_text() + table)
+        cited = [{"file": "t3/src/app.txt", "line": 3},
+                 {"file": "t3/src/app.txt", "line": 4}]
+        sourced = dict(SECOND, findings=[dict(SECOND["findings"][0],
+                                              evidence=cited)])
+        self.stubs.answer(pass_plan=plan(QUESTIONS[0]),
+                          report=fenced(sourced))
+        scout_id = self.steered()
+        code, printed = self.cli("--scout", str(scout_id), str(self.path))
+        self.assertEqual(code, 0, printed)
+        verified, past = self.reports(scout_id)[2]["findings"][0]["evidence"]
+        self.assertIs(verified["verified"], True)
+        self.assertEqual((past["verified"], past["why"]),
+                         (False, "past the end of the file (3 lines)"))
+
+
 class SteerConfigTests(ConfigFixture):
     def test_the_steer_keys_default_and_refuse_bad_values_by_name(self):
         config = scout_config(self.project())
