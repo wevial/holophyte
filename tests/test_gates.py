@@ -351,11 +351,17 @@ class ImportingTestsTests(unittest.TestCase):
 
     def test_an_importer_named_like_a_test_but_holding_none_leaves_the_gate_green(self):
         self.write("tests/test_helpers.py", "import pkg.a\n")
+        self.write("python311", "#!/bin/sh\npython3 \"$@\"\n"
+                   "status=$?\n[ $status -eq 5 ] && exit 0\nexit $status\n")
+        (self.wt / "python311").chmod(0o755)
         self.onto_main()
         self.change_a("1  # touched")
-        ok, out = self.gate()
-        self.assertTrue(ok, out)
-        self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
+        for python in ("python3", "./python311"):
+            with self.subTest(python=python):
+                self.log.write_text("")
+                ok, out = self.gate(self.VERIFY.replace("python3", python, 1))
+                self.assertTrue(ok, out)
+                self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
 
     def test_an_importer_inheriting_its_tests_runs(self):
         (self.wt / "tests/test_a.py").unlink()
