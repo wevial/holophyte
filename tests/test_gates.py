@@ -356,10 +356,12 @@ class ImportingTestsTests(unittest.TestCase):
         (self.wt / "python311").chmod(0o755)
         self.onto_main()
         self.change_a("1  # touched")
-        for python in ("python3", "./python311"):
-            with self.subTest(python=python):
+        for verify in (self.VERIFY,
+                       self.VERIFY.replace("python3", "./python311", 1),
+                       "set -e\n" + self.VERIFY):
+            with self.subTest(verify=verify):
                 self.log.write_text("")
-                ok, out = self.gate(self.VERIFY.replace("python3", python, 1))
+                ok, out = self.gate(verify)
                 self.assertTrue(ok, out)
                 self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
 

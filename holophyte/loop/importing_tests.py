@@ -142,8 +142,8 @@ def _module_clause(run, top, test):
                 or not _importable(relative)):
             prefix = (_with_path(run.prefix, top) if base != run.cwd
                       else " ".join(run.prefix))
-            return (f"(out=$({prefix} -m unittest {module_name(relative)} 2>&1);"
-                    f" status=$?; case \"$status:$out\" in"
+            return (f"(out=$({prefix} -m unittest {module_name(relative)} 2>&1)"
+                    f" && status=0 || status=$?; case \"$status:$out\" in"
                     f" 5:*|0:*'Ran 0 tests'*) exit 0;; esac;"
                     f" printf '%s\\n' \"$out\"; exit $status)")
     return None
