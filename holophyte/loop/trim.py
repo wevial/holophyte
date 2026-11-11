@@ -1,4 +1,5 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
+import ast
 import json
 import re
 import subprocess
@@ -36,7 +37,15 @@ from holophyte.loop.trim_brief import (
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
-from holophyte.review.reply_parsing import _GO_STRING, _GO_TOKEN, _JS_SKIPPED
+from holophyte.review.reply_parsing import (
+    _GO_STRING,
+    _GO_TOKEN,
+    _JS_REGEX,
+    _JS_SKIPPED,
+    _REGEX_AFTER,
+    _previous_token,
+    _template_literals,
+)
 from holophyte.review.witness_precheck import named_files
 
 LINE_FLOOR = 50
@@ -44,15 +53,11 @@ TEST_RATIO = 3
 TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
-TEST_IDS = {
-    ".py": (re.compile(r"^[ \t]*(?:async[ \t]+)?def (test\w*)\(", re.M), (1,)),
-    ".go": (re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING + "|"
-                       + _GO_TOKEN.pattern, re.S), (1, 2)),
-}
-SPEC_IDS = (re.compile(_JS_SKIPPED.pattern + r"|`(?:[^`\\]|\\.)*`"
-                       r"|(?<![.\w$])(?:it|test)\(\s*(?:(['\"])"
-                       r"((?:(?!\2)[^\\\n]|\\.)*)\2|`((?:[^`\\]|\\.)*)`)", re.S),
-            (3, 4))
+GO_IDS = re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING + "|"
+                    + _GO_TOKEN.pattern, re.S)
+JS_NEXT = re.compile(r"[\'\"`/]|(?<![.\w$])(?:it|test)\(")
+JS_TITLE = re.compile(r"(?<![.\w$])(?:it|test)\(\s*(?:(['\"])"
+                      r"((?:(?!\1)[^\\\n]|\\.)*)\1|`((?:[^`\\]|\\.)*)`)")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -175,9 +180,10 @@ def _protected(conn, run_id, wt, base_sha, sha):
     tree = sh(["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
     added = sh(["git", "diff", "--name-only", "--diff-filter=A",
                 f"{base_sha}...{sha}"], cwd=wt).splitlines()
-    return sorted({path for path in tree
-                   if any(fnmatchcase(path, pattern) for pattern in patterns)}
-                  | {path for path in added if _is_test(path)})
+    candidates = {path for path in tree
+                  if any(fnmatchcase(path, pattern) for pattern in patterns)}
+    return sorted(path for path in candidates | set(added)
+                  if _test_ids(wt, sha, path))
 
 
 def _witnessed(wt, sha, commits, protected):
@@ -197,9 +203,45 @@ def _test_ids(wt, commit, path):
     shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=wt,
                            capture_output=True)
     text = shown.stdout.decode(errors="replace") if not shown.returncode else ""
-    pattern, names = TEST_IDS.get(PurePosixPath(path).suffix, SPEC_IDS)
-    return Counter(match[n] for match in pattern.finditer(text)
-                   for n in names if match[n] is not None)
+    read = {".py": _python_tests, ".go": _go_tests}.get(
+        PurePosixPath(path).suffix, _spec_titles)
+    return Counter(read(text))
+
+
+def _python_tests(text):
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    return [node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test")]
+
+
+def _go_tests(text):
+    return [match[1] if match[1] is not None else match[2]
+            for match in GO_IDS.finditer(text)
+            if match[1] is not None or match[2] is not None]
+
+
+def _spec_titles(text):
+    titles, i = [], 0
+    while found := JS_NEXT.search(text, i):
+        i = found.start()
+        title = JS_TITLE.match(text, i)
+        skipped = _JS_SKIPPED.match(text, i) or (
+            text[i] == "/" and _previous_token(text, i) in _REGEX_AFTER
+            and _JS_REGEX.match(text, i))
+        if title:
+            titles.append(title[2] if title[2] is not None else title[3])
+            i = title.end()
+        elif skipped:
+            i = skipped.end()
+        elif text[i] == "`":
+            i = _template_literals(text, i + 1, [])[1] + 1
+        else:
+            i += 1
+    return titles
 
 
 def _scoped(wt, base_sha, sha, commits):

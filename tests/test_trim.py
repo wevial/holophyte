@@ -46,10 +46,14 @@ PAIR = ("def test_a():\n    assert {a}\n\n\ndef test_b():\n    value = {b}\n"
 SHORTENED_PAIR = "def test_a():\n    assert 3\n\n\ndef test_b():\n    pass\n"
 JS_PAIR = ('test("test_a", () => expect({a}));\n\ntest(\n  "test_b",\n'
            '  () => expect({b}),\n);\n')
+REGEX_PAIR = ('test("test_a", () => expect({a})); const quote = /"/; '
+              'test("test_b", () => expect({b}));\n')
 GO_PAIR = ("package pair\n\nfunc TestFooBar(t *testing.T) {{ _ = {a} }}\n\n"
            "func TestFoo(t *testing.T) {{ _ = {b} }}\n")
 ASYNC_PAIR = ("async def test_a(): assert {a}\n\n\n"
               "async def test_b(): assert {b}\n")
+DOC_PAIR = PAIR.replace("def test_b():\n", 'def test_b():\n    """Not a test:\n\n'
+                        '    def test_example():\n    """\n')
 JS_BODY_SPEC = 'test("checks", () => {{ {a}expect({b}); }});\n'
 NAMES_PAIR = "Given a pair, then both hold. (`test_pair.py` witnesses it.)"
 
@@ -341,6 +345,11 @@ class TrimLoopTests(TrimFixture):
         self.assert_witness_reverted(
             "pair.test.js", JS_PAIR, 'test("test_a", () => expect(3));\n')
 
+    def test_deleting_a_js_test_past_a_quote_in_a_regex_literal_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", REGEX_PAIR,
+            'test("test_a", () => expect(3)); const quote = /"/;\n')
+
     def test_a_deleted_go_test_whose_name_prefixes_a_kept_one_is_reverted(self):
         self.assert_witness_reverted(
             "pair_test.go", GO_PAIR,
@@ -355,11 +364,11 @@ class TrimLoopTests(TrimFixture):
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")
 
-    def test_deleting_a_test_from_a_test_file_the_run_added_is_reverted(self):
+    def test_deleting_a_test_from_a_module_the_run_added_is_reverted(self):
         fake = self.trimmed(
-            Commits(WORK, Commit("work tests", "test_added.py",
+            Commits(WORK, Commit("work tests", "checks.py",
                                  PAIR.format(a="3", b="4"))),
-            Commits(Commit("trim: tests", "test_added.py",
+            Commits(Commit("trim: tests", "checks.py",
                            "def test_a():\n    assert 3\n")),
             APPROVE)
         self.assert_merged()
@@ -374,6 +383,13 @@ class TrimLoopTests(TrimFixture):
             JS_BODY_SPEC.replace("{a}", '/x/.test("abc");\n'
                                       '  // test("example", () => {{}});\n  '))
         self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+
+    def test_dropping_a_docstring_naming_a_test_from_a_witness_is_kept(self):
+        fake = self.trimmed_pair(
+            NAMES_PAIR, PAIR.format(a="3", b="4"), pair=DOC_PAIR)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
 
     def test_the_same_deletion_in_a_file_no_criterion_names_is_kept(self):
         fake = self.trimmed_pair(a_task()["criteria"][0],
