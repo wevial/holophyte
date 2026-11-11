@@ -3,6 +3,7 @@ import re
 import unittest
 from pathlib import Path
 
+from holophyte.agents.harness import ADAPTERS, T3_KEYS
 from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
@@ -91,6 +92,15 @@ class ConfigReferenceTests(unittest.TestCase):
                      "Set `false`"):
             with self.subTest(term=term):
                 self.assertIn(term, row.group())
+
+    def test_critic_row_names_every_critic_harness_and_the_t3_options(self):
+        agents = sections((DOCS / "config.md").read_text())["agents"]
+        row = re.search(r"^\| `critic` \|.*$", agents, re.MULTILINE).group()
+        for name, adapter in ADAPTERS.items():
+            if "critic" in adapter.roles:
+                self.assertIn(f'"{name}"', row)
+        for option in T3_KEYS:
+            self.assertIn(f"`{option}`", row)
 
     def test_removed_entry_names_missing_key_even_if_mentioned_elsewhere(self):
         document = (DOCS / "config.md").read_text()

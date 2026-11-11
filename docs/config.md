@@ -71,7 +71,7 @@ implementer's command and isolation settings.
 | `consolidator` | Default: Hardened Codex review container on the reviewer's model pair | Non-empty command string; change to run the consolidator on another route. On a round with an adversarial pass that goes to a fix turn, it merges near-duplicate findings and orders the list the fix turn gets (see [Reviewing](reviewing.md)). It has no fallback key and no startup probe: a failed turn, or a reply without `CONSOLIDATED`, hands the fix turn the exact merge and the run goes on. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `trimmer` | Default: Active implementer route | Non-empty command string, or the table `[agents.trimmer]` with `harness` `"claude"`, `"codex"` or `"devin"` and the same `model` and `effort` rules as `[agents.implementer]` (no `orchestration`); set it to run the trim turn (`[trim]` below) on a cheaper model or another harness. The turn launches like an implementer turn, in the task worktree and under `implementer_isolation`, with the trim goal as the last argument, and records no session. Probed at startup; when it and `trimmer_fallback` both fail, startup prints "trimmer route down; runs skip trim" and each run's trim records `skipped`, without stopping the loop. |
-| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, `"claude"` or `"claude-sdk"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude` and `claude-sdk`: default `"opus"`, `"high"`), and, with `harness = "claude-sdk"` only, `api_key_file` (an absolute or `~` path outside the project checkout) and `base_url` (an `http(s)` URL, only beside `api_key_file`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
+| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, `"claude"`, `"claude-sdk"` or `"t3"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude` and `claude-sdk`: default `"opus"`, `"high"`), with `harness = "t3"` only, the required `project`, `worktree`, `provider` and `model` and no `effort`, and, with `harness = "claude-sdk"` only, `api_key_file` (an absolute or `~` path outside the project checkout) and `base_url` (an `http(s)` URL, only beside `api_key_file`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
 | `review_model` | Default: `"gpt-6-astra"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"high"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `review_fallback_model` | Default: Absent (disabled) | Non-empty Codex model ID, set together with `review_fallback_effort`; the container reviewer's fallback model, run in the same container. |
@@ -124,7 +124,7 @@ budget_scale = 1.5
 A role can instead be a table naming a harness adapter in
 `holophyte/agents/harness.py`. Only `implementer`, `reviewer`, `adjudicator`,
 `critic`, `trimmer` and `adversary` may be tables, and only for a role the harness supports; today that
-is `claude` for `implementer`, `trimmer` and `critic`, `claude-sdk` for `critic` only, `codex` for `implementer`, `trimmer`, `reviewer`,
+is `claude` for `implementer`, `trimmer` and `critic`, `claude-sdk` and `t3` for `critic` only, `codex` for `implementer`, `trimmer`, `reviewer`,
 `adjudicator`, `critic` and `adversary`, `devin` for `implementer`, `trimmer`, `reviewer`,
 `adjudicator` and `adversary`, and `cursor` for `reviewer`, `adjudicator` and `adversary`. Unknown keys, an unknown harness, a role the harness does not
 serve, or an option the harness requires or refuses are startup errors.
@@ -426,6 +426,30 @@ api_key_file = "~/.config/anthropic/key"   # optional; default the Claude login
 base_url     = "https://api.example.com"   # optional; only beside api_key_file
 ```
 
+With `harness = "t3"` each critic turn and probe is a T3 Code thread started
+through T3's own CLI, `t3 thread start P --worktree W --provider R --model M
+--wait PROMPT`, from the table's `project`, `worktree`, `provider` and `model`,
+all four required non-empty strings; `effort` is refused. The binary is `t3` on
+PATH, or the absolute path in `[harnesses] t3`. The CLI finds the T3 server
+through the T3 home's persisted runtime state, so the factory must run on the
+server's host as a user who can read that home. `project` names a T3 project
+the operator registers beforehand, a clone of its own rather than the
+factory's checkout, since T3 creates its worktrees there. The reply, the
+CLI's stdout and stderr merged with its `Thread ID` line, carries the FRESHNESS
+verdict. T3 runs the thread in its default runtime mode with no read-only flag;
+the critic's brief forbids edits. A turn past the critic's timeout stops only
+the local CLI; the T3 run goes on until it ends. Each probe starts a real
+thread. Removing the worktrees T3 creates is the operator's job.
+
+```toml
+[agents.critic]
+harness  = "t3"
+project  = "holophyte-critic"   # required; a registered T3 project
+worktree = "main"               # required; passed to --worktree
+provider = "codex"              # required; passed to --provider
+model    = "gpt-6-luna"         # required; passed to --model
+```
+
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,
 bridge networking, the factory user's non-root UID/GID, a temporary home and
 `/workspace` mounted read-write. Only `[worktree] env_allow` values and the
@@ -578,6 +602,7 @@ supplies the binary; review roles run on the host and keep their path.
 | `claude` | Default: `claude` on PATH | Absolute path to the Claude CLI, also the CLI a `harness = "claude-sdk"` critic's SDK session drives (there is no `claude-sdk` key); set when the binary the factory should run is not the first `claude` on PATH. A relative path is refused. |
 | `codex` | Default: `codex` on PATH | Absolute path to the Codex CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `codex` on PATH. A relative path is refused. |
 | `cursor` | Default: `cursor-agent` on PATH | Absolute path to the Cursor CLI for a table reviewer or adjudicator; set when the binary the factory should run is not the first `cursor-agent` on PATH. A relative path is refused. |
+| `t3` | Default: `t3` on PATH | Absolute path to the T3 Code CLI for a `harness = "t3"` critic; set when the binary the factory should run is not the first `t3` on PATH. A relative path is refused. |
 | `devin` | Default: `devin` on PATH | Absolute path to the Devin CLI for a table implementer, reviewer or adjudicator; set when the binary the factory should run is not the first `devin` on PATH. A relative path is refused. |
 
 ## `[loop]`
