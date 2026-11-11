@@ -1,6 +1,5 @@
 import contextlib
 import fcntl
-import fnmatch
 import os
 import re
 import shlex
@@ -785,164 +784,6 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
     return ok, VerificationOutput("\n".join(reports), results, failure=failure)
 
 
-IMPORTER_CAP = 10
-
-
-_DISCOVER_OPTIONS = {"-s": "start", "--start-directory": "start",
-                     "-p": "pattern", "--pattern": "pattern",
-                     "-t": "top", "--top-level-directory": "top"}
-_DISCOVER_POSITIONS = ("start", "pattern", "top")
-
-
-def _unittest_runs(command):
-    runs = []
-    for line in command.splitlines():
-        for clause in split_and_clauses(line, allow_or=True) or ():
-            try:
-                tokens = shlex.split(clause)
-            except ValueError:
-                continue
-            for index in range(1, len(tokens) - 1):
-                if tokens[index:index + 2] == ["-m", "unittest"]:
-                    args = tokens[index + 2:]
-                    cut = next((n for n, word in enumerate(args)
-                                if word[:1] in "|<>" or ">" in word), len(args))
-                    runs.append((tokens[:index], args[:cut]))
-                    break
-    return runs
-
-
-def _discovery(args):
-    found, positional = {"start": ".", "pattern": "test*.py", "top": None}, []
-    words = iter(args[1:] if args[:1] == ["discover"] else args)
-    for word in words:
-        name, eq, value = word.partition("=")
-        if name in _DISCOVER_OPTIONS:
-            found[_DISCOVER_OPTIONS[name]] = value if eq else next(words, None)
-        elif word == "-k":
-            next(words, None)
-        elif not word.startswith("-"):
-            positional.append(word)
-    found.update(zip(_DISCOVER_POSITIONS, positional))
-    return found
-
-
-def _discovered(start, test, packages):
-    folders = os.path.relpath(os.path.dirname(test) or ".", start).split("/")
-    if folders[0] == "..":
-        return False
-    return folders == ["."] or all(
-        os.path.normpath(os.path.join(start, *folders[:depth])) in packages
-        for depth in range(1, len(folders) + 1))
-
-
-def _covers(args, test, packages):
-    from holophyte.review.blast_radius import module_name
-
-    named = [word for word in args if not word.startswith("-")]
-    if any(word.startswith("-k") for word in args):
-        return False
-    if args[:1] == ["discover"] or not named:
-        found = _discovery(args)
-        start = os.path.normpath(found["start"] or ".")
-        return (_discovered(start, test, packages)
-                and fnmatch.fnmatchcase(os.path.basename(test),
-                                        found["pattern"] or "test*.py"))
-    return module_name(test) in {module_name(word) for word in named}
-
-
-def _top_level(runs):
-    for _, args in runs:
-        if args[:1] == ["discover"] or all(word.startswith("-") for word in args):
-            found = _discovery(args)
-            return os.path.normpath(found["top"] or found["start"] or ".")
-    return "."
-
-
-def _module_clause(prefix, top, test):
-    from holophyte.review.blast_radius import module_name
-
-    relative = os.path.relpath(test, top)
-    if top == "." or relative.startswith(".."):
-        return f"{shlex.join(prefix)} -m unittest {module_name(test)}"
-    return f"{_with_path(prefix, top)} -m unittest {module_name(relative)}"
-
-
-def _with_path(prefix, top):
-    assigned = [n for n, word in enumerate(prefix)
-                if word.startswith("PYTHONPATH=")]
-    if not assigned:
-        return (f"PYTHONPATH={shlex.quote(top)}${{PYTHONPATH:+:$PYTHONPATH}} "
-                f"{shlex.join(prefix)}")
-    words, last = list(prefix), assigned[-1]
-    value = words[last].partition("=")[2]
-    words[last] = f"PYTHONPATH={top}" + (f":{value}" if value else "")
-    return shlex.join(words)
-
-
-def _test_module(path):
-    from holophyte.review.blast_radius import module_name
-
-    name = os.path.basename(path)
-    return ((fnmatch.fnmatchcase(name, "test*.py") or name.endswith("_test.py"))
-            and all(part.isidentifier() for part in module_name(path).split(".")))
-
-
-def _distance(one, other):
-    one, other = one.split("/")[:-1], other.split("/")[:-1]
-    shared = len(os.path.commonprefix([one, other]))
-    return len(one) + len(other) - 2 * shared
-
-
-def _importing_tests(root, runs):
-    from holophyte.review.blast_radius import importers, module_names, package_dirs
-    from holophyte.review.briefs import _changed_files, main_ref
-
-    try:
-        base = sh(["git", "merge-base", main_ref(root), "HEAD"], cwd=root)
-        changed = [path for path in _changed_files(root, base, "HEAD")
-                   if path.endswith(".py")]
-        packages = package_dirs(root, "HEAD") if changed else set()
-        modules = {name: path for path in changed
-                   for name in module_names(path, packages)}
-        found = importers(root, "HEAD", modules) if modules else {}
-    except (RuntimeError, OSError, subprocess.CalledProcessError):
-        return []
-    nearest = {}
-    for source, files in found.items():
-        for test in files:
-            if (_test_module(test)
-                    and not any(_covers(args, test, packages)
-                                for _, args in runs)):
-                distance = _distance(test, source)
-                nearest[test] = min(distance, nearest.get(test, distance))
-    return sorted(nearest, key=lambda test: (nearest[test], test))[:IMPORTER_CAP]
-
-
-def _run_importing_tests(project, wt, command, conn=None, run_id=None):
-    from holophyte.config.config_tables import verify_config
-
-    runs = _unittest_runs(command)
-    tests = _importing_tests(wt, runs) if runs else []
-    if not tests:
-        return True, None
-    top = _top_level(runs)
-    joined = " && ".join(_module_clause(runs[0][0], top, test) for test in tests)
-    ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,
-                         conn=conn, run_id=run_id, project=project)
-    if ok:
-        return True, {"source": "importers", "command": joined, "exitCode": 0,
-                      "output": f"[verify] tests importing a changed module "
-                                f"passed: {', '.join(tests)}\n{out}"}
-    failure = getattr(out, "failure", None) or {}
-    index = failure.get("command_index") or 1
-    named = tests[index - 1] if 1 <= index <= len(tests) else ", ".join(tests)
-    report = (f"[verify] FAILED: {named} imports a changed module and failed\n"
-              f"{out}")
-    return False, {"source": "importers", "command": joined, "exitCode": 1,
-                   "output": report, "failure": failure or None}
-
-
 def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                   *, before_merge=False):
     import json
@@ -955,8 +796,9 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
     failure = getattr(out, "failure", None)
     reports = [str(out)]
     if ok and command:
-        ok, importing = _run_importing_tests(project, wt, command, conn,
-                                                run_id)
+        from holophyte.loop.importing_tests import run_importing_tests
+
+        ok, importing = run_importing_tests(project, wt, command, conn, run_id)
         if importing is not None:
             failure = importing.pop("failure", failure)
             results.append(importing)

@@ -146,6 +146,8 @@ Each module, one line:
   event facts for verify, adjudication and fix rounds.
 - `holophyte/loop/gates.py` — the verify gate: a ticket's command in, a red or
   green fail-loud report out.
+- `holophyte/loop/importing_tests.py` — the test modules that import a
+  changed module, run after a passing unittest verify in its shell setup.
 - `holophyte/agents/agent_routes.py` — process-owned route state and live console snapshots.
 - `holophyte/agents/agent_turns.py` — per-turn command labels, timing and run events.
 - `holophyte/isolation/launcher.py` — host/container implementer launch seam, validated

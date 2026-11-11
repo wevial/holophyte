@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.importing_tests  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import APPROVE, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
@@ -242,7 +243,7 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertEqual(out.results[-1]["exitCode"], 1)
 
     def test_only_the_capped_number_of_importers_run(self):
-        cap = holophyte.loop.gates.IMPORTER_CAP
+        cap = holophyte.loop.importing_tests.IMPORTER_CAP
         for depth in range(1, cap + 3):
             self.write("tests" + "/nested" * depth + "/__init__.py", "")
             self.add_test("test_deep", "pkg.a", "tests" + "/nested" * depth,
@@ -310,13 +311,51 @@ class ImportingTestsTests(unittest.TestCase):
 
     def test_a_verify_python_path_is_kept_beside_the_test_directory(self):
         self.write("src/helper.py", "")
+        self.write("the src/helper.py", "")
         self.add_test("test_src", "pkg.a", preamble="import helper\n")
         self.onto_main()
         self.change_a("1  # touched")
-        ok, out = self.gate("PYTHONPATH=src python3 -m unittest discover"
-                            " -s tests -p test_unrelated.py")
+        for path in ("src", '"$PWD/src"', "'the src'"):
+            with self.subTest(path=path):
+                self.log.write_text("")
+                ok, out = self.gate(f"PYTHONPATH={path} python3 -m unittest"
+                                    " discover -s tests -p test_unrelated.py")
+                self.assertTrue(ok, out)
+                self.assertIn("test_src", self.ran())
+
+    def test_an_exported_python_path_carries_to_importers(self):
+        self.write("src/helper.py", "")
+        self.add_test("test_src", "pkg.a", preamble="import helper\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate("export PYTHONPATH=src\n" + self.VERIFY)
         self.assertTrue(ok, out)
         self.assertIn("test_src", self.ran())
+
+    def test_importers_run_in_the_subproject_the_verify_changes_into(self):
+        self.write("sub/pkg/__init__.py", "")
+        self.write("sub/pkg/a.py", "VALUE = 1\n")
+        self.add_test("test_unrelated", "pkg.b", "sub/tests", label="sub_b")
+        self.write("sub/pkg/b.py", "VALUE = 1\n")
+        self.add_test("test_a", "pkg.a", "sub/tests", label="sub_a")
+        self.onto_main()
+        self.write("sub/pkg/a.py", "VALUE = 1  # touched\n")
+        self.git("commit", "-q", "-am", "change sub pkg.a")
+        ok, out = self.gate("cd sub && " + self.VERIFY)
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), ["sub_a", "sub_b"])
+
+    def test_a_relative_importer_of_the_changed_module_runs(self):
+        self.write("pkg/test_relative.py", (
+            "import unittest\nfrom .a import VALUE\n\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_value(self):\n"
+            "        self.assertEqual(VALUE, 1)\n"))
+        self.onto_main()
+        self.change_a(2)
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: pkg/test_relative.py imports a changed module", out)
 
 
 class MergeLockTests(unittest.TestCase):

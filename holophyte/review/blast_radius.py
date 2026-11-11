@@ -84,10 +84,21 @@ def _names(text):
             if part.split()}
 
 
-def imported(line):
+def _absolute(name, source):
+    level = len(name) - len(name.lstrip("."))
+    if not level:
+        return name
+    package = module_name(source).split(".")
+    if not source.endswith("/__init__.py") and source != "__init__.py":
+        package = package[:-1]
+    base = package[:max(0, len(package) - level + 1)]
+    return ".".join([*base, name[level:]] if name[level:] else base)
+
+
+def imported(line, source):
     found = FROM_RE.match(line)
     if found:
-        package = found.group(1)
+        package = _absolute(found.group(1), source)
         return {package} | {f"{package}.{name}" for name in _names(found.group(2))}
     found = IMPORT_RE.match(line)
     return _names(found.group(1)) if found else set()
@@ -104,7 +115,7 @@ def importers(root, sha, modules):
     for record in run.stdout.split("\n"):
         name, _, line = record.partition("\0")
         source = name.partition(":")[2]
-        for module in imported(line) & modules.keys():
+        for module in imported(line, source) & modules.keys():
             if modules[module] != source:
                 found[modules[module]].add(source)
     return found
