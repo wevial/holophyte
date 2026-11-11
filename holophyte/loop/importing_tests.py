@@ -80,6 +80,8 @@ def _discovery(args):
         name, eq, value = word.partition("=")
         if name in _DISCOVER_OPTIONS:
             found[_DISCOVER_OPTIONS[name]] = value if eq else next(words, None)
+        elif word[:2] in _DISCOVER_OPTIONS and len(word) > 2:
+            found[_DISCOVER_OPTIONS[word[:2]]] = word[2:]
         elif word == "-k":
             next(words, None)
         elif not word.startswith("-"):

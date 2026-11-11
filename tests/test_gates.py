@@ -248,6 +248,15 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertFalse(ok, out)
         self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
 
+    def test_attached_discovery_option_values_narrow_what_verify_covers(self):
+        self.write("tests/__init__.py", "")
+        self.onto_main()
+        self.change_a(2)
+        ok, out = self.gate(
+            "python3 -m unittest discover -stests -ptest_unrelated.py")
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
     def test_only_the_capped_number_of_importers_run(self):
         for depth in range(1, 13):
             self.write("tests" + "/nested" * depth + "/__init__.py", "")
