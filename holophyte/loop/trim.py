@@ -202,10 +202,14 @@ def _witnessed(wt, sha, commits, protected):
 def _test_ids(wt, commit, path):
     shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=wt,
                            capture_output=True)
-    text = shown.stdout.decode(errors="replace") if not shown.returncode else ""
+    if shown.returncode or b"\0" in shown.stdout:
+        return Counter()
     read = {".py": _python_tests, ".go": _go_tests}.get(
         PurePosixPath(path).suffix, _spec_titles)
-    return Counter(read(text))
+    try:
+        return Counter(read(shown.stdout.decode(errors="replace")))
+    except (RecursionError, MemoryError):
+        return Counter()
 
 
 def _python_tests(text):
