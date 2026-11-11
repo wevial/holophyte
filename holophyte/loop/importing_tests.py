@@ -174,7 +174,7 @@ def _importing_tests(root, runs):
     return sorted(nearest, key=lambda test: (nearest[test], test))
 
 
-def run_importing_tests(project, wt, command, conn=None, run_id=None):
+def run_importing_tests(project, wt, command, conn, run_id):
     runs = unittest_runs(command)
     if not runs:
         return True, None
