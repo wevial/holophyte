@@ -395,6 +395,20 @@ class TrimLoopTests(TrimFixture):
         self.assertIn("criterion witness", result["reason"])
         self.assertIn('"test_b"', self.git("show", f"main:{path}"))
 
+    def test_a_named_path_with_glob_characters_protects_only_itself(self):
+        named, sibling = "app/[id]/route.test.ts", "app/i/route.test.ts"
+        self.on_main(named, JS_PAIR.format(a="1", b="2"))
+        self.on_main(sibling, JS_PAIR.format(a="1", b="2"))
+        self.trimmed(
+            Commits(WORK, Commit("work tests", sibling, JS_PAIR.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", sibling,
+                           'test("test_a", () => expect(3));\n')),
+            APPROVE, task=dict(a_task(), criteria=[
+                f"Given a route, then both hold. (`{named}` witnesses it.)"]))
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+        self.assertNotIn('"test_b"', self.git("show", f"main:{sibling}"))
+
     def test_a_deleted_go_test_whose_name_prefixes_a_kept_one_is_reverted(self):
         self.assert_witness_reverted(
             "pair_test.go", GO_PAIR,
