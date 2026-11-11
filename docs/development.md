@@ -214,7 +214,7 @@ Each module, one line:
   kept, then posted to the thread as cards answering the taken message.
 - `holophyte/scout/report.py` — a scout report's shape checked field by
   field, and each `file`/`line` evidence item resolved against the base
-  commit.
+  commit, or under a source's `NAME/` against the source's commit.
 - `holophyte/scout/run_helpers.py` — a scout's `run` helpers: the
   helper's own shared clone of the project, the project's `[worktree] setup`
   in it, the run goal (the reproduce goal of a bug scout or the measure goal
@@ -236,6 +236,9 @@ Each module, one line:
 - `holophyte/scout/scout_process.py` — `--scout ID`: one scout in its own
   process, its lead worktree with pushes refused, its heartbeat and its end,
   an `answering` scout's answer turn, or a steered scout's follow-up pass.
+- `holophyte/scout/sources.py` — a scout's `[scout.sources]`: each source
+  shallow-cloned at its ref into the scout's directory with its commit
+  read, and its tree copied to `NAME/` in a checkout, kept out of git status.
 - `holophyte/scout/scout_sweep.py` — the host sweep's scout step: ends
   scouts whose heartbeat is stale and starts queued ones, waiting asks and
   waiting steers under `[scout] max_parallel` and a host-wide lock, putting a scout whose

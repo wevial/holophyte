@@ -159,12 +159,26 @@ def asked(row):
             f"Base commit: {row.base_sha}")
 
 
-def plan_goal(row, limit, context, prior="", github=False):
+def sources_sentence(sources):
+    if not sources:
+        return ""
+    listed = "\n".join(
+        f"- {source.name}/: {source.url} at {source.ref}, commit "
+        f"{source.commit}" for source in sources.values())
+    return ("Outside sources sit in this checkout, each at a pinned commit "
+            "and outside git status:\n"
+            f"{listed}\n"
+            "A sub-task's paths may start with a source's NAME/, and evidence "
+            "in a source is cited as NAME/path:line.\n\n")
+
+
+def plan_goal(row, limit, context, prior="", github=False, sources=None):
     return (
         f"{PLAN_OPENING}\n\n"
         "You lead a scout: a read-only investigation of this checkout. Do not "
         "edit files, commit or push.\n\n"
-        f"{asked(row)}\n\n{CONTEXT_SLOT if context else ''}{prior}"
+        f"{asked(row)}\n\n{sources_sentence(sources)}"
+        f"{CONTEXT_SLOT if context else ''}{prior}"
         f"Plan the work as at most {limit} sub-tasks. Each is one question a "
         "helper answers by reading the code (mode \"read\") or by running "
         "commands in its own checkout (mode \"run\"), with the "
@@ -559,10 +573,11 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
     parked = parked_subject(conn, row)
     context, pack_paths = scout_context(conn, project, row)
     prior, offered = scout_prior(conn, project, row, pack_paths)
-    turn = lead.start(plan_goal(row, limit, context, prior + digest,
-                                lead.server is not None), budget_s, context)
     with Swarm(conn, project, row, config, deadline, stopping,
                server=lead.server) as swarm:
+        turn = lead.start(plan_goal(row, limit, context, prior + digest,
+                                    lead.server is not None, swarm.sources),
+                          budget_s, context)
         tasks, problem = wave_tasks(conn, swarm, turn, 1, "plan")
         steers = run_waves(conn, lead, swarm, tasks, row.waves or config.waves)
         turn = lead.resume(report_goal(row, swarm, problem,
@@ -579,8 +594,8 @@ def run_lead(conn, project, row, worktree, budget_s, stopping):
                                           parked)
         if problems:
             return "failed", f"{MALFORMED}: {problems[0]}"
-        report = reproduced(row, swarm, resolve_evidence(project.path,
-                                                         row.base_sha, report))
+        report = reproduced(row, swarm, resolve_evidence(
+            project.path, row.base_sha, report, swarm.sources))
         with store.transaction(conn):
             report = stamped(conn, row, report)
             record_scout_report(conn, row.id, 1, dict(report, cut=swarm.cut()))

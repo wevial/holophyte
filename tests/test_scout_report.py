@@ -27,6 +27,7 @@ from holophyte.scout.report import (
     report_problems,
     resolve_evidence,
 )
+from holophyte.scout.sources import Fetched
 from holophyte.scout.views import scout_parts
 from holophyte.tickets import ticket_template
 from store.scouts import create_scout, move_scout, scout
@@ -310,6 +311,34 @@ class ResolveEvidenceTests(unittest.TestCase):
         self.assertIs(nul["verified"], False)
         self.assertTrue(nul["why"].startswith("not in the base commit"))
         self.assertEqual(report["findings"][0]["evidence"], cited)
+
+    def test_a_source_citation_is_resolved_at_the_source_commit(self):
+        with tempfile.TemporaryDirectory() as root:
+            repo, origin = Path(root) / "repo", Path(root) / "origin"
+            for tree in (repo, origin):
+                subprocess.run(["git", "init", "-q", str(tree)], check=True)
+            (repo / "file").write_text("one\n")
+            git(repo, "add", "file")
+            git(repo, "commit", "-q", "-m", "base")
+            (origin / "file").write_text("one\ntwo\nthree\n")
+            git(origin, "add", "file")
+            git(origin, "commit", "-q", "-m", "pinned")
+            pinned = git(origin, "rev-parse", "HEAD")
+            (origin / "file").write_text("one\ntwo\nthree\nfour\n")
+            git(origin, "commit", "-q", "-am", "later")
+            sources = {"t3": Fetched("t3", str(origin), "v1", origin, pinned)}
+            cited = [{"file": "t3/file", "line": 3},
+                     {"file": "t3/file", "line": 4},
+                     {"file": "other/file", "line": 1}]
+            report = changed(("findings", 0, "evidence"), cited)
+            resolved = resolve_evidence(repo, git(repo, "rev-parse", "HEAD"),
+                                        report, sources)
+        verified, past, undeclared = resolved["findings"][0]["evidence"]
+        self.assertIs(verified["verified"], True)
+        self.assertEqual((past["verified"], past["why"]),
+                         (False, "past the end of the file (3 lines)"))
+        self.assertIs(undeclared["verified"], False)
+        self.assertTrue(undeclared["why"].startswith("not in the base commit"))
 
 
 class ReportRepairTests(ScoutFixture):
