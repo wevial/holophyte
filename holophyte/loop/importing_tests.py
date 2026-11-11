@@ -5,7 +5,15 @@ import shlex
 import subprocess
 from typing import NamedTuple
 
+from holophyte.config.config_tables import verify_config
 from holophyte.loop.gates import _word_spans, run_verify, sh, split_and_clauses
+from holophyte.review.blast_radius import (
+    importers,
+    module_name,
+    module_names,
+    package_dirs,
+)
+from holophyte.review.briefs import _changed_files, main_ref
 
 IMPORTER_CAP = 10
 
@@ -87,8 +95,6 @@ def _discovered(start, test, packages):
 
 
 def _covers(run, test, packages):
-    from holophyte.review.blast_radius import module_name
-
     named = [word for word in run.args if not word.startswith("-")]
     if any(word.startswith("-k") for word in run.args):
         return False
@@ -113,8 +119,6 @@ def _top_level(runs):
 
 
 def _module_clause(run, top, test):
-    from holophyte.review.blast_radius import module_name
-
     under_top = os.path.normpath(os.path.join(run.cwd, top))
     for base in (under_top, run.cwd):
         relative = os.path.relpath(test, base)
@@ -138,8 +142,6 @@ def _with_path(prefix, top):
 
 
 def _test_module(path):
-    from holophyte.review.blast_radius import module_name
-
     name = os.path.basename(path)
     return ((fnmatch.fnmatchcase(name, "test*.py") or name.endswith("_test.py"))
             and all(part.isidentifier() for part in module_name(path).split(".")))
@@ -152,9 +154,6 @@ def _distance(one, other):
 
 
 def _importing_tests(root, runs):
-    from holophyte.review.blast_radius import importers, module_names, package_dirs
-    from holophyte.review.briefs import _changed_files, main_ref
-
     try:
         base = sh(["git", "merge-base", main_ref(root), "HEAD"], cwd=root)
         changed = [path for path in _changed_files(root, base, "HEAD")
@@ -176,8 +175,6 @@ def _importing_tests(root, runs):
 
 
 def run_importing_tests(project, wt, command, conn=None, run_id=None):
-    from holophyte.config.config_tables import verify_config
-
     runs = unittest_runs(command)
     top = _top_level(runs) if runs else "."
     clauses = {}
