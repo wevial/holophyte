@@ -11,6 +11,7 @@ from pathlib import Path
 import store
 from holophyte.agents.review_workspace import review_worktrees, scratch_git_environment
 from holophyte.config.config_tables import sweep_config
+from holophyte.host.registry import loop_unit_environment
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
@@ -367,7 +368,7 @@ def scout_mode(project, scout_id):
             return 1
         stopping = Stopping()
         run, stopped = modes(conn, project, row, stopping)
-        with stop_on_sigterm(stopping):
+        with loop_unit_environment(project), stop_on_sigterm(stopping):
             try:
                 return run()
             except ScoutStopped:
