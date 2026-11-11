@@ -1,11 +1,14 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
 import json
 import subprocess
+from collections import Counter
 from fnmatch import fnmatchcase
 from functools import partial
 from pathlib import Path, PurePosixPath
 
 import store
+import store.criteria
+import store.read
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.fallback import failed_turn, outage_reason
 from holophyte.config.config_tables import trim_config, verify_config
@@ -23,20 +26,30 @@ from holophyte.loop.implement import (
 )
 from holophyte.loop.review_round import _changed_lines
 from holophyte.loop.runs import heartbeat_while
-from holophyte.loop.trim_brief import TESTS_BRIEF, TRIM_BRIEF, pass_name
+from holophyte.loop.trim_brief import (
+    PROTECTED_BRIEF,
+    TESTS_BRIEF,
+    TRIM_BRIEF,
+    pass_name,
+)
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
+from holophyte.review.criterion_ids import numbered
+from holophyte.review.reply_parsing import test_names
+from holophyte.review.witness_precheck import named_files
 
 LINE_FLOOR = 50
 TEST_RATIO = 3
 TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
+SOURCE_SUFFIXES = {".py", ".go", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
+                   ".mts", ".cts"}
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
-         contracts):
+         contracts, criteria=()):
     config = trim_config(project)
     if not config.enabled:
         return sha
@@ -49,15 +62,21 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
         _record(project, conn, run_id, "skipped", reason, [], [], before, before)
         return sha
     untracked = _untracked(wt)
+    protected = _protected(conn, run_id, wt, base_sha, sha, criteria)
     goal = TRIM_BRIEF.format(base=base_sha,
                              commands=_commands_brief(project, verify_cmd).strip(),
-                             tests=_tests_brief(wt, base_sha))
+                             tests=_tests_brief(wt, base_sha),
+                             protected=PROTECTED_BRIEF.format(
+                                 files="\n".join(f"- `{path}`"
+                                                  for path in protected))
+                             if protected else "")
     out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min, goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
     commits = _commits(wt, sha)
     reason = reason or _malformed(wt, sha, commits)
     kept, reason = (([], reason) if reason else
-                    _judge(wt, base_sha, sha, commits, green, untracked))
+                    _judge(wt, base_sha, sha, commits, green, untracked,
+                           protected))
     dropped = commits[len(kept):]
     _land(wt, kept[-1][0] if kept else sha, untracked)
     outcome = ("partial" if kept and dropped else "kept" if kept
@@ -127,14 +146,61 @@ def _green(project, conn, run_id, beat_s, wt, verify_cmd, contracts):
     return ok
 
 
-def _judge(wt, base_sha, sha, commits, green, untracked):
+def _judge(wt, base_sha, sha, commits, green, untracked, protected):
     scoped, stray = _scoped(wt, base_sha, sha, commits)
-    if stray:
-        _land(wt, scoped[-1][0] if scoped else sha, untracked)
+    scoped, unwitnessed = _witnessed(wt, sha, scoped, protected)
+    _land(wt, scoped[-1][0] if scoped else sha, untracked)
     kept = _green_prefix(wt, scoped, green, untracked)
     red = scoped[len(kept):]
     return kept, "; ".join(filter(None, (
-        stray, red and f"verify was red at trim: {_passes(red)[0]['pass']}"))) or None
+        stray, unwitnessed,
+        red and f"verify was red at trim: {_passes(red)[0]['pass']}"))) or None
+
+
+def _protected(conn, run_id, wt, base_sha, sha, criteria):
+    claimed = [text for _, text in numbered(conn, run_id, criteria)]
+    snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
+    rows = [row for row in (store.criteria.current(conn, snapshot.ticketId)
+                            if snapshot else ())
+            if row["witnessKind"] == "test" and row["text"] in claimed]
+    patterns = {path for files in named_files(claimed) for path in files}
+    patterns |= {path for row in rows
+                 for path in (row["witnessTarget"] or "").split(",") if path}
+    tree = sh(["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
+    added = sh(["git", "diff", "--name-only", "--diff-filter=A",
+                f"{base_sha}...{sha}"], cwd=wt).splitlines()
+    globs = patterns - set(tree)
+    candidates = {path for path in tree if path in patterns
+                  or any(fnmatchcase(path, pattern) for pattern in globs)}
+    runnable = {path for path in added if _is_test(path)
+                or PurePosixPath(path).suffix in SOURCE_SUFFIXES}
+    return sorted(path for path in candidates | runnable
+                  if _test_ids(wt, sha, path))
+
+
+def _witnessed(wt, sha, commits, protected):
+    parent = sha
+    for n, (commit, subject) in enumerate(commits):
+        removed = [f"{path}::{name}" for path in protected
+                   for name in (_test_ids(wt, parent, path)
+                                - _test_ids(wt, commit, path))]
+        if removed:
+            return commits[:n], (f"criterion witness: {subject} removed "
+                                 + ", ".join(removed))
+        parent = commit
+    return commits, None
+
+
+def _test_ids(wt, commit, path):
+    shown = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=wt,
+                           capture_output=True)
+    if shown.returncode or b"\0" in shown.stdout:
+        return Counter()
+    try:
+        return Counter(test_names(shown.stdout.decode(errors="replace"),
+                                  PurePosixPath(path).suffix))
+    except (RecursionError, MemoryError):
+        return Counter()
 
 
 def _scoped(wt, base_sha, sha, commits):

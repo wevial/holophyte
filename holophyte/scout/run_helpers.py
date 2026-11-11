@@ -13,6 +13,7 @@ from holophyte.isolation import launcher
 from holophyte.loop.gates import RunFailure, sh
 from holophyte.loop.task_worktree import prepare_worktree
 from holophyte.scout.scout_probes import probe_scout_route
+from holophyte.scout.sources import place_sources
 from store.enums import ScoutKind, ScoutTaskMode, ScoutTaskPhase
 from store.scouts import record_scout_event
 
@@ -110,7 +111,7 @@ def reproduced(row, swarm, report):
         claimed_level=reproduction["level"], why=NO_RUN_FINISHED))
 
 
-def run_clone(project, scout_id, task_id, base_sha):
+def run_clone(project, scout_id, task_id, base_sha, sources):
     from holophyte.scout.scout_process import scout_dir
 
     path = scout_dir(project, scout_id) / f"run-{task_id}"
@@ -118,7 +119,9 @@ def run_clone(project, scout_id, task_id, base_sha):
     shutil.rmtree(path, ignore_errors=True)
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        return cloned(project, path, base_sha, env)
+        cloned(project, path, base_sha, env)
+        place_sources(path, sources)
+        return path
     except BaseException:
         shutil.rmtree(path, ignore_errors=True)
         raise

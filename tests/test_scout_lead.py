@@ -168,8 +168,8 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(len(self.stubs.turns("report")), 1)
         self.assertEqual(self.report(conn, scout_id), [dict(UNSHOWN, cut=[])])
 
-    def run_unstored_plan(self, tasks):
-        path, conn, scout_id = self.bug_scout()
+    def run_unstored_plan(self, tasks, config=CLAUDE_LEAD):
+        path, conn, scout_id = self.bug_scout(config)
         self.stubs.answer(plan=fenced({"tasks": tasks}), report=fenced(REPORT))
         code, printed = self.run_scout(path, scout_id)
         self.assertEqual(code, 0, printed)
@@ -187,11 +187,43 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(self.run_unstored_plan([PLAN["tasks"][0], untitled]),
                          [f"no wave 1 stored: task 2: {TITLE_RULE}"])
 
-    def test_a_task_title_of_nine_words_stores_no_plan_but_a_report(self):
-        long = dict(PLAN["tasks"][0],
-                    title="Find where the retry loop sleeps between its attempts")
-        self.assertEqual(self.run_unstored_plan([long, PLAN["tasks"][1]]),
-                         [f"no wave 1 stored: task 1: {TITLE_RULE}"])
+    def test_a_task_title_of_ten_words_is_stored_shortened(self):
+        path, conn, scout_id = self.bug_scout()
+        long = dict(PLAN["tasks"][1], title="Run the retry test on main and time"
+                    " each sleep")
+        self.stubs.answer(plan=fenced({"tasks": [PLAN["tasks"][0], long]}),
+                          report=fenced(REPORT))
+        code, printed = self.run_scout(path, scout_id)
+        self.assertEqual(code, 0, printed)
+        titles = [row[2] for row in self.tasks(conn, scout_id)]
+        self.assertEqual(titles[0], "Find the retry loop")
+        self.assertEqual(len(titles), 2)
+        self.assertEqual(titles[1], "Run the retry test on main and time")
+        self.assertLessEqual(len(titles[1].split()), 8)
+        self.assertLessEqual(len(titles[1]), 60)
+
+    def test_a_plan_with_a_source_path_is_stored_and_reaches_its_helper(self):
+        _, tagged, table = self.a_source()
+        path, conn, scout_id = self.bug_scout(CLAUDE_LEAD + table)
+        sourced = dict(PLAN["tasks"][0], paths=["t3/src/app.txt"])
+        self.stubs.answer(plan=fenced({"tasks": [sourced]}),
+                          report=fenced(REPORT))
+        code, printed = self.run_scout(path, scout_id)
+        self.assertEqual(code, 0, printed)
+        self.assertEqual(self.tasks(conn, scout_id), [
+            (1, 1, "Find the retry loop", "Where is the retry loop?", "[]",
+             "read", "done")])
+        (plan,), (helper,) = self.stubs.turns("plan"), self.stubs.turns("helper")
+        self.assertIn(f"- t3/: {self.root / 't3-origin'} at v1, commit {tagged}",
+                      plan["argv"][-1])
+        self.assertIn("Paths: t3/src/app.txt\n", helper["argv"][-1])
+
+    def test_a_plan_path_that_is_absolute_is_still_refused(self):
+        absolute = dict(PLAN["tasks"][0], paths=["/etc/t3/src/app.txt"])
+        self.assertEqual(self.run_unstored_plan(
+            [absolute], CLAUDE_LEAD + self.a_source()[2]), [
+            "no wave 1 stored: task 1: paths must be a list of "
+            "repository-relative paths"])
 
     def test_a_report_turn_with_no_json_block_ends_the_scout_failed(self):
         path, conn, scout_id = self.bug_scout()
