@@ -1,9 +1,12 @@
 import fcntl
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 import store
@@ -23,6 +26,7 @@ from holophyte.loop.reexec import (
 from holophyte.scout.answer import current_ask, fail_answer
 from holophyte.scout.follow_up import current_pass, fail_pass
 from holophyte.scout.scout_process import scout_dir
+from holophyte.scout.swarm import scout_scratch_prefix
 from store.enums import ScoutPhase
 from store.scout_thread import (
     ASK,
@@ -52,6 +56,8 @@ SPAWN = subprocess.Popen
 START_LOCK = "scout-start.lock"
 START_FAILED = "scout_start_failed"
 SANDBOX_UNAVAILABLE = "scout_sandbox_unavailable"
+STOP_GRACE_S = 10
+ENDED_FAILED = "ended failed"
 
 
 def _project_scouts(conn, target, phases):
@@ -70,7 +76,49 @@ def _end_one_stale(conn, row, reason, now):
         fail_pass(conn, row.id, steered, reason)
         return f"pass {steered['pass']} failed, back to done"
     end_scout(conn, row.id, "failed", reason, now=now)
-    return "ended failed"
+    return ENDED_FAILED
+
+
+def _runs_scout(pid, scout_id):
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return any(arg == b"--scout" and value == str(scout_id).encode()
+               for arg, value in zip(argv, argv[1:]))
+
+
+def _reap(pid):
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        pass
+
+
+def _signal_until_gone(pid, scout_id, signum, grace_s):
+    try:
+        os.kill(pid, signum)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    deadline = time.monotonic() + grace_s
+    while time.monotonic() < deadline:
+        _reap(pid)
+        if not _runs_scout(pid, scout_id):
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def stop_scout(pid, scout_id):
+    if pid is not None and _runs_scout(pid, scout_id) and not any(
+            _signal_until_gone(pid, scout_id, signum, STOP_GRACE_S)
+            for signum in (signal.SIGTERM, signal.SIGKILL)):
+        return
+    for scratch in Path(tempfile.gettempdir()).glob(
+            f"{scout_scratch_prefix(scout_id)}*"):
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def end_stale(name, target, conn, now, out):
@@ -89,6 +137,8 @@ def end_stale(name, target, conn, now, out):
         if ended is not None:
             print(f"[holo2] {name}: scout {row.id} {ended}: {reason}",
                   file=out)
+        if ended == ENDED_FAILED:
+            stop_scout(row.pid, row.id)
 
 
 def scout_unit(name, scout_id):

@@ -7,8 +7,10 @@ Run: python3 -m unittest discover -s tests -p 'test_scout_process.py' -v
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -512,6 +514,42 @@ class ScoutSweepTests(ScoutFixture):
         self.assertEqual(row.phase, "failed")
         self.assertTrue(row.reason.startswith("heartbeat stale"), row.reason)
         self.assertEqual(scout(conn, fresh), before)
+
+    def stale_with_process(self, argv):
+        path = self.project("alpha",
+                            "[supervisor]\nheartbeat_stale_min = 1\n")
+        stale = self.a_scout(path, "planning")
+        conn = self.conn(path)
+        child = subprocess.Popen([sys.executable, "-c",
+                                  "import time; time.sleep(120)",
+                                  *argv(stale)])
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        claim_scout(conn, stale, child.pid)
+        move_scout(conn, stale, "swarming")
+        beat_scout(conn, stale, now=now_ms() - 2 * MINUTE)
+        target = Project.locate(path, adopt=False)
+        return target, conn, stale, child
+
+    def test_a_scout_ended_stale_loses_its_process_and_helper_scratch(self):
+        target, conn, stale, child = self.stale_with_process(
+            lambda scout_id: ["--scout", str(scout_id)])
+        scratch = Path(tempfile.mkdtemp(prefix=f"holophyte-scout-{stale}-"))
+        (scratch / "helper").mkdir()
+        self.addCleanup(shutil.rmtree, scratch, True)
+        scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
+        self.assertEqual(scout(conn, stale).phase, "failed")
+        child.wait(timeout=5)
+        self.assertFalse(Path(f"/proc/{child.pid}").exists())
+        self.assertEqual(list(Path(tempfile.gettempdir()).glob(
+            f"holophyte-scout-{stale}-*")), [])
+
+    def test_a_stale_scout_pid_now_running_something_else_is_left(self):
+        target, conn, stale, child = self.stale_with_process(
+            lambda scout_id: ["--other", str(scout_id)])
+        scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
+        self.assertEqual(scout(conn, stale).phase, "failed")
+        self.assertIsNone(child.poll())
 
     def test_a_project_with_a_config_error_still_counts_its_live_scouts(self):
         alpha, beta = self.project("alpha"), self.project("beta")

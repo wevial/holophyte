@@ -101,6 +101,10 @@ class ScoutStopped(BaseException):
     pass
 
 
+def scout_scratch_prefix(scout_id):
+    return f"holophyte-scout-{int(scout_id)}-"
+
+
 def kill_group(proc):
     if proc.returncode is not None:
         return
@@ -269,7 +273,8 @@ class Swarm:
         self.launched += len(launch)
         if self.scratch is None:
             self.scratch = self.stack.enter_context(
-                review_scratch(self.project.path))
+                review_scratch(self.project.path,
+                               prefix=scout_scratch_prefix(self.row.id)))
         starts = [threading.Event() for _ in launch]
         done, ready, failed = threading.Event(), threading.Event(), []
         watcher = threading.Thread(target=self.watch,
