@@ -1,4 +1,4 @@
-"""The gap layer record: an additive table, its writer and its per-layer count."""
+"""The gap layer record: an additive table and its writer."""
 import json
 import re
 import sqlite3
@@ -8,10 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import store
-from store.gap_layers import gap_layer_counts, record_gap_layer
+from store.gap_layers import record_gap_layer
 
 FROZEN = Path(__file__).with_name("store_pre_gap_layers.sql")
-LADDER = ["impossible", "static", "witness", "guidance", "review", "none"]
 
 
 def frozen_version():
@@ -106,25 +105,18 @@ class GapLayerRecordTests(unittest.TestCase):
             "SELECT ticketId, layer, note, carriedBy, author, at"
             " FROM gapLayers ORDER BY id").fetchall()
 
-    def test_counts_take_each_gaps_latest_layer_in_ladder_order(self):
+    def test_each_record_appends_its_row(self):
         record_gap_layer(self.conn, self.ko1, "witness", "a test pins it",
                          "operator", now=10)
         record_gap_layer(self.conn, self.ko1, "static", "a lint refuses it",
                          "operator", carried_by="HOLO-7", now=20)
         record_gap_layer(self.conn, self.ko2, "impossible", "the type forbids",
                          "reviewer", now=30)
-        counts = gap_layer_counts(self.conn)
-        self.assertEqual(list(counts.items()),
-                         [("impossible", 1), ("static", 1), ("witness", 0),
-                          ("guidance", 0), ("review", 0), ("none", 0)])
-        self.assertEqual(self.rows()[:2], [
+        self.assertEqual(self.rows(), [
             (self.ko1, "witness", "a test pins it", None, "operator", 10),
             (self.ko1, "static", "a lint refuses it", "HOLO-7", "operator", 20),
+            (self.ko2, "impossible", "the type forbids", None, "reviewer", 30),
         ])
-
-    def test_an_empty_store_counts_every_layer_at_zero(self):
-        self.assertEqual(list(gap_layer_counts(self.conn).items()),
-                         [(layer, 0) for layer in LADDER])
 
     def test_a_bad_argument_is_refused_before_any_row(self):
         cases = [
