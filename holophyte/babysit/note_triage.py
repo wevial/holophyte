@@ -1,17 +1,14 @@
-import re
 from dataclasses import replace
 
 import store
 from holophyte.agents.roles import agent_route
 from holophyte.babysit import devin_notes
 from holophyte.babysit.thread_answers import post
-from holophyte.babysit.thread_text import COMMENT_HEADER, gist, where
+from holophyte.babysit.thread_text import COMMENT_HEADER, gist, thread_word_re, where
 from holophyte.loop.gates import InfraFailure
 from holophyte.loop.runs import heartbeat_while
 
-TRIAGE_LINE_RE = re.compile(
-    r"^[ \t]*(?:[-*][ \t]*)?THREAD[ \t]+(\d+)[ \t]*[:.)-][ \t]*(FINDING|NOTE)\b"
-    r"[ \t]*(?:[-–—:,]+[ \t]*)?(.*?)[ \t]*$", re.IGNORECASE | re.MULTILINE)
+TRIAGE_LINE_RE = thread_word_re(("FINDING", "NOTE"), r"[ \t]")
 UNPARSED = "the triage gave no verdict for this comment"
 NO_REASON = "no reason given"
 NOTE_WITHOUT_REASON = "the triage called it a note but gave no reason"
