@@ -17,7 +17,6 @@ sys.path.insert(0, str(ROOT))
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-import holophyte.loop.importing_tests  # noqa: E402 - after the sys.path insert above
 from tests.fake_agent import APPROVE, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
@@ -243,8 +242,7 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertEqual(out.results[-1]["exitCode"], 1)
 
     def test_only_the_capped_number_of_importers_run(self):
-        cap = holophyte.loop.importing_tests.IMPORTER_CAP
-        for depth in range(1, cap + 3):
+        for depth in range(1, 13):
             self.write("tests" + "/nested" * depth + "/__init__.py", "")
             self.add_test("test_deep", "pkg.a", "tests" + "/nested" * depth,
                           label=f"deep{depth:02}")
@@ -253,7 +251,7 @@ class ImportingTestsTests(unittest.TestCase):
         ok, out = self.gate()
         self.assertTrue(ok, out)
         self.assertEqual(self.ran(), sorted(
-            ["test_a", "test_unrelated", *(f"deep{d:02}" for d in range(1, cap))]))
+            ["test_a", "test_unrelated", *(f"deep{d:02}" for d in range(1, 10))]))
 
     def test_a_filtered_verify_does_not_cover_the_whole_module(self):
         self.change_a("1  # touched")
