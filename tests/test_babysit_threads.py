@@ -29,6 +29,7 @@ import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
+from holophyte.babysit import note_triage, thread_text  # noqa: E402
 from holophyte.babysit.maintainer_notes import cite_commits  # noqa: E402
 
 
@@ -1063,6 +1064,42 @@ class ParkQuestionQuoteTests(unittest.TestCase):
         self.assertIn(self.URL, header)
         self.assertEqual(len(body), 600)
         self.assertTrue(body.endswith("…"))
+
+
+class ThreadLinePrefixTests(unittest.TestCase):
+    REPLY = ("Read all three.\n"
+             "- THREAD 1: {0} -- the guard is missing\n"
+             "  * THREAD 2. {1}: out of scope\n"
+             "THREAD 3) {0} \u2014 rename it\n")
+
+    def test_bulleted_and_plain_lines_give_their_thread_and_word(self):
+        verdicts = thread_text.parse_verdicts(
+            self.REPLY.format("address", "DECLINE"), 3)
+        triage = note_triage.parse(self.REPLY.format("finding", "NOTE"), 3)
+        summaries = thread_text.parse_summaries(self.REPLY.format("did", "Did"))
+
+        self.assertEqual(verdicts, {1: ("ADDRESS", "the guard is missing"),
+                                    2: ("DECLINE", "out of scope"),
+                                    3: ("ADDRESS", "rename it")})
+        self.assertEqual(triage, {1: ("FINDING", "the guard is missing"),
+                                  2: ("NOTE", "out of scope"),
+                                  3: ("FINDING", "rename it")})
+        self.assertEqual(summaries, {1: "did -- the guard is missing",
+                                     2: "Did: out of scope",
+                                     3: "did \u2014 rename it"})
+
+    def test_unknown_word_no_number_or_unlisted_thread_answer_no_thread(self):
+        reply = ("THREAD 1: MAYBE -- unsure\n"
+                 "THREAD : {0} -- no number\n"
+                 "THREAD 3: {0} -- beyond the listing\n")
+
+        verdicts = thread_text.parse_verdicts(reply.format("ADDRESS"), 2)
+        triage = note_triage.parse(reply.format("NOTE"), 2)
+
+        unanswered = ("HUMAN", "the adjudicator gave no verdict for this thread")
+        self.assertEqual(verdicts, {1: unanswered, 2: unanswered})
+        self.assertEqual(triage, {1: ("FINDING", note_triage.UNPARSED),
+                                  2: ("FINDING", note_triage.UNPARSED)})
 
 
 if __name__ == "__main__":

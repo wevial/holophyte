@@ -166,6 +166,15 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(verdicts[3], ("DECLINE", "out of scope"))
         self.assertNotIn(9, verdicts)
 
+    def test_a_triage_prefix_split_across_lines_does_not_match_but_a_verdict_does(self):
+        from holophyte.babysit.note_triage import UNPARSED, parse
+        reply = "THREAD\n1: NOTE -- informational\n- THREAD 2\n: NOTE -- informational"
+
+        self.assertEqual(parse(reply, 2), {1: ("FINDING", UNPARSED),
+                                           2: ("FINDING", UNPARSED)})
+        self.assertEqual(babysitter.parse_verdicts(
+            "THREAD\n1: ADDRESS -- the guard", 1), {1: ("ADDRESS", "the guard")})
+
     def test_the_round_text_reads_as_a_review_round(self):
         threads = (thread(1, "crash on None"), thread(2, "rename n",
                                                        author="style"))
