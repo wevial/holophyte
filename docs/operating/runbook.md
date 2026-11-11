@@ -314,6 +314,25 @@ out-of-band state edit, when the human is present. When absent, freeing a
 work-blocking lease and preserving at-risk work are authorized; the merge
 waits `blocked_on_operator`.
 
+### Widening the T3 critic past its trial
+
+The trial runs the critic on `harness = "t3"` with today's critic route as
+`critic_fallback`. `--report`'s `critic HARNESS:` lines count every
+critic turn the store holds, so read them over a store whose critic turns
+fall in the window, or count the window's `agent_turn` events. A T3 startup
+probe that fails shows on the fallback's line as `switched to`. T3 widens
+only when all of these hold:
+
+* at least 30 T3 critic turns over 7 days;
+* its failed and timed-out turns, as a share of its turns, no more than 5
+  points above the fallback route's in the same window;
+* its median minutes no worse than 1.25 times the fallback route's;
+* no T3 run found still going after a timeout or a restart;
+* per-turn cost reported before it goes to any seat that spends heavily.
+
+Widening goes only to another seat that advises, never to a seat that
+writes or reviews code.
+
 ## Reading the state
 
 ```
