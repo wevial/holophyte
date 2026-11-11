@@ -29,6 +29,7 @@ from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.criteria  # noqa: E402
 from holophyte.agents.agent_output import ImplementerOutput  # noqa: E402
 from holophyte.agents.roles import agent  # noqa: E402
 from holophyte.loop.trim import trim  # noqa: E402
@@ -41,6 +42,25 @@ def lines(count):
 
 TRIMMED = "[trim]\nbudget_min = 1\n"
 WORK = Commit("work", path="work.txt", body=lines(60))
+PAIR = ("def test_a():\n    assert {a}\n\n\ndef test_b():\n    value = {b}\n"
+        "    assert value\n")
+SHORTENED_PAIR = "def test_a():\n    assert 3\n\n\ndef test_b():\n    pass\n"
+JS_PAIR = ('test("test_a", () => expect({a}));\n\ntest(\n  "test_b",\n'
+           '  () => expect({b}),\n);\n')
+REGEX_PAIR = ('test("test_a", () => expect({a})); const quote = /"/; '
+              'test("test_b", () => expect({b}));\n')
+SPACED_PAIR = ('test ("test_a", () => expect({a}));\n'
+               'test ("test_b", () => expect({b}));\n')
+CONDITION_PAIR = ('test("test_a", () => {{ if (true) /"/.test("text"); '
+                  'expect({a}); }}); test("test_b", () => expect({b}));\n')
+GO_PAIR = ("package pair\n\nfunc TestFooBar(t *testing.T) {{ _ = {a} }}\n\n"
+           "func TestFoo(t *testing.T) {{ _ = {b} }}\n")
+ASYNC_PAIR = ("async def test_a(): assert {a}\n\n\n"
+              "async def test_b(): assert {b}\n")
+DOC_PAIR = PAIR.replace("def test_b():\n", 'def test_b():\n    """Not a test:\n\n'
+                        '    def test_example():\n    """\n')
+JS_BODY_SPEC = 'test("checks", () => {{ {a}expect({b}); }});\n'
+NAMES_PAIR = "Given a pair, then both hold. (`test_pair.py` witnesses it.)"
 
 
 class Commits:
@@ -55,6 +75,23 @@ class Commits:
         for commit in self.commits:
             commit.play(cwd, turn)
         return "trimmed"
+
+
+class BoardEdit:
+    """A board edit that replaces the ticket's criteria mid-turn."""
+
+    def __init__(self, db, criteria):
+        self.db, self.criteria = db, criteria
+
+    def play(self, cwd, turn):
+        conn = store.open(self.db)
+        try:
+            (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
+            with conn:
+                store.criteria.record_criteria(conn, ticket_id, self.criteria,
+                                               [], 0)
+        finally:
+            conn.close()
 
 
 class LeaveDirtyThen(Commits):
@@ -229,8 +266,9 @@ class TrimLoopTests(TrimFixture):
         self.assertIn("reverted tests", summary)
 
     def on_main(self, path, body):
+        (self.target / path).parent.mkdir(parents=True, exist_ok=True)
         (self.target / path).write_text(body)
-        self.git("add", path)
+        self.git("add", "--", path)
         self.git("commit", "-q", "-m", f"add {path}")
 
     def test_a_pass_that_edits_a_module_outside_the_runs_diff_is_reverted(self):
@@ -299,6 +337,159 @@ class TrimLoopTests(TrimFixture):
         self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
         [result] = self.results()
         self.assertIn("vendor outside the run's diff", result["reason"])
+
+    def trimmed_pair(self, criterion, trimmed_pair, path="test_pair.py",
+                     pair=PAIR):
+        self.on_main(path, pair.format(a="1", b="2"))
+        task = dict(a_task(), criteria=[criterion])
+        fake = self.trimmed(
+            Commits(WORK, Commit("work tests", path, pair.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", path, trimmed_pair)),
+            APPROVE, task=task)
+        self.assert_merged()
+        return fake
+
+    def test_a_pass_deleting_a_test_from_a_criterion_named_file_is_reverted(self):
+        fake = self.trimmed_pair(NAMES_PAIR, "def test_a():\n    assert 3\n")
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("criterion witness", result["reason"])
+        self.assertIn("def test_b(", self.git("show", "main:test_pair.py"))
+
+    def assert_witness_reverted(self, path, pair, trimmed_pair):
+        fake = self.trimmed_pair(f"Given a pair, then both hold. (`{path}` "
+                                 "witnesses it.)", trimmed_pair, path, pair)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertIn("criterion witness", result["reason"])
+
+    def test_deleting_a_multiline_js_test_from_a_named_file_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", JS_PAIR, 'test("test_a", () => expect(3));\n')
+
+    def test_deleting_a_js_test_past_a_quote_in_a_regex_literal_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", REGEX_PAIR,
+            'test("test_a", () => expect(3)); const quote = /"/;\n')
+
+    def test_deleting_a_js_test_called_with_a_space_before_its_paren_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", SPACED_PAIR, 'test ("test_a", () => expect(3));\n')
+
+    def test_deleting_a_js_test_past_a_regex_after_an_if_condition_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", CONDITION_PAIR,
+            'test("test_a", () => { if (true) /"/.test("text"); expect(3); });\n')
+
+    def test_deleting_a_test_from_a_named_file_with_glob_characters_is_reverted(self):
+        path = "app/[id]/route.test.ts"
+        self.on_main(path, JS_PAIR.format(a="1", b="2"))
+        self.trimmed(
+            Commits(WORK, Commit("work tests", path, JS_PAIR.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", path, 'test("test_a", () => expect(3));\n')),
+            Idle(), APPROVE, task=dict(a_task(), criteria=[
+                f"Given a route, then both hold. (`{path}` witnesses it.)"]))
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("criterion witness", result["reason"])
+        self.assertIn('"test_b"', self.git("show", f"main:{path}"))
+
+    def test_a_named_path_with_glob_characters_protects_only_itself(self):
+        named, sibling = "app/[id]/route.test.ts", "app/i/route.test.ts"
+        self.on_main(named, JS_PAIR.format(a="1", b="2"))
+        self.on_main(sibling, JS_PAIR.format(a="1", b="2"))
+        self.trimmed(
+            Commits(WORK, Commit("work tests", sibling, JS_PAIR.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", sibling,
+                           'test("test_a", () => expect(3));\n')),
+            APPROVE, task=dict(a_task(), criteria=[
+                f"Given a route, then both hold. (`{named}` witnesses it.)"]))
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+        self.assertNotIn('"test_b"', self.git("show", f"main:{sibling}"))
+
+    def test_a_deleted_go_test_whose_name_prefixes_a_kept_one_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair_test.go", GO_PAIR,
+            "package pair\n\nfunc TestFooBar(t *testing.T) { _ = 3 }\n")
+
+    def test_shortening_a_one_line_async_witness_test_is_kept(self):
+        fake = self.trimmed_pair(
+            "Given a pair, then both hold. (`test_async.py` witnesses it.)",
+            "async def test_a(): assert 3\n\n\nasync def test_b(): pass\n",
+            "test_async.py", ASYNC_PAIR)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+
+    def test_a_claimed_criterion_keeps_its_witness_after_a_board_edit(self):
+        self.on_main("test_pair.py", PAIR.format(a="1", b="2"))
+        fake = self.trimmed(
+            Commits(WORK, Commit("work tests", "test_pair.py",
+                                 PAIR.format(a="3", b="4")),
+                    BoardEdit(self.db, a_task()["criteria"])),
+            Commits(Commit("trim: tests", "test_pair.py",
+                           "def test_a():\n    assert 3\n")),
+            APPROVE, task=dict(a_task(), criteria=[NAMES_PAIR]))
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertIn("criterion witness", result["reason"])
+
+    def test_dropping_a_js_example_from_an_added_doc_is_kept(self):
+        fake = self.trimmed(
+            Commits(WORK, Commit("work docs", "usage.md",
+                                 'Run:\n\n    test("sample", () => {});\n')),
+            Commits(Commit("trim: comments", "usage.md", "Run the suite.\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: comments"]])
+
+    def test_deleting_a_test_from_a_module_the_run_added_is_reverted(self):
+        fake = self.trimmed(
+            Commits(WORK, Commit("work tests", "checks.py",
+                                 PAIR.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", "checks.py",
+                           "def test_a():\n    assert 3\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertIn("criterion witness", result["reason"])
+
+    def test_dropping_test_like_calls_and_comments_from_a_js_body_is_kept(self):
+        fake = self.trimmed_pair(
+            "Given a spec, then it holds. (`body.test.js` witnesses it.)",
+            JS_BODY_SPEC.format(a="", b="1"), "body.test.js",
+            JS_BODY_SPEC.replace("{a}", '/x/.test("abc");\n'
+                                      '  // test("example", () => {{}});\n  '))
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+
+    def test_dropping_a_docstring_naming_a_test_from_a_witness_is_kept(self):
+        fake = self.trimmed_pair(
+            NAMES_PAIR, PAIR.format(a="3", b="4"), pair=DOC_PAIR)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+
+    def test_the_same_deletion_in_a_file_no_criterion_names_is_kept(self):
+        fake = self.trimmed_pair(a_task()["criteria"][0],
+                                 "def test_a():\n    assert 3\n")
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
+
+    def test_the_brief_lists_a_criterion_named_file_as_protected(self):
+        fake = self.trimmed_pair(NAMES_PAIR, SHORTENED_PAIR)
+        self.assertIn("witness the ticket's acceptance criteria", fake.turns[1].goal)
+        self.assertIn("- `test_pair.py`", fake.turns[1].goal)
+
+    def test_a_pass_that_only_shortens_a_witness_tests_body_is_kept(self):
+        fake = self.trimmed_pair(NAMES_PAIR, SHORTENED_PAIR)
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "kept")
 
     def assert_failed_turn_reverted(self, failure, named):
         review = ObservedApproval()

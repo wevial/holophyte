@@ -169,7 +169,7 @@ def _run_stages(run, task):
                          sha, timed=_timed, check_cap=_check_run_cap) or sha
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
-                       verify_cmd, contracts)
+                       verify_cmd, contracts, criteria)
 
     cap = _review_cap(project, conn, run_id, provider, task_id, wt)
     sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(
