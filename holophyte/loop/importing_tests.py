@@ -1,3 +1,4 @@
+import ast
 import fnmatch
 import os
 import re
@@ -41,6 +42,14 @@ def _change_directory(cwd, raw, words):
     return os.path.normpath(os.path.join(cwd, words[1]))
 
 
+def _without_comment(clause):
+    spans = _word_spans(clause)
+    for n, (_, start, end) in enumerate(spans):
+        if clause[start:end].strip().startswith("#"):
+            return clause[:start].strip(), spans[:n]
+    return clause, spans
+
+
 def unittest_runs(command):
     runs, setup, cwd = [], [], "."
     for line in command.splitlines():
@@ -50,7 +59,9 @@ def unittest_runs(command):
         if clauses is None:
             return []
         for clause in clauses:
-            spans = _word_spans(clause)
+            clause, spans = _without_comment(clause)
+            if not clause:
+                continue
             words = [word for word, _, _ in spans]
             raw = [clause[start:end].strip() for _, start, end in spans]
             if not words or words[0] in _UNREPRODUCIBLE:
@@ -153,6 +164,17 @@ def _test_module(path):
             and all(part.isidentifier() for part in module_name(path).split(".")))
 
 
+def _holds_tests(root, path):
+    try:
+        tree = ast.parse(sh(["git", "show", f"HEAD:{path}"], cwd=root))
+    except (SyntaxError, ValueError, RuntimeError, OSError):
+        return False
+    return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and node.name.startswith("test")
+               for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
+               for node in cls.body)
+
+
 def _distance(one, other):
     one, other = one.split("/")[:-1], other.split("/")[:-1]
     shared = len(os.path.commonprefix([one, other]))
@@ -187,8 +209,10 @@ def run_importing_tests(project, wt, command, conn, run_id):
     top = _top_level(runs)
     clauses = {}
     for test in _importing_tests(wt, runs):
+        if len(clauses) == IMPORTER_CAP:
+            break
         clause = _module_clause(runs[0], top, test)
-        if clause is not None and len(clauses) < IMPORTER_CAP:
+        if clause is not None and _holds_tests(wt, test):
             clauses[test] = clause
     if not clauses:
         return True, None

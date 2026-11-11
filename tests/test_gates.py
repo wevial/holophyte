@@ -342,9 +342,20 @@ class ImportingTestsTests(unittest.TestCase):
         self.add_test("test_src", "pkg.a", preamble="import helper\n")
         self.onto_main()
         self.change_a("1  # touched")
-        ok, out = self.gate("export PYTHONPATH=src\n" + self.VERIFY)
+        for export in ("export PYTHONPATH=src", "export PYTHONPATH=src # path"):
+            with self.subTest(export=export):
+                self.log.write_text("")
+                ok, out = self.gate(export + "\n" + self.VERIFY)
+                self.assertTrue(ok, out)
+                self.assertIn("test_src", self.ran())
+
+    def test_an_importer_named_like_a_test_but_holding_none_is_skipped(self):
+        self.write("tests/test_helpers.py", "import pkg.a\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate()
         self.assertTrue(ok, out)
-        self.assertIn("test_src", self.ran())
+        self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
 
     def test_importers_run_in_the_subproject_the_verify_changes_into(self):
         self.write("sub/pkg/__init__.py", "")
