@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 import math
@@ -409,29 +410,57 @@ _REGEX_AFTER = frozenset([*"(,=:[!&|?{};", "return", "typeof", "case", "do", "el
                           "instanceof", "yield", "await"])
 
 
+_CONDITIONS = frozenset(["if", "while", "for", "with"])
+
+
+_JS_TITLE = re.compile(r"(?<![.\w$])(?:it|test)\s*\(\s*(?:(['\"])"
+                       r"((?:(?!\1)[^\\\n]|\\.)*)\1|`((?:[^`\\]|\\.)*)`)")
+
+
 def _template_patterns(text):
     patterns = []
     _code_end(text, 0, patterns, depth=None)
     return patterns
 
 
-def _code_end(text, i, patterns, depth=1):
+def _code_end(text, i, patterns, depth=1, titles=None):
+    parens, condition = [], False
     while i < len(text) and depth != 0:
-        skipped = _JS_SKIPPED.match(text, i) or (
-            text[i] == "/" and _previous_token(text, i) in _REGEX_AFTER
-            and _JS_REGEX.match(text, i))
-        if skipped:
+        title = titles is not None and _JS_TITLE.match(text, i)
+        skipped = not title and (_JS_SKIPPED.match(text, i) or (
+            text[i] == "/" and _regex_starts(text, i, condition)
+            and _JS_REGEX.match(text, i)))
+        if title:
+            titles.append(title[2] if title[2] is not None else title[3])
+            parens.append(False)
+            i = title.end()
+        elif skipped:
             i = skipped.end()
         elif text[i] == "`":
-            literals, i = _template_literals(text, i + 1, patterns)
+            literals, i = _template_literals(text, i + 1, patterns, titles)
             i += 1
             if len(literals) > 1:
                 patterns.append(re.compile("[^\n]+?".join(map(re.escape, literals))))
         else:
+            if text[i] == "(":
+                parens.append(_previous_token(text, i) in _CONDITIONS)
+            elif text[i] == ")":
+                condition = parens.pop() if parens else False
             if depth is not None:
                 depth += {"{": 1, "}": -1}.get(text[i], 0)
             i += 1
     return i
+
+
+def _regex_starts(text, i, condition):
+    token = _previous_token(text, i)
+    return token in _REGEX_AFTER or condition and token == ")"
+
+
+def _spec_titles(text):
+    titles = []
+    _code_end(text, 0, [], depth=None, titles=titles)
+    return titles
 
 
 def _previous_token(text, i):
@@ -440,7 +469,7 @@ def _previous_token(text, i):
     return word.group() if word else stripped[-1:] or "("
 
 
-def _template_literals(text, i, patterns):
+def _template_literals(text, i, patterns, titles=None):
     literals, piece = [], []
     while i < len(text) and text[i] != "`":
         if text[i] == "\\":
@@ -449,7 +478,7 @@ def _template_literals(text, i, patterns):
         elif text.startswith("${", i):
             literals.append("".join(piece))
             piece = []
-            i = _code_end(text, i + 2, patterns)
+            i = _code_end(text, i + 2, patterns, titles=titles)
         else:
             piece.append(text[i])
             i += 1
@@ -464,12 +493,25 @@ _GO_TOKEN = re.compile(
     _GO_STRING + r"|`[^`]*`|'(?:[^'\\\n]|\\.)*'|(//[^\n]*|/\*.*?\*/)", re.S)
 
 
+_GO_NAMES = re.compile(r"\bfunc\s+(Test\w*)\s*\(|\.Run\s*\(\s*" + _GO_STRING
+                       + "|" + _GO_TOKEN.pattern, re.S)
+
+
+def _go_test_names(text):
+    return [match[1] if match[1] is not None else match[2]
+            for match in _GO_NAMES.finditer(text)
+            if match[1] is not None or match[2] is not None]
+
+
+def _go_runs(text):
+    return [match[2] for match in _GO_NAMES.finditer(text) if match[2] is not None]
+
+
 def _scan_go_subtest(text, name):
     parent, *children = name.split("/")
     if not re.search(rf"\bfunc {re.escape(parent)}\(", text):
         return f"no func {parent}"
-    runs = {re.sub(r"\s", "_", title) for title in
-            re.findall(r"\.Run\(" + _GO_STRING, text)}
+    runs = {re.sub(r"\s", "_", title) for title in _go_runs(text)}
     runs |= _go_table_titles(text, parent)
     absent = [child for child in children if re.sub(r"\s", "_", child) not in runs]
     return f'no .Run("{absent[0]}") for {parent}' if absent else None
@@ -487,6 +529,20 @@ def _go_table_titles(text, parent):
         return set()
     return {re.sub(r"\s", "_", token.group(1)) for token in tokens
             if token.group(1) is not None}
+
+
+def test_names(text, suffix):
+    if suffix == ".go":
+        return _go_test_names(text)
+    if suffix != ".py":
+        return _spec_titles(text)
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    return [node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test")]
 
 
 def missing_witnesses(references, root):

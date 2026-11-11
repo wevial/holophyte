@@ -49,6 +49,10 @@ JS_PAIR = ('test("test_a", () => expect({a}));\n\ntest(\n  "test_b",\n'
            '  () => expect({b}),\n);\n')
 REGEX_PAIR = ('test("test_a", () => expect({a})); const quote = /"/; '
               'test("test_b", () => expect({b}));\n')
+SPACED_PAIR = ('test ("test_a", () => expect({a}));\n'
+               'test ("test_b", () => expect({b}));\n')
+CONDITION_PAIR = ('test("test_a", () => {{ if (true) /"/.test("text"); '
+                  'expect({a}); }}); test("test_b", () => expect({b}));\n')
 GO_PAIR = ("package pair\n\nfunc TestFooBar(t *testing.T) {{ _ = {a} }}\n\n"
            "func TestFoo(t *testing.T) {{ _ = {b} }}\n")
 ASYNC_PAIR = ("async def test_a(): assert {a}\n\n\n"
@@ -367,6 +371,15 @@ class TrimLoopTests(TrimFixture):
         self.assert_witness_reverted(
             "pair.test.js", REGEX_PAIR,
             'test("test_a", () => expect(3)); const quote = /"/;\n')
+
+    def test_deleting_a_js_test_called_with_a_space_before_its_paren_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", SPACED_PAIR, 'test ("test_a", () => expect(3));\n')
+
+    def test_deleting_a_js_test_past_a_regex_after_an_if_condition_is_reverted(self):
+        self.assert_witness_reverted(
+            "pair.test.js", CONDITION_PAIR,
+            'test("test_a", () => { if (true) /"/.test("text"); expect(3); });\n')
 
     def test_a_deleted_go_test_whose_name_prefixes_a_kept_one_is_reverted(self):
         self.assert_witness_reverted(

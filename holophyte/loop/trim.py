@@ -1,7 +1,5 @@
 """The trim step: one turn that shrinks the diff, kept only while verify is green."""
-import ast
 import json
-import re
 import subprocess
 from collections import Counter
 from fnmatch import fnmatchcase
@@ -38,15 +36,7 @@ from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
 from holophyte.review.criterion_ids import numbered
-from holophyte.review.reply_parsing import (
-    _GO_STRING,
-    _GO_TOKEN,
-    _JS_REGEX,
-    _JS_SKIPPED,
-    _REGEX_AFTER,
-    _previous_token,
-    _template_literals,
-)
+from holophyte.review.reply_parsing import test_names
 from holophyte.review.witness_precheck import named_files
 
 LINE_FLOOR = 50
@@ -56,11 +46,6 @@ TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
 SOURCE_SUFFIXES = {".py", ".go", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
                    ".mts", ".cts"}
-GO_IDS = re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING + "|"
-                    + _GO_TOKEN.pattern, re.S)
-JS_NEXT = re.compile(r"[\'\"`/]|(?<![.\w$])(?:it|test)\(")
-JS_TITLE = re.compile(r"(?<![.\w$])(?:it|test)\(\s*(?:(['\"])"
-                      r"((?:(?!\1)[^\\\n]|\\.)*)\1|`((?:[^`\\]|\\.)*)`)")
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
@@ -210,48 +195,11 @@ def _test_ids(wt, commit, path):
                            capture_output=True)
     if shown.returncode or b"\0" in shown.stdout:
         return Counter()
-    read = {".py": _python_tests, ".go": _go_tests}.get(
-        PurePosixPath(path).suffix, _spec_titles)
     try:
-        return Counter(read(shown.stdout.decode(errors="replace")))
+        return Counter(test_names(shown.stdout.decode(errors="replace"),
+                                  PurePosixPath(path).suffix))
     except (RecursionError, MemoryError):
         return Counter()
-
-
-def _python_tests(text):
-    try:
-        tree = ast.parse(text)
-    except (SyntaxError, ValueError):
-        return []
-    return [node.name for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name.startswith("test")]
-
-
-def _go_tests(text):
-    return [match[1] if match[1] is not None else match[2]
-            for match in GO_IDS.finditer(text)
-            if match[1] is not None or match[2] is not None]
-
-
-def _spec_titles(text):
-    titles, i = [], 0
-    while found := JS_NEXT.search(text, i):
-        i = found.start()
-        title = JS_TITLE.match(text, i)
-        skipped = _JS_SKIPPED.match(text, i) or (
-            text[i] == "/" and _previous_token(text, i) in _REGEX_AFTER
-            and _JS_REGEX.match(text, i))
-        if title:
-            titles.append(title[2] if title[2] is not None else title[3])
-            i = title.end()
-        elif skipped:
-            i = skipped.end()
-        elif text[i] == "`":
-            i = _template_literals(text, i + 1, [])[1] + 1
-        else:
-            i += 1
-    return titles
 
 
 def _scoped(wt, base_sha, sha, commits):
