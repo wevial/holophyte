@@ -73,12 +73,8 @@ def lead_path(project, scout_id):
     return scout_dir(project, scout_id) / "lead"
 
 
-def sources_dir(project, scout_id):
-    return scout_dir(project, scout_id) / "sources"
-
-
 def scout_sources(project, scout_id, fresh=False):
-    return fetch_sources(sources_dir(project, scout_id),
+    return fetch_sources(scout_dir(project, scout_id) / "sources",
                          scout_config(project).sources, fresh)
 
 

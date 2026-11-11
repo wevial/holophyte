@@ -28,17 +28,14 @@ class SourceUnfetched(RuntimeError):
     pass
 
 
-def clone_environment():
-    return dict(scratch_git_environment(), GIT_TERMINAL_PROMPT="0")
-
-
 def clone(source, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     argv = ["git", "-c", "init.templateDir=", "-c", "protocol.ext.allow=never",
             "clone", "--quiet", "--depth", "1", "--branch", source.ref, "--",
             source.url, str(path)]
     try:
-        cloned = subprocess.run(argv, env=clone_environment(),
+        cloned = subprocess.run(argv, env=dict(scratch_git_environment(),
+                                               GIT_TERMINAL_PROMPT="0"),
                                 capture_output=True, text=True,
                                 stdin=subprocess.DEVNULL,
                                 timeout=CLONE_TIMEOUT_S)
