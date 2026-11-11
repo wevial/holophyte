@@ -25,6 +25,7 @@ from holophyte.loop.reexec import (
 from holophyte.scout.answer import current_ask, fail_answer
 from holophyte.scout.follow_up import current_pass, fail_pass
 from holophyte.scout.scout_process import scout_dir
+from holophyte.scout.stop import runs_scout
 from store.enums import ScoutPhase
 from store.scout_thread import (
     ASK,
@@ -77,15 +78,6 @@ def _end_one_stale(conn, row, reason, now):
     return ENDED_FAILED
 
 
-def _runs_scout(pid, scout_id):
-    try:
-        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-    except OSError:
-        return False
-    return any(arg == b"--scout" and value == str(scout_id).encode()
-               for arg, value in zip(argv, argv[1:]))
-
-
 def _reap(pid):
     try:
         os.waitpid(pid, os.WNOHANG)
@@ -93,7 +85,7 @@ def _reap(pid):
         pass
 
 
-def _signal_until_gone(pid, scout_id, signum):
+def _signal_until_gone(pid, scout_id, project_path, signum):
     try:
         os.kill(pid, signum)
     except ProcessLookupError:
@@ -103,15 +95,15 @@ def _signal_until_gone(pid, scout_id, signum):
     deadline = time.monotonic() + STOP_GRACE_S
     while time.monotonic() < deadline:
         _reap(pid)
-        if not _runs_scout(pid, scout_id):
+        if not runs_scout(pid, scout_id, project_path):
             return True
         time.sleep(0.05)
     return False
 
 
 def stop_scout(target, pid, scout_id):
-    if pid is not None and _runs_scout(pid, scout_id) and not any(
-            _signal_until_gone(pid, scout_id, signum)
+    if pid is not None and runs_scout(pid, scout_id, target.path) and not any(
+            _signal_until_gone(pid, scout_id, target.path, signum)
             for signum in (signal.SIGTERM, signal.SIGKILL)):
         return
     shutil.rmtree(scout_dir(target, scout_id) / "scratch", ignore_errors=True)

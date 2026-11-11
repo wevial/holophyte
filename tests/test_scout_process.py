@@ -518,11 +518,14 @@ class ScoutSweepTests(ScoutFixture):
                             "[supervisor]\nheartbeat_stale_min = 1\n")
         stale = self.a_scout(path, "planning")
         conn = self.conn(path)
+        tail = argv(stale, path)
         child = subprocess.Popen([sys.executable, "-c",
-                                  "import time; time.sleep(120)",
-                                  *argv(stale)])
+                                  "import time; time.sleep(120)", *tail])
         self.addCleanup(child.wait)
         self.addCleanup(child.kill)
+        cmdline = Path(f"/proc/{child.pid}/cmdline")
+        while not cmdline.read_bytes().endswith(f"\0{tail[-1]}\0".encode()):
+            time.sleep(0.01)
         claim_scout(conn, stale, child.pid)
         move_scout(conn, stale, "swarming")
         beat_scout(conn, stale, now=now_ms() - 2 * MINUTE)
@@ -536,7 +539,7 @@ class ScoutSweepTests(ScoutFixture):
 
     def test_a_scout_ended_stale_loses_its_process_and_helper_scratch(self):
         target, conn, stale, child = self.stale_with_process(
-            lambda scout_id: ["--scout", str(scout_id)])
+            lambda scout_id, path: ["--scout", str(scout_id), str(path)])
         scratch = self.helper_scratch(target, stale)
         scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
         self.assertEqual(scout(conn, stale).phase, "failed")
@@ -546,20 +549,22 @@ class ScoutSweepTests(ScoutFixture):
         self.assertFalse(scratch.exists())
 
     def test_a_stale_scout_spares_another_projects_scout_of_its_id(self):
-        target, conn, stale, child = self.stale_with_process(
-            lambda scout_id: ["--scout", str(scout_id)])
         beta = self.project("beta")
+        target, conn, stale, child = self.stale_with_process(
+            lambda scout_id, path: ["--scout", str(scout_id), str(beta)])
         self.assertEqual(self.a_scout(beta, "planning"), stale)
         swept = self.helper_scratch(target, stale)
         kept = self.helper_scratch(Project.locate(beta, adopt=False), stale)
         scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
-        child.wait(timeout=5)
+        self.assertEqual(scout(conn, stale).phase, "failed")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            child.wait(timeout=1)
         self.assertFalse(swept.exists())
         self.assertTrue((kept / "helper").is_dir())
 
     def test_a_stale_scout_pid_now_running_something_else_is_left(self):
         target, conn, stale, child = self.stale_with_process(
-            lambda scout_id: ["--other", str(scout_id)])
+            lambda scout_id, path: ["--other", str(scout_id), str(path)])
         scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
         self.assertEqual(scout(conn, stale).phase, "failed")
         self.assertIsNone(child.poll())
