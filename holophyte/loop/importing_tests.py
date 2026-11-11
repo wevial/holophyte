@@ -22,6 +22,7 @@ _DISCOVER_OPTIONS = {"-s": "start", "--start-directory": "start",
                      "-p": "pattern", "--pattern": "pattern",
                      "-t": "top", "--top-level-directory": "top"}
 _DISCOVER_POSITIONS = ("start", "pattern", "top")
+_DISCOVER_DEFAULTS = {"start": ".", "pattern": "test*.py", "top": None}
 _SETUP = {"export", "unset", "source", ".", "set"}
 _UNREPRODUCIBLE = {"pushd", "popd"}
 _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
@@ -71,7 +72,7 @@ def unittest_runs(command):
 
 
 def _discovery(args):
-    found, positional = {"start": ".", "pattern": "test*.py", "top": None}, []
+    found, positional = {}, []
     words = iter(args[1:] if args[:1] == ["discover"] else args)
     for word in words:
         name, eq, value = word.partition("=")
@@ -82,7 +83,8 @@ def _discovery(args):
         elif not word.startswith("-"):
             positional.append(word)
     found.update(zip(_DISCOVER_POSITIONS, positional))
-    return found
+    return {key: found.get(key) or default
+            for key, default in _DISCOVER_DEFAULTS.items()}
 
 
 def _discovered(start, test, packages):
@@ -100,11 +102,11 @@ def _covers(run, test, packages):
         return False
     if run.args[:1] == ["discover"] or not named:
         found = _discovery(run.args)
-        start = os.path.normpath(os.path.join(run.cwd, found["start"] or "."))
+        start = os.path.normpath(os.path.join(run.cwd, found["start"]))
         return (not os.path.isabs(start)
                 and _discovered(start, test, packages)
                 and fnmatch.fnmatchcase(os.path.basename(test),
-                                        found["pattern"] or "test*.py"))
+                                        found["pattern"]))
     return (module_name(os.path.relpath(test, run.cwd))
             in {module_name(word) for word in named})
 
@@ -114,7 +116,7 @@ def _top_level(runs):
         if run.cwd == runs[0].cwd and (run.args[:1] == ["discover"] or all(
                 word.startswith("-") for word in run.args)):
             found = _discovery(run.args)
-            return os.path.normpath(found["top"] or found["start"] or ".")
+            return os.path.normpath(found["top"] or found["start"])
     return "."
 
 
