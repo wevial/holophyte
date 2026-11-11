@@ -795,6 +795,14 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                if command else [])
     failure = getattr(out, "failure", None)
     reports = [str(out)]
+    if ok and command:
+        from holophyte.loop.importing_tests import run_importing_tests
+
+        ok, importing = run_importing_tests(project, wt, command, conn, run_id)
+        if importing is not None:
+            failure = importing.pop("failure", failure)
+            results.append(importing)
+            reports.append(importing["output"])
     for tier in (("always", "before_merge") if before_merge else ("always",)):
         if not ok:
             break

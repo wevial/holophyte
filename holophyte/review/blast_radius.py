@@ -84,30 +84,41 @@ def _names(text):
             if part.split()}
 
 
-def imported(line):
+def _absolute(name, source):
+    level = len(name) - len(name.lstrip("."))
+    if not level:
+        return name
+    package = module_name(source).split(".")
+    if not source.endswith("/__init__.py") and source != "__init__.py":
+        package = package[:-1]
+    base = package[:max(0, len(package) - level + 1)]
+    return ".".join([*base, name[level:]] if name[level:] else base)
+
+
+def imported(line, source):
     found = FROM_RE.match(line)
     if found:
-        package = found.group(1)
+        package = _absolute(found.group(1), source)
         return {package} | {f"{package}.{name}" for name in _names(found.group(2))}
     found = IMPORT_RE.match(line)
     return _names(found.group(1)) if found else set()
 
 
-def importer_counts(root, sha, modules):
+def importers(root, sha, modules):
     run = subprocess.run(
         ["git", "grep", "-z", "-I", "-E", "-e", IMPORT_LINE, sha, "--", "*.py"],
         cwd=root, capture_output=True, text=True, errors="replace")
     if run.returncode not in (0, 1):
         raise subprocess.CalledProcessError(run.returncode, run.args,
                                             run.stdout, run.stderr)
-    importers = {path: set() for path in modules.values()}
+    found = {path: set() for path in modules.values()}
     for record in run.stdout.split("\n"):
         name, _, line = record.partition("\0")
         source = name.partition(":")[2]
-        for module in imported(line) & modules.keys():
+        for module in imported(line, source) & modules.keys():
             if modules[module] != source:
-                importers[modules[module]].add(source)
-    return {path: len(files) for path, files in importers.items()}
+                found[modules[module]].add(source)
+    return found
 
 
 def segments(paths):
@@ -124,8 +135,8 @@ def _medium_reasons(root, sha, paths, config):
         packages = package_dirs(root, sha)
         modules = {name: path for path in sources
                    for name in module_names(path, packages)}
-        for path, count in importer_counts(root, sha, modules).items():
-            if count >= config.fan_in:
+        for path, files in importers(root, sha, modules).items():
+            if (count := len(files)) >= config.fan_in:
                 reasons.append(f"fan-in: {path} has {count} importers "
                                f"(threshold {config.fan_in})")
     spanned = segments(paths)

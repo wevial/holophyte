@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -164,6 +165,282 @@ class RepeatedPassTests(unittest.TestCase):
             self.assertFalse(holophyte.loop.gates.run_verify(
                 cmd, self.wt, run_id=7, rerun=False)[0])
         self.assertEqual(self.runs(), 2)
+
+
+class ImportingTestsTests(unittest.TestCase):
+    """After the ticket's unittest verify passes, the gate runs the test
+    modules that import a changed module, at most `IMPORTER_CAP` of them."""
+
+    VERIFY = "python3 -m unittest discover -s tests -p 'test_unrelated.py'"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.wt = Path(tmp.name, "wt")
+        self.log = Path(tmp.name, "ran")
+        self.log.write_text("")
+        self.target = SimpleNamespace(config=lambda: {})
+        self.write("pkg/__init__.py", "")
+        self.write("pkg/a.py", "VALUE = 1\n")
+        self.write("pkg/b.py", "VALUE = 1\n")
+        self.add_test("test_unrelated", "pkg.b")
+        self.add_test("test_a", "pkg.a")
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "base")
+        self.git("checkout", "-q", "-b", "task")
+
+    def write(self, path, text):
+        (self.wt / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.wt / path).write_text(text)
+
+    def add_test(self, name, module, directory="tests", preamble="", label=None):
+        self.write(f"{directory}/{name}.py", (
+            f"import unittest\nimport {module}\n{preamble}\n\n"
+            f"class T(unittest.TestCase):\n"
+            f"    def test_value(self):\n"
+            f"        with open({str(self.log)!r}, 'a') as log:\n"
+            f"            log.write({label or name!r} + '\\n')\n"
+            f"        self.assertEqual({module}.VALUE, 1)\n"))
+
+    def git(self, *args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com",
+                        *args], cwd=self.wt, check=True, capture_output=True)
+
+    def change_a(self, value):
+        self.write("pkg/a.py", f"VALUE = {value}\n")
+        self.git("commit", "-q", "-am", "change pkg.a")
+
+    def onto_main(self):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "more tests")
+        self.git("branch", "-f", "main")
+
+    def gate(self, verify=None):
+        verify = verify or self.VERIFY
+        ok, out = holophyte.loop.gates.run_verify(verify, self.wt)
+        self.assertTrue(ok, out)
+        return holophyte.loop.gates.with_baseline(
+            self.target, self.wt, verify, ok, out)
+
+    def ran(self):
+        return sorted(self.log.read_text().split())
+
+    def test_a_test_importing_the_changed_module_runs_too(self):
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
+
+    def test_a_failing_importer_is_a_verify_failure_naming_it(self):
+        self.change_a(2)
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertEqual(set(self.ran()), {"test_a", "test_unrelated"})
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+        self.assertEqual(out.failure["exit_status"], 1)
+        self.assertEqual(out.results[-1]["exitCode"], 1)
+
+    def test_a_blank_line_in_the_verify_keeps_importers_checked(self):
+        self.change_a(2)
+        ok, out = self.gate(
+            "python3 -m unittest discover -s tests -p test_unrelated.py\n\ntrue")
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
+    def test_attached_discovery_option_values_narrow_what_verify_covers(self):
+        self.write("tests/__init__.py", "")
+        self.onto_main()
+        self.change_a(2)
+        ok, out = self.gate(
+            "python3 -m unittest discover -stests -ptest_unrelated.py")
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
+    def test_only_the_capped_number_of_importers_run(self):
+        for depth in range(1, 13):
+            self.write("tests" + "/nested" * depth + "/__init__.py", "")
+            self.add_test("test_deep", "pkg.a", "tests" + "/nested" * depth,
+                          label=f"deep{depth:02}")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), sorted(
+            ["test_a", "test_unrelated", *(f"deep{d:02}" for d in range(1, 10))]))
+
+    def test_a_filtered_verify_does_not_cover_the_whole_module(self):
+        self.change_a("1  # touched")
+        for verify in ("python3 -m unittest tests.test_a.T.test_value",
+                       "python3 -m unittest discover -s tests -p test_a.py"
+                       " -k test_value"):
+            with self.subTest(verify=verify):
+                self.log.write_text("")
+                ok, out = self.gate(verify)
+                self.assertTrue(ok, out)
+                self.assertEqual(self.ran(), ["test_a", "test_a"])
+
+    def test_an_importer_named_as_default_discovery_finds_it_runs(self):
+        self.add_test("testImporter", "pkg.a")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertTrue(ok, out)
+        self.assertIn("testImporter", self.ran())
+
+    def test_a_same_named_importer_outside_the_verified_directory_runs(self):
+        self.add_test("test_shared", "pkg.b", "tests/unit", label="unit")
+        self.add_test("test_shared", "pkg.a", "tests/integration",
+                      label="integration")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate(
+            "python3 -m unittest discover -s tests/unit -p test_shared.py")
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), ["integration", "test_a", "unit"])
+
+    def test_the_verify_top_level_directory_carries_to_importers(self):
+        self.write("tests/__init__.py", "")
+        self.write("tests/support.py", "")
+        self.add_test("test_relative", "pkg.a", preamble="from . import support\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        for verify in ("python3 -m unittest discover -s tests -t ."
+                       " -p test_unrelated.py",
+                       "python3 -m unittest tests.test_unrelated"):
+            with self.subTest(verify=verify):
+                self.log.write_text("")
+                ok, out = self.gate(verify)
+                self.assertTrue(ok, out)
+                self.assertIn("test_relative", self.ran())
+
+    def test_discovery_does_not_cover_a_folder_that_is_not_a_package(self):
+        self.add_test("test_unrelated_a", "pkg.a", "tests/integration",
+                      label="integration")
+        self.onto_main()
+        self.change_a("1  # touched")
+        ok, out = self.gate("python3 -m unittest discover -s tests -p 'test_un*.py'")
+        self.assertTrue(ok, out)
+        self.assertIn("integration", self.ran())
+
+    def test_a_verify_python_path_is_kept_beside_the_test_directory(self):
+        self.write("src/helper.py", "")
+        self.write("the src/helper.py", "")
+        self.add_test("test_src", "pkg.a", preamble="import helper\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        for path in ("src", '"$PWD/src"', "'the src'"):
+            with self.subTest(path=path):
+                self.log.write_text("")
+                ok, out = self.gate(f"PYTHONPATH={path} python3 -m unittest"
+                                    " discover -s tests -p test_unrelated.py")
+                self.assertTrue(ok, out)
+                self.assertIn("test_src", self.ran())
+
+    def test_an_exported_python_path_carries_to_importers(self):
+        self.write("src/helper.py", "")
+        self.add_test("test_src", "pkg.a", preamble="import helper\n")
+        self.onto_main()
+        self.change_a("1  # touched")
+        for export in ("export PYTHONPATH=src", "export PYTHONPATH=src # path"):
+            with self.subTest(export=export):
+                self.log.write_text("")
+                ok, out = self.gate(export + "\n" + self.VERIFY)
+                self.assertTrue(ok, out)
+                self.assertIn("test_src", self.ran())
+
+    def test_an_importer_named_like_a_test_but_holding_none_leaves_the_gate_green(self):
+        self.write("tests/test_helpers.py", "import pkg.a\n")
+        self.write("python311", "#!/bin/sh\npython3 \"$@\"\n"
+                   "status=$?\n[ $status -eq 5 ] && exit 0\nexit $status\n")
+        (self.wt / "python311").chmod(0o755)
+        self.onto_main()
+        self.change_a("1  # touched")
+        for verify in (self.VERIFY,
+                       self.VERIFY.replace("python3", "./python311", 1),
+                       "set -e\n" + self.VERIFY):
+            with self.subTest(verify=verify):
+                self.log.write_text("")
+                ok, out = self.gate(verify)
+                self.assertTrue(ok, out)
+                self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
+
+    def test_an_importer_inheriting_its_tests_runs(self):
+        (self.wt / "tests/test_a.py").unlink()
+        self.write("tests/fixture_base.py", (
+            "import unittest\nimport pkg.a\n\n\n"
+            "class Base(unittest.TestCase):\n"
+            "    def test_value(self):\n"
+            "        self.assertEqual(pkg.a.VALUE, 1)\n"))
+        self.write("tests/test_inherited.py", (
+            "import pkg.a\nfrom fixture_base import Base\n\n\n"
+            "class TestInherited(Base):\n    pass\n"))
+        self.onto_main()
+        self.change_a(2)
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn(
+            "FAILED: tests/test_inherited.py imports a changed module", out)
+
+    def test_an_importer_that_only_imports_a_test_class_runs(self):
+        shared = ("import unittest\n\nVALUE = {}\n\n\n"
+                  "class SharedTests(unittest.TestCase):\n"
+                  "    def test_value(self):\n"
+                  "        self.assertEqual(VALUE, 1)\n")
+        self.write("pkg/a.py", shared.format(1))
+        self.write("tests/test_a.py", "from pkg.a import SharedTests as Kept\n")
+        self.onto_main()
+        self.write("pkg/a.py", shared.format(2))
+        self.git("commit", "-q", "-am", "change pkg.a")
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
+    def test_an_importer_that_does_not_parse_is_a_verify_failure(self):
+        self.write("tests/test_a.py", "import pkg.a\n\ndef broken(:\n")
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
+    def test_importers_run_in_the_subproject_the_verify_changes_into(self):
+        self.write("sub/pkg/__init__.py", "")
+        self.write("sub/pkg/a.py", "VALUE = 1\n")
+        self.add_test("test_unrelated", "pkg.b", "sub/tests", label="sub_b")
+        self.write("sub/pkg/b.py", "VALUE = 1\n")
+        self.add_test("test_a", "pkg.a", "sub/tests", label="sub_a")
+        self.onto_main()
+        self.write("sub/pkg/a.py", "VALUE = 1  # touched\n")
+        self.git("commit", "-q", "-am", "change sub pkg.a")
+        ok, out = self.gate("cd sub && " + self.VERIFY)
+        self.assertTrue(ok, out)
+        self.assertEqual(self.ran(), ["sub_a", "sub_b"])
+
+    def test_importers_run_under_a_subproject_named_unlike_a_module(self):
+        self.write("back-end/pkg/__init__.py", "")
+        self.write("back-end/pkg/a.py", "VALUE = 1\n")
+        self.write("back-end/pkg/b.py", "VALUE = 1\n")
+        self.add_test("test_unrelated", "pkg.b", "back-end/tests")
+        self.add_test("test_a", "pkg.a", "back-end/tests")
+        self.onto_main()
+        self.write("back-end/pkg/a.py", "VALUE = 2\n")
+        self.git("commit", "-q", "-am", "change back-end pkg.a")
+        ok, out = self.gate("cd back-end && " + self.VERIFY)
+        self.assertFalse(ok, out)
+        self.assertIn(
+            "FAILED: back-end/tests/test_a.py imports a changed module", out)
+
+    def test_a_relative_importer_of_the_changed_module_runs(self):
+        self.write("pkg/test_relative.py", (
+            "import unittest\nfrom .a import VALUE\n\n\n"
+            "class T(unittest.TestCase):\n"
+            "    def test_value(self):\n"
+            "        self.assertEqual(VALUE, 1)\n"))
+        self.onto_main()
+        self.change_a(2)
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: pkg/test_relative.py imports a changed module", out)
 
 
 class MergeLockTests(unittest.TestCase):
