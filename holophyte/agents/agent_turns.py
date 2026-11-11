@@ -1,6 +1,7 @@
 import json
 import shlex
 import subprocess
+from pathlib import Path
 from time import monotonic
 
 import store
@@ -9,8 +10,8 @@ from holophyte.agents.agent_output import (
     PANIC_SUMMARY_CHARS,
     killed_by_signal,
 )
-from holophyte.agents.agent_routes import routes
-from holophyte.agents.harness import implementer_profiles
+from holophyte.agents.agent_routes import routes, safe_command
+from holophyte.agents.harness import critic_seat, implementer_profiles
 from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.reader import DEFAULT_IMPLEMENTER, IMPL_MODEL
 from holophyte.redact import known_secrets, outbound, redact_prose
@@ -93,6 +94,8 @@ def timed_turn(project, role, routed_role, launch, ended, family_route=None):
     payload = dict(role=role, label=turn_label(project, routed_role, family_route),
                    route="fallback" if routed_role in routes(project).commands
                    else "primary", exit_status=None, timed_out=False)
+    if routed_role == "critic":
+        payload["harness"] = critic_harness(project)
     started = monotonic()
     crashed = None
     try:
@@ -120,6 +123,13 @@ def timed_turn(project, role, routed_role, launch, ended, family_route=None):
     finally:
         payload["seconds"] = monotonic() - started
         ended(payload, crashed)
+
+
+def critic_harness(project):
+    fallback = routes(project).commands.get("critic")
+    if fallback is not None:
+        return Path(safe_command(project, fallback)).name
+    return getattr(critic_seat(project), "name", None)
 
 
 def record_turn(conn, run_id, payload):

@@ -36,10 +36,12 @@ from fake_agent import (  # noqa: E402
 )
 from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: E402
 
+import holophyte.agents.agent_turns  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.fallback  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.harness  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.probes  # noqa: E402 - after the sys.path insert above
 import holophyte.agents.roles  # noqa: E402 - after the sys.path insert above
+import holophyte.cli.report  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.claim  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.pool  # noqa: E402 - after the sys.path insert above
@@ -536,8 +538,9 @@ class ClaudeCriticTests(LoopFixture):
 
 
 class CriticFallbackTurnTests(LoopFixture):
-    def test_a_critic_on_its_fallback_runs_the_fallback_command_in_a_detached_checkout(
-            self):
+    def on_fallback(self):
+        """A critic whose codex probe fails, switched at startup to the
+        `critic-fallback` script, which logs each call to `calls`."""
         calls = self.target.parent / "fallback-calls.jsonl"
         fallback = self.target.parent / "critic-fallback"
         fallback.write_text(
@@ -568,6 +571,12 @@ class CriticFallbackTurnTests(LoopFixture):
         with patch.object(sys, "stdout", io.StringIO()):
             holophyte.agents.probes.probe_critic(self.project, provider,
                                                  activate=True)
+        return calls, command, conn, project_id, provider, task
+
+    def test_a_critic_on_its_fallback_runs_the_fallback_command_in_a_detached_checkout(
+            self):
+        calls, command, conn, project_id, provider, task = self.on_fallback()
+        with patch.object(sys, "stdout", io.StringIO()):
             admitted = holophyte.review.freshness.critic_admits(
                 self.project, conn, project_id, provider, task)
 
@@ -581,6 +590,16 @@ class CriticFallbackTurnTests(LoopFixture):
         self.assertTrue(turn["detached"])
         self.assertEqual(turn["head"], self.git("rev-parse", "main").strip())
         self.assertFalse(Path(turn["cwd"]).exists())
+
+    def test_a_critic_turn_on_its_fallback_records_the_fallback_harness(self):
+        self.on_fallback()
+        recorded = []
+        holophyte.agents.agent_turns.timed_turn(
+            self.project, "critic", "critic", lambda: None,
+            lambda payload, _: recorded.append(payload))
+
+        self.assertEqual([turn["harness"] for turn in recorded],
+                         ["critic-fallback"])
 
 
 class RealCritic:
@@ -623,6 +642,7 @@ class CriticTurnRecordTests(LoopFixture):
         [turn] = self.claimed_with("print('FRESHNESS: FRESH')\n")
 
         self.assertEqual(turn["route"], "primary")
+        self.assertEqual(turn["harness"], "claude")
         self.assertTrue(turn["label"].endswith("sonnet"), turn["label"])
         self.assertEqual(turn["exit_status"], 0)
         self.assertFalse(turn["timed_out"])
@@ -637,6 +657,61 @@ class CriticTurnRecordTests(LoopFixture):
                           "SELECT summary FROM runEvents WHERE kind = 'warning'"
                           " AND summary LIKE 'critic:%'")][0])
         self.assertEqual([turn["timed_out"] for turn in turns], [True])
+
+
+class CriticReportTests(LoopFixture):
+    def critic_report(self):
+        """Three t3 turns (1, 2 and 10 minutes, the last timed out, no
+        usage), two codex turns (0.5 and 1.5 minutes, the first exiting 1,
+        costing $0.01 and $0.02) and one startup switch to a codex critic
+        fallback; the report's critic lines."""
+        conn = holophyte.loop.runs.open_store(self.project)
+        self.addCleanup(conn.close)
+        project = tickets.ensure_project(conn, "team-1", self.target)
+        ticket = tickets.mirror_ticket(
+            conn, project, linear_issue_id="issue-1", linear_identifier="KO-1",
+            title="ticket 1", acceptance_criteria=["Given 1, then it is worked"],
+            verification_commands=["echo ok"])
+        tickets.transition(conn, ticket, "in_flight")
+        run = store.claim(conn, project, ticket)
+        turns = [("t3", 60, 0, False, None), ("t3", 120, 0, False, None),
+                 ("t3", 600, None, True, None),
+                 ("codex", 30, 1, False, {"cost_usd": 0.01}),
+                 ("codex", 90, 0, False, {"cost_usd": 0.02})]
+        for harness, seconds, exit_status, timed_out, usage in turns:
+            turn = dict(role="critic", label=harness, route="primary",
+                        harness=harness, seconds=seconds,
+                        exit_status=exit_status, timed_out=timed_out)
+            if usage is not None:
+                turn["usage"] = usage
+            store.record_event(conn, run, "agent_turn", "critic turn ended",
+                               level="detail", payload=json.dumps(turn))
+        for seat in ("critic", "reviewer"):
+            store.record_event(conn, run, "route_fallback", json.dumps(
+                {"seat": seat, "reason": "probe failed",
+                 "command": "/opt/bin/codex"}))
+        return {line.split(":")[0]: line
+                for line in holophyte.cli.report.report_lines(conn)
+                if line.startswith("critic ")}
+
+    def test_each_critic_harness_has_its_own_report_line(self):
+        lines = self.critic_report()
+
+        self.assertEqual(sorted(lines), ["critic codex", "critic t3"])
+        self.assertTrue(lines["critic t3"].startswith(
+            "critic t3: 3 turns · median 2.0 min · p90 8.4 min · failed 0"
+            " · timed out 1 · switched to 0 · "), lines["critic t3"])
+        self.assertTrue(lines["critic codex"].startswith(
+            "critic codex: 2 turns · median 1.0 min · p90 1.4 min · failed 1"
+            " · timed out 0 · switched to 1 · "), lines["critic codex"])
+
+    def test_critic_turns_with_no_usage_show_their_cost_as_unreported(self):
+        lines = self.critic_report()
+
+        self.assertTrue(lines["critic t3"].endswith(" · cost unreported"),
+                        lines["critic t3"])
+        self.assertTrue(lines["critic codex"].endswith(" · cost $0.0300"),
+                        lines["critic codex"])
 
 
 class CriticAnswerTests(unittest.TestCase):

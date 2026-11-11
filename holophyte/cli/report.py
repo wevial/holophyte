@@ -3,6 +3,7 @@ import statistics
 import time
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
 import store.read
 import store.schema
@@ -164,6 +165,39 @@ def adversary_lines(conn):
                          if event.get("family") == family])]
 
 
+def critic_line(harness, turns, switches):
+    minutes = sorted((turn.get("seconds") or 0) / 60 for turn in turns)
+    p90 = (minutes[0] if len(minutes) == 1 else
+           statistics.quantiles(minutes, n=10, method="inclusive")[-1])
+    timed_out = sum(1 for turn in turns if turn.get("timed_out"))
+    failed = sum(1 for turn in turns
+                 if not turn.get("timed_out") and turn.get("exit_status") != 0)
+    costs = [turn["usage"]["cost_usd"] for turn in turns
+             if isinstance(turn.get("usage"), dict)
+             and type(turn["usage"].get("cost_usd")) in (int, float)]
+    return (f"critic {harness}: {len(turns)} turns"
+            f" · median {statistics.median(minutes):.1f} min"
+            f" · p90 {p90:.1f} min · failed {failed} · timed out {timed_out}"
+            f" · switched to {switches[harness]}"
+            f" · cost {f'${sum(costs):.4f}' if costs else 'unreported'}")
+
+
+def critic_lines(conn):
+    turns = [turn for (payload,) in conn.execute(
+        "SELECT payload FROM runEvents WHERE kind = 'agent_turn'")
+        if (turn := json.loads(payload)).get("role") == "critic"
+        and turn.get("harness")]
+    switches = Counter(
+        Path(evidence["command"]).name for (summary,) in conn.execute(
+            "SELECT summary FROM runEvents WHERE kind = 'route_fallback'")
+        if (evidence := json.loads(summary)).get("seat") == "critic")
+    by_harness = {}
+    for turn in turns:
+        by_harness.setdefault(turn["harness"], []).append(turn)
+    return [critic_line(harness, mine, switches)
+            for harness, mine in sorted(by_harness.items())]
+
+
 def consolidation_lines(conn):
     rounds = [json.loads(payload) for (payload,) in conn.execute(
         "SELECT payload FROM runEvents WHERE kind = 'consolidation'")]
@@ -263,6 +297,7 @@ def report_lines(conn, target=None):
         live += complexity_lines(conn)
         live += blast_radius_lines(conn)
         live += adversary_lines(conn)
+        live += critic_lines(conn)
         live += consolidation_lines(conn)
         live += question_lines(conn)
         live += scout_report_lines(conn)
