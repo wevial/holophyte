@@ -169,8 +169,8 @@ def _protected(conn, run_id, wt, base_sha, sha, criteria):
     tree = sh(["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
     added = sh(["git", "diff", "--name-only", "--diff-filter=A",
                 f"{base_sha}...{sha}"], cwd=wt).splitlines()
-    candidates = {path for path in tree
-                  if any(fnmatchcase(path, pattern) for pattern in patterns)}
+    candidates = {path for path in tree if path in patterns
+                  or any(fnmatchcase(path, pattern) for pattern in patterns)}
     runnable = {path for path in added if _is_test(path)
                 or PurePosixPath(path).suffix in SOURCE_SUFFIXES}
     return sorted(path for path in candidates | runnable

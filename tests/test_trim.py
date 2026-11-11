@@ -266,8 +266,9 @@ class TrimLoopTests(TrimFixture):
         self.assertIn("reverted tests", summary)
 
     def on_main(self, path, body):
+        (self.target / path).parent.mkdir(parents=True, exist_ok=True)
         (self.target / path).write_text(body)
-        self.git("add", path)
+        self.git("add", "--", path)
         self.git("commit", "-q", "-m", f"add {path}")
 
     def test_a_pass_that_edits_a_module_outside_the_runs_diff_is_reverted(self):
@@ -380,6 +381,19 @@ class TrimLoopTests(TrimFixture):
         self.assert_witness_reverted(
             "pair.test.js", CONDITION_PAIR,
             'test("test_a", () => { if (true) /"/.test("text"); expect(3); });\n')
+
+    def test_deleting_a_test_from_a_named_file_with_glob_characters_is_reverted(self):
+        path = "app/[id]/route.test.ts"
+        self.on_main(path, JS_PAIR.format(a="1", b="2"))
+        self.trimmed(
+            Commits(WORK, Commit("work tests", path, JS_PAIR.format(a="3", b="4"))),
+            Commits(Commit("trim: tests", path, 'test("test_a", () => expect(3));\n')),
+            Idle(), APPROVE, task=dict(a_task(), criteria=[
+                f"Given a route, then both hold. (`{path}` witnesses it.)"]))
+        [result] = self.results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("criterion witness", result["reason"])
+        self.assertIn('"test_b"', self.git("show", f"main:{path}"))
 
     def test_a_deleted_go_test_whose_name_prefixes_a_kept_one_is_reverted(self):
         self.assert_witness_reverted(
