@@ -27,6 +27,7 @@ _DISCOVER_DEFAULTS = {"start": ".", "pattern": "test*.py", "top": None}
 _SETUP = {"export", "unset", "source", ".", "set"}
 _UNREPRODUCIBLE = {"pushd", "popd"}
 _ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+_PLAIN_BASES = {"TestCase", "IsolatedAsyncioTestCase", "object"}
 
 
 class UnittestRun(NamedTuple):
@@ -164,15 +165,39 @@ def _test_module(path):
             and all(part.isidentifier() for part in module_name(path).split(".")))
 
 
+def _base_name(base):
+    return base.attr if isinstance(base, ast.Attribute) else getattr(
+        base, "id", None)
+
+
+def _class_holds_tests(cls, classes, seen):
+    if cls.name in seen:
+        return False
+    seen.add(cls.name)
+    if any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+           and node.name.startswith("test") for node in cls.body):
+        return True
+    for base in cls.bases:
+        name = _base_name(base)
+        if name in _PLAIN_BASES:
+            continue
+        if not isinstance(base, ast.Name) or name not in classes:
+            return True
+        if _class_holds_tests(classes[name], classes, seen):
+            return True
+    return False
+
+
 def _holds_tests(root, path):
     try:
         tree = ast.parse(sh(["git", "show", f"HEAD:{path}"], cwd=root))
     except (SyntaxError, ValueError, RuntimeError, OSError):
-        return False
-    return any(isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-               and node.name.startswith("test")
-               for cls in ast.walk(tree) if isinstance(cls, ast.ClassDef)
-               for node in cls.body)
+        return True
+    classes = {node.name: node for node in tree.body
+               if isinstance(node, ast.ClassDef)}
+    return any(isinstance(node, ast.FunctionDef) and node.name == "load_tests"
+               for node in tree.body) or any(
+        _class_holds_tests(cls, classes, set()) for cls in classes.values())
 
 
 def _distance(one, other):

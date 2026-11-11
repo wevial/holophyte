@@ -357,6 +357,30 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertTrue(ok, out)
         self.assertEqual(self.ran(), ["test_a", "test_unrelated"])
 
+    def test_an_importer_inheriting_its_tests_runs(self):
+        (self.wt / "tests/test_a.py").unlink()
+        self.write("tests/fixture_base.py", (
+            "import unittest\nimport pkg.a\n\n\n"
+            "class Base(unittest.TestCase):\n"
+            "    def test_value(self):\n"
+            "        self.assertEqual(pkg.a.VALUE, 1)\n"))
+        self.write("tests/test_inherited.py", (
+            "import pkg.a\nfrom fixture_base import Base\n\n\n"
+            "class TestInherited(Base):\n    pass\n"))
+        self.onto_main()
+        self.change_a(2)
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn(
+            "FAILED: tests/test_inherited.py imports a changed module", out)
+
+    def test_an_importer_that_does_not_parse_is_a_verify_failure(self):
+        self.write("tests/test_a.py", "import pkg.a\n\ndef broken(:\n")
+        self.change_a("1  # touched")
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
     def test_importers_run_in_the_subproject_the_verify_changes_into(self):
         self.write("sub/pkg/__init__.py", "")
         self.write("sub/pkg/a.py", "VALUE = 1\n")
