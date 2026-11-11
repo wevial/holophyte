@@ -29,6 +29,7 @@ from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.criteria  # noqa: E402
 from holophyte.agents.agent_output import ImplementerOutput  # noqa: E402
 from holophyte.agents.roles import agent  # noqa: E402
 from holophyte.loop.trim import trim  # noqa: E402
@@ -70,6 +71,23 @@ class Commits:
         for commit in self.commits:
             commit.play(cwd, turn)
         return "trimmed"
+
+
+class BoardEdit:
+    """A board edit that replaces the ticket's criteria mid-turn."""
+
+    def __init__(self, db, criteria):
+        self.db, self.criteria = db, criteria
+
+    def play(self, cwd, turn):
+        conn = store.open(self.db)
+        try:
+            (ticket_id,) = conn.execute("SELECT id FROM tickets").fetchone()
+            with conn:
+                store.criteria.record_criteria(conn, ticket_id, self.criteria,
+                                               [], 0)
+        finally:
+            conn.close()
 
 
 class LeaveDirtyThen(Commits):
@@ -364,11 +382,34 @@ class TrimLoopTests(TrimFixture):
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")
 
+    def test_a_claimed_criterion_keeps_its_witness_after_a_board_edit(self):
+        self.on_main("test_pair.py", PAIR.format(a="1", b="2"))
+        fake = self.trimmed(
+            Commits(WORK, Commit("work tests", "test_pair.py",
+                                 PAIR.format(a="3", b="4")),
+                    BoardEdit(self.db, a_task()["criteria"])),
+            Commits(Commit("trim: tests", "test_pair.py",
+                           "def test_a():\n    assert 3\n")),
+            APPROVE, task=dict(a_task(), criteria=[NAMES_PAIR]))
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["work tests"]])
+        [result] = self.results()
+        self.assertIn("criterion witness", result["reason"])
+
+    def test_dropping_a_js_example_from_an_added_doc_is_kept(self):
+        fake = self.trimmed(
+            Commits(WORK, Commit("work docs", "usage.md",
+                                 'Run:\n\n    test("sample", () => {});\n')),
+            Commits(Commit("trim: comments", "usage.md", "Run the suite.\n")),
+            APPROVE)
+        self.assert_merged()
+        self.assertEqual(self.review_candidates(fake), [self.shas()["trim: comments"]])
+
     def test_deleting_a_test_from_a_module_the_run_added_is_reverted(self):
         fake = self.trimmed(
-            Commits(WORK, Commit("work tests", "checks.py",
+            Commits(WORK, Commit("work tests", "test_checks.py",
                                  PAIR.format(a="3", b="4"))),
-            Commits(Commit("trim: tests", "checks.py",
+            Commits(Commit("trim: tests", "test_checks.py",
                            "def test_a():\n    assert 3\n")),
             APPROVE)
         self.assert_merged()

@@ -37,6 +37,7 @@ from holophyte.loop.trim_brief import (
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
+from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import (
     _GO_STRING,
     _GO_TOKEN,
@@ -61,7 +62,7 @@ JS_TITLE = re.compile(r"(?<![.\w$])(?:it|test)\(\s*(?:(['\"])"
 
 
 def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
-         contracts):
+         contracts, criteria=()):
     config = trim_config(project)
     if not config.enabled:
         return sha
@@ -74,7 +75,7 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
         _record(project, conn, run_id, "skipped", reason, [], [], before, before)
         return sha
     untracked = _untracked(wt)
-    protected = _protected(conn, run_id, wt, base_sha, sha)
+    protected = _protected(conn, run_id, wt, base_sha, sha, criteria)
     goal = TRIM_BRIEF.format(base=base_sha,
                              commands=_commands_brief(project, verify_cmd).strip(),
                              tests=_tests_brief(wt, base_sha),
@@ -169,20 +170,21 @@ def _judge(wt, base_sha, sha, commits, green, untracked, protected):
         red and f"verify was red at trim: {_passes(red)[0]['pass']}"))) or None
 
 
-def _protected(conn, run_id, wt, base_sha, sha):
+def _protected(conn, run_id, wt, base_sha, sha, criteria):
+    claimed = [text for _, text in numbered(conn, run_id, criteria)]
     snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
     rows = [row for row in (store.criteria.current(conn, snapshot.ticketId)
-                            if snapshot else ()) if row["status"] != "retired"]
-    patterns = {path for files in named_files([row["text"] for row in rows])
-                for path in files}
-    patterns |= {path for row in rows if row["witnessKind"] == "test"
+                            if snapshot else ())
+            if row["witnessKind"] == "test" and row["text"] in claimed]
+    patterns = {path for files in named_files(claimed) for path in files}
+    patterns |= {path for row in rows
                  for path in (row["witnessTarget"] or "").split(",") if path}
     tree = sh(["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
     added = sh(["git", "diff", "--name-only", "--diff-filter=A",
                 f"{base_sha}...{sha}"], cwd=wt).splitlines()
     candidates = {path for path in tree
                   if any(fnmatchcase(path, pattern) for pattern in patterns)}
-    return sorted(path for path in candidates | set(added)
+    return sorted(path for path in candidates | set(filter(_is_test, added))
                   if _test_ids(wt, sha, path))
 
 
