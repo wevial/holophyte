@@ -1,9 +1,11 @@
 import fcntl
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import store
@@ -52,6 +54,8 @@ SPAWN = subprocess.Popen
 START_LOCK = "scout-start.lock"
 START_FAILED = "scout_start_failed"
 SANDBOX_UNAVAILABLE = "scout_sandbox_unavailable"
+STOP_GRACE_S = 10
+ENDED_FAILED = "ended failed"
 
 
 def _project_scouts(conn, target, phases):
@@ -70,7 +74,63 @@ def _end_one_stale(conn, row, reason, now):
         fail_pass(conn, row.id, steered, reason)
         return f"pass {steered['pass']} failed, back to done"
     end_scout(conn, row.id, "failed", reason, now=now)
-    return "ended failed"
+    return ENDED_FAILED
+
+
+def _runs_scout(pid, scout_id, project_path):
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return None
+    wanted = Path(project_path).resolve()
+    return any(arg == b"--scout" and value == str(scout_id).encode()
+               and Path(os.fsdecode(path)).resolve() == wanted
+               for arg, value, path in zip(argv, argv[1:], argv[2:]))
+
+
+def _reap(pid):
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        pass
+
+
+def _signal_until_gone(pid, scout_id, project_path, signum):
+    try:
+        os.kill(pid, signum)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return None
+    deadline = time.monotonic() + STOP_GRACE_S
+    while time.monotonic() < deadline:
+        _reap(pid)
+        running = _runs_scout(pid, scout_id, project_path)
+        if running is not True:
+            return None if running is None else True
+        time.sleep(0.05)
+    return False
+
+
+def _stopped(target, pid, scout_id):
+    if pid is None:
+        return True
+    running = _runs_scout(pid, scout_id, target.path)
+    if running is not True:
+        return running is False
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        gone = _signal_until_gone(pid, scout_id, target.path, signum)
+        if gone is not False:
+            return gone
+    return False
+
+
+def stop_scout(target, pid, scout_id):
+    if _stopped(target, pid, scout_id):
+        shutil.rmtree(scout_dir(target, scout_id) / "scratch",
+                      ignore_errors=True)
 
 
 def end_stale(name, target, conn, now, out):
@@ -89,6 +149,8 @@ def end_stale(name, target, conn, now, out):
         if ended is not None:
             print(f"[holo2] {name}: scout {row.id} {ended}: {reason}",
                   file=out)
+        if ended == ENDED_FAILED:
+            stop_scout(target, row.pid, row.id)
 
 
 def scout_unit(name, scout_id):
