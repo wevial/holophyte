@@ -22,7 +22,7 @@ import unittest
 from pathlib import Path
 from typing import NamedTuple
 
-from tests.test_file_sizes import line_count
+from tests.test_file_sizes import line_count, python_files
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -281,6 +281,7 @@ PINNED = {
     "holophyte/scout/scout_probes.py": 0,
     "holophyte/scout/scout_process.py": 3,
     "holophyte/scout/scout_sweep.py": 3,
+    "holophyte/scout/sources.py": 3,
     "holophyte/scout/stop.py": 0,
     "holophyte/scout/swarm.py": 1,
     "holophyte/scout/telemetry.py": 0,
@@ -393,8 +394,7 @@ class Module(NamedTuple):
 
 
 def in_scope(root=ROOT):
-    names = subprocess.check_output(
-        ["git", "ls-files", "*.py"], cwd=root, text=True).splitlines()
+    names = python_files(root)
     return sorted(n for n in names if n.startswith(SCOPE) or "/" not in n)
 
 
@@ -435,6 +435,10 @@ def measure(root=ROOT):
         cited = tuple(sorted(n for n in lines if CITATION.search(physical[n - 1])))
         modules[name] = Module(line_count(path), len(lines), cited)
     return modules
+
+
+def pin_table(modules):
+    return {name: module.count for name, module in modules.items()}
 
 
 def budget_violations(modules, pinned=PINNED):
@@ -571,7 +575,7 @@ class CommentBudget(unittest.TestCase):
 
     def test_the_tables_are_exactly_what_the_measure_reads(self):
         modules = measure()
-        self.assertEqual(PINNED, {n: m.count for n, m in modules.items()})
+        self.assertEqual(PINNED, pin_table(modules))
         self.assertEqual(CITED, {n: len(m.cited)
                                  for n, m in modules.items() if m.cited})
         self.assertLessEqual(
@@ -655,7 +659,6 @@ class BudgetSelfTests(unittest.TestCase):
         with Repo({"holophyte/over.py": lines(30, 4),
                    "holophyte/under.py": lines(30, 2),
                    "holophyte/new.py": lines(40, 3)}) as repo:
-            (repo.root / "holophyte/loose.py").write_text(lines(5))
             bad = budget_violations(measure(repo.root), pinned={
                 "holophyte/over.py": 3, "holophyte/under.py": 3,
                 "holophyte/loose.py": 0})
@@ -669,6 +672,16 @@ class BudgetSelfTests(unittest.TestCase):
             "holophyte/loose.py: not a tracked in-scope file; the PINNED "
             "entry is stale",
         ])
+
+    def test_an_untracked_module_with_no_pin_breaks_the_exact_table(self):
+        with Repo({".gitignore": "holophyte/ignored.py\n",
+                   "holophyte/pinned.py": lines(5)}) as repo:
+            (repo.root / "holophyte/untracked.py").write_text(lines(5))
+            (repo.root / "holophyte/ignored.py").write_text(lines(5))
+            table = pin_table(measure(repo.root))
+        pinned = {"holophyte/pinned.py": 0}
+        self.assertNotEqual(table, pinned)
+        self.assertEqual(set(table) - set(pinned), {"holophyte/untracked.py"})
 
     def test_an_unlisted_module_at_its_allowance_passes(self):
         with Repo({"store/new.py": lines(59, 2)}) as repo:

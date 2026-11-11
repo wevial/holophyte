@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tests.scout_stubs import BRIEF, LeadStubs, fenced
+from tests.scout_stubs import BRIEF, LeadStubs, fenced, titled
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from host_fixture import HostFixture, git  # noqa: E402
@@ -26,6 +26,7 @@ import store  # noqa: E402
 from holophyte.config.project import Project  # noqa: E402
 from holophyte.host.registry import Host, HostError, settings  # noqa: E402
 from holophyte.host.sweep_host import supervise_host  # noqa: E402
+from holophyte.isolation import launcher  # noqa: E402
 from store.scouts import (  # noqa: E402
     ScoutRefused,
     beat_scout,
@@ -117,6 +118,22 @@ class ScoutFixture(HostFixture):
         patcher.start()
         self.addCleanup(patcher.stop)
         return refused
+
+    def a_source(self, name="t3"):
+        """A repository tagged v1 at a three-line `src/app.txt`, with a later
+        commit past the tag; its path, the tag's commit and a source table."""
+        source = self.root / f"{name}-origin"
+        subprocess.run(["git", "init", "-q", str(source)], check=True)
+        (source / "src").mkdir()
+        (source / "src" / "app.txt").write_text("one\ntwo\nthree\n")
+        git(source, "add", "src/app.txt")
+        git(source, "commit", "-q", "-m", "tagged")
+        git(source, "tag", "-a", "v1", "-m", "release")
+        (source / "src" / "app.txt").write_text("changed after the tag\n")
+        git(source, "commit", "-q", "-am", "later")
+        table = (f'[scout.sources.{name}]\nurl = "{source}"\n'
+                 'ref = "v1"\n')
+        return source, git(source, "rev-parse", "v1^{commit}"), table
 
     def sweep_pass(self):
         out = io.StringIO()
@@ -341,6 +358,73 @@ class ScoutProcessTests(ScoutFixture):
         self.assertEqual([kind for kind in self.events(path, scout_id)
                           if kind != "agent_turn"], ["scout_started"])
 
+    def test_a_declared_source_sits_at_its_tag_in_every_checkout(self):
+        source, tagged, table = self.a_source()
+        path = self.project("alpha", table)
+        scout_id = self.a_scout(path, "planning")
+        paths = ["t3/src/app.txt"]
+        self.stubs.answer(
+            plan=fenced({"tasks": [
+                titled({"question": "Where does t3 count?", "paths": paths,
+                        "mode": "read"}),
+                titled({"question": "Does t3 run here?", "paths": paths,
+                        "mode": "run"})]}),
+            report=fenced({**BRIEF, "summary": "nothing found",
+                           "findings": [], "actions": []}),
+            helper_git=[["status", "--porcelain"]],
+            helper_sh=["cat t3/src/app.txt", "test -e t3/.git; echo $?"])
+        code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 0, printed)
+        lead = self.lead(path, scout_id)
+        self.assertEqual((lead / "t3" / "src" / "app.txt").read_text(),
+                         "one\ntwo\nthree\n")
+        self.assertEqual(git(lead, "status", "--porcelain"), "")
+        helpers = self.stubs.helpers()
+        self.assertEqual(sorted(Path(helper["cwd"]).name.split("-")[0]
+                                for helper in helpers), ["helper", "run"])
+        for helper in helpers:
+            self.assertEqual(helper["git"], [[0, ""]])
+            self.assertEqual(helper["sh"], [[0, "one\ntwo\nthree"],
+                                            [0, "1"]])
+        (payload,) = [json.loads(payload) for (payload,) in self.conn(
+            path).execute("SELECT payload FROM runEvents WHERE scoutId = ?"
+                          " AND kind = 'scout_sources'", (scout_id,))]
+        self.assertEqual(payload, {"t3": {"url": str(source), "ref": "v1",
+                                          "commit": tagged}})
+        self.assertEqual(git(path, "status", "--porcelain"), "")
+
+    def test_a_changed_source_ref_keeps_the_clone_and_its_own_ref(self):
+        source, tagged, table = self.a_source()
+        git(source, "tag", "v2")
+        path = self.project("alpha", table)
+        scout_id = self.a_scout(path)
+        project = Project.locate(path, adopt=False)
+        scout_process.scout_sources(project, scout_id, fresh=True)
+        project.config_path.write_text(project.config_path.read_text()
+                                       .replace('"v1"', '"v2"'))
+        (kept,) = scout_process.scout_sources(
+            Project.locate(path, adopt=False), scout_id).values()
+        self.assertEqual((kept.url, kept.ref, kept.commit),
+                         (str(source), "v1", tagged))
+        self.assertEqual((kept.path / "src" / "app.txt").read_text(),
+                         "one\ntwo\nthree\n")
+
+    def test_a_source_ref_that_cannot_be_fetched_fails_before_any_turn(self):
+        _, _, table = self.a_source()
+        path = self.project("alpha", "[questions.titles]\n"
+                            + table.replace('"v1"', '"v9"'))
+        scout_id = self.a_scout(path, "planning")
+        code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 1, printed)
+        row = scout(self.conn(path), scout_id)
+        self.assertEqual(row.phase, "failed")
+        (summary,) = [summary for (summary,) in self.conn(path).execute(
+            "SELECT summary FROM runEvents WHERE scoutId = ?"
+            " AND kind = 'scout_failed'", (scout_id,))]
+        self.assertIn("source t3: ref v9 could not be fetched", summary)
+        self.assertEqual([call["turn"] for call in self.stubs.calls()], [])
+        self.assertEqual(self.stubs.helpers(), [])
+
     def make_lead_in(self, checkout):
         project = SimpleNamespace(path=checkout, holo_dir=self.root / "holo")
         return scout_process.make_lead(project, 1,
@@ -371,6 +455,34 @@ class ScoutProcessTests(ScoutFixture):
         for tree in (checkout, lead):
             self.assertEqual(git(tree, "rev-parse", "--show-toplevel"),
                              str(tree.resolve()))
+
+    def test_a_credential_set_nowhere_fails_the_run_task_at_setup(self):
+        path = self.project(
+            "alpha", '[agents]\nimplementer_isolation = "container"\n'
+            'implementer_credential = { env = "SCOUT_CREDENTIAL" }\n'
+            '[worktree]\nsetup = ["true"]\n')
+        git(path, "config", "user.name", "scout-test")
+        git(path, "config", "user.email", "scout@test")
+        unit_dir = self.home / "alpha"
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        (unit_dir / "serve.env").write_text("UNIT_SETTING=plain\n")
+        os.environ.pop("SCOUT_CREDENTIAL", None)
+        scout_id = self.a_scout(path, "planning")
+        question = "Does the retry test fail on main?"
+        self.stubs.answer(
+            plan=fenced({"tasks": [titled({"question": question, "paths": [],
+                                           "mode": "run"})]}),
+            report=fenced({**BRIEF, "summary": "nothing found",
+                           "findings": [], "actions": []}))
+        with patch.object(launcher, "image_ready", lambda route: None):
+            code, printed = self.cli("--scout", str(scout_id), str(path))
+        self.assertEqual(code, 0, printed)
+        phase, excerpt = self.conn(path).execute(
+            "SELECT phase, excerpt FROM scoutTasks WHERE scoutId = ?",
+            (scout_id,)).fetchone()
+        self.assertEqual(phase, "failed")
+        self.assertIn("implementer credential variable SCOUT_CREDENTIAL"
+                      " is not set", excerpt)
 
 
 class ScoutSweepTests(ScoutFixture):

@@ -10,6 +10,7 @@ from holophyte.agents.harness import (
     route_adapter,
 )
 from holophyte.config.reader import config_table
+from holophyte.scout.sources import Source
 
 DEFAULT_LEADS = {
     "opus": {"harness": "claude", "model": "opus", "effort": "high"},
@@ -43,6 +44,7 @@ class ScoutConfig:
     steer_budget_min: int
     steer_helpers: int
     github: bool
+    sources: dict
 
     @property
     def prices(self):
@@ -83,7 +85,36 @@ def scout_config(project):
             f"{where}: [scout] github must be true or false, got {github!r}")
     return ScoutConfig(leads, helpers, lead_prices, helper_prices, lead,
                        helper, waves=waves, steer_budget_min=steer_budget_min,
-                       steer_helpers=steer_helpers, github=github, **counts)
+                       steer_helpers=steer_helpers, github=github,
+                       sources=scout_sources(where, table), **counts)
+
+
+def scout_sources(where, table):
+    declared = table.get("sources", {})
+    if not isinstance(declared, dict):
+        raise SystemExit(
+            f"{where}: [scout] sources: write each source as a "
+            f"[scout.sources.NAME] table")
+    sources = {}
+    for name, source in declared.items():
+        label = f"[scout.sources.{name}]"
+        if not PROFILE_NAME.fullmatch(name):
+            raise SystemExit(
+                f"{where}: {label}: a source name takes only letters, "
+                f"digits, _ and -")
+        if not isinstance(source, dict) or set(source) != {"url", "ref"}:
+            raise SystemExit(
+                f"{where}: {label}: write it as a table with url and ref "
+                f"only")
+        for key in ("url", "ref"):
+            value = source[key]
+            if not isinstance(value, str) or not value.strip() \
+                    or value.startswith("-"):
+                raise SystemExit(
+                    f"{where}: {label} {key} must be a non-empty string not "
+                    f"starting with -, got {value!r}")
+        sources[name] = Source(name, source["url"], source["ref"])
+    return sources
 
 
 def route_seats(project, where, table, key, defaults, role):

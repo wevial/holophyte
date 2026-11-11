@@ -116,6 +116,18 @@ test("the Merge queue link shows after Runs only while a polled project has a qu
   expect(queueBadge().classList.contains("text-need")).toBe(false);
 });
 
+test("the Merge queue link shows only for a scope with a queue: the project that has one, or All projects", async () => {
+  await mount("#/?project=demo", queueDaemons(noQueue, servedQueue));
+  expect(labels()).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
+  cleanup();
+
+  for (const hash of ["#/?project=writer", "#/"]) {
+    await mount(hash, queueDaemons(noQueue, servedQueue));
+    expect(labels()).toEqual(["Overview", "Runs", "Merge queue, 4 queued", "Tickets", "Findings", "Scouts"]);
+    cleanup();
+  }
+});
+
 test("the Merge queue badge takes the need tone while a pull request that left the queue waits on you", async () => {
   expect(servedQueue.left.some((row) => row.waits_on_you)).toBe(true);
   await mount("#/", queueDaemons(noQueue, servedQueue));

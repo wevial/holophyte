@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import signal
@@ -11,6 +12,7 @@ from pathlib import Path
 import store
 from holophyte.agents.review_workspace import review_worktrees, scratch_git_environment
 from holophyte.config.config_tables import sweep_config
+from holophyte.host.registry import loop_unit_environment
 from holophyte.loop.gates import sh
 from holophyte.loop.runs import open_store
 from holophyte.redact import safe_print as print
@@ -32,6 +34,12 @@ from holophyte.scout.follow_up import (
 )
 from holophyte.scout.lead import run_lead
 from holophyte.scout.scout_config import scout_config
+from holophyte.scout.sources import (
+    fetch_sources,
+    place_sources,
+    sources_payload,
+    sources_summary,
+)
 from holophyte.scout.stop import BY_SIGNAL, stop_reason, stop_request, stopped_by
 from holophyte.scout.swarm import ScoutStopped, Stopping
 from holophyte.scout.titler import title_scout
@@ -63,6 +71,26 @@ def scout_dir(project, scout_id):
 
 def lead_path(project, scout_id):
     return scout_dir(project, scout_id) / "lead"
+
+
+def scout_sources(project, scout_id, fresh=False):
+    return fetch_sources(scout_dir(project, scout_id) / "sources",
+                         scout_config(project).sources, fresh)
+
+
+def lead_checkout(project, scout_id, base_sha, sources):
+    lead = make_lead(project, scout_id, base_sha)
+    place_sources(lead, sources)
+    return lead
+
+
+def fetched_sources(conn, project, scout_id):
+    sources = scout_sources(project, scout_id, fresh=True)
+    if sources:
+        record_scout_event(conn, scout_id, "scout_sources",
+                           sources_summary(sources), level="detail",
+                           payload=json.dumps(sources_payload(sources)))
+    return sources
 
 
 def refusal(scout_id, row):
@@ -237,7 +265,8 @@ def answer_stopped(conn, scout_id, ask):
 
 def answered(conn, project, row, ask, stopping):
     try:
-        worktree = make_lead(project, row.id, row.base_sha)
+        worktree = lead_checkout(project, row.id, row.base_sha,
+                                 scout_sources(project, row.id))
         return answer(conn, project, row, ask, worktree, stopping)
     except ScoutRefused:
         raise
@@ -300,7 +329,8 @@ def pass_stopped(conn, scout_id, steered):
 def passed(conn, project, row, steered, stopping):
     try:
         budget_s = scout_config(project).steer_budget_min * 60
-        worktree = make_lead(project, row.id, row.base_sha)
+        worktree = lead_checkout(project, row.id, row.base_sha,
+                                 scout_sources(project, row.id))
         return run_pass(conn, project, row, steered, worktree, budget_s,
                         stopping)
     except ScoutRefused:
@@ -367,7 +397,7 @@ def scout_mode(project, scout_id):
             return 1
         stopping = Stopping()
         run, stopped = modes(conn, project, row, stopping)
-        with stop_on_sigterm(stopping):
+        with loop_unit_environment(project), stop_on_sigterm(stopping):
             try:
                 return run()
             except ScoutStopped:
@@ -390,9 +420,10 @@ def run_scout(conn, project, row, stopping):
                            f"scout {scout_id} started as pid {os.getpid()}")
         try:
             with scout_heartbeat(conn, scout_id, interval_s):
+                sources = fetched_sources(conn, project, scout_id)
                 if row.title is None:
                     title_scout(conn, project.config(), row)
-                lead = make_lead(project, scout_id, row.base_sha)
+                lead = lead_checkout(project, scout_id, row.base_sha, sources)
                 phase, reason = run_lead(conn, project, row, lead,
                                          row.budget_min * 60, stopping)
         except (ScoutEnded, ScoutRefused):
