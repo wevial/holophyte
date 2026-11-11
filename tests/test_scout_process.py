@@ -574,6 +574,15 @@ class ScoutSweepTests(ScoutFixture):
         self.assertEqual(scout(conn, stale).phase, "failed")
         self.assertIsNone(child.poll())
 
+    def test_a_stale_scout_pid_holding_its_flag_inside_one_argument_is_left(
+            self):
+        target, conn, stale, child = self.stale_with_process(
+            lambda scout_id, path: [f"--scout {scout_id} {path}"])
+        scout_sweep.end_stale("alpha", target, conn, now_ms(), io.StringIO())
+        self.assertEqual(scout(conn, stale).phase, "failed")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            child.wait(timeout=1)
+
     def test_a_project_with_a_config_error_still_counts_its_live_scouts(self):
         alpha, beta = self.project("alpha"), self.project("beta")
         with open(Host.locate().path, "a") as registry:
