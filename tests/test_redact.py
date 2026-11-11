@@ -8,10 +8,11 @@ over the result is the oracle, so the test asserts what the redacted
 document *means*, not what the scanner did to produce it.
 """
 
+import time
 import tomllib
 import unittest
 
-from holophyte.redact import REDACTED, known_secrets, redact, restore
+from holophyte.redact import REDACTED, known_secrets, redact, redact_prose, restore
 
 DOCUMENT = '''\
 # top-level secret and a path that only looks like one
@@ -152,6 +153,28 @@ class BoardKey(unittest.TestCase):
         text = NATIVE_BOARD + '\n[extra]\nkey = "s3cr3t"\n'
         self.assertIn("s3cr3t", known_secrets(tomllib.loads(text), environ={}))
         self.assertNotIn("s3cr3t", redact(text))
+
+
+class ProseAssignments(unittest.TestCase):
+
+    def test_each_assignment_value_is_redacted(self):
+        cases = {
+            "api_key = abc123": "api_key = [redacted]",
+            "GITHUB_TOKEN: ghp_x": "GITHUB_TOKEN: [redacted]",
+            '"token": "v"': '"token": [redacted]',
+            "my.key=1": "my.key=[redacted]",
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(redact_prose(text), expected)
+
+    def test_a_long_unbroken_hex_word_returns_unchanged_within_two_seconds(self):
+        text = "0123456789abcdef" * 18750
+        self.assertEqual(len(text), 300_000)
+        started = time.monotonic()
+        result = redact_prose(text)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(result, text)
 
 
 if __name__ == "__main__":

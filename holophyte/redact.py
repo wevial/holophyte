@@ -331,7 +331,7 @@ def restore(text, current):
 
 # The value runs to the end of the line, so a string with a space is gone whole.
 PROSE_PAIR = re.compile(
-    r"""(?im)(["']?[\w.-]*(?:token|key)["']?\s*[=:]\s*)(?!\s*$)[^\r\n]+""")
+    r"""(?im)((?<![\w.-])["']?[\w.-]*(?:token|key)["']?\s*[=:]\s*)(?!\s*$)[^\r\n]+""")
 
 
 # Kept for the process lifetime, as a rotated source's old values can still be
