@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from functools import partial
+from pathlib import Path
 from time import monotonic
 from typing import NamedTuple
 
@@ -101,8 +103,10 @@ class ScoutStopped(BaseException):
     pass
 
 
-def scout_scratch_prefix(scout_id):
-    return f"holophyte-scout-{int(scout_id)}-"
+def scout_scratch_prefix(project_path, scout_id):
+    project = hashlib.sha256(
+        str(Path(project_path).resolve()).encode()).hexdigest()[:12]
+    return f"holophyte-scout-{int(scout_id)}-{project}-"
 
 
 def kill_group(proc):
@@ -274,7 +278,8 @@ class Swarm:
         if self.scratch is None:
             self.scratch = self.stack.enter_context(
                 review_scratch(self.project.path,
-                               prefix=scout_scratch_prefix(self.row.id)))
+                               prefix=scout_scratch_prefix(
+                                   self.project.path, self.row.id)))
         starts = [threading.Event() for _ in launch]
         done, ready, failed = threading.Event(), threading.Event(), []
         watcher = threading.Thread(target=self.watch,

@@ -111,13 +111,13 @@ def _signal_until_gone(pid, scout_id, signum):
     return False
 
 
-def stop_scout(pid, scout_id):
+def stop_scout(project_path, pid, scout_id):
     if pid is not None and _runs_scout(pid, scout_id) and not any(
             _signal_until_gone(pid, scout_id, signum)
             for signum in (signal.SIGTERM, signal.SIGKILL)):
         return
     for scratch in Path(tempfile.gettempdir()).glob(
-            f"{scout_scratch_prefix(scout_id)}*"):
+            f"{scout_scratch_prefix(project_path, scout_id)}*"):
         shutil.rmtree(scratch, ignore_errors=True)
 
 
@@ -138,7 +138,7 @@ def end_stale(name, target, conn, now, out):
             print(f"[holo2] {name}: scout {row.id} {ended}: {reason}",
                   file=out)
         if ended == ENDED_FAILED:
-            stop_scout(row.pid, row.id)
+            stop_scout(target.path, row.pid, row.id)
 
 
 def scout_unit(name, scout_id):
