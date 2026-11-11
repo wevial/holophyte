@@ -11,6 +11,7 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
+from holophyte.scout.brief import trimmed
 from holophyte.scout.context import context_pack
 from holophyte.scout.github_mcp import TOOLS_SENTENCE, scout_server
 from holophyte.scout.guardrails import findings_digest
@@ -136,6 +137,16 @@ def task_titled(title):
             and not any(mark in title for mark in "\r\n"))
 
 
+def shortened_title(task):
+    if not isinstance(task, dict):
+        return task
+    title = task.get("title")
+    if not isinstance(title, str) or not title.strip() or task_titled(title):
+        return task
+    words = " ".join(title.split()[:TASK_TITLE_WORDS])
+    return dict(task, title=trimmed(words, TASK_TITLE_CHARS))
+
+
 def relative_path(path):
     return (isinstance(path, str) and bool(path.strip())
             and not PurePosixPath(path).is_absolute()
@@ -145,7 +156,7 @@ def relative_path(path):
 def plan_tasks(answer):
     if not isinstance(answer, dict) or not isinstance(answer.get("tasks"), list):
         return None, "the answer holds no tasks list"
-    tasks = answer["tasks"]
+    tasks = [shortened_title(task) for task in answer["tasks"]]
     for number, task in enumerate(tasks, 1):
         problem = task_problem(number, task)
         if problem is not None:
