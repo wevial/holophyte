@@ -111,14 +111,34 @@ def _signal_until_gone(pid, scout_id, signum):
     return False
 
 
+def _scout_temp(pid, scout_id):
+    temp = tempfile.gettempdir()
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if pid is not None:
+        try:
+            seen = os.open(f"/proc/{pid}/root{temp}", flags)
+        except OSError:
+            pass
+        else:
+            if _runs_scout(pid, scout_id):
+                return seen, True
+            os.close(seen)
+    return os.open(temp, flags), False
+
+
 def stop_scout(project_path, pid, scout_id):
-    if pid is not None and _runs_scout(pid, scout_id) and not any(
-            _signal_until_gone(pid, scout_id, signum)
-            for signum in (signal.SIGTERM, signal.SIGKILL)):
-        return
-    for scratch in Path(tempfile.gettempdir()).glob(
-            f"{scout_scratch_prefix(project_path, scout_id)}*"):
-        shutil.rmtree(scratch, ignore_errors=True)
+    temp, running = _scout_temp(pid, scout_id)
+    try:
+        if running and not any(
+                _signal_until_gone(pid, scout_id, signum)
+                for signum in (signal.SIGTERM, signal.SIGKILL)):
+            return
+        prefix = scout_scratch_prefix(project_path, scout_id)
+        for name in os.listdir(temp):
+            if name.startswith(prefix):
+                shutil.rmtree(name, ignore_errors=True, dir_fd=temp)
+    finally:
+        os.close(temp)
 
 
 def end_stale(name, target, conn, now, out):
