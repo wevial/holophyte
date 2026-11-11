@@ -108,6 +108,6 @@ def next_commands(run):
             if run["pr_url"] or not needs_pr] + [LEDGER.format(**names)]
 
 
-def first_line(text):
+def first_line(text, missing=""):
     lines = (text or "").strip().splitlines()
-    return lines[0] if lines else ""
+    return lines[0] if lines else missing

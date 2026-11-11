@@ -8,6 +8,7 @@ from time import sleep, time
 from holophyte.config.project import Project
 from holophyte.holo.grammar import FOLLOW
 from holophyte.holo.render import age, clock, colour_on, moment, symbol, zone
+from holophyte.holo.run_page import first_line
 
 EVERY = 2.0
 AGO = re.compile(r"([0-9]+(?:\.[0-9]+)?)([smhd])")
@@ -39,11 +40,6 @@ def every_seconds(text):
         raise ValueError(f"the interval must be a number of seconds above"
                          f" zero, got {text!r}")
     return seconds
-
-
-def first_line(text):
-    lines = (text or "").strip().splitlines()
-    return lines[0] if lines else ""
 
 
 def event_entry(event):

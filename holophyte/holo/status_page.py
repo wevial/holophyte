@@ -19,6 +19,7 @@ from holophyte.holo.render import (
     symbol,
     zone,
 )
+from holophyte.holo.run_page import first_line
 from holophyte.serve.serve_host import SWEEP_TIMEOUT_SEC
 
 STATUS_JSON = ["--status", "--json"]
@@ -148,11 +149,6 @@ def line(row, widths, colour):
 
 def hinted(text, hint):
     return f"{text}  try: {hint}"
-
-
-def first_line(text, missing):
-    lines = (text or "").strip().splitlines()
-    return lines[0] if lines else missing
 
 
 def parked_rows(who, status):
