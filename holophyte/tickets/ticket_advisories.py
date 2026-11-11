@@ -37,6 +37,12 @@ CD_COMMANDS = ("cd", "pushd")
 SAME_COUNT = ("say the same count as main instead; a hard-coded count goes "
               "stale as main grows")
 GLOB_CHARS = ("*", "?")
+PULL_REQUEST_WITNESS_RE = re.compile(
+    r"\b(?:pr|pull request)(?:'s)? (?:description|body)\b"
+    r"|\bgithub (?:actions?|checks?)\b|\bactions run\b"
+    r"|\bci (?:checks?|runs?|jobs?)\b"
+    r"|\bwhen (?:the|a) (?:pr|pull request) is opened\b"
+    r"|\bopening (?:the|a) (?:pr|pull request)\b", re.IGNORECASE)
 
 
 def _discovers_whole_suite(tokens):
@@ -236,9 +242,19 @@ def _baseline_advisories(t):
     return advisories
 
 
+def _pull_request_witness_advisories(t):
+    return [f"{tt.ADVISORY_PREFIX}criterion {i} reads as a pull request or "
+            f"CI witness; the reviewer can only witness the candidate branch, "
+            f"before any pull request exists"
+            for i, (text, files) in enumerate(
+                zip(t.acceptance_boxes, named_files(t.acceptance_boxes)), 1)
+            if not files
+            and PULL_REQUEST_WITNESS_RE.search(" ".join(text.split()))]
+
+
 def advisories(t, repo=None):
     found = (_suite_advisories(t) + _count_advisories(t)
-             + _baseline_advisories(t))
+             + _baseline_advisories(t) + _pull_request_witness_advisories(t))
     if repo is not None:
         found += _wide_verify_advisories(t, repo)
         found += _lint_advisories(t, repo)
