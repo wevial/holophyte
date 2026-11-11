@@ -407,9 +407,9 @@ class TrimLoopTests(TrimFixture):
 
     def test_deleting_a_test_from_a_module_the_run_added_is_reverted(self):
         fake = self.trimmed(
-            Commits(WORK, Commit("work tests", "test_checks.py",
+            Commits(WORK, Commit("work tests", "checks.py",
                                  PAIR.format(a="3", b="4"))),
-            Commits(Commit("trim: tests", "test_checks.py",
+            Commits(Commit("trim: tests", "checks.py",
                            "def test_a():\n    assert 3\n")),
             APPROVE)
         self.assert_merged()

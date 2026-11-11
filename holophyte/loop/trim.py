@@ -54,6 +54,8 @@ TEST_RATIO = 3
 TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
+SOURCE_SUFFIXES = {".py", ".go", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
+                   ".mts", ".cts"}
 GO_IDS = re.compile(r"\bfunc (Test\w*)\(|\.Run\(\s*" + _GO_STRING + "|"
                     + _GO_TOKEN.pattern, re.S)
 JS_NEXT = re.compile(r"[\'\"`/]|(?<![.\w$])(?:it|test)\(")
@@ -184,7 +186,9 @@ def _protected(conn, run_id, wt, base_sha, sha, criteria):
                 f"{base_sha}...{sha}"], cwd=wt).splitlines()
     candidates = {path for path in tree
                   if any(fnmatchcase(path, pattern) for pattern in patterns)}
-    return sorted(path for path in candidates | set(filter(_is_test, added))
+    runnable = {path for path in added if _is_test(path)
+                or PurePosixPath(path).suffix in SOURCE_SUFFIXES}
+    return sorted(path for path in candidates | runnable
                   if _test_ids(wt, sha, path))
 
 
