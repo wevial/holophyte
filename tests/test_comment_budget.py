@@ -338,7 +338,7 @@ PINNED = {
     "holophyte/tickets/ticket_criteria.py": 0,
     "holophyte/tickets/ticket_depends.py": 3,
     "holophyte/tickets/ticket_header.py": 4,
-    "holophyte/tickets/ticket_template.py": 24,
+    "holophyte/tickets/ticket_template.py": 23,
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
@@ -381,7 +381,6 @@ CITED = {
 # "path::function" to the ticket that retires its `noqa: C901`, or None.
 COMPLEXITY_EXEMPT = {
     "holophyte/loop/gates.py::split_and_clauses": None,
-    "holophyte/tickets/ticket_template.py::validate": None,
 }
 
 BODIED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
@@ -760,12 +759,10 @@ class ComplexitySelfTests(unittest.TestCase):
             ["a.py::f: carries no noqa: C901; the COMPLEXITY_EXEMPT entry "
              "is stale"])
 
-    def test_the_two_standing_exemptions_are_listed(self):
-        found = complexity_exempt()
-        for key in ("holophyte/loop/gates.py::split_and_clauses",
-                    "holophyte/tickets/ticket_template.py::validate"):
-            self.assertIn(key, found)
-            self.assertIn(key, COMPLEXITY_EXEMPT)
+    def test_the_standing_exemption_is_listed(self):
+        key = "holophyte/loop/gates.py::split_and_clauses"
+        self.assertIn(key, complexity_exempt())
+        self.assertIn(key, COMPLEXITY_EXEMPT)
 
 
 BEFORE = '''"""Module docstring,
