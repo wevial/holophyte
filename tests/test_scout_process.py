@@ -393,6 +393,22 @@ class ScoutProcessTests(ScoutFixture):
                                           "commit": tagged}})
         self.assertEqual(git(path, "status", "--porcelain"), "")
 
+    def test_a_changed_source_ref_keeps_the_clone_and_its_own_ref(self):
+        source, tagged, table = self.a_source()
+        git(source, "tag", "v2")
+        path = self.project("alpha", table)
+        scout_id = self.a_scout(path)
+        project = Project.locate(path, adopt=False)
+        scout_process.scout_sources(project, scout_id, fresh=True)
+        project.config_path.write_text(project.config_path.read_text()
+                                       .replace('"v1"', '"v2"'))
+        (kept,) = scout_process.scout_sources(
+            Project.locate(path, adopt=False), scout_id).values()
+        self.assertEqual((kept.url, kept.ref, kept.commit),
+                         (str(source), "v1", tagged))
+        self.assertEqual((kept.path / "src" / "app.txt").read_text(),
+                         "one\ntwo\nthree\n")
+
     def test_a_source_ref_that_cannot_be_fetched_fails_before_any_turn(self):
         _, _, table = self.a_source()
         path = self.project("alpha", "[questions.titles]\n"

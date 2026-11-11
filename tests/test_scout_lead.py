@@ -193,7 +193,7 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(self.run_unstored_plan([long, PLAN["tasks"][1]]),
                          [f"no wave 1 stored: task 1: {TITLE_RULE}"])
 
-    def test_a_plan_path_under_a_declared_source_is_stored_and_named(self):
+    def test_a_plan_with_a_source_path_is_stored_and_reaches_its_helper(self):
         _, tagged, table = self.a_source()
         path, conn, scout_id = self.bug_scout(CLAUDE_LEAD + table)
         sourced = dict(PLAN["tasks"][0], paths=["t3/src/app.txt"])

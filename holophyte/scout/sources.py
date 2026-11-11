@@ -47,10 +47,14 @@ def clone(source, path):
         raise SourceUnfetched(
             f"source {source.name}: ref {source.ref} could not be fetched "
             f"from {source.url}: {failure or 'git clone failed'}")
+    for key, value in (("url", source.url), ("ref", source.ref)):
+        sh(["git", "config", f"scout.{key}", value], cwd=path,
+           env=scratch_git_environment())
 
 
 def fetch_sources(directory, declared, fresh=False):
-    """Clones each declared source under `directory` unless already cloned."""
+    """Clones each source once; a kept clone keeps its cloned url and ref."""
+    env = scratch_git_environment()
     fetched = {}
     for source in declared.values():
         path = directory / source.name
@@ -58,9 +62,10 @@ def fetch_sources(directory, declared, fresh=False):
             shutil.rmtree(path, ignore_errors=True)
         if not (path / ".git").is_dir():
             clone(source, path)
-        commit = sh(["git", "rev-parse", "HEAD"], cwd=path,
-                    env=scratch_git_environment())
-        fetched[source.name] = Fetched(*source, path, commit)
+        url, ref = (sh(["git", "config", "--get", f"scout.{key}"], cwd=path,
+                       env=env) for key in ("url", "ref"))
+        commit = sh(["git", "rev-parse", "HEAD"], cwd=path, env=env)
+        fetched[source.name] = Fetched(source.name, url, ref, path, commit)
     return fetched
 
 
