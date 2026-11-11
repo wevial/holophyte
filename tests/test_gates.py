@@ -374,6 +374,20 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertIn(
             "FAILED: tests/test_inherited.py imports a changed module", out)
 
+    def test_an_importer_that_only_imports_a_test_class_runs(self):
+        shared = ("import unittest\n\nVALUE = {}\n\n\n"
+                  "class SharedTests(unittest.TestCase):\n"
+                  "    def test_value(self):\n"
+                  "        self.assertEqual(VALUE, 1)\n")
+        self.write("pkg/a.py", shared.format(1))
+        self.write("tests/test_a.py", "from pkg.a import SharedTests as Kept\n")
+        self.onto_main()
+        self.write("pkg/a.py", shared.format(2))
+        self.git("commit", "-q", "-am", "change pkg.a")
+        ok, out = self.gate()
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
     def test_an_importer_that_does_not_parse_is_a_verify_failure(self):
         self.write("tests/test_a.py", "import pkg.a\n\ndef broken(:\n")
         self.change_a("1  # touched")
@@ -393,6 +407,20 @@ class ImportingTestsTests(unittest.TestCase):
         ok, out = self.gate("cd sub && " + self.VERIFY)
         self.assertTrue(ok, out)
         self.assertEqual(self.ran(), ["sub_a", "sub_b"])
+
+    def test_importers_run_under_a_subproject_named_unlike_a_module(self):
+        self.write("back-end/pkg/__init__.py", "")
+        self.write("back-end/pkg/a.py", "VALUE = 1\n")
+        self.write("back-end/pkg/b.py", "VALUE = 1\n")
+        self.add_test("test_unrelated", "pkg.b", "back-end/tests")
+        self.add_test("test_a", "pkg.a", "back-end/tests")
+        self.onto_main()
+        self.write("back-end/pkg/a.py", "VALUE = 2\n")
+        self.git("commit", "-q", "-am", "change back-end pkg.a")
+        ok, out = self.gate("cd back-end && " + self.VERIFY)
+        self.assertFalse(ok, out)
+        self.assertIn(
+            "FAILED: back-end/tests/test_a.py imports a changed module", out)
 
     def test_a_relative_importer_of_the_changed_module_runs(self):
         self.write("pkg/test_relative.py", (

@@ -9,6 +9,7 @@ from typing import NamedTuple
 from holophyte.config.config_tables import verify_config
 from holophyte.loop.gates import _word_spans, run_verify, sh, split_and_clauses
 from holophyte.review.blast_radius import (
+    _absolute,
     importers,
     module_name,
     module_names,
@@ -140,11 +141,16 @@ def _module_clause(run, top, test):
     under_top = os.path.normpath(os.path.join(run.cwd, top))
     for base in (under_top, run.cwd):
         relative = os.path.relpath(test, base)
-        if not (os.path.isabs(base) or relative.startswith("..")):
+        if not (os.path.isabs(base) or relative.startswith("..")
+                or not _importable(relative)):
             prefix = (_with_path(run.prefix, top) if base != run.cwd
                       else " ".join(run.prefix))
             return f"{prefix} -m unittest {module_name(relative)}"
     return None
+
+
+def _importable(path):
+    return all(part.isidentifier() for part in module_name(path).split("."))
 
 
 def _with_path(prefix, top):
@@ -161,8 +167,7 @@ def _with_path(prefix, top):
 
 def _test_module(path):
     name = os.path.basename(path)
-    return ((fnmatch.fnmatchcase(name, "test*.py") or name.endswith("_test.py"))
-            and all(part.isidentifier() for part in module_name(path).split(".")))
+    return fnmatch.fnmatchcase(name, "test*.py") or name.endswith("_test.py")
 
 
 def _base_name(base):
@@ -188,16 +193,58 @@ def _class_holds_tests(cls, classes, seen):
     return False
 
 
-def _holds_tests(root, path):
+def _source(path, name, files):
+    found = files.get(_absolute(name, path))
+    if found or name.startswith("."):
+        return found
+    local = os.path.join(os.path.dirname(path), *name.split("."))
+    return next((candidate for candidate in (f"{local}.py", f"{local}/__init__.py")
+                 if candidate in files.values()), None)
+
+
+def _imported_names(node, names):
+    if any(alias.name == "*" for alias in node.names):
+        return names
+    return {alias.name for alias in node.names
+            if names is None or (alias.asname or alias.name) in names}
+
+
+def _holds_tests(root, path, files, names=None, seen=None):
+    seen = set() if seen is None else seen
+    key = (path, None if names is None else frozenset(names))
+    if key in seen:
+        return False
+    seen.add(key)
     try:
         tree = ast.parse(sh(["git", "show", f"HEAD:{path}"], cwd=root))
     except (SyntaxError, ValueError, RuntimeError, OSError):
         return True
     classes = {node.name: node for node in tree.body
                if isinstance(node, ast.ClassDef)}
-    return any(isinstance(node, ast.FunctionDef) and node.name == "load_tests"
-               for node in tree.body) or any(
-        _class_holds_tests(cls, classes, set()) for cls in classes.values())
+    if names is None and any(isinstance(node, ast.FunctionDef)
+                             and node.name == "load_tests" for node in tree.body):
+        return True
+    if any(_class_holds_tests(cls, classes, set()) for name, cls in classes.items()
+           if names is None or name in names):
+        return True
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom):
+            wanted = _imported_names(node, names)
+            source = _source(path, "." * node.level + (node.module or ""), files)
+            if source and (wanted is None or wanted) and _holds_tests(
+                    root, source, files, wanted, seen):
+                return True
+    return False
+
+
+def _python_files(root):
+    try:
+        packages = package_dirs(root, "HEAD")
+        listed = sh(["git", "ls-tree", "-r", "-z", "--name-only", "HEAD"], cwd=root)
+    except (RuntimeError, OSError, subprocess.CalledProcessError):
+        return {}
+    return {name: path for path in listed.split("\0") if path.endswith(".py")
+            for name in module_names(path, packages)}
 
 
 def _distance(one, other):
@@ -232,12 +279,16 @@ def run_importing_tests(project, wt, command, conn, run_id):
     if not runs:
         return True, None
     top = _top_level(runs)
-    clauses = {}
+    clauses, files = {}, None
     for test in _importing_tests(wt, runs):
         if len(clauses) == IMPORTER_CAP:
             break
         clause = _module_clause(runs[0], top, test)
-        if clause is not None and _holds_tests(wt, test):
+        if clause is None:
+            continue
+        if files is None:
+            files = _python_files(wt)
+        if _holds_tests(wt, test, files):
             clauses[test] = clause
     if not clauses:
         return True, None
