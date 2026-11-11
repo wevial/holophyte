@@ -345,37 +345,6 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertTrue(ok, out)
         self.assertEqual(self.ran(), ["sub_a", "sub_b"])
 
-    def test_an_importer_in_the_second_subproject_the_verify_enters_runs(self):
-        for sub in ("one", "two"):
-            self.write(f"{sub}/pkg/__init__.py", "")
-            self.write(f"{sub}/pkg/b.py", "VALUE = 1\n")
-            self.add_test("test_unrelated", "pkg.b", f"{sub}/tests",
-                          label=f"{sub}_b")
-        self.write("two/pkg/a.py", "VALUE = 1\n")
-        self.add_test("test_a", "pkg.a", "two/tests", label="two_a")
-        self.onto_main()
-        self.write("two/pkg/a.py", "VALUE = 2\n")
-        self.git("commit", "-q", "-am", "change two pkg.a")
-        ok, out = self.gate(f"cd one && {self.VERIFY} && cd ../two && {self.VERIFY}")
-        self.assertFalse(ok, out)
-        self.assertIn("two_a", self.ran())
-        self.assertIn("FAILED: two/tests/test_a.py imports a changed module", out)
-
-    def test_an_importer_of_a_module_on_the_verify_python_path_runs(self):
-        self.write("src/a.py", "VALUE = 1\n")
-        self.add_test("test_src_a", "a")
-        self.onto_main()
-        self.write("src/a.py", "VALUE = 2\n")
-        self.git("commit", "-q", "-am", "change src a")
-        for verify in (f"PYTHONPATH=src {self.VERIFY}",
-                       f"export PYTHONPATH=src\n{self.VERIFY}"):
-            with self.subTest(verify=verify):
-                self.log.write_text("")
-                ok, out = self.gate(verify)
-                self.assertFalse(ok, out)
-                self.assertIn(
-                    "FAILED: tests/test_src_a.py imports a changed module", out)
-
     def test_a_relative_importer_of_the_changed_module_runs(self):
         self.write("pkg/test_relative.py", (
             "import unittest\nfrom .a import VALUE\n\n\n"

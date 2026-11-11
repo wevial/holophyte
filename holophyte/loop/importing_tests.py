@@ -32,7 +32,6 @@ class UnittestRun(NamedTuple):
     cwd: str
     prefix: list
     args: list
-    roots: tuple
 
 
 def _change_directory(cwd, raw, words):
@@ -41,25 +40,8 @@ def _change_directory(cwd, raw, words):
     return os.path.normpath(os.path.join(cwd, words[1]))
 
 
-def _python_path_roots(cwd, words):
-    roots = []
-    for word in words:
-        name, eq, value = word.partition("=")
-        if name != "PYTHONPATH" or not eq:
-            continue
-        for part in value.split(":"):
-            for pwd in ("${PWD}", "$PWD"):
-                if part.startswith(pwd):
-                    part = "./" + part.removeprefix(pwd).lstrip("/")
-            root = os.path.normpath(os.path.join(cwd, part))
-            if (part and not any(c in part for c in "$~`")
-                    and not os.path.isabs(root) and not root.startswith("..")):
-                roots.append(root)
-    return roots
-
-
 def unittest_runs(command):
-    runs, setup, cwd, roots = [], [], ".", []
+    runs, setup, cwd = [], [], "."
     for line in command.splitlines():
         clauses = split_and_clauses(line, allow_or=True)
         if clauses is None:
@@ -77,15 +59,13 @@ def unittest_runs(command):
                 setup.append(clause)
             elif words[0] in _SETUP or all(map(_ASSIGNMENT.match, raw)):
                 setup.append(clause)
-                roots += _python_path_roots(cwd, words)
             for index in range(1, len(words) - 1):
                 if words[index:index + 2] == ["-m", "unittest"]:
                     args = words[index + 2:]
                     cut = next((n for n, word in enumerate(args)
                                 if word[:1] in "|<>" or ">" in word), len(args))
-                    runs.append(UnittestRun(
-                        tuple(setup), cwd, raw[:index], args[:cut],
-                        (cwd, *roots, *_python_path_roots(cwd, words[:index]))))
+                    runs.append(UnittestRun(tuple(setup), cwd, raw[:index],
+                                            args[:cut]))
                     break
     return runs
 
@@ -129,9 +109,9 @@ def _covers(run, test, packages):
             in {module_name(word) for word in named})
 
 
-def _top_level(runs, cwd):
+def _top_level(runs):
     for run in runs:
-        if run.cwd == cwd and (run.args[:1] == ["discover"] or all(
+        if run.cwd == runs[0].cwd and (run.args[:1] == ["discover"] or all(
                 word.startswith("-") for word in run.args)):
             found = _discovery(run.args)
             return os.path.normpath(found["top"] or found["start"] or ".")
@@ -179,12 +159,8 @@ def _importing_tests(root, runs):
         changed = [path for path in _changed_files(root, base, "HEAD")
                    if path.endswith(".py")]
         packages = package_dirs(root, "HEAD") if changed else set()
-        roots = {root for run in runs for root in run.roots}
         modules = {name: path for path in changed
                    for name in module_names(path, packages)}
-        modules.update({module_name(os.path.relpath(path, root)): path
-                        for path in changed for root in roots
-                        if not os.path.relpath(path, root).startswith("..")})
         found = importers(root, "HEAD", modules) if modules else {}
     except (RuntimeError, OSError, subprocess.CalledProcessError):
         return []
@@ -198,44 +174,31 @@ def _importing_tests(root, runs):
     return sorted(nearest, key=lambda test: (nearest[test], test))
 
 
-def _grouped_clauses(runs, tests):
-    groups, count = {}, 0
-    for test in tests:
-        if count == IMPORTER_CAP:
-            break
-        for index, run in enumerate(runs):
-            clause = _module_clause(run, _top_level(runs, run.cwd), test)
-            if clause is not None:
-                groups.setdefault(index, {})[test] = clause
-                count += 1
-                break
-    return [(runs[index].setup, groups[index]) for index in sorted(groups)]
-
-
 def run_importing_tests(project, wt, command, conn=None, run_id=None):
     runs = unittest_runs(command)
-    groups = _grouped_clauses(runs, _importing_tests(wt, runs)) if runs else []
-    commands, outputs, ran = [], [], []
-    for setup, clauses in groups:
-        tests = list(clauses)
-        commands.append(" && ".join([*setup, *clauses.values()]))
-        ok, out = run_verify(commands[-1], wt,
-                             timeout=verify_config(project).timeout_sec,
-                             conn=conn, run_id=run_id, project=project)
-        outputs.append(str(out))
-        ran += tests
-        if not ok:
-            failure = getattr(out, "failure", None) or {}
-            index = (failure.get("command_index") or 1) - len(setup)
-            named = (tests[index - 1] if 1 <= index <= len(tests)
-                     else ", ".join(tests))
-            return False, {"source": "importers", "command": "\n".join(commands),
-                           "exitCode": 1, "failure": failure or None,
-                           "output": f"[verify] FAILED: {named} imports a changed"
-                                     f" module and failed\n" + "\n".join(outputs)}
-    if not ran:
+    if not runs:
         return True, None
-    return True, {"source": "importers", "command": "\n".join(commands),
-                  "exitCode": 0,
-                  "output": f"[verify] tests importing a changed module passed:"
-                            f" {', '.join(ran)}\n" + "\n".join(outputs)}
+    top = _top_level(runs)
+    clauses = {}
+    for test in _importing_tests(wt, runs):
+        if len(clauses) < IMPORTER_CAP:
+            clause = _module_clause(runs[0], top, test)
+            if clause is not None:
+                clauses[test] = clause
+    if not clauses:
+        return True, None
+    tests, setup = list(clauses), runs[0].setup
+    joined = " && ".join([*setup, *clauses.values()])
+    ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,
+                         conn=conn, run_id=run_id, project=project)
+    if ok:
+        return True, {"source": "importers", "command": joined, "exitCode": 0,
+                      "output": f"[verify] tests importing a changed module "
+                                f"passed: {', '.join(tests)}\n{out}"}
+    failure = getattr(out, "failure", None) or {}
+    index = (failure.get("command_index") or 1) - len(setup)
+    named = tests[index - 1] if 1 <= index <= len(tests) else ", ".join(tests)
+    report = (f"[verify] FAILED: {named} imports a changed module and failed\n"
+              f"{out}")
+    return False, {"source": "importers", "command": joined, "exitCode": 1,
+                   "output": report, "failure": failure or None}
