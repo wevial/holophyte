@@ -183,10 +183,9 @@ def run_importing_tests(project, wt, command, conn, run_id):
     top = _top_level(runs)
     clauses = {}
     for test in _importing_tests(wt, runs):
-        if len(clauses) < IMPORTER_CAP:
-            clause = _module_clause(runs[0], top, test)
-            if clause is not None:
-                clauses[test] = clause
+        clause = _module_clause(runs[0], top, test)
+        if clause is not None and len(clauses) < IMPORTER_CAP:
+            clauses[test] = clause
     if not clauses:
         return True, None
     tests, setup = list(clauses), runs[0].setup
