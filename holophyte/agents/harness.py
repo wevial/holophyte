@@ -21,6 +21,7 @@ SCOUT_RUNNER = "scout-runner"
 READ_ONLY_ROLES = (SCOUT_LEAD, SCOUT_HELPER)
 TABLE_KEYS = ("harness", "model", "effort")
 CREDENTIAL_KEYS = ("api_key_file", "base_url")
+T3_KEYS = ("project", "worktree", "provider")
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 SHADOW_KEY = "implementer_shadow"
 PROFILES_KEY = "implementer_profiles"
@@ -261,8 +262,21 @@ class ClaudeSdk(Adapter):
         return [self.name, *Claude.route(options)]
 
 
+class T3(Adapter):
+    name = "t3"
+    roles = frozenset({"critic"})
+    requires = frozenset({"model", *T3_KEYS})
+    refuses = frozenset({"effort"})
+    resumes = False
+
+    def turn(self, binary, options, role):
+        return [binary, "thread", "start", options["project"], "--worktree",
+                options["worktree"], "--provider", options["provider"],
+                "--model", options["model"], "--wait"]
+
+
 ADAPTERS = {adapter.name: adapter for adapter in (Claude(), ClaudeSdk(), Codex(),
-                                                  Cursor(), Devin())}
+                                                  Cursor(), Devin(), T3())}
 
 
 @dataclass(frozen=True)
@@ -309,7 +323,8 @@ def parse_role(where, key, table):
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
     accepted = (IMPLEMENTER_KEYS if key == "implementer" or profile
-                else TABLE_KEYS + CREDENTIAL_KEYS if key == "critic" else TABLE_KEYS)
+                else TABLE_KEYS + CREDENTIAL_KEYS + T3_KEYS if key == "critic"
+                else TABLE_KEYS)
     adapter = route_adapter(where, f"[agents.{key}]", table, role, accepted,
                             shown=key, listed=TABLE_ROLES)
     check_orchestration(where, table, adapter, key)
@@ -526,9 +541,26 @@ def check_credentials(where, key, table, adapter, checkout):
             f"{where}: {label} base_url must be an http(s) URL, got {url!r}")
 
 
+def check_t3_options(where, key, table, adapter):
+    label = f"[agents.{key}]"
+    for option in T3_KEYS:
+        if option not in table:
+            continue
+        if adapter.name != T3.name:
+            raise SystemExit(
+                f"{where}: {label} {option}: harness {adapter.name!r} takes "
+                f"no {option}; only harness {T3.name!r} does")
+        value = table[option]
+        if not isinstance(value, str) or not value.strip():
+            raise SystemExit(
+                f"{where}: {label} {option} must be a non-empty string, "
+                f"got {value!r}")
+
+
 def table_seat(target, where, key, table, role, *, launched):
     adapter = parse_role(where, key, table)
     check_credentials(where, key, table, adapter, target.path)
+    check_t3_options(where, key, table, adapter)
     from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     # A container implementer's binary comes from the image, not `[harnesses]`.

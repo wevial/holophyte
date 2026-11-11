@@ -910,6 +910,35 @@ class CriticTableTests(unittest.TestCase):
                 with self.assertRaisesRegex(SystemExit, message):
                     holophyte.config.checks.check_document(project)
 
+    T3 = ('[agents.critic]\nharness = "t3"\nproject = "holophyte-trial"\n'
+          'worktree = "main"\nprovider = "codex"\nmodel = "gpt-6-luna"\n')
+
+    def test_a_t3_critic_starts_a_thread_and_waits_with_the_goal_last(self):
+        critic = self.target(self.T3)
+        holophyte.config.checks.check_document(critic)
+        self.assertEqual(holophyte.agents.harness.critic_seat(critic).turn("GOAL"), [
+            "t3", "thread", "start", "holophyte-trial", "--worktree", "main",
+            "--provider", "codex", "--model", "gpt-6-luna", "--wait", "GOAL"])
+
+    def test_a_t3_critic_missing_an_option_is_refused_naming_it(self):
+        for option in ("provider", "model", "project", "worktree"):
+            config = "".join(line + "\n" for line in self.T3.splitlines()
+                             if not line.startswith(option + " "))
+            with self.subTest(option=option):
+                with self.assertRaisesRegex(
+                        SystemExit, rf"\[agents\.critic\] {option} is required "
+                                    r"for harness 't3'"):
+                    holophyte.config.checks.check_document(self.target(config))
+
+    def test_t3_on_a_seat_other_than_critic_is_refused(self):
+        for role in ("reviewer", "implementer", "trimmer", "adjudicator"):
+            with self.subTest(role=role):
+                with self.assertRaisesRegex(
+                        SystemExit, rf"\[agents\.{role}\] harness: 't3' "
+                                    rf"supports critic, not {role}"):
+                    holophyte.config.checks.check_document(self.target(
+                        f'[agents.{role}]\nharness = "t3"\nmodel = "gpt-6"\n'))
+
 
 if __name__ == "__main__":
     unittest.main()
