@@ -44,6 +44,8 @@ def _change_directory(cwd, raw, words):
 def unittest_runs(command):
     runs, setup, cwd = [], [], "."
     for line in command.splitlines():
+        if not line.strip():
+            continue
         clauses = split_and_clauses(line, allow_or=True)
         if clauses is None:
             return []

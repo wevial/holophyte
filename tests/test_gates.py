@@ -241,6 +241,13 @@ class ImportingTestsTests(unittest.TestCase):
         self.assertEqual(out.failure["exit_status"], 1)
         self.assertEqual(out.results[-1]["exitCode"], 1)
 
+    def test_a_blank_line_in_the_verify_keeps_importers_checked(self):
+        self.change_a(2)
+        ok, out = self.gate(
+            "python3 -m unittest discover -s tests -p test_unrelated.py\n\ntrue")
+        self.assertFalse(ok, out)
+        self.assertIn("FAILED: tests/test_a.py imports a changed module", out)
+
     def test_only_the_capped_number_of_importers_run(self):
         for depth in range(1, 13):
             self.write("tests" + "/nested" * depth + "/__init__.py", "")
