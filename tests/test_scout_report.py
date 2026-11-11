@@ -312,7 +312,6 @@ class ResolveEvidenceTests(unittest.TestCase):
         self.assertTrue(nul["why"].startswith("not in the base commit"))
         self.assertEqual(report["findings"][0]["evidence"], cited)
 
-
     def test_a_source_citation_is_resolved_at_the_source_commit(self):
         with tempfile.TemporaryDirectory() as root:
             repo, origin = Path(root) / "repo", Path(root) / "origin"

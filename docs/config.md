@@ -2149,12 +2149,12 @@ lead's worktree and in every read and run helper's checkout, kept out of git
 status (through the clone's `info/exclude`, or a linked worktree's own
 `core.excludesFile`). Helpers keep their sandbox and get no network. The
 lead's plan goal names each source with its URL, ref and commit; a plan's
-task paths may start with `NAME/`, and report evidence `NAME/path:line` is
-verified at the source's commit. A ref that cannot be fetched ends the scout
+task paths may start with `NAME/`, and the run's report evidence
+`NAME/path:line` is verified at the source's commit. A ref that cannot be fetched ends the scout
 `failed` with a `scout_failed` event naming the source and ref, before any
 turn runs. A source NAME takes letters, digits, `_` and `-`; a table with
 any key but `url` and `ref`, a `url` or `ref` that is not a non-empty string
-or starts with `-`, or a NAME the base commit already holds is refused.
+or starts with `-`, or a NAME a checkout already holds is refused.
 Sources that need credentials are not supported.
 
 With `github = true` and a GitHub `origin`, every lead turn (plan,
