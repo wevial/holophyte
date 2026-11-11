@@ -187,11 +187,20 @@ class ScoutLeadTests(ScoutFixture):
         self.assertEqual(self.run_unstored_plan([PLAN["tasks"][0], untitled]),
                          [f"no wave 1 stored: task 2: {TITLE_RULE}"])
 
-    def test_a_task_title_of_nine_words_stores_no_plan_but_a_report(self):
-        long = dict(PLAN["tasks"][0],
-                    title="Find where the retry loop sleeps between its attempts")
-        self.assertEqual(self.run_unstored_plan([long, PLAN["tasks"][1]]),
-                         [f"no wave 1 stored: task 1: {TITLE_RULE}"])
+    def test_a_task_title_of_ten_words_is_stored_shortened(self):
+        path, conn, scout_id = self.bug_scout()
+        long = dict(PLAN["tasks"][1], title="Run the retry test on main and time"
+                    " each sleep")
+        self.stubs.answer(plan=fenced({"tasks": [PLAN["tasks"][0], long]}),
+                          report=fenced(REPORT))
+        code, printed = self.run_scout(path, scout_id)
+        self.assertEqual(code, 0, printed)
+        titles = [row[2] for row in self.tasks(conn, scout_id)]
+        self.assertEqual(titles[0], "Find the retry loop")
+        self.assertEqual(len(titles), 2)
+        self.assertEqual(titles[1], "Run the retry test on main and time")
+        self.assertLessEqual(len(titles[1].split()), 8)
+        self.assertLessEqual(len(titles[1]), 60)
 
     def test_a_plan_with_a_source_path_is_stored_and_reaches_its_helper(self):
         _, tagged, table = self.a_source()

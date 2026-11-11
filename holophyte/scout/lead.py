@@ -11,6 +11,7 @@ from holophyte.agents.agent_turns import argv_label
 from holophyte.agents.harness import SCOUT_LEAD
 from holophyte.agents.probes import PROBE_TIMEOUT
 from holophyte.redact import known_secrets, outbound
+from holophyte.scout.brief import trimmed
 from holophyte.scout.context import context_pack
 from holophyte.scout.github_mcp import TOOLS_SENTENCE, scout_server
 from holophyte.scout.guardrails import findings_digest
@@ -147,6 +148,11 @@ def plan_tasks(answer):
         return None, "the answer holds no tasks list"
     tasks = answer["tasks"]
     for number, task in enumerate(tasks, 1):
+        title = task.get("title") if isinstance(task, dict) else None
+        if (isinstance(title, str) and title.strip()
+                and not task_titled(title)):
+            tasks[number - 1] = task = dict(task, title=trimmed(
+                " ".join(title.split()[:TASK_TITLE_WORDS]), TASK_TITLE_CHARS))
         problem = task_problem(number, task)
         if problem is not None:
             return None, problem
