@@ -20,6 +20,7 @@ from holophyte.host.registry import HOST_FILE
 from tests.host_fixture import git
 from tests.main_watch_fixture import job, sweep_pass
 from tests.test_automation_switches import SwitchFixture
+from tests.test_sweep_host import MINUTE, T0
 
 S = "5e1f0c2a9b7d4e3f8a6c1b0d2e4f6a8c0b1d3e5f"
 FACTORY = os.path.join(os.path.dirname(os.path.dirname(
@@ -455,6 +456,97 @@ class StaleRuleTests(ActFixture):
         self.assertEqual(firing.state, "canceled")
         self.assertIn("needs revision", firing.reason)
         self.assertEqual(self.act_github.calls(self.paths["alpha"]), [])
+
+
+HOUR = 60 * MINUTE
+FAILING = "for i in $(seq 1 80); do echo smoke line $i; done; exit 3"
+
+
+class SmokeFixture(ActFixture):
+    def smoke(self, name, mode, command, every_hours=6):
+        """A native board, `[automations.smoke]`, and a local bare origin
+        whose main is one commit; that commit's sha."""
+        path = self.paths[name]
+        self.target(name).config_path.write_text(
+            f'[board]\nkind = "native"\nteam = "team-{name}"\n'
+            f'prefix = "SM"\n\n[automations.smoke]\nmode = "{mode}"\n'
+            f"revision = 1\ncommand = {json.dumps(command)}\n"
+            f"every_hours = {every_hours}\n")
+        origin = self.root / f"{name}-origin.git"
+        git(self.root, "init", "-q", "--bare", str(origin))
+        (path / "README").write_text("smoke\n")
+        git(path, "add", "README")
+        git(path, "commit", "-q", "-m", "main")
+        git(path, "push", "-q", str(origin), "HEAD:main")
+        git(path, "remote", "set-url", "origin", str(origin))
+        return git(path, "rev-parse", "HEAD")
+
+    def smoke_firings(self, name):
+        return [firing for firing in store.automations.firings(self.conn(name))
+                if firing.automation == "smoke"]
+
+    def filed(self, name):
+        return self.conn(name).execute(
+            "SELECT linearIdentifier, title, boardColumn, body FROM tickets"
+            " ORDER BY id").fetchall()
+
+
+class SmokeTests(SmokeFixture):
+    def test_a_failing_smoke_check_in_act_files_one_todo_ticket(self):
+        sha = self.smoke("alpha", "act", FAILING)
+
+        sweep_pass(T0)
+
+        [(key, title, column, body)] = self.filed("alpha")
+        self.assertEqual((title, column),
+                         (f"Smoke check fails on main at {sha[:12]}", "ready"))
+        lines = body.splitlines()
+        self.assertIn("> smoke line 80", lines)
+        self.assertIn("> smoke line 21", lines)
+        self.assertNotIn("> smoke line 20", lines)
+        self.assertIn("exited with status 3", body)
+        [firing] = self.smoke_firings("alpha")
+        self.assertEqual((firing.mode, firing.state, firing.detail["ticket"]),
+                         ("act", "confirmed", key))
+
+    def test_a_failure_while_its_ticket_is_open_files_no_second(self):
+        self.smoke("alpha", "act", FAILING)
+        sweep_pass(T0)
+        [(key, *_rest)] = self.filed("alpha")
+
+        sweep_pass(T0 + 6 * HOUR)
+
+        self.assertEqual(len(self.filed("alpha")), 1)
+        newest = self.smoke_firings("alpha")[0]
+        self.assertEqual(newest.reason, f"already filed {key}")
+
+    def test_a_dry_run_failure_is_proposed_and_files_nothing(self):
+        sha = self.smoke("alpha", "dry_run", FAILING)
+
+        sweep_pass(T0)
+
+        self.assertEqual(self.filed("alpha"), [])
+        [firing] = self.smoke_firings("alpha")
+        self.assertEqual((firing.mode, firing.state), ("dry_run", "proposed"))
+        self.assertEqual(firing.reason,
+                         f"would file Smoke check fails on main at {sha[:12]}")
+
+    def test_a_pass_files_nothing_and_a_run_not_due_records_nothing(self):
+        sha = self.smoke("alpha", "act", "true")
+        sweep_pass(T0)
+        [passed] = self.smoke_firings("alpha")
+        self.assertEqual(passed.reason, f"smoke passed at {sha[:12]}")
+        config = self.target("alpha").config_path
+        config.write_text(config.read_text().replace(
+            'command = "true"', f"command = {json.dumps(FAILING)}"))
+
+        sweep_pass(T0 + 6 * HOUR - MINUTE)
+
+        self.assertEqual(self.smoke_firings("alpha"), [passed])
+        self.assertEqual(self.filed("alpha"), [])
+        sweep_pass(T0 + 6 * HOUR)
+        self.assertEqual(len(self.filed("alpha")), 1)
+
 
 if __name__ == "__main__":
     import unittest

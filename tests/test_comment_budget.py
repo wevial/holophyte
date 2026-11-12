@@ -65,6 +65,7 @@ PINNED = {
     "holophyte/automation/main_watch.py": 1,
     "holophyte/automation/merge_hold.py": 1,
     "holophyte/automation/policy.py": 1,
+    "holophyte/automation/smoke.py": 4,
     "holophyte/automation/step.py": 3,
     "holophyte/automation/switches.py": 1,
     "holophyte/automation/worker.py": 1,

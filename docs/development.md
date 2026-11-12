@@ -345,7 +345,9 @@ Each module, one line:
 - `holophyte/automation/automation_config.py` — `[automations]`:
   `main_watch_config()` reads `[automations.main_watch] mode` and
   `revision`, `off` without the table and a `ValueError` naming the key for
-  a wrong value or an `act` without `revision`; `unapproved()` names why an
+  a wrong value or an `act` without `revision`; `smoke_config()` reads
+  `[automations.smoke]` the same way plus `command` and `every_hours`;
+  `unapproved()` names why an
   `act` config whose `revision` is not the rule's stays in dry run; and
   `check_automations()` refuses a wrong value at the loop's startup.
 - `holophyte/automation/main_watch.py` — the main watch, `REVISION = 1`:
@@ -358,6 +360,14 @@ Each module, one line:
   `act` places, the merge hold on a red head, and `release_held_merges()`
   ends it on a green one and sends the runs it parked back to the
   babysitter.
+- `holophyte/automation/smoke.py` — the smoke check, `REVISION = 1`:
+  `run_smoke_checks()`, called by the step before the main watch, runs each
+  opted-in, unpaused project's `command` once `every_hours` have passed
+  since its last smoke firing, in a detached worktree of `origin/main`'s
+  head after `[worktree] setup`; it records a pass, a `dry_run` proposal,
+  or in `act` files one Todo ticket through `board_for()` holding the
+  output's last `TAIL_LINES`, or `already filed KEY` while one it filed is
+  open.
 - `holophyte/automation/limits.py` — an automation's act limits on one
   project, `QUEUED`, `PER_HOUR` and `PER_DAY`, read through `act_counts()`
   inside `reserve_firing()`'s transaction, and the host's daily GitHub
