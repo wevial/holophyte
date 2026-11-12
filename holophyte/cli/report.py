@@ -1,6 +1,7 @@
 import json
 import re
 import statistics
+import subprocess
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -11,7 +12,8 @@ import store.schema
 from holophyte.cli.complexity_report import complexity_lines
 from holophyte.cli.shadow_report import shadow_lines
 from holophyte.config.config_tables import report_config
-from holophyte.files import git
+from holophyte.files import GIT_TIMEOUT
+from holophyte.loop.gates import run_capped
 from holophyte.scout.telemetry import scout_report_lines
 from holophyte.story.story_views import story_report_lines
 from store.gap_layers import gap_finder_counts, gap_layer_counts
@@ -284,8 +286,13 @@ def merged_runs_since(conn, since):
 
 
 def reverted_shas_since(repo, since):
-    code, out = git(repo, "log", "main", "-z", f"--since={since // 1000}",
-                    "--format=%H%x00%ct%x00%B")
+    try:
+        code, out = run_capped(
+            ["git", "log", "main", "-z", f"--since={since // 1000}",
+             "--format=%H%x00%ct%x00%B", "--"], repo, GIT_TIMEOUT,
+            stderr=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return None
     if code != 0:
         return None
     fields = out.split("\0")
