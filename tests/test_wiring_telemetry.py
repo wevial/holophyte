@@ -370,10 +370,11 @@ class ReportTests(ReportStoreCase):
         # lines precede the table, and below it the `[report] findings` mode -- the
         # default, nothing configured -- and the one line on the supervisor:
         # none has ever beaten here.
-        self.assertEqual(printed[:14], holophyte.cli.report.report_lines(self.conn))
-        self.assertEqual(printed[14], "findings: none")
-        self.assertEqual(printed[15], "supervisor: none recorded")
-        self.assertEqual(len(printed), 16)
+        self.assertEqual(printed[:16], holophyte.cli.report.report_lines(
+            self.conn, holophyte.config.project.Project.locate(self.target)))
+        self.assertEqual(printed[16], "findings: none")
+        self.assertEqual(printed[17], "supervisor: none recorded")
+        self.assertEqual(len(printed), 18)
         # Nothing was claimed: three runs went in, three are there, all ended,
         # and the lease the loop would have taken is free.
         self.assertEqual(
@@ -438,7 +439,7 @@ class HostLabelTests(ReportStoreCase):
         self.assertNotIn(hostname, rendered)
         # Every recorded host is the label; the NULL row stays unknown, as
         # the store does not know the pre-column run ran on this writer.
-        self.assertEqual([line.split()[-1] for line in printed[11:14]],
+        self.assertEqual([line.split()[-1] for line in printed[13:16]],
                          [self.LABEL, "?", self.LABEL])
         self.assertRegex(printed[-1],
                          rf"^supervisor: live, .* \(pid 4242 on {self.LABEL}\)$")
