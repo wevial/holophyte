@@ -30,11 +30,11 @@ def with_removals(wt, base_sha, sha, ticket, ok, out):
     if not lines:
         return ok, out
     report = "\n".join(lines)
-    failure = getattr(out, "failure", None) or {
+    failure = out.failure or {
         "command_index": None, "command": "test removal check",
         "exit_status": None, "last_output_line": lines[-1]}
     return False, VerificationOutput(
-        f"{out}\n{report}", getattr(out, "results", []), failure=failure)
+        f"{out}\n{report}", out.results, failure=failure)
 
 
 def _changed_pairs(wt, base_sha, sha):
