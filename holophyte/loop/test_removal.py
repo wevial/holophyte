@@ -16,7 +16,8 @@ def removed_outside_scope(wt, base_sha, sha, ticket):
         if not _is_test(old) or old in scope:
             continue
         before = sum(_test_ids(wt, base_sha, old).values())
-        after = sum(_test_ids(wt, sha, new).values()) if new else 0
+        after = (sum(_test_ids(wt, sha, new).values())
+                 if new and _is_test(new) else 0)
         if after < before:
             lines.append(f"tests removed outside the ticket's scope: {old}"
                          f" ({before} before, {after} after)")
