@@ -428,6 +428,8 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
     if not CREDENTIAL_NEEDED.get():
+        if "env" in route.credential:
+            register_values([os.environ.get(route.credential["env"], "")])
         route = replace(route, credential={}, codex_login=False)
     from holophyte.config.worktree_settings import carry_directories
     from holophyte.isolation.isolation_clone import carry_mounts, turn_clone

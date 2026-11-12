@@ -624,6 +624,20 @@ class SmokeTests(ActFixture):
         self.assertEqual((firing.mode, firing.reason),
                          ("dry_run", f"smoke passed at {sha[:12]}"))
 
+    def test_a_credential_the_smoke_command_prints_stays_off_the_board(self):
+        self.smoke("alpha", "act", f'echo "${CREDENTIAL}"; exit 3')
+        self.contained("alpha")
+        stack, docker = self.uncredentialed()
+
+        with stack:
+            os.environ[CREDENTIAL] = "smoke-oauth-token-value"
+            sweep_pass(T0)
+
+        self.assertNotIn(f"--env={CREDENTIAL}", docker.call_args.args[0])
+        [(_key, _title, _column, body)] = self.filed("alpha")
+        self.assertIn("exited with status 3", body)
+        self.assertNotIn("smoke-oauth-token-value", body)
+
     def test_a_smoke_run_that_raises_is_recorded_once_per_interval(self):
         sha = self.smoke("alpha", "dry_run", "true")
         self.contained("alpha")
