@@ -426,7 +426,7 @@ api_key_file = "~/.config/anthropic/key"   # optional; default the Claude login
 base_url     = "https://api.example.com"   # optional; only beside api_key_file
 ```
 
-With `harness = "t3"` each critic turn and probe is a T3 Code thread started
+With `harness = "t3"` each critic turn is a T3 Code thread started
 through T3's own CLI, `t3 thread start P --worktree W --provider R --model M
 --wait PROMPT`, from the table's `project`, `worktree`, `provider` and `model`,
 all four required non-empty strings; `effort` is refused. The binary is `t3` on
@@ -438,8 +438,10 @@ factory's checkout, since T3 creates its worktrees there. The reply, the
 CLI's stdout and stderr merged with its `Thread ID` line, carries the FRESHNESS
 verdict. T3 runs the thread in its default runtime mode with no read-only flag;
 the critic's brief forbids edits. A turn past the critic's timeout stops only
-the local CLI; the T3 run goes on until it ends. Each probe starts a real
-thread. Removing the worktrees T3 creates is the operator's job.
+the local CLI; the T3 run goes on until it ends. The startup probe starts no
+thread: it runs `t3 thread list --project P` and passes when that exits 0, so
+a server that is down or a project T3 does not know fails it. Removing the
+worktrees T3 creates is the operator's job.
 
 ```toml
 [agents.critic]

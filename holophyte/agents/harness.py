@@ -61,6 +61,9 @@ class Adapter:
     def reported_session(self, binary, output, role, run):
         return None
 
+    def probe(self, binary, options):
+        return None
+
     def mcp_flags(self, server):
         raise ValueError(f"harness {self.name!r} takes no MCP server")
 
@@ -274,6 +277,9 @@ class T3(Adapter):
                 options["worktree"], "--provider", options["provider"],
                 "--model", options["model"], "--wait"]
 
+    def probe(self, binary, options):
+        return [binary, "thread", "list", "--project", options["project"]]
+
 
 ADAPTERS = {adapter.name: adapter for adapter in (Claude(), ClaudeSdk(), Codex(),
                                                   Cursor(), Devin(), T3())}
@@ -293,6 +299,9 @@ class Seat:
     def turn(self, goal, server=None):
         return self.served(self.adapter.turn(self.binary, self.options,
                                              self.role), server) + [goal]
+
+    def probe(self):
+        return self.adapter.probe(self.binary, self.options)
 
     def session(self, argv):
         return self.adapter.session(argv)
