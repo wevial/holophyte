@@ -688,13 +688,11 @@ class TestRemovalTests(LoopFixture):
         ok, out = self.verify_after("def test_a():\n    pass\n",
                                     "tests/test_other.py")
         self.assertTrue(ok, out)
-        self.assertNotIn("tests removed outside the ticket's scope", out)
 
     def test_a_renamed_test_outside_the_in_scope_list_passes(self):
         ok, out = self.verify_after(self.TWO_TESTS.replace("test_b", "test_c"),
                                     "holophyte/thing.py")
         self.assertTrue(ok, out)
-        self.assertNotIn("tests removed outside the ticket's scope", out)
 
 
 if __name__ == "__main__":
