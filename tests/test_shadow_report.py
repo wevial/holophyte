@@ -161,6 +161,8 @@ class ShadowReportTests(ReportStoreCase):
             " supervisor 0, unknown 0",
             "interventions 7d by actor: maintainer 0, operator 0,"
             " supervisor 0, unknown 0",
+            "reverts 30d: no factory merges",
+            "reverts 7d: no factory merges",
             "gap layers: impossible 0, static 0, witness 0, guidance 0,"
             " review 0, none 0",
             "gaps found: witness 0, operator 0",
