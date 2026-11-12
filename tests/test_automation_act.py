@@ -640,6 +640,20 @@ class SmokeTests(ActFixture):
             " image x is not built; run: docker build")
         docker.assert_not_called()
 
+    def test_a_refused_setup_files_nothing_and_says_the_run_could_not_start(
+            self):
+        sha = self.smoke("alpha", "act", "true")
+        with self.target("alpha").config_path.open("a") as handle:
+            handle.write('\n[worktree]\nsetup = ["false"]\n')
+
+        sweep_pass(T0)
+
+        self.assertEqual(self.filed("alpha"), [])
+        [firing] = self.smoke_firings("alpha")
+        self.assertEqual(
+            firing.reason, f"smoke could not run at {sha[:12]}: [holo2]"
+            " worktree setup command 1 of 1 FAILED: false")
+
     def test_an_implementer_launch_after_a_smoke_check_needs_its_credential(
             self):
         self.smoke("alpha", "dry_run", "true")

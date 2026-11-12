@@ -59,7 +59,7 @@ def run_smoke(target, sha, command):
         try:
             ready, report = run_worktree_setup(target, tree, credential=False)
             if not ready:
-                return "failed its worktree setup", report
+                raise RuntimeError(report)
             try:
                 status, out = run_capped(command, tree,
                                          verify_config(target).timeout_sec)
