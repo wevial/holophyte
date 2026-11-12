@@ -17,6 +17,7 @@ from holophyte.loop import (
     implement,
     merge_gate,
     review_round,
+    test_removal,
 )
 from holophyte.pr import github, pullrequest
 from holophyte.review import witness_precheck
@@ -272,6 +273,8 @@ class WorkingTimeTests(SweepTestCase):
                     (github, 'push_branch', None)):
                 stack.enter_context(patch.object(module, name, return_value=result))
             stack.enter_context(patch.object(pullrequest, 'monotonic', return_value=0))
+            stack.enter_context(patch.object(test_removal, '_changed_pairs',
+                                             return_value=[]))
             scenarios = (
                 (implement._implement, 'working', ['done'], 1),
                 (review_round._review_rounds, 'working',
