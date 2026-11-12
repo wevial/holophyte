@@ -662,10 +662,6 @@ class IsolatedVerifyTests(unittest.TestCase):
         self.assertNotIn('host secret', out)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TestRemovalTests(LoopFixture):
     TWO_TESTS = "def test_a():\n    pass\n\n\ndef test_b():\n    pass\n"
 
@@ -699,3 +695,7 @@ class TestRemovalTests(LoopFixture):
                                     "holophyte/thing.py")
         self.assertTrue(ok, out)
         self.assertNotIn("tests removed outside the ticket's scope", out)
+
+
+if __name__ == "__main__":
+    unittest.main()
