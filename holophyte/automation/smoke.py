@@ -66,13 +66,17 @@ def run_smoke(target, command):
     return sha, status, out
 
 
+def title(sha):
+    return f"Smoke check fails on main at {sha[:12]}"
+
+
 def ticket_body(sha, command, status, out):
     tail = redact_prose("\n".join(out.splitlines()[-TAIL_LINES:]))
     quoted = "\n".join(f"> {line}" for line in ["```", *tail.splitlines(),
                                                 "```"])
     exited = (f"exited with status {status}" if isinstance(status, int)
               else status)
-    return (f"# Smoke check fails on main at {sha[:12]}\n\n## Summary\n\n"
+    return (f"# {title(sha)}\n\n## Summary\n\n"
             f"The scheduled smoke check `{command}` {exited} on main at"
             f" `{sha}`.\n\n## What / Why / How\n\n**What:** the smoke check"
             " passes on main again.\n\n**Why:** main fails its own smoke"
@@ -103,10 +107,10 @@ def record(conn, project, mode, sha, now, reason,
 
 
 def file_failure(board, conn, project, fired, sha, failure, now):
-    title = f"Smoke check fails on main at {sha[:12]}"
+    heading = title(sha)
     firing = store.automations.reserve_firing(
         conn, project, SMOKE, REVISION, SUBJECT, f"{sha}@{now}", mode=ACT,
-        reason=f"filing {title}", detail={"sha": sha}, now=now,
+        reason=f"filing {heading}", detail={"sha": sha}, now=now,
         lease_until=now + LEASE_MS)
     state = store.automations.CONFIRMED
     try:
@@ -114,15 +118,15 @@ def file_failure(board, conn, project, fired, sha, failure, now):
         if key is not None:
             reason = f"already filed {key}"
         else:
-            key = board.file(title, ticket_body(sha, *failure), ESTIMATE_MIN,
+            key = board.file(heading, ticket_body(sha, *failure), ESTIMATE_MIN,
                              "Todo")
-            reason = f"filed {key}: {title}"
+            reason = f"filed {key}: {heading}"
     except store.board.FilingRefused as refused:
         state, reason = store.automations.REFUSED, f"filing refused: {refused}"
     except Exception as bad:
         store.automations.settle_firing(
             conn, firing, None, store.automations.UNKNOWN,
-            f"filing {title} failed: {bad}", now=now)
+            f"filing {heading} failed: {bad}", now=now)
         raise
     store.automations.settle_firing(
         conn, firing, None, state, reason, now=now,
@@ -157,7 +161,7 @@ def smoke_one(target, listed, now):
         if config.mode == ACT and held is None:
             return file_failure(board, conn, project, fired, sha,
                                 (config.command, status, out), now)
-        proposal = f"would file Smoke check fails on main at {sha[:12]}"
+        proposal = f"would file {title(sha)}"
         return record(conn, project, DRY_RUN, sha, now, proposal if held is None
                       else f"{proposal}; dry run: {held}", state=None)
     finally:
