@@ -24,7 +24,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
     block_until_killed,
 )
-from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402
+from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
@@ -201,6 +201,10 @@ class ObservedApproval:
         return APPROVE.text
 
 
+def in_scope(path):
+    return VALID_BODY.replace("* The thing.", f"* `{path}`")
+
+
 class TrimFixture(LoopFixture):
     def trimmed(self, *script, config=TRIMMED, task=None):
         self.configure(config)
@@ -339,9 +343,9 @@ class TrimLoopTests(TrimFixture):
         self.assertIn("vendor outside the run's diff", result["reason"])
 
     def trimmed_pair(self, criterion, trimmed_pair, path="test_pair.py",
-                     pair=PAIR):
+                     pair=PAIR, **extra):
         self.on_main(path, pair.format(a="1", b="2"))
-        task = dict(a_task(), criteria=[criterion])
+        task = dict(a_task(), criteria=[criterion], **extra)
         fake = self.trimmed(
             Commits(WORK, Commit("work tests", path, pair.format(a="3", b="4"))),
             Commits(Commit("trim: tests", path, trimmed_pair)),
@@ -403,7 +407,7 @@ class TrimLoopTests(TrimFixture):
             Commits(WORK, Commit("work tests", sibling, JS_PAIR.format(a="3", b="4"))),
             Commits(Commit("trim: tests", sibling,
                            'test("test_a", () => expect(3));\n')),
-            APPROVE, task=dict(a_task(), criteria=[
+            APPROVE, task=dict(a_task(), body=in_scope(sibling), criteria=[
                 f"Given a route, then both hold. (`{named}` witnesses it.)"]))
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")
@@ -475,7 +479,8 @@ class TrimLoopTests(TrimFixture):
 
     def test_the_same_deletion_in_a_file_no_criterion_names_is_kept(self):
         fake = self.trimmed_pair(a_task()["criteria"][0],
-                                 "def test_a():\n    assert 3\n")
+                                 "def test_a():\n    assert 3\n",
+                                 body=in_scope("test_pair.py"))
         self.assertEqual(self.review_candidates(fake), [self.shas()["trim: tests"]])
         [result] = self.results()
         self.assertEqual(result["outcome"], "kept")

@@ -214,6 +214,7 @@ PINNED = {
     "holophyte/loop/witness_turns.py": 3,
     "holophyte/loop/trim.py": 3,
     "holophyte/loop/trim_brief.py": 0,
+    "holophyte/loop/test_removal.py": 2,
     "holophyte/loop/task_worktree.py": 5,
 
     "holophyte/media_store.py": 1,
