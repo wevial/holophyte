@@ -654,6 +654,30 @@ class SmokeTests(ActFixture):
             firing.reason, f"smoke could not run at {sha[:12]}: [holo2]"
             " worktree setup command 1 of 1 FAILED: false")
 
+    def test_a_refused_setup_config_is_recorded_once_per_interval(self):
+        sha = self.smoke("alpha", "dry_run", "true")
+        with self.target("alpha").config_path.open("a") as handle:
+            handle.write('\n[worktree]\nsetup = ["true"]\n'
+                         "setup_timeout_sec = 0\n")
+
+        sweep_pass(T0)
+        sweep_pass(T0 + MINUTE)
+
+        [firing] = self.smoke_firings("alpha")
+        self.assertTrue(firing.reason.startswith(
+            f"smoke could not run at {sha[:12]}: [holo2] "), firing.reason)
+        self.assertIn("setup_timeout_sec must be a finite positive number",
+                      firing.reason)
+
+    def test_a_signal_during_the_run_records_no_firing(self):
+        self.smoke("alpha", "dry_run", "true")
+
+        with patch("holophyte.automation.smoke.run_worktree_setup",
+                   side_effect=SystemExit(143)):
+            sweep_pass(T0)
+
+        self.assertEqual(self.smoke_firings("alpha"), [])
+
     def test_an_implementer_launch_after_a_smoke_check_needs_its_credential(
             self):
         self.smoke("alpha", "dry_run", "true")
