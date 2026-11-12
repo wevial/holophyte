@@ -279,13 +279,13 @@ REVERT_LINE = re.compile(r"This reverts commit ([0-9a-f]{7,40})")
 
 def merged_runs_since(conn, since):
     return conn.execute(
-        "SELECT t.linearIdentifier, r.mergeSha, r.endedAt"
+        "SELECT t.linearIdentifier, r.mergeSha"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
         " WHERE r.outcome = 'merged' AND r.mergeSha IS NOT NULL"
         " AND r.endedAt >= ? ORDER BY r.endedAt, r.id", (since,)).fetchall()
 
 
-def reverted_shas_since(repo, since):
+def main_log_since(repo, since):
     try:
         code, out = run_capped(
             ["git", "log", "main", "-z", f"--since={since // 1000}",
@@ -296,32 +296,34 @@ def reverted_shas_since(repo, since):
     if code != 0:
         return None
     fields = out.split("\0")
-    return [(found, int(at) * 1000)
-            for at, body in zip(fields[1::3], fields[2::3])
-            for found in REVERT_LINE.findall(body)]
+    return [(sha, int(at) * 1000, body) for sha, at, body
+            in zip(fields[0::3], fields[1::3], fields[2::3])]
 
 
-def is_reverted(merge_sha, ended_at, reverts):
+def is_reverted(merge_sha, merged_at, log):
     return any(merge_sha.startswith(found)
-               and 0 <= at - ended_at <= REVERT_SPAN
-               for found, at in reverts)
+               and 0 <= at - merged_at <= REVERT_SPAN
+               for _, at, body in log for found in REVERT_LINE.findall(body))
 
 
 def revert_lines(conn, repo, now):
-    merged = merged_runs_since(conn, now - max(s for _, s in REVERT_WINDOWS))
-    reverts = reverted_shas_since(repo, merged[0][2]) if merged else []
+    since = now - max(span for _, span in REVERT_WINDOWS)
+    candidates = merged_runs_since(conn, since)
+    log = main_log_since(repo, since) if candidates else []
+    if log is None:
+        return [f"reverts {label}: unknown, git log main failed in {repo}"
+                for label, _ in REVERT_WINDOWS]
+    merged_at = {sha: at for sha, at, _ in log}
+    merged = [(key, sha, merged_at[sha]) for key, sha in candidates
+              if sha in merged_at]
     lines = []
     for label, span in REVERT_WINDOWS:
         window = [run for run in merged if run[2] >= now - span]
         if not window:
             lines.append(f"reverts {label}: no factory merges")
             continue
-        if reverts is None:
-            lines.append(f"reverts {label}: unknown, git log main failed"
-                         f" in {repo}")
-            continue
         keys = [key for key, sha, at in window
-                if is_reverted(sha, at, reverts)]
+                if is_reverted(sha, at, log)]
         lines.append(
             f"reverts {label}: {len(keys)} of {len(window)} factory merges"
             f" reverted within 14 days ({100 * len(keys) / len(window):.1f}%)"

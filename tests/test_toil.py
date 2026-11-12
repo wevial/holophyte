@@ -120,9 +120,9 @@ class RevertTests(StoreTestCase):
         self.git("commit", "-q", "-m", name, at=at)
         return self.git("rev-parse", "HEAD")
 
-    def merge(self, n, at):
+    def merge(self, n, at, closed=None):
         sha = self.commit_at(at, f"ticket-{n}")
-        self.run_of(n, at - HOUR, merged=at, merge_sha=sha)
+        self.run_of(n, at - HOUR, merged=closed or at, merge_sha=sha)
         return sha
 
     def revert(self, sha, at):
@@ -148,6 +148,14 @@ class RevertTests(StoreTestCase):
         self.revert(sha, self.now - 5 * DAY)
         self.assertIn("reverts 30d: 0 of 1 factory merges reverted within"
                       " 14 days (0.0%)", self.report())
+
+    def test_the_merge_commit_dates_a_run_closed_out_later(self):
+        sha = self.merge(1, self.now - 15 * DAY, closed=self.now - DAY)
+        self.revert(sha, self.now - 14 * DAY)
+        lines = self.report()
+        self.assertIn("reverts 30d: 1 of 1 factory merges reverted within"
+                      " 14 days (100.0%): KO-1", lines)
+        self.assertIn("reverts 7d: no factory merges", lines)
 
     def test_no_merge_in_the_window(self):
         self.merge(1, self.now - 40 * DAY)
