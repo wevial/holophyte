@@ -529,6 +529,17 @@ class SmokeTests(ActFixture):
         self.assertEqual(firing.reason,
                          f"would file Smoke check fails on main at {sha[:12]}")
 
+    def test_a_kill_switch_set_during_the_run_files_nothing(self):
+        self.smoke("alpha", "act", "printf '{\"off\": true, \"note\":"
+                   " \"halt\"}' > \"$HOLOPHYTE_HOME/automations.json\"; exit 1")
+
+        sweep_pass(T0)
+
+        self.assertEqual(self.filed("alpha"), [])
+        [firing] = self.smoke_firings("alpha")
+        self.assertEqual((firing.mode, firing.state), ("dry_run", "proposed"))
+        self.assertIn("automations are off on this host: halt", firing.reason)
+
     def test_a_pass_files_nothing_and_a_run_not_due_records_nothing(self):
         sha = self.smoke("alpha", "act", "true")
         sweep_pass(T0)

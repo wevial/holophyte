@@ -12,9 +12,11 @@ from holophyte.automation.automation_config import (
     smoke_config,
     unapproved,
 )
+from holophyte.automation.gate import inhibitor
 from holophyte.automation.policy import report_only_reason
 from holophyte.board.provider import board_for
 from holophyte.config.config_tables import verify_config
+from holophyte.host.registry import home
 from holophyte.loop.claim import run_worktree_setup
 from holophyte.loop.gates import run_capped, sh
 from holophyte.loop.runs import open_store
@@ -158,7 +160,8 @@ def smoke_one(target, listed, now):
         proposal = f"would file {title(sha)}"
         if config.mode == ACT:
             held = (unapproved(config, REVISION, SMOKE)
-                    or (pull and report_only_reason(pull, listed)))
+                    or (pull and report_only_reason(pull, listed))
+                    or inhibitor(home(), conn, SMOKE))
             if held is None:
                 return file_failure(board, conn, project, fired, sha,
                                     (config.command, status, out), now)
