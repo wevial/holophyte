@@ -4,9 +4,6 @@ import subprocess
 from holophyte.loop.gates import VerificationOutput
 from holophyte.tickets import ticket_template
 
-REPORT = ("tests removed outside the ticket's scope: "
-          "{path} ({before} before, {after} after)")
-
 
 def removed_outside_scope(wt, base_sha, sha, ticket):
     # Deferred: the trim module imports the review rounds, which import this.
@@ -21,7 +18,8 @@ def removed_outside_scope(wt, base_sha, sha, ticket):
         before = sum(_test_ids(wt, base_sha, old).values())
         after = sum(_test_ids(wt, sha, new).values()) if new else 0
         if after < before:
-            lines.append(REPORT.format(path=old, before=before, after=after))
+            lines.append(f"tests removed outside the ticket's scope: {old}"
+                         f" ({before} before, {after} after)")
     return lines
 
 
@@ -29,12 +27,11 @@ def with_removals(wt, base_sha, sha, ticket, ok, out):
     lines = removed_outside_scope(wt, base_sha, sha, ticket)
     if not lines:
         return ok, out
-    report = "\n".join(lines)
     failure = out.failure or {
         "command_index": None, "command": "test removal check",
         "exit_status": None, "last_output_line": lines[-1]}
     return False, VerificationOutput(
-        f"{out}\n{report}", out.results, failure=failure)
+        "\n".join([out, *lines]), out.results, failure=failure)
 
 
 def _changed_pairs(wt, base_sha, sha):
