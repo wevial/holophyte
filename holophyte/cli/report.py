@@ -1,4 +1,5 @@
 import json
+import re
 import statistics
 import time
 from collections import Counter
@@ -10,6 +11,7 @@ import store.schema
 from holophyte.cli.complexity_report import complexity_lines
 from holophyte.cli.shadow_report import shadow_lines
 from holophyte.config.config_tables import report_config
+from holophyte.files import git
 from holophyte.scout.telemetry import scout_report_lines
 from holophyte.story.story_views import story_report_lines
 from store.gap_layers import gap_finder_counts, gap_layer_counts
@@ -234,6 +236,7 @@ def question_lines(conn):
     return ["questions: " + " · ".join(parts)]
 
 
+DAY_MS = 24 * 3_600_000
 TOIL_WINDOWS = (("24h", 24 * 3_600_000), ("7d", 7 * 24 * 3_600_000))
 
 
@@ -264,6 +267,58 @@ def toil_lines(conn, now):
         actors = ", ".join(f"{actor} {n}"
                            for actor, n in window["by_actor"].items())
         lines.append(f"interventions {label} by actor: {actors}")
+    return lines
+
+
+REVERT_WINDOWS = (("30d", 30 * DAY_MS), ("7d", 7 * DAY_MS))
+REVERT_SPAN = 14 * DAY_MS
+REVERT_LINE = re.compile(r"This reverts commit ([0-9a-f]{7,40})")
+
+
+def merged_runs_since(conn, since):
+    return conn.execute(
+        "SELECT t.linearIdentifier, r.mergeSha, r.endedAt"
+        " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " WHERE r.outcome = 'merged' AND r.mergeSha IS NOT NULL"
+        " AND r.endedAt >= ? ORDER BY r.endedAt, r.id", (since,)).fetchall()
+
+
+def reverted_shas_since(repo, since):
+    code, out = git(repo, "log", "main", "-z", f"--since={since // 1000}",
+                    "--format=%H%x00%ct%x00%B")
+    if code != 0:
+        return None
+    fields = out.split("\0")
+    return [(found, int(at) * 1000)
+            for at, body in zip(fields[1::3], fields[2::3])
+            for found in REVERT_LINE.findall(body)]
+
+
+def is_reverted(merge_sha, ended_at, reverts):
+    return any(merge_sha.startswith(found)
+               and 0 <= at - ended_at <= REVERT_SPAN
+               for found, at in reverts)
+
+
+def revert_lines(conn, repo, now):
+    merged = merged_runs_since(conn, now - max(s for _, s in REVERT_WINDOWS))
+    reverts = reverted_shas_since(repo, merged[0][2]) if merged else []
+    lines = []
+    for label, span in REVERT_WINDOWS:
+        window = [run for run in merged if run[2] >= now - span]
+        if not window:
+            lines.append(f"reverts {label}: no factory merges")
+            continue
+        if reverts is None:
+            lines.append(f"reverts {label}: unknown, git log main failed"
+                         f" in {repo}")
+            continue
+        keys = [key for key, sha, at in window
+                if is_reverted(sha, at, reverts)]
+        lines.append(
+            f"reverts {label}: {len(keys)} of {len(window)} factory merges"
+            f" reverted within 14 days ({100 * len(keys) / len(window):.1f}%)"
+            + (f": {', '.join(keys)}" if keys else ""))
     return lines
 
 
@@ -302,6 +357,8 @@ def report_lines(conn, target=None):
         live += question_lines(conn)
         live += scout_report_lines(conn)
         live += toil_lines(conn, now)
+        if target is not None:
+            live += revert_lines(conn, target.path, now)
         live.append("gap layers: " + ", ".join(
             f"{layer} {count}"
             for layer, count in gap_layer_counts(conn).items()))
