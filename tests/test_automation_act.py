@@ -462,7 +462,7 @@ HOUR = 60 * MINUTE
 FAILING = "for i in $(seq 1 80); do echo smoke line $i; done; exit 3"
 
 
-class SmokeFixture(ActFixture):
+class SmokeTests(ActFixture):
     def smoke(self, name, mode, command, every_hours=6):
         """A native board, `[automations.smoke]`, and a local bare origin
         whose main is one commit; that commit's sha."""
@@ -490,8 +490,6 @@ class SmokeFixture(ActFixture):
             "SELECT linearIdentifier, title, boardColumn, body FROM tickets"
             " ORDER BY id").fetchall()
 
-
-class SmokeTests(SmokeFixture):
     def test_a_failing_smoke_check_in_act_files_one_todo_ticket(self):
         sha = self.smoke("alpha", "act", FAILING)
 

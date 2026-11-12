@@ -2,7 +2,6 @@
 import subprocess
 import tempfile
 
-import store
 import store.automations
 import store.board
 from holophyte.admission import project_of
@@ -90,12 +89,12 @@ def ticket_body(sha, command, status, out):
             "## Open questions\n\n- None\n")
 
 
-def record(conn, project, mode, sha, now, reason, detail=None,
+def record(conn, project, mode, sha, now, reason,
            state=store.automations.CONFIRMED):
     """A firing settled as `state`; `None` leaves it `proposed`."""
     firing = store.automations.reserve_firing(
         conn, project, SMOKE, REVISION, SUBJECT, f"{sha}@{now}", mode=mode,
-        reason=reason, detail={"sha": sha, **(detail or {})}, now=now,
+        reason=reason, detail={"sha": sha}, now=now,
         lease_until=None if state is None else now + LEASE_MS)
     if state is not None:
         store.automations.settle_firing(conn, firing, None, state, reason,
