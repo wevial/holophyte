@@ -499,9 +499,9 @@ class SmokeTests(ActFixture):
         git(self.paths[name], "config", "user.name", "Smoke")
         git(self.paths[name], "config", "user.email", "smoke@example.com")
 
-    def uncredentialed(self, docker=(0, "installed"), image=None):
-        """No `CREDENTIAL` in the environment; `docker run` answers
-        `docker`, and the image check raises `image` when one is given."""
+    def uncredentialed(self, image=None):
+        """No `CREDENTIAL` in the environment; `docker run` succeeds, and
+        the image check raises `image` when one is given."""
         stack = contextlib.ExitStack()
         stack.enter_context(patch.dict(os.environ))
         os.environ.pop(CREDENTIAL, None)
@@ -510,7 +510,7 @@ class SmokeTests(ActFixture):
         stack.enter_context(patch.object(launcher.review_runner,
                                          "_remove_container"))
         run = stack.enter_context(patch.object(launcher, "run_capped",
-                                               return_value=docker))
+                                               return_value=(0, "installed")))
         return stack, run
 
     def filed(self, name):
