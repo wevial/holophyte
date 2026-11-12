@@ -23,6 +23,7 @@ from holophyte.automation.limits import (
     self_pause,
 )
 from holophyte.automation.policy import RERUN_FAILED_JOBS, report_only
+from holophyte.automation.smoke import run_smoke_checks
 from holophyte.cli.host_modes import FACTORY_PATH
 from holophyte.host.registry import Host, HostError
 from holophyte.loop.gates import InfraFailure
@@ -231,6 +232,13 @@ def run_automations(entries, state, stop, sweep_sec, now, out, *, key, save,
     except HostError as bad:
         print(f"{bad}; automations are off this pass", file=out)
         return
+    watch_main(entries, state, stop, sweep_sec, now, out, key, save, listed,
+               reruns)
+    run_smoke_checks(entries, listed, now, stop, out, key)
+
+
+def watch_main(entries, state, stop, sweep_sec, now, out, key, save, listed,
+               reruns):
     order = watched(entries, out, key)
     if not order:
         return
