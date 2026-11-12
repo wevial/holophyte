@@ -162,3 +162,12 @@ class RevertTests(StoreTestCase):
         lines = self.report()
         self.assertIn("reverts 30d: no factory merges", lines)
         self.assertIn("reverts 7d: no factory merges", lines)
+
+    def test_a_missing_checkout_reports_unknown(self):
+        self.merge(1, self.now - 3 * DAY)
+        self.conn.commit()
+        missing = self.target / "gone"
+        lines = report.revert_lines(self.conn, missing, self.now)
+        self.assertEqual(
+            [f"reverts {label}: unknown, git log main failed in {missing}"
+             for label in ("30d", "7d")], lines)

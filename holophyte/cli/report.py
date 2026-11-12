@@ -291,7 +291,7 @@ def main_log_since(repo, since):
             ["git", "log", "main", "-z", f"--since={since // 1000}",
              "--format=%H%x00%ct%x00%B", "--"], repo, GIT_TIMEOUT,
             stderr=subprocess.DEVNULL)
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, OSError):
         return None
     if code != 0:
         return None
