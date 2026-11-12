@@ -1,6 +1,8 @@
 """Test files outside the ticket's In scope list that lost tests since the base."""
+import json
 import subprocess
 
+import store
 from holophyte.loop.gates import VerificationOutput
 from holophyte.tickets import ticket_template
 
@@ -24,15 +26,22 @@ def removed_outside_scope(wt, base_sha, sha, ticket):
     return lines
 
 
-def with_removals(wt, base_sha, sha, ticket, ok, out):
+def with_removals(wt, base_sha, sha, ticket, ok, out, conn=None, run_id=None):
     lines = removed_outside_scope(wt, base_sha, sha, ticket)
     if not lines:
         return ok, out
     failure = out.failure or {
         "command_index": None, "command": "test removal check",
         "exit_status": None, "last_output_line": lines[-1]}
+    results = [*out.results, {"source": "test_removal",
+                              "command": "test removal check", "exitCode": 1,
+                              "output": "\n".join(lines)}]
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "verification",
+                           "Mechanical verification failed", level="detail",
+                           payload=json.dumps({"verificationResults": results}))
     return False, VerificationOutput(
-        "\n".join([out, *lines]), out.results, failure=failure)
+        "\n".join([out, *lines]), results, failure=failure)
 
 
 def _changed_pairs(wt, base_sha, sha):

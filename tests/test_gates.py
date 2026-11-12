@@ -685,6 +685,7 @@ class TestRemovalTests(LoopFixture):
         self.assertFalse(ok)
         self.assertIn("tests removed outside the ticket's scope: "
                       "tests/test_other.py (2 before, 1 after)", out)
+        self.assertIn(1, [row["exitCode"] for row in out.results])
 
     def test_a_test_deleted_from_an_in_scope_file_passes(self):
         ok, out = self.verify_after("def test_a():\n    pass\n",

@@ -255,7 +255,7 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
         ok, out = with_baseline(project, wt, verify_cmd, ok, out, conn, run_id)
     sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     ok, out = with_removals(wt, review_base(wt, base_sha, sha), sha, ticket,
-                            ok, out)
+                            ok, out, conn, run_id)
     if ok:
         print(f"[holo2] verify ok before round {rnd}")
     else:
