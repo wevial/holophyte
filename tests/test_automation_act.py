@@ -4,6 +4,7 @@ the factory's `gh api` path to a `gh` on PATH that logs each method and path.
 
 Run: python3 -m unittest discover -s tests -p 'test_automation_act.py' -v
 """
+import contextlib
 import json
 import os
 import stat
@@ -17,6 +18,7 @@ import holophyte.automation.step as step
 import store.automations
 from holophyte.config.project import Project
 from holophyte.host.registry import HOST_FILE
+from holophyte.isolation import launcher
 from tests.host_fixture import git
 from tests.main_watch_fixture import job, sweep_pass
 from tests.test_automation_switches import SwitchFixture
@@ -460,6 +462,8 @@ class StaleRuleTests(ActFixture):
 
 HOUR = 60 * MINUTE
 FAILING = "for i in $(seq 1 80); do echo smoke line $i; done; exit 3"
+CREDENTIAL = "CLAUDE_CODE_OAUTH_TOKEN"
+SETUP = "pip install -e ."
 
 
 class SmokeTests(ActFixture):
@@ -484,6 +488,30 @@ class SmokeTests(ActFixture):
     def smoke_firings(self, name):
         return [firing for firing in store.automations.firings(self.conn(name))
                 if firing.automation == "smoke"]
+
+    def contained(self, name):
+        """The implementer in a container that needs `CREDENTIAL`, and a
+        worktree setup that runs there."""
+        with self.target(name).config_path.open("a") as handle:
+            handle.write('\n[agents]\nimplementer_isolation = "container"\n'
+                         f'implementer_credential = {{ env = "{CREDENTIAL}" }}'
+                         f"\n\n[worktree]\nsetup = [{json.dumps(SETUP)}]\n")
+        git(self.paths[name], "config", "user.name", "Smoke")
+        git(self.paths[name], "config", "user.email", "smoke@example.com")
+
+    def uncredentialed(self, docker=(0, "installed"), image=None):
+        """No `CREDENTIAL` in the environment; `docker run` answers
+        `docker`, and the image check raises `image` when one is given."""
+        stack = contextlib.ExitStack()
+        stack.enter_context(patch.dict(os.environ))
+        os.environ.pop(CREDENTIAL, None)
+        stack.enter_context(patch.object(launcher, "image_ready",
+                                         side_effect=image))
+        stack.enter_context(patch.object(launcher.review_runner,
+                                         "_remove_container"))
+        run = stack.enter_context(patch.object(launcher, "run_capped",
+                                               return_value=docker))
+        return stack, run
 
     def filed(self, name):
         return self.conn(name).execute(
@@ -576,6 +604,59 @@ class SmokeTests(ActFixture):
         self.assertEqual(self.filed("alpha"), [])
         sweep_pass(T0 + 6 * HOUR)
         self.assertEqual(len(self.filed("alpha")), 1)
+
+
+    def test_a_contained_setup_runs_without_the_implementer_credential(self):
+        sha = self.smoke("alpha", "dry_run", "true")
+        self.contained("alpha")
+        stack, docker = self.uncredentialed()
+
+        with stack:
+            sweep_pass(T0)
+
+        [call] = docker.call_args_list
+        argv, host_env = call.args[0], call.kwargs["env"]
+        self.assertEqual((argv[:2], argv[-3:]),
+                         (["docker", "run"], ["/bin/sh", "-c", SETUP]))
+        self.assertNotIn(f"--env={CREDENTIAL}", argv)
+        self.assertNotIn(CREDENTIAL, host_env)
+        [firing] = self.smoke_firings("alpha")
+        self.assertEqual((firing.mode, firing.reason),
+                         ("dry_run", f"smoke passed at {sha[:12]}"))
+
+    def test_a_smoke_run_that_raises_is_recorded_once_per_interval(self):
+        sha = self.smoke("alpha", "dry_run", "true")
+        self.contained("alpha")
+        stack, docker = self.uncredentialed(image=RuntimeError(
+            "implementer image x is not built; run: docker build\nsecond"))
+
+        with stack:
+            sweep_pass(T0)
+            sweep_pass(T0 + 6 * HOUR - MINUTE)
+
+        [firing] = self.smoke_firings("alpha")
+        self.assertEqual(
+            firing.reason, f"smoke could not run at {sha[:12]}: implementer"
+            " image x is not built; run: docker build")
+        docker.assert_not_called()
+
+    def test_an_implementer_launch_after_a_smoke_check_needs_its_credential(
+            self):
+        self.smoke("alpha", "dry_run", "true")
+        self.contained("alpha")
+        target = self.target("alpha")
+        stack, docker = self.uncredentialed()
+
+        with stack:
+            sweep_pass(T0)
+            docker.reset_mock()
+            with self.assertRaisesRegex(
+                    RuntimeError,
+                    f"implementer credential variable {CREDENTIAL} is not set"):
+                launcher.launch(launcher.route_for(target), target.path, None,
+                                ["claude", "-p", "task"], project=target)
+
+        docker.assert_not_called()
 
 
 if __name__ == "__main__":

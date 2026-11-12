@@ -1,4 +1,5 @@
 import contextlib
+import contextvars
 import hashlib
 import itertools
 import os
@@ -27,6 +28,18 @@ class Route:
     writable: bool = True
     codex: bool = False
     codex_login: bool = False
+
+
+CREDENTIAL_NEEDED = contextvars.ContextVar("credential_needed", default=True)
+
+
+@contextlib.contextmanager
+def without_credential():
+    reset = CREDENTIAL_NEEDED.set(False)
+    try:
+        yield
+    finally:
+        CREDENTIAL_NEEDED.reset(reset)
 
 
 def runs_codex(value):
@@ -414,6 +427,8 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
                                           **kwargs)
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
+    if not CREDENTIAL_NEEDED.get():
+        route = replace(route, credential={}, codex_login=False)
     from holophyte.config.worktree_settings import carry_directories
     from holophyte.isolation.isolation_clone import carry_mounts, turn_clone
 

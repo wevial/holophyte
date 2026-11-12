@@ -43,10 +43,13 @@ def open_filed(board, fired):
     return next((key for key in filed if key not in closed), None)
 
 
-def run_smoke(target, command):
-    """`(sha, exit status or why it has none, output)` at origin/main's head."""
+def main_head(target):
     sh(["git", "fetch", "--quiet", "origin", "main"], target.path)
-    sha = sh(["git", "rev-parse", "origin/main"], target.path).strip()
+    return sh(["git", "rev-parse", "origin/main"], target.path).strip()
+
+
+def run_smoke(target, sha, command):
+    """`(exit status or why it has none, output)` at `sha`."""
     target.worktrees.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="smoke-",
                                      dir=target.worktrees) as tmp:
@@ -54,9 +57,9 @@ def run_smoke(target, command):
         sh(["git", "worktree", "add", "--detach", "--quiet", tree, sha],
            target.path)
         try:
-            ready, report = run_worktree_setup(target, tree)
+            ready, report = run_worktree_setup(target, tree, credential=False)
             if not ready:
-                return sha, "failed its worktree setup", report
+                return "failed its worktree setup", report
             try:
                 status, out = run_capped(command, tree,
                                          verify_config(target).timeout_sec)
@@ -65,7 +68,7 @@ def run_smoke(target, command):
                 out = expired.output or ""
         finally:
             sh(["git", "worktree", "remove", "--force", tree], target.path)
-    return sha, status, out
+    return status, out
 
 
 def title(sha):
@@ -152,7 +155,15 @@ def smoke_one(target, listed, now):
         board = board_for(target)
         if config.mode == ACT and board is None:
             raise RuntimeError("the project has no board to file on")
-        sha, status, out = run_smoke(target, config.command)
+        sha = "origin/main"
+        try:
+            sha = main_head(target)
+            status, out = run_smoke(target, sha, config.command)
+        except (Exception, SystemExit) as error:
+            reason = (str(error).strip().splitlines() or [repr(error)])[0]
+            return record(conn, project, config.mode, sha, now,
+                          f"smoke could not run at {sha[:12]}:"
+                          f" {redact_prose(reason)}")
         if status == 0:
             return record(conn, project, config.mode, sha, now,
                           f"smoke passed at {sha[:12]}")

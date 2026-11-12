@@ -1,3 +1,4 @@
+import contextlib
 import os
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ from holophyte.environment_git import (
     environment_temporary_directory,
     exclude_environment,
 )
+from holophyte.isolation import launcher
 from holophyte.loop.gates import InfraFailure, run_verify, sh
 from holophyte.loop.runs import set_phase
 from holophyte.redact import redact_values
@@ -77,8 +79,10 @@ def write_capture_ignore(project, wt):
             os.unlink(temporary)
 
 
-def run_worktree_setup(project, wt, conn=None, run_id=None):
-    ok, report, _ = prepare_worktree(project, wt, conn, run_id)
+def run_worktree_setup(project, wt, conn=None, run_id=None, *, credential=True):
+    with (contextlib.nullcontext() if credential
+          else launcher.without_credential()):
+        ok, report, _ = prepare_worktree(project, wt, conn, run_id)
     return ok, report
 
 
