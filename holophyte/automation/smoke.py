@@ -159,7 +159,7 @@ def smoke_one(target, listed, now):
         try:
             sha = main_head(target)
             status, out = run_smoke(target, sha, config.command)
-        except (Exception, SystemExit) as error:
+        except Exception as error:
             reason = (str(error).strip().splitlines() or [repr(error)])[0]
             return record(conn, project, config.mode, sha, now,
                           f"smoke could not run at {sha[:12]}:"
