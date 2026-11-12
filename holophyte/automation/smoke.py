@@ -155,15 +155,15 @@ def smoke_one(target, listed, now):
             return record(conn, project, config.mode, sha, now,
                           f"smoke passed at {sha[:12]}")
         pull = github._origin_pull(target)
-        held = None if config.mode != ACT else (
-            unapproved(config, REVISION, SMOKE)
-            or (pull and report_only_reason(pull, listed)))
-        if config.mode == ACT and held is None:
-            return file_failure(board, conn, project, fired, sha,
-                                (config.command, status, out), now)
         proposal = f"would file {title(sha)}"
-        return record(conn, project, DRY_RUN, sha, now, proposal if held is None
-                      else f"{proposal}; dry run: {held}", state=None)
+        if config.mode == ACT:
+            held = (unapproved(config, REVISION, SMOKE)
+                    or (pull and report_only_reason(pull, listed)))
+            if held is None:
+                return file_failure(board, conn, project, fired, sha,
+                                    (config.command, status, out), now)
+            proposal = f"{proposal}; dry run: {held}"
+        return record(conn, project, DRY_RUN, sha, now, proposal, state=None)
     finally:
         conn.close()
 
