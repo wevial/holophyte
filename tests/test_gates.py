@@ -664,3 +664,38 @@ class IsolatedVerifyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRemovalTests(LoopFixture):
+    TWO_TESTS = "def test_a():\n    pass\n\n\ndef test_b():\n    pass\n"
+
+    def verify_after(self, body, in_scope):
+        (self.target / "tests" / "test_other.py").write_text(self.TWO_TESTS)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "two tests")
+        base = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "-b", "task")
+        (self.target / "tests" / "test_other.py").write_text(body)
+        self.git("commit", "-q", "-am", "candidate")
+        ticket = f"# Change\n\n## In scope\n\n- `{in_scope}`\n"
+        return holophyte.loop.review_round._verify(
+            self.project, None, None, 0, self.target, base, ticket, "true", [], 1)
+
+    def test_a_test_deleted_outside_the_in_scope_list_fails_verify(self):
+        ok, out = self.verify_after("def test_a():\n    pass\n",
+                                    "holophyte/thing.py")
+        self.assertFalse(ok)
+        self.assertIn("tests removed outside the ticket's scope: "
+                      "tests/test_other.py (2 before, 1 after)", out)
+
+    def test_a_test_deleted_from_an_in_scope_file_passes(self):
+        ok, out = self.verify_after("def test_a():\n    pass\n",
+                                    "tests/test_other.py")
+        self.assertTrue(ok, out)
+        self.assertNotIn("tests removed outside the ticket's scope", out)
+
+    def test_a_renamed_test_outside_the_in_scope_list_passes(self):
+        ok, out = self.verify_after(self.TWO_TESTS.replace("test_b", "test_c"),
+                                    "holophyte/thing.py")
+        self.assertTrue(ok, out)
+        self.assertNotIn("tests removed outside the ticket's scope", out)

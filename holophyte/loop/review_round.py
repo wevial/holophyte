@@ -32,6 +32,7 @@ from holophyte.loop.runs import (
 from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.steering import pending as steer_pending
 from holophyte.loop.stop import boundary, stop_if_requested
+from holophyte.loop.test_removal import with_removals
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
 from holophyte.review import adversary, consolidate, main_baseline
@@ -245,12 +246,16 @@ def _round_contract(conn, run_id, ticket, claimed, pending):
     return reviewed_ticket(conn, run_id, ticket), verify_cmd, kept
 
 
-def _verify(project, conn, run_id, beat_s, wt, verify_cmd, contracts, rnd):
+def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
+            contracts, rnd):
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts,
                              verify_config(project).timeout_sec,
                              conn=conn, run_id=run_id, project=project)
         ok, out = with_baseline(project, wt, verify_cmd, ok, out, conn, run_id)
+    sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    ok, out = with_removals(wt, review_base(wt, base_sha, sha), sha, ticket,
+                            ok, out)
     if ok:
         print(f"[holo2] verify ok before round {rnd}")
     else:
@@ -260,8 +265,8 @@ def _verify(project, conn, run_id, beat_s, wt, verify_cmd, contracts, rnd):
 
 def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
               sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd):
-    checks = partial(_verify, project, conn, run_id, beat_s, wt, verify_cmd,
-                     contracts, rnd)
+    checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
+                     ticket, verify_cmd, contracts, rnd)
     ok, out = checks()
     if rnd != 1:
         return sha, ok, out, main_baseline.brief(main_baseline.baselines(

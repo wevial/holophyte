@@ -578,6 +578,9 @@ Each module, one line:
   that mode, one shadow a project under `shadow.lock`, else `shadow_skipped`.
 - `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
   turn per round, up to the cap the candidate's size earns.
+- `holophyte/loop/test_removal.py` — the round's verify failed when a test
+  file the ticket's In scope list does not name holds fewer tests than at the
+  base.
 - `holophyte/loop/adjudicate.py` — the terminal adjudication once the review
   rounds are spent.
 - `holophyte/loop/steering.py` — a live run's pending `holo steer` notes: the
