@@ -103,30 +103,31 @@ def record(conn, project, mode, sha, now, reason, detail=None,
     return firing
 
 
-def file_failure(target, conn, project, fired, sha, failure, now):
-    board = board_for(target)
-    if board is None:
-        raise RuntimeError("the project has no board to file on")
-    filed = open_filed(board, fired)
-    if filed is not None:
-        return record(conn, project, ACT, sha, now, f"already filed {filed}",
-                      {"ticket": filed})
+def file_failure(board, conn, project, fired, sha, failure, now):
     title = f"Smoke check fails on main at {sha[:12]}"
     firing = store.automations.reserve_firing(
         conn, project, SMOKE, REVISION, SUBJECT, f"{sha}@{now}", mode=ACT,
         reason=f"filing {title}", detail={"sha": sha}, now=now,
         lease_until=now + LEASE_MS)
+    state = store.automations.CONFIRMED
     try:
-        key = board.file(title, ticket_body(sha, *failure), ESTIMATE_MIN,
-                         "Todo")
+        key = open_filed(board, fired)
+        if key is not None:
+            reason = f"already filed {key}"
+        else:
+            key = board.file(title, ticket_body(sha, *failure), ESTIMATE_MIN,
+                             "Todo")
+            reason = f"filed {key}: {title}"
     except store.board.FilingRefused as refused:
+        state, reason = store.automations.REFUSED, f"filing refused: {refused}"
+    except Exception as bad:
         store.automations.settle_firing(
-            conn, firing, None, store.automations.REFUSED,
-            f"filing refused: {refused}", now=now)
-        return firing
+            conn, firing, None, store.automations.UNKNOWN,
+            f"filing {title} failed: {bad}", now=now)
+        raise
     store.automations.settle_firing(
-        conn, firing, None, store.automations.CONFIRMED, f"filed {key}: {title}",
-        now=now, detail={"sha": sha, "ticket": key})
+        conn, firing, None, state, reason, now=now,
+        detail={"sha": sha, **({"ticket": key} if key else {})})
     return firing
 
 
@@ -143,6 +144,9 @@ def smoke_one(target, listed, now):
         fired = smoke_firings(conn, project)
         if fired and now - fired[0].createdAt < config.every_hours * HOUR_MS:
             return None
+        board = board_for(target)
+        if config.mode == ACT and board is None:
+            raise RuntimeError("the project has no board to file on")
         sha, status, out = run_smoke(target, config.command)
         if status == 0:
             return record(conn, project, config.mode, sha, now,
@@ -152,7 +156,7 @@ def smoke_one(target, listed, now):
             unapproved(config, REVISION, SMOKE)
             or (pull and report_only_reason(pull, listed)))
         if config.mode == ACT and held is None:
-            return file_failure(target, conn, project, fired, sha,
+            return file_failure(board, conn, project, fired, sha,
                                 (config.command, status, out), now)
         proposal = f"would file Smoke check fails on main at {sha[:12]}"
         return record(conn, project, DRY_RUN, sha, now, proposal if held is None
