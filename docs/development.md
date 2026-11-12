@@ -362,7 +362,8 @@ Each module, one line:
   babysitter.
 - `holophyte/automation/smoke.py` — the smoke check, `REVISION = 1`:
   `run_smoke_checks()`, called by the step after the main watch, runs each
-  opted-in, unpaused project's `command` once `every_hours` have passed
+  opted-in project's `command`, while neither the kill switch nor a
+  pause stops it, once `every_hours` have passed
   since its last smoke firing, in a detached worktree of `origin/main`'s
   head after `[worktree] setup`; it records a pass, a `dry_run` proposal,
   or in `act`, rechecking the kill switch and its pause after the run,

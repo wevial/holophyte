@@ -550,6 +550,17 @@ class SmokeTests(ActFixture):
         self.assertEqual((firing.mode, firing.state), ("dry_run", "proposed"))
         self.assertIn("automations are off on this host: halt", firing.reason)
 
+    def test_a_kill_switch_set_by_one_project_stops_the_next_one(self):
+        self.smoke("alpha", "act", "printf '{\"off\": true}'"
+                   " > \"$HOLOPHYTE_HOME/automations.json\"")
+        self.smoke("beta", "act", "touch \"$HOLOPHYTE_HOME/beta-ran\"")
+
+        sweep_pass(T0)
+
+        self.assertEqual(len(self.smoke_firings("alpha")), 1)
+        self.assertEqual(self.smoke_firings("beta"), [])
+        self.assertFalse((self.home / "beta-ran").exists())
+
     def test_a_pass_files_nothing_and_a_run_not_due_records_nothing(self):
         sha = self.smoke("alpha", "act", "true")
         sweep_pass(T0)

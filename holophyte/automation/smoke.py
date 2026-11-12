@@ -144,8 +144,7 @@ def smoke_one(target, listed, now):
     conn = open_store(target)
     try:
         project = project_of(conn, target)
-        if (project is None
-                or store.automations.automation_pause(conn, SMOKE) is not None):
+        if project is None or inhibitor(home(), conn, SMOKE) is not None:
             return None
         fired = smoke_firings(conn, project)
         if fired and now - fired[0].createdAt < config.every_hours * HOUR_MS:
