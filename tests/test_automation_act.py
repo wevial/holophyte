@@ -507,6 +507,16 @@ class SmokeTests(ActFixture):
         self.assertEqual((firing.mode, firing.state, firing.detail["ticket"]),
                          ("act", "confirmed", key))
 
+    def test_a_secret_in_the_command_stays_off_the_board(self):
+        self.smoke("alpha", "act", "API_TOKEN=smoke-secret-value sh -c"
+                   " 'echo API_TOKEN=$API_TOKEN; exit 3'")
+
+        sweep_pass(T0)
+
+        [(_key, _title, _column, body)] = self.filed("alpha")
+        self.assertIn("API_TOKEN=", body)
+        self.assertNotIn("smoke-secret-value", body)
+
     def test_a_failure_while_its_ticket_is_open_files_no_second(self):
         self.smoke("alpha", "act", FAILING)
         sweep_pass(T0)

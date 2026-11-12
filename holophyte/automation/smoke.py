@@ -73,6 +73,7 @@ def title(sha):
 
 
 def ticket_body(sha, command, status, out):
+    command = redact_prose(command)
     tail = redact_prose("\n".join(out.splitlines()[-TAIL_LINES:]))
     quoted = "\n".join(f"> {line}" for line in ["```", *tail.splitlines(),
                                                 "```"])
