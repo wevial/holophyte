@@ -65,6 +65,7 @@ class ProbeResult:
     entry: int = 0
     answer: str = None
     launch_diagnostic: str = None
+    exit_only: bool = False
 
     @property
     def timed_out(self):
@@ -72,6 +73,8 @@ class ProbeResult:
 
     @property
     def ok(self):
+        if self.exit_only:
+            return self.returncode == 0
         witness = self.expected_commit or PROBE_WORD
         said = self.output if self.answer is None else self.answer
         return self.returncode == 0 and witness in said.lower()
@@ -300,9 +303,13 @@ def probe_critic(project, provider, *, activate, timeout=None):
     seat = critic_seat(project)
     if seat is None:
         return None
-    probe = critic_probe(project, seat.turn(PROBE_GOAL), timeout,
-                         sdk_probe(seat) if seat.name == ClaudeSdk.name
-                         else run_capped)
+    listing = seat.probe()
+    if listing is not None:
+        probe = replace(critic_probe(project, listing, timeout), exit_only=True)
+    else:
+        probe = critic_probe(project, seat.turn(PROBE_GOAL), timeout,
+                             sdk_probe(seat) if seat.name == ClaudeSdk.name
+                             else run_capped)
     print(probe_diagnostic(project, probe))
     if not probe.ok and critic_fallback(project) is not None:
         from holophyte.agents.fallback import startup_fallback

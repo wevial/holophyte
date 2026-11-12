@@ -4,6 +4,7 @@ a throwaway candidate checkout.
 
 Run: python3 -m unittest tests.test_harness -v
 """
+import io
 import json
 import os
 import shutil
@@ -18,6 +19,7 @@ from unittest.mock import patch
 
 import holophyte.agents.fix_session
 import holophyte.agents.harness
+import holophyte.agents.probes
 import holophyte.agents.review_workspace
 import holophyte.agents.roles
 import holophyte.config.checks
@@ -938,6 +940,89 @@ class CriticTableTests(unittest.TestCase):
                                     rf"supports critic, not {role}"):
                     holophyte.config.checks.check_document(self.target(
                         f'[agents.{role}]\nharness = "t3"\nmodel = "gpt-6"\n'))
+
+
+def fake_harness(path, calls, said, code):
+    path.write_text(
+        f"#!{sys.executable}\nimport json, sys\n"
+        f"open({str(calls)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        f"print({said!r})\nsys.exit({code})\n")
+    path.chmod(0o755)
+
+
+class CriticProbeTests(unittest.TestCase):
+    """The critic's startup probe: a `t3` seat lists the project's threads and
+    is judged by exit status; other seats still answer the probe goal."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=self.repo,
+                       check=True)
+        subprocess.run(["git", "-c", "user.name=Test", "-c",
+                        "user.email=test@example.invalid", "commit",
+                        "--allow-empty", "-qm", "base"], cwd=self.repo, check=True)
+        self.calls = self.root / "calls.jsonl"
+
+    def probe(self, config):
+        holo = self.root / "holo"
+        holo.mkdir(exist_ok=True)
+        (holo / "config.toml").write_text(config)
+        target = holophyte.config.project.Project(
+            path=self.repo, holo_dir=holo, store_path=holo / "store.db",
+            config_path=holo / "config.toml", worktrees=self.root / "worktrees")
+        with patch.object(sys, "stdout", io.StringIO()):
+            return holophyte.agents.probes.probe_critic(target, None,
+                                                        activate=False)
+
+    def received(self):
+        return [json.loads(line) for line in self.calls.read_text().splitlines()]
+
+    def t3(self, code, extra=""):
+        binary = self.root / "t3"
+        fake_harness(binary, self.calls, "THREAD  TITLE", code)
+        return self.probe(f'{extra}[agents.critic]\nharness = "t3"\n'
+                          'project = "holophyte-trial"\nworktree = "main"\n'
+                          'provider = "codex"\nmodel = "gpt-6-luna"\n'
+                          f'[harnesses]\nt3 = "{binary}"\n')
+
+    def test_a_t3_critic_probe_lists_threads_and_passes_on_exit_zero(self):
+        probe = self.t3(0)
+        self.assertEqual(self.received(),
+                         [["thread", "list", "--project", "holophyte-trial"]])
+        self.assertTrue(probe.ok)
+
+    def test_a_t3_critic_probe_failing_tries_the_critic_fallback(self):
+        fallback = self.root / "critic-fallback"
+        fake_harness(fallback, self.calls, "ready", 0)
+        probe = self.t3(1, f'[agents]\ncritic_fallback = "{fallback}"\n')
+        self.assertTrue(probe.ok)
+        self.assertEqual(probe.command[0], str(fallback))
+
+    def test_a_codex_critic_probe_still_needs_the_witness_word(self):
+        codex = self.root / "codex"
+        for said, passed in (("ready", True), ("hello", False)):
+            with self.subTest(said=said):
+                fake_harness(codex, self.calls, said, 0)
+                probe = self.probe(f'[agents.critic]\n[harnesses]\n'
+                                   f'codex = "{codex}"\n')
+                self.assertEqual(self.received()[-1][-1],
+                                 holophyte.agents.probes.PROBE_GOAL)
+                self.assertEqual(probe.ok, passed)
+
+    def test_a_claude_sdk_critic_probe_still_needs_the_witness_word(self):
+        for said, passed in (("ready", True), ("hello", False)):
+            with self.subTest(said=said):
+                with patch.object(holophyte.agents.probes, "run_turn",
+                                  return_value=(0, said, None)) as turn:
+                    probe = self.probe('[agents.critic]\n'
+                                       'harness = "claude-sdk"\n')
+                self.assertEqual(turn.call_args.args[1],
+                                 holophyte.agents.probes.PROBE_GOAL)
+                self.assertEqual(probe.ok, passed)
 
 
 if __name__ == "__main__":
