@@ -266,6 +266,7 @@ test("hovering a waiting point draws a full-height guide through that point's x,
   fireEvent.mouseLeave(third);
   expect(container.querySelector("[data-guide]")).toBeNull();
   fireEvent.focus(third);
+  expect(container.querySelector("[data-guide]")).not.toBeNull();
   fireEvent.blur(third);
   expect(container.querySelector("[data-guide]")).toBeNull();
 });
