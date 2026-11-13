@@ -6,6 +6,7 @@ import { BarChart, Change, LineChart } from "../../src/app/components/FlowCharts
 import { Section } from "../../src/app/components/Section";
 import { StageChip } from "../../src/app/components/StageChip";
 import { StateDot } from "../../src/app/components/StateDot";
+import { flowWeekly } from "../../src/app/flow";
 import { STATES, type State } from "../../src/app/state";
 
 afterEach(cleanup);
@@ -199,4 +200,16 @@ test("a weekly change is green when the number moved the good way and the accent
   expect(mergedChange.classList.contains("text-live")).toBe(true);
   expect(waitingChange.textContent).toBe("+5 pts vs the week before");
   expect(waitingChange.classList.contains("text-accent")).toBe(true);
+});
+
+test("a week with no merges has no interventions count, so the All projects interventions line breaks there", () => {
+  const weeks = [1, 0, 1].map((merged, index) => ({
+    start_ms: SIX_WEEKS[index]!,
+    merged,
+    rounds_median: null,
+    interventions: [2, 0, 1][index]!,
+    hours: { working: 1, waiting: 1, operator: 0 },
+  }));
+  const flow = { now: SIX_WEEKS[3]!, weeks, phases: {}, waits: { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 }, reverted: null };
+  expect(flowWeekly([flow]).interventions).toEqual([2, null, 1]);
 });

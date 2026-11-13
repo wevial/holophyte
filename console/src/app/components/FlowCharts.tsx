@@ -68,7 +68,7 @@ function Chart({ title, note, starts, format, top, values, none, children }: Cha
   const ticks = [top, top / 2, 0];
   const spoken = values.map((value, index) => `${weekLabel(starts[index]!)} ${value == null ? none : format(value)}`).join(", ");
   return (
-    <figure role="img" aria-label={`${title} ${note}: ${spoken}`} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
+    <figure role="img" aria-label={`${title} ${note}: ${spoken}`} data-chart={title} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
       <figcaption aria-hidden="true" className="flex items-baseline justify-between gap-3">
         <span className="font-sans text-[13px] font-semibold text-ink">{title}</span>
         <span className="font-sans text-[11.5px] text-ink-3">{note}</span>
