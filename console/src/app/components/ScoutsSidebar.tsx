@@ -108,7 +108,7 @@ function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }
         <span className="mt-[2px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span className="flex min-w-0 flex-col gap-[5px]">
           <span data-cell="title" className="line-clamp-2 font-sans text-[14px] font-semibold leading-[1.3] text-ink">{row.title}</span>
-          <span data-scout-row-facts className={`${MONO} [overflow-wrap:anywhere]`}>
+          <span data-scout-row-facts className={`${MONO} ${outcome.kind === "failed" ? "truncate" : "[overflow-wrap:anywhere]"}`}>
             {row.kind}{" · "}{took}{" · "}{dayTime(row.started_ms ?? row.created_ms)}
             {!empty && <>{" · "}<Outcome outcome={outcome} /></>}
           </span>
