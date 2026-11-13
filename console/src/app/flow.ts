@@ -36,7 +36,7 @@ function median(values: number[]): number | null {
 }
 
 /** The median of a flow's weekly round medians, its weeks without a merge left out. */
-export function flowRounds(flow: Flow): number | null {
+function flowRounds(flow: Flow): number | null {
   return median(flow.weeks.flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median])));
 }
 
