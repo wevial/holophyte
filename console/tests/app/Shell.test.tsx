@@ -500,11 +500,11 @@ test("picking a project in the Flow dropdown shows only its host's numbers and p
 });
 
 test("Biggest waits leads with the largest group, and approval carries the by design tag", async () => {
-  const waits = { ...NO_WAITS, approval: 40, pending_checks: 12, thread: 3 };
+  const waits = { ...NO_WAITS, approval: 40, pending_checks: 3, thread: 12 };
   await mount("#/flow?project=demo", flowDaemons(flowOf([{ merged: 1, working: 1, waiting: 55, operator: 0 }], waits), writerFlow));
   await act(settle);
   const rows = within(screen.getByRole("list", { name: "Biggest waits" })).getAllByRole("listitem");
-  expect(rows.map((row) => row.getAttribute("data-wait"))).toEqual(["approval", "pending_checks", "thread"]);
+  expect(rows.map((row) => row.getAttribute("data-wait"))).toEqual(["approval", "thread", "pending_checks"]);
   expect(within(rows[0]!).getByText("by design")).toBeTruthy();
   expect(rows.slice(1).some((row) => row.textContent!.includes("by design"))).toBe(false);
 });
