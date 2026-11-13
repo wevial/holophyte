@@ -14,6 +14,7 @@ import {
   formatRounds,
   oneDecimal,
   WAIT_WORDS,
+  weeklyTips,
   type FlowNumbers,
   type FlowWeekly,
 } from "../flow";
@@ -74,18 +75,19 @@ const tenths = (value: number) => value.toFixed(1);
 
 function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: boolean }) {
   const { starts } = weekly;
+  const tips = weeklyTips(weekly, allProjects);
   return (
     <section aria-labelledby="flow-weeks" className="flex flex-col gap-3">
       <h2 id="flow-weeks" className={H2}>Week by week</h2>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-px border border-rule bg-rule">
-        <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} />
-        <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} />
+        <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} tip={tips.merged} />
+        <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} tip={tips.waiting} />
         {allProjects ? (
-          <LineChart title="Interventions" note="per week" starts={starts} values={weekly.interventions} format={oneDecimal} />
+          <LineChart title="Interventions" note="per week" starts={starts} values={weekly.interventions} format={oneDecimal} tip={tips.interventions} />
         ) : (
-          <LineChart title="Review rounds per merge" note="median" starts={starts} values={weekly.rounds} format={oneDecimal} />
+          <LineChart title="Review rounds per merge" note="median" starts={starts} values={weekly.rounds} format={oneDecimal} tip={tips.rounds} />
         )}
-        <LineChart title="Interventions per merge" note="per week" starts={starts} values={weekly.interventionsPerMerge} format={tenths} />
+        <LineChart title="Interventions per merge" note="per week" starts={starts} values={weekly.interventionsPerMerge} format={tenths} tip={tips.perMerge} />
       </div>
     </section>
   );
