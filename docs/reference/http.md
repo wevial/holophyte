@@ -513,9 +513,10 @@ entered it, plus `merge_gate` time entered after a "behind main" merge
 refusal. The groups are `pending_checks`, `checks_failing`, `thread`,
 `rounds_used`, `behind_main`, `main_red`, `approval` and `other`.
 
-`reverted` counts the factory merges of the last 30 days as the
-`reverts 30d` line of `--report` does: `count` reverted within 14 days of
-`merged` merges found on `main`. It is null when `git log main` fails.
+`reverted` counts the same merges as `weeks`: `merged` is the sum of the
+weekly `merged` values, and `count` is those whose merge commit a `git
+revert` on `main` reverted within 14 days. A merge with no recorded merge
+commit counts as not reverted. It is null when `git log main` fails.
 
 A `weeks` that is not an integer from 1 to 26 is 400 with an `error`.
 

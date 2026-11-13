@@ -31,11 +31,12 @@ function share(part: number, whole: number): number {
   return whole > 0 ? (100 * part) / whole : 0;
 }
 
-function Figure({ label, children, tone = "text-ink" }: { label: string; children: ReactNode; tone?: string }) {
+function Figure({ label, children, tone = "text-ink", note }: { label: string; children: ReactNode; tone?: string; note?: string }) {
   return (
     <div className="flex flex-col gap-2 px-4 py-4 not-first:border-l not-first:border-rule">
       <dt className={LABEL}>{label}</dt>
       <dd data-number={label} className={`font-mono text-[26px] font-semibold leading-[1.15] ${tone}`}>{children}</dd>
+      {note && <dd className="font-sans text-[12px] leading-[1.5] text-ink-3">{note}</dd>}
     </div>
   );
 }
@@ -47,7 +48,7 @@ function Numbers({ numbers }: { numbers: FlowNumbers }) {
       <Figure label="Waiting" tone="text-wait">{numbers.waitingShare == null ? "–" : `${numbers.waitingShare}%`}</Figure>
       <Figure label="Rounds per merge">{formatRounds(numbers.rounds)}</Figure>
       <Figure label="Interventions per merge">{formatPerMerge(numbers.interventionsPerMerge)}</Figure>
-      <Figure label="Reverted" tone="text-live">{formatReverted(numbers.reverted)}</Figure>
+      <Figure label="Reverted" tone="text-live" note="of these merges, within 14 days">{formatReverted(numbers.reverted)}</Figure>
     </dl>
   );
 }
@@ -151,7 +152,7 @@ function ProjectsTable({ projects, scope, pick }: { projects: ProjectFlow[]; sco
         </tbody>
       </table>
       <p className="font-sans text-[12px] leading-[1.5] text-ink-3">
-        Rounds is the median review rounds per merge. Reverted counts factory merges reverted within 14 days, over the last 30 days.
+        Rounds is the median review rounds per merge. Reverted counts which of these merges were reverted within 14 days.
       </p>
     </section>
   );

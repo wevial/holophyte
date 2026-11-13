@@ -7,7 +7,7 @@ from time import time
 from typing import TypedDict
 
 import store.read
-from holophyte.cli.report import revert_counts
+from holophyte.cli.report import REVERT_SPAN, is_reverted, main_log_since
 from holophyte.serve.day_log import THREAD_PARK
 from holophyte.serve.serve_runs import (
     INTEGER,
@@ -219,8 +219,9 @@ def flow(project, query, now=None):
     conn = store.read.open_readonly(project.store_path)
     try:
         merged = conn.execute(
-            "SELECT endedAt, reviewRoundCount FROM runs WHERE outcome = 'merged'"
-            " AND endedAt BETWEEN ? AND ?", (since, now)).fetchall()
+            "SELECT endedAt, reviewRoundCount, mergeSha FROM runs"
+            " WHERE outcome = 'merged' AND endedAt BETWEEN ? AND ?",
+            (since, now)).fetchall()
         interventions = conn.execute(
             "SELECT at FROM interventions WHERE at BETWEEN ? AND ?",
             (since, now)).fetchall()
@@ -229,14 +230,23 @@ def flow(project, query, now=None):
             " FROM runs r LEFT JOIN runEvents e ON e.runId = r.id"
             " AND e.kind = 'phase_change' WHERE r.startedAt BETWEEN ? AND ?"
             " ORDER BY r.id, e.seq", (since, now)).fetchall()
-        reverts = revert_counts(conn, project.path, now)
     finally:
         conn.close()
-    keys, count = (reverts or {}).get("30d", (None, None))
     return 200, {"now": now,
                  **flow_weeks(since, weeks, merged, interventions, events, now),
-                 "reverted": (None if keys is None
-                              else {"count": len(keys), "merged": count})}
+                 "reverted": flow_reverted(project.path, since, merged)}
+
+
+def flow_reverted(repo, since, merged):
+    shas = [sha for _, _, sha in merged if sha]
+    log = main_log_since(repo, since - REVERT_SPAN) if shas else []
+    if log is None:
+        return None
+    merged_at = {sha: at for sha, at, _ in log}
+    return {"count": sum(sha in merged_at
+                         and is_reverted(sha, merged_at[sha], log)
+                         for sha in shas),
+            "merged": len(merged)}
 
 
 def flow_weeks(since, weeks, merged, interventions, events, now):
@@ -247,7 +257,7 @@ def flow_weeks(since, weeks, merged, interventions, events, now):
              "interventions": 0,
              "hours": {"working": 0, "waiting": 0, "operator": 0}}
             for index in range(weeks)]
-    for ended_at, rounds in merged:
+    for ended_at, rounds, _ in merged:
         week_of(ended_at)["rounds"].append(rounds)
     for (at,) in interventions:
         week_of(at)["interventions"] += 1
