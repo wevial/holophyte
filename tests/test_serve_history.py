@@ -2,6 +2,8 @@
 
 Run: python3 -m unittest discover -s tests -p 'test_serve_history.py' -v
 """
+import os
+import subprocess
 import unittest
 from time import time
 
@@ -384,6 +386,67 @@ class FlowTests(ServeTestCase):
                 code, _, body = self.request("GET", f"/flow?weeks={weeks}")
                 self.assertEqual(code, 400)
                 self.assertIn("weeks", body["error"])
+
+
+class FlowRevertTests(ServeTestCase):
+    def setUp(self):
+        super().setUp()
+        self.now = int(time() * 1000)
+        self.git("init", "-q", "-b", "main")
+        self.commit_at(self.now - 60 * DAY, "base")
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        self.project_id = store.tickets.ensure_project(
+            self.conn, "team-1", self.target)
+
+    def git(self, *args, at=None):
+        env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                   GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        if at is not None:
+            stamp = f"@{at // 1000} +0000"
+            env.update(GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
+        return subprocess.run(["git", *args], cwd=self.target, env=env,
+                              check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    def commit_at(self, at, name):
+        (self.target / name).write_text(name)
+        self.git("add", name)
+        self.git("commit", "-q", "-m", name, at=at)
+        return self.git("rev-parse", "HEAD")
+
+    def merge(self, n, at, with_commit=True):
+        sha = self.commit_at(at, f"ticket-{n}") if with_commit else None
+        ticket = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id=f"issue-{n}",
+            linear_identifier=f"KO-{n}", title=f"ticket {n}")
+        run = store.claim(self.conn, self.project_id, ticket, now=at - MIN)
+        finish_run(self.conn, run, "merged", now=at, merge_sha=sha)
+        return sha
+
+    def flow(self, weeks):
+        self.conn.commit()
+        self.start()
+        code, _, body = self.request("GET", f"/flow?weeks={weeks}")
+        self.assertEqual(code, 200)
+        return body
+
+    def test_reverted_counts_the_merges_of_the_requested_weeks(self):
+        self.merge(1, self.now - 25 * DAY)
+        for n, days in ((2, 20), (3, 16), (5, 5), (6, 1)):
+            self.merge(n, self.now - days * DAY)
+        reverted = self.merge(4, self.now - 10 * DAY)
+        self.git("revert", "--no-edit", reverted, at=self.now - 6 * DAY)
+        body = self.flow(3)
+        self.assertEqual(body["reverted"], {"count": 1, "merged": 5})
+        self.assertEqual(sum(week["merged"] for week in body["weeks"]), 5)
+
+    def test_a_merged_run_without_a_merge_commit_counts_as_not_reverted(self):
+        self.merge(1, self.now - 3 * DAY, with_commit=False)
+        reverted = self.merge(2, self.now - 2 * DAY)
+        self.git("revert", "--no-edit", reverted, at=self.now - DAY)
+        self.assertEqual(self.flow(1)["reverted"], {"count": 1, "merged": 2})
 
 
 if __name__ == "__main__":

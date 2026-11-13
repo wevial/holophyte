@@ -41,7 +41,7 @@ interface Trend {
   values: (number | null)[];
 }
 
-function Figure({ label, children, tone = "text-ink", trend }: { label: string; children: ReactNode; tone?: string; trend?: Trend }) {
+function Figure({ label, children, tone = "text-ink", trend, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; note?: string }) {
   return (
     <div className="flex flex-col gap-2 px-4 py-4 not-first:border-l not-first:border-rule">
       <dt className={LABEL}>{label}</dt>
@@ -50,6 +50,7 @@ function Figure({ label, children, tone = "text-ink", trend }: { label: string; 
         {trend && <Sparkline values={trend.values} />}
       </dd>
       {trend && <Change number={trend.number} values={trend.values} />}
+      {note && <dd className="font-sans text-[12px] leading-[1.5] text-ink-3">{note}</dd>}
     </div>
   );
 }
@@ -65,7 +66,7 @@ function Numbers({ numbers, weekly }: { numbers: FlowNumbers; weekly: FlowWeekly
       <Figure label="Interventions per merge" trend={{ number: "interventions", values: weekly.interventionsPerMerge }}>
         {formatPerMerge(numbers.interventionsPerMerge)}
       </Figure>
-      <Figure label="Reverted" tone="text-live">{formatReverted(numbers.reverted)}</Figure>
+      <Figure label="Reverted" tone="text-live" note="of these merges, within 14 days">{formatReverted(numbers.reverted)}</Figure>
     </dl>
   );
 }
@@ -192,7 +193,7 @@ function ProjectsTable({ projects, scope, pick }: { projects: ProjectFlow[]; sco
         </tbody>
       </table>
       <p className="font-sans text-[12px] leading-[1.5] text-ink-3">
-        Rounds is the median review rounds per merge. Reverted counts factory merges reverted within 14 days, over the last 30 days.
+        Rounds is the median review rounds per merge. Reverted counts which of these merges were reverted within 14 days.
       </p>
     </section>
   );
