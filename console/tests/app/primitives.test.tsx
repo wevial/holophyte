@@ -213,3 +213,10 @@ test("a week with no merges has no interventions count, so the All projects inte
   const flow = { now: SIX_WEEKS[3]!, weeks, phases: {}, waits: { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 }, reverted: null };
   expect(flowWeekly([flow]).interventions).toEqual([2, null, 1]);
 });
+
+test("a per-merge line far below one keeps its gridlines at distinct one-decimal values", () => {
+  const { container } = render(
+    <LineChart title="Interventions per merge" note="per week" starts={SIX_WEEKS} values={[0.01, 0.02, 0, 0.01, 0, 0.01]} format={(value) => value.toFixed(1)} />,
+  );
+  expect([...container.querySelectorAll("[data-grid]")].map((line) => line.getAttribute("data-grid"))).toEqual(["1.0", "0.5", "0.0"]);
+});

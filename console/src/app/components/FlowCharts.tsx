@@ -6,9 +6,9 @@ const BAR_SHARE = 0.6;
 
 type Point = [number, number];
 
-/** The smallest 1, 2 or 5 times a power of ten at or above `max`. */
+/** The smallest 1, 2 or 5 times a power of ten at or above `max`, never below 1 so one decimal tells each gridline apart. */
 function roundedTop(max: number): number {
-  if (!(max > 0)) return 1;
+  if (!(max > 1)) return 1;
   const power = 10 ** Math.floor(Math.log10(max));
   return (STEPS.find((step) => step * power >= max) ?? 10) * power;
 }
