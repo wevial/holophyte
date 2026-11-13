@@ -18,10 +18,12 @@ from fake_agent import (  # noqa: E402 - after sys.path
     APPROVE,
     IMPLEMENT,
     REQUEST_CHANGES,
+    REVIEW_ROLES,
     Commit,
     FakeAgent,
     Idle,
     Reply,
+    _git,
 )
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
@@ -96,6 +98,22 @@ class PausingCommit:
         finally:
             conn.close()
         return reply
+
+
+class StaleApproval:
+    """A review that cites an approval at the first commit of the gate test,
+    which the witness turns have changed since."""
+
+    role = REVIEW_ROLES
+
+    def __init__(self, repo):
+        self.repo = repo
+
+    def play(self, cwd, turn):
+        first = _git(self.repo, "log", "--all", "--reverse", "--format=%H",
+                     "--", "tests/test_gate.py").split()[0]
+        return (f"CRITERION 1: met \u2014 approval at {first[:12]}; "
+                "tests/test_gate.py::test_it_gates\nVERDICT: APPROVE")
 
 
 class WitnessTurns(LoopFixture):
@@ -190,6 +208,17 @@ class WitnessTurns(LoopFixture):
         goal = fake.turns[5].goal
         self.assertIn(f"witness pre-check found these gaps before this review;"
                       f" judge each criterion yourself:\n{GAP}\n", goal)
+
+    def test_a_stale_approval_rereview_keeps_the_open_gap(self):
+        fake = self.run_task(gated(), gated(1), gated(2),
+                             StaleApproval(self.target), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "implement",
+                                      "review", "review"])
+        self.assertEqual(len(self.summaries("stale_approval_rereview")), 1)
+        self.assertIn(f"witness pre-check found these gaps before this review;"
+                      f" judge each criterion yourself:\n{GAP}\n",
+                      fake.turns[4].goal)
 
     def test_a_resumed_run_takes_only_the_turns_its_paused_run_left(self):
         self.run_task(gated(), PausingCommit(self.db, gated(1)))

@@ -212,13 +212,13 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
-              pending, ok, out, verify_cmd):
+              pending, ok, out, verify_cmd, witness):
     if pending.get("stale"):
         stale_again(branch, sha, stale)
     stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
     boundary(conn, run_id, "verifying", rnd=rnd + 1, stale=stale)
     return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale,
-            "verify_cmd": verify_cmd}
+            "verify_cmd": verify_cmd, "witness": witness}
 
 
 def _steer_at_top(project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
@@ -346,7 +346,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             if stale:
                 pending = _rereview(conn, run_id, provider, task_id, branch,
                                     sha, rnd, stale, pending, ok, out,
-                                    verify_cmd)
+                                    verify_cmd, witness)
                 continue
 
         _check_run_cap(project, conn, run_id, budget_min, sha)
