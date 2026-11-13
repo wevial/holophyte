@@ -487,6 +487,14 @@ test("on All projects the Flow numbers sum both hosts: merged adds, and waiting 
   expect(figure("Reverted")).toBe("0 of 6");
 });
 
+test("the Reverted figure says it counts the page's merges reverted within 14 days", async () => {
+  await mount("#/flow", flowDaemons(demoFlow, writerFlow));
+  await act(settle);
+  const reverted = document.querySelector('[data-number="Reverted"]')!.parentElement!;
+  expect(within(reverted).getByText("of these merges, within 14 days")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("30 days");
+});
+
 test("on All projects a host whose revert count is unknown leaves the summed Reverted unknown", async () => {
   await mount("#/flow", flowDaemons(demoFlow, { ...writerFlow, reverted: null }));
   await act(settle);
