@@ -45,21 +45,37 @@ export interface FlowSearch {
   to?: string;
 }
 
+function dayEnd(day: string): Date {
+  const end = dayStart(day);
+  end.setDate(end.getDate() + 1);
+  return end;
+}
+
+function wholeDays(from: string, to: string): number {
+  return Math.round((dayEnd(to).getTime() - dayStart(from).getTime()) / 86_400_000);
+}
+
+function endedRange(from: string | undefined, to: string | undefined): boolean {
+  return from != null && to != null && wholeDays(from, to) >= 7 && dayEnd(to).getTime() <= Date.now();
+}
+
+function lastEndedDay(): string {
+  const day = new Date();
+  day.setDate(day.getDate() - 1);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+}
+
 export function validateFlowSearch(search: Record<string, unknown>): FlowSearch {
   const from = validDay(search.from);
   const to = validDay(search.to);
-  if (from != null && to != null && from <= to) return { from, to };
+  if (endedRange(from, to)) return { from, to };
   const range = RANGES.find((each) => each.value === search.range && each.value !== DEFAULT_RANGE);
   return range ? { range: range.value } : {};
 }
 
-function flowWindow({ range, from, to }: FlowSearch, now: number): FlowWindow {
+function flowWindow({ range, from, to }: FlowSearch): FlowWindow {
   if (from == null || to == null) return { weeks: RANGES.find((each) => each.value === (range ?? DEFAULT_RANGE))!.weeks };
-  const end = dayStart(to);
-  end.setDate(end.getDate() + 1);
-  const days = Math.round((end.getTime() - dayStart(from).getTime()) / 86_400_000);
-  const weeks = Math.min(Math.max(Math.floor(days / 7), 1), WEEKS_CAP);
-  return end.getTime() > now ? { weeks } : { weeks, until: end.getTime() };
+  return { weeks: Math.min(Math.floor(wholeDays(from, to) / 7), WEEKS_CAP), until: dayEnd(to).getTime() };
 }
 
 const SPLIT = [
@@ -256,7 +272,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
   const [draft, setDraft] = useState({ from: "", to: "" });
   const custom = search.from != null && search.to != null;
   const preset = search.range ?? DEFAULT_RANGE;
-  const field = "min-h-11 border border-rule bg-paper px-2 font-mono text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
+  const field = "min-h-11 w-40 border border-rule bg-paper px-2 font-mono text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
   const toggle = () => {
     setDraft({ from: search.from ?? "", to: search.to ?? "" });
     setOpen(!open);
@@ -264,7 +280,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
   const pickDay = (change: Partial<typeof draft>) => {
     const next = { ...draft, ...change };
     setDraft(next);
-    if (next.from !== "" && next.to !== "" && next.from <= next.to) choose({ range: undefined, from: next.from, to: next.to });
+    if (endedRange(next.from || undefined, next.to || undefined)) choose({ range: undefined, from: next.from, to: next.to });
   };
   return (
     <div ref={box} className="relative flex flex-col gap-1.5">
@@ -298,9 +314,9 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
             </label>
             <label className="flex items-center justify-between gap-3">
               To
-              <input type="date" value={draft.to} min={draft.from || undefined} className={field} onChange={(event) => pickDay({ to: event.target.value })} />
+              <input type="date" value={draft.to} min={draft.from || undefined} max={lastEndedDay()} className={field} onChange={(event) => pickDay({ to: event.target.value })} />
             </label>
-            <span className="text-[12px] leading-[1.5] text-ink-3">Whole weeks back from To, up to 26.</span>
+            <span className="text-[12px] leading-[1.5] text-ink-3">Whole weeks back from To, one to 26; To is a past day.</span>
           </div>
         </div>
       )}
@@ -320,7 +336,7 @@ export function FlowPage() {
   const { project } = search;
   const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
-  const answers = useFlows(hosts, deps, flowWindow(search, Date.now())).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
+  const answers = useFlows(hosts, deps, flowWindow(search)).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
   const inScope = new Set(scopedHosts(hosts, project));
   const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;

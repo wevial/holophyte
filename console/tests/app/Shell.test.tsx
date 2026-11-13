@@ -560,3 +560,22 @@ test("choosing From and To puts them in the address and asks for the whole weeks
   const last = asked.at(-1)!.searchParams;
   expect([last.get("weeks"), last.get("until")]).toEqual(["6", String(new Date(2026, 10, 13).getTime())]);
 });
+
+test("a From and To under a whole week, or with a To day not yet ended, stay out of the address and the asks", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  const later = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+  const future = `${later.getFullYear()}-${String(later.getMonth() + 1).padStart(2, "0")}-${String(later.getDate()).padStart(2, "0")}`;
+  for (const [from, to] of [["2026-11-12", "2026-11-12"], ["2026-11-01", future]]) {
+    const asked: URL[] = [];
+    await mount("#/flow", askedFlows(asked));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Range" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: from } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: to } });
+    await flush();
+    const search = new URLSearchParams(window.location.hash.split("?")[1]);
+    expect([search.get("from"), search.get("to")]).toEqual([null, null]);
+    expect(asked.every((url) => url.searchParams.get("weeks") === "6" && !url.searchParams.has("until"))).toBe(true);
+    cleanup();
+  }
+});
