@@ -25,6 +25,10 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+function place(index: number, count: number, value: number, top: number) {
+  return { left: `${weekX(index, count)}%`, top: `${plotY(value, top)}%` };
+}
+
 function segments(values: (number | null)[], top: number): Point[][] {
   const runs: Point[][] = [];
   let current: Point[] = [];
@@ -53,10 +57,6 @@ function areaPath(points: Point[]): string {
   return `${smoothPath(points)} L${points.at(-1)![0]} 100 L${points[0]![0]} 100 Z`;
 }
 
-function spoken(starts: number[], values: (number | null)[], format: (value: number) => string, none: string): string {
-  return values.map((value, index) => `${weekLabel(starts[index]!)} ${value == null ? none : format(value)}`).join(", ");
-}
-
 interface ChartProps {
   title: string;
   note: string;
@@ -64,21 +64,23 @@ interface ChartProps {
   format: (value: number) => string;
 }
 
-function Chart({ title, note, starts, format, top, label, children }: ChartProps & { top: number; label: string; children: ReactNode }) {
+function Chart({ title, note, starts, format, top, values, none, children }: ChartProps & { top: number; values: (number | null)[]; none: string; children: ReactNode }) {
+  const ticks = [top, top / 2, 0];
+  const spoken = values.map((value, index) => `${weekLabel(starts[index]!)} ${value == null ? none : format(value)}`).join(", ");
   return (
-    <figure role="img" aria-label={label} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
+    <figure role="img" aria-label={`${title} ${note}: ${spoken}`} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
       <figcaption aria-hidden="true" className="flex items-baseline justify-between gap-3">
         <span className="font-sans text-[13px] font-semibold text-ink">{title}</span>
         <span className="font-sans text-[11.5px] text-ink-3">{note}</span>
       </figcaption>
       <div aria-hidden="true" className="grid grid-cols-[2.5rem_1fr] grid-rows-[7.5rem_auto] gap-x-1 gap-y-1.5">
         <div className="relative">
-          {[top, top / 2, 0].map((value) => (
+          {ticks.map((value) => (
             <span key={value} style={{ top: `${plotY(value, top)}%` }} className="absolute left-0 -translate-y-1/2 font-mono text-[10.5px] text-ink-3">{format(value)}</span>
           ))}
         </div>
         <div className="relative">
-          {[top, top / 2, 0].map((value) => (
+          {ticks.map((value) => (
             <span key={value} data-grid={format(value)} style={{ top: `${plotY(value, top)}%` }} className="absolute inset-x-0 border-t border-dashed border-rule" />
           ))}
           {children}
@@ -99,7 +101,7 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
   const width = (100 / values.length) * BAR_SHARE;
   const latest = values.length - 1;
   return (
-    <Chart {...props} top={top} label={`${props.title} ${props.note}: ${spoken(props.starts, values, props.format, "none")}`}>
+    <Chart {...props} top={top} values={values} none="none">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
         {values.map((value, index) => {
           const y = round(plotY(value, top));
@@ -118,7 +120,7 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
       {values.map((value, index) => (
         <span
           key={index}
-          style={{ left: `${weekX(index, values.length)}%`, top: `${plotY(value, top)}%` }}
+          style={place(index, values.length, value, top)}
           className={`absolute -translate-x-1/2 -translate-y-[calc(100%+3px)] font-mono text-[10.5px] ${index === latest ? "font-semibold text-ink" : "text-ink-3"}`}
         >
           {props.format(value)}
@@ -134,7 +136,7 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
   const latest = values.length - 1;
   const latestValue = values[latest];
   return (
-    <Chart {...props} top={top} label={`${props.title} ${props.note}: ${spoken(props.starts, values, props.format, "no merges")}`}>
+    <Chart {...props} top={top} values={values} none="no merges">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
         {runs.map((points) => (
           <path key={`fill-${points[0]![0]}`} d={areaPath(points)} className="fill-wait opacity-15" />
@@ -148,14 +150,14 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
           <span
             key={index}
             data-dot={index}
-            style={{ left: `${weekX(index, values.length)}%`, top: `${plotY(value, top)}%` }}
+            style={place(index, values.length, value, top)}
             className={`absolute size-2 -translate-1/2 rounded-full border-[1.5px] border-wait ${index === latest ? "bg-wait" : "bg-paper"}`}
           />
         ),
       )}
       {latestValue != null && (
         <span
-          style={{ left: `${weekX(latest, values.length)}%`, top: `${plotY(latestValue, top)}%` }}
+          style={place(latest, values.length, latestValue, top)}
           className="absolute -translate-x-full -translate-y-[calc(100%+6px)] font-mono text-[11px] font-semibold text-ink"
         >
           {props.format(latestValue)}
@@ -179,7 +181,7 @@ export function Sparkline({ values }: { values: (number | null)[] }) {
         ))}
       </svg>
       {latest != null && (
-        <span style={{ left: `${weekX(scaled.length - 1, scaled.length)}%`, top: `${plotY(latest, span)}%` }} className="absolute size-1.5 -translate-1/2 rounded-full bg-wait" />
+        <span style={place(scaled.length - 1, scaled.length, latest, span)} className="absolute size-1.5 -translate-1/2 rounded-full bg-wait" />
       )}
     </span>
   );

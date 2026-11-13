@@ -104,7 +104,7 @@ export function flowSpan(flows: Flow[]): string | null {
   return `${count} ${weeks === 1 ? "week" : "weeks"}, ${DAY_MONTH.format(Math.min(...starts))} to ${DAY_MONTH.format(end)}`;
 }
 
-function oneDecimal(value: number): string {
+export function oneDecimal(value: number): string {
   return String(Math.round(value * 10) / 10);
 }
 

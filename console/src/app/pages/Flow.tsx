@@ -12,6 +12,7 @@ import {
   formatPerMerge,
   formatReverted,
   formatRounds,
+  oneDecimal,
   WAIT_WORDS,
   type FlowNumbers,
   type FlowWeekly,
@@ -70,7 +71,6 @@ function Numbers({ numbers, weekly }: { numbers: FlowNumbers; weekly: FlowWeekly
 
 const percent = (value: number) => `${Math.round(value)}%`;
 const tenths = (value: number) => value.toFixed(1);
-const short = (value: number) => String(Math.round(value * 10) / 10);
 
 function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: boolean }) {
   const { starts } = weekly;
@@ -78,12 +78,12 @@ function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: 
     <section aria-labelledby="flow-weeks" className="flex flex-col gap-3">
       <h2 id="flow-weeks" className={H2}>Week by week</h2>
       <div className="grid grid-cols-3 gap-px border border-rule bg-rule max-[960px]:grid-cols-2 max-[720px]:grid-cols-1">
-        <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={short} />
+        <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} />
         <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} />
         {allProjects ? (
-          <LineChart title="Interventions" note="per week" starts={starts} values={weekly.interventions} format={short} />
+          <LineChart title="Interventions" note="per week" starts={starts} values={weekly.interventions} format={oneDecimal} />
         ) : (
-          <LineChart title="Review rounds per merge" note="median" starts={starts} values={weekly.rounds} format={short} />
+          <LineChart title="Review rounds per merge" note="median" starts={starts} values={weekly.rounds} format={oneDecimal} />
         )}
         <LineChart title="Interventions per merge" note="per week" starts={starts} values={weekly.interventionsPerMerge} format={tenths} />
       </div>
