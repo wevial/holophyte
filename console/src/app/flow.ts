@@ -100,7 +100,7 @@ export function flowSpan(flows: Flow[]): string | null {
   if (starts.length === 0) return null;
   const weeks = Math.max(...flows.map((flow) => flow.weeks.length));
   const count = COUNT_WORDS[weeks] ?? String(weeks);
-  const end = Math.max(...flows.map((flow) => flow.now));
+  const end = Math.max(...flows.map((flow) => flow.now)) - 1;
   return `${count} ${weeks === 1 ? "week" : "weeks"}, ${DAY_MONTH.format(Math.min(...starts))} to ${DAY_MONTH.format(end)}`;
 }
 

@@ -531,7 +531,11 @@ function askedFlows(asked: URL[]): Fetch {
     const query = new URL(url);
     asked.push(query);
     const weeks = Number(query.searchParams.get("weeks"));
-    return Response.json(flowOf(Array.from({ length: weeks }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 }))));
+    const flow = flowOf(Array.from({ length: weeks }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 })));
+    const until = query.searchParams.get("until");
+    if (until == null) return Response.json(flow);
+    const end = Number(until);
+    return Response.json({ ...flow, now: end, weeks: flow.weeks.map((week, index) => ({ ...week, start_ms: end - (weeks - index) * WEEK })) });
   };
 }
 
@@ -559,6 +563,7 @@ test("choosing From and To puts them in the address and asks for the whole weeks
   expect([search.get("from"), search.get("to")]).toEqual(["2026-10-01", "2026-11-12"]);
   const last = asked.at(-1)!.searchParams;
   expect([last.get("weeks"), last.get("until")]).toEqual(["6", String(new Date(2026, 10, 13).getTime())]);
+  expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toEndWith(" to 12 November");
 });
 
 test("a From and To under a whole week, or with a To day not yet ended, stay out of the address and the asks", async () => {
