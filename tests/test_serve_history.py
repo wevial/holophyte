@@ -354,6 +354,28 @@ class FlowTests(ServeTestCase):
                           body["waits"]["checks_failing"],
                           body["waits"]["other"]), (1.0, 1.0, 0))
 
+    def test_a_claimed_run_with_no_phase_change_counts_its_waiting_time(self):
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="issue-1",
+                linear_identifier="KO-1", title="ticket 1",
+                acceptance_criteria=["Given 1, then it is worked"],
+                verification_commands=["echo ok"])
+            store.tickets.transition(conn, ticket, "in_flight")
+            store.claim(conn, project, ticket, now=self.now - 30 * MIN)
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/flow?weeks=1")
+        self.assertEqual(code, 200)
+        self.assertGreaterEqual(body["phases"]["claimed"], 0.5)
+        self.assertEqual(body["weeks"][0]["hours"]["waiting"],
+                         body["phases"]["claimed"])
+
     def test_weeks_outside_one_to_twenty_six_is_400_naming_it(self):
         self.seed()
         self.start()

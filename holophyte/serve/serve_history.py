@@ -226,8 +226,8 @@ def flow(project, query, now=None):
             (since, now)).fetchall()
         events = conn.execute(
             "SELECT r.id, r.startedAt, r.endedAt, e.at, e.summary"
-            " FROM runs r JOIN runEvents e ON e.runId = r.id"
-            " WHERE e.kind = 'phase_change' AND r.startedAt BETWEEN ? AND ?"
+            " FROM runs r LEFT JOIN runEvents e ON e.runId = r.id"
+            " AND e.kind = 'phase_change' WHERE r.startedAt BETWEEN ? AND ?"
             " ORDER BY r.id, e.seq", (since, now)).fetchall()
         reverts = revert_counts(conn, project.path, now)
     finally:
@@ -274,14 +274,17 @@ def flow_weeks(since, weeks, merged, interventions, events, now):
 def run_stays(events, now):
     runs = {}
     for run_id, started_at, ended_at, at, summary in events:
-        runs.setdefault(run_id, (started_at, ended_at, []))[2].append(
-            (at, summary))
+        changes = runs.setdefault(run_id, (started_at, ended_at, []))[2]
+        if at is not None:
+            changes.append((at, summary))
     for started_at, ended_at, changes in runs.values():
         yield from stays(started_at, ended_at, changes, now)
 
 
 def stays(started_at, ended_at, changes, now):
     phase, note, entered = None, None, started_at
+    if not changes:
+        phase = "claimed"
     for at, summary in changes:
         match = PHASE_CHANGE.match(summary)
         if match is None:
