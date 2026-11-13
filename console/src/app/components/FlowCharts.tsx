@@ -7,7 +7,7 @@ const BAR_SHARE = 0.6;
 type Point = [number, number];
 
 /** The smallest 1, 2 or 5 times a power of ten at or above `max`. */
-export function roundedTop(max: number): number {
+function roundedTop(max: number): number {
   if (!(max > 0)) return 1;
   const power = 10 ** Math.floor(Math.log10(max));
   return (STEPS.find((step) => step * power >= max) ?? 10) * power;
@@ -66,7 +66,7 @@ interface ChartProps {
 
 function Chart({ title, note, starts, format, top, label, children }: ChartProps & { top: number; label: string; children: ReactNode }) {
   return (
-    <figure role="img" aria-label={label} data-chart={title} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
+    <figure role="img" aria-label={label} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
       <figcaption aria-hidden="true" className="flex items-baseline justify-between gap-3">
         <span className="font-sans text-[13px] font-semibold text-ink">{title}</span>
         <span className="font-sans text-[11.5px] text-ink-3">{note}</span>
@@ -106,7 +106,6 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
           return (
             <rect
               key={index}
-              data-week={index}
               x={round(weekX(index, values.length) - width / 2)}
               y={y}
               width={round(width)}
@@ -156,7 +155,6 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
       )}
       {latestValue != null && (
         <span
-          data-latest
           style={{ left: `${weekX(latest, values.length)}%`, top: `${plotY(latestValue, top)}%` }}
           className="absolute -translate-x-full -translate-y-[calc(100%+6px)] font-mono text-[11px] font-semibold text-ink"
         >
@@ -174,7 +172,7 @@ export function Sparkline({ values }: { values: (number | null)[] }) {
   const scaled = values.map((value) => (value == null ? null : value - bottom));
   const latest = scaled.at(-1);
   return (
-    <span aria-hidden="true" data-sparkline className="relative block h-6 w-16 shrink-0">
+    <span aria-hidden="true" className="relative block h-6 w-16 shrink-0">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
         {segments(scaled, span).map((points) => (
           <path key={points[0]![0]} d={smoothPath(points)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-wait" />

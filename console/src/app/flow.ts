@@ -168,13 +168,13 @@ export function weekLabel(start: number): string {
 
 export type Better = "more" | "fewer";
 
-export interface WeeklyChange {
+interface WeeklyChange {
   text: string;
   tone: "good" | "bad" | "flat";
 }
 
 /** The latest week against the one before it, or null when either is unknown. */
-export function weeklyChange(values: (number | null)[], better: Better, unit = ""): WeeklyChange | null {
+export function weeklyChange(values: (number | null)[], better: Better, unit: string): WeeklyChange | null {
   const latest = values.at(-1);
   const before = values.at(-2);
   if (latest == null || before == null) return null;
