@@ -53,15 +53,10 @@ export function validateFlowSearch(search: Record<string, unknown>): FlowSearch 
   return range ? { range: range.value } : {};
 }
 
-function dayAfter(day: string): Date {
-  const next = dayStart(day);
-  next.setDate(next.getDate() + 1);
-  return next;
-}
-
 function flowWindow({ range, from, to }: FlowSearch, now: number): FlowWindow {
   if (from == null || to == null) return { weeks: RANGES.find((each) => each.value === (range ?? DEFAULT_RANGE))!.weeks };
-  const end = dayAfter(to);
+  const end = dayStart(to);
+  end.setDate(end.getDate() + 1);
   const days = Math.round((end.getTime() - dayStart(from).getTime()) / 86_400_000);
   const weeks = Math.min(Math.max(Math.floor(days / 7), 1), WEEKS_CAP);
   return end.getTime() > now ? { weeks } : { weeks, until: end.getTime() };
