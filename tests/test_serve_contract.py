@@ -40,6 +40,8 @@ from holophyte.serve.contract import (
     main,
 )
 from holophyte.serve.contract_emit import ContractError, json_schema
+from holophyte.serve.serve_history import Flow
+from tests.serve_fixture import ServeTestCase
 
 FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention", "prefs",
@@ -141,7 +143,8 @@ class GeneratedFilesTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in before
                                 if path.parent == SCHEMA_DIR),
                          [f"{stem}.schema.json" for stem in (
-                             "attention", "board", "findings", "history", "holds",
+                             "attention", "board", "findings", "flow", "history",
+                             "holds",
                              "host-attention", "host-status", "ledger",
                              "merge-queue", "path-matches", "peers", "prefs",
                              "run-asks",
@@ -327,6 +330,16 @@ class PinnedAnswerTests(unittest.TestCase):
         self.assertEqual(row["properties"]["resumed_as"],
                          {"anyOf": [{"type": "integer"}, {"type": "null"}]})
         self.assertNotIn("resumed_as", row["required"])
+
+
+class FlowAnswerTests(ServeTestCase):
+    def test_a_served_flow_answer_walks_clean_against_the_flow_type(self):
+        self.seed()
+        self.start()
+        code, _, body = self.request("GET", "/flow")
+        self.assertEqual(code, 200)
+        self.assertEqual(len(body["weeks"]), 6)
+        walk(body, Flow, "flow")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ those writing routes. A project with no store answers 503.
 `GET /attention` and `GET /prefs`, of the run routes `GET /runs/N`,
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
-`GET /shipped`, `GET /history`, `GET /holds`, `GET /ledger`, `GET /board`,
+`GET /shipped`, `GET /history`, `GET /flow`, `GET /holds`, `GET /ledger`, `GET /board`,
 `GET /tickets/KEY` and `GET /tickets?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
 and `GET /scouts/routes`, of `GET /merge-queue`, of `GET /config/path-matches`,
 of `GET /config/tracked-tree`, and of `POST /tickets/check`: one
@@ -474,6 +474,50 @@ non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
 `order`, `state` or `failure` value not listed above, is 400 with an
 `error` naming the parameter and any value it got. An `until` at or before
 `since` is 400 with `"until must be after since"`.
+
+## `GET /flow?weeks=N`
+
+The project's flow week by week: how much the factory merged and where its
+run time went. The console's Flow page reads it.
+
+```json
+{"now": 1750000000000,
+ "weeks": [
+  {"start_ms": 1749395200000, "merged": 2, "rounds_median": 1.5,
+   "interventions": 3,
+   "hours": {"working": 4.25, "waiting": 6.0, "operator": 1.5}}],
+ "phases": {"claimed": 0.1, "working": 3.25, "reviewing": 1.0,
+  "merge_gate": 2.4, "awaiting_merge_approval": 3.5,
+  "blocked_on_operator": 1.5},
+ "waits": {"pending_checks": 0.5, "checks_failing": 0, "thread": 1.0,
+  "rounds_used": 0, "behind_main": 0.4, "main_red": 0, "approval": 2.0,
+  "other": 1.5},
+ "reverted": {"count": 0, "merged": 7}}
+```
+
+`weeks` holds one entry per seven-day window ending at `now`, oldest
+first; `weeks` defaults to 6 and runs from 1 to 26. Each entry's
+`start_ms` opens its window, `merged` counts the runs merged in it,
+`rounds_median` is the median review round count of those runs (null with
+none), and `interventions` counts the store's interventions in it. `hours`
+splits the run time of the runs started in the window, read from their
+phase changes: `working` (`working`, `verifying`, `reviewing`,
+`addressing`), `operator` (`blocked_on_operator`) and `waiting` (every
+other phase but the ended ones), each stay running to the next change, the
+run's end, or `now` for an open run.
+
+`phases` is the hours per phase over all the weeks. `waits` is the hours
+over all the weeks by why the run waited: time in `awaiting_merge_approval`
+and `blocked_on_operator`, grouped by the note of the phase change that
+entered it, plus `merge_gate` time entered after a "behind main" merge
+refusal. The groups are `pending_checks`, `checks_failing`, `thread`,
+`rounds_used`, `behind_main`, `main_red`, `approval` and `other`.
+
+`reverted` counts the factory merges of the last 30 days as the
+`reverts 30d` line of `--report` does: `count` reverted within 14 days of
+`merged` merges found on `main`. It is null when `git log main` fails.
+
+A `weeks` that is not an integer from 1 to 26 is 400 with an `error`.
 
 ## `GET /runs/N`
 

@@ -306,27 +306,36 @@ def is_reverted(merge_sha, merged_at, log):
                for _, at, body in log for found in REVERT_LINE.findall(body))
 
 
-def revert_lines(conn, repo, now):
+def revert_counts(conn, repo, now):
     since = now - max(span for _, span in REVERT_WINDOWS)
     candidates = merged_runs_since(conn, since)
     log = main_log_since(repo, since) if candidates else []
     if log is None:
-        return [f"reverts {label}: unknown, git log main failed in {repo}"
-                for label, _ in REVERT_WINDOWS]
+        return None
     merged_at = {sha: at for sha, at, _ in log}
     merged = [(key, sha, merged_at[sha]) for key, sha in candidates
               if sha in merged_at]
-    lines = []
+    counts = {}
     for label, span in REVERT_WINDOWS:
         window = [run for run in merged if run[2] >= now - span]
-        if not window:
+        counts[label] = ([key for key, sha, at in window
+                          if is_reverted(sha, at, log)], len(window))
+    return counts
+
+
+def revert_lines(conn, repo, now):
+    counts = revert_counts(conn, repo, now)
+    if counts is None:
+        return [f"reverts {label}: unknown, git log main failed in {repo}"
+                for label, _ in REVERT_WINDOWS]
+    lines = []
+    for label, (keys, merged) in counts.items():
+        if not merged:
             lines.append(f"reverts {label}: no factory merges")
             continue
-        keys = [key for key, sha, at in window
-                if is_reverted(sha, at, log)]
         lines.append(
-            f"reverts {label}: {len(keys)} of {len(window)} factory merges"
-            f" reverted within 14 days ({100 * len(keys) / len(window):.1f}%)"
+            f"reverts {label}: {len(keys)} of {merged} factory merges"
+            f" reverted within 14 days ({100 * len(keys) / merged:.1f}%)"
             + (f": {', '.join(keys)}" if keys else ""))
     return lines
 

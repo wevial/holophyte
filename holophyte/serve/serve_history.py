@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import dataclasses
+import re
+from statistics import median
 from time import time
+from typing import TypedDict
 
 import store.read
+from holophyte.cli.report import revert_counts
+from holophyte.serve.day_log import THREAD_PARK
 from holophyte.serve.serve_runs import (
     INTEGER,
     SQLITE_MAX_DIGITS,
@@ -18,6 +23,7 @@ from holophyte.serve.serve_runs import (
     parse_until,
     served_round_caps,
 )
+from store.operate import ENDED_PHASES, PARKED_PHASES
 from store.run_reads import (
     FAILURE_KINDS,
     HISTORY_ORDERS,
@@ -29,6 +35,65 @@ from store.working import effective_work
 
 HISTORY_LIMIT = 200
 HISTORY_CAP = 5000
+FLOW_WEEKS = 6
+FLOW_WEEKS_CAP = 26
+WEEK_MS = 7 * 24 * 3600 * 1000
+HOUR_MS = 3600 * 1000
+WORKING_PHASES = frozenset({"working", "verifying", "reviewing", "addressing"})
+OPERATOR_PHASE = "blocked_on_operator"
+PHASE_CHANGE = re.compile(r"^(\w+) -> (\w+)(?:: (.*))?$", re.DOTALL)
+BEHIND_MAIN = "behind main"
+WAIT_REASONS = (
+    ("thread", re.compile(re.escape(THREAD_PARK))),
+    ("behind_main", re.compile(BEHIND_MAIN)),
+    ("main_red", re.compile(r"main is red")),
+    ("rounds_used", re.compile(r"rounds are used up|review rounds"
+                               r"|passes made|refreshes made")),
+    ("pending_checks", re.compile(r"pending checks|checks (are )?pending")),
+    ("checks_failing", re.compile(r"checks (are )?(failure|failed|failing)"
+                                  r"|failed on the merge group"
+                                  r"|check fix round")),
+    ("approval", re.compile(r"to say merge")),
+)
+WAIT_GROUPS = (*(name for name, _ in WAIT_REASONS), "other")
+
+
+class FlowHours(TypedDict):
+    working: float
+    waiting: float
+    operator: float
+
+
+class FlowWeek(TypedDict):
+    start_ms: int
+    merged: int
+    rounds_median: float | None
+    interventions: int
+    hours: FlowHours
+
+
+class FlowWaits(TypedDict):
+    pending_checks: float
+    checks_failing: float
+    thread: float
+    rounds_used: float
+    behind_main: float
+    main_red: float
+    approval: float
+    other: float
+
+
+class FlowReverted(TypedDict):
+    count: int
+    merged: int
+
+
+class Flow(TypedDict):
+    now: int
+    weeks: list[FlowWeek]
+    phases: dict[str, float]
+    waits: FlowWaits
+    reverted: FlowReverted | None
 
 
 def parse_offset(query):
@@ -128,3 +193,121 @@ def history_row(project, run, now, max_rounds, origin):
             "resumed_as": run.resumedAs,
             "implementer": run.implementer,
             "pr_url": run.prUrl, "host": json_host(project, run.host)}
+
+
+
+def parse_weeks(query):
+    text = parse_filter(query, "weeks")
+    if text is None:
+        return FLOW_WEEKS
+    if not text.isdigit() or not 1 <= int(text) <= FLOW_WEEKS_CAP:
+        raise ValueError(f"weeks must be an integer from 1 to"
+                         f" {FLOW_WEEKS_CAP}, got {text!r}")
+    return int(text)
+
+
+def flow(project, query, now=None):
+    try:
+        weeks = parse_weeks(query)
+    except ValueError as bad:
+        return 400, {"error": str(bad)}
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    now = int(time() * 1000) if now is None else now
+    since = now - weeks * WEEK_MS
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        merged = conn.execute(
+            "SELECT endedAt, reviewRoundCount FROM runs WHERE outcome = 'merged'"
+            " AND endedAt BETWEEN ? AND ?", (since, now)).fetchall()
+        interventions = conn.execute(
+            "SELECT at FROM interventions WHERE at BETWEEN ? AND ?",
+            (since, now)).fetchall()
+        events = conn.execute(
+            "SELECT r.id, r.startedAt, r.endedAt, e.at, e.summary"
+            " FROM runs r JOIN runEvents e ON e.runId = r.id"
+            " WHERE e.kind = 'phase_change' AND r.startedAt BETWEEN ? AND ?"
+            " ORDER BY r.id, e.seq", (since, now)).fetchall()
+        reverts = revert_counts(conn, project.path, now)
+    finally:
+        conn.close()
+    keys, count = (reverts or {}).get("30d", (None, None))
+    return 200, {"now": now,
+                 **flow_weeks(since, weeks, merged, interventions, events, now),
+                 "reverted": (None if keys is None
+                              else {"count": len(keys), "merged": count})}
+
+
+def flow_weeks(since, weeks, merged, interventions, events, now):
+    def week_of(at):
+        return rows[min((at - since) // WEEK_MS, weeks - 1)]
+
+    rows = [{"start_ms": since + index * WEEK_MS, "rounds": [],
+             "interventions": 0,
+             "hours": {"working": 0, "waiting": 0, "operator": 0}}
+            for index in range(weeks)]
+    for ended_at, rounds in merged:
+        week_of(ended_at)["rounds"].append(rounds)
+    for (at,) in interventions:
+        week_of(at)["interventions"] += 1
+    phases, waits = {}, dict.fromkeys(WAIT_GROUPS, 0)
+    for started_at, phase, ms, wait in run_stays(events, now):
+        if phase in ENDED_PHASES:
+            continue
+        week_of(started_at)["hours"][phase_group(phase)] += ms
+        phases[phase] = phases.get(phase, 0) + ms
+        if wait is not None:
+            waits[wait] += ms
+    return {"weeks": [{"start_ms": row["start_ms"],
+                       "merged": len(row["rounds"]),
+                       "rounds_median": (median(row["rounds"])
+                                         if row["rounds"] else None),
+                       "interventions": row["interventions"],
+                       "hours": {group: in_hours(ms)
+                                 for group, ms in row["hours"].items()}}
+                      for row in rows],
+            "phases": {phase: in_hours(ms) for phase, ms in phases.items()},
+            "waits": {reason: in_hours(ms) for reason, ms in waits.items()}}
+
+
+def run_stays(events, now):
+    runs = {}
+    for run_id, started_at, ended_at, at, summary in events:
+        runs.setdefault(run_id, (started_at, ended_at, []))[2].append(
+            (at, summary))
+    for started_at, ended_at, changes in runs.values():
+        yield from stays(started_at, ended_at, changes, now)
+
+
+def stays(started_at, ended_at, changes, now):
+    phase, note, entered = None, None, started_at
+    for at, summary in changes:
+        match = PHASE_CHANGE.match(summary)
+        if match is None:
+            continue
+        phase = phase or match.group(1)
+        yield started_at, phase, at - entered, wait_reason(phase, note)
+        phase, note, entered = match.group(2), match.group(3), at
+    if phase is not None:
+        end = now if ended_at is None else min(ended_at, now)
+        yield (started_at, phase, max(end - entered, 0),
+               wait_reason(phase, note))
+
+
+def wait_reason(phase, note):
+    if phase in PARKED_PHASES:
+        return next((reason for reason, pattern in WAIT_REASONS
+                     if pattern.search(note or "")), "other")
+    if phase == "merge_gate" and BEHIND_MAIN in (note or ""):
+        return "behind_main"
+    return None
+
+
+def phase_group(phase):
+    if phase in WORKING_PHASES:
+        return "working"
+    return "operator" if phase == OPERATOR_PHASE else "waiting"
+
+
+def in_hours(ms):
+    return round(ms / HOUR_MS, 3)

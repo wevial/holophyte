@@ -14,6 +14,7 @@ from holophyte.serve.contract_routes import (
 )
 from holophyte.serve.contract_routes import RouteProbe as RouteProbe
 from holophyte.serve.contract_run import Precheck, Round
+from holophyte.serve.serve_history import Flow
 from holophyte.serve.serve_merge_queue import MergeQueue
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -944,6 +945,7 @@ ROUTES = {
     "run-transcript": (Transcript, "GET /runs/N/turns/T/transcript"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
+    "flow": (Flow, "GET /flow"),
     "holds": (Holds, "GET /holds"),
     "ledger": (Ledger, "GET /ledger"),
     "findings": (Findings, "GET /findings"),

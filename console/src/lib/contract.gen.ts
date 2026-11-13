@@ -838,6 +838,49 @@ export const historySchema = z.looseObject({
 });
 export type History = z.infer<typeof historySchema>;
 
+export const flowHoursSchema = z.looseObject({
+  working: z.number(),
+  waiting: z.number(),
+  operator: z.number(),
+});
+export type FlowHours = z.infer<typeof flowHoursSchema>;
+
+export const flowWeekSchema = z.looseObject({
+  start_ms: z.int(),
+  merged: z.int(),
+  rounds_median: z.number().nullable(),
+  interventions: z.int(),
+  hours: flowHoursSchema,
+});
+export type FlowWeek = z.infer<typeof flowWeekSchema>;
+
+export const flowWaitsSchema = z.looseObject({
+  pending_checks: z.number(),
+  checks_failing: z.number(),
+  thread: z.number(),
+  rounds_used: z.number(),
+  behind_main: z.number(),
+  main_red: z.number(),
+  approval: z.number(),
+  other: z.number(),
+});
+export type FlowWaits = z.infer<typeof flowWaitsSchema>;
+
+export const flowRevertedSchema = z.looseObject({
+  count: z.int(),
+  merged: z.int(),
+});
+export type FlowReverted = z.infer<typeof flowRevertedSchema>;
+
+export const flowSchema = z.looseObject({
+  now: z.int(),
+  weeks: z.array(flowWeekSchema),
+  phases: z.record(z.string(), z.number()),
+  waits: flowWaitsSchema,
+  reverted: flowRevertedSchema.nullable(),
+});
+export type Flow = z.infer<typeof flowSchema>;
+
 export const holdRowSchema = z.looseObject({
   id: z.int(),
   at: z.int(),
