@@ -124,3 +124,62 @@ export function formatPerMerge(value: number | null): string {
 export function formatReverted(reverted: FlowNumbers["reverted"]): string {
   return reverted == null ? "–" : `${reverted.count} of ${reverted.merged}`;
 }
+
+export interface FlowWeekly {
+  starts: number[];
+  merged: number[];
+  interventions: number[];
+  waitingShare: (number | null)[];
+  rounds: (number | null)[];
+  interventionsPerMerge: (number | null)[];
+}
+
+/** `flows` week by week, aligned on their latest week since each host counts
+ *  its weeks back from its own clock. A week with no merges has no share,
+ *  rounds or per-merge ratio. */
+export function flowWeekly(flows: Flow[]): FlowWeekly {
+  const count = Math.max(0, ...flows.map((flow) => flow.weeks.length));
+  const weekly: FlowWeekly = { starts: [], merged: [], interventions: [], waitingShare: [], rounds: [], interventionsPerMerge: [] };
+  for (let index = 0; index < count; index += 1) {
+    const back = count - index;
+    const weeks = flows.flatMap((flow) => {
+      const week = flow.weeks[flow.weeks.length - back];
+      return week ? [week] : [];
+    });
+    const merged = weeks.reduce((sum, week) => sum + week.merged, 0);
+    const interventions = weeks.reduce((sum, week) => sum + week.interventions, 0);
+    const waiting = weeks.reduce((sum, week) => sum + week.hours.waiting + week.hours.operator, 0);
+    const total = waiting + weeks.reduce((sum, week) => sum + week.hours.working, 0);
+    weekly.starts.push(Math.min(...weeks.map((week) => week.start_ms)));
+    weekly.merged.push(merged);
+    weekly.interventions.push(interventions);
+    weekly.waitingShare.push(merged > 0 && total > 0 ? Math.round((100 * waiting) / total) : null);
+    weekly.rounds.push(merged > 0 ? median(weeks.flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median]))) : null);
+    weekly.interventionsPerMerge.push(merged > 0 ? interventions / merged : null);
+  }
+  return weekly;
+}
+
+const MONTH_DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+
+export function weekLabel(start: number): string {
+  return MONTH_DAY.format(start);
+}
+
+export type Better = "more" | "fewer";
+
+export interface WeeklyChange {
+  text: string;
+  tone: "good" | "bad" | "flat";
+}
+
+/** The latest week against the one before it, or null when either is unknown. */
+export function weeklyChange(values: (number | null)[], better: Better, unit = ""): WeeklyChange | null {
+  const latest = values.at(-1);
+  const before = values.at(-2);
+  if (latest == null || before == null) return null;
+  const delta = Math.round((latest - before) * 10) / 10;
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+  const tone = delta === 0 ? "flat" : (delta > 0) === (better === "more") ? "good" : "bad";
+  return { text: `${sign}${Math.abs(delta)}${unit} vs the week before`, tone };
+}

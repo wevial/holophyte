@@ -2,6 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ConfirmDialog } from "../../src/app/components/ConfirmDialog";
 import { Btn } from "../../src/app/components/Btn";
+import { BarChart, Change, LineChart } from "../../src/app/components/FlowCharts";
 import { Section } from "../../src/app/components/Section";
 import { StageChip } from "../../src/app/components/StageChip";
 import { StateDot } from "../../src/app/components/StateDot";
@@ -163,4 +164,39 @@ test("a confirm defaults to Cancel and primary, and supports a focused Keep runn
   expect(confirm).not.toHaveBeenCalled();
   fireEvent.click(abort);
   expect(confirm).toHaveBeenCalledTimes(1);
+});
+
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+const SIX_WEEKS = Array.from({ length: 6 }, (_, index) => Date.UTC(2026, 9, 2) + index * WEEK_MS);
+
+test("the merges chart draws a bar a week, the latest in the accent colour, under a top gridline rounded up to 200", () => {
+  const { container } = render(<BarChart title="Merges" note="per week" starts={SIX_WEEKS} values={[57, 123, 173, 133, 20, 43]} format={String} />);
+  const bars = [...container.querySelectorAll("rect")];
+  expect(bars.length).toBe(6);
+  expect(bars.map((bar) => bar.getAttribute("class"))).toEqual([...Array(5).fill("fill-wait"), "fill-accent"]);
+  const heights = bars.map((bar) => Number(bar.getAttribute("height")));
+  expect(heights[2]).toBeCloseTo((100 * 173) / 200, 1);
+  expect([...container.querySelectorAll("[data-grid]")].map((line) => line.getAttribute("data-grid"))).toEqual(["200", "100", "0"]);
+});
+
+test("a waiting line breaks at a week with no merges into two segments and puts no dot on that week", () => {
+  const { container } = render(
+    <LineChart title="Time spent waiting" note="share of run time" starts={SIX_WEEKS} values={[80, 75, null, 48, 52, 50]} top={100} format={(value) => `${value}%`} />,
+  );
+  const lines = [...container.querySelectorAll("path[data-segment]")];
+  expect(lines.length).toBe(2);
+  expect(lines.every((line) => (line.getAttribute("d")!.match(/M/g) ?? []).length === 1)).toBe(true);
+  expect([...container.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot"))).toEqual(["0", "1", "3", "4", "5"]);
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("no merges");
+});
+
+test("a weekly change is green when the number moved the good way and the accent colour when not", () => {
+  const { container: merged } = render(<dl><Change number="merged" values={[20, 43]} /></dl>);
+  const { container: waiting } = render(<dl><Change number="waiting" values={[50, 55]} /></dl>);
+  const mergedChange = merged.querySelector("[data-change]")!;
+  const waitingChange = waiting.querySelector("[data-change]")!;
+  expect(mergedChange.textContent).toBe("+23 vs the week before");
+  expect(mergedChange.classList.contains("text-live")).toBe(true);
+  expect(waitingChange.textContent).toBe("+5 pts vs the week before");
+  expect(waitingChange.classList.contains("text-accent")).toBe(true);
 });
