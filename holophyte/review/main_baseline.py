@@ -1,5 +1,5 @@
-"""Each on-main criterion's check run at the review base with the
-candidate's copy of its named test files, for the reviewer to read."""
+"""Each criterion's named test run at the review base with the candidate's
+copy of its files; an on-main clause's run goes to the reviewer to read."""
 import json
 import re
 import subprocess
@@ -24,6 +24,8 @@ SENTENCE = re.compile(r"(?<=[.!?])\s+")
 VERIFY_FAILED = "verify failed at the candidate"
 WORD_END = " \t\n;&|<>()"
 NO_CHECK_OUTPUT = "its output shows no run of the named check"
+FAILS_ON_BASE = "fails_on_base"
+PRESERVING = re.compile(r"\b(?:still|unchanged|keeps)\b", re.I)
 
 
 def _form(sentence):
@@ -50,6 +52,8 @@ def wanted(pairs):
     found = []
     for (n, text), files in zip(pairs, named):
         form = next((form for form in demands(text) if form != "other"), None)
+        if not form and not PRESERVING.search(text):
+            form = FAILS_ON_BASE
         if form and files:
             found.append((n, form, files))
     return found
@@ -246,15 +250,15 @@ def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
     n, form, named = want
     blobs = _blobs(wt, sha, named)
     command = "\n".join(lines_for(verify_cmd, list(blobs)))
-    key = {"criterion": n, "base": base, "files": list(blobs), "blobs": blobs,
+    key = {"base": base, "files": list(blobs), "blobs": blobs,
            "command": command}
-    result = dict(key, form=form, sha=sha)
+    result = dict(key, criterion=n, form=form, sha=sha)
     if not blobs:
         return dict(result, ran=False, reason=f"none of {', '.join(named)} "
                     f"exists at the candidate {sha[:12]}")
     reused = _recorded(conn, run_id, key)
     if reused is not None:
-        return dict(reused, form=form, sha=sha)
+        return dict(reused, criterion=n, form=form, sha=sha)
     try:
         result.update(_run(project, conn, run_id, beat_s, wt, base, sha,
                            list(blobs), command))
@@ -271,8 +275,8 @@ def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
 
 def baselines(project, conn, run_id, beat_s, wt, frozen, sha, criteria,
               verify_cmd, ok):
-    """Per on-main criterion its baseline result, reused when the base, the
-    command and the named files' blobs match a recorded run."""
+    """Per criterion naming a test file its baseline result, reused when the
+    base, the command and the named files' blobs match a recorded run."""
     if conn is None or run_id is None:
         return []
     found = wanted(criterion_ids.numbered(conn, run_id, criteria))
@@ -287,9 +291,20 @@ def baselines(project, conn, run_id, beat_s, wt, frozen, sha, criteria,
                       want) for want in found]
 
 
+def _shown(result):
+    files, command = result["files"], result["command"]
+    return any(_names(line, path) for line in _commands(command)
+               for path in files) or _check_ran(
+        _execution_output(result["output"], command), files)
+
+
 def gap(result):
     if not result.get("passed"):
         return None
+    if result["form"] == FAILS_ON_BASE:
+        return (f"criterion C{result['criterion']}'s named test passes at the "
+                f"merge base {result['base'][:12]} without the change"
+                if _shown(result) else None)
     return (f"criterion C{result['criterion']}'s check passes at the merge "
             f"base {result['base'][:12]}; its on-main clause says it fails")
 
@@ -319,6 +334,8 @@ def _entry(result):
 
 
 def brief(results):
+    results = [result for result in results
+               if result["form"] != FAILS_ON_BASE]
     if not results:
         return ""
     return (f"{HEADING}:\n" + "".join(_entry(result) for result in results)

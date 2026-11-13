@@ -1,6 +1,6 @@
-"""Each criterion with an on-main output clause has its check run by the
-factory at the review base, with the candidate's copy of the named test file,
-and the reviewer reads that run in a "Baseline at the merge base" block.
+"""Each criterion naming a test file has its check run by the factory at the
+review base, with the candidate's copy of the named test file; a pass there
+is a witness gap, and an on-main clause's run goes in a baseline block.
 
 Real git in temporary repositories, real verify commands; agents are scripted.
 Run: python3 -m unittest discover -s tests -p 'test_main_baseline.py' -v
@@ -28,6 +28,7 @@ from fake_agent import (  # noqa: E402 - after sys.path
     _git,
 )
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
+from test_trim import TRIMMED, Commits, lines  # noqa: E402 - as above
 
 import holophyte.config.project  # noqa: E402 - as above
 import store  # noqa: E402 - as above
@@ -49,11 +50,14 @@ OUTPUT = "and that run's output is in the implementer output."
 ON_MAIN = ("Given `tests/test_app.py`, when it runs, then it passes. "
            f"On main the test fails, {OUTPUT}")
 HEADING = "Baseline at the merge base"
+NAMED = "Given `tests/test_app.py`, when it runs, then it passes."
 APPROVE_APP = Reply("CRITERION 1: met — tests/test_app.py::AppTests::"
                     "test_value\nVERDICT: APPROVE")
 REQUEST_CHANGES = Reply("Blocker: tidy the notes.\nVERDICT: REQUEST_CHANGES")
 CHANGE_AND_TEST = {"app.py": NEW,
                    "tests/test_app.py": TEST_APP.format(expected="new")}
+TRUTHY_APP = TEST_APP.replace("self.assertEqual(VALUE, {expected!r})",
+                              "self.assertTrue(VALUE)")
 
 
 def git(cwd, *args):
@@ -143,20 +147,62 @@ class BaselineRuns(unittest.TestCase):
         self.assertEqual(git(self.wt, "status", "--porcelain"), status)
         self.assertEqual(git(self.repo, "worktree", "list"), trees)
 
-    def test_only_the_three_on_main_forms_naming_a_test_file_are_run(self):
-        named = "Given `tests/test_app.py`, when it runs, then it passes. "
+    def assert_passes_at_the_base(self, result):
+        self.assertTrue(result["passed"])
+        self.assertEqual(main_baseline.gap(result),
+                         f"criterion C1's named test passes at the merge base "
+                         f"{self.base[:12]} without the change")
+
+    def test_each_criterion_naming_a_test_file_runs_in_its_form(self):
         criteria = [
             ON_MAIN,
-            named + f"With `VALUE` as on main the test fails, {OUTPUT}",
-            named + f"With the change reverted the test fails, {OUTPUT}",
-            named + f"On the first ticket's branch the test fails, {OUTPUT}",
-            named + "On main the test fails.",
+            NAMED + f" With `VALUE` as on main the test fails, {OUTPUT}",
+            NAMED + f" With the change reverted the test fails, {OUTPUT}",
+            NAMED + f" On the first ticket's branch the test fails, {OUTPUT}",
+            NAMED + " On main the test fails.",
+            NAMED,
             f"Given the app, when it runs, then it passes. On main the app "
             f"fails, {OUTPUT}",
         ]
-        conn, run, _ = self.baselines(criteria)
+        _, _, results = self.baselines(criteria)
+        self.assertEqual(
+            [(result["criterion"], result["form"]) for result in results],
+            [(1, "on_main"), (2, "as_on_main"), (3, "reverted"),
+             (4, "fails_on_base"), (5, "fails_on_base"),
+             (6, "fails_on_base")])
+        self.assertTrue(all(result["ran"] for result in results))
+
+    def test_a_named_test_passing_at_the_base_is_a_gap_and_failing_is_not(self):
+        session = self.run_store([NAMED])
+        _, _, (fails,) = self.baselines([NAMED], session=session)
+        self.assertFalse(fails["passed"])
+        self.assertIn("AssertionError", fails["output"])
+        self.assertIsNone(main_baseline.gap(fails))
+        self.commit({"app.py": OLD,
+                     "tests/test_app.py": TEST_APP.format(expected="old")})
+        conn, run, (passes,) = self.baselines([NAMED], session=session)
+        self.assert_passes_at_the_base(passes)
+        self.assertEqual([event["passed"] for event in payloads(conn, run)],
+                         [False, True])
+
+    def test_a_preserving_criterion_has_no_base_run_and_no_gap(self):
+        self.commit({"app.py": OLD,
+                     "tests/test_app.py": TEST_APP.format(expected="old")})
+        preserving = ["Given `tests/test_app.py`, the app STILL passes.",
+                      "Given `tests/test_app.py`, VALUE is unchanged.",
+                      "Given `tests/test_app.py`, the app keeps its value."]
+        conn, run, results = self.baselines(preserving + [NAMED])
+        self.assertEqual([result["criterion"] for result in results], [4])
         self.assertEqual([event["criterion"] for event in payloads(conn, run)],
-                         [1, 2, 3])
+                         [4])
+
+    def test_a_base_pass_that_shows_no_run_of_the_named_test_is_no_gap(self):
+        conn, run, _ = self.baselines([NAMED], verify="echo ok")
+        (event,) = payloads(conn, run)
+        self.assertTrue(event["ran"])
+        self.assertTrue(event["passed"])
+        self.assertEqual(event["command"], "echo ok")
+        self.assertIsNone(main_baseline.gap(event))
 
     def stubs(self, *lines):
         """A verify block whose stubs log their own names; returns the block
@@ -417,6 +463,43 @@ class BaselineInTheLoop(LoopFixture):
         self.assertIn(gap, fake.turns[1].goal)
         (goal,) = self.review_goals(fake)
         self.assertIn("Exit status: 0.", goal[goal.index(HEADING):])
+
+    def base_gap(self):
+        return (f"criterion C1's named test passes at the merge base "
+                f"{self.base[:12]} without the change")
+
+    def witness_turns(self):
+        return [summary for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'witness_turn'"
+            " ORDER BY seq")]
+
+    def test_a_named_test_passing_at_the_base_gets_a_witness_turn(self):
+        fake = self.run_task(
+            Writes({"tests/test_app.py": TEST_APP.format(expected="old")}),
+            Writes(CHANGE_AND_TEST), APPROVE_APP, criteria=[NAMED])
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.witness_turns()
+        self.assertIn(self.base_gap(), turn)
+        self.assertIn(self.base_gap(), fake.turns[1].goal)
+        (goal,) = self.review_goals(fake)
+        self.assertNotIn("witness pre-check found these gaps", goal)
+        self.assertNotIn("passes at the merge base", goal)
+
+    def test_a_trim_that_cuts_the_witness_to_a_base_pass_gets_a_turn(self):
+        self.configure(TRIMMED)
+        fake = self.run_task(
+            Writes(dict(CHANGE_AND_TEST, **{"work.txt": lines(60)})),
+            Commits(Commit("trim: tests", "tests/test_app.py", TRUTHY_APP)),
+            Writes(CHANGE_AND_TEST), APPROVE_APP, criteria=[NAMED])
+        self.assertTrue(fake.turns[1].goal.startswith("Trim the change"))
+        ((kept,),) = self.read("SELECT payload->>'kept' FROM runEvents"
+                               " WHERE kind = 'trim_result'")
+        self.assertEqual([kept["pass"] for kept in json.loads(kept)],
+                         ["tests"])
+        self.assertEqual(fake.roles[2:], ["implement", "review"])
+        (turn,) = self.witness_turns()
+        self.assertIn(self.base_gap(), turn)
+        self.assertIn(self.base_gap(), fake.turns[2].goal)
 
     def logging_verify(self):
         """A verify that logs the directory each run starts in."""

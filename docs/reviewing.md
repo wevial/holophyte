@@ -151,26 +151,43 @@ while they execute, like the implementer, every half heartbeat stale interval.
 
 ## Witness pre-check
 
-Before the round 1 review, after its verify passes, the factory checks each
+Before every review round, after its verify passes, the factory checks each
 acceptance criterion's named test file: it exists, the branch adds or changes
 it, the verify commands run a test from it, and its tests, and the tests the
-branch adds there, did not run only skipped. Each gap it finds goes back to
-the implementer as a witness turn, on the run's implement time box rather than
-as a review round; the run stays in `verifying`. A turn that commits is
-verified again and checked again on the new head.
+branch adds there, did not run only skipped. It also runs each such
+criterion's verify lines at the merge base, in a detached tree holding the
+candidate's copy of the file. A test that passes there without the change
+witnesses nothing: the gap reads `criterion Cn's named test passes at the
+merge base SHA without the change`. A base pass counts only when a verify
+line names the file or the run's output shows its tests ran; a base failure
+is never a gap. A criterion whose text says `still`, `unchanged` or `keeps`
+(a whole word, any case) preserves behaviour that should pass on the base,
+and gets no base run; a criterion with an on-main output clause keeps its
+own check, shown in the "Baseline at the merge base" block. A base run is
+reused while the base, the command and the file's blob match, so a round
+that changes only production code runs nothing new at the base.
+
+Each gap goes back to the implementer as a witness turn, on the run's
+implement time box rather than as a review round; the run stays in
+`verifying`. A turn that commits is verified again and checked again on the
+new head. Round 1 runs after the trim pass, so a trim that cuts a test down
+until it passes at the base is caught there; a later round's check catches a
+gap its fix turn made.
 
 The turns stop at two a run, counted from the run's `witness_turn` events, so
-a resumed run does not get two more. A turn that makes no commit ends them
-(`witness_turn_idle`), as does a verify that goes red after a turn; a turn that
-times out fails the run. A criterion that names no test file never starts a
-turn, and neither does a file whose runner the factory cannot parse; its gaps
-go to the reviewer only.
+a resumed run does not get two more, and the ledger note of each names the
+round it ran before. A turn that makes no commit ends a round's turns
+(`witness_turn_idle`), as does a verify that goes red after a turn; a turn
+that times out fails the run. A criterion that names no test file never
+starts a turn, and neither does a file whose runner the factory cannot
+parse; its gaps go to the reviewer only.
 
-When gaps or criteria naming no test file remain, the round 1 review prompt
-lists them after the criteria, for the reviewer to judge; the list is not a
-finding. When a turn turned verify red, the list is the last check's, named
-by the commit it ran at; when verify was red before any check, it holds only
-the criteria naming no test file.
+When gaps or criteria naming no test file remain, the review prompt lists
+them after the criteria, for the reviewer to judge; the list is not a
+finding. Once a run has used both turns, a later round's gaps go to that
+round's reviewer in the same list. When a turn turned verify red, the list
+is the last check's, named by the commit it ran at; when verify was red
+before any check, it holds only the criteria naming no test file.
 
 ## Adversarial pass
 

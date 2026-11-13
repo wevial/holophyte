@@ -588,8 +588,9 @@ Each module, one line:
 - `holophyte/loop/shadow_spawn.py` — `start_shadow`: a fresh claim's detached
   `factory.py --shadow` beside the primary, recorded as `shadow_started`; and
   that mode, one shadow a project under `shadow.lock`, else `shadow_skipped`.
-- `holophyte/loop/review_round.py` — the review rounds: verify, review and a fix
-  turn per round, up to the cap the candidate's size earns.
+- `holophyte/loop/review_round.py` — the review rounds: verify, the witness
+  pre-check and its turns, review and a fix turn per round, up to the cap the
+  candidate's size earns.
 - `holophyte/loop/test_removal.py` — the round's verify failed when a test
   file the ticket's In scope list does not name holds fewer tests than at the
   base.
@@ -627,21 +628,24 @@ Each module, one line:
   selection (unittest or pytest), which added tests were skipped or never
   collected and why, and the fix-round brief asking for a runnable
   reproduction.
-- `holophyte/review/witness_precheck.py` — before the round 1 review, each
+- `holophyte/review/witness_precheck.py` — before each review round, each
   criterion's named test file checked from git and a verbose verify rerun:
   it exists at the candidate, the branch adds or changes it, and the verify
   ran it; recorded as the `witness_precheck` and
   `witness_precheck_results` events.
-- `holophyte/loop/witness_turns.py` — the witness pre-check's gaps sent back
-  to the implementer before the round 1 review, at most two `witness_turn`
-  turns a run, and the brief of gaps still open for the round 1 reviewer.
+- `holophyte/loop/witness_turns.py` — the witness pre-check's and the merge
+  base runs' gaps sent back to the implementer before each review round, at
+  most two `witness_turn` turns a run, and the brief of gaps still open for
+  that round's reviewer.
 - `holophyte/review/main_baseline.py` — before each review round, each
-  criterion with an on-main output clause and a named test file has its
-  verify lines run in a detached tree at the review base with the
-  candidate's copy of that file; recorded as the `main_baseline` event,
-  reused while the base, the command and the file's blob match, and shown
-  to the reviewer as the "Baseline at the merge base" block. A check that
-  passes at the base is a round 1 witness gap.
+  criterion naming a test file, bar one whose text says `still`,
+  `unchanged` or `keeps`, has its verify lines run in a detached tree at the
+  review base with the candidate's copy of that file; recorded as the
+  `main_baseline` event and reused while the base, the command and the
+  file's blob match. A pass there that a verify line or the output ties to
+  the file is a witness gap; a criterion with an on-main output clause also
+  has its run shown to the reviewer as the "Baseline at the merge base"
+  block.
 - `holophyte/loop/merge_lock.py` — the bounded wait for a live merge-lock holder,
   with waiter heartbeats and paired wait events (KO-496).
 - `holophyte/config/locks.py` — the `Locks` protocol a `Project` carries as

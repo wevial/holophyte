@@ -1,4 +1,4 @@
-"""Witness pre-check gaps sent back to the implementer before the round 1 review."""
+"""Witness pre-check gaps sent back to the implementer before each review round."""
 from functools import partial
 
 import store
@@ -69,20 +69,21 @@ def _turns_taken(conn, run_id):
                for event in store.read.narrative_events(conn, run))
 
 
-def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps):
+def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps, rnd):
     store.record_event(conn, run_id, "witness_turn",
                        f"witness turn {turn} of {WITNESS_TURNS} at "
                        f"{sha[:12]}: {len(gaps)} gaps\n" + "\n".join(gaps))
     ledger(conn, run_id, task_id, "note",
-           f"Witness pre-check: turn {turn} of {WITNESS_TURNS} before round 1",
+           f"Witness pre-check: turn {turn} of {WITNESS_TURNS} before round "
+           f"{rnd}",
            provider)
 
 
 def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                   base_sha, sha, ticket, verify_cmd, criteria, budget_min, ok,
-                  out, checks):
+                  out, checks, rnd):
     """Turn and recheck until no gap, the cap, an idle turn or a red verify;
-    return the head, its verify and the round 1 reviewer's brief."""
+    return the head, its verify and the round `rnd` reviewer's brief."""
     entries = witness_precheck.record(project, conn, run_id, beat_s, wt,
                                       base_sha, sha, criteria, verify_cmd, ok)
     if entries is None and ok:
@@ -103,10 +104,10 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
         if turn > WITNESS_TURNS:
             break
         _check_run_cap(project, conn, run_id, budget_min, sha)
-        boundary(conn, run_id, "verifying", rnd=1)
-        _record_turn(conn, run_id, provider, task_id, turn, sha, gaps)
+        boundary(conn, run_id, "verifying", rnd=rnd)
+        _record_turn(conn, run_id, provider, task_id, turn, sha, gaps, rnd)
         set_phase(conn, run_id, "verifying",
-                  f"round 1: witness turn {turn} of {WITNESS_TURNS}")
+                  f"round {rnd}: witness turn {turn} of {WITNESS_TURNS}")
         head = witness_turn(project, conn, run_id, beat_s, wt, budget_min,
                             ticket, sha, gaps, timed=_timed,
                             check_cap=_check_run_cap)

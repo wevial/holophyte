@@ -35,7 +35,7 @@ from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.loop.test_removal import with_removals
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary, consolidate, main_baseline
+from holophyte.review import adversary, consolidate
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     criteria_brief,
@@ -268,13 +268,9 @@ def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
     checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
                      ticket, verify_cmd, contracts, rnd)
     ok, out = checks()
-    if rnd != 1:
-        return sha, ok, out, main_baseline.brief(main_baseline.baselines(
-            project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
-            verify_cmd, ok))
     return witness_turns.before_review(
         project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
-        ticket, verify_cmd, criteria, budget_min, ok, out, checks)
+        ticket, verify_cmd, criteria, budget_min, ok, out, checks, rnd)
 
 
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,

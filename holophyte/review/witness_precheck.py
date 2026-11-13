@@ -1,5 +1,5 @@
 """Each criterion's named test file, checked from git and a verbose verify
-rerun before the first review: it exists, the branch adds or changes it,
+rerun before each review: it exists, the branch adds or changes it,
 and the verify commands ran it."""
 import json
 import re
