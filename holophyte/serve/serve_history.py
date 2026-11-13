@@ -49,7 +49,9 @@ WAIT_REASONS = (
     ("main_red", re.compile(r"main is red")),
     ("rounds_used", re.compile(r"rounds are used up|review rounds"
                                r"|passes made|refreshes made")),
-    ("pending_checks", re.compile(r"pending checks|checks (are )?pending")),
+    ("pending_checks", re.compile(r"pending checks|checks (are )?pending"
+                                  r"|never reported|did not report"
+                                  r"|quiet wait")),
     ("checks_failing", re.compile(r"checks (are )?(failure|failed|failing)"
                                   r"|failed on the merge group"
                                   r"|check fix round")),
@@ -195,12 +197,11 @@ def history_row(project, run, now, max_rounds, origin):
             "pr_url": run.prUrl, "host": json_host(project, run.host)}
 
 
-
 def parse_weeks(query):
     text = parse_filter(query, "weeks")
     if text is None:
         return FLOW_WEEKS
-    if not text.isdigit() or not 1 <= int(text) <= FLOW_WEEKS_CAP:
+    if not INTEGER.fullmatch(text) or not 1 <= int(text) <= FLOW_WEEKS_CAP:
         raise ValueError(f"weeks must be an integer from 1 to"
                          f" {FLOW_WEEKS_CAP}, got {text!r}")
     return int(text)
