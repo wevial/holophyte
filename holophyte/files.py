@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +15,7 @@ MAX_FILES = 200
 # The same filter on both diffs, so they name the same paths.
 DIFF_FILTER = "ADMR"
 MAIN = "main"
+PATH_TAIL = re.compile(r"""(?:: |, )['"].*$""", re.DOTALL)
 
 
 class RangeError(Exception):
@@ -36,6 +39,16 @@ class TouchedFiles:
     total_added: int = 0
     total_deleted: int = 0
     truncated: bool = False
+
+
+def copy_tree(source, target, **options):
+    try:
+        return shutil.copytree(source, target, **options)
+    except shutil.Error as failed:
+        errors = failed.args[0]
+        first = PATH_TAIL.sub("", str(errors[0][2])) if errors else ""
+        raise OSError(f"copying {Path(source).name} failed for {len(errors)} "
+                      f"files: {first}") from None
 
 
 def git(repo, *args, timeout=GIT_TIMEOUT):

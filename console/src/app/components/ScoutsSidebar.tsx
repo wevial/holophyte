@@ -7,6 +7,7 @@ import { formatClock, formatSettled } from "../../lib/format";
 import { scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 import { SCOUT_DOTS } from "../scout";
 import {
+  cappedReason,
   keepList,
   LISTED_KINDS,
   SCOUT_STATES,
@@ -77,7 +78,7 @@ export function useLaunchProjects(project: string | undefined) {
 }
 
 function Outcome({ outcome }: { outcome: ScoutOutcome }) {
-  if (outcome.kind === "failed") return <span className="font-semibold text-bad">{outcome.text}</span>;
+  if (outcome.kind === "failed") return <span title={outcome.text} className="font-semibold text-bad">{cappedReason(outcome.text)}</span>;
   if (outcome.kind === "back") return <>{outcome.text}</>;
   return outcome.parts.map((part, index) => (
     <Fragment key={part.words}>
