@@ -138,6 +138,7 @@ export interface FlowWeekly {
   runHours: number[];
   waitingShare: (number | null)[];
   rounds: (number | null)[];
+  roundsHosts: number[];
   interventionsPerMerge: (number | null)[];
 }
 
@@ -155,6 +156,7 @@ export function flowWeekly(flows: Flow[]): FlowWeekly {
     runHours: [],
     waitingShare: [],
     rounds: [],
+    roundsHosts: [],
     interventionsPerMerge: [],
   };
   for (let index = 0; index < count; index += 1) {
@@ -170,7 +172,9 @@ export function flowWeekly(flows: Flow[]): FlowWeekly {
     weekly.runHours.push(total);
     weekly.interventions.push(merged > 0 ? interventions : null);
     weekly.waitingShare.push(merged > 0 && total > 0 ? Math.round((100 * waiting) / total) : null);
-    weekly.rounds.push(merged > 0 ? median(weeks.flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median]))) : null);
+    const hostMedians = weeks.flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median]));
+    weekly.rounds.push(merged > 0 ? median(hostMedians) : null);
+    weekly.roundsHosts.push(hostMedians.length);
     weekly.interventionsPerMerge.push(merged > 0 ? interventions / merged : null);
   }
   return weekly;
@@ -216,7 +220,10 @@ export function weeklyTips(weekly: FlowWeekly, allProjects: boolean) {
       value: `${value}% waiting`,
       context: `${hoursNumber(weekly.waitingHours[index]!)} of ${hoursNumber(weekly.runHours[index]!)} run-hours`,
     }),
-    rounds: (value: number, index: number): Tip => ({ value: counted(value, "review round"), context: `median over ${merges(index)}` }),
+    rounds: (value: number, index: number): Tip => ({
+      value: counted(value, "review round"),
+      context: weekly.roundsHosts[index]! > 1 ? `median across ${weekly.roundsHosts[index]} hosts' medians` : `median over ${merges(index)}`,
+    }),
     interventions: (value: number, index: number): Tip => ({ value: counted(value, "intervention"), context: `over ${merges(index)}` }),
     perMerge: (value: number, index: number): Tip => ({ value: `${value.toFixed(1)} per merge`, context: `${interventions(index)} over ${merges(index)}` }),
   };

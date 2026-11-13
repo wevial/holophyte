@@ -266,3 +266,18 @@ test("a hovered merges bar grows and names its median review rounds for one proj
   fireEvent.mouseEnter(screen.getByRole("button", { name: "Oct 23 – 29: 0 merged, 3 interventions" }));
   expect(all.querySelector("[data-tooltip]")!.textContent).toBe("Oct 23 – 290 merged3 interventions");
 });
+
+test("a rounds point taken over several hosts names the host medians it is the median of, not their summed merges", () => {
+  const host = (merged: number, rounds_median: number) => ({
+    now: SIX_WEEKS[1]!,
+    weeks: [{ start_ms: SIX_WEEKS[0]!, merged, rounds_median, interventions: 0, hours: { working: 1, waiting: 0, operator: 0 } }],
+    phases: {},
+    waits: NO_WAITS,
+    reverted: null,
+  });
+  const single = flowWeekly([host(100, 1)]);
+  const spread = flowWeekly([host(100, 1), host(1, 9)]);
+  expect(weeklyTips(single, false).rounds(single.rounds[0]!, 0).context).toBe("median over 100 merges");
+  expect(spread.rounds).toEqual([5]);
+  expect(weeklyTips(spread, false).rounds(spread.rounds[0]!, 0).context).toBe("median across 2 hosts' medians");
+});
