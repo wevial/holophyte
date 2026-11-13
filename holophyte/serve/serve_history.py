@@ -44,7 +44,7 @@ OPERATOR_PHASE = "blocked_on_operator"
 PHASE_CHANGE = re.compile(r"^(\w+) -> (\w+)(?:: (.*))?$", re.DOTALL)
 BEHIND_MAIN = "behind main"
 WAIT_REASONS = (
-    ("thread", re.compile(re.escape(THREAD_PARK))),
+    ("thread", re.compile(re.escape(THREAD_PARK) + r"|thread\(s\)")),
     ("behind_main", re.compile(BEHIND_MAIN)),
     ("main_red", re.compile(r"main is red")),
     ("rounds_used", re.compile(r"rounds are used up|review rounds"
@@ -53,7 +53,7 @@ WAIT_REASONS = (
                                   r"|never reported|did not report"
                                   r"|quiet wait")),
     ("checks_failing", re.compile(r"checks (are )?(failure|failed|failing)"
-                                  r"|failed on the merge group"
+                                  r"|failed on (the )?merge group"
                                   r"|check fix round")),
     ("approval", re.compile(r"to say merge")),
 )

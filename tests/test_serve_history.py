@@ -325,6 +325,35 @@ class FlowTests(ServeTestCase):
             "rounds_used": 0, "behind_main": 0, "main_red": 0, "approval": 0,
             "other": 0.5})
 
+    def test_answered_threads_and_merge_group_failures_keep_their_reason(self):
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            notes = ("1 person's thread(s) addressed and left open for them"
+                     " to close", "unit failed on merge group 9a0b9a0b9a0b")
+            for n, note in enumerate(notes, start=1):
+                ticket = store.tickets.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                    acceptance_criteria=[f"Given {n}, then it is worked"],
+                    verification_commands=["echo ok"])
+                store.tickets.transition(conn, ticket, "in_flight")
+                started = self.now - DAY
+                run = store.claim(conn, project, ticket, now=started)
+                park_run(conn, run, "awaiting_merge_approval", note,
+                         now=started)
+                finish_run(conn, run, "merged", now=started + 60 * MIN)
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/flow?weeks=1")
+        self.assertEqual(code, 200)
+        self.assertEqual((body["waits"]["thread"],
+                          body["waits"]["checks_failing"],
+                          body["waits"]["other"]), (1.0, 1.0, 0))
+
     def test_weeks_outside_one_to_twenty_six_is_400_naming_it(self):
         self.seed()
         self.start()
