@@ -251,6 +251,26 @@ test("focusing a waiting point tooltips its week, share and run-hours, grows its
   expect(container.querySelector("[data-latest]")).not.toBeNull();
 });
 
+test("hovering a waiting point draws a full-height guide through that point's x, and none shows while nothing is hovered or focused", () => {
+  const { container } = render(
+    <LineChart title="Time spent waiting" note="share of run time" starts={SIX_WEEKS} values={[80, 75, 60, 48, 52, 50]} top={100} format={String} tip={UNTOLD} />,
+  );
+  const third = container.querySelector('button[data-point="2"]')!;
+  expect(container.querySelector("[data-guide]")).toBeNull();
+  fireEvent.mouseEnter(third);
+  const guide = container.querySelector<HTMLElement>("[data-guide]")!;
+  expect(parseFloat(guide.style.left)).toBeCloseTo((2.5 / 6) * 100, 6);
+  expect(guide.style.left).toBe(container.querySelector<HTMLElement>('[data-dot="2"]')!.style.left);
+  expect(guide.classList.contains("inset-y-0")).toBe(true);
+  expect(guide.parentElement).toBe(container.querySelector('[data-grid="100"]')!.parentElement);
+  fireEvent.mouseLeave(third);
+  expect(container.querySelector("[data-guide]")).toBeNull();
+  fireEvent.focus(third);
+  expect(container.querySelector("[data-guide]")).not.toBeNull();
+  fireEvent.blur(third);
+  expect(container.querySelector("[data-guide]")).toBeNull();
+});
+
 test("a hovered merges bar grows and names its median review rounds for one project and its interventions under All projects", () => {
   const bars = (allProjects: boolean) =>
     render(<BarChart title="Merges" note="per week" starts={WEEKLY.starts} values={WEEKLY.merged} format={String} tip={weeklyTips(WEEKLY, allProjects).merged} />);

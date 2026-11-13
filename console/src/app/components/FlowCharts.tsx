@@ -201,6 +201,13 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
               <path key={`line-${points[0]![0]}`} data-segment d={smoothPath(points)} fill="none" strokeWidth={1.75} vectorEffect="non-scaling-stroke" className="stroke-wait" />
             ))}
           </svg>
+          {active != null && values[active] != null && (
+            <span
+              data-guide
+              style={{ left: `${weekX(active, values.length)}%` }}
+              className="pointer-events-none absolute inset-y-0 -translate-x-1/2 border-l border-dashed border-ink-2 opacity-50"
+            />
+          )}
           {values.map((value, index) =>
             value == null ? null : (
               <span
