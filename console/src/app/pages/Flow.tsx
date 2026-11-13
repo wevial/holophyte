@@ -2,16 +2,21 @@ import { useContext, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { Flow } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
+import { BarChart, Change, LineChart, Sparkline, type TrendNumber } from "../components/FlowCharts";
 import {
   BY_DESIGN,
   flowNumbers,
   flowSpan,
+  flowWeekly,
   formatHours,
   formatPerMerge,
   formatReverted,
   formatRounds,
+  oneDecimal,
   WAIT_WORDS,
+  weeklyTips,
   type FlowNumbers,
+  type FlowWeekly,
 } from "../flow";
 import { storeScope } from "../projects";
 import { useFlows } from "../queries";
@@ -31,25 +36,61 @@ function share(part: number, whole: number): number {
   return whole > 0 ? (100 * part) / whole : 0;
 }
 
-function Figure({ label, children, tone = "text-ink", note }: { label: string; children: ReactNode; tone?: string; note?: string }) {
+interface Trend {
+  number: TrendNumber;
+  values: (number | null)[];
+}
+
+function Figure({ label, children, tone = "text-ink", trend, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; note?: string }) {
   return (
     <div className="flex flex-col gap-2 px-4 py-4 not-first:border-l not-first:border-rule">
       <dt className={LABEL}>{label}</dt>
-      <dd data-number={label} className={`font-mono text-[26px] font-semibold leading-[1.15] ${tone}`}>{children}</dd>
+      <dd className="flex items-center gap-3">
+        <span data-number={label} className={`font-mono text-[26px] font-semibold leading-[1.15] ${tone}`}>{children}</span>
+        {trend && <Sparkline values={trend.values} />}
+      </dd>
+      {trend && <Change number={trend.number} values={trend.values} />}
       {note && <dd className="font-sans text-[12px] leading-[1.5] text-ink-3">{note}</dd>}
     </div>
   );
 }
 
-function Numbers({ numbers }: { numbers: FlowNumbers }) {
+function Numbers({ numbers, weekly }: { numbers: FlowNumbers; weekly: FlowWeekly }) {
   return (
     <dl aria-label="Flow numbers" className="grid grid-cols-5 border border-rule bg-paper max-[960px]:grid-cols-2">
-      <Figure label="Merged">{numbers.merged}</Figure>
-      <Figure label="Waiting" tone="text-wait">{numbers.waitingShare == null ? "–" : `${numbers.waitingShare}%`}</Figure>
-      <Figure label="Rounds per merge">{formatRounds(numbers.rounds)}</Figure>
-      <Figure label="Interventions per merge">{formatPerMerge(numbers.interventionsPerMerge)}</Figure>
+      <Figure label="Merged" trend={{ number: "merged", values: weekly.merged }}>{numbers.merged}</Figure>
+      <Figure label="Waiting" tone="text-wait" trend={{ number: "waiting", values: weekly.waitingShare }}>
+        {numbers.waitingShare == null ? "–" : `${numbers.waitingShare}%`}
+      </Figure>
+      <Figure label="Rounds per merge" trend={{ number: "rounds", values: weekly.rounds }}>{formatRounds(numbers.rounds)}</Figure>
+      <Figure label="Interventions per merge" trend={{ number: "interventions", values: weekly.interventionsPerMerge }}>
+        {formatPerMerge(numbers.interventionsPerMerge)}
+      </Figure>
       <Figure label="Reverted" tone="text-live" note="of these merges, within 14 days">{formatReverted(numbers.reverted)}</Figure>
     </dl>
+  );
+}
+
+const percent = (value: number) => `${Math.round(value)}%`;
+const tenths = (value: number) => value.toFixed(1);
+
+function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: boolean }) {
+  const { starts } = weekly;
+  const tips = weeklyTips(weekly, allProjects);
+  return (
+    <section aria-labelledby="flow-weeks" className="flex flex-col gap-3">
+      <h2 id="flow-weeks" className={H2}>Week by week</h2>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-px border border-rule bg-rule">
+        <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} tip={tips.merged} />
+        <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} tip={tips.waiting} />
+        {allProjects ? (
+          <LineChart title="Interventions" note="per week" starts={starts} values={weekly.interventions} format={oneDecimal} tip={tips.interventions} />
+        ) : (
+          <LineChart title="Review rounds per merge" note="median" starts={starts} values={weekly.rounds} format={oneDecimal} tip={tips.rounds} />
+        )}
+        <LineChart title="Interventions per merge" note="per week" starts={starts} values={weekly.interventionsPerMerge} format={tenths} tip={tips.perMerge} />
+      </div>
+    </section>
   );
 }
 
@@ -189,6 +230,7 @@ export function FlowPage() {
   const inScope = new Set(scopedHosts(hosts, project));
   const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;
+  const weekly = flowWeekly(scoped);
   const names = [...new Set(hosts.flatMap((host) => (host.project == null ? [] : [projectName(host.project)])))];
   const pick = (name: string | undefined) => {
     storeScope(name ?? null);
@@ -217,8 +259,9 @@ export function FlowPage() {
       </header>
       {numbers && (
         <>
-          <Numbers numbers={numbers} />
+          <Numbers numbers={numbers} weekly={weekly} />
           <TimeSplit numbers={numbers} />
+          {weekly.starts.length > 0 && <WeekByWeek weekly={weekly} allProjects={project == null} />}
           <div className="grid grid-cols-2 gap-10 max-[960px]:grid-cols-1">
             <BiggestWaits waits={numbers.waits} />
             <ProjectsTable projects={byProject(answers)} scope={project} pick={pick} />
