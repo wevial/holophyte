@@ -188,7 +188,7 @@ test("a waiting line breaks at a week with no merges into two segments and puts 
   expect(lines.length).toBe(2);
   expect(lines.every((line) => (line.getAttribute("d")!.match(/M/g) ?? []).length === 1)).toBe(true);
   expect([...container.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot"))).toEqual(["0", "1", "3", "4", "5"]);
-  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("no merges");
+  expect(screen.getByRole("img").getAttribute("aria-label")).toContain("no data");
 });
 
 test("a weekly change is green when the number moved the good way and the accent colour when not", () => {

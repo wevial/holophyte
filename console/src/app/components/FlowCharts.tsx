@@ -136,7 +136,7 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
   const latest = values.length - 1;
   const latestValue = values[latest];
   return (
-    <Chart {...props} top={top} values={values} none="no merges">
+    <Chart {...props} top={top} values={values} none="no data">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
         {runs.map((points) => (
           <path key={`fill-${points[0]![0]}`} d={areaPath(points)} className="fill-wait opacity-15" />
