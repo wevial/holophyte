@@ -147,12 +147,6 @@ class BaselineRuns(unittest.TestCase):
         self.assertEqual(git(self.wt, "status", "--porcelain"), status)
         self.assertEqual(git(self.repo, "worktree", "list"), trees)
 
-    def assert_passes_at_the_base(self, result):
-        self.assertTrue(result["passed"])
-        self.assertEqual(main_baseline.gap(result),
-                         f"criterion C1's named test passes at the merge base "
-                         f"{self.base[:12]} without the change")
-
     def test_each_criterion_naming_a_test_file_runs_in_its_form(self):
         criteria = [
             ON_MAIN,
@@ -181,7 +175,10 @@ class BaselineRuns(unittest.TestCase):
         self.commit({"app.py": OLD,
                      "tests/test_app.py": TEST_APP.format(expected="old")})
         conn, run, (passes,) = self.baselines([NAMED], session=session)
-        self.assert_passes_at_the_base(passes)
+        self.assertTrue(passes["passed"])
+        self.assertEqual(main_baseline.gap(passes),
+                         f"criterion C1's named test passes at the merge base "
+                         f"{self.base[:12]} without the change")
         self.assertEqual([event["passed"] for event in payloads(conn, run)],
                          [False, True])
 
