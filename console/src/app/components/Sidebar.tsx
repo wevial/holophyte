@@ -14,6 +14,7 @@ import { FILTER_LABELS, TICKET_FILTERS, ticketView, useTicketBoard } from "../ti
 import {
   ChevronIcon,
   FindingsIcon,
+  FlowIcon,
   Mark,
   MergeQueueIcon,
   MoonIcon,
@@ -41,6 +42,7 @@ const PAGES = [
   { to: "/tickets", label: "Tickets", icon: <TicketsIcon />, noun: "" },
   { to: "/findings", label: "Findings", icon: <FindingsIcon />, noun: "open" },
   { to: "/scouts", label: "Scouts", icon: <ScoutsIcon />, noun: "running" },
+  { to: "/flow", label: "Flow", icon: <FlowIcon />, noun: "" },
 ] as const;
 
 const SETTINGS_PATH = new RegExp(`^/settings(/(${SETTINGS_TABS.map((tab) => tab.id).join("|")}))?/?$`);

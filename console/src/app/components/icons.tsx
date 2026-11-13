@@ -297,3 +297,11 @@ export function MergeQueueIcon() {
     </Stroke>
   );
 }
+
+export function FlowIcon() {
+  return (
+    <Stroke>
+      <path d="M2 13.5h12M3.5 11V8M6.5 11V4M9.5 11V6.5M12.5 11V9" />
+    </Stroke>
+  );
+}
