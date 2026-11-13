@@ -79,7 +79,7 @@ const change = async (element: Element, value: string) => {
 };
 
 const pages = () => within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link").filter((link) => !link.closest("ul"));
-const scoutsLink = () => pages().at(-1)!;
+const scoutsLink = () => pages().find((link) => link.getAttribute("aria-label")!.startsWith("Scouts"))!;
 const list = () => screen.getByRole("list", { name: "Scouts, newest first" });
 const ids = () => [...list().querySelectorAll("[data-scout]")].map((row) => row.getAttribute("data-scout"));
 const countLine = () => document.querySelector("[data-count-line]")!.textContent;
@@ -129,7 +129,7 @@ afterEach(() => {
 
 test("the Scouts page link follows Findings, is current on #/scouts and counts running scouts", async () => {
   await mount("#/scouts", scoutFetch({ demo: [scout(31, "swarming", 1), scout(30, "planning", 2), scout(28, "done", 3)] }).fetch);
-  expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts, 2 running"]);
+  expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts, 2 running", "Flow"]);
   expect(scoutsLink().getAttribute("aria-current")).toBe("page");
   expect(scoutsLink().querySelector("[data-badge]")?.textContent).toBe("2");
   cleanup();

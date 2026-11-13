@@ -7,6 +7,7 @@ import { SHIPPED_PAGE } from "../hooks/useShipped";
 import {
   boardSchema,
   findingsSchema,
+  flowSchema,
   historySchema,
   holdsSchema,
   ledgerSchema,
@@ -27,6 +28,7 @@ import {
   type Board,
   type BoardStory,
   type Findings,
+  type Flow,
   type History,
   type Ledger,
   type LedgerEntry,
@@ -528,5 +530,25 @@ export function useMergeQueues<R extends HostRecord<PollBodies>>(hosts: R[], dep
   return asked.flatMap((host, index) => {
     const queue = results[index]?.data;
     return queue ? [{ host, queue }] : [];
+  });
+}
+
+const FLOW_INTERVAL_MS = 60_000;
+
+/** Each status-answering host's last good `/flow` answer, in fleet order;
+ *  a daemon without the route, or that never answered, is left out. */
+export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; flow: Flow }[] {
+  const asked = hosts.filter((host) => host.status != null);
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, "/flow"),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}/flow`, flowSchema),
+      refetchInterval: FLOW_INTERVAL_MS,
+      staleTime: FLOW_INTERVAL_MS,
+    })),
+  });
+  return asked.flatMap((host, index) => {
+    const flow = results[index]?.data;
+    return flow ? [{ host, flow }] : [];
   });
 }

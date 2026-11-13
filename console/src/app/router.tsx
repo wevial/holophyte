@@ -17,6 +17,7 @@ import { validateFindingsSearch } from "./findings";
 import { useFleet } from "./fleet";
 import { SettingsMarksProvider } from "./settingsDraft";
 import { Findings } from "./pages/Findings";
+import { FlowPage } from "./pages/Flow";
 import { MergeQueuePage } from "./pages/MergeQueue";
 import { validateRunsSearch } from "./history";
 import { NotFound } from "./pages/Placeholder";
@@ -90,6 +91,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/findings", validateSearch: validateFindingsSearch, component: Findings }),
   createRoute({ getParentRoute: () => rootRoute, path: "/scouts", validateSearch: validateScoutsSearch, component: Scouts }),
   createRoute({ getParentRoute: () => rootRoute, path: "/scouts/$project/$scout", validateSearch: validateScoutListSearch, component: ScoutPage }),
+  pageRoute("/flow", FlowPage),
   pageRoute("/settings", Settings),
   pageRoute("/settings/$tab", Settings),
 ]);

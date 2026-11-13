@@ -6,7 +6,7 @@ import { ConsoleApp } from "../../src/app/router";
 import { THEME_KEY } from "../../src/lib/theme";
 import { APP_SHELL_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
-import type { Attention, Board, MergeQueue, Status } from "../../src/lib/contract.gen";
+import type { Attention, Board, Flow, MergeQueue, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { needsDaemons } from "./needsFleet";
 import { declarations } from "../cssTokens";
@@ -21,7 +21,11 @@ const servedQueue = (await Bun.file(new URL("merge-queue.json", SERVE)).json()) 
 const noQueue: MergeQueue = { ...servedQueue, configured: false, configuration: null, entries: [], left: [] };
 
 const happyDOM = (window as unknown as {
-  happyDOM: { settings: { device: { prefersColorScheme: string } }; setViewport: (viewport: { width: number }) => void };
+  happyDOM: {
+    settings: { device: { prefersColorScheme: string } };
+    setViewport: (viewport: { width: number }) => void;
+    setURL: (url: string) => void;
+  };
 }).happyDOM;
 const device = happyDOM.settings.device;
 
@@ -60,6 +64,7 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   window.location.hash = "";
+  happyDOM.setURL("about:blank");
   device.prefersColorScheme = "light";
 });
 
@@ -67,7 +72,7 @@ test("a scoped hash opens its page, marks its link current and keeps the scope o
   await mount("#/runs?project=demo");
   expect((await screen.findByRole("heading", { level: 1 })).textContent).toBe("Runs");
   const links = pages();
-  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
+  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow"]);
   expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Runs"]);
   for (const link of links) {
     expect(new URLSearchParams(link.getAttribute("href")!.split("?")[1]).get("project")).toBe("demo");
@@ -105,12 +110,12 @@ const queueBadge = () => screen.getByRole("link", { name: /^Merge queue/ }).quer
 
 test("the Merge queue link shows after Runs only while a polled project has a queue, its badge the entries in the live tone", async () => {
   await mount("#/", queueDaemons(noQueue, noQueue));
-  expect(labels()).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
+  expect(labels()).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow"]);
   cleanup();
 
   const quiet = { ...servedQueue, left: servedQueue.left.map((row) => ({ ...row, waits_on_you: false })) };
   await mount("#/", queueDaemons(noQueue, quiet));
-  expect(labels()).toEqual(["Overview", "Runs", "Merge queue, 4 queued", "Tickets", "Findings", "Scouts"]);
+  expect(labels()).toEqual(["Overview", "Runs", "Merge queue, 4 queued", "Tickets", "Findings", "Scouts", "Flow"]);
   expect(queueBadge().textContent).toBe("4");
   expect(queueBadge().classList.contains("text-live")).toBe(true);
   expect(queueBadge().classList.contains("text-need")).toBe(false);
@@ -118,12 +123,12 @@ test("the Merge queue link shows after Runs only while a polled project has a qu
 
 test("the Merge queue link shows only for a scope with a queue: the project that has one, or All projects", async () => {
   await mount("#/?project=demo", queueDaemons(noQueue, servedQueue));
-  expect(labels()).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
+  expect(labels()).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow"]);
   cleanup();
 
   for (const hash of ["#/?project=writer", "#/"]) {
     await mount(hash, queueDaemons(noQueue, servedQueue));
-    expect(labels()).toEqual(["Overview", "Runs", "Merge queue, 4 queued", "Tickets", "Findings", "Scouts"]);
+    expect(labels()).toEqual(["Overview", "Runs", "Merge queue, 4 queued", "Tickets", "Findings", "Scouts", "Flow"]);
     cleanup();
   }
 });
@@ -175,8 +180,8 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
   const expand = screen.getByRole("button", { name: "Expand sidebar" });
   expect(expand.getAttribute("aria-expanded")).toBe("false");
-  expect(pages().map((link) => link.textContent)).toEqual(["", "", "", "", ""]);
-  expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts"]);
+  expect(pages().map((link) => link.textContent)).toEqual(["", "", "", "", "", ""]);
+  expect(pages().map((link) => link.getAttribute("aria-label"))).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow"]);
   cleanup();
 
   await mount("#/");
@@ -283,15 +288,15 @@ test("the footer names the host and how long ago it was polled, and reads pollin
   }
 });
 
-test("the five page icons differ from one another and from the All projects icon, unfolded and folded", async () => {
+test("the six page icons differ from one another and from the All projects icon, unfolded and folded", async () => {
   await mount("#/", peersFetch(ORIGIN, { [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf([]) } }));
   const drawn = () => {
     const switcher = screen.getByRole("button", { name: /^Project: All projects/ });
     return [...pages(), switcher].map((control) => control.querySelector("svg")!.outerHTML);
   };
-  expect(new Set(drawn()).size).toBe(6);
+  expect(new Set(drawn()).size).toBe(7);
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-  expect(new Set(drawn()).size).toBe(6);
+  expect(new Set(drawn()).size).toBe(7);
 });
 
 const DRAG = "[-webkit-app-region:drag]";
@@ -422,4 +427,84 @@ test("off Settings the sidebar keeps the project switcher and the Pages nav and 
     expect(sidebar.queryByRole("navigation", { name: "Settings sections" })).toBeNull();
     cleanup();
   }
+});
+
+const NOV_6 = Date.UTC(2026, 10, 6);
+const WEEK = 7 * 24 * 3600 * 1000;
+const NO_WAITS = { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 };
+
+function flowOf(weeks: { merged: number; working: number; waiting: number; operator: number }[], waits = NO_WAITS): Flow {
+  return {
+    now: NOV_6 + WEEK,
+    weeks: weeks.map(({ merged, working, waiting, operator }, index) => ({
+      start_ms: NOV_6 - (weeks.length - 1 - index) * WEEK,
+      merged,
+      rounds_median: 2,
+      interventions: 1,
+      hours: { working, waiting, operator },
+    })),
+    phases: { working: 1 },
+    waits,
+    reverted: { count: 0, merged: 3 },
+  };
+}
+
+const demoFlow = flowOf([{ merged: 3, working: 4, waiting: 12, operator: 1 }, { merged: 4, working: 6, waiting: 8, operator: 4 }]);
+const writerFlow = flowOf([{ merged: 5, working: 30, waiting: 10, operator: 0 }]);
+
+function flowDaemons(demo: Flow, writer: Flow): Fetch {
+  const polls = daemons([], []);
+  return async (url, init) => {
+    if (url === `${ORIGIN}/flow`) return Response.json(demo);
+    if (url === `${PEER}/flow`) return Response.json(writer);
+    return polls(url, init);
+  };
+}
+
+async function flush() {
+  for (let round = 0; round < 6; round += 1) await act(settle);
+}
+
+const figure = (label: string) => document.querySelector(`[data-number="${label}"]`)!.textContent;
+
+test("the sidebar's Flow link opens the Flow page", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  await mount("#/", flowDaemons(demoFlow, writerFlow));
+  const link = screen.getByRole("link", { name: "Flow" });
+  expect(link.getAttribute("href")).toMatch(/#\/flow(\?|$)/);
+  fireEvent.click(link);
+  await flush();
+  expect(window.location.hash).toMatch(/^#\/flow/);
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Flow");
+});
+
+test("on All projects the Flow numbers sum both hosts: merged adds, and waiting is waiting and operator hours over all hours", async () => {
+  await mount("#/flow", flowDaemons(demoFlow, writerFlow));
+  await act(settle);
+  expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("");
+  expect(figure("Merged")).toBe("12");
+  expect(figure("Waiting")).toBe("47%");
+  expect(figure("Reverted")).toBe("0 of 6");
+});
+
+test("picking a project in the Flow dropdown shows only its host's numbers and puts it in the address", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  await mount("#/flow", flowDaemons(demoFlow, writerFlow));
+  await act(settle);
+  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "writer" } });
+  await flush();
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("project")).toBe("writer");
+  expect(figure("Merged")).toBe("5");
+  expect(figure("Waiting")).toBe("25%");
+  expect(figure("Reverted")).toBe("0 of 3");
+});
+
+test("Biggest waits leads with the largest group, and approval carries the by design tag", async () => {
+  const waits = { ...NO_WAITS, approval: 40, pending_checks: 12, thread: 3 };
+  await mount("#/flow?project=demo", flowDaemons(flowOf([{ merged: 1, working: 1, waiting: 55, operator: 0 }], waits), writerFlow));
+  await act(settle);
+  const rows = within(screen.getByRole("list", { name: "Biggest waits" })).getAllByRole("listitem");
+  expect(rows.map((row) => row.getAttribute("data-wait"))).toEqual(["approval", "pending_checks", "thread"]);
+  expect(within(rows[0]!).getByText("by design")).toBeTruthy();
+  expect(rows.slice(1).some((row) => row.textContent!.includes("by design"))).toBe(false);
 });
