@@ -77,7 +77,7 @@ function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: 
   return (
     <section aria-labelledby="flow-weeks" className="flex flex-col gap-3">
       <h2 id="flow-weeks" className={H2}>Week by week</h2>
-      <div className="grid grid-cols-3 gap-px border border-rule bg-rule max-[960px]:grid-cols-2 max-[720px]:grid-cols-1">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-px border border-rule bg-rule">
         <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} />
         <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} />
         {allProjects ? (
