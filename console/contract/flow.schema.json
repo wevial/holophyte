@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Flow",
+  "description": "GET /flow",
+  "$ref": "#/$defs/Flow",
+  "$defs": {
+    "FlowHours": {
+      "type": "object",
+      "properties": {
+        "working": {
+          "type": "number"
+        },
+        "waiting": {
+          "type": "number"
+        },
+        "operator": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "working",
+        "waiting",
+        "operator"
+      ],
+      "additionalProperties": true
+    },
+    "FlowWeek": {
+      "type": "object",
+      "properties": {
+        "start_ms": {
+          "type": "integer"
+        },
+        "merged": {
+          "type": "integer"
+        },
+        "rounds_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "interventions": {
+          "type": "integer"
+        },
+        "hours": {
+          "$ref": "#/$defs/FlowHours"
+        }
+      },
+      "required": [
+        "start_ms",
+        "merged",
+        "rounds_median",
+        "interventions",
+        "hours"
+      ],
+      "additionalProperties": true
+    },
+    "FlowWaits": {
+      "type": "object",
+      "properties": {
+        "pending_checks": {
+          "type": "number"
+        },
+        "checks_failing": {
+          "type": "number"
+        },
+        "thread": {
+          "type": "number"
+        },
+        "rounds_used": {
+          "type": "number"
+        },
+        "behind_main": {
+          "type": "number"
+        },
+        "main_red": {
+          "type": "number"
+        },
+        "approval": {
+          "type": "number"
+        },
+        "other": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pending_checks",
+        "checks_failing",
+        "thread",
+        "rounds_used",
+        "behind_main",
+        "main_red",
+        "approval",
+        "other"
+      ],
+      "additionalProperties": true
+    },
+    "FlowReverted": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "merged": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count",
+        "merged"
+      ],
+      "additionalProperties": true
+    },
+    "Flow": {
+      "type": "object",
+      "properties": {
+        "now": {
+          "type": "integer"
+        },
+        "weeks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FlowWeek"
+          }
+        },
+        "phases": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "waits": {
+          "$ref": "#/$defs/FlowWaits"
+        },
+        "reverted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FlowReverted"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "now",
+        "weeks",
+        "phases",
+        "waits",
+        "reverted"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

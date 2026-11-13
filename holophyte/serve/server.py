@@ -62,7 +62,7 @@ from holophyte.serve.serve_config import (
     write_config,
 )
 from holophyte.serve.serve_findings import findings
-from holophyte.serve.serve_history import history
+from holophyte.serve.serve_history import flow, history
 from holophyte.serve.serve_levers import LEVERS, holds
 from holophyte.serve.serve_merge import (
     MERGE_ACTION,
@@ -132,7 +132,7 @@ CONTENT_TYPES = {".html": "text/html; charset=utf-8",
 OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
-                        "/attention", "/board", "/report", "/findings",
+                        "/flow", "/attention", "/board", "/report", "/findings",
                         "/tickets", SCOUTS_PATH, MERGE_QUEUE_PATH})
 CONFIG_READS = frozenset({CONFIG_PATH, PATH_MATCHES_PATH, TRACKED_TREE_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
@@ -284,6 +284,7 @@ def window_report(project, query):
 
 QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/history": history, "/holds": holds, "/report": window_report,
+                "/flow": flow,
                 "/findings": findings, "/tickets": ticket_search,
                 SCOUTS_PATH: scouts, MERGE_QUEUE_PATH: merge_queue}
 

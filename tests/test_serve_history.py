@@ -247,5 +247,144 @@ class HistoryTests(ServeTestCase):
         self.assertEqual(rows[r1].get("resumed_as", "absent"), r2)
 
 
+class FlowTests(ServeTestCase):
+    def seed_flow(self):
+        """KO-1 merged in the older week after 30 minutes parked on pending
+        checks; in the newer week KO-2 merged after 60 minutes parked on a
+        thread, KO-3 merged with no stays, and KO-4 failed after 30 minutes
+        blocked on the operator. Each week holds one approval, the newer one
+        a second and the store's migration row too."""
+        self.now = int(time() * 1000)
+        older, newer = self.now - 10 * DAY, self.now - 3 * DAY
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            runs = {}
+            for n, started in ((1, older), (2, newer), (3, self.now - DAY),
+                               (4, self.now - 2 * DAY)):
+                ticket = store.tickets.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                    acceptance_criteria=[f"Given {n}, then it is worked"],
+                    verification_commands=["echo ok"])
+                store.tickets.transition(conn, ticket, "in_flight")
+                runs[n] = store.claim(conn, project, ticket, now=started)
+            for phase, at in (("working", older + 10 * MIN),
+                              ("verifying", older + 70 * MIN),
+                              ("reviewing", older + 80 * MIN),
+                              ("merge_gate", older + 100 * MIN)):
+                store.set_phase(conn, runs[1], phase, now=at)
+            park_run(conn, runs[1], "awaiting_merge_approval",
+                     "pending checks (unit) exceeded 1800s on the pull request",
+                     now=older + 120 * MIN)
+            finish_run(conn, runs[1], "merged", now=older + 150 * MIN)
+            for phase, at in (("working", newer), ("reviewing", newer + 30 * MIN),
+                              ("merge_gate", newer + 45 * MIN)):
+                advance_phase(conn, runs[2], phase, now=at)
+            park_run(conn, runs[2], "awaiting_merge_approval",
+                     "a thread needs a human's answer: is the cap right?",
+                     park_kind="thread", now=newer + 60 * MIN)
+            finish_run(conn, runs[2], "merged", now=newer + 120 * MIN)
+            finish_run(conn, runs[3], "merged", now=self.now - DAY)
+            store.set_phase(conn, runs[4], "working", now=self.now - 2 * DAY)
+            park_run(conn, runs[4], "blocked_on_operator", "which schema?",
+                     now=self.now - 2 * DAY + 30 * MIN)
+            store.release(conn, runs[4], "failed", "no answer",
+                          now=self.now - 2 * DAY + 60 * MIN)
+            for run, at in ((1, older + 20 * MIN), (2, newer + 90 * MIN),
+                            (3, self.now - DAY), (1, self.now - 20 * DAY)):
+                store.record_intervention(conn, runs[run], "approve",
+                                          "merge it", now=at)
+            with store.transaction(conn):
+                for run, rounds in ((1, 1), (2, 2), (3, 3)):
+                    conn.execute("UPDATE runs SET reviewRoundCount = ?"
+                                 " WHERE id = ?", (rounds, runs[run]))
+        finally:
+            conn.close()
+        self.start()
+
+    def test_each_week_counts_its_merges_rounds_interventions_and_hours(self):
+        self.seed_flow()
+        code, _, body = self.request("GET", "/flow?weeks=2")
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            [(week["merged"], week["rounds_median"], week["interventions"],
+              week["hours"]) for week in body["weeks"]],
+            [(1, 1, 1, {"working": 1.5, "waiting": 1.0, "operator": 0}),
+             (2, 2.5, 3, {"working": 1.25, "waiting": 1.25, "operator": 0.5})])
+        self.assertEqual(body["weeks"][1]["start_ms"] - body["weeks"][0]["start_ms"],
+                         7 * DAY)
+
+    def test_parked_time_is_grouped_by_the_reason_that_parked_it(self):
+        self.seed_flow()
+        code, _, body = self.request("GET", "/flow?weeks=2")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["waits"], {
+            "pending_checks": 0.5, "checks_failing": 0, "thread": 1.0,
+            "rounds_used": 0, "behind_main": 0, "main_red": 0, "approval": 0,
+            "other": 0.5})
+
+    def test_answered_threads_and_merge_group_failures_keep_their_reason(self):
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            notes = ("1 person's thread(s) addressed and left open for them"
+                     " to close", "unit failed on merge group 9a0b9a0b9a0b")
+            for n, note in enumerate(notes, start=1):
+                ticket = store.tickets.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}",
+                    acceptance_criteria=[f"Given {n}, then it is worked"],
+                    verification_commands=["echo ok"])
+                store.tickets.transition(conn, ticket, "in_flight")
+                started = self.now - DAY
+                run = store.claim(conn, project, ticket, now=started)
+                park_run(conn, run, "awaiting_merge_approval", note,
+                         now=started)
+                finish_run(conn, run, "merged", now=started + 60 * MIN)
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/flow?weeks=1")
+        self.assertEqual(code, 200)
+        self.assertEqual((body["waits"]["thread"],
+                          body["waits"]["checks_failing"],
+                          body["waits"]["other"]), (1.0, 1.0, 0))
+
+    def test_a_claimed_run_with_no_phase_change_counts_its_waiting_time(self):
+        self.now = int(time() * 1000)
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            ticket = store.tickets.mirror_ticket(
+                conn, project, linear_issue_id="issue-1",
+                linear_identifier="KO-1", title="ticket 1",
+                acceptance_criteria=["Given 1, then it is worked"],
+                verification_commands=["echo ok"])
+            store.tickets.transition(conn, ticket, "in_flight")
+            store.claim(conn, project, ticket, now=self.now - 30 * MIN)
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", "/flow?weeks=1")
+        self.assertEqual(code, 200)
+        self.assertGreaterEqual(body["phases"]["claimed"], 0.5)
+        self.assertEqual(body["weeks"][0]["hours"]["waiting"],
+                         body["phases"]["claimed"])
+
+    def test_weeks_outside_one_to_twenty_six_is_400_naming_it(self):
+        self.seed()
+        self.start()
+        for weeks in ("0", "27"):
+            with self.subTest(weeks=weeks):
+                code, _, body = self.request("GET", f"/flow?weeks={weeks}")
+                self.assertEqual(code, 400)
+                self.assertIn("weeks", body["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
