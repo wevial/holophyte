@@ -155,6 +155,7 @@ def check_carry(source: Path, entry: str) -> Path:
 
 def _carry_into(source: Path, stage: Path, carry: Sequence[str]) -> None:
     """Each copy has every write bit cleared, so the reviewer reads it like the tree."""
+    from holophyte.files import copy_tree
     for entry in carry:
         origin = check_carry(source, entry)
         relative = Path(entry)
@@ -162,7 +163,7 @@ def _carry_into(source: Path, stage: Path, carry: Sequence[str]) -> None:
             raise ReviewBoundaryError(
                 f"[worktree] carry: {entry!r} is not a directory in the worktree "
                 f"{source}")
-        shutil.copytree(origin, stage / relative, symlinks=True)
+        copy_tree(origin, stage / relative, symlinks=True)
         for root, dirs, files in os.walk(stage / relative, topdown=False):
             for name in files + dirs:
                 path = Path(root) / name
