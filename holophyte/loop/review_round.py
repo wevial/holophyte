@@ -273,6 +273,24 @@ def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
         ticket, verify_cmd, criteria, budget_min, ok, out, checks, rnd)
 
 
+def _prepared(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
+              sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd,
+              pending):
+    phase = pending.get("phase")
+    if phase not in ("reviewing", "addressing"):
+        return _verified(project, conn, run_id, provider, task_id, beat_s, wt,
+                         base_sha, sha, ticket, verify_cmd, contracts, criteria,
+                         budget_min, rnd)
+    ok, out = pending.get("ok", False), pending.get("out", "")
+    if phase == "addressing" or "witness" in pending:
+        return sha, ok, out, pending.get("witness", "")
+    checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
+                     ticket, verify_cmd, contracts, rnd)
+    return witness_turns.before_review(
+        project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
+        ticket, verify_cmd, criteria, budget_min, ok, out, checks, rnd)
+
+
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                    base_sha, sha, ticket, verify_cmd, contracts, criteria,
                    budget_min, cap, resume=None):
@@ -296,19 +314,16 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" unresolved in {', '.join(unresolved)}; a human"
                     f" resolves the merge before this ticket is run again;"
                     f" branch {branch} preserved at {sha[:12]}")
-        if pending.get("phase") in ("reviewing", "addressing"):
-            ok, out = pending.get("ok", False), pending.get("out", "")
-            witness = pending.get("witness", "")
-        else:
-            sha, ok, out, witness = _verified(
-                project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
-                sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd)
+        sha, ok, out, witness = _prepared(
+            project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
+            sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd,
+            pending)
         leaks = leak_guard.branch_leaks(project, wt, sha)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
                  verify_cmd=verify_cmd,
                  **({"stale": pending["stale"]} if "stale" in pending else {}),
-                 **({"witness": witness} if witness else {}))
+                 witness=witness)
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         if pending.get("phase") == "addressing":
             verdict = pending["verdict"]

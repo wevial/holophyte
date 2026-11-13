@@ -81,6 +81,13 @@ def gated(n=0):
                    GATED.format(extra=f"# revision {n}\n" if n else "")})
 
 
+class Declaring(Writes):
+    """Writes the files and declares the reported defect not reproduced."""
+
+    def play(self, cwd, turn):
+        return f"{super().play(cwd, turn)}\nOUTCOME: NOT_REPRODUCED"
+
+
 class PausingCommit:
 
     role = IMPLEMENT
@@ -219,6 +226,27 @@ class WitnessTurns(LoopFixture):
         self.assertIn(f"witness pre-check found these gaps before this review;"
                       f" judge each criterion yourself:\n{GAP}\n",
                       fake.turns[4].goal)
+
+    def test_a_twice_refused_not_reproduced_round_two_gets_a_witness_turn(self):
+        refused = Reply("The test never opens the gate.\nVERDICT: FAIL")
+        ungated = {"gate.py": "OPEN = True\n", "tests/test_gate.py": UNGATED}
+        fake = self.run_task(
+            Declaring(ungated), refused,
+            Declaring(dict(ungated, **{"gate.py": "OPEN = 1\n"})), refused,
+            Commit("gate the test", path="tests/test_gate.py", body=OPENED),
+            APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate", "implement",
+                                      "adjudicate", "implement", "review"])
+        gap = (f"criterion C1's named test passes at the merge base "
+               f"{self.base[:12]} without the change")
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(gap, turn)
+        self.assertIn(gap, fake.turns[4].goal)
+        self.assertIn(("Witness pre-check: turn 1 of 2 before round 2",),
+                      self.read("SELECT text FROM ledger WHERE kind = 'note'"))
+        self.assertNotIn("witness pre-check found these gaps",
+                         fake.turns[5].goal)
 
     def test_a_resumed_run_takes_only_the_turns_its_paused_run_left(self):
         self.run_task(gated(), PausingCommit(self.db, gated(1)))
