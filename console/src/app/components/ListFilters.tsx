@@ -97,7 +97,7 @@ const SEGMENT = "min-h-8 cursor-pointer px-2.5 font-mono text-[11px] font-medium
 
 /** A popover's open state, closed by `hidden`, Escape or a press outside
  *  `box`, which gives focus back to `button` and focuses nothing else. */
-function usePopover(hidden: boolean) {
+export function usePopover(hidden: boolean) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);

@@ -475,7 +475,7 @@ non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
 `error` naming the parameter and any value it got. An `until` at or before
 `since` is 400 with `"until must be after since"`.
 
-## `GET /flow?weeks=N`
+## `GET /flow?weeks=N&until=MS`
 
 The project's flow week by week: how much the factory merged and where its
 run time went. The console's Flow page reads it.
@@ -496,7 +496,9 @@ run time went. The console's Flow page reads it.
 ```
 
 `weeks` holds one entry per seven-day window ending at `now`, oldest
-first; `weeks` defaults to 6 and runs from 1 to 26. Each entry's
+first; `weeks` defaults to 6 and runs from 1 to 26. `now` is `until`, the
+end of the last week in epoch milliseconds, or the daemon's clock without
+one; phase changes after it are left out. Each entry's
 `start_ms` opens its window, `merged` counts the runs merged in it,
 `rounds_median` is the median review round count of those runs (null with
 none), and `interventions` counts the store's interventions in it. `hours`
@@ -518,7 +520,8 @@ weekly `merged` values, and `count` is those whose merge commit a `git
 revert` on `main` reverted within 14 days. A merge with no recorded merge
 commit counts as not reverted. It is null when `git log main` fails.
 
-A `weeks` that is not an integer from 1 to 26 is 400 with an `error`.
+A `weeks` that is not an integer from 1 to 26, or an `until` that is not
+an integer or is later than the daemon's clock, is 400 with an `error`.
 
 ## `GET /runs/N`
 
