@@ -387,6 +387,37 @@ class FlowTests(ServeTestCase):
                 self.assertEqual(code, 400)
                 self.assertIn("weeks", body["error"])
 
+    def test_until_ends_the_last_week_and_leaves_later_merges_out(self):
+        until = 1794009600000
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            for n, merged in ((1, until - 9 * DAY), (2, until - 2 * DAY),
+                              (3, until + 2 * DAY)):
+                ticket = store.tickets.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}")
+                run = store.claim(conn, project, ticket, now=merged - MIN)
+                finish_run(conn, run, "merged", now=merged)
+        finally:
+            conn.close()
+        self.start()
+        code, _, body = self.request("GET", f"/flow?weeks=2&until={until}")
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            [(week["start_ms"], week["merged"]) for week in body["weeks"]],
+            [(until - 14 * DAY, 1), (until - 7 * DAY, 1)])
+        self.assertEqual(body["now"], until)
+
+    def test_an_until_later_than_now_is_400_naming_it(self):
+        self.seed()
+        self.start()
+        later = int(time() * 1000) + DAY
+        code, _, body = self.request("GET", f"/flow?until={later}")
+        self.assertEqual(code, 400)
+        self.assertIn("until", body["error"])
+
 
 class FlowRevertTests(ServeTestCase):
     def setUp(self):

@@ -1,8 +1,9 @@
-import { useContext, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { Flow } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
 import { BarChart, Change, LineChart, Sparkline, type TrendNumber } from "../components/FlowCharts";
+import { dayRangeLabel, usePopover } from "../components/ListFilters";
 import {
   BY_DESIGN,
   flowNumbers,
@@ -18,13 +19,53 @@ import {
   type FlowNumbers,
   type FlowWeekly,
 } from "../flow";
+import { dayStart, validDay } from "../history";
 import { storeScope } from "../projects";
-import { useFlows } from "../queries";
+import { useFlows, type FlowWindow } from "../queries";
 import { PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 
 const H2 = "font-sans text-[15px] font-semibold leading-[1.3] text-ink";
 const LABEL = "font-mono text-[11px] font-medium uppercase leading-[1.3] tracking-[0.1em] text-ink-3";
 const INSIDE_MIN = 8;
+const CONTROL = "min-h-11 min-w-48 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[13px] font-semibold text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
+
+const RANGES = [
+  { value: "4w", label: "Last 4 weeks", weeks: 4 },
+  { value: "6w", label: "Last 6 weeks", weeks: 6 },
+  { value: "12w", label: "Last 12 weeks", weeks: 12 },
+  { value: "26w", label: "Last 26 weeks", weeks: 26 },
+] as const;
+type FlowRange = (typeof RANGES)[number]["value"];
+const DEFAULT_RANGE: FlowRange = "6w";
+const WEEKS_CAP = 26;
+
+export interface FlowSearch {
+  range?: FlowRange;
+  from?: string;
+  to?: string;
+}
+
+export function validateFlowSearch(search: Record<string, unknown>): FlowSearch {
+  const from = validDay(search.from);
+  const to = validDay(search.to);
+  if (from != null && to != null && from <= to) return { from, to };
+  const range = RANGES.find((each) => each.value === search.range && each.value !== DEFAULT_RANGE);
+  return range ? { range: range.value } : {};
+}
+
+function dayAfter(day: string): Date {
+  const next = dayStart(day);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
+function flowWindow({ range, from, to }: FlowSearch, now: number): FlowWindow {
+  if (from == null || to == null) return { weeks: RANGES.find((each) => each.value === (range ?? DEFAULT_RANGE))!.weeks };
+  const end = dayAfter(to);
+  const days = Math.round((end.getTime() - dayStart(from).getTime()) / 86_400_000);
+  const weeks = Math.min(Math.max(Math.floor(days / 7), 1), WEEKS_CAP);
+  return end.getTime() > now ? { weeks } : { weeks, until: end.getTime() };
+}
 
 const SPLIT = [
   { part: "working", name: "Working", fill: "bg-live" },
@@ -215,6 +256,63 @@ function Phases({ phases }: { phases: FlowNumbers["phases"] }) {
   );
 }
 
+function RangeControl({ search, choose }: { search: FlowSearch; choose: (change: FlowSearch) => void }) {
+  const { open, setOpen, close, box, button } = usePopover(false);
+  const [draft, setDraft] = useState({ from: "", to: "" });
+  const custom = search.from != null && search.to != null;
+  const preset = search.range ?? DEFAULT_RANGE;
+  const field = "min-h-11 border border-rule bg-paper px-2 font-mono text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
+  const toggle = () => {
+    setDraft({ from: search.from ?? "", to: search.to ?? "" });
+    setOpen(!open);
+  };
+  const pickDay = (change: Partial<typeof draft>) => {
+    const next = { ...draft, ...change };
+    setDraft(next);
+    if (next.from !== "" && next.to !== "" && next.from <= next.to) choose({ range: undefined, from: next.from, to: next.to });
+  };
+  return (
+    <div ref={box} className="relative flex flex-col gap-1.5">
+      <span aria-hidden="true" className={LABEL}>Range</span>
+      <button ref={button} type="button" aria-label="Range" aria-haspopup="true" aria-expanded={open} onClick={toggle}
+        className={`${CONTROL} inline-flex items-center justify-between gap-3 text-left`}>
+        {custom ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === preset)!.label}
+        <svg aria-hidden="true" viewBox="0 0 10 6" width={10} height={6} fill="none" stroke="currentColor" strokeWidth={1.4}>
+          <path d="M1 1l4 4 4-4" />
+        </svg>
+      </button>
+      {open && (
+        <div role="group" aria-label="Range choices"
+          className="absolute top-full right-0 z-20 mt-1 flex w-72 flex-col gap-4 border border-rule bg-paper p-4 shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
+          <div className="flex flex-col">
+            {RANGES.map((each) => (
+              <button key={each.value} type="button" aria-pressed={!custom && preset === each.value}
+                onClick={() => {
+                  choose({ range: each.value === DEFAULT_RANGE ? undefined : each.value, from: undefined, to: undefined });
+                  close();
+                }}
+                className="min-h-11 cursor-pointer px-3 text-left font-sans text-[13px] font-semibold text-ink hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper">
+                {each.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-col gap-3 border-t border-rule pt-4 font-sans text-[13px] text-ink-2">
+            <label className="flex items-center justify-between gap-3">
+              From
+              <input type="date" value={draft.from} max={draft.to || undefined} className={field} onChange={(event) => pickDay({ from: event.target.value })} />
+            </label>
+            <label className="flex items-center justify-between gap-3">
+              To
+              <input type="date" value={draft.to} min={draft.from || undefined} className={field} onChange={(event) => pickDay({ to: event.target.value })} />
+            </label>
+            <span className="text-[12px] leading-[1.5] text-ink-3">Whole weeks back from To, up to 26.</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function byProject(answers: { name: string; flow: Flow }[]): ProjectFlow[] {
   const grouped = new Map<string, Flow[]>();
   for (const { name, flow } of answers) grouped.set(name, [...(grouped.get(name) ?? []), flow]);
@@ -223,10 +321,11 @@ function byProject(answers: { name: string; flow: Flow }[]): ProjectFlow[] {
 
 export function FlowPage() {
   const { hosts } = useConsolePeers();
-  const { project } = useSearch({ from: "__root__" });
+  const search = useSearch({ from: "/flow" });
+  const { project } = search;
   const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
-  const answers = useFlows(hosts, deps).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
+  const answers = useFlows(hosts, deps, flowWindow(search, Date.now())).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
   const inScope = new Set(scopedHosts(hosts, project));
   const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;
@@ -236,6 +335,7 @@ export function FlowPage() {
     storeScope(name ?? null);
     void navigate({ to: "/flow", search: (previous: ScopeSearch) => ({ ...previous, project: name }) });
   };
+  const choose = (change: FlowSearch) => void navigate({ to: "/flow", search: (previous: ScopeSearch & FlowSearch) => ({ ...previous, ...change }) });
   return (
     <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-8 px-8 pt-3.5 pb-10 max-[720px]:px-4">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -243,19 +343,18 @@ export function FlowPage() {
           <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Flow</h1>
           <p className="font-sans text-[13px] leading-[1.5] text-ink-2">{flowSpan(scoped) ?? " "}</p>
         </div>
-        <label className="flex flex-col gap-1.5">
-          <span className={LABEL}>Project</span>
-          <select
-            value={project ?? ""}
-            onChange={(event) => pick(event.target.value === "" ? undefined : event.target.value)}
-            className="min-h-9 min-w-48 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[13px] font-semibold text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
-          >
-            <option value="">All projects</option>
-            {names.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </label>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className={LABEL}>Project</span>
+            <select value={project ?? ""} onChange={(event) => pick(event.target.value === "" ? undefined : event.target.value)} className={CONTROL}>
+              <option value="">All projects</option>
+              {names.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <RangeControl search={search} choose={choose} />
+        </div>
       </header>
       {numbers && (
         <>

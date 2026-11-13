@@ -455,8 +455,8 @@ const writerFlow = flowOf([{ merged: 5, working: 30, waiting: 10, operator: 0 }]
 function flowDaemons(demo: Flow, writer: Flow): Fetch {
   const polls = daemons([], []);
   return async (url, init) => {
-    if (url === `${ORIGIN}/flow`) return Response.json(demo);
-    if (url === `${PEER}/flow`) return Response.json(writer);
+    if (url.startsWith(`${ORIGIN}/flow?`)) return Response.json(demo);
+    if (url.startsWith(`${PEER}/flow?`)) return Response.json(writer);
     return polls(url, init);
   };
 }
@@ -522,4 +522,41 @@ test("Biggest waits leads with the largest group, and approval carries the by de
   expect(rows.map((row) => row.getAttribute("data-wait"))).toEqual(["approval", "thread", "pending_checks"]);
   expect(within(rows[0]!).getByText("by design")).toBeTruthy();
   expect(rows.slice(1).some((row) => row.textContent!.includes("by design"))).toBe(false);
+});
+
+function askedFlows(asked: URL[]): Fetch {
+  const polls = daemons([], []);
+  return async (url, init) => {
+    if (!/\/flow\?/.test(url)) return polls(url, init);
+    const query = new URL(url);
+    asked.push(query);
+    const weeks = Number(query.searchParams.get("weeks"));
+    return Response.json(flowOf(Array.from({ length: weeks }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 }))));
+  };
+}
+
+test("opened with range=12w the Flow page asks each host for twelve weeks and every chart shows twelve", async () => {
+  const asked: URL[] = [];
+  await mount("#/flow?range=12w", askedFlows(asked));
+  await flush();
+  expect(new Set(asked.map((url) => url.origin))).toEqual(new Set([ORIGIN, PEER]));
+  expect(asked.every((url) => url.searchParams.get("weeks") === "12" && !url.searchParams.has("until"))).toBe(true);
+  const charts = [...document.querySelectorAll("figure[data-chart]")];
+  expect(charts).toHaveLength(4);
+  expect(charts.map((chart) => chart.querySelectorAll("[data-point]").length)).toEqual([12, 12, 12, 12]);
+});
+
+test("choosing From and To puts them in the address and asks for the whole weeks ending with the To day", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  const asked: URL[] = [];
+  await mount("#/flow", askedFlows(asked));
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Range" }));
+  fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-01" } });
+  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
+  await flush();
+  const search = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect([search.get("from"), search.get("to")]).toEqual(["2026-10-01", "2026-11-12"]);
+  const last = asked.at(-1)!.searchParams;
+  expect([last.get("weeks"), last.get("until")]).toEqual(["6", String(new Date(2026, 10, 13).getTime())]);
 });

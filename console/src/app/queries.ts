@@ -535,14 +535,20 @@ export function useMergeQueues<R extends HostRecord<PollBodies>>(hosts: R[], dep
 
 const FLOW_INTERVAL_MS = 60_000;
 
-/** Each status-answering host's last good `/flow` answer, in fleet order;
- *  a daemon without the route, or that never answered, is left out. */
-export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }): { host: R; flow: Flow }[] {
+export interface FlowWindow {
+  weeks: number;
+  until?: number;
+}
+
+/** Each status-answering host's last good `/flow` answer for `window`, in
+ *  fleet order; a daemon without the route, or that never answered, is left out. */
+export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }, window: FlowWindow): { host: R; flow: Flow }[] {
   const asked = hosts.filter((host) => host.status != null);
+  const path = `/flow?weeks=${window.weeks}${window.until == null ? "" : `&until=${window.until}`}`;
   const results = useQueries({
     queries: asked.map((host) => ({
-      queryKey: routeKey(host.base, "/flow"),
-      queryFn: () => routeOrNone(deps.fetch, `${host.base}/flow`, flowSchema),
+      queryKey: routeKey(host.base, path),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, flowSchema),
       refetchInterval: FLOW_INTERVAL_MS,
       staleTime: FLOW_INTERVAL_MS,
     })),

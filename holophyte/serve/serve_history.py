@@ -208,13 +208,17 @@ def parse_weeks(query):
 
 
 def flow(project, query, now=None):
+    now = int(time() * 1000) if now is None else now
     try:
         weeks = parse_weeks(query)
+        until = parse_until(query)
     except ValueError as bad:
         return 400, {"error": str(bad)}
+    if until is not None and until > now:
+        return 400, {"error": f"until must not be later than now, got {until}"}
     if not project.store_path.exists():
         return 503, no_store(project)
-    now = int(time() * 1000) if now is None else now
+    now = now if until is None else until
     since = now - weeks * WEEK_MS
     conn = store.read.open_readonly(project.store_path)
     try:
@@ -228,8 +232,9 @@ def flow(project, query, now=None):
         events = conn.execute(
             "SELECT r.id, r.startedAt, r.endedAt, e.at, e.summary"
             " FROM runs r LEFT JOIN runEvents e ON e.runId = r.id"
-            " AND e.kind = 'phase_change' WHERE r.startedAt BETWEEN ? AND ?"
-            " ORDER BY r.id, e.seq", (since, now)).fetchall()
+            " AND e.kind = 'phase_change' AND e.at <= ?"
+            " WHERE r.startedAt BETWEEN ? AND ?"
+            " ORDER BY r.id, e.seq", (now, since, now)).fetchall()
     finally:
         conn.close()
     return 200, {"now": now,
