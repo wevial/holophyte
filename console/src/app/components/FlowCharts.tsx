@@ -3,6 +3,7 @@ import { weekLabel, weeklyChange, weekRange, type Better, type Tip } from "../fl
 
 const STEPS = [1, 2, 5, 10];
 const BAR_SHARE = 0.6;
+const ACTIVE_BAR_SHARE = 0.75;
 
 type Point = [number, number];
 
@@ -86,7 +87,9 @@ function Tooltip({ range, tip, style, align }: { range: string; tip: Tip; style:
 }
 
 function Chart({ title, note, starts, format, tip, top, values, none, children }: ChartProps & { top: number; values: (number | null)[]; none: string; children: (active: number | null) => ReactNode }) {
-  const [active, setActive] = useState<number | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
+  const active = hovered ?? focused;
   const ticks = [top, top / 2, 0];
   const count = values.length;
   const spoken = values.map((value, index) => `${weekLabel(starts[index]!)} ${value == null ? none : format(value)}`).join(", ");
@@ -119,10 +122,10 @@ function Chart({ title, note, starts, format, tip, top, values, none, children }
                 type="button"
                 data-point={index}
                 aria-label={`${weekRange(starts[index]!)}: ${said}, ${context}`}
-                onMouseEnter={() => setActive(index)}
-                onMouseLeave={() => setActive(null)}
-                onFocus={() => setActive(index)}
-                onBlur={() => setActive(null)}
+                onMouseEnter={() => setHovered(index)}
+                onMouseLeave={() => setHovered(null)}
+                onFocus={() => setFocused(index)}
+                onBlur={() => setFocused(null)}
                 style={{ left: `${(index / count) * 100}%`, width: `${100 / count}%` }}
                 className="absolute inset-y-0 cursor-default focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
               />
@@ -145,7 +148,6 @@ function Chart({ title, note, starts, format, tip, top, values, none, children }
 
 export function BarChart({ values, ...props }: ChartProps & { values: number[] }) {
   const top = roundedTop(Math.max(0, ...values));
-  const width = (100 / values.length) * BAR_SHARE;
   const latest = values.length - 1;
   return (
     <Chart {...props} top={top} values={values} none="none">
@@ -154,6 +156,7 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
             {values.map((value, index) => {
               const y = round(plotY(value, top));
+              const width = (100 / values.length) * (index === active ? ACTIVE_BAR_SHARE : BAR_SHARE);
               return (
                 <rect
                   key={index}

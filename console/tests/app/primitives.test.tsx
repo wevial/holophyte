@@ -231,7 +231,7 @@ const WEEKS = [
 ].map((week, index) => ({ start_ms: SIX_WEEKS[index + 2]!, ...week }));
 const WEEKLY = flowWeekly([{ now: SIX_WEEKS[5]!, weeks: WEEKS, phases: {}, waits: NO_WAITS, reverted: null }]);
 
-test("focusing a waiting point tooltips its week, share and run-hours, grows its dot and hides the latest label until blur", () => {
+test("focusing a waiting point tooltips its week, share and run-hours, grows its dot and hides the latest label until blur, whatever the mouse does", () => {
   const { container } = render(
     <LineChart title="Time spent waiting" note="share of run time" starts={WEEKLY.starts} values={WEEKLY.waitingShare} top={100} format={String} tip={weeklyTips(WEEKLY, false).waiting} />,
   );
@@ -242,17 +242,25 @@ test("focusing a waiting point tooltips its week, share and run-hours, grows its
   expect(container.querySelector('[data-dot="2"]')!.classList.contains("size-3")).toBe(true);
   expect(container.querySelector('[data-dot="0"]')!.classList.contains("size-2")).toBe(true);
   expect(container.querySelector("[data-latest]")).toBeNull();
+  fireEvent.mouseEnter(point);
+  fireEvent.mouseLeave(point);
+  expect(container.querySelector("[data-tooltip]")!.textContent).toBe("Oct 30 – Nov 550% waiting42 of 84 run-hours");
+  expect(container.querySelector("[data-latest]")).toBeNull();
   fireEvent.blur(point);
   expect(container.querySelector("[data-tooltip]")).toBeNull();
   expect(container.querySelector("[data-latest]")).not.toBeNull();
 });
 
-test("a merges bar names its median review rounds for one project and its interventions under All projects", () => {
+test("a hovered merges bar grows and names its median review rounds for one project and its interventions under All projects", () => {
   const bars = (allProjects: boolean) =>
     render(<BarChart title="Merges" note="per week" starts={WEEKLY.starts} values={WEEKLY.merged} format={String} tip={weeklyTips(WEEKLY, allProjects).merged} />);
   const { container: project } = bars(false);
+  const widths = () => [...project.querySelectorAll("rect")].map((bar) => Number(bar.getAttribute("width")));
+  const restingWidth = widths()[0]!;
   fireEvent.mouseEnter(screen.getByRole("button", { name: "Oct 16 – 22: 57 merged, median 2 review rounds" }));
   expect(project.querySelector("[data-tooltip]")!.textContent).toBe("Oct 16 – 2257 mergedmedian 2 review rounds");
+  expect(widths()[0]).toBeGreaterThan(restingWidth);
+  expect(widths()[1]).toBe(restingWidth);
   cleanup();
   const { container: all } = bars(true);
   fireEvent.mouseEnter(screen.getByRole("button", { name: "Oct 23 – 29: 0 merged, 3 interventions" }));
