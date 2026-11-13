@@ -89,7 +89,7 @@ function BiggestWaits({ waits }: { waits: FlowNumbers["waits"] }) {
     <section aria-labelledby="flow-waits" className="flex flex-col gap-3">
       <h2 id="flow-waits" className={H2}>Biggest waits</h2>
       <ol aria-label="Biggest waits" className="flex flex-col gap-3.5">
-        {waits.map(({ group, hours }) => (
+        {waits.map(({ group, hours }, index) => (
           <li key={group} data-wait={group} className="flex flex-col gap-1.5">
             <span className="flex items-center justify-between gap-3 font-sans text-[13px] text-ink">
               <span className="flex items-center gap-2">
@@ -99,7 +99,7 @@ function BiggestWaits({ waits }: { waits: FlowNumbers["waits"] }) {
               <span className="font-mono text-[12px] text-ink-2">{formatHours(hours)}</span>
             </span>
             <span aria-hidden="true" className="block h-1 bg-paper-2">
-              <span className="block h-full bg-wait" style={{ width: `${share(hours, top)}%` }} />
+              <span className={`block h-full ${index === 0 ? "bg-need" : "bg-wait"}`} style={{ width: `${share(hours, top)}%` }} />
             </span>
           </li>
         ))}

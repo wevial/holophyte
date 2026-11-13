@@ -487,6 +487,13 @@ test("on All projects the Flow numbers sum both hosts: merged adds, and waiting 
   expect(figure("Reverted")).toBe("0 of 6");
 });
 
+test("on All projects a host whose revert count is unknown leaves the summed Reverted unknown", async () => {
+  await mount("#/flow", flowDaemons(demoFlow, { ...writerFlow, reverted: null }));
+  await act(settle);
+  expect(figure("Merged")).toBe("12");
+  expect(figure("Reverted")).toBe("–");
+});
+
 test("picking a project in the Flow dropdown shows only its host's numbers and puts it in the address", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   await mount("#/flow", flowDaemons(demoFlow, writerFlow));

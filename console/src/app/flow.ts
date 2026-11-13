@@ -54,7 +54,7 @@ export function flowNumbers(flows: Flow[]): FlowNumbers {
   let interventions = 0;
   let revertedCount = 0;
   let revertedMerged = 0;
-  let revertedKnown = false;
+  let revertedKnown = flows.length > 0;
   for (const flow of flows) {
     for (const week of flow.weeks) {
       merged += week.merged;
@@ -65,8 +65,8 @@ export function flowNumbers(flows: Flow[]): FlowNumbers {
     }
     addInto(waits, flow.waits);
     addInto(phases, flow.phases);
-    if (flow.reverted) {
-      revertedKnown = true;
+    if (flow.reverted == null) revertedKnown = false;
+    else {
       revertedCount += flow.reverted.count;
       revertedMerged += flow.reverted.merged;
     }
