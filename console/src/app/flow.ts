@@ -141,11 +141,7 @@ export function flowWeekly(flows: Flow[]): FlowWeekly {
   const count = Math.max(0, ...flows.map((flow) => flow.weeks.length));
   const weekly: FlowWeekly = { starts: [], merged: [], interventions: [], waitingShare: [], rounds: [], interventionsPerMerge: [] };
   for (let index = 0; index < count; index += 1) {
-    const back = count - index;
-    const weeks = flows.flatMap((flow) => {
-      const week = flow.weeks[flow.weeks.length - back];
-      return week ? [week] : [];
-    });
+    const weeks = flows.map((flow) => flow.weeks.at(index - count)).filter((week) => week != null);
     const merged = weeks.reduce((sum, week) => sum + week.merged, 0);
     const interventions = weeks.reduce((sum, week) => sum + week.interventions, 0);
     const waiting = weeks.reduce((sum, week) => sum + week.hours.waiting + week.hours.operator, 0);
