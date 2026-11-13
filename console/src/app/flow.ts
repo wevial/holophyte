@@ -95,7 +95,6 @@ export function flowNumbers(flows: Flow[]): FlowNumbers {
 
 const DAY_MONTH = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long" });
 
-/** `Six weeks, 2 October to 12 November` over the widest of `flows`. */
 export function flowSpan(flows: Flow[]): string | null {
   const starts = flows.flatMap((flow) => (flow.weeks[0] ? [flow.weeks[0].start_ms] : []));
   if (starts.length === 0) return null;
