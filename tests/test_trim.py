@@ -821,18 +821,18 @@ class RetireLoopTests(TrimFixture):
     def cut_from_test_kept(self, line):
         self.cut_from_copy(COPY.replace("(True)\n\n    def test_dropped",
                                         f"(True)\n{line}\n    def test_dropped"),
-                           unittest_module("CopyTests", "test_kept"), "test_kept")
+                           unittest_module("CopyTests", "test_kept"), "::test_kept")
 
-    def cut_from_copy(self, approved, retired, named):
+    def cut_from_copy(self, approved, retired, named, files=()):
         self.retired(
             Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
                   "protects nothing", {"tests/test_copy.py": retired}),
             cited=["tests/test_copy.py::CopyTests::test_kept"],
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
-                                 "tests/test_copy.py": approved}),))
+                                 "tests/test_copy.py": approved, **dict(files)}),))
         self.assert_reverted("deleted lines that kept tests own or use: "
-                             f"tests/test_copy.py::{named}")
+                             f"tests/test_copy.py{named}")
 
     def test_a_retire_cutting_a_hash_line_from_a_kept_docstring_is_reverted(self):
         def documented(source, marker):
@@ -840,7 +840,7 @@ class RetireLoopTests(TrimFixture):
                                   f'        """Checks:\n{marker}        """\n')
 
         self.cut_from_copy(documented(COPY, "# the marker\n"), documented(
-            unittest_module("CopyTests", "test_kept"), ""), "test_kept")
+            unittest_module("CopyTests", "test_kept"), ""), "::test_kept")
 
     def test_a_retire_commit_cutting_a_load_tests_adding_a_check_is_reverted(self):
         hook = ("def load_tests(loader, tests, pattern):\n"
@@ -857,6 +857,23 @@ class RetireLoopTests(TrimFixture):
         self.assert_reverted("deleted lines that kept tests own or use: "
                              "tests/test_copy.py::load_tests")
 
+    def test_a_retire_commit_cutting_an_import_that_supplies_tests_is_reverted(self):
+        shared = COPY.replace("import unittest\n", "import unittest\n"
+                              "from checks import SharedChecks\n").replace(
+            "test_dropped(self):\n        self.assertTrue(True)",
+            "test_dropped(self):\n        self.assertTrue(SharedChecks)")
+        self.cut_from_copy(shared, unittest_module("CopyTests", "test_kept"),
+                           ":2", files={"tests/checks.py": unittest_module(
+                               "SharedChecks", "test_shared")})
+
+    def test_a_retire_commit_cutting_an_assigned_load_tests_is_reverted(self):
+        hooked = COPY.replace("import unittest\n", "import unittest\n"
+                              "load_tests = lambda loader, tests, pattern: (\n"
+                              "    tests.addTest(unittest.FunctionTestCase("
+                              "lambda: None)), tests)[1]\n")
+        self.cut_from_copy(hooked, unittest_module("CopyTests", "test_kept"),
+                           ":2")
+
     def test_a_retire_commit_cutting_a_kept_tests_framework_attribute_is_reverted(self):
         def unskipped(source):
             return source.replace(
@@ -867,7 +884,7 @@ class RetireLoopTests(TrimFixture):
 
         self.cut_from_copy(unskipped(COPY), unskipped(unittest_module(
             "CopyTests", "test_kept")).replace("    __unittest_skip__ = False\n\n", ""),
-            "CopyTests")
+            "::CopyTests")
 
     def test_a_retire_commit_cutting_a_hook_kept_tests_use_is_reverted(self):
         hooked = COPY.replace("    def test_kept", "    def tearDown(self):\n"
@@ -916,10 +933,19 @@ class RetireLoopTests(TrimFixture):
         self.assertNotIn("test_copy.py::test_kept", fake.turns[-1].goal)
 
     def test_a_retire_commit_that_turns_verify_red_is_reverted(self):
+        def leaning(source):
+            return source.replace(
+                "def test_kept(self):\n        self.assertTrue(True)",
+                "def test_kept(self):\n        self.assertTrue("
+                "hasattr(self, 'test_dropped'))")
+
         self.retired(
             Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
-                  "protects nothing", {"tests/test_copy.py": unittest_module(
-                      "CopyTests", "test_kept").replace("import unittest\n", "")}))
+                  "protects nothing", {"tests/test_copy.py": leaning(
+                      unittest_module("CopyTests", "test_kept"))}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": leaning(COPY)}),))
         self.assert_reverted("verify was red at the retire commit")
 
     def test_a_retire_commit_that_edits_a_factory_module_is_reverted(self):

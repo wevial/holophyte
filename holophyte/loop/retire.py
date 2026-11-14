@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import tokenize
+from collections import Counter
 from functools import partial
 from pathlib import PurePosixPath
 
@@ -312,7 +313,8 @@ def _cut_tests(wt, sha, head, path, gone):
     kept = set(range(1, text.count("\n") + 2)) - quiet - deleted
     used = (None if PurePosixPath(path).name == "conftest.py"
             else _used_names(wt, head, path))
-    owners = (_owner(tree, number, kept, gone, used)
+    reads = _reads(tree)
+    owners = (_owner(tree, number, kept, gone, used, reads)
               for number in sorted(deleted))
     return sorted({f"{path}{owner}" for owner in owners if owner})
 
@@ -338,14 +340,14 @@ def _used_names(wt, head, path):
                if isinstance(node, ast.Attribute)})
 
 
-def _owner(tree, number, kept, gone, used):
+def _owner(tree, number, kept, gone, used, reads):
     chain = _enclosing(tree, number)
     whole = next((node for node in chain if kept.isdisjoint(_span(node))), None)
     inside = chain[:chain.index(whole)] if whole is not None else chain
     if whole is not None and not any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in inside) and _only_gone_use(
-                whole, gone, used, _served(tree, chain, whole, used)):
+                whole, gone, used, _served(tree, chain, whole, used), reads):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]
@@ -380,9 +382,7 @@ def _is_fixture(node):
     return False
 
 
-def _only_gone_use(node, gone, used, scope):
-    if isinstance(node, (ast.Import, ast.ImportFrom)):
-        return True
+def _only_gone_use(node, gone, used, scope, reads):
     if used is None:
         return False
     if _is_test_def(node):
@@ -395,20 +395,49 @@ def _only_gone_use(node, gone, used, scope):
         if node.name in HOOKS or _is_fixture(node):
             return _serves_only_gone(scope, gone)
         return node.name not in used
-    return _unused_assignment(node, gone, used, scope)
+    return _unused_binding(node, gone, used, scope, reads)
 
 
-def _unused_assignment(node, gone, used, scope):
-    targets = (node.targets if isinstance(node, ast.Assign)
-               else [node.target] if isinstance(node, ast.AnnAssign) else None)
-    if targets is None or not all(isinstance(target, ast.Name)
-                                  and target.id not in used
-                                  for target in targets):
+def _unused_binding(node, gone, used, scope, reads):
+    bound, sources = _bindings(node)
+    if not bound or any(_may_supply_tests(name) for name in bound + sources):
         return False
-    framework_read = (isinstance(scope, ast.ClassDef) or node not in scope.body
-                      or any(
-        target.id.startswith(("__", "pytest")) for target in targets))
-    return not framework_read or _serves_only_gone(scope, gone)
+    if any(name in used for name in bound):
+        return False
+    if (isinstance(scope, ast.ClassDef) or node not in scope.body or any(
+            name in HOOKS or name.startswith(("__", "pytest")) for name in bound)):
+        return _serves_only_gone(scope, gone)
+    own = _reads(node)
+    return all(reads[name] > own[name] for name in bound)
+
+
+def _bindings(node):
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if any(alias.name == "*" for alias in node.names):
+            return [], []
+        return ([alias.asname or alias.name.partition(".")[0]
+                 for alias in node.names],
+                [alias.name.rpartition(".")[2] for alias in node.names])
+    targets = (node.targets if isinstance(node, ast.Assign)
+               else [node.target] if isinstance(node, ast.AnnAssign) else [])
+    if not all(isinstance(target, ast.Name) for target in targets):
+        return [], []
+    value = getattr(node, "value", None) or ast.Pass()
+    return ([target.id for target in targets],
+            [getattr(child, "id", getattr(child, "attr", ""))
+             for child in ast.walk(value)
+             if isinstance(child, (ast.Name, ast.Attribute))])
+
+
+def _may_supply_tests(name):
+    return (name in TEST_SUPPLIERS or name.lower().startswith("test")
+            or (name[:1].isupper() and not name.isupper()))
+
+
+def _reads(tree):
+    return Counter(node.id for node in ast.walk(tree)
+                   if isinstance(node, ast.Name)
+                   and isinstance(node.ctx, ast.Load))
 
 
 def _serves_only_gone(scope, gone):
