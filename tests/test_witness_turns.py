@@ -476,6 +476,50 @@ class Asserting(unittest.TestCase):
         self.assertIn("tests/test_beta.py is changed or imports a changed"
                       " module and failed", fake.turns[3].goal)
 
+    def test_a_verify_command_an_earlier_failure_skipped_is_run(self):
+        tests = {"tests/test_alpha.py": RUNS, "tests/test_beta.py": RUNS}
+        broken = {name: FIX_BROKE for name in tests}
+        fake = self.run_task(
+            Writes(tests), REQUEST_CHANGES, Writes(broken), Writes(tests),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_alpha.py'"
+                   " && python3 -m unittest discover -s tests"
+                   " -p 'test_beta.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("tests/test_beta.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+
+    def test_the_run_beats_while_the_self_check_runs_tests(self):
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
+        beating = f"""import sqlite3
+import time
+import unittest
+
+
+def beat():
+    return sqlite3.connect({str(self.db)!r}).execute(
+        "SELECT lastHeartbeat FROM runs WHERE endedAt IS NULL").fetchone()
+
+
+class Beating(unittest.TestCase):
+    def test_the_run_beats(self):
+        first = beat()
+        time.sleep(4)
+        self.assertNotEqual(beat(), first)
+"""
+        fake = self.run_task(
+            Writes(LIB), REQUEST_CHANGES,
+            Commit("a slow test", path="tests/test_beating.py", body=beating),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "review"])
+        (event,) = self.summaries("fix_self_check")
+        self.assertTrue(event.startswith("fix self-check passed at"), event)
+
     def test_a_spent_time_box_still_records_the_self_check(self):
         fake = FakeAgent(Writes(LIB), REQUEST_CHANGES,
                          Commit("break", path="tests/test_runs.py",

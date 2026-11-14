@@ -201,9 +201,10 @@ def _importing_tests(root, runs, since=None):
     return sorted(nearest, key=lambda test: (nearest[test], test))
 
 
-def _selected(wt, runs, base=None, ran=()):
+def _selected(wt, runs, base=None, ran=(), covering=None):
     top, clauses = _top_level(runs), {}
-    for test in _importing_tests(wt, runs, base):
+    for test in _importing_tests(wt, runs if covering is None else covering,
+                                 base):
         if len(clauses) == IMPORTER_CAP:
             break
         clause = _module_clause(runs[0], top, test)
@@ -212,15 +213,33 @@ def _selected(wt, runs, base=None, ran=()):
     return clauses
 
 
+def _each(project, wt, conn, run_id, setup, clauses):
+    reports = []
+    for test, clause in clauses.items():
+        ok, out = run_verify(" && ".join([*setup, clause]), wt,
+                             timeout=verify_config(project).timeout_sec,
+                             conn=conn, run_id=run_id, project=project)
+        if not ok:
+            reports.append(f"[verify] FAILED: {test} is changed or imports a "
+                           f"changed module and failed\n{out}")
+    return not reports, {"source": "importers",
+                         "command": " && ".join([*setup, *clauses.values()]),
+                         "exitCode": 1 if reports else 0,
+                         "output": "\n".join(reports)}
+
+
 def run_importing_tests(project, wt, command, conn, run_id, *, base=None,
-                        after_importers=False):
+                        after_importers=False, executed=None):
     runs = unittest_runs(command)
     if not runs:
         return True, None
     ran = _selected(wt, runs) if after_importers else {}
-    clauses = _selected(wt, runs, base, ran)
+    covering = None if executed is None else unittest_runs(executed)
+    clauses = _selected(wt, runs, base, ran, covering)
     if not clauses:
         return True, None
+    if base:
+        return _each(project, wt, conn, run_id, runs[0].setup, clauses)
     tests, setup = list(clauses), runs[0].setup
     joined = " && ".join([*setup, *clauses.values()])
     ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,
@@ -232,8 +251,7 @@ def run_importing_tests(project, wt, command, conn, run_id, *, base=None,
     failure = getattr(out, "failure", None) or {}
     index = (failure.get("command_index") or 1) - len(setup)
     named = tests[index - 1] if 1 <= index <= len(tests) else ", ".join(tests)
-    why = ("is changed or imports a changed module" if base
-           else "imports a changed module")
-    report = f"[verify] FAILED: {named} {why} and failed\n{out}"
+    report = (f"[verify] FAILED: {named} imports a changed module and failed\n"
+              f"{out}")
     return False, {"source": "importers", "command": joined, "exitCode": 1,
                    "output": report, "failure": failure or None}

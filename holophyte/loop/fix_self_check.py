@@ -8,6 +8,7 @@ from holophyte.loop.follow_ups import _commits
 from holophyte.loop.gates import sh
 from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.importing_tests import run_importing_tests
+from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
 from holophyte.review.reply_parsing import FINDING_PATH_RE
@@ -34,16 +35,26 @@ def _unaddressed(wt, candidate):
                        f" in its directory")
 
 
-def _failures(project, conn, run_id, wt, candidate, verify_cmd, checks):
+def _executed(verify_cmd, passed, out):
+    failed = (getattr(out, "failure", None) or {}).get("command") or ""
+    if passed or not failed or failed not in verify_cmd:
+        return verify_cmd if passed else ""
+    return verify_cmd[:verify_cmd.index(failed) + len(failed)]
+
+
+def _failures(project, conn, run_id, beat_s, wt, candidate, verify_cmd,
+              checks):
     ok, out = checks()
     failures = [] if ok else [f"verify failed:\n{out}"]
-    ran = any(row.get("source") == "importers" and row.get("exitCode") == 0
-              for row in getattr(out, "results", ()))
-    ok, tests = run_importing_tests(project, wt, verify_cmd, conn, run_id,
-                                    base=candidate, after_importers=ran)
-    if not ok:
-        failures.append(tests["output"])
-    return failures + list(_unaddressed(wt, candidate))
+    passed = {row.get("source") for row in getattr(out, "results", ())
+              if row.get("exitCode") == 0}
+    with heartbeat_while(conn, run_id, beat_s):
+        ok, tests = run_importing_tests(
+            project, wt, verify_cmd, conn, run_id, base=candidate,
+            after_importers="importers" in passed,
+            executed=_executed(verify_cmd, "ticket" in passed, out))
+        unaddressed = list(_unaddressed(wt, candidate))
+    return failures + ([] if ok else [tests["output"]]) + unaddressed
 
 
 def _record(conn, run_id, summary):
@@ -55,8 +66,8 @@ def after_fix(project, conn, run_id, beat_s, wt, budget_min, ticket, candidate,
               sha, verify_cmd, checks):
     """Check the fix diff `candidate..sha`; on a failure, take one more fix
     turn; return the head the next round reviews."""
-    failures = _failures(project, conn, run_id, wt, candidate, verify_cmd,
-                         checks)
+    failures = _failures(project, conn, run_id, beat_s, wt, candidate,
+                         verify_cmd, checks)
     if not failures:
         print(f"[holo2] fix self-check passed at {sha[:12]}")
         _record(conn, run_id, f"fix self-check passed at {sha[:12]}")
