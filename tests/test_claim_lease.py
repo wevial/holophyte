@@ -5,8 +5,10 @@ import io
 import sqlite3
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -173,9 +175,24 @@ class BoardLeaseLabelTests(LoopFixture):
                     self.assertion = (thread.is_alive(), list(competitor))
                 super().label_issue(issue_id, name)
 
+            def set_state(self, issue_id, state):
+                # Outside the lease turn, while this claim's run is live.
+                if threads and not self.states:
+                    threads[0].join(10)
+                super().set_state(issue_id, state)
+
+        parked = holophyte.loop.claim.freshness.parked_since_admitted
+
+        def late_competitor(*args, **kwargs):
+            if threads and threading.current_thread() is threads[0]:
+                time.sleep(1)
+            return parked(*args, **kwargs)
+
         provider = self.labelled(Contended, [self.label()])
-        out = self.main_output(Commit("the scripted work"), APPROVE,
-                               provider=provider)
+        with mock.patch("holophyte.loop.claim.freshness.parked_since_admitted",
+                        late_competitor):
+            out = self.main_output(Commit("the scripted work"), APPROVE,
+                                   provider=provider)
         threads[0].join(10)
 
         self.assertEqual(provider.assertion, (True, []))
