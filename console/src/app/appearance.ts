@@ -22,7 +22,7 @@ export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
 export const FULL = 100;
 
-export function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
+function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
     return localStorage.getItem(EFFECT_KEY) === "none" ? "none" : "haze";
   } catch {
@@ -67,9 +67,9 @@ function writePercent(key: string, value: number): void {
 }
 
 function applyScale(property: string) {
-  return (percent: number, root: HTMLElement = document.documentElement) => {
-    if (percent === FULL) root.style.removeProperty(property);
-    else root.style.setProperty(property, String(percent / 100));
+  return (percent: number) => {
+    if (percent === FULL) document.documentElement.style.removeProperty(property);
+    else document.documentElement.style.setProperty(property, String(percent / 100));
   };
 }
 
@@ -78,7 +78,7 @@ export const readHazeStrength = (fallback?: number) => readPercent(HAZE_STRENGTH
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
 
-export function readMotion(fallback = true): boolean {
+function readMotion(fallback = true): boolean {
   try {
     return localStorage.getItem(MOTION_KEY) !== "off";
   } catch {
@@ -161,8 +161,8 @@ const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, writeHeaderEffect, () => {});
 const motionStore = appearanceStore(readMotion, writeMotion, () => {});
 const textSizeStore = appearanceStore((fallback?: number) => readPercent(TEXT_SIZE_KEY, TEXT_SIZES, fallback), (value) => writePercent(TEXT_SIZE_KEY, value), () => {});
-const grainStore = appearanceStore(readGrain, (value) => writePercent(GRAIN_KEY, value), (value) => applyGrain(value));
-const hazeStrengthStore = appearanceStore(readHazeStrength, (value) => writePercent(HAZE_STRENGTH_KEY, value), (value) => applyHazeStrength(value));
+const grainStore = appearanceStore(readGrain, (value) => writePercent(GRAIN_KEY, value), applyGrain);
+const hazeStrengthStore = appearanceStore(readHazeStrength, (value) => writePercent(HAZE_STRENGTH_KEY, value), applyHazeStrength);
 
 function systemDark(): boolean {
   return window.matchMedia?.(DARK_QUERY).matches ?? false;
