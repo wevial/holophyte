@@ -728,12 +728,13 @@ class ReviewLoopTests(unittest.TestCase):
 
         self.assertTrue(merged)
         # Round 2's findings buy a third implementer turn, and the verify gate
-        # runs over that fix commit before the adjudicator is dispatched.
+        # runs over that fix commit before the adjudicator is dispatched; each
+        # fix turn's self-check verifies its head first.
         self.assertEqual(self.events, [
             "implement",
             "verify", "review", "implement",
-            "verify", "review", "implement",
-            "verify", "adjudicate",
+            "verify", "verify", "review", "implement",
+            "verify", "verify", "adjudicate",
             "verify",  # pre-merge
         ])
 

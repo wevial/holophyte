@@ -76,6 +76,16 @@ class Broken(unittest.TestCase):
 
 FIX_BROKE = BROKEN.replace("broken by the witness turn", "broken by the fix")
 CITED = "fix\n\nADDRESS: lib/thing.py:3 the finding\n"
+COUNTED = """import unittest
+
+import {name}
+
+
+class Counted(unittest.TestCase):
+    def test_it_runs(self):
+        with open({log!r}, "a") as log:
+            log.write("{name}\\n")
+"""
 LIB = {"lib/thing.py": "THING = 1\n", "lib/other.py": "OTHER = 1\n"}
 BOTH_MET = Reply("CRITERION 1: met \u2014 tests/test_gate.py::test_it_gates\n"
                  "CRITERION 2: met \u2014 tests/test_runs.py::test_it_runs\n"
@@ -426,6 +436,37 @@ class FixSelfCheck(RunningRepo):
             f" extra turn committed, head {still[:12]}\nverify failed:"),
             first)
         self.assertIn("broken by the fix", first)
+
+    def test_a_test_verify_ran_as_an_importer_is_not_run_again(self):
+        log = str(self.target.parent / "ran.log")
+        counted = {f"tests/test_{name}.py": COUNTED.format(name=name, log=log)
+                   for name in ("alpha", "beta")}
+        self.run_task(
+            Writes({"alpha.py": "A = 1\n", "beta.py": "B = 1\n", **counted}),
+            REQUEST_CHANGES, Commit("fix", path="alpha.py", body="A = 2\n"),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        ran = Path(log).read_text().split()
+        self.assertEqual(ran.count("alpha"), ran.count("beta"), ran)
+
+    def test_a_spent_time_box_still_records_the_self_check(self):
+        fake = FakeAgent(Writes(LIB), REQUEST_CHANGES,
+                         Commit("break", path="tests/test_runs.py",
+                                body=FIX_BROKE))
+        real = holophyte.loop.implement.agent_work
+
+        def spent(run, now):
+            return 10 ** 10 if len(fake.turns) == 3 else real(run, now)
+
+        with patch.object(holophyte.loop.implement, "agent_work", spent):
+            self.run_task(fake=fake, criteria=a_task()["criteria"])
+
+        self.assertEqual(len(fake.turns), 3)
+        (event,) = self.summaries("fix_self_check")
+        self.assertIn("1 failures; the extra turn never started", event)
+        self.assertIn("broken by the fix", event)
+        self.assertEqual(len(self.summaries("run_cap")), 1)
 
 
 if __name__ == "__main__":

@@ -37,8 +37,10 @@ def _unaddressed(wt, candidate):
 def _failures(project, conn, run_id, wt, candidate, verify_cmd, checks):
     ok, out = checks()
     failures = [] if ok else [f"verify failed:\n{out}"]
+    ran = any(row.get("source") == "importers"
+              for row in getattr(out, "results", ()))
     ok, tests = run_importing_tests(project, wt, verify_cmd, conn, run_id,
-                                    base=candidate)
+                                    base=candidate, after_importers=ran)
     if not ok:
         failures.append(tests["output"])
     return failures + list(_unaddressed(wt, candidate))
@@ -59,13 +61,15 @@ def after_fix(project, conn, run_id, beat_s, wt, budget_min, ticket, candidate,
         print(f"[holo2] fix self-check passed at {sha[:12]}")
         _record(conn, run_id, f"fix self-check passed at {sha[:12]}")
         return sha
-    _check_run_cap(project, conn, run_id, budget_min, sha)
+    turn = "never started"
     try:
+        _check_run_cap(project, conn, run_id, budget_min, sha)
+        turn = "made no commit"
         self_check_turn(project, conn, run_id, beat_s, wt, budget_min, ticket,
                         sha, failures, timed=_timed, check_cap=_check_run_cap)
     finally:
         head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-        turn = "committed" if head != sha else "made no commit"
+        turn = "committed" if head != sha else turn
         _record(conn, run_id,
                 f"fix self-check at {sha[:12]}: {len(failures)} failures; the "
                 f"extra turn {turn}, head {head[:12]}\n" + "\n".join(failures))

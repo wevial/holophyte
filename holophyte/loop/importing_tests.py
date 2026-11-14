@@ -201,18 +201,24 @@ def _importing_tests(root, runs, since=None):
     return sorted(nearest, key=lambda test: (nearest[test], test))
 
 
-def run_importing_tests(project, wt, command, conn, run_id, *, base=None):
-    runs = unittest_runs(command)
-    if not runs:
-        return True, None
-    top = _top_level(runs)
-    clauses = {}
+def _selected(wt, runs, base=None, ran=()):
+    top, clauses = _top_level(runs), {}
     for test in _importing_tests(wt, runs, base):
         if len(clauses) == IMPORTER_CAP:
             break
         clause = _module_clause(runs[0], top, test)
-        if clause is not None:
+        if clause is not None and test not in ran:
             clauses[test] = clause
+    return clauses
+
+
+def run_importing_tests(project, wt, command, conn, run_id, *, base=None,
+                        after_importers=False):
+    runs = unittest_runs(command)
+    if not runs:
+        return True, None
+    ran = _selected(wt, runs) if after_importers else {}
+    clauses = _selected(wt, runs, base, ran)
     if not clauses:
         return True, None
     tests, setup = list(clauses), runs[0].setup
