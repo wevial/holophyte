@@ -3,9 +3,9 @@ import { useDensity, useReadingFont, useTheme, type ReadingFont } from "../appea
 import type { Theme } from "../../lib/theme";
 
 const THEMES: { value: Theme; name: string; line: string; colors: string[] }[] = [
-  { value: "dark", name: "Night", line: "deep violet, pink for you", colors: ["#0d0a15", "#16121f", "#f6a3c3"] },
-  { value: "light", name: "Dawn", line: "light lavender paper", colors: ["#eceaf3", "#fbfafd", "#af2f6e"] },
-  { value: "system", name: "System", line: "follows your computer", colors: ["#0d0a15", "#eceaf3", "#16121f", "#fbfafd", "#f6a3c3", "#af2f6e"] },
+  { value: "dark", name: "Night", line: "deep violet, pink for you", colors: ["#0d0a15", "#15121f", "#b9a3ff"] },
+  { value: "light", name: "Dawn", line: "light lavender paper", colors: ["#f6f5fa", "#ffffff", "#5a4ebf"] },
+  { value: "system", name: "System", line: "follows your computer", colors: ["#0d0a15", "#f6f5fa", "#15121f", "#ffffff", "#b9a3ff", "#5a4ebf"] },
 ];
 
 const FONTS: { value: ReadingFont; name: string; line: string; face: string }[] = [

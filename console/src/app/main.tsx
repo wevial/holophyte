@@ -1,13 +1,15 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { applyTheme, readTheme } from "../lib/theme";
+import { applyPick, applyTheme, readPick, readTheme } from "../lib/theme";
 import { applyDensity, applyFont, readDensity, readFont } from "./appearance";
 import { consoleQueryClient } from "./fleet";
 import { ConsoleApp } from "./router";
 import "./theme.css";
 
 applyTheme(readTheme());
+applyPick("light", readPick("light"));
+applyPick("dark", readPick("dark"));
 applyFont(readFont());
 applyDensity(readDensity());
 
