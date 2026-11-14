@@ -208,13 +208,6 @@ test("a passing round reads passed, and a note withdrawn after the agent read it
   ]);
 });
 
-test("the Stage line links to the Progress section by its id", async () => {
-  await mount(progressFetch({ detail: liveDetail, asks }));
-  const link = screen.getByRole("link", { name: "history in Progress" });
-  expect(link.getAttribute("href")).toBe("#progress");
-  expect(document.getElementById("progress")).toBe(section());
-});
-
 /** Cap 1: round 1 asks for changes, then the terminal adjudication records round 2 as `last`. */
 function adjudicated(last: Partial<RunDetail["rounds"][number]>): RunDetail {
   return {

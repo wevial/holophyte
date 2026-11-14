@@ -86,13 +86,13 @@ beforeAll(() => happyDOM.setURL(`${DEMO}/`));
 afterAll(() => happyDOM.setURL("about:blank"));
 afterEach(() => { cleanup(); window.location.hash = ""; });
 
-test("Details loads files and turns from the run's host only after opening, and displays file counts", async () => {
+test("Details loads files from the run's host only after opening, the turns already loaded for the stepper, and displays file counts", async () => {
   const urls = await mount();
   const fold = screen.getByText("Details", { exact: true }).closest("details")!;
   expect(fold.open).toBe(false);
-  expect(urls.some((url) => /\/runs\/12\/(files|turns)$/.test(url))).toBe(false);
+  expect(urls.filter((url) => /\/runs\/12\/(files|turns)$/.test(url))).toEqual([`${WRITER}/runs/12/turns`]);
   await openDetails();
-  expect(urls.filter((url) => /\/runs\/12\/(files|turns)$/.test(url)).sort()).toEqual([
+  expect([...new Set(urls.filter((url) => /\/runs\/12\/(files|turns)$/.test(url)))].sort()).toEqual([
     `${WRITER}/runs/12/files`, `${WRITER}/runs/12/turns`,
   ]);
   const changed = within(screen.getByRole("region", { name: "Files changed" }));

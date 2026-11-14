@@ -1,4 +1,4 @@
-import { useContext, useRef, type MouseEvent } from "react";
+import { useContext, useRef } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { Markdown } from "../components/Markdown";
 import { TicketLink } from "../components/TicketLink";
@@ -15,21 +15,15 @@ import { RunDetails } from "../components/RunDetails";
 import { ACTIONS_OFF_LINE } from "../components/CardActions";
 import { RunPullRequest } from "../components/RunPullRequest";
 import { ScoutThis } from "../components/ScoutThis";
-import { StageChip } from "../components/StageChip";
+import { RunStepper } from "../components/RunStepper";
 import { StateDot } from "../components/StateDot";
 import { TitleText } from "../components/TitleText";
-import { useTicket } from "../queries";
-import { useRunPage } from "../run";
+import { useRunTurns, useTicket } from "../queries";
+import { stepperOf, useRunPage, type RunPage as RunPageFacts } from "../run";
 import { PollDepsContext } from "../scope";
 import { CRUMB_LINK, Loading, Notice, Page, zoneName } from "./runShared";
 
 const STRONG = "font-medium text-ink-2";
-
-/** The console routes on the hash, so the in-page link scrolls instead of navigating. */
-function toProgress(event: MouseEvent<HTMLAnchorElement>) {
-  event.preventDefault();
-  document.getElementById("progress")?.scrollIntoView({ block: "start" });
-}
 
 /** The summary the run was given: the claimed revision's body when the
  *  ticket answers one, else its current one; nothing on a 404. */
@@ -48,6 +42,12 @@ function RunTicket({ base, ticket }: { base: string; ticket: string }) {
       </div>
     </section>
   );
+}
+
+function Stepper({ page }: { page: Extract<RunPageFacts, { kind: "run" }> }) {
+  const deps = useContext(PollDepsContext);
+  const turns = useRunTurns(page.base, page.detail.run.id, true, page.live, deps);
+  return <RunStepper stages={stepperOf(page.detail, turns.data?.turns ?? [], page.phase)} />;
 }
 
 function Dot() {
@@ -125,20 +125,16 @@ export function RunPage() {
             {page.sentence}
           </p>
         </div>
-        <div className="mt-[18px] flex flex-wrap items-center gap-x-3 gap-y-2.5">
-          {page.state !== "merged" && <a href="#agent" className="btn" data-variant="quiet" onClick={(event) => {
-            event.preventDefault();
-            composeRef.current?.focus();
-            composeRef.current?.scrollIntoView({ block: "nearest" });
-          }}>Steer or ask</a>}
-          <span className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">Stage</span>
-          <span role="group" aria-label="Stage">
-            <StageChip label={page.stage.label} state={page.state} sub={page.stage.sub} />
-          </span>
-          <a href="#progress" onClick={toProgress} className="font-mono text-[12px] leading-[1.3] text-ink-2 underline underline-offset-2 hover:text-ink">
-            history in Progress
-          </a>
-        </div>
+        <Stepper page={page} />
+        {page.state !== "merged" && (
+          <div className="mt-[18px]">
+            <a href="#agent" className="btn" data-variant="quiet" onClick={(event) => {
+              event.preventDefault();
+              composeRef.current?.focus();
+              composeRef.current?.scrollIntoView({ block: "nearest" });
+            }}>Steer or ask</a>
+          </div>
+        )}
       </header>
       <div data-run-body className="@container mt-3.5 flex min-h-40 flex-wrap border border-rule bg-paper">
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[1000px]:border-r @[1000px]:border-rule max-[720px]:px-4">
