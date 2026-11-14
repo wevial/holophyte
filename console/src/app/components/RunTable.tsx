@@ -1,18 +1,24 @@
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatClock, formatSettled, formatStamp } from "../../lib/format";
 import { localMidnight } from "../../lib/ledger";
-import type { RunOrder, RunRow, RunSort } from "../history";
+import { daysAgo } from "../../lib/shipped";
+import { projectColours } from "../dayLog";
+import type { RunRow } from "../history";
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
-import { STATES, type State } from "../state";
-import { StateDot, TONE_TEXT } from "./StateDot";
+import type { State } from "../state";
+import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
-const GRID = "grid grid-cols-[52px_88px_minmax(0,1.6fr)_84px_minmax(0,1fr)_60px_52px_100px_100px_64px] items-start gap-3";
-const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
+const GRID =
+  "grid grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_48px_60px] items-center gap-x-3 max-[759px]:grid-cols-[16px_minmax(0,1fr)_auto]";
+const MONO = "font-mono text-[12px] leading-none tabular-nums text-ink-3";
+const WIDE = "max-[759px]:hidden";
+const NARROW_LINK = "max-[759px]:absolute max-[759px]:inset-0 max-[759px]:text-[0px]";
 const DASH = "–";
 const NEEDS_YOU = new Set<State>(["stale", "question", "paused", "ready_to_merge"]);
+const DAY_NAME = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" });
 
 function clock(ms: number, now: number): string {
   const today = localMidnight(now);
@@ -48,21 +54,53 @@ export function ResumedAs({ row }: { row: { base: string; resumed_as?: number | 
   );
 }
 
-function RunTableRow({ row, now }: { row: RunRow; now: number }) {
+function StateGlyph({ row }: { row: RunRow }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span
+      tabIndex={0}
+      onPointerEnter={() => setShown(true)}
+      onPointerLeave={() => setShown(false)}
+      onFocus={() => setShown(true)}
+      onBlur={() => setShown(false)}
+      onKeyDown={(event) => event.key === "Escape" && setShown(false)}
+      className={`relative inline-flex size-4 items-center justify-center focus-visible:outline-2 focus-visible:outline-focus ${shown ? "z-30" : "z-[1]"}`}
+    >
+      <StateDot state={row.state} hideWord label={row.stage} />
+      {shown && (
+        <span role="tooltip" className="absolute top-full left-0 mt-1.5 w-max max-w-[min(320px,calc(100vw-32px))] border border-rule bg-paper px-3 py-2 font-sans text-[13px] leading-[1.45] text-ink shadow-[var(--card-shadow)]">
+          {row.stage}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function LoopGlyph() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={12} height={12} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+      <path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4" />
+      <path d="M3.2 2.6v2.6h2.6" />
+    </svg>
+  );
+}
+
+function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; colour: string | undefined; grouped: boolean }) {
   const start = clock(row.started_ms, now);
-  const quiet = row.state === "merged" || row.state === "abandoned" || row.state === "resumed";
+  const shownStart = grouped ? formatClock(row.started_ms) : start;
   const need = NEEDS_YOU.has(row.state);
   return (
     <li
       data-row
       data-run={row.id}
       data-need={need ? "" : undefined}
-      className={`${GRID} relative border-b border-rule-2 p-3 text-[14px] transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"} ${need ? "bg-need-wash shadow-[inset_2px_0_0_var(--need)]" : ""}`}
+      className={`${GRID} relative min-h-8 border-b border-rule-2 px-2.5 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover max-[759px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
-      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} text-ink-2 no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
+      <StateGlyph row={row} />
+      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} ${NARROW_LINK} no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
         {row.id}
       </RunRowLink>
-      <span className="font-mono text-[11.5px] font-medium leading-[1.3] tabular-nums text-ink-3 [overflow-wrap:anywhere]">
+      <span className={`${MONO} ${WIDE} truncate`}>
         <Link
           to="/tickets/$project/$key"
           params={{ project: row.project, key: row.ticket }}
@@ -72,85 +110,74 @@ function RunTableRow({ row, now }: { row: RunRow; now: number }) {
           {row.ticket}
         </Link>
       </span>
-      <span className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] ${quiet ? "text-ink-2" : "text-ink"}`}><TitleText>{row.title}</TitleText></span>
-      <span className={`${MONO} [overflow-wrap:anywhere]`}>{row.project}</span>
-      <span className="inline-flex items-start gap-1.5">
-        <StateDot state={row.state} hideWord />
-        <span className={`font-sans text-[13px] font-medium leading-[1.3] ${row.state === "merged" ? "text-ink" : TONE_TEXT[STATES[row.state].tone]}`}>
-          {row.state === "resumed" ? <>paused · <ResumedAs row={row} /></> : row.stage}
+      <span data-title className="flex min-w-0 flex-col gap-1">
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span className="truncate font-read text-[14px] font-medium leading-[1.3]"><TitleText>{row.title}</TitleText></span>
+          {row.resumed_as != null && <span className="shrink-0 font-mono text-[11.5px] text-ink-3"><ResumedAs row={row} /></span>}
         </span>
+        <span aria-hidden="true" className={`${MONO} hidden max-[759px]:block`}>{row.ticket} · {shownStart}</span>
       </span>
-      <span className={MONO}>{row.rounds > 0 ? row.rounds : DASH}</span>
-      <span className={MONO}>{prNumber(row.pr_url)}</span>
-      <span className={`${MONO} whitespace-nowrap`}>{start}</span>
-      <span className={`${MONO} whitespace-nowrap`}>{row.ended_ms == null ? DASH : clock(row.ended_ms, now)}</span>
+      <span className={`${WIDE} flex min-w-0 items-center gap-2 font-sans text-[13px] text-ink-2`}>
+        <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: colour ?? "var(--ink-3)" }} />
+        <span className="truncate">{row.project}</span>
+      </span>
+      <span data-rounds className={`${MONO} ${WIDE} inline-flex items-center gap-1`}>
+        {row.rounds > 0 ? <><LoopGlyph />{row.rounds}</> : DASH}
+      </span>
+      <span data-pr className={`${MONO} ${WIDE}`}>{prNumber(row.pr_url)}</span>
+      <span className={`${MONO} ${WIDE} whitespace-nowrap`}>{shownStart}</span>
       <span className={`${MONO} whitespace-nowrap text-right`}>{formatSettled(row.elapsed_ms)}</span>
     </li>
   );
 }
 
-const HEADS: { label: string; sort?: RunSort; right?: boolean }[] = [
-  { label: "Run" },
-  { label: "Ticket" },
-  { label: "Title" },
-  { label: "Project" },
-  { label: "State", sort: "state" },
-  { label: "Rounds", sort: "rounds" },
-  { label: "PR" },
-  { label: "Started", sort: "started" },
-  { label: "Ended", sort: "ended" },
-  { label: "Took", sort: "duration", right: true },
-];
-
-function SortArrow({ order }: { order: RunOrder | null }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 8 10" width={8} height={10} fill="none" stroke="currentColor" strokeWidth={1.4} className={order ? "text-act" : "opacity-50"}>
-      {order === "desc" && <path d="M4 1v8M1 6l3 3 3-3" />}
-      {order === "asc" && <path d="M4 9V1M1 4l3-3 3 3" />}
-      {order == null && <path d="M4 1v8M2 3l2-2 2 2M2 7l2 2 2-2" />}
-    </svg>
-  );
+interface Day {
+  key: string;
+  label: string;
+  rows: RunRow[];
 }
 
-export function RunTableHeads({ sort, order, onSort }: { sort: RunSort; order: RunOrder; onSort: (key: RunSort) => void }) {
+function daysOf(rows: RunRow[], now: number): Day[] {
+  const days: Day[] = [];
+  for (const row of rows) {
+    const date = new Date(row.started_ms);
+    const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    const last = days.at(-1);
+    if (last?.key === key) {
+      last.rows.push(row);
+      continue;
+    }
+    const back = daysAgo(row.started_ms, now);
+    days.push({ key, label: back === 0 ? "Today" : back === 1 ? "Yesterday" : DAY_NAME.format(row.started_ms), rows: [row] });
+  }
+  return days;
+}
+
+/** `grouped` lists the rows under a heading for each local day they start
+ *  on, in their order; `dock` sits above the rows. */
+export function RunTable({ rows, now, empty, label = "Runs, newest first", dock, grouped = false }: {
+  rows: RunRow[]; now: number; empty: string; label?: string; dock?: ReactNode; grouped?: boolean;
+}) {
+  const colours = projectColours(useConsolePeers().hosts);
+  const id = useId();
+  const list = (each: RunRow[]) => each.map((row) => <RunTableRow key={`${row.base} ${row.id}`} row={row} now={now} colour={colours.get(row.project)} grouped={grouped} />);
   return (
-    <div data-run-heads className={`${GRID} relative z-[1] border border-rule bg-paper px-3 pb-2.5 pt-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
-      {HEADS.map((head) =>
-        head.sort ? (
-          <button
-            key={head.label}
-            type="button"
-            aria-label={`Sort by ${head.label.toLowerCase()}`}
-            aria-pressed={sort === head.sort}
-            onClick={() => onSort(head.sort!)}
-            className={`inline-flex cursor-pointer items-center gap-1.5 uppercase tracking-[0.12em] hover:text-ink aria-pressed:text-ink ${head.right ? "justify-self-end" : "justify-self-start"}`}
-          >
-            {head.label}
-            <SortArrow order={sort === head.sort ? order : null} />
-          </button>
+    <div data-run-table>
+      {dock}
+      <div data-run-list className="flex flex-col gap-5">
+        {grouped ? (
+          daysOf(rows, now).map((day) => (
+            <section key={day.key} aria-labelledby={`${id}-${day.key}`}>
+              <h2 data-day className="m-0 flex h-8 items-center gap-2 bg-raised px-2.5 font-sans text-[13px] font-semibold text-ink">
+                <span id={`${id}-${day.key}`}>{day.label}</span> <span className="font-mono text-[12px] font-normal tabular-nums text-ink-3">{day.rows.length}</span>
+              </h2>
+              <ol aria-labelledby={`${id}-${day.key}`} className="m-0 list-none p-0">{list(day.rows)}</ol>
+            </section>
+          ))
         ) : (
-          <span key={head.label}>{head.label}</span>
-        ),
-      )}
-    </div>
-  );
-}
-
-/** The runs as one table that scrolls sideways inside its own box while it
- *  is narrower than the table; `dock` sits above the rows inside that box. */
-export function RunTable({ rows, now, empty, label = "Runs, newest first", dock }: { rows: RunRow[]; now: number; empty: string; label?: string; dock?: ReactNode }) {
-  return (
-    <div data-run-table className="overflow-x-auto @min-[1100px]:overflow-x-visible">
-      <div className="min-w-[1100px]">
-        {dock}
-        <div className="border-x border-b border-rule bg-paper">
-          <ol aria-label={label} className="m-0 list-none p-0">
-            {rows.map((row) => (
-              <RunTableRow key={`${row.base} ${row.id}`} row={row} now={now} />
-            ))}
-          </ol>
-          {rows.length === 0 && <p className="m-0 px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
-        </div>
+          rows.length > 0 && <ol aria-label={label} className="m-0 list-none p-0">{list(rows)}</ol>
+        )}
+        {rows.length === 0 && <p className="m-0 px-2.5 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3">{empty}</p>}
       </div>
     </div>
   );

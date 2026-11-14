@@ -3,8 +3,8 @@ import { useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Btn } from "../components/Btn";
 import { ChevronIcon } from "../components/icons";
-import { dayRangeLabel, FilterChips, FilterPopover, RangeButtons, SearchField, type FilterChip, type FilterSection } from "../components/ListFilters";
-import { RunTable, RunTableHeads } from "../components/RunTable";
+import { dayRangeLabel, FilterChips, FilterPopover, RangeButtons, SearchField, type FilterChip, type FilterSection, type SortSection } from "../components/ListFilters";
+import { RunTable } from "../components/RunTable";
 import {
   DEFAULT_RANGE, DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
   type RunGroup, type RunOrder, type RunRange, type RunSort, type RunsFilters, type RunsSearch,
@@ -33,7 +33,7 @@ const RANGES: { value: RunRange; label: string; chip: string }[] = [
   { value: "any", label: "Any", chip: "Any time" },
 ];
 
-const CHIP_WORDS = { projects: "Project", state: "State", failure: "Failure", implementer: "Implementer" } as const;
+const CHIP_WORDS = { projects: "Project", failure: "Failure", implementer: "Implementer" } as const;
 
 const CLEARED = {
   q: undefined, projects: undefined, state: undefined, failure: undefined, implementer: undefined, range: undefined, from: undefined, to: undefined,
@@ -46,6 +46,8 @@ const SORT_WORDS: Record<RunSort, Record<RunOrder, string>> = {
   rounds: { desc: "most rounds first", asc: "fewest rounds first" },
   state: { asc: "active first", desc: "abandoned first" },
 };
+
+const SORT_LABELS: Record<RunSort, string> = { started: "Started", ended: "Ended", duration: "Took", rounds: "Rounds", state: "State" };
 
 const HIDE_AFTER_PX = 24;
 const QUIET_MS = 150;
@@ -93,6 +95,26 @@ function useControlsShift(dock: RefObject<HTMLDivElement | null>, controls: RefO
   return shift;
 }
 
+function StateTabs({ state, counts, onPick }: { state: string | undefined; counts: Record<RunGroup, number>; onPick: (group: RunGroup | undefined) => void }) {
+  const all = RUN_GROUPS.reduce((sum, group) => sum + counts[group], 0);
+  const tabs = [{ group: undefined, label: "All", count: all }, ...RUN_GROUPS.map((group) => ({ group, label: STATE_LABELS[group], count: counts[group] }))];
+  return (
+    <div role="group" aria-label="Run states" className="flex flex-wrap items-center gap-1">
+      {tabs.map((tab) => (
+        <button
+          key={tab.label}
+          type="button"
+          aria-pressed={state === tab.group}
+          onClick={() => onPick(tab.group)}
+          className="inline-flex min-h-8 cursor-pointer items-center gap-2 px-2.5 font-sans text-[13.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink"
+        >
+          {tab.label} <span className="font-mono text-[12px] font-normal tabular-nums text-ink-3">{tab.count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): FilterChip<Partial<typeof CLEARED>>[] {
   const chips: FilterChip<Partial<typeof CLEARED>>[] = [];
   if (search.q) chips.push({ word: "Search", value: `“${search.q}”`, clears: { q: undefined } });
@@ -128,14 +150,20 @@ export function Runs() {
     setFieldKey((key) => key + 1);
     go(CLEARED);
   };
-  const sortBy = (key: RunSort) => {
-    const nextOrder: RunOrder = key === sort ? (order === "asc" ? "desc" : "asc") : key === "state" ? "asc" : "desc";
+  const sortBy = (key: RunSort, nextOrder: RunOrder) => {
     const fresh = key === "started" && nextOrder === "desc";
     go({ sort: fresh ? undefined : key, order: fresh ? undefined : nextOrder });
   };
+  const sorting: SortSection = {
+    keys: (Object.keys(SORT_LABELS) as RunSort[]).map((key) => ({ value: key, label: SORT_LABELS[key] })),
+    orders: (["desc", "asc"] as const).map((each) => ({ value: each, label: SORT_WORDS[sort][each] })),
+    sort,
+    order,
+    onSort: (key) => sortBy(key as RunSort, key === "state" ? "asc" : "desc"),
+    onOrder: (picked) => sortBy(sort, picked as RunOrder),
+  };
   const sections: FilterSection[] = [
     { label: "Project", param: "projects", options: projects.map(({ name, count }) => ({ value: name, label: name, count })) },
-    { label: "State", param: "state", options: RUN_GROUPS.map((group) => ({ value: group, label: STATE_LABELS[group], count: counts.state[group] })) },
     { label: "Failure kind", param: "failure", options: FAILURE_KINDS.map((kind) => ({ value: kind, label: FAILURE_LABELS[kind], count: counts.failure[kind] ?? 0 })) },
     { label: "Implementer", param: "implementer", options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
   ];
@@ -150,7 +178,7 @@ export function Runs() {
   }, [pastEnd, backTo, navigate]);
   return (
     <section aria-labelledby="page-title" className="@container flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-2">
-      <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
+      <header className="flex flex-col gap-1.5">
         <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Runs</h1>
         <p data-count-line className="font-mono text-[13px] leading-[1.6] [overflow-wrap:anywhere] text-ink-2">
           {scope} · <b className="font-semibold text-ink">{total}</b> runs
@@ -159,12 +187,14 @@ export function Runs() {
           <Slash />
           {orderWords}
         </p>
+        <StateTabs state={search.state} counts={counts.state} onPick={(group) => go({ state: group })} />
       </header>
       <RunTable
         rows={rows}
         now={now}
         label={`Runs, ${orderWords}`}
-        empty={chips.length > 0 ? "No runs match" : `No runs in ${project ?? "any project"} in the last 7 days.`}
+        grouped={sort === "started"}
+        empty={chips.length > 0 || search.state != null ? "No runs match" : `No runs in ${project ?? "any project"} in the last 7 days.`}
         dock={
           <div
             ref={dock}
@@ -177,12 +207,12 @@ export function Runs() {
               data-controls
               data-hidden={hidden ? "" : undefined}
               inert={hidden}
-              className="flex flex-col gap-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0 @max-[1099px]:sticky @max-[1099px]:left-0 @max-[1099px]:w-[100cqw]"
+              className="flex flex-col gap-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0"
             >
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2.5 min-[1100px]:flex-nowrap">
               <SearchField key={fieldKey} label="Search runs" width="w-[220px] min-w-[112px] shrink" />
               <RangeButtons label="Started" presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
-              <FilterPopover label="Filter runs" sections={sections} hidden={hidden} />
+              <FilterPopover label="Filter runs" sections={sections} hidden={hidden} sorting={sorting} />
               <span className="ml-auto shrink-0 font-mono text-[12.5px] whitespace-nowrap text-ink-3">{total} runs</span>
               <select
                 aria-label="Rows a page"
@@ -202,7 +232,6 @@ export function Runs() {
               </div>
               {chips.length > 0 && <FilterChips chips={chips} onClear={go} onClearAll={clearAll} />}
             </div>
-            <RunTableHeads sort={sort} order={order} onSort={sortBy} />
           </div>
         }
       />

@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:te
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -67,7 +67,7 @@ test("an old history link opens Runs over the last 30 days, keeping its project 
   await mount("#/runs/history?project=demo&outcome=failed&page=3");
   expect(hashPath()).toBe("#/runs");
   expect(hashSearch()).toEqual({ project: "demo", state: "failed", range: "30d" });
-  expect(screen.getByRole("list", { name: "Runs, newest first" })).toBeTruthy();
+  expect(document.querySelector("[data-run-list]")).toBeTruthy();
   expect(asked.at(-1)).toMatchObject({ since: THIRTY_DAYS_SINCE, state: "failed" });
 });
 

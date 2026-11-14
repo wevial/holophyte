@@ -205,10 +205,41 @@ function Section({ section, search, write }: { section: FilterSection; search: P
   );
 }
 
+export interface SortSection {
+  keys: readonly FilterOption[];
+  orders: readonly FilterOption[];
+  sort: string;
+  order: string;
+  onSort: (key: string) => void;
+  onOrder: (order: string) => void;
+}
+
+function Radio({ name, label, checked, onPick }: { name: string; label: string; checked: boolean; onPick: () => void }) {
+  return (
+    <label className="flex min-h-8 cursor-pointer items-center gap-3 pl-7 text-ink-2">
+      <input type="radio" name={name} checked={checked} onChange={onPick} className="size-3.5 shrink-0 cursor-pointer accent-act" />
+      {label}
+    </label>
+  );
+}
+
+function Sorting({ sorting }: { sorting: SortSection }) {
+  const id = useId();
+  return (
+    <fieldset aria-labelledby={id} className="m-0 min-w-0 border-rule px-4 py-2.5">
+      <legend id={id} className="float-left flex min-h-8 w-full items-center font-semibold text-ink">Sort</legend>
+      {sorting.keys.map((key) => <Radio key={key.value} name={`${id}-key`} label={key.label} checked={sorting.sort === key.value} onPick={() => sorting.onSort(key.value)} />)}
+      <div role="radiogroup" aria-label="Order" className="mt-1 border-t border-rule-2 pt-1">
+        {sorting.orders.map((order) => <Radio key={order.value} name={`${id}-order`} label={order.label} checked={sorting.order === order.value} onPick={() => sorting.onOrder(order.value)} />)}
+      </div>
+    </fieldset>
+  );
+}
+
 /** A Filter button over a dialog of checkbox `sections`, each section's
  *  checked values written to its own search param as a comma list in the
- *  section's order; `hidden` closes it. */
-export function FilterPopover({ label, sections, hidden }: { label: string; sections: readonly FilterSection[]; hidden: boolean }) {
+ *  section's order, after an optional `sorting`; `hidden` closes it. */
+export function FilterPopover({ label, sections, hidden, sorting }: { label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection }) {
   const search = useSearch({ strict: false }) as PageSearch;
   const write = useWrite();
   const { open, setOpen, box, button } = usePopover(hidden);
@@ -229,6 +260,7 @@ export function FilterPopover({ label, sections, hidden }: { label: string; sect
       {open && (
         <div role="dialog" aria-label={label}
           className="absolute top-full left-0 z-20 mt-1 max-h-[min(560px,calc(100vh-11rem))] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
+          {sorting && <Sorting sorting={sorting} />}
           {sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />)}
         </div>
       )}
