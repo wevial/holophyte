@@ -1,8 +1,10 @@
 """The retire step: after approval, one turn drops run-added tests the gate fails."""
 import ast
+import io
 import json
 import re
 import subprocess
+import tokenize
 from functools import partial
 from pathlib import PurePosixPath
 
@@ -35,7 +37,12 @@ SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
 NOT_REPRODUCED = "the run took the not-reproduced path"
 HOOKS = {"setUp", "tearDown", "setUpClass", "tearDownClass", "asyncSetUp",
-         "asyncTearDown", "setUpModule", "tearDownModule"}
+         "asyncTearDown", "setUpModule", "tearDownModule", "load_tests",
+         "setup_module", "teardown_module", "setup_function",
+         "teardown_function", "setup_class", "teardown_class", "setup_method",
+         "teardown_method"}
+QUIET_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
+                tokenize.DEDENT, tokenize.ENDMARKER}
 SKIPPED = re.compile(r"'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\""
                      r"|`(?:[^`\\]|\\.)*`|//[^\n]*|/\*.*?\*/", re.S)
 TEST_VALUE_GATE = """\
@@ -269,26 +276,42 @@ def _deleted_hunks(wt, sha, head, path):
             hunks.append([])
             number = int(start[1])
         elif hunks and line.startswith("-"):
-            hunks[-1].append((number, line[1:]))
+            hunks[-1].append(number)
             number += 1
-    return [[(number, text) for number, text in hunk
-             if text.strip() and not text.strip().startswith("#")]
-            for hunk in hunks]
+    return hunks
+
+
+def _quiet_lines(text, suffix):
+    lines = range(1, text.count("\n") + 2)
+    blank = {number for number, line in zip(lines, text.split("\n"))
+             if not line.strip()}
+    if suffix != ".py":
+        return blank
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError):
+        return blank
+    loud = {number for token in tokens if token.type not in QUIET_TOKENS
+            for number in range(token.start[0], token.end[0] + 1)}
+    return set(lines) - loud
 
 
 def _cut_tests(wt, sha, head, path, gone):
-    hunks = [hunk for hunk in _deleted_hunks(wt, sha, head, path) if hunk]
+    tree, text = _tree(wt, sha, path)
+    quiet = _quiet_lines(text, PurePosixPath(path).suffix)
+    hunks = [[number for number in hunk if number not in quiet]
+             for hunk in _deleted_hunks(wt, sha, head, path)]
+    hunks = [hunk for hunk in hunks if hunk]
     if not hunks:
         return []
-    deleted = {number for hunk in hunks for number, _ in hunk}
-    tree, text = _tree(wt, sha, path)
+    deleted = {number for hunk in hunks for number in hunk}
     if tree is None:
         owned = _candidate_lines(text, PurePosixPath(path).suffix, gone)
-        return [f"{path}:{min(number for number, _ in hunk if number not in owned)}"
-                for hunk in hunks if any(number not in owned for number, _ in hunk)]
-    kept = {number for number, line in enumerate(text.splitlines(), 1)
-            if line.strip() and not line.strip().startswith("#")} - deleted
-    used = _used_names(wt, head, path)
+        return [f"{path}:{min(set(hunk) - owned)}"
+                for hunk in hunks if set(hunk) - owned]
+    kept = set(range(1, text.count("\n") + 2)) - quiet - deleted
+    used = (None if PurePosixPath(path).name == "conftest.py"
+            else _used_names(wt, head, path))
     owners = (_owner(tree, number, kept, gone, used)
               for number in sorted(deleted))
     return sorted({f"{path}{owner}" for owner in owners if owner})
@@ -321,7 +344,8 @@ def _owner(tree, number, kept, gone, used):
     inside = chain[:chain.index(whole)] if whole is not None else chain
     if whole is not None and not any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            for node in inside) and _only_gone_use(whole, gone, used):
+            for node in inside) and _only_gone_use(
+                whole, gone, used, _served(tree, chain, whole)):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]
@@ -340,7 +364,22 @@ def _enclosing(tree, number):
                 if isinstance(child, ast.AST)]
 
 
-def _only_gone_use(node, gone, used):
+def _served(tree, chain, node):
+    parent = chain[chain.index(node) - 1] if chain.index(node) else None
+    if isinstance(parent, ast.ClassDef) and not _is_fixture(node):
+        return parent
+    return tree
+
+
+def _is_fixture(node):
+    for decorator in getattr(node, "decorator_list", []):
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if getattr(target, "id", getattr(target, "attr", None)) == "fixture":
+            return True
+    return False
+
+
+def _only_gone_use(node, gone, used, scope):
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         return True
     if used is None:
@@ -352,7 +391,10 @@ def _only_gone_use(node, gone, used):
             child.name in gone for child in ast.walk(node)
             if _is_test_def(child))
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return node.name not in HOOKS | used
+        if node.name in HOOKS or _is_fixture(node):
+            return all(child.name in gone for child in ast.walk(scope)
+                       if _is_test_def(child))
+        return node.name not in used
     targets = (node.targets if isinstance(node, ast.Assign)
                else [node.target] if isinstance(node, ast.AnnAssign) else None)
     return targets is not None and all(

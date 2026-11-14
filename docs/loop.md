@@ -173,9 +173,15 @@ machines it walks. Back to the [README](index.md).
    test file outside In scope with fewer tests than at the review base.
    In a Python file each deleted line belongs to its outermost wholly
    deleted statement: a removed candidate, an import, or a helper, class
-   or assignment whose name the kept file no longer uses; a `setUp` or
-   `tearDown` hook counts as used while its class stays, and nothing
-   deleted inside a function that survives passes. In any other file
+   or assignment whose name the kept file no longer uses. A framework
+   hook (`setUp`, `tearDown`, `setUpClass`, `tearDownClass`,
+   `setUpModule`, `tearDownModule`, `load_tests`, the pytest xunit hooks
+   or a pytest fixture) passes only when every test in its class, or for
+   a module hook or fixture its file, is a removed candidate; nothing
+   deleted in a `conftest.py` but an import passes, and nothing deleted
+   inside a function that survives passes. Only a line holding nothing
+   but a comment or whitespace, as Python's tokenizer reads the file, is
+   exempt, so a `#` line inside a string still counts. In any other file
    each deleted line must fall inside a removed candidate's call, from its
    declaration to the matching close bracket;
    otherwise the branch returns to the approved head. No review round

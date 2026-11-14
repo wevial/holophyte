@@ -819,18 +819,35 @@ class RetireLoopTests(TrimFixture):
         self.cut_from_test_kept("        unused = self.assertEqual(1, 1)\n")
 
     def cut_from_test_kept(self, line):
-        checked = COPY.replace("(True)\n\n    def test_dropped",
-                               f"(True)\n{line}\n    def test_dropped")
+        self.cut_from_copy(COPY.replace("(True)\n\n    def test_dropped",
+                                        f"(True)\n{line}\n    def test_dropped"),
+                           unittest_module("CopyTests", "test_kept"), "test_kept")
+
+    def cut_from_copy(self, approved, retired, named):
         self.retired(
             Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
-                  "protects nothing", {"tests/test_copy.py": unittest_module(
-                      "CopyTests", "test_kept")}),
+                  "protects nothing", {"tests/test_copy.py": retired}),
             cited=["tests/test_copy.py::CopyTests::test_kept"],
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
-                                 "tests/test_copy.py": checked}),))
+                                 "tests/test_copy.py": approved}),))
         self.assert_reverted("deleted lines that kept tests own or use: "
-                             "tests/test_copy.py::test_kept")
+                             f"tests/test_copy.py::{named}")
+
+    def test_a_retire_cutting_a_hash_line_from_a_kept_docstring_is_reverted(self):
+        def documented(source, marker):
+            return source.replace("test_kept(self):\n", "test_kept(self):\n"
+                                  f'        """Checks:\n{marker}        """\n')
+
+        self.cut_from_copy(documented(COPY, "# the marker\n"), documented(
+            unittest_module("CopyTests", "test_kept"), ""), "test_kept")
+
+    def test_a_retire_commit_cutting_a_load_tests_adding_a_check_is_reverted(self):
+        hook = ("def load_tests(loader, tests, pattern):\n"
+                "    tests.addTest(unittest.FunctionTestCase(lambda: None))\n"
+                "    return tests\n\n\n")
+        self.cut_from_copy(COPY.replace("class CopyTests", hook + "class CopyTests"),
+                           unittest_module("CopyTests", "test_kept"), "load_tests")
 
     def test_a_retire_commit_cutting_a_hook_kept_tests_use_is_reverted(self):
         hooked = COPY.replace("    def test_kept", "    def tearDown(self):\n"
