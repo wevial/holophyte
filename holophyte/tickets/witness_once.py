@@ -11,6 +11,10 @@ def is_once(path):
     return posixpath.dirname(posixpath.normpath(path)) == DIRECTORY
 
 
+def is_inside(path):
+    return posixpath.normpath(path).startswith(DIRECTORY + "/")
+
+
 def tail_paths(texts):
     return [(match.group(1).strip() if (match := TAIL.search(text.strip()))
              else None) for text in texts]

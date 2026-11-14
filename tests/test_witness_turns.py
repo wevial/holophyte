@@ -397,6 +397,15 @@ class WritesOnce(Writes):
         return reply
 
 
+class RewritesUncommitted:
+
+    role = IMPLEMENT
+
+    def play(self, cwd, turn):
+        (cwd / ONCE_PATH).write_text(ONCE_TEST)
+        return "rewrote the one-time test; nothing to commit"
+
+
 class Untracks:
 
     role = IMPLEMENT
@@ -441,6 +450,32 @@ class WitnessedOnce(RunningRepo):
         (turn,) = self.summaries("witness_turn")
         self.assertIn(f"criterion C1's one-time witness `{ONCE_PATH}` is "
                       "committed; it stays out of the branch", turn)
+
+    def test_a_dot_slash_one_time_path_committed_gets_a_witness_turn(self):
+        dotted = f"./{ONCE_PATH}"
+        fake = self.run_task(
+            WritesOnce(force=True), Untracks(), APPROVE, verify=ONCE_VERIFY,
+            criteria=(ONCE_CRITERION.replace(ONCE_PATH, dotted),))
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"criterion C1's one-time witness `{dotted}` is "
+                      "committed; it stays out of the branch", turn)
+
+    def test_an_uncommitted_repair_of_a_one_time_test_is_checked_again(self):
+        skipped = ONCE_TEST.replace("    def test_",
+                                    '    @unittest.skip("not yet")\n'
+                                    "    def test_")
+        fake = self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: skipped}),
+            RewritesUncommitted(), APPROVE, criteria=(ONCE_CRITERION,),
+            verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.summaries("witness_turn_idle"), [])
+        first, second = self.summaries("witness_precheck")
+        self.assertIn("ran only skipped in verify (not yet)", first)
+        self.assertIn("1 of 1 criteria witnessed", second)
 
     def test_an_unwritten_one_time_test_gets_a_witness_turn(self):
         fake = self.run_task(

@@ -2,6 +2,7 @@
 rerun before each review: it exists, the branch adds or changes it,
 and the verify commands ran it."""
 import json
+import posixpath
 import re
 import subprocess
 from fnmatch import fnmatchcase
@@ -105,10 +106,11 @@ def _gaps(n, path, ran, detail):
 
 
 def _once(n, path, wt, tree, probed):
-    result = {"file": path, "exists": (Path(wt) / path).is_file(),
+    canonical = posixpath.normpath(path)
+    result = {"file": path, "exists": (Path(wt) / canonical).is_file(),
               "changed": None}
     gaps = ([f"criterion C{n}'s one-time witness `{path}` is committed; it "
-             "stays out of the branch"] if path in tree else [])
+             "stays out of the branch"] if canonical in tree else [])
     if not result["exists"]:
         return result, gaps + [f"criterion C{n}'s one-time witness `{path}` "
                                "does not exist in the task worktree"]

@@ -119,6 +119,10 @@ class RepositoryChecksTests(unittest.TestCase):
                  " directly under .holophyte-witness/"),
                 (f'(`{ONCE_PATH}` witnesses it.)', ONCE_VERIFY,
                  f'criterion 2 names `{ONCE_PATH}` as a durable witness'),
+                ('(`.holophyte-witness/nested/test_header.py` witnesses it.)',
+                 ONCE_VERIFY,
+                 'criterion 2 names `.holophyte-witness/nested/test_header.py`'
+                 ' as a durable witness'),
                 (f'(witnessed once: `{ONCE_PATH}`)',
                  '.venv/bin/python -m unittest tests.test_a',
                  f"criterion 2's one-time witness `{ONCE_PATH}` is named by no"

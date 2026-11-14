@@ -266,7 +266,7 @@ def _once_problems(t):
                      f"a {witness_once.DIRECTORY}/ file stays out of every "
                      f"commit, so end it with (witnessed once: `{path}`)"
                      for path in files
-                     if witness_once.is_once(path) and path != once]
+                     if witness_once.is_inside(path) and path != once]
         if once is None:
             continue
         if not witness_once.is_once(once):
