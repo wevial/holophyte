@@ -250,7 +250,7 @@ def search_tickets(conn, query):
     return [row[0] for row in _matching_tickets(conn, query.lower())]
 
 
-def search(conn, text, limit, findings_of=list):
+def search(conn, text, limit, findings_of=None):
     needle = text.lower()
     run_id = int(text) if text.isascii() and text.isdigit() else None
     runs = conn.execute(
@@ -274,9 +274,12 @@ def _matching_findings(conn, needle, findings_of):
     rounds = conn.execute("SELECT runId, round, findings FROM reviewRounds"
                           " ORDER BY runId DESC, round DESC")
     for run_id, number, findings in rounds:
-        for finding in findings_of(json.loads(findings)):
-            if _holds(needle, *map(finding.get, ("message", "title", "path"))):
-                yield run_id, number, finding
+        for stored in json.loads(findings):
+            for served in ([stored] if findings_of is None
+                           else findings_of([stored])):
+                if _holds(needle, *(row.get(key) for row in (stored, served)
+                                    for key in ("message", "title", "path"))):
+                    yield run_id, number, served
 
 
 @dataclass(frozen=True)

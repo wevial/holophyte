@@ -171,7 +171,7 @@ class SearchTests(ServeTestCase):
         self.assertEqual([(run["id"], run["title"]) for run in body["runs"]],
                          [(403, "ticket 2")])
 
-    def test_findings_are_the_review_findings_run_detail_serves(self):
+    def test_findings_are_run_details_matched_on_their_stored_text(self):
         def seed(conn, project):
             ticket = mirror(conn, project, "KO-1", "ticket 1")
             store.tickets.transition(conn, ticket, "in_flight")
@@ -182,6 +182,12 @@ class SearchTests(ServeTestCase):
                                severity="nit", author="coderabbitai",
                                request="Handle empty tokens",
                                message="Handle empty tokens"),
+                          dict(kind="instruction", path="retry.py", line=3,
+                               severity="nit", author="coderabbitai",
+                               request="**Handle retries**\n\nThe empty"
+                                       " tokens retry is skipped.",
+                               message="**Handle retries**\n\nThe empty"
+                                       " tokens retry is skipped."),
                           dict(kind="instruction", path="app.py", line=2,
                                severity="nit", author="operator",
                                request="Rename the empty tokens helper",
@@ -194,7 +200,7 @@ class SearchTests(ServeTestCase):
         _, _, body = self.request("GET", "/search?q=empty%20tokens")
 
         served = [f["message"] for f in detail["rounds"][0]["findings"]]
-        self.assertEqual(served, ["Handle empty tokens"])
+        self.assertEqual(served, ["Handle empty tokens", "Handle retries"])
         self.assertEqual([f["message"] for f in body["findings"]], served)
 
     def test_a_missing_or_blank_q_is_refused(self):
