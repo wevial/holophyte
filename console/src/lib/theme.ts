@@ -48,7 +48,7 @@ export const BUILTIN_PICKS: BuiltinPick[] = ["lotus", "dune", "tide", "mono", "f
 const PICK_KEYS: Record<ThemeMode, string> = { light: "holophyte.theme.light", dark: "holophyte.theme.dark" };
 
 export function readPick(mode: ThemeMode): ThemePick {
-  const customs = readCustomThemes().map((theme) => theme.id);
+  const customs = parseCustomThemes(readCustomThemesRaw()).map((theme) => theme.id);
   return readChoice<ThemePick>(PICK_KEYS[mode], [...BUILTIN_PICKS, ...customs], "lotus");
 }
 
@@ -173,7 +173,7 @@ const BUILTIN_COLOURS: Record<ThemeMode, Record<BuiltinPick, [ground: string, ac
   },
 };
 
-const round = (x: number, places = 3) => Math.round(x * 10 ** places) / 10 ** places;
+const round = (x: number) => Math.round(x * 1000) / 1000;
 const rounded = (hex: string): Oklch => {
   const { l, c, h } = hexToOklch(hex);
   return { l: round(l), c: round(c), h: Math.round(h) % 360 };
@@ -228,10 +228,6 @@ export function parseCustomThemes(raw: string | null): CustomTheme[] {
   }
 }
 
-export function readCustomThemes(): CustomTheme[] {
-  return parseCustomThemes(readCustomThemesRaw());
-}
-
 export function writeCustomThemes(themes: CustomTheme[]): void {
   writeChoice(CUSTOM_KEY, JSON.stringify(themes), "[]");
 }
@@ -243,10 +239,8 @@ export function applyCustomTheme(theme: CustomTheme | null, root: HTMLElement = 
   for (const [property, value] of Object.entries(deriveTheme(theme).tokens)) root.style.setProperty(property, value);
 }
 
-export type ContrastCheck = { name: string; colour: string; ratio: number; bar: number };
-
 /** Text pairs need 4.5:1 and state colours 3:1, each against the ground unless named otherwise. */
-export function contrastChecks(theme: DerivedTheme): ContrastCheck[] {
+export function contrastChecks(theme: DerivedTheme) {
   const t = theme.tokens;
   const check = (name: string, colour: string, on: string, bar: number) => ({ name, colour, ratio: contrast(colour, on), bar });
   return [
