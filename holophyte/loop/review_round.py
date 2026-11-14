@@ -35,7 +35,7 @@ from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.loop.test_removal import with_removals
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary, consolidate, main_baseline
+from holophyte.review import adversary, consolidate
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     criteria_brief,
@@ -212,13 +212,13 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
-              pending, ok, out, verify_cmd):
+              pending, ok, out, verify_cmd, witness):
     if pending.get("stale"):
         stale_again(branch, sha, stale)
     stale_rereview(conn, run_id, provider, task_id, sha, rnd, stale)
     boundary(conn, run_id, "verifying", rnd=rnd + 1, stale=stale)
     return {"phase": "reviewing", "ok": ok, "out": out, "stale": stale,
-            "verify_cmd": verify_cmd}
+            "verify_cmd": verify_cmd, "witness": witness}
 
 
 def _steer_at_top(project, conn, run_id, beat_s, wt, budget_min, ticket, sha,
@@ -268,13 +268,27 @@ def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
     checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
                      ticket, verify_cmd, contracts, rnd)
     ok, out = checks()
-    if rnd != 1:
-        return sha, ok, out, main_baseline.brief(main_baseline.baselines(
-            project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
-            verify_cmd, ok))
     return witness_turns.before_review(
         project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
-        ticket, verify_cmd, criteria, budget_min, ok, out, checks)
+        ticket, verify_cmd, criteria, budget_min, ok, out, checks, rnd)
+
+
+def _prepared(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
+              sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd,
+              pending):
+    phase = pending.get("phase")
+    if phase not in ("reviewing", "addressing"):
+        return _verified(project, conn, run_id, provider, task_id, beat_s, wt,
+                         base_sha, sha, ticket, verify_cmd, contracts, criteria,
+                         budget_min, rnd)
+    ok, out = pending.get("ok", False), pending.get("out", "")
+    if phase == "addressing" or "witness" in pending:
+        return sha, ok, out, pending.get("witness", "")
+    checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
+                     ticket, verify_cmd, contracts, rnd)
+    return witness_turns.before_review(
+        project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
+        ticket, verify_cmd, criteria, budget_min, ok, out, checks, rnd)
 
 
 def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
@@ -300,19 +314,16 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" unresolved in {', '.join(unresolved)}; a human"
                     f" resolves the merge before this ticket is run again;"
                     f" branch {branch} preserved at {sha[:12]}")
-        if pending.get("phase") in ("reviewing", "addressing"):
-            ok, out = pending.get("ok", False), pending.get("out", "")
-            witness = pending.get("witness", "")
-        else:
-            sha, ok, out, witness = _verified(
-                project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
-                sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd)
+        sha, ok, out, witness = _prepared(
+            project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
+            sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd,
+            pending)
         leaks = leak_guard.branch_leaks(project, wt, sha)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
                  verify_cmd=verify_cmd,
                  **({"stale": pending["stale"]} if "stale" in pending else {}),
-                 **({"witness": witness} if witness else {}))
+                 witness=witness)
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         if pending.get("phase") == "addressing":
             verdict = pending["verdict"]
@@ -350,7 +361,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             if stale:
                 pending = _rereview(conn, run_id, provider, task_id, branch,
                                     sha, rnd, stale, pending, ok, out,
-                                    verify_cmd)
+                                    verify_cmd, witness)
                 continue
 
         _check_run_cap(project, conn, run_id, budget_min, sha)

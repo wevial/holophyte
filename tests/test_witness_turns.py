@@ -16,16 +16,21 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after sys.path
     APPROVE,
+    IMPLEMENT,
+    REQUEST_CHANGES,
+    REVIEW_ROLES,
     Commit,
     FakeAgent,
     Idle,
     Reply,
+    _git,
 )
 from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
 
 import holophyte.loop.implement  # noqa: E402 - as above
 import store  # noqa: E402 - as above
 from holophyte.loop.stop import command  # noqa: E402 - as above
+from tests.test_main_baseline import Writes  # noqa: E402 - as above
 
 VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
 CRITERION = "A test in `tests/test_gate.py` witnesses it."
@@ -40,6 +45,8 @@ class Runs(unittest.TestCase):
 """
 GATED = """import unittest
 
+import gate
+
 
 class Gate(unittest.TestCase):
     @unittest.skip("needs a browser")
@@ -48,11 +55,14 @@ class Gate(unittest.TestCase):
 {extra}"""
 OPENED = """import unittest
 
+import gate
+
 
 class Gate(unittest.TestCase):
     def test_it_gates(self):
         self.assertTrue(True)
 """
+UNGATED = OPENED.replace("import gate\n\n", "")
 BROKEN = """import unittest
 
 
@@ -67,18 +77,26 @@ BOTH_MET = Reply("CRITERION 1: met \u2014 tests/test_gate.py::test_it_gates\n"
 
 
 def gated(n=0):
-    return Commit(f"gated test {n}", path="tests/test_gate.py",
-                  body=GATED.format(extra=f"# revision {n}\n" if n else ""))
+    return Writes({"gate.py": "OPEN = False\n", "tests/test_gate.py":
+                   GATED.format(extra=f"# revision {n}\n" if n else "")})
 
 
-class PausingCommit(Commit):
-
-    def __init__(self, db, step):
-        super().__init__(step.message, step.path, step.body)
-        self.db = db
+class Declaring(Writes):
+    """Writes the files and declares the reported defect not reproduced."""
 
     def play(self, cwd, turn):
-        reply = super().play(cwd, turn)
+        return f"{super().play(cwd, turn)}\nOUTCOME: NOT_REPRODUCED"
+
+
+class PausingCommit:
+
+    role = IMPLEMENT
+
+    def __init__(self, db, step):
+        self.db, self.step = db, step
+
+    def play(self, cwd, turn):
+        reply = self.step.play(cwd, turn)
         conn = store.open(self.db)
         try:
             ((run,),) = conn.execute(
@@ -87,6 +105,22 @@ class PausingCommit(Commit):
         finally:
             conn.close()
         return reply
+
+
+class StaleApproval:
+    """A review that cites an approval at the first commit of the gate test,
+    which the witness turns have changed since."""
+
+    role = REVIEW_ROLES
+
+    def __init__(self, repo):
+        self.repo = repo
+
+    def play(self, cwd, turn):
+        first = _git(self.repo, "log", "--all", "--reverse", "--format=%H",
+                     "--", "tests/test_gate.py").split()[0]
+        return (f"CRITERION 1: met \u2014 approval at {first[:12]}; "
+                "tests/test_gate.py::test_it_gates\nVERDICT: APPROVE")
 
 
 class WitnessTurns(LoopFixture):
@@ -146,6 +180,74 @@ class WitnessTurns(LoopFixture):
         self.assertIn(GAP, goal)
         self.assert_merged_after_round_one()
 
+    def test_a_fix_that_makes_the_test_pass_at_the_base_gets_a_turn(self):
+        fake = self.run_task(
+            Writes({"gate.py": "OPEN = True\n", "tests/test_gate.py": OPENED}),
+            REQUEST_CHANGES,
+            Commit("ungate the test", path="tests/test_gate.py", body=UNGATED),
+            Commit("gate the test", path="tests/test_gate.py", body=OPENED),
+            APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        fix = self.git("log", "main", "--format=%H", "--grep",
+                       "ungate the test").strip()
+        self.assertTrue(any(summary.startswith(f"witness pre-check at "
+                                               f"{fix[:12]}:")
+                            for summary in self.summaries("witness_precheck")))
+        gap = (f"criterion C1's named test passes at the merge base "
+               f"{self.base[:12]} without the change")
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"at {fix[:12]}: 1 gaps\n{gap}", turn)
+        self.assertIn(gap, fake.turns[3].goal)
+        self.assertIn(("Witness pre-check: turn 1 of 2 before round 2",),
+                      self.read("SELECT text FROM ledger WHERE kind = 'note'"))
+        self.assertNotIn("witness pre-check found these gaps",
+                         fake.turns[4].goal)
+
+    def test_a_gap_left_after_both_turns_reaches_the_round_two_review(self):
+        fake = self.run_task(gated(), gated(1), gated(2), REQUEST_CHANGES,
+                             Commit("notes", path="NOTES.md"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "implement",
+                                      "review", "implement", "review"])
+        self.assertEqual(len(self.summaries("witness_turn")), 2)
+        goal = fake.turns[5].goal
+        self.assertIn(f"witness pre-check found these gaps before this review;"
+                      f" judge each criterion yourself:\n{GAP}\n", goal)
+
+    def test_a_stale_approval_rereview_keeps_the_open_gap(self):
+        fake = self.run_task(gated(), gated(1), gated(2),
+                             StaleApproval(self.target), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "implement",
+                                      "review", "review"])
+        self.assertEqual(len(self.summaries("stale_approval_rereview")), 1)
+        self.assertIn(f"witness pre-check found these gaps before this review;"
+                      f" judge each criterion yourself:\n{GAP}\n",
+                      fake.turns[4].goal)
+
+    def test_a_twice_refused_not_reproduced_round_two_gets_a_witness_turn(self):
+        refused = Reply("The test never opens the gate.\nVERDICT: FAIL")
+        ungated = {"gate.py": "OPEN = True\n", "tests/test_gate.py": UNGATED}
+        fake = self.run_task(
+            Declaring(ungated), refused,
+            Declaring(dict(ungated, **{"gate.py": "OPEN = 1\n"})), refused,
+            Commit("gate the test", path="tests/test_gate.py", body=OPENED),
+            APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "adjudicate", "implement",
+                                      "adjudicate", "implement", "review"])
+        gap = (f"criterion C1's named test passes at the merge base "
+               f"{self.base[:12]} without the change")
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(gap, turn)
+        self.assertIn(gap, fake.turns[4].goal)
+        self.assertIn(("Witness pre-check: turn 1 of 2 before round 2",),
+                      self.read("SELECT text FROM ledger WHERE kind = 'note'"))
+        self.assertNotIn("witness pre-check found these gaps",
+                         fake.turns[5].goal)
+
     def test_a_resumed_run_takes_only_the_turns_its_paused_run_left(self):
         self.run_task(gated(), PausingCommit(self.db, gated(1)))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
@@ -189,16 +291,18 @@ class WitnessTurns(LoopFixture):
             gated(), Commit("break verify", path="tests/test_broken.py",
                             body=BROKEN), APPROVE,
             Commit("mend verify", path="tests/test_broken.py", body=RUNS),
+            Commit("run the gated test", path="tests/test_gate.py",
+                   body=OPENED),
             BOTH_MET, criteria=(CRITERION, a_task()["criteria"][0]))
 
-        self.assertEqual(fake.roles[:3], ["implement", "implement", "review"])
-        self.assertEqual(len(self.summaries("witness_turn")), 1)
+        self.assertEqual(fake.roles, ["implement", "implement", "review",
+                                      "implement", "implement", "review"])
         goal = self.review_goal(fake)
         self.assertIn("FAILED with output below", goal)
         self.assertIn("broken by the witness turn", goal)
-        (gapped,) = [sha for (sha,) in self.read(
+        gapped = self.read(
             "SELECT payload->>'sha' FROM runEvents"
-            " WHERE kind = 'witness_precheck_results'")]
+            " WHERE kind = 'witness_precheck_results' ORDER BY seq")[0][0]
         self.assertIn(f"found these gaps at {gapped[:12]}, before verify went"
                       f" red; judge each criterion yourself:\n{GAP}\n", goal)
         self.assertIn("Criteria that name no test file: C2.", goal)
