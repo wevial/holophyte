@@ -123,7 +123,7 @@ function RowLabel({ id, text, shown, onShow, onToggle }: LabelProps) {
           id={tipId}
           role="tooltip"
           style={place}
-          className="fixed z-20 w-max max-w-[min(320px,calc(100vw-16px))] border border-rule bg-paper px-3 py-2 text-left font-sans text-[13px] font-normal leading-[1.45] text-ink shadow-[var(--card-shadow)]"
+          className="fixed z-20 w-max max-w-[min(320px,calc((100vw-16px)/var(--text-scale,1)))] border border-rule bg-paper px-3 py-2 text-left font-sans text-[13px] font-normal leading-[1.45] text-ink shadow-[var(--card-shadow)]"
         >
           {text}
         </span>
