@@ -440,8 +440,29 @@ verdict. T3 runs the thread in its default runtime mode with no read-only flag;
 the critic's brief forbids edits. A turn past the critic's timeout stops only
 the local CLI; the T3 run goes on until it ends. The startup probe starts no
 thread: it runs `t3 thread list --project P` and passes when that exits 0, so
-a server that is down or a project T3 does not know fails it. Removing the
-worktrees T3 creates is the operator's job.
+a server that is down or a project T3 does not know fails it.
+
+After every turn on the `t3` seat (not on a `critic_fallback` command), whether
+the critic replied, failed or timed out, the factory settles the thread and
+removes the worktree and branch T3 made for it. The thread id is the CLI's
+`Thread <id>` line; with none, one `thread` step is recorded as failed and
+nothing else runs. The factory issues a short-lived token with `t3 auth session
+issue --subject mcp-client --scope orchestration:read --scope
+orchestration:operate --ttl 5m --label "holophyte critic cleanup" --json`, reads the server's origin from
+`userdata/server-runtime.json` under the T3 home (`$T3CODE_HOME`, else `~/.t3`),
+and calls the server's MCP endpoint at `<origin>/mcp`: `t3_thread_read` for the
+thread's worktree and branch, then `t3_thread_organize` with action `settle`.
+It revokes the token afterwards, whatever happened. After a timeout it first
+calls `t3_thread_interrupt`, then retries the settle for up to 30 seconds while
+T3 answers that the thread is still running. Only after a settle succeeds, and
+only when the thread's worktree still exists, the factory runs `git worktree
+remove --force` on it in its repository and then `git branch -D` on its branch;
+a thread that ran in the project folder gets neither step, and a failed settle
+leaves the worktree alone. Each step (`thread`, `interrupt`, `settle`,
+`worktree`, `branch`) is a detail-level `t3_cleanup` event on the claimed run
+with `thread`, `step`, `ok` and a redacted first error line in `detail`; a
+ticket the critic parks prints them instead. A failed step never changes the
+verdict or stops the claim.
 
 ```toml
 [agents.critic]
