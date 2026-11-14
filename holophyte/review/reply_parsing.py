@@ -170,13 +170,23 @@ FOLLOW_UP_LINE_RE = re.compile(
     r"(?P<line>FOLLOW_UP\((?:feature|guardrail)\):[^\n]*)\n?", re.M)
 
 
+def _unfenced_follow_ups(reply):
+    fenced = fenced_spans(reply)
+    return [match for match in FOLLOW_UP_LINE_RE.finditer(reply)
+            if not any(a <= match.start("line") < b for a, b in fenced)]
+
+
 def follow_up_lines(reply):
     return [match["line"].strip()
-            for match in FOLLOW_UP_LINE_RE.finditer(without_refuted(reply))]
+            for match in _unfenced_follow_ups(without_refuted(reply))]
 
 
 def without_follow_ups(reply):
-    return FOLLOW_UP_LINE_RE.sub("", reply)
+    kept, offset = [], 0
+    for match in _unfenced_follow_ups(reply):
+        kept.append(reply[offset:match.start()])
+        offset = match.end()
+    return "".join(kept) + reply[offset:]
 
 
 def parse_findings(reply):

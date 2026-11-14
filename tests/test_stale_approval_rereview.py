@@ -258,6 +258,21 @@ class StaleApprovalRereviewTests(unittest.TestCase):
             [("guardrail", "handle empty input", "holophyte/load.py", 2,
               self.head)])
 
+    def test_fenced_follow_up_line_stays_in_the_finding_and_is_not_filed(self):
+        quoted = "FOLLOW_UP(guardrail): example input @ holophyte/load.py:2"
+        reply = self.finding_reply().replace(
+            "missing file\n", f"missing file\n  ```text\n  {quoted}\n  ```\n", 1)
+
+        result = self.review_rounds(reply, self.direct_reply(),
+                                    fix=self.declining_fix)
+
+        self.assertTrue(result[2])
+        (fix_goal,) = self.fix_turns
+        self.assertIn(quoted, fix_goal)
+        self.assertEqual(self.conn.execute(
+            "SELECT COUNT(*) FROM followUps WHERE runId = ?",
+            (self.run_id,)).fetchone(), (0,))
+
     def test_round_two_after_a_resume_lists_the_paused_runs_finding(self):
         with self.assertRaises(store.RunEnded):
             self.review_rounds(self.pausing(self.finding_reply()), cap=3)
