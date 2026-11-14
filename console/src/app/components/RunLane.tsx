@@ -22,6 +22,7 @@ interface LaneGroup extends ProjectGroup {
   runs: StatusRun[];
   workers: number;
   witnesses: WitnessSet | null;
+  staleListed: Set<number>;
 }
 
 interface RunningRow {
@@ -34,7 +35,7 @@ interface RunningRow {
 /** The project groups of the hosts that answered `/status` well. */
 export function laneGroups(hosts: HostRecord<ContractBodies>[]): LaneGroup[] {
   const answered = hosts.flatMap((host) =>
-    host.status && !host.contract_error ? [{ key: host.key, base: host.base, status: host.status, seen_ms: host.seen_ms }] : [],
+    host.status && !host.contract_error ? [{ key: host.key, base: host.base, status: host.status, seen_ms: host.seen_ms, attention: host.attention }] : [],
   );
   const groups = groupByProject(answered.map((entry) => ({ ...entry, status: { ...entry.status, route_labels: undefined } })));
   return groups.map((group) => {
@@ -44,17 +45,18 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[]): LaneGroup[] {
       runs: own.flatMap((entry) => entry.status.runs),
       workers: own[0]!.status.workers,
       witnesses: own.find((entry) => entry.status.witnesses)?.status.witnesses ?? null,
+      staleListed: new Set(own.flatMap((entry) => (entry.attention?.items ?? []).flatMap((item) => (item.kind === "stale_run" && typeof item.run === "number" ? [item.run] : [])))),
     };
   });
 }
 
-/** Every group's runs whose heartbeat is fresh; a quiet run is a Needs you item instead. */
+/** Every group's runs but the quiet ones its daemon already lists as Needs you items. */
 export function liveRuns(groups: LaneGroup[], now: number): RunningRow[] {
   return groups.flatMap((group) => {
     const sinceMs = sinceSeen(group.seen_ms, now);
     const threshold = group.status.thresholds.heartbeat_stale_ms;
     return group.runs
-      .filter((run) => !isStale(run.heartbeat_age_ms + sinceMs, threshold))
+      .filter((run) => !(isStale(run.heartbeat_age_ms + sinceMs, threshold) && group.staleListed.has(run.id)))
       .map((run) => ({ run, project: group.path, base: group.base, sinceMs }));
   });
 }

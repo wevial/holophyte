@@ -1,11 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { RunDetail, Status } from "../../src/lib/contract.gen";
+import type { Attention, RunDetail, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
-import { fakeDeps, peersFetch, settle } from "../harness";
+import { captureIntervals, fakeDeps, peersFetch, settle } from "../harness";
 
 const DEMO = "http://writer-host:7710";
 const WRITER = "http://writer-host:7711";
@@ -18,6 +18,7 @@ const NOW = new Date(2026, 9, 15, 12, 0).getTime();
 const STALE_MS = served.thresholds.heartbeat_stale_ms;
 
 type Run = Status["runs"][number];
+type Item = Attention["items"][number];
 
 const runOf = (id: number, ticket: string, title: string, fields: Partial<Run>): Run => ({
   ...served.runs[0]!, id, ticket, title, heartbeat_age_ms: 30_000, work_started_ms: null, ...fields,
@@ -28,18 +29,21 @@ const demoRun = runOf(7, "DEMO-7", "Count the rounds", {
 const writerRun = runOf(3, "WRITER-3", "Name the writer", {
   phase: "working", round: 0, agent_ms: 23 * MINUTE, time_box_ms: 25 * MINUTE,
 });
+const staleItem = ({ id, ticket, phase }: Run): Item => ({
+  kind: "stale_run", level: "attention", run: id, ticket, ticket_url: null, phase, heartbeat_age_ms: STALE_MS + MINUTE, pr_url: null,
+});
 function statusOf(project: string, runs: Run[], fields: Partial<Status> = {}): Status {
   return { ...served, project, now: NOW, runs, queued: [], ...fields };
 }
 
-/** Each status is one daemon's, the first DEMO's, the second WRITER's; DEMO
- *  answers `/runs/N` from `details`. `answerDemo` makes DEMO's next poll answer
- *  `body` and refetches the fleet. */
-async function mount(hash: string, statuses: Status[], details: Record<number, RunDetail> = {}) {
+/** Each status is one daemon's, the first DEMO's, the second WRITER's, and its
+ *  attention lists `listed` at the same place; DEMO answers `/runs/N` from `details`.
+ *  `answerDemo` makes DEMO's next poll answer `body` and `items`, and refetches. */
+async function mount(hash: string, statuses: Status[], details: Record<number, RunDetail> = {}, listed: Item[][] = []) {
   window.location.hash = hash;
   const bases = [DEMO, WRITER, ...statuses.slice(2).map((_, index) => `http://writer-host:${7712 + index}`)];
   const daemons = Object.fromEntries(
-    statuses.map((status, index) => [bases[index]!, { status, attention: { level: "none", now: NOW, project: status.project, items: [] } }]),
+    statuses.map((status, index) => [bases[index]!, { status, attention: { level: "none", now: NOW, project: status.project, items: listed[index] ?? [] } }]),
   );
   const polls = peersFetch(DEMO, daemons);
   const fetchImpl: Fetch = async (url) => {
@@ -56,8 +60,9 @@ async function mount(hash: string, statuses: Status[], details: Record<number, R
   );
   for (let round = 0; round < 4; round += 1) await act(settle);
   return {
-    answerDemo: async (body: object) => {
-      daemons[DEMO] = { ...daemons[DEMO]!, status: body as Status };
+    clock: fake.clock,
+    answerDemo: async (body: object, items: Item[] = []) => {
+      daemons[DEMO] = { status: body as Status, attention: { level: "none", now: (body as Status).now, project: (body as Status).project, items } };
       await act(async () => { await client.refetchQueries({ queryKey: ["fleet", DEMO] }); });
       for (let round = 0; round < 4; round += 1) await act(settle);
     },
@@ -110,12 +115,12 @@ test("a run past the heartbeat threshold draws no Running row, and a scoped page
   const quiet = runOf(9, "DEMO-9", "Went quiet", { heartbeat_age_ms: STALE_MS + MINUTE });
   const demo = statusOf("/srv/dev/demo", [demoRun, quiet]);
   const writer = statusOf("/srv/dev/writer", [writerRun]);
-  await mount("#/", [demo, writer]);
+  await mount("#/", [demo, writer], {}, [[staleItem(quiet)]]);
   expect(rows().map((row) => row.getAttribute("aria-label")!.split(" ")[0])).toEqual(["DEMO-7", "WRITER-3"]);
   expect(running().querySelector("[data-count]")!.textContent).toBe("2");
   cleanup();
 
-  await mount("#/?project=writer", [demo, writer]);
+  await mount("#/?project=writer", [demo, writer], {}, [[staleItem(quiet)]]);
   expect(rows().map((row) => row.getAttribute("aria-label")!.split(" ")[0])).toEqual(["WRITER-3"]);
 });
 
@@ -204,12 +209,28 @@ test("a running witness set is a line under Running naming its story, key range 
   expect(witnessLines()).toEqual(["Witnesses · DEMO-20 · W1, W3 · running 12m"]);
 });
 
+test("a run that goes quiet on the console's clock keeps its Running row until its daemon lists it under Needs you", async () => {
+  const intervals = captureIntervals();
+  try {
+    const page = await mount("#/", [statusOf("/srv/dev/demo", [demoRun])]);
+    page.clock.now = NOW + STALE_MS;
+    act(intervals.fire);
+    expect(rows().map((row) => row.getAttribute("aria-label")!.split(" ")[0])).toEqual(["DEMO-7"]);
+    const quiet = { ...demoRun, heartbeat_age_ms: STALE_MS + 30_000 };
+    await page.answerDemo(statusOf("/srv/dev/demo", [quiet], { now: NOW + STALE_MS }), [staleItem(quiet)]);
+    expect(rows()).toEqual([]);
+    expect(within(screen.getByRole("region", { name: "Needs you" })).getByText("DEMO-7")).toBeTruthy();
+  } finally {
+    intervals.restore();
+  }
+});
+
 const dotsLabel = () => within(running()).getByRole("img", { name: /workers busy$/ }).getAttribute("aria-label");
 const tickets = () => rows().map((row) => row.getAttribute("aria-label")!.split(" ")[0]);
 
 test("a run gone quiet draws no row but still holds a busy worker in the heading's dots", async () => {
   const quiet = runOf(9, "DEMO-9", "Went quiet", { heartbeat_age_ms: STALE_MS + MINUTE });
-  await mount("#/", [statusOf("/srv/dev/demo", [demoRun, quiet], { workers: 2 }), statusOf("/srv/dev/writer", [], { workers: 1 })]);
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun, quiet], { workers: 2 }), statusOf("/srv/dev/writer", [], { workers: 1 })], {}, [[staleItem(quiet)]]);
   expect(tickets()).toEqual(["DEMO-7"]);
   expect(dotsLabel()).toBe("2 of 3 workers busy");
 });

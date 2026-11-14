@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { ageOf, orderByAge, prTitle, type ReadinessMap } from "../../lib/attention";
+import { ageOf, entryKey, orderByAge, prTitle, type ReadinessMap } from "../../lib/attention";
 import { formatAge } from "../../lib/format";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
@@ -97,7 +97,7 @@ export function WaitingRows({ rows, readiness }: { rows: WaitingRow[]; readiness
   return (
     <ul aria-label="Waiting runs">
       {rows.map((row, index) => (
-        <WaitingLine key={`${row.host.key} ${row.item.pr_url ?? index}`} row={row} readiness={readiness} />
+        <WaitingLine key={entryKey(row, index)} row={row} readiness={readiness} />
       ))}
     </ul>
   );
