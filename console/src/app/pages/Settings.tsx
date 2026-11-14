@@ -15,7 +15,7 @@ import { settingsHost, patchLines, lineDiff, SETTINGS_FIELDS, SETTINGS_TABS } fr
 import { SettingsDraftProvider, SettingsMarksContext, useSettingsDraft } from "../settingsDraft";
 import { SettingRow } from "../components/SettingRow";
 import { UnsavedBar } from "../components/UnsavedBar";
-import { AppearanceTab } from "../components/AppearanceTab";
+import { AppearanceHeader, AppearanceTab } from "../components/AppearanceTab";
 import { DayLogTab } from "../components/DayLogTab";
 import { HoldTab } from "../components/HoldTab";
 import { HostsTab } from "../components/HostsTab";
@@ -151,7 +151,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
   return (
     <section aria-labelledby="page-title" className={`${tab.id === "toml" ? "" : "max-w-[1180px] "}px-5 pt-3.5 pb-7 min-[720px]:px-8`}>
       <div className="min-w-0 pb-6">
-        {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 pb-5">{heading}</header>}
+        {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 pb-5">{heading}{tab.id === "appearance" && <AppearanceHeader />}</header>}
         {banner && <div role="status" className="mt-6 border border-live bg-paper p-5">
           <p className="font-mono text-[13px] text-live">Saved config.toml at revision {banner.revision.slice(0, 7)}.</p>
           <p className="mt-2 font-read text-[14px] text-ink-2">It applies at the {banner.applies}.</p>

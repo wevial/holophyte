@@ -48,7 +48,8 @@ function LegendItem({ status }: { status: GridCell["status"] }) {
   );
 }
 
-/** Below the label, or above it when there is no room below, and never past the viewport's sides. */
+/** Below the label, or above it when there is no room below, and never past the viewport's sides; placed in
+ *  the zoomed document's own CSS pixels, as rects come back in viewport pixels. */
 function useTipPlace(shown: boolean) {
   const anchor = useRef<HTMLButtonElement>(null);
   const tip = useRef<HTMLSpanElement>(null);
@@ -60,7 +61,8 @@ function useTipPlace(shown: boolean) {
     const left = Math.max(MARGIN, Math.min(at.left, window.innerWidth - size.width - MARGIN));
     const below = at.bottom + GAP;
     const top = below + size.height > window.innerHeight - MARGIN ? Math.max(MARGIN, at.top - size.height - GAP) : below;
-    setPlace({ left, top });
+    const zoom = tip.current.currentCSSZoom || 1;
+    setPlace({ left: left / zoom, top: top / zoom });
   }, [shown]);
   return { anchor, tip, place };
 }
@@ -121,7 +123,7 @@ function RowLabel({ id, text, shown, onShow, onToggle }: LabelProps) {
           id={tipId}
           role="tooltip"
           style={place}
-          className="fixed z-20 w-max max-w-[min(320px,calc(100vw-16px))] border border-rule bg-paper px-3 py-2 text-left font-sans text-[13px] font-normal leading-[1.45] text-ink shadow-[var(--card-shadow)]"
+          className="fixed z-20 w-max max-w-[min(320px,calc((100vw-16px)/var(--text-scale,1)))] border border-rule bg-paper px-3 py-2 text-left font-sans text-[13px] font-normal leading-[1.45] text-ink shadow-[var(--card-shadow)]"
         >
           {text}
         </span>
