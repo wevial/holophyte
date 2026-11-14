@@ -123,10 +123,10 @@ function RunRow({ row }: { row: RunningRow }) {
         data-row
         {...runPage(row.project, run.id)}
         aria-label={`${run.ticket} ${plainTitle(run.title ?? "")}, ${stage.label}${spoken}`}
-        className="grid grid-cols-[16px_84px_minmax(0,1fr)_270px_70px] items-start gap-x-3 px-2.5 py-3 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline max-[720px]:grid-cols-[16px_minmax(0,1fr)_70px]"
+        className="grid grid-cols-[16px_84px_minmax(0,1fr)_270px_70px] items-start gap-x-3 px-2.5 py-3 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline @max-[680px]:grid-cols-[16px_84px_minmax(0,1fr)_70px] @max-[420px]:grid-cols-[16px_minmax(0,1fr)_70px]"
       >
         <span className="pt-0.5"><StateDot state="running" hideWord /></span>
-        <span className="truncate pt-0.5 text-ink-2 max-[720px]:hidden">{run.ticket}</span>
+        <span className="truncate pt-0.5 text-ink-2 @max-[420px]:hidden">{run.ticket}</span>
         <span className="flex min-w-0 flex-col gap-1">
           <span className="truncate font-read text-[14.5px] font-medium leading-[1.35] text-ink"><TitleText>{run.title ?? ""}</TitleText></span>
           {(stop ?? activity) !== "" && (
@@ -136,7 +136,7 @@ function RunRow({ row }: { row: RunningRow }) {
             </span>
           )}
         </span>
-        <span data-stage className="flex items-center gap-2.5 pt-1 font-sans text-[12.5px] text-ink-2 max-[720px]:hidden">
+        <span data-stage className="flex items-center gap-2.5 pt-1 font-sans text-[12.5px] text-ink-2 @max-[680px]:hidden">
           <StageTrack at={stage.at} />
           <span className="truncate">{stage.label}</span>
         </span>
@@ -156,7 +156,7 @@ function RunRow({ row }: { row: RunningRow }) {
 /** A hairline row per live run, across every project. */
 export function RunningRows({ rows }: { rows: RunningRow[] }) {
   return (
-    <ul aria-label="Running runs">
+    <ul aria-label="Running runs" className="@container">
       {rows.map((row) => (
         <RunRow key={`${row.base} ${row.run.id}`} row={row} />
       ))}
