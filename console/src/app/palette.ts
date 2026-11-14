@@ -121,9 +121,9 @@ const TICKET_STATES: Record<string, State> = {
 
 const words = (status: string) => status.replaceAll("_", " ");
 
-export function ticketEntry(project: string, hit: SearchTicket): PaletteEntry {
+export function ticketEntry(project: string, hit: SearchTicket, base: string): PaletteEntry {
   return {
-    key: `ticket:${project}:${hit.ticket}`,
+    key: `ticket:${base}:${hit.ticket}`,
     title: `${hit.ticket} ${hit.title}`,
     meta: `${project} · ${words(hit.status)}`,
     glyph: { state: TICKET_STATES[hit.status] ?? "backlog", label: words(hit.status) },
@@ -131,10 +131,10 @@ export function ticketEntry(project: string, hit: SearchTicket): PaletteEntry {
   };
 }
 
-export function runEntry(project: string, hit: SearchRun): PaletteEntry {
+export function runEntry(project: string, hit: SearchRun, base: string): PaletteEntry {
   const state = stateOf({ run: hit, staleMs: Number.POSITIVE_INFINITY });
   return {
-    key: `run:${project}:${hit.id}`,
+    key: `run:${base}:${hit.id}`,
     title: `run ${hit.id} · ${hit.ticket} ${hit.title}`,
     meta: `${project} · ${words(hit.outcome ?? hit.phase)}`,
     glyph: { state, label: STATES[state].word },
@@ -142,10 +142,10 @@ export function runEntry(project: string, hit: SearchRun): PaletteEntry {
   };
 }
 
-export function scoutEntry(project: string, hit: SearchScout): PaletteEntry {
+export function scoutEntry(project: string, hit: SearchScout, base: string): PaletteEntry {
   const state = scoutState(hit.phase);
   return {
-    key: `scout:${project}:${hit.id}`,
+    key: `scout:${base}:${hit.id}`,
     title: hit.title,
     meta: `${project} · scout ${hit.id} · ${hit.phase}`,
     glyph: { state: SCOUT_DOTS[state], label: state },
@@ -153,10 +153,10 @@ export function scoutEntry(project: string, hit: SearchScout): PaletteEntry {
   };
 }
 
-export function findingEntry(project: string, hit: SearchFinding, index: number): PaletteEntry {
+export function findingEntry(project: string, hit: SearchFinding, index: number, base: string): PaletteEntry {
   const severity = hit.severity.toUpperCase();
   return {
-    key: `finding:${project}:${hit.run}:${hit.round}:${index}`,
+    key: `finding:${base}:${hit.run}:${hit.round}:${index}`,
     title: `${severity} · ${hit.message}`,
     meta: `${hit.path}${hit.line == null ? "" : `:${hit.line}`} · run ${hit.run} round ${hit.round}`,
     glyph: { icon: "finding", label: `${severity} finding`, tone: severity === "P1" ? "text-bad" : "text-need" },

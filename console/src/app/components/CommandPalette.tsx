@@ -67,7 +67,7 @@ const palette = definePrimitive({
       if (key == null || context.options().items?.find((item) => item.value === key)?.disabled) return;
       context.options().onChoose?.(key);
     };
-    const api: ComboApi<ReturnType<typeof context.store.get>> & typeof popup = {
+    const api: ComboApi<ReturnType<typeof context.store.get>> & typeof popup & { replaceQuery(query: string): void } = {
       ...popup,
       listbox,
       choose,
@@ -75,12 +75,10 @@ const palette = definePrimitive({
         context.store.set({ query });
         context.options().onQuery?.(query);
       },
+      replaceQuery(query: string) {
+        context.store.set({ query });
+      },
       keydown(event: KeyboardEvent) {
-        if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
-          event.preventDefault();
-          popup.close({ reason: "close-press", event });
-          return;
-        }
         if (event.key === "Backspace" && context.store.get().query === "") {
           context.options().onEmptyBackspace?.();
           return;
@@ -205,14 +203,17 @@ function useListing(chip: Chip | null, text: string, project: string | undefined
     };
   }
   const loading = searching && (settled !== query || found.pending);
-  const tickets = found.tickets.map(({ host, hit }) => ticketEntry(nameOf(host), hit));
+  const tickets = found.tickets.map(({ host, hit }) => ticketEntry(nameOf(host), hit, host.base));
   const exact = isTicketKey(query) ? tickets.filter((entry) => entry.go.kind === "ticket" && entry.go.key.toLowerCase() === query.toLowerCase()) : [];
-  const groups: PaletteGroup[] = [{ name: "Go to", entries: exact }];
-  if (chip == null || chip === "#") groups.push({ name: "Tickets", entries: tickets.filter((entry) => !exact.includes(entry)) });
-  if (chip == null || chip === "@") groups.push({ name: "Runs", entries: found.runs.map(({ host, hit }) => runEntry(nameOf(host), hit)) });
+  const groups: PaletteGroup[] = [];
+  if (chip == null || chip === "#") {
+    groups.push({ name: "Go to", entries: exact });
+    groups.push({ name: "Tickets", entries: tickets.filter((entry) => !exact.includes(entry)) });
+  }
+  if (chip == null || chip === "@") groups.push({ name: "Runs", entries: found.runs.map(({ host, hit }) => runEntry(nameOf(host), hit, host.base)) });
   if (chip == null) {
-    groups.push({ name: "Scouts", entries: found.scouts.map(({ host, hit }) => scoutEntry(nameOf(host), hit)) });
-    groups.push({ name: "Findings", entries: found.findings.map(({ host, hit }, index) => findingEntry(nameOf(host), hit, index)) });
+    groups.push({ name: "Scouts", entries: found.scouts.map(({ host, hit }) => scoutEntry(nameOf(host), hit, host.base)) });
+    groups.push({ name: "Findings", entries: found.findings.map(({ host, hit }, index) => findingEntry(nameOf(host), hit, index, host.base)) });
     const searched = { "/tickets": tickets.length, "/runs": found.runs.length, "/scouts": found.scouts.length } as Record<string, number>;
     groups.push({
       name: "Pages",
@@ -342,6 +343,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   const [refusal, setRefusal] = useState<string | null>(null);
   const { setTheme } = useTheme();
   const sweep = useAction();
+  const swept = useRef(new Set<string>());
   const listing = useListing(chip, text, project);
   const { actions } = listing;
   const query = text.trim();
@@ -393,9 +395,12 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
       setTheme(actions.nextTheme);
       return close();
     }
-    for (const daemon of actions.sweeps) {
-      const result = await sweep.mutateAsync({ label: "Run sweep", base: daemon.base, route: ROUTES["Run sweep"]!, body: {}, said: `Asked ${hostName(daemon)} to sweep.` });
+    for (const daemon of actions.sweeps.filter((each) => !swept.current.has(each.base))) {
+      const result = await sweep
+        .mutateAsync({ label: "Run sweep", base: daemon.base, route: ROUTES["Run sweep"]!, body: {}, said: `Asked ${hostName(daemon)} to sweep.` })
+        .catch((failure: unknown) => ({ ok: false, detail: failure instanceof Error ? failure.message : String(failure) }));
       if (!result.ok) return setRefusal(result.detail);
+      swept.current.add(daemon.base);
     }
     close();
   };
@@ -416,7 +421,8 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
       const taken = takeChip(chip, typed);
       if (taken.chip !== chip) {
         setChip(taken.chip);
-        handle.api.search(taken.text);
+        handle.api.replaceQuery(taken.text);
+        setText(taken.text);
         return;
       }
       setText(typed);
@@ -445,6 +451,11 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
         <>
         <Backdrop className="fixed inset-0 z-50 bg-scrim" />
         <Content
+          onKeyDown={(event) => {
+            if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return;
+            event.preventDefault();
+            close();
+          }}
           initialFocus={`#${CSS.escape(inputId)}`}
           finalFocus={() => returnTo()}
           className="fixed inset-x-0 top-[120px] z-50 mx-auto flex max-h-[calc(100vh-160px)] w-[min(640px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-rule bg-raised text-ink shadow-[0_24px_60px_rgba(0,0,0,.35)]"

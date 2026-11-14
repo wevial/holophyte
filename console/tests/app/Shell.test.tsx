@@ -862,3 +862,14 @@ test("Run sweep asks for an inline confirm: Cancel returns to the list, Confirm 
   expect(posts).toEqual([`${ORIGIN}/actions/run-sweep`]);
   expect(palette()).toBeNull();
 });
+
+test("a query that is exactly a ticket key puts that ticket first under Go to, and the runs chip lists only runs", async () => {
+  await mount("#/", searchDaemons());
+  await paletteKey();
+  await typeIn("demo-69");
+  expect(groupNames()).toEqual(["Go to", "Runs", "Scouts", "Findings", "Pages", "Actions"]);
+  expect(titlesOf("Go to")).toEqual(["DEMO-69 Witness turn runs the real tool once"]);
+  await typeIn("");
+  await typeIn("@DEMO-69");
+  expect(groupNames()).toEqual(["Runs"]);
+});

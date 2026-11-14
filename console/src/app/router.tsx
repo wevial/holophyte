@@ -50,6 +50,7 @@ function Shell() {
     if (palette) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
       event.preventDefault();
       opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setPalette(true);
