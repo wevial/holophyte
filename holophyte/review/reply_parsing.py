@@ -165,9 +165,23 @@ def without_refuted(reply):
     return REFUTED_SECTION_RE.sub("", reply)
 
 
+FOLLOW_UP_LINE_RE = re.compile(
+    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
+    r"(?P<line>FOLLOW_UP\((?:feature|guardrail)\):[^\n]*)\n?", re.M)
+
+
+def follow_up_lines(reply):
+    return [match["line"].strip()
+            for match in FOLLOW_UP_LINE_RE.finditer(without_refuted(reply))]
+
+
+def without_follow_ups(reply):
+    return FOLLOW_UP_LINE_RE.sub("", reply)
+
+
 def parse_findings(reply):
     findings = []
-    reply = without_refuted(reply)
+    reply = without_follow_ups(without_refuted(reply))
     # CRITERION and SCOPE lines cite paths but are accounts, not complaints.
     accounts = SCOPE_LINE_RE.sub("", without_criteria(reply))
     for block in finding_blocks(accounts):

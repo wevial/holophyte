@@ -235,6 +235,29 @@ class StaleApprovalRereviewTests(unittest.TestCase):
             self.assertNotIn(EARLIER_ROUNDS, prompt)
             self.assertNotIn("load.py:2", prompt)
 
+    def test_reviewer_follow_up_line_is_kept_pending_not_sent_as_a_finding(self):
+        follow_up = "FOLLOW_UP(guardrail): handle empty input @ holophyte/load.py:2"
+        reply = self.finding_reply().replace(
+            "CRITERION 1", f"{follow_up}\nCRITERION 1", 1)
+
+        result = self.review_rounds(reply, self.direct_reply(),
+                                    fix=self.declining_fix)
+
+        self.assertTrue(result[2])
+        (stored,) = self.conn.execute(
+            "SELECT findings FROM reviewRounds WHERE runId = ? AND round = 1",
+            (self.run_id,)).fetchone()
+        self.assertEqual([finding["message"] for finding in json.loads(stored)],
+                         ["- holophyte/load.py:2 load() hides a missing file"])
+        (fix_goal,) = self.fix_turns
+        self.assertIn("load() hides a missing file", fix_goal)
+        self.assertNotIn("handle empty input", fix_goal)
+        self.assertEqual(self.conn.execute(
+            "SELECT kind, text, path, line, commitSha FROM followUps"
+            " WHERE runId = ?", (self.run_id,)).fetchall(),
+            [("guardrail", "handle empty input", "holophyte/load.py", 2,
+              self.head)])
+
     def test_round_two_after_a_resume_lists_the_paused_runs_finding(self):
         with self.assertRaises(store.RunEnded):
             self.review_rounds(self.pausing(self.finding_reply()), cap=3)

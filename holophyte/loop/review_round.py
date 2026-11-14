@@ -14,6 +14,7 @@ from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
 from holophyte.loop import contradiction, witness_turns
 from holophyte.loop.claim import merge_conflicts
+from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
@@ -57,7 +58,9 @@ from holophyte.review.reply_parsing import (
     _review_reply,
     cited_approval,
     criteria_findings,
+    follow_up_lines,
     stale_approvals,
+    without_follow_ups,
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
@@ -194,6 +197,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
                  adversary=blocking + red + private)
+    if decision == "REQUEST_CHANGES" and conn is not None:
+        capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
         reason = "reviewer returned no verdict line twice"
         print(f"[holo2] round {rnd}: {reason}")
@@ -383,7 +388,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
-            without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap,
+            without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
+            check_cap=_check_run_cap,
             criteria=numbered(conn, run_id, criteria))
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
