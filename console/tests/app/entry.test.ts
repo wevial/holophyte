@@ -35,7 +35,7 @@ test("one build emits the console at index.html alone, with its script, palette,
     const css = (await Promise.all(localStylesheets.map((href) =>
       Bun.file(outdir + href.replace(/^(?:\.\/|\/)/, "")).text()))).join("\n");
     expect(declarations(css).some(({ name }) => name === "--canvas")).toBe(true);
-    expect(/--row-selected:\s*color-mix\(/.test(css)).toBe(true);
+    expect(/--hair:\s*color-mix\(/.test(css)).toBe(true);
     const fonts = stylesheets.filter((href) => href.startsWith("https://fonts.googleapis.com/"));
     expect(fonts).toHaveLength(1);
     expect(new URL(fonts[0]!).searchParams.getAll("family")).toEqual([

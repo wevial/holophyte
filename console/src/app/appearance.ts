@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { applyTheme, readTheme, writeTheme, type Theme } from "../lib/theme";
+import { applyPick, applyTheme, readPick, readTheme, writePick, writeTheme, type Theme, type ThemeMode, type ThemePick } from "../lib/theme";
 
 export type ReadingFont = "sans" | "serif" | "hyperlegible";
 
@@ -76,6 +76,9 @@ function appearanceStore<T>(read: (fallback?: T) => T, write: (value: T) => void
 }
 
 const themeStore = appearanceStore(readTheme, writeTheme, applyTheme);
+const pickStore = (mode: ThemeMode) => appearanceStore<ThemePick>(() => readPick(mode), (pick) => writePick(mode, pick), (pick) => applyPick(mode, pick));
+const lightPickStore = pickStore("light");
+const darkPickStore = pickStore("dark");
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 
@@ -92,7 +95,12 @@ function subscribeSystem(listener: () => void) {
 export function useTheme() {
   const theme: Theme = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot);
   const dark = useSyncExternalStore(subscribeSystem, systemDark);
-  return { theme, setTheme: themeStore.set, resolvedTheme: theme === "system" ? (dark ? "dark" : "light") : theme };
+  const lightPick = useSyncExternalStore(lightPickStore.subscribe, lightPickStore.getSnapshot);
+  const darkPick = useSyncExternalStore(darkPickStore.subscribe, darkPickStore.getSnapshot);
+  return {
+    theme, setTheme: themeStore.set, resolvedTheme: theme === "system" ? (dark ? "dark" : "light") : theme,
+    lightPick, setLightPick: lightPickStore.set, darkPick, setDarkPick: darkPickStore.set,
+  };
 }
 
 export function useReadingFont() {
