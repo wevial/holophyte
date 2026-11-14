@@ -30,40 +30,28 @@ function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   }
 }
 
-function writeHeaderEffect(effect: HeaderEffect): void {
+function writeStored(key: string, value: string | null): void {
   try {
-    if (effect === "haze") localStorage.removeItem(EFFECT_KEY);
-    else localStorage.setItem(EFFECT_KEY, effect);
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
   } catch {
     return;
   }
 }
 
-function writeMotion(motion: boolean): void {
-  try {
-    if (motion) localStorage.removeItem(MOTION_KEY);
-    else localStorage.setItem(MOTION_KEY, "off");
-  } catch {
-    return;
-  }
+function readPercent(key: string, range: typeof STRENGTHS) {
+  return (fallback = FULL): number => {
+    try {
+      const stored = Number(localStorage.getItem(key) ?? FULL);
+      return Number.isInteger(stored) && stored >= range.min && stored <= range.max && stored % range.step === 0 ? stored : FULL;
+    } catch {
+      return fallback;
+    }
+  };
 }
 
-function readPercent(key: string, range: { min: number; max: number; step: number }, fallback = FULL): number {
-  try {
-    const stored = Number(localStorage.getItem(key) ?? FULL);
-    return Number.isInteger(stored) && stored >= range.min && stored <= range.max && stored % range.step === 0 ? stored : FULL;
-  } catch {
-    return fallback;
-  }
-}
-
-function writePercent(key: string, value: number): void {
-  try {
-    if (value === FULL) localStorage.removeItem(key);
-    else localStorage.setItem(key, String(value));
-  } catch {
-    return;
-  }
+function writePercent(key: string) {
+  return (value: number) => writeStored(key, value === FULL ? null : String(value));
 }
 
 function applyScale(property: string) {
@@ -73,8 +61,8 @@ function applyScale(property: string) {
   };
 }
 
-export const readGrain = (fallback?: number) => readPercent(GRAIN_KEY, STRENGTHS, fallback);
-export const readHazeStrength = (fallback?: number) => readPercent(HAZE_STRENGTH_KEY, STRENGTHS, fallback);
+export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
+export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
 
@@ -158,25 +146,29 @@ const lightPickStore = pickStore("light");
 const darkPickStore = pickStore("dark");
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
-const effectStore = appearanceStore(readHeaderEffect, writeHeaderEffect, () => {});
-const motionStore = appearanceStore(readMotion, writeMotion, () => {});
-const textSizeStore = appearanceStore((fallback?: number) => readPercent(TEXT_SIZE_KEY, TEXT_SIZES, fallback), (value) => writePercent(TEXT_SIZE_KEY, value), () => {});
-const grainStore = appearanceStore(readGrain, (value) => writePercent(GRAIN_KEY, value), applyGrain);
-const hazeStrengthStore = appearanceStore(readHazeStrength, (value) => writePercent(HAZE_STRENGTH_KEY, value), applyHazeStrength);
+const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
+const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
+const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
+const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
+const hazeStrengthStore = appearanceStore(readHazeStrength, writePercent(HAZE_STRENGTH_KEY), applyHazeStrength);
 
-function systemDark(): boolean {
-  return window.matchMedia?.(DARK_QUERY).matches ?? false;
+function mediaQuery(media: string) {
+  return {
+    matches: () => window.matchMedia?.(media).matches ?? false,
+    subscribe: (listener: () => void) => {
+      const query = window.matchMedia?.(media);
+      query?.addEventListener("change", listener);
+      return () => query?.removeEventListener("change", listener);
+    },
+  };
 }
 
-function subscribeSystem(listener: () => void) {
-  const query = window.matchMedia?.(DARK_QUERY);
-  query?.addEventListener("change", listener);
-  return () => query?.removeEventListener("change", listener);
-}
+const systemDark = mediaQuery(DARK_QUERY);
+const reducedMotion = mediaQuery(REDUCED_MOTION_QUERY);
 
 export function useTheme() {
   const theme: Theme = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot);
-  const dark = useSyncExternalStore(subscribeSystem, systemDark);
+  const dark = useSyncExternalStore(systemDark.subscribe, systemDark.matches);
   const lightPick = useSyncExternalStore(lightPickStore.subscribe, lightPickStore.getSnapshot);
   const darkPick = useSyncExternalStore(darkPickStore.subscribe, darkPickStore.getSnapshot);
   return {
@@ -193,22 +185,12 @@ export function useDensity() {
   return { density: useSyncExternalStore(densityStore.subscribe, densityStore.getSnapshot), setDensity: densityStore.set };
 }
 
-function reducedMotion(): boolean {
-  return window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
-}
-
-function subscribeReducedMotion(listener: () => void) {
-  const query = window.matchMedia?.(REDUCED_MOTION_QUERY);
-  query?.addEventListener("change", listener);
-  return () => query?.removeEventListener("change", listener);
-}
-
 export function useHeaderEffect() {
   return { effect: useSyncExternalStore(effectStore.subscribe, effectStore.getSnapshot), setEffect: effectStore.set };
 }
 
 export function useMotion() {
-  const reduced = useSyncExternalStore(subscribeReducedMotion, reducedMotion);
+  const reduced = useSyncExternalStore(reducedMotion.subscribe, reducedMotion.matches);
   return { motion: useSyncExternalStore(motionStore.subscribe, motionStore.getSnapshot), reduced, setMotion: motionStore.set };
 }
 

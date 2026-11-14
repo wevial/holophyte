@@ -129,7 +129,7 @@ function EffectRow() {
 }
 
 function SliderRow({ id, icon, title, label, value, range, onChange }: {
-  id: string; icon: ReactNode; title: string; label: string; value: number; range: { min: number; max: number; step: number }; onChange: (value: number) => void;
+  id: string; icon: ReactNode; title: string; label: string; value: number; range: typeof STRENGTHS; onChange: (value: number) => void;
 }) {
   return (
     <Row id={id} icon={icon} title={title} reset={value !== FULL && <RowReset label={`Reset ${label.toLowerCase()}`} onReset={() => onChange(FULL)} />}>
