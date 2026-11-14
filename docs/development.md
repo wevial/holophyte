@@ -541,6 +541,8 @@ Each module, one line:
 - `holophyte/serve/contract_routes.py` — a seat's and an implementer
   profile's route, last probes and labels, as the contract declares them
   on `/status`.
+- `holophyte/serve/contract_search.py` — the tickets, runs, scouts and
+  review findings `GET /search` answers, as the contract declares them.
 - `holophyte/serve/contract_run.py` — a run's review round as `/runs/N`
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.

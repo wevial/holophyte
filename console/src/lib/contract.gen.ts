@@ -1149,6 +1149,50 @@ export const ticketSearchSchema = z.looseObject({
 });
 export type TicketSearch = z.infer<typeof ticketSearchSchema>;
 
+export const searchTicketSchema = z.looseObject({
+  ticket: z.string(),
+  title: z.string(),
+  status: z.string(),
+});
+export type SearchTicket = z.infer<typeof searchTicketSchema>;
+
+export const searchRunSchema = z.looseObject({
+  id: z.int(),
+  ticket: z.string(),
+  title: z.string(),
+  phase: z.string(),
+  outcome: z.string().nullable(),
+  started_ms: z.int(),
+});
+export type SearchRun = z.infer<typeof searchRunSchema>;
+
+export const searchScoutSchema = z.looseObject({
+  id: z.int(),
+  title: z.string(),
+  phase: z.enum(["queued", "planning", "swarming", "synthesizing", "answering", "done", "failed", "stopped"]),
+});
+export type SearchScout = z.infer<typeof searchScoutSchema>;
+
+export const searchFindingSchema = z.looseObject({
+  run: z.int(),
+  round: z.int(),
+  severity: z.string(),
+  message: z.string(),
+  path: z.string(),
+  line: z.int().nullable(),
+});
+export type SearchFinding = z.infer<typeof searchFindingSchema>;
+
+export const searchSchema = z.looseObject({
+  q: z.string(),
+  limit: z.int(),
+  tickets: z.array(searchTicketSchema),
+  runs: z.array(searchRunSchema),
+  scouts: z.array(searchScoutSchema),
+  findings: z.array(searchFindingSchema),
+});
+export type Search = z.infer<typeof searchSchema>;
+
 export const storyChildRowSchema = z.looseObject({
   ticket: z.string(),
   title: z.string(),
