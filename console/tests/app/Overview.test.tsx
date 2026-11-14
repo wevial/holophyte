@@ -95,12 +95,14 @@ test("on a picked project, the more link counts that project's merges and keeps 
 
 test("with two Needs you rows and the first opened, only the opened row carries the need tint", async () => {
   await mount("#/", fleet({ items: [blocked, ...failed] }, { items: [] }));
-  const tinted = (row: HTMLElement) => row.hasAttribute("data-open") && classes(row).includes("data-open:bg-(image:--need-tint)") && classes(row).includes("data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]");
+  const tint = ["bg-(image:--need-tint)", "shadow-[inset_0_0_0_1px_var(--need-edge)]"];
+  const tinted = (row: HTMLElement) => [...row.querySelectorAll("[class]")].some((element) => tint.every((name) => classes(element).includes(name)));
   expect(needRows().map(tinted)).toEqual([true, false]);
   const tintClasses = [...document.querySelectorAll("[class]")].flatMap((element) => classes(element).filter((name) => /need-(tint|edge)/.test(name)).map((name) => [element, name] as const));
   for (const [element, name] of tintClasses) {
-    expect(name.startsWith("data-open:")).toBe(true);
-    expect(needRows()).toContain(element as HTMLElement);
+    expect(needRows().filter((row) => row.hasAttribute("data-open") && row.contains(element))).toHaveLength(1);
+    expect(needRows().some((row) => row === element)).toBe(false);
+    expect(name).not.toStartWith("data-open:");
   }
   fireEvent.click(within(needRows()[1]!).getAllByRole("button")[0]!);
   expect(needRows().map(tinted)).toEqual([false, true]);

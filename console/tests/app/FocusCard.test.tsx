@@ -214,16 +214,17 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("the data-open mark the need tint keys on stays on the expanded row alone as rows open and close", async () => {
+test("the need tint and edge sit on the open row's detail block alone, leaving its header row and every closed row untinted", async () => {
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
-  const marked = () => waitRows().filter((li) => li.hasAttribute("data-open")).map((li) => li.dataset.waitRow);
-  for (const li of waitRows()) expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining(["data-open:bg-(image:--need-tint)", "data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]"]));
-  expect(marked()).toEqual(["A-1"]);
+  const tint = ["bg-(image:--need-tint)", "shadow-[inset_0_0_0_1px_var(--need-edge)]"];
+  const tinted = () => [...document.querySelectorAll<HTMLElement>("[class]")].filter((element) => tint.some((name) => element.className.split(/\s+/).some((cls) => cls.endsWith(name))));
+  expect(tinted()).toEqual([openDetail()]);
+  expect(openRow().dataset.waitRow).toBe("A-1");
   fireEvent.click(toggleOf("B-2"));
-  expect(marked()).toEqual(["B-2"]);
-  expect(marked()).toEqual(openKeys());
+  expect(tinted()).toEqual([openDetail()]);
+  expect(row("B-2").contains(openDetail())).toBe(true);
   fireEvent.click(toggleOf("B-2"));
-  expect(marked()).toEqual([]);
+  expect(tinted()).toEqual([]);
 });
 
 test("the open detail sits in its own row under the toggle and holds only its sentence and its actions, even when the run has events", async () => {

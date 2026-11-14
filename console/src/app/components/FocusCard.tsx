@@ -74,7 +74,7 @@ function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: H
   const seen = num(item.last_seen_ms);
   const sentence = "max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink";
   return (
-    <div id={id} className="flex flex-col gap-3 pt-1 pb-4 pl-12 pr-2.5 max-[720px]:px-2.5 [&>[data-card-actions]]:mt-0">
+    <div id={id} data-need-detail className="mt-1.5 mb-2.5 flex flex-col gap-3 rounded-lg bg-(image:--need-tint) py-4 pl-12 pr-4 shadow-[inset_0_0_0_1px_var(--need-edge)] max-[720px]:px-3 [&>[data-card-actions]]:mt-0">
       {item.kind === UNREACHABLE ? (
         <p className={sentence}>{description.body} {seen == null ? "It never answered." : `Last seen ${formatAge(now - seen)} ago.`}</p>
       ) : item.kind === "blocked" ? (
@@ -103,13 +103,13 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));
   const age = ageOf(item, now);
   return (
-    <li data-wait-row={name} data-open={open || undefined} className="group border-b border-rule-2 data-open:bg-(image:--need-tint) data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]">
+    <li data-wait-row={name} data-open={open || undefined} className="group border-b border-rule-2 data-open:border-b-0">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={detailId}
         onClick={onToggle}
-        className="grid min-h-8 w-full grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 group-data-open:hover:bg-transparent max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
+        className="grid min-h-8 w-full grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 group-data-open:border-b group-data-open:border-rule-2 max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
       >
         <StateDot state={state} hideWord />
         <span className="truncate text-ink-2">{name}</span>
