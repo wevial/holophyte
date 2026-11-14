@@ -92,7 +92,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
           title={choice.name}
           aria-pressed={choice.theme === theme}
           onClick={() => setTheme(choice.theme)}
-          className={`flex items-center justify-center hover:text-ink focus-visible:outline-offset-[-2px] ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
+          className={`flex items-center justify-center hover:text-ink focus-visible:-outline-offset-2! ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
             choice.theme === theme ? "bg-selected text-focus" : "text-ink-3 hover:bg-hover"
           }`}
         >
