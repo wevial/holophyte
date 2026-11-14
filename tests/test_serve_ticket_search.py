@@ -171,6 +171,32 @@ class SearchTests(ServeTestCase):
         self.assertEqual([(run["id"], run["title"]) for run in body["runs"]],
                          [(403, "ticket 2")])
 
+    def test_findings_are_the_review_findings_run_detail_serves(self):
+        def seed(conn, project):
+            ticket = mirror(conn, project, "KO-1", "ticket 1")
+            store.tickets.transition(conn, ticket, "in_flight")
+            run = store.claim(conn, project, ticket, now=T0)
+            store.record_review_round(
+                conn, run, 1, "changes_requested", "github:coderabbitai",
+                findings=[dict(kind="instruction", path="app.py", line=1,
+                               severity="nit", author="coderabbitai",
+                               request="Handle empty tokens",
+                               message="Handle empty tokens"),
+                          dict(kind="instruction", path="app.py", line=2,
+                               severity="nit", author="operator",
+                               request="Rename the empty tokens helper",
+                               message="Rename the empty tokens helper")])
+            return run
+
+        run = self.seeded(seed)
+
+        _, _, detail = self.request("GET", f"/runs/{run}")
+        _, _, body = self.request("GET", "/search?q=empty%20tokens")
+
+        served = [f["message"] for f in detail["rounds"][0]["findings"]]
+        self.assertEqual(served, ["Handle empty tokens"])
+        self.assertEqual([f["message"] for f in body["findings"]], served)
+
     def test_a_missing_or_blank_q_is_refused(self):
         self.seeded(lambda conn, project: None)
         for path in ("/search", "/search?q=", "/search?q=%20%20"):

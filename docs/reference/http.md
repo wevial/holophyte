@@ -1634,8 +1634,8 @@ one request, past any list's polling window.
 record in the project's store, ended ones included: a ticket by its
 identifier, title, labels or body, as `GET /tickets?q=TEXT` matches; a run
 by its ticket's identifier or title, or by its id when `q` is all digits
-and equals it; a scout by its title or ask; a review finding by its
-message, title or path. `tickets` is in identifier order, `runs` newest
+and equals it; a scout by its title or ask; a review finding, as
+`GET /runs/N` serves it, by its message, title or path. `tickets` is in identifier order, `runs` newest
 start first, `scouts` newest id first, and `findings` newest run first,
 then newest round, then in the round's order. Each group holds at most
 `limit` entries: 20 by default, capped at 50. A missing or blank `q` is 400

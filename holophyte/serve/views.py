@@ -13,7 +13,12 @@ from holophyte.agents.harness import PROFILES_KEY
 from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale, runs_implementer_route
-from holophyte.config.config_tables import board_mode, loop_config, sweep_config
+from holophyte.config.config_tables import (
+    board_mode,
+    loop_config,
+    merge_config,
+    sweep_config,
+)
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.config.serve_settings import console_colour, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
@@ -26,6 +31,7 @@ from holophyte.serve.serve_runs import (
     no_store,
     parse_limit,
     served_round_caps,
+    split_instructions,
 )
 from holophyte.story.witness_running import running_set
 from store.steer_notes import chain_notes
@@ -355,6 +361,12 @@ def ticket_search(project, query):
         conn.close()
 
 
+def review_findings(project):
+    merge = merge_config(project)
+    bot_logins = merge.bot_authors + merge.bot_logins
+    return lambda rows: split_instructions(rows, bot_logins)["findings"]
+
+
 def search(project, query):
     text = parse_qs(query).get("q", [""])[-1].strip()
     if not text:
@@ -367,7 +379,7 @@ def search(project, query):
         return 503, no_store(project)
     conn = store.read.open_readonly(project.store_path)
     try:
-        found = store.read.search(conn, text, limit)
+        found = store.read.search(conn, text, limit, review_findings(project))
     finally:
         conn.close()
     return 200, {
