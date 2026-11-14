@@ -124,6 +124,8 @@ function chipsOf(search: RunsSearch & RunsFilters, sections: FilterSection[]): F
     const labels = section.options.filter((option) => checked.includes(option.value)).map((option) => option.label);
     if (labels.length > 0) chips.push({ word: CHIP_WORDS[param], value: labels.join(", "), clears: { [param]: undefined } });
   }
+  const states = listOf(search.state);
+  if (states.length > 1) chips.push({ word: "State", value: RUN_GROUPS.filter((group) => states.includes(group)).map((group) => STATE_LABELS[group]).join(", "), clears: { state: undefined } });
   const started = search.from != null || search.to != null ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === search.range)?.chip;
   if (started) chips.push({ word: "Started", value: started, clears: { range: undefined, from: undefined, to: undefined } });
   return chips;

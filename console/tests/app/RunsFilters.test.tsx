@@ -361,6 +361,7 @@ test("each state tab shows its group's count summed over the hosts and All their
 
   await press(tabs().find((tab) => tab.textContent!.startsWith("Failed "))!);
   expect(hashSearch().get("state")).toBe("failed");
+  for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).state).toBe("failed");
   expect(pressedTabs()).toEqual(["Failed"]);
   expect(shownIds()).toEqual(["9", "4"]);
 });
@@ -423,7 +424,8 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   expect(await checkedIn("Project")).toEqual(["demo"]);
   expect(await checkedIn("Failure kind")).toEqual(["verify"]);
   expect((await section("Sort")).getByRole("radio", { name: "Took" })).toHaveProperty("checked", true);
-  expect(chips()).toEqual(["Search: “lock”", "Project: demo", "Failure: verify", "Started: Last 30 days"]);
+  expect(pressedTabs()).toEqual([]);
+  expect(chips()).toEqual(["Search: “lock”", "Project: demo", "Failure: verify", "State: Failed, Abandoned", "Started: Last 30 days"]);
   expect(daemons.lastOf(DEMO)).toMatchObject({ q: "lock", state: "failed,abandoned", failure: "verify", since: midnight(9, 16), sort: "duration", order: "desc", limit: "25" });
 
   await press(screen.getByRole("button", { name: "Remove Failure: verify" }));

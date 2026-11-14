@@ -11,8 +11,9 @@ import type { State } from "../state";
 import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 
-const GRID =
-  "grid grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_48px_60px] items-center gap-x-3 max-[759px]:grid-cols-[16px_minmax(0,1fr)_auto]";
+const GRID = "grid items-center gap-x-3 max-[759px]:grid-cols-[16px_minmax(0,1fr)_auto]";
+const DAY_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_48px_60px]";
+const DATED_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_88px_60px]";
 const MONO = "font-mono text-[12px] leading-none tabular-nums text-ink-3";
 const WIDE = "max-[759px]:hidden";
 const NARROW_LINK = "max-[759px]:absolute max-[759px]:inset-0 max-[759px]:text-[0px]";
@@ -94,7 +95,7 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
       data-row
       data-run={row.id}
       data-need={need ? "" : undefined}
-      className={`${GRID} relative min-h-8 border-b border-rule-2 px-2.5 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover max-[759px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
+      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} relative min-h-8 border-b border-rule-2 px-2.5 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover max-[759px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
       <StateGlyph row={row} />
       <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} ${NARROW_LINK} no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>

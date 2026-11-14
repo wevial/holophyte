@@ -177,7 +177,7 @@ test("a Runs row whose host has not answered /status reads its run as text, with
   expect(Array.from(row7!.querySelectorAll("[href]"), (link) => link.getAttribute("href")).filter((href) => href!.includes("classic"))).toEqual([]);
 });
 
-test("a scoped Runs lists only that project's runs, a dash for no rounds or pull request and a count beside the loop glyph", async () => {
+test("a run with no rounds or pull request reads a dash in both cells, and one with 4 rounds reads 4 beside the loop glyph", async () => {
   const looped = { ...demo9, rounds: 4 };
   await mount("#/runs?project=demo&state=all", fleet([demo12, looped], [writer40]));
   const [first, second] = rows();
