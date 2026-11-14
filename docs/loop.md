@@ -158,11 +158,11 @@ machines it walks. Back to the [README](index.md).
    criterion row, when the approving round's `criteria` event cites it,
    when its file is one of the ticket's story witnesses, or when the
    commit of the run's latest `reproduced` event already held it. With no
-   candidate, the trimmer route down or the run cap refusing a
-   `[trim] budget_min` turn, the step records `skipped` and runs no turn;
-   `[trim] enabled = false` turns it off, and the not-reproduced path and a
-   run resumed at the merge gate skip it. Otherwise one turn on the trimmer
-   route gets the candidates as `path::name` and the test-value gate from
+   candidate, the trimmer route down, the run cap refusing a
+   `[trim] budget_min` turn or a run on the not-reproduced path, the step
+   records `skipped` and runs no turn; `[trim] enabled = false` turns it
+   off, and a run resumed at the merge gate skips it unrecorded.
+   Otherwise one turn on the trimmer route gets the candidates as `path::name` and the test-value gate from
    `AGENTS.md`, and may make one commit, subject `retire: run-added tests`,
    with one `RETIRED path::name: REASON` body line per deleted test. The
    factory keeps the commit only when it is one non-merge commit on the

@@ -193,9 +193,8 @@ def _run_stages(run, task):
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)
-    if not unreproduced:
-        sha = retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
-                     verify_cmd, contracts, criteria)
+    sha = retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
+                 verify_cmd, contracts, criteria, unreproduced=unreproduced)
     before_gate(project, conn, run_id, sha, rnd)
     return _merge_stage(run, beat_s, sha, rnd, ticket, verify_cmd, contracts,
                         body, criteria, issue_url)

@@ -670,6 +670,14 @@ RETIRE_BODY = ("RETIRED tests/test_old.py::test_three: pins a one-off label\n"
                "RETIRED tests/test_copy.py::test_dropped: protects nothing")
 
 
+class NotReproduced(Commit):
+    """An implement turn that commits a test and declares the report not
+    reproduced."""
+
+    def play(self, cwd, turn):
+        return f"{super().play(cwd, turn)}\nOUTCOME: NOT_REPRODUCED"
+
+
 def approving(*cited):
     return Reply("Reviewed the diff; no blockers.\nCRITERION 1: met \u2014 "
                  + ", ".join(("tests/test_new.py::NewTests::test_it", *cited))
@@ -743,6 +751,31 @@ class RetireLoopTests(TrimFixture):
         self.assert_reverted("no RETIRED line for: tests/test_copy.py::"
                              "test_dropped, tests/test_old.py::test_three")
 
+    def test_a_retired_js_title_holding_a_colon_keeps_its_reason(self):
+        labels = ('test("parse: old label", () => {});\n'
+                  'test("parse: new label", () => {});\n')
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/labels.test.js::parse: old label:"
+                  " pins a one-off label",
+                  {"tests/labels.test.js": labels.splitlines(True)[1]}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/labels.test.js": labels}),))
+        [result] = self.retire_results()
+        self.assertEqual((result["outcome"], result["retired"]), ("kept", [
+            {"test": "tests/labels.test.js::parse: old label",
+             "reason": "pins a one-off label"}]))
+
+    def test_a_not_reproduced_run_records_the_skip(self):
+        self.configure(TRIMMED)
+        self.loop(NotReproduced("test the thing"),
+                  Reply("The test never runs the thing.\nVERDICT: FAIL"),
+                  Commit("fix the thing"), APPROVE)
+        self.assert_merged()
+        [result] = self.retire_results()
+        self.assertEqual((result["outcome"], result["reason"]),
+                         ("skipped", "the run took the not-reproduced path"))
+
     def test_a_reproduction_test_the_run_renamed_stays_protected(self):
         regress = unittest_module("RegressTests", "test_bug").replace(
             "self.assertTrue(True)", "self.assertTrue(Path('thing.txt').exists())"
@@ -764,9 +797,11 @@ class RetireLoopTests(TrimFixture):
         self.assertNotIn("tests/test_bug.py::test_bug", result["candidates"])
 
     def test_a_retire_commit_deleting_a_criterion_witness_is_reverted(self):
-        self.retired(Files(SUBJECT, {"tests/test_old.py": OLD,
-                                     "tests/test_new.py": "import unittest\n"}))
-        self.assert_reverted("tests/test_new.py::test_it")
+        self.retired(Files(
+            f"{SUBJECT}\n\nRETIRED tests/test_old.py::test_three: pins a label\n"
+            "RETIRED tests/test_new.py::test_it: pins a path",
+            {"tests/test_old.py": OLD, "tests/test_new.py": "import unittest\n"}))
+        self.assert_reverted("not candidates: tests/test_new.py::test_it")
 
     def test_a_test_the_approving_review_cited_is_protected(self):
         fake = self.retired(

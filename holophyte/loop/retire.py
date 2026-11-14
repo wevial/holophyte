@@ -29,6 +29,7 @@ from holophyte.review.reply_parsing import test_references
 
 SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
+NOT_REPRODUCED = "the run took the not-reproduced path"
 TEST_VALUE_GATE = """\
 **The test-value gate.** Before adding a test, answer four questions: what
 behavior, invariant or contract does it protect? What credible regression
@@ -64,7 +65,7 @@ rebase, branch, merge or push.
 
 
 def retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
-           verify_cmd, contracts, criteria):
+           verify_cmd, contracts, criteria, unreproduced=False):
     config = trim_config(project)
     if not config.enabled:
         return sha
@@ -74,8 +75,9 @@ def retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
     candidates = [test for test in added if test not in protected]
     record = partial(_record, project, conn, run_id, candidates=candidates,
                      protected=protected, approved=sha)
-    reason = _skip_reason(project, conn, run_id, config.budget_min, sha,
-                          candidates)
+    reason = (NOT_REPRODUCED if unreproduced else
+              _skip_reason(project, conn, run_id, config.budget_min, sha,
+                           candidates))
     if reason:
         record("skipped", reason)
         return sha
@@ -193,7 +195,8 @@ def _unsound(wt, base, sha, ticket, candidates, green):
     if outside:
         reasons.append("the commit removed tests that are not candidates: "
                        + ", ".join(outside))
-    unexplained = [test for test in removed if test not in _reasons(wt, head)]
+    unexplained = [test for test in removed
+                   if test not in _reasons(wt, head, removed)]
     if unexplained:
         reasons.append("the commit body has no RETIRED line for: "
                        + ", ".join(unexplained))
@@ -242,20 +245,23 @@ def _removed(wt, sha, head, changed):
                                - _test_ids(wt, head, path))]
 
 
-def _reasons(wt, head):
+def _reasons(wt, head, removed):
+    longest_first = sorted(removed, key=len, reverse=True)
     reasons = {}
     for line in sh(["git", "log", "-1", "--format=%b", head],
                    cwd=wt).splitlines():
-        test, colon, why = line.removeprefix("RETIRED ").partition(": ")
-        if line.startswith("RETIRED ") and colon and why.strip():
-            reasons[test.strip()] = why.strip()
+        rest = line.removeprefix("RETIRED ")
+        test = next((test for test in longest_first
+                     if rest.startswith(f"{test}: ")), None)
+        if line.startswith("RETIRED ") and test and rest[len(test) + 2:].strip():
+            reasons[test] = rest[len(test) + 2:].strip()
     return reasons
 
 
 def _retired(wt, sha, head):
-    reasons = _reasons(wt, head)
-    return [{"test": test, "reason": reasons[test]}
-            for test in _removed(wt, sha, head, _changed(wt, sha, head))]
+    removed = _removed(wt, sha, head, _changed(wt, sha, head))
+    reasons = _reasons(wt, head, removed)
+    return [{"test": test, "reason": reasons[test]} for test in removed]
 
 
 def _record(project, conn, run_id, outcome, reason, *, candidates, protected,
