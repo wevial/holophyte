@@ -855,6 +855,7 @@ class RetireLoopTests(TrimFixture):
                                  "tests/test_new.py": NEW,
                                  "tests/test_copy.py": hooked}),))
         self.assert_reverted("deleted lines outside retired tests and unused imports: "
+                             "tests/test_copy.py::CopyTests, "
                              "tests/test_copy.py::load_tests")
 
     def test_a_retire_commit_cutting_an_import_that_supplies_tests_is_reverted(self):
@@ -921,6 +922,15 @@ class RetireLoopTests(TrimFixture):
         self.assert_reverted("deleted lines outside retired tests and unused "
                              "imports: tests/test_copy.py::tearDown")
 
+    def test_a_retire_commit_deleting_a_class_inheriting_a_base_test_is_reverted(self):
+        self.on_main("tests/mixins.py", "class SharedMixin:\n"
+                     "    def test_shared(self):\n        self.assertTrue(True)\n")
+        kept = unittest_module("CopyTests", "test_kept").replace(
+            "import unittest\n", "import unittest\nfrom mixins import SharedMixin\n")
+        dropped = ("\nclass Dropped(SharedMixin, unittest.TestCase):\n"
+                   "    def test_dropped(self):\n        self.assertTrue(True)\n")
+        self.cut_from_copy(kept + dropped, kept, "::Dropped")
+
     def test_a_js_retire_cutting_a_kept_assertion_naming_the_retired_is_reverted(self):
         flags = ('test("dropped", () => { assert.ok(true); });\n'
                  'test("kept", () => {\n  assert.equal(state(), "dropped");\n'
@@ -948,6 +958,7 @@ class RetireLoopTests(TrimFixture):
                                  "tests/test_new.py": NEW,
                                  "tests/test_copy.py": twins}),))
         self.assert_reverted("deleted lines outside retired tests and unused imports: "
+                             "tests/test_copy.py::CopyTests, "
                              "tests/test_copy.py::test_common")
 
     def test_a_js_retire_cutting_under_a_commented_candidate_title_is_reverted(self):
@@ -1030,6 +1041,11 @@ class RetireLoopTests(TrimFixture):
             " 'retire_result')"), [(0,)])
 
 
+def documented_b(*names):
+    return unittest_module("BTests", *names).replace(
+        "(unittest.TestCase):\n", '(unittest.TestCase):\n    """B."""\n\n')
+
+
 class RetireStepTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -1045,8 +1061,7 @@ class RetireStepTests(unittest.TestCase):
                      ["add", "tests"], ["commit", "-qm", "base"],
                      ["checkout", "-qb", "task"]):
             self.git(*args)
-        (self.repo / "tests/test_b.py").write_text(
-            unittest_module("BTests", "test_b"))
+        (self.repo / "tests/test_b.py").write_text(documented_b("test_b"))
         self.git("add", "tests")
         self.git("commit", "-qm", "work")
         holo = root / "holo"
@@ -1084,7 +1099,7 @@ class RetireStepTests(unittest.TestCase):
         approved = self.git("rev-parse", "HEAD")
         fake = FakeAgent(Files(
             f"{SUBJECT}\n\nRETIRED tests/test_b.py::test_b: pins nothing",
-            {"tests/test_b.py": "import unittest\n"}))
+            {"tests/test_b.py": documented_b().rstrip() + "\n"}))
         with patch.object(holophyte.loop.implement, "agent", fake):
             head = retire(self.target, self.conn, self.run, 60, self.repo,
                           self.git("rev-parse", "main"), approved,

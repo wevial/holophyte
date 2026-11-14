@@ -313,7 +313,7 @@ def _cut_tests(wt, sha, head, path, gone):
     used = _used_names(wt, head, path)
     removed = [node for node in ast.walk(tree) if _is_test_def(node)
                and node.name in gone and kept.isdisjoint(_span(node))]
-    owners = (_owner(tree, number, kept, removed, used)
+    owners = (_owner(tree, number, removed, used)
               for number in sorted(deleted))
     return sorted({f"{path}{owner}" for owner in owners if owner})
 
@@ -340,33 +340,25 @@ def _used_names(wt, head, path):
         node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
 
 
-def _owner(tree, number, kept, removed, used):
+def _owner(tree, number, removed, used):
     chain = _enclosing(tree, number)
     for node in chain:
         if any(node is gone for gone in removed):
             return None
         if not isinstance(node, ast.ClassDef):
             break
-    if len(chain) == 1 and used is not None and _retirable(
-            chain[0], kept, removed, used):
+    if len(chain) == 1 and used is not None and _retirable(chain[0], used):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]
     return f"::{(tests or named)[-1].name}" if named else f":{number}"
 
 
-def _retirable(node, kept, removed, used):
-    if isinstance(node, (ast.Import, ast.ImportFrom)):
-        bound = _imported(node)
-        return bool(bound) and all(
-            name not in used and not _may_supply_tests(name)
-            and not _may_supply_tests(source) for name, source in bound)
-    return (isinstance(node, ast.ClassDef) and kept.isdisjoint(_span(node))
-            and not node.decorator_list and not node.keywords
-            and node.name not in used and all(
-                any(child is gone for gone in removed)
-                or (index == 0 and isinstance(child, ast.Expr))
-                for index, child in enumerate(node.body)))
+def _retirable(node, used):
+    bound = _imported(node)
+    return bool(bound) and all(
+        name not in used and not _may_supply_tests(name)
+        and not _may_supply_tests(source) for name, source in bound)
 
 
 def _imported(node):
