@@ -62,10 +62,10 @@ The repository's AGENTS.md states the gate:
 
 Read each candidate and the code it exercises. Delete only a whole listed
 test that fails the gate, plus a top-level import no remaining code uses.
-Leave helpers, hooks such as setUp or tearDown, fixtures, constants and
-class bodies in place even when they become unused; delete a whole class
-only when every test in it is deleted and it holds nothing else but a
-docstring. Touch no other test, no file that is not a test file, and add
+Leave helpers, hooks such as setUp or tearDown, fixtures, constants,
+classes and class bodies in place even when they become unused, and
+never delete a class line, even when every test in the class goes.
+Touch no other test, no file that is not a test file, and add
 no line but an import. Keep a listed test that passes the gate.
 
 The check command, run from the worktree root, must stay green:

@@ -174,11 +174,10 @@ machines it walks. Back to the [README](index.md).
    In a Python file a deleted line may fall only inside a removed
    candidate, inside a top-level import whose names the kept file does
    not use and none of which could supply tests (a `load_tests`, a `test`
-   name or a class-like name), or inside a whole deleted class whose body was a
-   docstring and removed candidates and whose name the kept file does not
-   use. Any other deletion, of a hook, fixture, helper, constant, class
-   body line or line inside a surviving test, reverts the commit; a
-   helper left unused stays for trim. Only a line holding nothing but a
+   name or a class-like name). Any other deletion, of a class, hook,
+   fixture, helper, constant, class body line or line inside a surviving
+   test, reverts the commit, even a class every test of which is retired;
+   a helper or class left unused stays for trim. Only a line holding nothing but a
    comment or whitespace, as Python's tokenizer reads the file, is
    exempt, so a `#` line inside a string still counts. In any other file
    each deleted line must fall inside a removed candidate's call, from its
