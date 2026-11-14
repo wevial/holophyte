@@ -301,6 +301,22 @@ test("a reviewing run whose round under way has no row yet shows that round as a
   expect(rounds.getAllByRole("img", { name: "unused round" })).toHaveLength(3);
 });
 
+test("a review mark scrolls to its own round in Progress", async () => {
+  await mount("#/runs/demo/51");
+  const scrolled: Element[] = [];
+  const scroll = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
+  try {
+    fireEvent.click(screen.getByRole("link", { name: "Round 2: changes requested" }));
+  } finally {
+    Element.prototype.scrollIntoView = scroll;
+  }
+  expect(scrolled).toHaveLength(1);
+  expect(scrolled[0]!.id).toBe("round-2");
+  expect(screen.getByRole("region", { name: "Progress" }).contains(scrolled[0]!)).toBe(true);
+  expect(scrolled[0]!.querySelector("[data-group-title]")!.textContent).toStartWith("Round 2");
+});
+
 test("a review mark's card names its round, verdict, findings and blockers on keyboard focus and goes on blur", async () => {
   await mount("#/runs/demo/51");
   const first = screen.getByRole("link", { name: "Round 1: changes requested" });

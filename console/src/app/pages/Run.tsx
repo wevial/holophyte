@@ -86,6 +86,11 @@ export function RunPage() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 className="m-0 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink"><TitleText>{run.title}</TitleText></h1>
           <div className="flex flex-wrap items-start justify-end gap-2">
+            {page.state !== "merged" && <a href="#agent" className="btn" data-variant="quiet" onClick={(event) => {
+              event.preventDefault();
+              composeRef.current?.focus();
+              composeRef.current?.scrollIntoView({ block: "nearest" });
+            }}>Steer or ask</a>}
             <RunActions key={`${page.base}/${run.id}`} page={page} project={project} />
             {run.outcome === "failed" && (
               <ScoutThis
@@ -126,15 +131,6 @@ export function RunPage() {
           </p>
         </div>
         <Stepper page={page} />
-        {page.state !== "merged" && (
-          <div className="mt-[18px]">
-            <a href="#agent" className="btn" data-variant="quiet" onClick={(event) => {
-              event.preventDefault();
-              composeRef.current?.focus();
-              composeRef.current?.scrollIntoView({ block: "nearest" });
-            }}>Steer or ask</a>
-          </div>
-        )}
       </header>
       <div data-run-body className="@container mt-3.5 flex min-h-40 flex-wrap border border-rule bg-paper">
         <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[1000px]:border-r @[1000px]:border-rule max-[720px]:px-4">

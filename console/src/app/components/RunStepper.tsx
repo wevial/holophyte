@@ -29,7 +29,7 @@ const MARK_GLYPH: Record<MarkGlyph, { icon: ReactNode; tone: string }> = {
   ended: { icon: ring, tone: "text-ink-2" },
 };
 
-function Glyph({ icon, tone }: { icon: ReactNode; tone: string }) {
+function Glyph({ icon, tone, size = "size-3.5" }: { icon: ReactNode; tone: string; size?: string }) {
   return (
     <svg
       viewBox="0 0 16 16"
@@ -41,7 +41,7 @@ function Glyph({ icon, tone }: { icon: ReactNode; tone: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={`size-3.5 shrink-0 ${tone}`}
+      className={`${size} shrink-0 ${tone}`}
     >
       {icon}
     </svg>
@@ -54,7 +54,7 @@ function toRound(event: MouseEvent<HTMLAnchorElement>, anchor: string) {
   (document.getElementById(anchor) ?? document.getElementById("progress"))?.scrollIntoView({ block: "start" });
 }
 
-const MARK = "flex size-[18px] items-center justify-center rounded-full outline-offset-1 hover:bg-hover";
+const MARK = "flex size-[22px] items-center justify-center rounded-[6px] outline-offset-1 hover:bg-hover data-[mark=running]:bg-live-wash data-[mark=running]:ring-1 data-[mark=running]:ring-live/40";
 
 function Mark({ mark }: { mark: StepperMark }) {
   const glyph = <Glyph {...MARK_GLYPH[mark.glyph]} />;
@@ -103,8 +103,8 @@ function Marks({ stage }: { stage: StepperStage }) {
         </span>
       ))}
       {Array.from({ length: stage.slots }, (_, index) => (
-        <span key={index} role="img" aria-label="unused round" data-slot className="flex size-[18px] items-center justify-center opacity-50">
-          <Glyph icon={STATE_ICONS.backlog} tone="text-ink-3" />
+        <span key={index} role="img" aria-label="unused round" data-slot className="flex size-[18px] items-center justify-center opacity-40">
+          <Glyph icon={STATE_ICONS.backlog} tone="text-ink-3" size="size-2.5" />
         </span>
       ))}
     </div>

@@ -74,10 +74,11 @@ function Group({ group, open, onToggle, line, fates, current, tail }: GroupProps
   const folds = group.steps.length > 0 || findings.length > 0 || tail != null;
   return (
     <li
+      id={group.round != null && (group.kind === "round" || group.kind === "final") ? `round-${group.round.round}` : undefined}
       data-group={group.kind}
       data-running={group.running ? "" : undefined}
       data-current={current ?? undefined}
-      className={`relative border-b border-rule-2 ${current == null ? "" : `-ml-3 pl-3 ${CURRENT_TINT[current]}`}`}
+      className={`relative scroll-mt-4 border-b border-rule-2 ${current == null ? "" : `-ml-3 pl-3 ${CURRENT_TINT[current]}`}`}
     >
       <Connector line={line} shifted={current != null} />
       <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} onToggle={onToggle}>
