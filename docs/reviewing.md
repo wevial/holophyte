@@ -182,6 +182,28 @@ that times out fails the run. A criterion that names no test file never
 starts a turn, and neither does a file whose runner the factory cannot
 parse; its gaps go to the reviewer only.
 
+A criterion that checks only copy, a label or presence can be witnessed
+once: it ends with ``(witnessed once: `.holophyte-witness/test_NAME.py`)``
+in place of ``(`PATH` witnesses it.)``, a trailing period allowed inside or
+after the parenthesis. Worktree setup creates `.holophyte-witness/` at the
+worktree root with a `.gitignore` reading `*`, so the file stays in the task
+worktree and in no commit; a verify line must name it, and that line runs it
+before each review. The pre-check reads the worktree file rather than the
+tree at the candidate: `exists` comes from the file, `changed` is null, and
+`ran` comes from the verbose verify rerun. A one-time witness the candidate
+commits is a gap, ``criterion Cn's one-time witness `PATH` is committed; it
+stays out of the branch``, and so is a missing one, ``criterion Cn's one-time
+witness `PATH` does not exist in the task worktree``. A witness turn that
+changes a one-time witness without committing is checked again like one
+that commits. These two gaps start a witness turn even when verify is
+red, since a missing one-time witness leaves its verify line with no test to
+run. The reviewer's staged checkout carries `.holophyte-witness/` unless a
+file in it is tracked. `holo ticket check`
+blocks a one-time path outside `.holophyte-witness/`, a `.holophyte-witness/`
+path named as a durable witness, and a one-time path no verify line names,
+and suggests the one-time form for a criterion that checks only copy, a
+label or presence.
+
 When gaps or criteria naming no test file remain, the review prompt lists
 them after the criteria, for the reviewer to judge; the list is not a
 finding. Once a run has used both turns, a later round's gaps go to that
