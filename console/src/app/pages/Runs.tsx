@@ -106,7 +106,7 @@ function StateTabs({ state, counts, onPick }: { state: string | undefined; count
           type="button"
           aria-pressed={state === tab.group}
           onClick={() => onPick(tab.group)}
-          className="inline-flex min-h-8 cursor-pointer items-center gap-2 px-2.5 font-sans text-[13.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink"
+          className="inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-chip px-2.5 font-sans text-[13.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink"
         >
           {tab.label} <span className="font-mono text-[12px] font-normal tabular-nums text-ink-3">{tab.count}</span>
         </button>
