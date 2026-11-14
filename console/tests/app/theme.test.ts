@@ -38,40 +38,19 @@ test("Tailwind exposes every raw colour through a declared raw token", () => {
 });
 
 test("computed canvas and action colours honor explicit themes and otherwise follow system preference", () => {
-  const root = document.documentElement;
-  const device = (window as unknown as { happyDOM: { settings: { device: { prefersColorScheme: string } } } })
-    .happyDOM.settings.device;
-  const previousPreference = device.prefersColorScheme;
-  const previousTheme = root.getAttribute("data-theme");
-  const style = document.createElement("style");
-  style.textContent = css.replace(/@import[^;]*;/, "");
-  const token = (name: string) => getComputedStyle(root).getPropertyValue(name).trim();
-  try {
-    for (const [theme, preference, canvas, action] of [
-      ["dark", "light", "#0d0a15", "#b9a3ff"],
-      ["light", "dark", "#f6f5fa", "#5a4ebf"],
-      [null, "dark", "#0d0a15", "#b9a3ff"],
-      [null, "light", "#f6f5fa", "#5a4ebf"],
-    ] as const) {
-      device.prefersColorScheme = preference;
-      if (theme === null) root.removeAttribute("data-theme");
-      else root.setAttribute("data-theme", theme);
-      document.head.appendChild(style);
-      expect(token("--canvas")).toBe(canvas);
-      expect(token("--act")).toBe(action);
-      style.remove();
-    }
-  } finally {
-    style.remove();
-    device.prefersColorScheme = previousPreference;
-    if (previousTheme === null) root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", previousTheme);
+  for (const [theme, preference, canvas, action] of [
+    ["dark", "light", "#0d0a15", "#b9a3ff"],
+    ["light", "dark", "#f6f5fa", "#5a4ebf"],
+    [null, "dark", "#0d0a15", "#b9a3ff"],
+    [null, "light", "#f6f5fa", "#5a4ebf"],
+  ] as const) {
+    expect([tokenUnder(theme, preference), tokenUnder(theme, preference, "--act")]).toEqual([canvas, action]);
   }
 });
 
 type Scheme = "dark" | "light" | null;
 
-function canvasUnder(scheme: Scheme, preference: "light" | "dark"): string {
+function tokenUnder(scheme: Scheme, preference: "light" | "dark", token = "--canvas"): string {
   const root = document.documentElement;
   const device = (window as unknown as { happyDOM: { settings: { device: { prefersColorScheme: string } } } })
     .happyDOM.settings.device;
@@ -82,7 +61,7 @@ function canvasUnder(scheme: Scheme, preference: "light" | "dark"): string {
     device.prefersColorScheme = preference;
     applyTheme(scheme ?? "system");
     document.head.appendChild(style);
-    return getComputedStyle(root).getPropertyValue("--canvas").trim();
+    return getComputedStyle(root).getPropertyValue(token).trim();
   } finally {
     style.remove();
     device.prefersColorScheme = previousPreference;
@@ -106,7 +85,7 @@ test("with nothing stored both picks are Lotus and the canvas follows the system
     expect([readPick("light"), readPick("dark")]).toEqual(["lotus", "lotus"]);
     applyPick("light", readPick("light"));
     applyPick("dark", readPick("dark"));
-    expect([canvasUnder(null, "light"), canvasUnder(null, "dark")]).toEqual(["#f6f5fa", "#0d0a15"]);
+    expect([tokenUnder(null, "light"), tokenUnder(null, "dark")]).toEqual(["#f6f5fa", "#0d0a15"]);
   });
 });
 
@@ -114,10 +93,10 @@ test("a Tide dark pick and a Dune light pick follow the system preference, and e
   withPicks(() => {
     applyPick("dark", "tide");
     applyPick("light", "dune");
-    expect([canvasUnder(null, "dark"), canvasUnder(null, "light")]).toEqual(["#0b0e1d", "#fcfaf7"]);
-    expect([canvasUnder("light", "dark"), canvasUnder("dark", "light")]).toEqual(["#fcfaf7", "#0b0e1d"]);
+    expect([tokenUnder(null, "dark"), tokenUnder(null, "light")]).toEqual(["#0b0e1d", "#fcfaf7"]);
+    expect([tokenUnder("light", "dark"), tokenUnder("dark", "light")]).toEqual(["#fcfaf7", "#0b0e1d"]);
     applyPick("dark", "lotus");
-    expect([canvasUnder("dark", "light"), canvasUnder(null, "dark")]).toEqual(["#0d0a15", "#0d0a15"]);
+    expect([tokenUnder("dark", "light"), tokenUnder(null, "dark")]).toEqual(["#0d0a15", "#0d0a15"]);
   });
 });
 
@@ -134,7 +113,7 @@ test("written picks survive a fresh read, and with storage throwing they still a
       writePick("dark", "tide");
       applyPick("light", "dune");
       applyPick("dark", "tide");
-      expect([canvasUnder("light", "dark"), canvasUnder("dark", "light")]).toEqual(["#fcfaf7", "#0b0e1d"]);
+      expect([tokenUnder("light", "dark"), tokenUnder("dark", "light")]).toEqual(["#fcfaf7", "#0b0e1d"]);
       expect([readPick("light"), readPick("dark")]).toEqual(["lotus", "lotus"]);
     } finally {
       Object.defineProperty(globalThis, "localStorage", real);

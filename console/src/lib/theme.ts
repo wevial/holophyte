@@ -3,28 +3,32 @@ export type Theme = "system" | "light" | "dark";
 export const THEME_KEY = "holophyte.theme";
 export const THEMES: Theme[] = ["system", "light", "dark"];
 
-function isTheme(value: unknown): value is Theme {
-  return typeof value === "string" && (THEMES as string[]).includes(value);
-}
-
-/** The persisted choice, `system` when nothing valid is stored or storage
- *  is unavailable. */
-export function readTheme(): Theme {
+/** The persisted choice under `key`, `fallback` when nothing valid is stored
+ *  or storage is unavailable. */
+function readChoice<T extends string>(key: string, choices: T[], fallback: T): T {
   try {
-    const stored = localStorage.getItem(THEME_KEY);
-    return isTheme(stored) ? stored : "system";
+    const stored = localStorage.getItem(key);
+    return choices.find((choice) => choice === stored) ?? fallback;
   } catch {
-    return "system";
+    return fallback;
   }
 }
 
-export function writeTheme(theme: Theme): void {
+function writeChoice(key: string, value: string, fallback: string): void {
   try {
-    if (theme === "system") localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, theme);
+    if (value === fallback) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
   } catch {
     // Storage may be disabled; the stamp still applies for this page.
   }
+}
+
+export function readTheme(): Theme {
+  return readChoice(THEME_KEY, THEMES, "system");
+}
+
+export function writeTheme(theme: Theme): void {
+  writeChoice(THEME_KEY, theme, "system");
 }
 
 /** Stamp `data-theme` on the document: absent for `system` so the
@@ -40,28 +44,12 @@ export type ThemePick = "lotus" | "dune" | "tide" | "mono" | "forest";
 const THEME_PICKS: ThemePick[] = ["lotus", "dune", "tide", "mono", "forest"];
 const PICK_KEYS: Record<ThemeMode, string> = { light: "holophyte.theme.light", dark: "holophyte.theme.dark" };
 
-function isPick(value: unknown): value is ThemePick {
-  return typeof value === "string" && (THEME_PICKS as string[]).includes(value);
-}
-
-/** The persisted theme for one mode, `lotus` when nothing valid is stored
- *  or storage is unavailable. */
 export function readPick(mode: ThemeMode): ThemePick {
-  try {
-    const stored = localStorage.getItem(PICK_KEYS[mode]);
-    return isPick(stored) ? stored : "lotus";
-  } catch {
-    return "lotus";
-  }
+  return readChoice(PICK_KEYS[mode], THEME_PICKS, "lotus");
 }
 
 export function writePick(mode: ThemeMode, pick: ThemePick): void {
-  try {
-    if (pick === "lotus") localStorage.removeItem(PICK_KEYS[mode]);
-    else localStorage.setItem(PICK_KEYS[mode], pick);
-  } catch {
-    // Storage may be disabled; the stamp still applies for this page.
-  }
+  writeChoice(PICK_KEYS[mode], pick, "lotus");
 }
 
 /** Stamp `data-light` or `data-dark`: absent for `lotus`, whose values are
