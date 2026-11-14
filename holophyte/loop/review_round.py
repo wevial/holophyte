@@ -38,7 +38,10 @@ from holophyte.redact import safe_print as print
 from holophyte.review import adversary, consolidate
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
+    CORNER_CASE_RULE,
+    ONE_PASS_RULE,
     criteria_brief,
+    earlier_rounds_brief,
     evidence_brief,
     scope_brief,
     scope_files,
@@ -129,7 +132,7 @@ def _evidence_brief(project, wt, task_id, ticket):
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
-                 witness=""):
+                 witness="", earlier=""):
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
         f"{review_refs(run_id)[0]} as the frozen base and "
@@ -142,6 +145,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + criteria_brief(criteria)
         + witness
         + stale_approval_brief(stale)
+        + earlier
         + verified_brief(mode)
         + tests_brief(wt)
         + scope_brief(wt, ticket, base_sha, sha)
@@ -151,7 +155,9 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         "line:\n"
         "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
         "If REQUEST_CHANGES, list only concrete blockers, each as one list "
-        f"item, {FINDING_FORMAT}.")
+        f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
+        "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
+        "before the CRITERION lines.")
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
@@ -166,7 +172,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
-                          witness=witness)
+                          witness=witness,
+                          earlier=earlier_rounds_brief(conn, run_id, wt, rnd))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,

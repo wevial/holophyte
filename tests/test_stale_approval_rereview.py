@@ -19,6 +19,7 @@ from holophyte.babysit import babysitter
 from holophyte.loop.gates import RunFailure
 from holophyte.loop.runs import open_store, set_phase
 from holophyte.loop.stop import continuation, resume_paused
+from holophyte.review.briefs import EARLIER_ROUNDS
 
 CRITERIA = ["Given a missing file, then load() returns an empty thing",
             "Given a broken file, then load() names the line"]
@@ -76,12 +77,12 @@ class StaleApprovalRereviewTests(unittest.TestCase):
             ["git", *args], cwd=self.root, text=True, stderr=subprocess.PIPE
         ).strip()
 
-    def commit(self, files):
+    def commit(self, files, message="commit"):
         for path, text in files.items():
             (self.root / path).parent.mkdir(parents=True, exist_ok=True)
             (self.root / path).write_text(text)
         self.git("add", ".")
-        self.git("commit", "-qm", "commit")
+        self.git("commit", "-qm", message)
         return self.git("rev-parse", "HEAD")
 
     def stale_reply(self, second="met — tests/test_load.py::test_broken"):
@@ -94,7 +95,7 @@ class StaleApprovalRereviewTests(unittest.TestCase):
                 "CRITERION 2: met — tests/test_load.py::test_broken\n"
                 "VERDICT: APPROVE")
 
-    def agents(self, replies):
+    def agents(self, replies, fix=None):
         replies = list(replies)
 
         def reviewer(target, role, goal, *args, **kwargs):
@@ -105,6 +106,8 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         def implementer(target, conn, run_id, beat_s, wt, budget_min, goal,
                         **kwargs):
             self.fix_turns.append(goal)
+            if fix:
+                return fix(), False
             return "No change: the criterion needs a fresh review.", False
 
         return (patch.object(holophyte.loop.review_round, "agent", reviewer),
@@ -112,8 +115,8 @@ class StaleApprovalRereviewTests(unittest.TestCase):
                 patch.object(holophyte.loop.implement, "_transport_timed",
                              implementer))
 
-    def review_rounds(self, *replies, cap=2, resume=None):
-        reviewer, fixer, babysit_fixer = self.agents(replies)
+    def review_rounds(self, *replies, cap=2, resume=None, fix=None):
+        reviewer, fixer, babysit_fixer = self.agents(replies, fix)
         with reviewer, fixer, babysit_fixer:
             return holophyte.loop.review_round._review_rounds(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
@@ -125,6 +128,18 @@ class StaleApprovalRereviewTests(unittest.TestCase):
             store.pause(self.conn, self.run_id, "review checkpoint")
             return reply
         return pause_then_reply
+
+    def finding_reply(self):
+        return ("- holophyte/load.py:2 [p1] [correctness] load() hides a"
+                " missing file\n\n" + self.direct_reply().replace(
+                    "VERDICT: APPROVE", "VERDICT: REQUEST_CHANGES"))
+
+    def declining_fix(self):
+        self.commit({"tests/test_load.py": "def test_missing():\n    pass\n\n\n"
+                                           "def test_broken():\n    pass\n"},
+                    "test: keep the load tests\n\n"
+                    "DECLINE: the empty dict is the documented result")
+        return "Declined the finding."
 
     def review_fix(self, *replies, fix_note="repair the pin"):
         reviewer, fixer, babysit_fixer = self.agents(replies)
@@ -200,6 +215,41 @@ class StaleApprovalRereviewTests(unittest.TestCase):
         self.assertEqual(len(self.fix_turns), 1)
         self.assertEqual(self.rereview_events(), [])
         self.assertIn("fix round made no progress", str(failed.exception))
+
+    def test_round_two_lists_round_one_findings_and_the_fix_verdicts(self):
+        result = self.review_rounds(
+            "draft notes EVIDENCE-ONLY-DRAFT without a verdict",
+            self.finding_reply(), self.direct_reply(), fix=self.declining_fix)
+
+        self.assertTrue(result[2])
+        first, retried, second = self.prompts
+        self.assertIn("Round 1:\n- holophyte/load.py:2 [p1] ", second)
+        self.assertIn("DECLINE: the empty dict is the documented result", second)
+        self.assertIn(f"Round 1 reviewed candidate {self.head}.", second)
+        (stored,) = self.conn.execute(
+            "SELECT findings FROM reviewRounds WHERE runId = ? AND round = 1",
+            (self.run_id,)).fetchone()
+        self.assertIn("EVIDENCE-ONLY-DRAFT", stored)
+        self.assertNotIn("EVIDENCE-ONLY-DRAFT", second)
+        for prompt in (first, retried):
+            self.assertNotIn(EARLIER_ROUNDS, prompt)
+            self.assertNotIn("load.py:2", prompt)
+
+    def test_round_two_after_a_resume_lists_the_paused_runs_finding(self):
+        with self.assertRaises(store.RunEnded):
+            self.review_rounds(self.pausing(self.finding_reply()), cap=3)
+        resume_paused(self.project, self.conn, self.ticket_id, "go on")
+        store.tickets.transition(self.conn, self.ticket_id, "in_flight")
+        self.run_id = store.claim(self.conn, self.project_id, self.ticket_id)
+        set_phase(self.conn, self.run_id, "merge_gate")
+
+        result = self.review_rounds(
+            self.direct_reply(), cap=3, fix=self.declining_fix,
+            resume=continuation(self.conn, self.run_id))
+
+        self.assertTrue(result[2])
+        self.assertEqual(len(self.prompts), 2)
+        self.assertIn("Round 1:\n- holophyte/load.py:2 [p1] ", self.prompts[1])
 
     def test_covering_review_of_only_stale_approvals_runs_again_not_a_fix(self):
         approved = self.review_fix(self.stale_reply(), self.direct_reply())
