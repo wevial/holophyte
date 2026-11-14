@@ -11,6 +11,7 @@ from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import trim_config
 from holophyte.loop.gates import sh
 from holophyte.loop.implement import OUTPUT_TAIL, _commands_brief, run_cap_reason
+from holophyte.loop.steering import adopted_verify
 from holophyte.loop.test_removal import _changed_pairs, removed_outside_scope
 from holophyte.loop.trim import (
     _below_swept_wip,
@@ -69,6 +70,7 @@ def retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
     config = trim_config(project)
     if not config.enabled:
         return sha
+    verify_cmd = adopted_verify(conn, run_id, verify_cmd)
     base = review_base(wt, base_sha, sha)
     added = _run_added(wt, base, sha)
     protected = _protected(conn, run_id, wt, sha, criteria, added)

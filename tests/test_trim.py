@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -21,6 +22,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     REVIEW_ROLES,
     Commit,
+    FakeAgent,
     Idle,
     Reply,
     block_until_killed,
@@ -29,15 +31,20 @@ from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: 
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.pipeline  # noqa: E402
 import store  # noqa: E402 - after the sys.path insert above
+import store.board  # noqa: E402
 import store.criteria  # noqa: E402
+import store.steer_notes  # noqa: E402
+import store.tickets  # noqa: E402
 from holophyte.agents.agent_output import ImplementerOutput  # noqa: E402
 from holophyte.agents.roles import agent  # noqa: E402
-from holophyte.loop.retire import SUBJECT  # noqa: E402
+from holophyte.loop.retire import SUBJECT, retire  # noqa: E402
 from holophyte.loop.test_removal import removed_outside_scope  # noqa: E402
 from holophyte.loop.trim import trim  # noqa: E402
 from tests.test_harness import CONFIG, FAKE_CLAUDE  # noqa: E402
+from tests.test_ticket_criteria_rows import COMMANDS, ticket_body  # noqa: E402
 
 
 def lines(count):
@@ -665,6 +672,8 @@ OLD = unittest_module("OldTests", "test_one", "test_two")
 NEW = ("import unittest\nfrom pathlib import Path\n\n\n"
        "class NewTests(unittest.TestCase):\n    def test_it(self):\n"
        "        self.assertTrue(Path('thing.txt').exists())\n")
+ADOPTED_V1 = "python3 -m unittest discover -s tests -p 'test_a.py'"
+ADOPTED_V2 = "python3 -m unittest discover -s tests -p 'test_b.py'"
 COPY = unittest_module("CopyTests", "test_kept", "test_dropped")
 RETIRE_BODY = ("RETIRED tests/test_old.py::test_three: pins a one-off label\n"
                "RETIRED tests/test_copy.py::test_dropped: protects nothing")
@@ -856,6 +865,75 @@ class RetireLoopTests(TrimFixture):
         self.assertEqual(self.read(
             "SELECT count(*) FROM runEvents WHERE kind IN ('retire',"
             " 'retire_result')"), [(0,)])
+
+
+class RetireStepTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.repo = root / "repo"
+        (self.repo / "tests").mkdir(parents=True)
+        (self.repo / "tests/test_a.py").write_text(
+            unittest_module("ATests", "test_a"))
+        for args in (["init", "-q", "-b", "main"],
+                     ["config", "user.name", "Test"],
+                     ["config", "user.email", "test@example.invalid"],
+                     ["add", "tests"], ["commit", "-qm", "base"],
+                     ["checkout", "-qb", "task"]):
+            self.git(*args)
+        (self.repo / "tests/test_b.py").write_text(
+            unittest_module("BTests", "test_b"))
+        self.git("add", "tests")
+        self.git("commit", "-qm", "work")
+        holo = root / "holo"
+        holo.mkdir()
+        (holo / "config.toml").write_text(CONFIG + TRIMMED)
+        self.target = holophyte.config.project.Project(
+            path=self.repo, holo_dir=holo, store_path=holo / "store.db",
+            config_path=holo / "config.toml", worktrees=root / "repo.worktrees")
+        self.conn = store.open(self.target.store_path)
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project = store.tickets.ensure_project(self.conn, "team", str(self.repo))
+        key = store.board.file_ticket(self.conn, project, "NAT",
+                                      self.body(ADOPTED_V1))
+        (self.ticket,) = self.conn.execute(
+            "SELECT id FROM tickets WHERE linearIdentifier = ?", (key,)
+        ).fetchone()
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        self.run = store.claim(self.conn, project, self.ticket)
+        edited = int(time.time() * 1000) + 1000
+        store.board.edit_ticket(self.conn, project, key, self.body(ADOPTED_V2),
+                                expected_revision=1, now=edited)
+        store.steer_notes.steer(self.conn, self.ticket, "Meet revision 2",
+                                "maintainer", now=edited + 1000)
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.repo, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def body(self, verify):
+        return ticket_body(["the list shows every entry"]).replace(
+            COMMANDS, verify)
+
+    def test_a_deletion_the_adopted_verify_fails_is_reverted(self):
+        approved = self.git("rev-parse", "HEAD")
+        fake = FakeAgent(Files(
+            f"{SUBJECT}\n\nRETIRED tests/test_b.py::test_b: pins nothing",
+            {"tests/test_b.py": "import unittest\n"}))
+        with patch.object(holophyte.loop.implement, "agent", fake):
+            head = retire(self.target, self.conn, self.run, 60, self.repo,
+                          self.git("rev-parse", "main"), approved,
+                          self.body(ADOPTED_V1), ADOPTED_V1, [],
+                          ["the list shows every entry"])
+        self.assertEqual((head, self.git("rev-parse", "HEAD")),
+                         (approved, approved))
+        [(payload,)] = self.conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'retire_result'")
+        result = json.loads(payload)
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn("verify was red at the retire commit", result["reason"])
 
 
 class TrimStepTests(unittest.TestCase):
