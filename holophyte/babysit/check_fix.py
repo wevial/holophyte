@@ -196,7 +196,9 @@ def _module_files(wt, modules):
 
 def _record_skip(run, pull, failed, named, reproduced, out):
     names = ", ".join(check.name for check in failed)
-    ids = ", ".join(f"{module}.{name}" for module, name in reproduced)
+    named, reproduced = ([f"{module}.{name}" for module, name in found]
+                         for found in (named, reproduced))
+    ids = ", ".join(reproduced)
     print(f"[holo2] checks failed on {pull.url} ({names}); {ids} failed"
           f" locally at {run.sha[:12]}, so no rerun")
     if run.conn is not None and run.run_id is not None:
@@ -205,10 +207,7 @@ def _record_skip(run, pull, failed, named, reproduced, out):
             run.conn, run.run_id, "check_rerun_skipped",
             f"not rerunning {names} on {pull.url}: {ids} failed locally at"
             f" {run.sha[:12]}", level="detail", payload=json.dumps({
-                "ids": [f"{module}.{name}" for module, name in named],
-                "reproduced": [f"{module}.{name}"
-                               for module, name in reproduced],
-                "output": tail}))
+                "ids": named, "reproduced": reproduced, "output": tail}))
 
 
 def _job_logs(run, beat_s, pull, failed):
