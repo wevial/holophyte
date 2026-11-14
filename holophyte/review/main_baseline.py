@@ -15,6 +15,7 @@ from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids
 from holophyte.review.witness_precheck import GLOB, named_files
+from holophyte.tickets import witness_once
 
 EVENT = "main_baseline"
 OUTPUT_CLAUSE = "that run's output is in the implementer output"
@@ -60,6 +61,9 @@ def wanted(pairs):
 
 
 def _names(line, path):
+    if (witness_once.is_once(path)
+            and witness_once.DIRECTORY.lstrip(".") not in line):
+        return False
     stem = Path(path).name.rsplit(".", 1)[0]
     spellings = ((path, r"[\w-]"),
                  (path.removesuffix(".py").replace("/", "."), r"[\w-]"),
@@ -143,18 +147,30 @@ def _complete(text):
                           capture_output=True).returncode == 0
 
 
-def lines_for(verify_cmd, files):
-    commands = _commands(verify_cmd)
+def lines_for(verify_cmd, files, skip=()):
+    commands = [command for command in _commands(verify_cmd)
+                if any(_names(command, path) for path in files)
+                or not any(_names(command, path) for path in skip)]
     for end, command in enumerate(commands, 1):
         if any(_names(command, path) for path in files):
             return commands[:end]
     return commands
 
 
+def once_blob(wt, path):
+    if not (Path(wt) / path).is_file():
+        return None
+    return sh(["git", "hash-object", "-w", "--", path], wt).strip()
+
+
 def _blobs(wt, sha, files):
     tree = sh(["git", "ls-tree", "-r", "--name-only", sha], wt).splitlines()
     blobs = {}
     for named in files:
+        if witness_once.is_once(named):
+            if blob := once_blob(wt, named):
+                blobs[named] = blob
+            continue
         for path in ([found for found in tree if fnmatchcase(found, named)]
                      if GLOB.search(named) else [named]):
             found = subprocess.run(["git", "rev-parse", "--verify", "--quiet",
@@ -227,13 +243,28 @@ def _recorded(conn, run_id, key):
     return None
 
 
-def _run(project, conn, run_id, beat_s, wt, base, sha, files, command):
+def _place(tree, sha, blobs):
+    committed = [path for path in blobs if not witness_once.is_once(path)]
+    if committed:
+        sh(["git", "checkout", sha, "--", *committed], tree)
+    for path, blob in blobs.items():
+        if witness_once.is_once(path):
+            read = subprocess.run(["git", "cat-file", "blob", blob],
+                                  cwd=tree, capture_output=True)
+            if read.returncode:
+                raise RuntimeError(f"blob {blob} of {path} is unreadable")
+            (tree / path).parent.mkdir(parents=True, exist_ok=True)
+            (tree / path).write_bytes(read.stdout)
+
+
+def _run(project, conn, run_id, beat_s, wt, base, sha, blobs, command):
+    files = list(blobs)
     with detached_main(project, conn, run_id, beat_s, wt, base) as (
             tree, setup_failure):
         if setup_failure is not None:
             return {"ran": False,
                     "reason": f"its worktree setup failed:\n{setup_failure}"}
-        sh(["git", "checkout", sha, "--", *files], tree)
+        _place(tree, sha, blobs)
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(command, tree,
                                  timeout=verify_config(project).timeout_sec,
@@ -247,21 +278,22 @@ def _run(project, conn, run_id, beat_s, wt, base, sha, files, command):
 
 
 def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
-    n, form, named = want
+    n, form, named, skip = want
     blobs = _blobs(wt, sha, named)
-    command = "\n".join(lines_for(verify_cmd, list(blobs)))
+    command = "\n".join(lines_for(verify_cmd, list(blobs), skip))
     key = {"base": base, "files": list(blobs), "blobs": blobs,
            "command": command}
     result = dict(key, criterion=n, form=form, sha=sha)
     if not blobs:
-        return dict(result, ran=False, reason=f"none of {', '.join(named)} "
+        return dict(result, files=named, ran=False,
+                    reason=f"none of {', '.join(named)} "
                     f"exists at the candidate {sha[:12]}")
     reused = _recorded(conn, run_id, key)
     if reused is not None:
         return dict(reused, criterion=n, form=form, sha=sha)
     try:
         result.update(_run(project, conn, run_id, beat_s, wt, base, sha,
-                           list(blobs), command))
+                           blobs, command))
     except RuntimeError as exc:
         result.update(ran=False, reason=f"the detached tree failed: {exc}")
     status = (f"exit {result['exit_status']}" if result["ran"]
@@ -273,20 +305,31 @@ def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
     return result
 
 
+def _apart(found):
+    for n, form, files in found:
+        once = [path for path in files if witness_once.is_once(path)]
+        durable = [path for path in files if path not in once]
+        if durable:
+            yield n, form, durable, ()
+        if once:
+            yield n, form, once, durable
+
+
 def baselines(project, conn, run_id, beat_s, wt, frozen, sha, criteria,
               verify_cmd, ok):
     """Per criterion naming a test file its baseline result, reused when the
     base, the command and the named files' blobs match a recorded run."""
     if conn is None or run_id is None:
         return []
-    found = wanted(criterion_ids.numbered(conn, run_id, criteria))
+    found = list(_apart(wanted(criterion_ids.numbered(conn, run_id,
+                                                      criteria))))
     if not found:
         return []
     base = review_base(wt, frozen, sha)
     if not ok:
         return [{"criterion": n, "base": base, "files": files, "sha": sha,
                  "form": form, "ran": False, "reason": VERIFY_FAILED}
-                for n, form, files in found]
+                for n, form, files, _ in found]
     return [_baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd,
                       want) for want in found]
 

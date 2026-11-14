@@ -338,7 +338,9 @@ def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
                                    budget_min, issue_url)
     if lead:
         text = f"{lead}\n\n{text}"
-    return title, _with_concerns(pr_media.append(text, evidence), conn, run_id)
+    return title, _with_witnessed_once(
+        _with_concerns(pr_media.append(text, evidence), conn, run_id),
+        conn, run_id)
 
 
 def _with_concerns(text, conn, run_id):
@@ -347,6 +349,29 @@ def _with_concerns(text, conn, run_id):
         return text
     return (f"{text.rstrip()}\n\n## Other concerns ({len(held)})\n"
             + "\n".join(f"- {consolidate.bullet(item)}" for item in held))
+
+
+def _witnessed_once_line(entry, sha, base):
+    outcome, _, reason = entry["base_run"].partition(": ")
+    reason = reason.splitlines()[0].rstrip(":") if reason else ""
+    return (f"- C{entry['criterion']} `{entry['file']}` (blob "
+            f"{(entry['blob'] or 'none')[:12]}): {entry['candidate']} at "
+            f"{sha[:12]}; {outcome} at the merge base {base[:12]}"
+            + (f": {reason}" if reason else ""))
+
+
+def _with_witnessed_once(text, conn, run_id):
+    if conn is None or run_id is None:
+        return text
+    row = conn.execute(
+        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
+        " ORDER BY seq DESC LIMIT 1", (run_id, "witness_once")).fetchone()
+    if row is None:
+        return text
+    record = json.loads(row[0])
+    return (f"{text.rstrip()}\n\n## One-time witnesses\n" + "\n".join(
+        _witnessed_once_line(entry, record["sha"], record["base"])
+        for entry in record["criteria"]))
 
 
 def _opens_draft(project, wt):

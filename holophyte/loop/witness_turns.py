@@ -1,10 +1,12 @@
 """Witness pre-check gaps sent back to the implementer before each review round."""
+import json
 from functools import partial
 from pathlib import Path
 
 import store
 import store.read
 from holophyte.agents.fix_session import witness_turn
+from holophyte.agents.review_workspace import review_base
 from holophyte.board.projection import ledger
 from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.runs import set_phase
@@ -88,6 +90,48 @@ def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps, rnd):
            provider)
 
 
+def _candidate(ok, check):
+    if check is None:
+        return "not checked"
+    if not check["exists"]:
+        return "does not exist"
+    return "passed" if ok and check.get("ran") == "ran" else check.get("ran")
+
+
+def _base_run(result):
+    if result is None:
+        return "did not run: no base run is asked for"
+    if not result["ran"]:
+        return f"did not run: {result['reason']}"
+    if result.get("unattributed"):
+        return f"did not run: {result['unattributed']}"
+    return "passed" if result["passed"] else "failed"
+
+
+def _record_once(conn, run_id, wt, base_sha, sha, ok, criteria, entries,
+                 results):
+    pairs = criterion_ids.numbered(conn, run_id, criteria)
+    named = witness_precheck.named_files([text for _, text in pairs])
+    checks = {(entry["criterion"], check["file"]): check
+              for entry in entries for check in entry["checks"]}
+    runs = {(result["criterion"], path): result for result in results
+            for path in result["files"]}
+    found = [{"criterion": n, "file": path,
+              "blob": runs.get((n, path), {}).get("blobs", {}).get(path)
+              or main_baseline.once_blob(wt, path),
+              "candidate": _candidate(ok, checks.get((n, path))),
+              "base_run": _base_run(runs.get((n, path)))}
+             for (n, _), files in zip(pairs, named) for path in files
+             if witness_once.is_once(path)]
+    if not found:
+        return
+    store.record_event(conn, run_id, "witness_once",
+                       f"one-time witnesses at {sha[:12]}: {len(found)} "
+                       "recorded", level="detail", payload=json.dumps(
+                           {"sha": sha, "base": review_base(wt, base_sha, sha),
+                            "criteria": found}))
+
+
 def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                   base_sha, sha, ticket, verify_cmd, criteria, budget_min, ok,
                   out, checks, rnd):
@@ -137,6 +181,8 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
             entries, checked = _with_baseline(fresh, results), sha
         elif not ok:
             break
+    _record_once(conn, run_id, wt, base_sha, sha, ok, criteria, entries,
+                 results)
     when = (None if checked is None else "before this review" if checked == sha
             else f"at {checked[:12]}, before verify went red")
     return sha, ok, out, (witness_brief(_gaps(entries), _unnamed(entries), when)
