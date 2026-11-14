@@ -48,7 +48,8 @@ function LegendItem({ status }: { status: GridCell["status"] }) {
   );
 }
 
-/** Below the label, or above it when there is no room below, and never past the viewport's sides. */
+/** Below the label, or above it when there is no room below, and never past the viewport's sides; placed in
+ *  the zoomed document's own CSS pixels, as rects come back in viewport pixels. */
 function useTipPlace(shown: boolean) {
   const anchor = useRef<HTMLButtonElement>(null);
   const tip = useRef<HTMLSpanElement>(null);
@@ -60,7 +61,8 @@ function useTipPlace(shown: boolean) {
     const left = Math.max(MARGIN, Math.min(at.left, window.innerWidth - size.width - MARGIN));
     const below = at.bottom + GAP;
     const top = below + size.height > window.innerHeight - MARGIN ? Math.max(MARGIN, at.top - size.height - GAP) : below;
-    setPlace({ left, top });
+    const zoom = tip.current.currentCSSZoom || 1;
+    setPlace({ left: left / zoom, top: top / zoom });
   }, [shown]);
   return { anchor, tip, place };
 }

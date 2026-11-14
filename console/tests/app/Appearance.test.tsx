@@ -32,12 +32,15 @@ const motion = () => screen.getByRole("switch", { name: "Motion" });
 const shell = () => screen.getByRole("main").parentElement!;
 const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.hazeStrength", "holophyte.next.font", "holophyte.next.density"];
 const stored = () => KEYS.filter((key) => localStorage.getItem(key) !== null);
+const FONT_NAMES = ["Plex Sans", "Plex Serif", "Hyperlegible"];
 const storedValues = () => Object.fromEntries(KEYS.map((key) => [key, localStorage.getItem(key)]));
 const controls = () => ({
   scheme: within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio").filter((radio) => radio.getAttribute("aria-checked") === "true").map((radio) => radio.textContent),
   light: pressed("Light"), dark: pressed("Dark"), header: pressed("Header"),
   motion: motion().getAttribute("aria-checked"),
   sliders: [slider("Text size").value, slider("Grain").value, slider("Haze strength").value],
+  font: FONT_NAMES.filter((name) => radio("Reading font", name).checked),
+  density: screen.getAllByRole("button", { name: /^(Comfortable|Compact)$/ }).filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent),
 });
 
 function reducedMotion(reduced: boolean) {
@@ -160,7 +163,9 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   fireEvent.change(slider("Text size"), { target: { value: "110" } });
   fireEvent.change(slider("Grain"), { target: { value: "50" } });
   fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
-  expect(stored()).toEqual(KEYS.slice(0, 8));
+  fireEvent.click(radio("Reading font", "Hyperlegible"));
+  fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+  expect(stored()).toEqual(KEYS);
   const values = storedValues();
   const before = controls();
 
@@ -171,7 +176,8 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   expect(screen.queryByText("Reset?")).toBeNull();
   expect(storedValues()).toEqual(values);
   expect(controls()).toEqual(before);
-  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50", "150"] });
+  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50", "150"], font: ["Hyperlegible"], density: ["Compact"] });
+  expect([root.getAttribute("data-font"), root.getAttribute("data-density")]).toEqual(["hyperlegible", "compact"]);
   expect([root.style.getPropertyValue("zoom"), root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["1.1", "0.5", "1.5"]);
 
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
