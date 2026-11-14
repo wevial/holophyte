@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -34,6 +35,18 @@ const attentionOf = (items: Item[], project: string): Attention => ({ level: ite
 const daemons = peersFetch(ORIGIN, {
   [ORIGIN]: { status: statusOf("/srv/dev/demo", 1, "held"), attention: attentionOf([one, two], "/srv/dev/demo") },
   [PEER]: { status: statusOf("/srv/dev/writer", 2, "enabled"), attention: attentionOf([], "/srv/dev/writer") },
+});
+
+const LOTUS = "http://writer-host:7712";
+const threeProjects = peersFetch(ORIGIN, {
+  [ORIGIN]: { status: statusOf("/srv/dev/demo", 1, "enabled"), attention: attentionOf([], "/srv/dev/demo") },
+  [PEER]: { status: statusOf("/srv/dev/halo", 1, "enabled"), attention: attentionOf([], "/srv/dev/halo") },
+  [LOTUS]: { status: statusOf("/srv/dev/Lotuspod", 1, "enabled"), attention: attentionOf([], "/srv/dev/Lotuspod") },
+});
+
+const accented = peersFetch(ORIGIN, {
+  [ORIGIN]: { status: statusOf("/srv/dev/café", 1, "enabled"), attention: attentionOf([], "/srv/dev/café") },
+  [PEER]: { status: statusOf("/srv/dev/cafe", 1, "enabled"), attention: attentionOf([], "/srv/dev/cafe") },
 });
 
 async function mount(hash: string, fetchImpl: Fetch = daemons) {
@@ -185,4 +198,73 @@ test("with session storage throwing, a bare open is unscoped and picking still w
   } finally {
     Object.defineProperty(globalThis, "sessionStorage", real);
   }
+});
+
+test("a click outside the open switcher closes it and returns focus to the switcher button", async () => {
+  await mount("#/runs");
+  await key(switcher(), "ArrowDown");
+  expect(document.activeElement).toBe(find());
+
+  await userEvent.click(screen.getByRole("main"));
+  await act(settle);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(switcher().getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(switcher());
+});
+
+test("a click on a focusable control outside the open switcher closes it and leaves focus on that control", async () => {
+  await mount("#/runs");
+  await key(switcher(), "ArrowDown");
+  expect(document.activeElement).toBe(find());
+
+  const field = screen.getByRole("searchbox", { name: "Search runs" });
+  await userEvent.click(field);
+  await act(settle);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(switcher().getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(field);
+});
+
+test("typing filters the options, ArrowDown moves through the matches and Enter picks the active one", async () => {
+  await mount("#/runs", threeProjects);
+  fireEvent.click(switcher());
+  await act(settle);
+  await type("lo");
+  expect(optionNames()).toEqual(["halo1 open", "Lotuspod1 open"]);
+  expect(activeName()).toContain("halo");
+
+  await key(find(), "ArrowDown");
+  expect(activeName()).toContain("Lotuspod");
+  await key(find(), "Enter");
+  expect(location()).toEqual({ path: "/runs", project: "Lotuspod" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(switcher().getAttribute("aria-label")).toBe("Project: Lotuspod. Switch project");
+});
+
+test("with the link naming a project no host serves, opening highlights All projects and Enter picks it", async () => {
+  await mount("#/runs?project=ghost");
+  await key(switcher(), "ArrowDown");
+  expect(activeName()).toContain("All projects");
+  await key(find(), "Enter");
+  expect(location()).toEqual({ path: "/runs", project: null });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Shift+Tab from the filter closes the switcher with focus on its button", async () => {
+  await mount("#/runs");
+  await key(switcher(), "ArrowDown");
+  await userEvent.tab({ shift: true });
+  await act(settle);
+  expect(document.activeElement).toBe(switcher());
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the filter matches accents exactly, so typing cafe and Enter picks cafe over café", async () => {
+  await mount("#/runs", accented);
+  fireEvent.click(switcher());
+  await act(settle);
+  await type("cafe");
+  expect(optionNames()).toEqual(["cafe1 open"]);
+  await key(find(), "Enter");
+  expect(location()).toEqual({ path: "/runs", project: "cafe" });
 });

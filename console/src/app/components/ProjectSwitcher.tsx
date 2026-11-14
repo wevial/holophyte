@@ -1,12 +1,133 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { createListbox, createPopup, definePrimitive, popupContent, popupState, popupTitle, popupTrigger, selects } from "@ui-sdk/core";
+import { popoverPreset } from "@ui-sdk/core/popover";
+import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import { useId, useMemo, useRef } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { matchRows, storeScope, type SwitcherRow } from "../projects";
+import { storeScope, type SwitcherRow } from "../projects";
 import type { ScopeSearch } from "../scope";
 import { AllProjectsIcon, DropIcon, FolderIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
-const LEAST_HEIGHT = 164;
+const GAP = 4;
+
+type SwitcherOptions = {
+  defaultOpen?: boolean;
+  items?: { value: string; label: string }[];
+  current?: string;
+  onChoose?: (key: string) => void;
+};
+
+const switcher = definePrimitive({
+  name: "project-switcher",
+  options: { defaultOpen: "boolean", items: "value", current: "string", onChoose: "callback" },
+  state: (options: SwitcherOptions) => ({
+    ...popupState(options),
+    query: "",
+    highlighted: null as string | null,
+    current: options.current ?? null,
+  }),
+  sync: (options) => ({ current: options.current ?? null }),
+  api: (context) => {
+    const popup = createPopup(context, { preset: popoverPreset });
+    const listbox = createListbox(context, {
+      key: "highlighted",
+      focus: "virtual",
+      items: () => context.options().items ?? [],
+      query: () => context.store.get().query.trim(),
+      filter: () => (item, query) => item.label.toLowerCase().includes(query.toLowerCase()),
+    });
+    let wasOpen = context.store.get().open;
+    context.onDestroy(
+      context.store.subscribe(() => {
+        const { open, current } = context.store.get();
+        if (open === wasOpen) return;
+        wasOpen = open;
+        if (!open) return;
+        context.store.set({ query: "" });
+        if (context.options().items?.some((item) => item.value === current)) listbox.highlight(current);
+        else listbox.move("first");
+      }),
+    );
+    const choose = (key: string | null, event?: Event) => {
+      if (key == null) return;
+      popup.close({ reason: "item-press", event });
+      context.options().onChoose?.(key);
+    };
+    return {
+      ...popup,
+      listbox,
+      choose,
+      search(query: string) {
+        context.store.set({ query });
+        listbox.move("first");
+      },
+      keydown(event: KeyboardEvent) {
+        if (event.key === "Tab" && event.shiftKey) setTimeout(() => popup.close({ reason: "focus-out", event }));
+        if (event.key !== "Enter") return listbox.keydown(event);
+        event.preventDefault();
+        choose(context.store.get().highlighted, event);
+      },
+    };
+  },
+  slots: (slot) => ({
+    root: slot({}),
+    trigger: popupTrigger(slot),
+    content: popupContent(slot),
+    title: popupTitle(slot),
+    input: slot({
+      role: "combobox",
+      focus: "native",
+      keys: ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Enter"],
+      attrs: (state, { id, api }) => ({
+        value: state.query,
+        "aria-expanded": "true",
+        "aria-controls": `${id}-list`,
+        "aria-autocomplete": "list",
+        "aria-activedescendant": api.listbox.activeId(state),
+      }),
+      on: {
+        input: (event, { api }) => api.search((event.target as HTMLInputElement).value),
+        keydown: (event, { api }) => api.keydown(event as KeyboardEvent),
+      },
+    }),
+    list: slot<{}, { shown: string[] }>({
+      role: "listbox",
+      state: (_state, { api }) => ({ shown: api.listbox.items().map((item) => (item as { value: string }).value) }),
+      keys: { none: "The combobox's input handles them." },
+      present: (_state, { api }) => api.listbox.count() > 0,
+      attrs: (_state, { id }) => ({ id: `${id}-list` }),
+    }),
+    empty: slot({ present: (_state, { api }) => api.listbox.count() === 0 }),
+    option: slot<{ value: string }>({
+      role: "option",
+      focus: "active-descendant",
+      props: { value: "string" },
+      selects: selects({ highlighted: ({ key }) => [key, null] }),
+      attrs: (state, part) => ({
+        ...part.api.listbox.attrs(state, part),
+        "aria-selected": String(part.key === state.current),
+        "data-active": String(part.key === state.highlighted),
+      }),
+      press: ({ key, api }, event) => api.choose(key, event),
+      on: { pointermove: (event, { key, api }) => api.listbox.highlight(key, { event }) },
+      bind: (el, part) => {
+        if (part.key === part.store.get().highlighted) el.scrollIntoView?.({ block: "nearest" });
+        return part.api.listbox.bind(el, part);
+      },
+    }),
+  }),
+});
+
+const { Trigger, Content, Title, Input, List, Empty, Option } = createParts(switcher, {
+  trigger: "button",
+  content: "div",
+  title: "h2",
+  input: "input",
+  list: "ul",
+  empty: "p",
+  option: "li",
+});
 
 function iconColour(row: SwitcherRow): string {
   if (row.name == null) return "text-ink-2";
@@ -35,186 +156,131 @@ function unknownRow(name: string): SwitcherRow {
   return { name, label: name, held: false, need: 0, open: 0, down: false };
 }
 
+const rowKey = (row: SwitcherRow) => (row.name == null ? "all-projects-scope" : `project:${row.name}`);
+
 export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded: boolean }) {
   const { project } = useSearch({ from: "__root__" });
   const navigate = useNavigate();
-  const id = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const [place, setPlace] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
-  const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  const findId = `${useId()}-find`;
 
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
-  const matches = matchRows(rows, query);
-  const at = Math.min(active, Math.max(0, matches.length - 1));
-  const open = place != null;
+  const byKey = useMemo(() => new Map(rows.map((row) => [rowKey(row), row])), [rows]);
+  const items = useMemo(() => rows.map((row) => ({ value: rowKey(row), label: row.label })), [rows]);
 
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!dialogRef.current?.contains(target) && !buttonRef.current?.contains(target)) setPlace(null);
-    };
-    document.addEventListener("mousedown", outside);
-    return () => document.removeEventListener("mousedown", outside);
-  }, [open]);
+  const handle = usePrimitive(switcher, {
+    items,
+    current: rowKey(current),
+    onChoose: (key) => {
+      const row = byKey.get(key)!;
+      storeScope(row.name);
+      void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: row.name ?? undefined }) });
+    },
+  });
 
-  const show = () => {
-    const rect = buttonRef.current!.getBoundingClientRect();
-    const rail = buttonRef.current!.closest("aside")?.getBoundingClientRect() ?? rect;
-    const room = window.innerWidth - DIALOG_WIDTH - EDGE;
-    const beside = folded && rail.right + 4 <= room;
-    const below = beside ? rect.top : rect.bottom + 4;
-    const top = Math.max(EDGE, Math.min(below, window.innerHeight - EDGE - LEAST_HEIGHT));
-    const left = beside ? rail.right + 4 : Math.max(EDGE, Math.min(rect.left, room));
-    setPlace({ top, left, maxHeight: window.innerHeight - top - EDGE });
-    setQuery("");
-    setActive(Math.max(0, rows.indexOf(current)));
+  const besideRailWhenRoom = {
+    getBoundingClientRect: () => {
+      const rect = buttonRef.current!.getBoundingClientRect();
+      const rail = buttonRef.current!.closest("aside")?.getBoundingClientRect() ?? rect;
+      const beside = rail.right + GAP <= window.innerWidth - DIALOG_WIDTH - EDGE;
+      return beside ? new DOMRect(rail.right + GAP, rect.top - GAP, 0, 0) : rect;
+    },
   };
 
-  useEffect(() => {
-    if (open) document.getElementById(`${id}-option-${at}`)?.scrollIntoView?.({ block: "nearest" });
-  }, [open, at, id]);
-
-  const close = () => {
-    setPlace(null);
-    buttonRef.current?.focus();
-  };
-
-  const pick = (row: SwitcherRow) => {
-    storeScope(row.name);
-    void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: row.name ?? undefined }) });
-    close();
-  };
-
-  const onButtonKey = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-    event.preventDefault();
-    if (!open) show();
-  };
-
-  const onFindKey = (event: KeyboardEvent) => {
-    const count = matches.length;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      if (count > 0) setActive((at + (event.key === "ArrowDown" ? 1 : count - 1)) % count);
-    } else if (event.key === "Enter") {
-      event.preventDefault();
-      const row = matches[at];
-      if (row) pick(row);
-    } else if (event.key === "Tab") {
-      setPlace(null);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-    }
-  };
-
-  const optionId = (index: number) => `${id}-option-${index}`;
-  const listId = `${id}-list`;
-  const findId = `${id}-find`;
-
-  return (
-    <div className={`pt-3 pb-1 ${folded ? "flex justify-center" : "px-3"}`}>
-      <button
-        ref={buttonRef}
-        type="button"
-        aria-label={buttonName(current)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        title={folded ? current.label : undefined}
-        onClick={() => (open ? setPlace(null) : show())}
-        onKeyDown={onButtonKey}
-        className={`relative flex min-h-11 items-center gap-2 border border-rule bg-paper text-[13px] text-ink hover:bg-paper-2 ${
-          folded ? "size-11 justify-center" : "w-full px-3"
-        }`}
-      >
-        <RowIcon row={current} />
-        {folded ? (
-          current.need > 0 && (
-            <span data-need aria-hidden="true" className="absolute top-0.5 right-1 font-mono text-[9px] leading-none font-semibold text-need">
-              {current.need}
-            </span>
-          )
-        ) : (
-          <>
-            <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
-            {current.held && <HeldTag />}
-            {current.need > 0 && (
-              <span data-need aria-hidden="true" className="font-mono text-[12px] font-semibold text-need">
-                {current.need}
-              </span>
-            )}
-            <span className="text-ink-3">
-              <DropIcon />
-            </span>
-          </>
-        )}
-      </button>
-
-      {place && (
-        <div
-          ref={dialogRef}
-          role="dialog"
-          aria-label="Switch project"
-          style={{ top: place.top, left: place.left, maxHeight: place.maxHeight, width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
-          className="fixed z-50 flex flex-col border border-rule bg-paper p-2 shadow-card"
-          onMouseDown={(event) => {
-            if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
-          }}
-          onBlur={(event) => {
-            const next = event.relatedTarget as Node | null;
-            if (!dialogRef.current?.contains(next) && next !== buttonRef.current) setPlace(null);
-          }}
-        >
-          <label htmlFor={findId} className="sr-only">
-            Find a project
-          </label>
-          <input
-            id={findId}
-            autoFocus
-            role="combobox"
-            aria-expanded="true"
-            aria-controls={listId}
-            aria-autocomplete="list"
-            aria-activedescendant={matches.length > 0 ? optionId(at) : undefined}
-            placeholder="Find a project"
-            autoComplete="off"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActive(0);
+  return usePart(
+    handle,
+    "root",
+    {},
+    {
+      className: `pt-3 pb-1 ${folded ? "flex justify-center" : "px-3"}`,
+      children: (
+        <>
+          <Trigger
+            ref={buttonRef}
+            aria-label={buttonName(current)}
+            title={folded ? current.label : undefined}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+              event.preventDefault();
+              handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            onKeyDown={onFindKey}
-            className="min-h-9 border border-ink-3 bg-paper-2 px-2.5 text-[13px] text-ink placeholder:text-ink-2 focus:outline-2 focus:outline-focus focus:-outline-offset-1!"
-          />
-          {matches.length === 0 ? (
-            <p className="mt-2 px-2 py-2.5 text-[13px] text-ink-3">No project matches.</p>
-          ) : (
-            <ul id={listId} role="listbox" aria-label="Projects" className="mt-2 flex max-h-[320px] min-h-0 flex-col overflow-y-auto">
-              {matches.map((row, index) => (
-                <li
-                  key={row.name == null ? "all-projects-scope" : `project:${row.name}`}
-                  id={optionId(index)}
-                  role="option"
-                  aria-selected={row.name === current.name}
-                  data-active={index === at}
-                  onClick={() => pick(row)}
-                  onMouseMove={() => setActive(index)}
-                  className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-[13px] text-ink aria-selected:text-act data-[active=true]:bg-paper-2"
-                >
-                  <RowIcon row={row} />
-                  <span className="min-w-0 flex-1 truncate">{row.label}</span>
-                  {row.held && <HeldTag />}
-                  {row.need > 0 && <span className="font-mono text-[12px] font-semibold text-need">{row.need}</span>}
-                  <span className="font-mono text-[11px] text-ink-3">{row.down ? "not answering" : `${row.open} open`}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </div>
+            className={`relative flex min-h-11 items-center gap-2 border border-rule bg-paper text-[13px] text-ink hover:bg-paper-2 ${
+              folded ? "size-11 justify-center" : "w-full px-3"
+            }`}
+          >
+            <RowIcon row={current} />
+            {folded ? (
+              current.need > 0 && (
+                <span data-need aria-hidden="true" className="absolute top-0.5 right-1 font-mono text-[9px] leading-none font-semibold text-need">
+                  {current.need}
+                </span>
+              )
+            ) : (
+              <>
+                <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
+                {current.held && <HeldTag />}
+                {current.need > 0 && (
+                  <span data-need aria-hidden="true" className="font-mono text-[12px] font-semibold text-need">
+                    {current.need}
+                  </span>
+                )}
+                <span className="text-ink-3">
+                  <DropIcon />
+                </span>
+              </>
+            )}
+          </Trigger>
+
+          <Content
+            side="bottom"
+            align="start"
+            sideOffset={GAP}
+            collisionPadding={EDGE}
+            anchor={folded ? besideRailWhenRoom : undefined}
+            onFocus={(event) => {
+              if (event.target === event.currentTarget) document.getElementById(findId)?.focus();
+            }}
+            style={{ maxHeight: "var(--available-height)", width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
+            className="fixed z-50 flex flex-col border border-rule bg-paper p-2 shadow-card"
+            onMouseDown={(event) => {
+              if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
+            }}
+          >
+            <Title className="sr-only">Switch project</Title>
+            <label htmlFor={findId} className="sr-only">
+              Find a project
+            </label>
+            <Input
+              id={findId}
+              placeholder="Find a project"
+              autoComplete="off"
+              className="min-h-9 border border-ink-3 bg-paper-2 px-2.5 text-[13px] text-ink placeholder:text-ink-2 focus:outline-2 focus:outline-focus focus:-outline-offset-1!"
+            />
+            <Empty className="mt-2 px-2 py-2.5 text-[13px] text-ink-3">No project matches.</Empty>
+            <List aria-label="Projects" className="mt-2 flex max-h-[320px] min-h-0 flex-col overflow-y-auto">
+              {({ shown }) =>
+                shown.map((key) => {
+                  const row = byKey.get(key)!;
+                  return (
+                    <Option
+                      key={key}
+                      value={key}
+                      className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-[13px] text-ink aria-selected:text-act data-[active=true]:bg-paper-2"
+                    >
+                      <RowIcon row={row} />
+                      <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                      {row.held && <HeldTag />}
+                      {row.need > 0 && <span className="font-mono text-[12px] font-semibold text-need">{row.need}</span>}
+                      <span className="font-mono text-[11px] text-ink-3">{row.down ? "not answering" : `${row.open} open`}</span>
+                    </Option>
+                  );
+                })
+              }
+            </List>
+          </Content>
+        </>
+      ),
+    },
+    "div",
   );
 }
