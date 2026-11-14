@@ -101,10 +101,11 @@ async function mount(hash: string, fetchImpl: Fetch) {
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
-const rows = () => within(screen.getByRole("list", { name: "Runs, newest first" })).queryAllByRole("listitem");
+const rows = () => Array.from(document.querySelectorAll<HTMLElement>("li[data-run]"));
 const runLink = (row: HTMLElement) => within(row).getByRole("link", { name: /^Run \d+,/ });
-const cells = (row: HTMLElement) => Array.from(row.children, (cell) => cell.textContent);
-const stateCells = () => rows().map((row) => cells(row)[4]);
+const glyph = (row: HTMLElement) => within(row).getByRole("img");
+const glyphs = () => rows().map((row) => glyph(row).getAttribute("aria-label"));
+const days = () => Array.from(document.querySelectorAll("[data-day]"), (heading) => heading.textContent);
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -130,10 +131,10 @@ test("Runs lists every host's runs since yesterday newest start first, each name
   expect(runLink(first!).getAttribute("aria-label")).toBe("Run 12, DEMO-12 Count the rounds, demo, reviewing · round 1 of 3, started 16:36");
   expect(runLink(first!).getAttribute("href")).toEndWith("#/runs/demo/12");
 
-  expect(within(failed!).getByRole("img").getAttribute("aria-label")).toBe("failed");
-  expect(cells(merged!)).toContain("yest 21:05");
+  expect(glyph(failed!).getAttribute("aria-label")).toBe("failed");
+  expect(runLink(merged!).getAttribute("aria-label")).toEndWith("started yest 21:05");
   expect(runLink(merged!).getAttribute("href")).toEndWith("#/runs/demo/9");
-  expect(within(merged!).getByRole("img").getAttribute("aria-label")).toBe("merged");
+  expect(glyph(merged!).getAttribute("aria-label")).toBe("merged");
 });
 
 test("a Runs row opens its run's Run page on its own project", async () => {
@@ -168,7 +169,7 @@ test("a Runs row whose host has not answered /status reads its run as text, with
   render(<RouterProvider router={createRouter({ routeTree: root.addChildren([page]), history: createHashHistory() })} />);
   await act(settle);
   const [row7] = rows();
-  const runCell = row7!.children[0]!;
+  const runCell = row7!.children[1]!;
   expect(runCell.textContent).toBe("7");
   expect(runCell.closest("a")).toBeNull();
   expect(runCell.querySelector("a")).toBeNull();
@@ -176,20 +177,30 @@ test("a Runs row whose host has not answered /status reads its run as text, with
   expect(Array.from(row7!.querySelectorAll("[href]"), (link) => link.getAttribute("href")).filter((href) => href!.includes("classic"))).toEqual([]);
 });
 
-test("a scoped Runs lists only that project's runs, with a dash for no rounds or pull request", async () => {
-  await mount("#/runs?project=demo&state=all", fleet([demo12, demo9], [writer40]));
+test("a run with no rounds or pull request reads a dash in both cells, and one with 4 rounds reads 4 beside the loop glyph", async () => {
+  const looped = { ...demo9, rounds: 4 };
+  await mount("#/runs?project=demo&state=all", fleet([demo12, looped], [writer40]));
   const [first, second] = rows();
   expect(rows()).toHaveLength(2);
-  expect(cells(first!)).toEqual(["12", "DEMO-12", "Count the rounds", "demo", "reviewing · round 1 of 3", "–", "–", "16:36", "–", "16m"]);
-  expect(cells(second!)).toEqual(["9", "DEMO-9", "Page the ledger", "demo", "merged", "2", "#524", "yest 21:05", "–", "1h 43m"]);
+  const cell = (row: HTMLElement, name: string) => row.querySelector(`[data-${name}]`)!;
+  expect([cell(first!, "rounds").textContent, cell(first!, "pr").textContent]).toEqual(["–", "–"]);
+  expect(cell(first!, "rounds").querySelector("svg")).toBeNull();
+  expect([cell(second!, "rounds").textContent, cell(second!, "pr").textContent]).toEqual(["4", "#524"]);
+  expect(cell(second!, "rounds").querySelector("svg")).not.toBeNull();
 });
 
-test("the table heads the ticket key and the title as separate columns, the key linked to its ticket page", async () => {
+test("runs sorted by start fall under Today, Yesterday and then their date, each heading counting its rows", async () => {
+  const older = run({ id: 3, ticket: "DEMO-3", title: "Ship the old one", started_ms: new Date(2026, 9, 12, 9, 30).getTime() });
+  await mount("#/runs?state=all", fleet([demo12, demo9, older], [writer40]));
+  expect(days()).toEqual(["Today 2", "Yesterday 1", "Mon, Oct 12 1"]);
+  const under = (day: string) => within(screen.getByRole("list", { name: day })).getAllByRole("listitem").map((row) => row.getAttribute("data-run"));
+  expect([under("Today"), under("Yesterday"), under("Mon, Oct 12")]).toEqual([["12", "40"], ["9"], ["3"]]);
+});
+
+test("the ticket key and the title sit in the row, the key linked to its ticket page", async () => {
   await mount("#/runs", fleet([run({ id: 21, ticket: "HOLO-12", title: "Fix the sweep", started_ms: today(17, 0) })], []));
-  const head = document.querySelector("[data-run-heads]")!;
-  expect(Array.from(head.children, (cell) => cell.textContent)).toEqual(["Run", "Ticket", "Title", "Project", "State", "Rounds", "PR", "Started", "Ended", "Took"]);
   const [row] = rows();
-  expect(cells(row!).slice(1, 3)).toEqual(["HOLO-12", "Fix the sweep"]);
+  expect(within(row!).getByText("Fix the sweep")).toBeTruthy();
   expect(runLink(row!).getAttribute("aria-label")).toStartWith("Run 21, HOLO-12 Fix the sweep, demo,");
   expect(within(row!).getByRole("link", { name: "HOLO-12" }).getAttribute("href")).toEndWith("#/tickets/demo/HOLO-12");
 });
@@ -211,21 +222,25 @@ const parkedRun = (id: number, hour: number) => run({
   pr_url: `https://github.com/example/demo/pull/${id}`,
 });
 
-test("a failed run's State cell names its failure stage and an abandoned run's its reason's first line", async () => {
+test("a failed run's glyph is labelled with its failure stage and an abandoned run's with its reason's first line, shown on hover", async () => {
   const failed = run({ id: 11, ticket: "DEMO-11", title: "Fail", started_ms: today(16, 0), phase: "failed", outcome: "failed", failure_kind: "verify" });
   const abandoned = run({
     id: 10, ticket: "DEMO-10", title: "Drop", started_ms: today(15, 0), phase: "done", outcome: "abandoned",
     outcome_reason: "aborted: wrong ticket\nmore",
   });
   await mount("#/runs?state=all", fleet([failed, abandoned], []));
-  expect(stateCells()).toEqual(["failed at verify", "abandoned · aborted: wrong ticket"]);
+  expect(glyphs()).toEqual(["failed at verify", "abandoned · aborted: wrong ticket"]);
+  const [failedRow] = rows();
+  expect(failedRow!.textContent).not.toContain("failed");
+  await act(async () => void fireEvent.pointerEnter(glyph(failedRow!).parentElement!));
+  expect(within(failedRow!).getByRole("tooltip").textContent).toBe("failed at verify");
 });
 
 test("a parked run names its pull request's first open fact and a stale run how long since its beat", async () => {
   const parked = parkedRun(8, 17);
   const stale = run({ id: 7, ticket: "DEMO-7", title: "Hang", started_ms: today(16, 50), phase: "implementing", heartbeat_age_ms: 15 * MINUTE });
   await mount("#/runs", fleet([parked, stale], [], [pullRequestItem(8, { threads: 1, open_threads: 1 })]));
-  expect(stateCells()).toEqual(["parked · 1 thread open", "stale · no beat 15m"]);
+  expect(glyphs()).toEqual(["parked · 1 thread open", "stale · no beat 15m"]);
 });
 
 test("exactly the runs that wait on the maintainer carry data-need, each row named by its stage word", async () => {
@@ -240,22 +255,11 @@ test("exactly the runs that wait on the maintainer carry data-need, each row nam
     pullRequestItem(4, {}),
   ] as Item[];
   await mount("#/runs?state=all", fleet([stale, question, paused, readyRun, { ...demo12, rounds: 1 }, merged], [], items, [4]));
-  expect(stateCells()).toEqual([
+  expect(glyphs()).toEqual([
     "stale · no beat 15m", "asks · Which way?", "paused · Waiting on a key", "ready to merge", "reviewing · round 2 of 3", "merged 11:15",
   ]);
   expect(rows().map((row) => row.hasAttribute("data-need"))).toEqual([true, true, true, true, false, false]);
   expect(runLink(rows()[4]!).getAttribute("aria-label")).toEndWith(", reviewing · round 2 of 3, started 16:36");
-});
-
-test("the Ended column, between Started and Took, reads an ended run's end as Started reads a start and a dash while a run is open", async () => {
-  const endedYesterday = run({
-    id: 30, ticket: "DEMO-30", title: "End late", started_ms: new Date(2026, 9, 14, 15, 50).getTime(),
-    phase: "done", outcome: "merged", ended_ms: new Date(2026, 9, 14, 16, 20).getTime(),
-  });
-  await mount("#/runs?state=all", fleet([demo12, endedYesterday], []));
-  const [open, closed] = rows();
-  expect(cells(open!)[8]).toBe("–");
-  expect(cells(closed!).slice(7)).toEqual(["yest 15:50", "yest 16:20", "16m"]);
 });
 
 const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
@@ -267,16 +271,13 @@ const writerAbandoned = run({ id: 43, ticket: "WRITER-43", title: "Drop the note
 const sixRuns = () => fleet([demo12, demoParked, demoFailed], [writer41, writerMerged, writerAbandoned]);
 
 const countLine = () => document.querySelector("[data-count-line]")!.textContent;
-const openFilter = async () => {
-  if (!screen.queryByRole("dialog", { name: "Filter runs" })) await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Filter/ })));
-  return within(screen.getByRole("group", { name: "State" }));
-};
-const stateRows = async () => (await openFilter()).getAllByRole("checkbox").slice(1).map((box) => box.closest("label")!.textContent);
-const checkedStates = async () => (await openFilter()).getAllByRole("checkbox").slice(1).filter((box) => (box as HTMLInputElement).checked).map((box) => box.getAttribute("aria-label"));
-const checkState = async (name: string) => {
-  const box = (await openFilter()).getByRole("checkbox", { name });
+const tabs = () => within(screen.getByRole("group", { name: "Run states" })).getAllByRole("button");
+const tabTexts = () => tabs().map((tab) => tab.textContent);
+const pressedTabs = () => tabs().filter((tab) => tab.getAttribute("aria-pressed") === "true").map((tab) => tab.textContent!.split(" ")[0]);
+const pickTab = async (name: string) => {
+  const tab = tabs().find((each) => each.textContent!.startsWith(`${name} `))!;
   await act(async () => {
-    fireEvent.click(box);
+    fireEvent.click(tab);
     await settle();
   });
   for (let round = 0; round < 3; round += 1) await act(settle);
@@ -294,54 +295,56 @@ function resumedFleet(): Fetch {
   return fleet([resumed, resumer, waiting], [], items);
 }
 
-test("a paused run a later run resumed reads resumed as that run in grey, while one with no later run still needs you", async () => {
+test("a paused run a later run resumed says so on its glyph and links that run from its row, while one with no later run still needs you", async () => {
   await mount("#/runs?state=all", resumedFleet());
   const byId = (id: string) => rows().find((row) => row.getAttribute("data-run") === id)!;
   const [resumed, waiting] = [byId("5"), byId("4")];
-  expect(cells(resumed)[4]).toBe("paused · resumed as run 8");
+  expect(glyph(resumed).getAttribute("aria-label")).toBe("paused · resumed as run 8");
   expect(within(resumed).getByRole("link", { name: "run 8" }).getAttribute("href")).toEndWith("#/runs/demo/8");
   expect(resumed.hasAttribute("data-need")).toBe(false);
-  expect(within(resumed).getByText(/^paused · /).className).toContain("text-ink-3");
-  expect(cells(waiting)[4]).toBe("paused · Waiting on a key");
+  expect(glyph(waiting).getAttribute("aria-label")).toBe("paused · Waiting on a key");
   expect(waiting.hasAttribute("data-need")).toBe(true);
 });
 
-test("Active under State leaves out a paused run a later run resumed and does not count it, while no state lists it", async () => {
+test("the Active tab leaves out a paused run a later run resumed and does not count it, while All lists it", async () => {
   await mount("#/runs", resumedFleet());
-  expect(await checkedStates()).toEqual([]);
+  expect(pressedTabs()).toEqual(["All"]);
   expect(shownIds()).toEqual(["8", "5", "4"]);
   expect(countLine()).toBe("all projects · 3 runs / 2 active / newest first");
-  await checkState("Active");
-  expect(await checkedStates()).toEqual(["Active"]);
+  await pickTab("Active");
+  expect(pressedTabs()).toEqual(["Active"]);
   expect(shownIds()).toEqual(["8", "4"]);
   expect(countLine()).toBe("all projects · 2 runs / 2 active / newest first");
 });
 
-test("the count line and every State box count the scoped runs, with no State box checked and every run listed by default", async () => {
+test("the count line and every state tab count the scoped runs, with All picked and every run listed by default", async () => {
   await mount("#/runs", sixRuns());
   expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first");
-  expect(await stateRows()).toEqual(["Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
-  expect(await checkedStates()).toEqual([]);
+  expect(tabTexts()).toEqual(["All 6", "Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
+  expect(pressedTabs()).toEqual(["All"]);
   expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
 });
 
-test("checking Active under State from the default puts state=active in the link and lists only the active runs", async () => {
+test("picking the Active tab puts state=active in the link and lists only the active runs, and All drops it", async () => {
   await mount("#/runs", sixRuns());
-  await checkState("Active");
+  await pickTab("Active");
   expect(searchState()).toBe("active");
-  expect(await checkedStates()).toEqual(["Active"]);
+  expect(pressedTabs()).toEqual(["Active"]);
   expect(shownIds()).toEqual(["12", "13", "41"]);
+  await pickTab("All");
+  expect(searchState()).toBeNull();
+  expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
 });
 
-test("a link with state=merged checks Merged under State and lists only the merged run", async () => {
+test("a link with state=merged picks the Merged tab and lists only the merged run", async () => {
   await mount("#/runs?state=merged", sixRuns());
-  expect(await checkedStates()).toEqual(["Merged"]);
+  expect(pressedTabs()).toEqual(["Merged"]);
   expect(shownIds()).toEqual(["42"]);
 });
 
-test("a state the filter does not know reads as no state", async () => {
+test("a state the tabs do not know reads as All", async () => {
   await mount("#/runs?state=bogus", sixRuns());
-  expect(await checkedStates()).toEqual([]);
+  expect(pressedTabs()).toEqual(["All"]);
   expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
 });
 

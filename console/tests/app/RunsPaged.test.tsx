@@ -87,7 +87,7 @@ async function mount(hash: string, fetchImpl: Fetch) {
 }
 
 const list = () => document.querySelector("ol[aria-label^='Runs, ']")!;
-const rows = () => within(list() as HTMLElement).queryAllByRole("listitem");
+const rows = () => Array.from(document.querySelectorAll<HTMLElement>("li[data-run]"));
 const shownIds = () => rows().map((row) => row.getAttribute("data-run"));
 const pager = () => screen.queryByRole("navigation", { name: "Pages of runs" });
 const range = () => pager()!.querySelector("span")!.textContent;
@@ -100,6 +100,12 @@ const press = async (element: HTMLElement) => {
   for (let round = 0; round < 3; round += 1) await act(settle);
 };
 const button = (name: string) => screen.getByRole("button", { name });
+const popover = async () => {
+  if (!screen.queryByRole("dialog", { name: "Filter runs" })) await press(screen.getByRole("button", { name: /^Filter/ }));
+  return within(screen.getByRole("dialog", { name: "Filter runs" }));
+};
+const radio = async (name: string) => (await popover()).getByRole("radio", { name }) as HTMLInputElement;
+const checkedSort = async () => (await popover()).getAllByRole("radio").filter((each) => (each as HTMLInputElement).checked).map((each) => each.closest("label")!.textContent);
 const paged = (state: string | null, offset: number, limit: number, sort = "started", order = "desc") => ({
   since: String(SINCE), ...(state ? { state } : {}), sort, order, offset: String(offset), limit: String(limit),
 });
@@ -126,8 +132,7 @@ test("Runs asks each host once for the first 50 runs of the last 7 days newest f
   await mount("#/runs", daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
   expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 50)]);
-  expect(button("Sort by started").getAttribute("aria-pressed")).toBe("true");
-  expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
+  expect(await checkedSort()).toEqual(["Started", "newest first"]);
   expect(rows()).toHaveLength(5);
   expect(range()).toBe("1–5 of 5");
 });
@@ -166,7 +171,7 @@ test("one host in scope serves each page itself, Next walks to the last page, an
 
 function PageOfRuns({ search }: { search: Required<RunsSearch> }) {
   const { rows } = useRunPage(search);
-  return <ol aria-label="Runs, newest first">{rows.map((row) => <li key={`${row.base} ${row.id}`}>{row.ticket}</li>)}</ol>;
+  return <ol aria-label="Runs, newest first">{rows.map((row) => <li key={`${row.base} ${row.id}`} data-run={row.id}>{row.ticket}</li>)}</ol>;
 }
 
 async function mountPage(search: Required<RunsSearch>, fetchImpl: Fetch) {
@@ -210,36 +215,36 @@ test("with several hosts in scope a page past the daemon's 5000-row cap is asked
   expect([shown[0], shown.at(-1)]).toEqual(["DEMO-1000", "DEMO-901"]);
 });
 
-test("a sort head puts its sort and order in the hash, asks the hosts with them and names the list, State starts ascending, and newest first drops both", async () => {
+test("a sort picked in the Filter popover puts its sort and order in the hash, asks the hosts with them and names the list, State starts ascending, and newest first drops both", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 60) }, { rows: [] });
   await mount("#/runs", daemons.fetchImpl);
   await press(button("Next"));
   expect(hashSearch().get("page")).toBe("2");
 
-  await press(button("Sort by took"));
+  await press(await radio("Took"));
   expect(hashSearch().get("sort")).toBe("duration");
   expect(hashSearch().get("order")).toBe("desc");
   expect(hashSearch().has("page")).toBe(false);
   expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged(null, 0, 50, "duration", "desc"));
   expect(daemons.askedOf(WRITER).at(-1)).toEqual(paged(null, 0, 50, "duration", "desc"));
   expect(list().getAttribute("aria-label")).toBe("Runs, longest first");
-  expect(button("Sort by took").getAttribute("aria-pressed")).toBe("true");
+  expect(await checkedSort()).toEqual(["Took", "longest first"]);
 
-  await press(button("Sort by took"));
+  await press(await radio("shortest first"));
   expect(hashSearch().get("order")).toBe("asc");
   expect(list().getAttribute("aria-label")).toBe("Runs, shortest first");
 
-  await press(button("Sort by state"));
+  await press(await radio("State"));
   expect(hashSearch().get("sort")).toBe("state");
   expect(hashSearch().get("order")).toBe("asc");
 
-  await press(button("Sort by started"));
+  await press(await radio("Started"));
   expect(hashSearch().has("sort")).toBe(false);
   expect(hashSearch().has("order")).toBe(false);
-  expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
+  expect(await checkedSort()).toEqual(["Started", "newest first"]);
 });
 
-test("sorted by took, two hosts' rows are drawn longest first, then shortest first after a second press", async () => {
+test("sorted by took, two hosts' rows are drawn longest first, then shortest first once that order is picked", async () => {
   const took = (id: number, ticket: string, hour: number, minutes: number) =>
     run({ id, ticket, title: ticket, started_ms: today(hour, 0), elapsed_ms: minutes * MINUTE });
   const longestFirst = (rows: HistoryRow[]) => (params: URLSearchParams) => (params.get("order") === "asc" ? [...rows].reverse() : rows);
@@ -249,10 +254,10 @@ test("sorted by took, two hosts' rows are drawn longest first, then shortest fir
   );
   await mount("#/runs", daemons.fetchImpl);
 
-  await press(button("Sort by took"));
+  await press(await radio("Took"));
   expect(shownIds()).toEqual(["1", "3", "2", "4"]);
 
-  await press(button("Sort by took"));
+  await press(await radio("shortest first"));
   expect(shownIds()).toEqual(["4", "2", "3", "1"]);
 });
 
@@ -261,8 +266,8 @@ test("the controls row hides after 24px of scrolling down once the dock is stuck
   expect(rows()).toHaveLength(50);
   const dock = document.querySelector<HTMLElement>("[data-runs-dock]")!;
   const controls = dock.querySelector<HTMLElement>("[data-controls]")!;
-  expect(within(dock).getAllByRole("button", { name: /^Sort by / })).toHaveLength(5);
-  expect(dock.contains(list())).toBe(false);
+  expect(within(dock).getByRole("button", { name: /^Filter/ })).toBeTruthy();
+  expect(dock.contains(rows()[0]!)).toBe(false);
   Object.defineProperty(controls, "offsetHeight", { configurable: true, value: 52 });
   Object.defineProperty(dock, "offsetHeight", { configurable: true, value: 96 });
   const main = document.querySelector("main")!;
@@ -342,7 +347,7 @@ test("unknown sort, order, page and size open newest first on page 1 at 50 a pag
   await mount("#/runs?sort=size&order=up&page=0&size=7", daemons.fetchImpl);
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
   expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 50)]);
-  expect(list().getAttribute("aria-label")).toBe("Runs, newest first");
+  expect(await checkedSort()).toEqual(["Started", "newest first"]);
   expect((screen.getByRole("combobox", { name: "Rows a page" }) as HTMLSelectElement).value).toBe("50");
   expect(range()).toBe("1–3 of 3");
 });

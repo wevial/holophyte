@@ -104,7 +104,7 @@ test("every Overview running, queued and pull request row and Runs and Tickets t
   cleanup();
 
   await mount("#/runs");
-  const runs = within(screen.getByRole("list", { name: "Runs, newest first" })).getAllByRole("listitem");
+  const runs = document.querySelectorAll("li[data-run]");
   expect(runs).toHaveLength(3);
   for (const row of runs) {
     expect(row.hasAttribute("data-row")).toBe(true);
