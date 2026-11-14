@@ -504,7 +504,8 @@ class TrimLoopTests(TrimFixture):
             review, task=dict(a_task(), verify="echo verified > keep.txt"))
         self.assert_merged()
         self.assertEqual(self.review_candidates(fake), [self.shas()["work"]])
-        self.assertEqual(review.status, {"?? keep.txt", "!! carried.log"})
+        self.assertEqual(review.status, {"?? keep.txt", "!! carried.log",
+                                         "!! .holophyte-witness/"})
         [result] = self.results()
         self.assertEqual(result["outcome"], "reverted")
         self.assertIn(named, result["reason"])
