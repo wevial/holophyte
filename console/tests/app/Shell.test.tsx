@@ -391,6 +391,37 @@ test("theme.css lets the app's controls inside the main pane cut through its dra
   for (const name of ["main", "a", "button"]) expect(selector).toMatch(new RegExp(`\\b${name}\\b`));
 });
 
+test("without WebGL2 the shell's haze band shows the fallback, hidden from assistive technology and taking no pointer events", async () => {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = (() => null) as typeof getContext;
+  const style = document.createElement("style");
+  style.textContent = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text()).replace(/@import[^;]*;/, "");
+  document.head.appendChild(style);
+  try {
+    await mount("#/");
+    const bands = screen.getByRole("main").querySelectorAll<HTMLElement>("[data-haze]");
+    expect(bands.length).toBe(1);
+    const band = bands[0]!;
+    expect(band.classList.contains("haze-fallback")).toBe(true);
+    expect(band.querySelector("canvas")).toBeNull();
+    expect(band.getAttribute("aria-hidden")).toBe("true");
+    expect(getComputedStyle(band).pointerEvents).toBe("none");
+  } finally {
+    HTMLCanvasElement.prototype.getContext = getContext;
+    style.remove();
+  }
+});
+
+test("a stored header effect of none renders no haze band, and with nothing stored the shell renders one", async () => {
+  localStorage.setItem("holophyte.next.effect", "none");
+  await mount("#/");
+  expect(screen.getByRole("main").querySelector("[data-haze]")).toBeNull();
+  cleanup();
+  localStorage.clear();
+  await mount("#/");
+  expect(screen.getByRole("main").querySelectorAll("[data-haze]").length).toBe(1);
+});
+
 test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords leave it", async () => {
   await mount("#/");
   fireEvent.keyDown(document, { key: "\\", metaKey: true });

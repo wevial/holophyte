@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { applyPick, applyTheme, readPick, writePick } from "../../src/lib/theme";
+import { applyPick, applyTheme, readPick, writePick, type ThemeMode, type ThemePick } from "../../src/lib/theme";
 import { declarations, resolveToken, tokensUnder } from "../cssTokens";
 
 const css = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
@@ -31,7 +31,7 @@ test("Tailwind exposes every raw colour through a declared raw token", () => {
     .map((d) => [d.name, d.value]));
   const unexposed = /^--(?:neutral|pink|red|orange|gold|yellow|green|violet|slate)-(?:1[0-2]|[1-9])$/;
   const notColours = ["--card-shadow", "--need-tint", "--need-tint-mix", "--accent-tint-mix", "--need-edge-mix", "--grain", "--grain-side"];
-  for (const name of raw.filter((name) => !notColours.includes(name) && !unexposed.test(name))) {
+  for (const name of raw.filter((name) => !notColours.includes(name) && !unexposed.test(name) && !name.startsWith("--haze-"))) {
     expect(theme.get(`--color-${name.slice(2)}`)).toBe(`var(${name})`);
   }
   expect(theme.get("--shadow-card")).toBe("var(--card-shadow)");
@@ -115,6 +115,33 @@ test("written picks survive a fresh read, and with storage throwing they still a
       expect([readPick("light"), readPick("dark")]).toEqual(["lotus", "lotus"]);
     } finally {
       Object.defineProperty(globalThis, "localStorage", real);
+    }
+  });
+});
+
+const HAZE_TOKENS = ["--haze-ground", "--haze-back", "--haze-front", "--haze-strength", "--haze-fallback-back", "--haze-fallback-front"];
+const HAZE: Record<string, string> = {
+  "lotus dark": "#0d0a15 #4b3fc4 #c77ee8 0.30 rgba(91,74,230,.34) rgba(199,126,232,.2)",
+  "dune dark": "#1b1817 #8a2f4f #e8785a 0.32 rgba(138,47,79,.42) rgba(232,120,90,.22)",
+  "tide dark": "#0b0e1d #2c3cb0 #8a6bff 0.38 rgba(44,60,176,.42) rgba(138,107,255,.22)",
+  "mono dark": "#0a0a0b #4b3fc4 #d07ee8 0.32 rgba(75,63,196,.34) rgba(208,126,232,.2)",
+  "forest dark": "#0e1411 #16594a #b4d368 0.28 rgba(22,89,74,.55) rgba(180,211,104,.18)",
+  "lotus light": "#f6f5fa #c8bff6 #f3bddb 0.62 rgba(200,191,246,.7) rgba(243,189,219,.55)",
+  "dune light": "#fcfaf7 #f6c4ad #f0b5c8 0.62 rgba(246,196,173,.75) rgba(240,181,200,.6)",
+  "tide light": "#f5f7fb #bcd0f5 #cfc4f6 0.62 rgba(188,208,245,.75) rgba(207,196,246,.55)",
+  "mono light": "#fafafa #d4ccf3 #f2c3dc 0.62 rgba(212,204,243,.7) rgba(242,195,220,.5)",
+  "forest light": "#f6f8f4 #93cdb6 #e8f0a2 0.62 rgba(147,205,182,.75) rgba(232,240,162,.6)",
+};
+
+test("each of the ten themes resolves its haze colours, strength and fallback gradients to the approved table", () => {
+  const compact = (value: string) => value.replace(/\s+/g, "").replace(/(^|[(,])0\./g, "$1.");
+  withPicks(() => {
+    for (const [theme, row] of Object.entries(HAZE)) {
+      const [pick, mode] = theme.split(" ") as [ThemePick, ThemeMode];
+      applyPick(mode, pick);
+      const other = mode === "dark" ? "light" : "dark";
+      const resolved = HAZE_TOKENS.map((token) => compact(tokenUnder(mode, other, token)));
+      expect([theme, resolved]).toEqual([theme, row.split(" ").map(compact)]);
     }
   });
 });
