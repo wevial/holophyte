@@ -24,9 +24,9 @@ const DISC = "M8 .5A7.5 7.5 0 1 1 8 15.5A7.5 7.5 0 1 1 8 .5Z";
 const LEAF = "M7.5 13.5V10.05L3 6C4 4 5.5 3 7 3V4.5L8 5.5L9 4.5V3C10.5 3 12 4 13 6L8.5 10.05V13.5Z";
 
 /** The ginkgo disc in the surrounding ink; even-odd filling cuts the leaf out of it. */
-export function Mark({ className }: { className?: string }) {
+export function Mark() {
   return (
-    <svg viewBox="0 0 16 16" width={20} height={20} aria-hidden="true" className={`size-5 shrink-0 ${className ?? ""}`}>
+    <svg viewBox="0 0 16 16" width={20} height={20} aria-hidden="true" className="size-5 shrink-0">
       <path d={`${DISC}${LEAF}`} fill="currentColor" fillRule="evenodd" />
     </svg>
   );
