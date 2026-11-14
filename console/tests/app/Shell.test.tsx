@@ -711,3 +711,154 @@ test("a From and To under a whole week, or with a To day not yet ended, stay out
     cleanup();
   }
 });
+
+const SEARCH_ANSWER = {
+  q: "witness",
+  limit: 20,
+  tickets: [{ ticket: "DEMO-69", title: "Witness turn runs the real tool once", status: "merged" }],
+  runs: [
+    { id: 403, ticket: "DEMO-69", title: "Witness turn runs the real tool once", phase: "done", outcome: "merged", started_ms: 1 },
+    { id: 411, ticket: "DEMO-74", title: "Witness criterion for git tickets", phase: "implementing", outcome: null, started_ms: 2 },
+  ],
+  scouts: [{ id: 3, title: "Witness coverage across projects", phase: "swarming" }],
+  findings: [{ run: 411, round: 2, severity: "p1", message: "witness turn skipped on the merge gate", path: "holophyte/loop/gates.py", line: 212 }],
+};
+
+function searchDaemons(posts: string[] = []): Fetch {
+  const polls = daemons([], []);
+  return async (url, init) => {
+    if (init?.method === "POST") {
+      posts.push(url);
+      return Response.json({ ok: true, detail: "done" });
+    }
+    if (url.startsWith(`${ORIGIN}/search?`)) return Response.json({ ...SEARCH_ANSWER, q: new URL(url).searchParams.get("q") });
+    return polls(url, init);
+  };
+}
+
+const paletteKey = (init: { metaKey?: boolean; ctrlKey?: boolean } = { metaKey: true }) =>
+  act(async () => void fireEvent.keyDown(document.activeElement ?? document.body, { key: "k", ...init }));
+const palette = () => screen.queryByRole("dialog", { name: "Command palette" });
+const paletteInput = () => within(palette()!).getByRole("combobox");
+const groupNames = () => within(palette()!).queryAllByRole("group").map((group) => group.getAttribute("aria-labelledby") && document.getElementById(group.getAttribute("aria-labelledby")!)!.textContent);
+const optionsOf = (name: string) => within(within(palette()!).getByRole("group", { name })).getAllByRole("option");
+const titlesOf = (name: string) => optionsOf(name).map((option) => option.querySelector("[data-title]")!.textContent);
+
+async function typeIn(value: string) {
+  await act(async () => void fireEvent.input(paletteInput(), { target: { value } }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  await flush();
+}
+
+async function paletteKeyDown(key: string) {
+  await act(async () => void fireEvent.keyDown(paletteInput(), { key }));
+  await flush();
+}
+
+test("⌘K or Ctrl+K opens the Command palette with its input focused, and Escape closes it back to the focused element", async () => {
+  await mount("#/runs", searchDaemons());
+  for (const init of [{ metaKey: true }, { ctrlKey: true }]) {
+    const before = screen.getByRole("link", { name: "Tickets" });
+    before.focus();
+    await paletteKey(init);
+    await flush();
+    expect(palette()).toBeTruthy();
+    expect(document.activeElement).toBe(paletteInput());
+    await act(async () => void fireEvent.keyDown(paletteInput(), { key: "Escape" }));
+    await flush();
+    expect(palette()).toBeNull();
+    expect(document.activeElement).toBe(before);
+  }
+});
+
+test("an empty palette reads Recent, newest first, then Jump to and Switch project", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  await mount("#/", searchDaemons());
+  for (const page of ["Runs", "Findings"]) {
+    await paletteKey();
+    await flush();
+    const jump = optionsOf("Jump to");
+    expect(titlesOf("Jump to")).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow", "Appearance"]);
+    fireEvent.click(jump[titlesOf("Jump to").indexOf(page)]!);
+    await flush();
+    expect(palette()).toBeNull();
+  }
+  expect(window.location.hash.split("?")[0]).toBe("#/findings");
+  await paletteKey();
+  await flush();
+  expect(groupNames()).toEqual(["Recent", "Jump to", "Switch project"]);
+  expect(titlesOf("Recent")).toEqual(["Findings", "Runs"]);
+  expect(titlesOf("Switch project")).toEqual(["All projects", "demo", "writer"]);
+});
+
+test("typing a search lists Tickets, Runs, Scouts, Findings, Pages and Actions in that order, with the matches marked", async () => {
+  await mount("#/", searchDaemons());
+  await paletteKey();
+  await typeIn("witness");
+  expect(groupNames()).toEqual(["Tickets", "Runs", "Scouts", "Findings", "Pages", "Actions"]);
+  expect(optionsOf("Runs")).toHaveLength(2);
+  expect(optionsOf("Tickets")[0]!.querySelector("mark")!.textContent).toBe("Witness");
+  expect(titlesOf("Actions")).toContain('New ticket "witness"');
+});
+
+test("a scope character becomes a chip that narrows the list, and Backspace on the empty input removes it", async () => {
+  await mount("#/", searchDaemons());
+  await paletteKey();
+  await typeIn(">");
+  const chip = () => palette()!.querySelector("[data-chip]");
+  expect(chip()!.textContent).toBe("Actions");
+  expect((paletteInput() as HTMLInputElement).value).toBe("");
+  expect(groupNames()).toEqual(["Actions"]);
+  expect(titlesOf("Actions")).toEqual(["New ticket", "Launch scout", "Switch theme", "Run sweep"]);
+  await paletteKeyDown("Backspace");
+  expect(chip()).toBeNull();
+  expect(groupNames()).toEqual(["Jump to", "Switch project"]);
+
+  await typeIn("#witness");
+  expect(chip()!.textContent).toBe("Tickets");
+  expect(groupNames()).toEqual(["Tickets"]);
+  await typeIn("");
+  await paletteKeyDown("Backspace");
+  await typeIn("@witness");
+  expect(chip()!.textContent).toBe("Runs");
+  expect(groupNames()).toEqual(["Runs"]);
+});
+
+test("↓ twice then Enter opens that run's page and puts it first in Recent", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  await mount("#/", searchDaemons());
+  await paletteKey();
+  await typeIn("witness");
+  await paletteKeyDown("ArrowDown");
+  await paletteKeyDown("ArrowDown");
+  await paletteKeyDown("Enter");
+  expect(palette()).toBeNull();
+  expect(window.location.hash.split("?")[0]).toBe("#/runs/demo/411");
+  await paletteKey();
+  await flush();
+  expect(titlesOf("Recent")[0]).toBe("run 411 · DEMO-74 Witness criterion for git tickets");
+});
+
+test("Run sweep asks for an inline confirm: Cancel returns to the list, Confirm posts once to the sweep route", async () => {
+  const posts: string[] = [];
+  const polls = searchDaemons(posts);
+  const host = (await Bun.file(new URL("host-status.json", SERVE)).json()) as Status;
+  await mount("#/", async (url, init) => (url === `${ORIGIN}/status` ? Response.json({ ...host, projects: [], actions: true }) : polls(url, init)));
+  await paletteKey();
+  await typeIn(">sweep");
+  fireEvent.click(optionsOf("Actions")[0]!);
+  await flush();
+  expect(within(palette()!).queryByRole("listbox")).toBeNull();
+  expect(within(palette()!).getByRole("heading", { name: "Run sweep" })).toBeTruthy();
+  expect(posts).toEqual([]);
+  fireEvent.click(within(palette()!).getByRole("button", { name: "Cancel" }));
+  await flush();
+  expect(groupNames()).toEqual(["Actions"]);
+  expect(posts).toEqual([]);
+  fireEvent.click(optionsOf("Actions")[0]!);
+  await flush();
+  await act(async () => void fireEvent.click(within(palette()!).getByRole("button", { name: "Confirm" })));
+  await flush();
+  expect(posts).toEqual([`${ORIGIN}/actions/run-sweep`]);
+  expect(palette()).toBeNull();
+});

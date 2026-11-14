@@ -7,7 +7,7 @@ import type { Fetch } from "../../src/lib/poll";
 import { runKey } from "../../src/lib/runs";
 import type { Attention, Status } from "../../src/lib/types";
 import { consoleQueryClient } from "../../src/app/fleet";
-import { useReadiness } from "../../src/app/queries";
+import { useReadiness, useSearchAll } from "../../src/app/queries";
 import { hostOf, settle } from "../harness";
 
 const WRITER = "http://writer-host:7710";
@@ -75,4 +75,44 @@ test("a ready run leaves the map when its refetch fails", async () => {
   });
 
   expect(hook.result.current.has(runKey(addressOf(WRITER), 9))).toBe(false);
+});
+
+test("useSearchAll reads /search?q= from each host and merges its groups, each hit keeping its host; a 404 host adds nothing", async () => {
+  const answer = {
+    q: "witness", limit: 20,
+    tickets: [{ ticket: "DEMO-69", title: "Witness once", status: "merged" }],
+    runs: [{ id: 403, ticket: "DEMO-69", title: "Witness once", phase: "done", outcome: "merged", started_ms: 1 }],
+    scouts: [{ id: 3, title: "Witness coverage", phase: "done" }],
+    findings: [{ run: 411, round: 2, severity: "p1", message: "the witness turn is skipped", path: "holophyte/loop/gates.py", line: 212 }],
+  };
+  const peerAnswer = { ...answer, tickets: [], scouts: [], findings: [], runs: [{ ...answer.runs[0]!, id: 7 }] };
+  const { fetch, asked } = mergeFetch({
+    [`${WRITER}/search?q=witness`]: () => Response.json(answer),
+    [`${PEER}/search?q=witness`]: () => Response.json(peerAnswer),
+    [`${WRITER}/search?q=once`]: () => Response.json({ ...peerAnswer, q: "once" }),
+  });
+  const queries = consoleQueryClient();
+  clients.push(queries);
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queries}>{children}</QueryClientProvider>;
+  const hook = renderHook(({ text }) => useSearchAll(hosts, text, { fetch }), { wrapper, initialProps: { text: "witness" } });
+  await act(settle);
+  await act(settle);
+
+  expect(Object.fromEntries(asked)).toEqual({ [`${WRITER}/search?q=witness`]: 1, [`${PEER}/search?q=witness`]: 1 });
+  const found = hook.result.current;
+  expect(found.runs.map(({ host, hit }) => [host.base, hit.id])).toEqual([[WRITER, 403], [PEER, 7]]);
+  expect(found.tickets.map(({ host, hit }) => [host.base, hit.ticket])).toEqual([[WRITER, "DEMO-69"]]);
+  expect(found.scouts.map(({ host }) => host.base)).toEqual([WRITER]);
+  expect(found.findings.map(({ host, hit }) => [host.base, hit.run])).toEqual([[WRITER, 411]]);
+  expect(found.pending).toBe(false);
+
+  hook.rerender({ text: "once" });
+  await act(settle);
+  await act(settle);
+  const once = hook.result.current;
+  expect(asked.get(`${PEER}/search?q=once`)).toBe(1);
+  expect(once.runs.map(({ host, hit }) => [host.base, hit.id])).toEqual([[WRITER, 7]]);
+  expect([once.tickets, once.scouts, once.findings]).toEqual([[], [], []]);
+  expect(once.pending).toBe(false);
+  expect(queries.getQueryCache().getAll().every((query) => query.state.error == null)).toBe(true);
 });

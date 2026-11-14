@@ -1,5 +1,16 @@
-import { createListbox, createPopup, definePrimitive, popupContent, popupState, popupTitle, popupTrigger, selects } from "@ui-sdk/core";
+import {
+  createListbox,
+  createPopup,
+  definePrimitive,
+  popupContent,
+  popupState,
+  popupTitle,
+  popupTrigger,
+  selects,
+  type SlotFactory,
+} from "@ui-sdk/core";
 import { popoverPreset } from "@ui-sdk/core/popover";
+import type { BaseSlotProps } from "@ui-sdk/core/renderer";
 import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
 import { useId, useMemo, useRef } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -17,6 +28,63 @@ type SwitcherOptions = {
   current?: string;
   onChoose?: (key: string) => void;
 };
+
+/** What a filtering combobox's primitive offers its input and options. */
+export interface ComboApi<State extends object> {
+  listbox: ReturnType<typeof createListbox<State>>;
+  search(query: string): void;
+  keydown(event: KeyboardEvent): void;
+  choose(key: string | null, event?: Event): void;
+}
+
+/** The combobox input of a list whose highlight is virtual: it holds the
+ *  query, points at the highlighted option and keys through `api.keydown`. */
+export function comboInput<State extends { query: string }, Api extends ComboApi<State>>(slot: SlotFactory<State, Api>) {
+  return slot({
+    role: "combobox",
+    focus: "native",
+    keys: ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Enter"],
+    attrs: (state, { id, api }) => ({
+      value: state.query,
+      "aria-expanded": "true",
+      "aria-controls": `${id}-list`,
+      "aria-autocomplete": "list",
+      "aria-activedescendant": api.listbox.activeId(state),
+    }),
+    on: {
+      input: (event, { api }) => api.search((event.target as HTMLInputElement).value),
+      keydown: (event, { api }) => api.keydown(event as KeyboardEvent),
+    },
+  });
+}
+
+type OptionProps = { value: string } & BaseSlotProps;
+
+/** An option of that list: highlighted as the pointer moves, chosen on a
+ *  press, `aria-selected` where `selected` says, re-rendered as `reads` selects. */
+export function virtualOption<State extends { highlighted: string | null }, Api extends ComboApi<State>>(
+  slot: SlotFactory<State, Api>,
+  selected: (state: State, key: string) => boolean,
+  reads: ReturnType<typeof selects<State, Api, OptionProps>>,
+) {
+  return slot<{ value: string }>({
+    role: "option",
+    focus: "active-descendant",
+    props: { value: "string" },
+    selects: reads,
+    attrs: (state, part) => ({
+      ...part.api.listbox.attrs(state, part),
+      "aria-selected": String(selected(state, part.key)),
+      "data-active": String(part.key === state.highlighted),
+    }),
+    press: ({ key, api }, event) => api.choose(key, event),
+    on: { pointermove: (event, { key, api }) => api.listbox.highlight(key, { event }) },
+    bind: (el, part) => {
+      if (part.key === part.store.get().highlighted) el.scrollIntoView?.({ block: "nearest" });
+      return part.api.listbox.bind(el, part);
+    },
+  });
+}
 
 const switcher = definePrimitive({
   name: "project-switcher",
@@ -75,22 +143,7 @@ const switcher = definePrimitive({
     trigger: popupTrigger(slot),
     content: popupContent(slot),
     title: popupTitle(slot),
-    input: slot({
-      role: "combobox",
-      focus: "native",
-      keys: ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Enter"],
-      attrs: (state, { id, api }) => ({
-        value: state.query,
-        "aria-expanded": "true",
-        "aria-controls": `${id}-list`,
-        "aria-autocomplete": "list",
-        "aria-activedescendant": api.listbox.activeId(state),
-      }),
-      on: {
-        input: (event, { api }) => api.search((event.target as HTMLInputElement).value),
-        keydown: (event, { api }) => api.keydown(event as KeyboardEvent),
-      },
-    }),
+    input: comboInput(slot),
     list: slot<{}, { shown: string[] }>({
       role: "listbox",
       state: (_state, { api }) => ({ shown: api.listbox.items().map((item) => (item as { value: string }).value) }),
@@ -99,23 +152,7 @@ const switcher = definePrimitive({
       attrs: (_state, { id }) => ({ id: `${id}-list` }),
     }),
     empty: slot({ present: (_state, { api }) => api.listbox.count() === 0 }),
-    option: slot<{ value: string }>({
-      role: "option",
-      focus: "active-descendant",
-      props: { value: "string" },
-      selects: selects({ highlighted: ({ key }) => [key, null] }),
-      attrs: (state, part) => ({
-        ...part.api.listbox.attrs(state, part),
-        "aria-selected": String(part.key === state.current),
-        "data-active": String(part.key === state.highlighted),
-      }),
-      press: ({ key, api }, event) => api.choose(key, event),
-      on: { pointermove: (event, { key, api }) => api.listbox.highlight(key, { event }) },
-      bind: (el, part) => {
-        if (part.key === part.store.get().highlighted) el.scrollIntoView?.({ block: "nearest" });
-        return part.api.listbox.bind(el, part);
-      },
-    }),
+    option: virtualOption(slot, (state, key) => key === state.current, selects({ highlighted: ({ key }) => [key, null] })),
   }),
 });
 
