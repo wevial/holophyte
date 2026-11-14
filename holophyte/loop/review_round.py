@@ -43,6 +43,7 @@ from holophyte.review.briefs import (
     criteria_brief,
     earlier_rounds_brief,
     evidence_brief,
+    follow_up_place,
     scope_brief,
     scope_files,
     stale_approval_brief,
@@ -157,7 +158,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         "If REQUEST_CHANGES, list only concrete blockers, each as one list "
         f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
         "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
-        "before the CRITERION lines.")
+        f"before {follow_up_place(criteria)}.")
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
@@ -173,7 +174,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
                           witness=witness,
-                          earlier=earlier_rounds_brief(conn, run_id, wt, rnd))
+                          earlier=earlier_rounds_brief(conn, run_id, wt, rnd,
+                                                       criteria))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,

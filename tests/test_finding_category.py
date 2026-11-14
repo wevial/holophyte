@@ -82,7 +82,8 @@ class BriefTests(unittest.TestCase):
                     Family("codex"))
         earlier = earlier_rounds_text(
             [(1, ["- a/one.py:1 [p1] the loop never ends"])], self.sha,
-            [(self.sha, "fix: end the loop\n\nADDRESS: a/one.py:1")])
+            [(self.sha, "fix: end the loop\n\nADDRESS: a/one.py:1")],
+            "the VERDICT line")
         return {
             "round_prompt": self.prompt(project),
             "round_2_prompt": self.prompt(project, earlier),

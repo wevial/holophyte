@@ -242,7 +242,11 @@ CORNER_CASE_RULE = (
 EARLIER_ROUNDS = "Findings of the earlier review rounds, by round:"
 
 
-def earlier_rounds_text(rounds, candidate, commits):
+def follow_up_place(criteria):
+    return "the CRITERION lines" if criteria else "the VERDICT line"
+
+
+def earlier_rounds_text(rounds, candidate, commits, place):
     listed = "".join(
         f"Round {number}:\n" + "".join(f"{line}\n" for line in lines)
         for number, lines in rounds)
@@ -263,12 +267,11 @@ def earlier_rounds_text(rounds, candidate, commits):
             "or unwitnessed, or a bug you reproduced or traced step by step, "
             "and say on that finding why the earlier rounds did not see it; "
             "write any other new finding there as a "
-            "`FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line before the "
-            "CRITERION lines, not as a blocker. Review code the fixes changed "
-            "as before.\n\n")
+            f"`FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line before {place}, "
+            "not as a blocker. Review code the fixes changed as before.\n\n")
 
 
-def earlier_rounds_brief(conn, run_id, wt, rnd):
+def earlier_rounds_brief(conn, run_id, wt, rnd, criteria):
     from holophyte.loop.follow_ups import _commits
     from holophyte.review.adversary import _payloads
     from holophyte.review.blast_radius import continued_runs
@@ -288,7 +291,8 @@ def earlier_rounds_brief(conn, run_id, wt, rnd):
     if not rounds or not candidates:
         return ""
     return earlier_rounds_text(rounds, candidates[0],
-                               list(_commits(wt, candidates[0])))
+                               list(_commits(wt, candidates[0])),
+                               follow_up_place(criteria))
 
 
 REFUTED_OPEN = "REFUTED FINDINGS (non-blocking)"
