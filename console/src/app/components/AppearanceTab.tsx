@@ -75,9 +75,8 @@ function RowReset({ label, onReset }: { label: string; onReset: () => void }) {
 function ThemeRow({ mode }: { mode: ThemeMode }) {
   const { lightPick, setLightPick, darkPick, setDarkPick } = useTheme();
   const [picked, pick] = mode === "light" ? [lightPick, setLightPick] : [darkPick, setDarkPick];
-  const title = mode === "light" ? "Light" : "Dark";
   return (
-    <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={title}>
+    <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={mode === "light" ? "Light" : "Dark"}>
       <div role="group" aria-labelledby={`appearance-${mode}`} className="flex flex-wrap gap-3">
         {PICKS.map((item) => (
           <button key={item.value} type="button" aria-pressed={picked === item.value} onClick={() => pick(item.value)}
@@ -116,7 +115,7 @@ function EffectRow() {
           })}
         </div>
         <label className="flex min-h-11 items-center gap-2.5 pl-3 text-[13px] text-ink-2">
-          <Switch aria-label="Motion" checked={motion && !reduced} disabled={reduced} onCheckedChange={(checked) => setMotion(checked)}
+          <Switch aria-label="Motion" checked={motion && !reduced} disabled={reduced} onCheckedChange={setMotion}
             className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-rule bg-hover data-checked:border-act data-checked:bg-act disabled:opacity-50">
             <SwitchThumb className="absolute left-0.5 size-3.5 rounded-full bg-ink-3 transition-transform data-checked:translate-x-4 data-checked:bg-act-ink" />
           </Switch>
