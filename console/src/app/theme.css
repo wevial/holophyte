@@ -187,6 +187,12 @@
   --need-edge-mix: 12%;
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.03'/%3E%3C/svg%3E");
   --grain-side: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.015'/%3E%3C/svg%3E");
+  --haze-ground: #f6f5fa;
+  --haze-back: #c8bff6;
+  --haze-front: #f3bddb;
+  --haze-strength: 0.62;
+  --haze-fallback-back: rgba(200, 191, 246, 0.7);
+  --haze-fallback-front: rgba(243, 189, 219, 0.55);
 }
 
 /* One color-mix() of var()s per rule: the bundler keeps only a rule's first. */
@@ -222,6 +228,12 @@
   --ink-3: #655e62;
   --accent: #a4512e;
   --focus: #a4512e;
+  --haze-ground: #fcfaf7;
+  --haze-back: #f6c4ad;
+  --haze-front: #f0b5c8;
+  --haze-strength: 0.62;
+  --haze-fallback-back: rgba(246, 196, 173, 0.75);
+  --haze-fallback-front: rgba(240, 181, 200, 0.6);
 }
 
 :root[data-light="tide"] {
@@ -236,6 +248,12 @@
   --accent: #3651c9;
   --focus: #3651c9;
   --wait: #3d4fc0;
+  --haze-ground: #f5f7fb;
+  --haze-back: #bcd0f5;
+  --haze-front: #cfc4f6;
+  --haze-strength: 0.62;
+  --haze-fallback-back: rgba(188, 208, 245, 0.75);
+  --haze-fallback-front: rgba(207, 196, 246, 0.55);
 }
 
 :root[data-light="mono"] {
@@ -249,6 +267,12 @@
   --ink-3: #5f5f68;
   --accent: #5a4ebf;
   --focus: #5a4ebf;
+  --haze-ground: #fafafa;
+  --haze-back: #d4ccf3;
+  --haze-front: #f2c3dc;
+  --haze-strength: 0.62;
+  --haze-fallback-back: rgba(212, 204, 243, 0.7);
+  --haze-fallback-front: rgba(242, 195, 220, 0.5);
 }
 
 :root[data-light="forest"] {
@@ -262,6 +286,12 @@
   --ink-3: #59665d;
   --accent: #1f7a5c;
   --focus: #1f7a5c;
+  --haze-ground: #f6f8f4;
+  --haze-back: #93cdb6;
+  --haze-front: #e8f0a2;
+  --haze-strength: 0.62;
+  --haze-fallback-back: rgba(147, 205, 182, 0.75);
+  --haze-fallback-front: rgba(232, 240, 162, 0.6);
 }
 
 :root[data-theme="dark"] {
@@ -452,6 +482,12 @@
   --need-edge-mix: 8%;
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
   --grain-side: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.02'/%3E%3C/svg%3E");
+  --haze-ground: #0d0a15;
+  --haze-back: #4b3fc4;
+  --haze-front: #c77ee8;
+  --haze-strength: 0.30;
+  --haze-fallback-back: rgba(91, 74, 230, 0.34);
+  --haze-fallback-front: rgba(199, 126, 232, 0.2);
 }
 
 :root[data-theme="dark"][data-dark="dune"] {
@@ -465,6 +501,12 @@
   --ink-3: #9a8d87;
   --accent: #ffad7a;
   --focus: #ffbe96;
+  --haze-ground: #1b1817;
+  --haze-back: #8a2f4f;
+  --haze-front: #e8785a;
+  --haze-strength: 0.32;
+  --haze-fallback-back: rgba(138, 47, 79, 0.42);
+  --haze-fallback-front: rgba(232, 120, 90, 0.22);
 }
 
 :root[data-theme="dark"][data-dark="tide"] {
@@ -478,6 +520,12 @@
   --ink-3: #808aac;
   --accent: #9db1ff;
   --focus: #aabdff;
+  --haze-ground: #0b0e1d;
+  --haze-back: #2c3cb0;
+  --haze-front: #8a6bff;
+  --haze-strength: 0.38;
+  --haze-fallback-back: rgba(44, 60, 176, 0.42);
+  --haze-fallback-front: rgba(138, 107, 255, 0.22);
 }
 
 :root[data-theme="dark"][data-dark="mono"] {
@@ -491,6 +539,12 @@
   --ink-3: #86868f;
   --accent: #b9a3ff;
   --focus: #c9b4ff;
+  --haze-ground: #0a0a0b;
+  --haze-back: #4b3fc4;
+  --haze-front: #d07ee8;
+  --haze-strength: 0.32;
+  --haze-fallback-back: rgba(75, 63, 196, 0.34);
+  --haze-fallback-front: rgba(208, 126, 232, 0.2);
 }
 
 :root[data-theme="dark"][data-dark="forest"] {
@@ -504,6 +558,12 @@
   --ink-3: #84968c;
   --accent: #7fd6b8;
   --focus: #9be3c8;
+  --haze-ground: #0e1411;
+  --haze-back: #16594a;
+  --haze-front: #b4d368;
+  --haze-strength: 0.28;
+  --haze-fallback-back: rgba(22, 89, 74, 0.55);
+  --haze-fallback-front: rgba(180, 211, 104, 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -695,6 +755,12 @@
     --need-edge-mix: 8%;
     --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
     --grain-side: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.02'/%3E%3C/svg%3E");
+    --haze-ground: #0d0a15;
+    --haze-back: #4b3fc4;
+    --haze-front: #c77ee8;
+    --haze-strength: 0.30;
+    --haze-fallback-back: rgba(91, 74, 230, 0.34);
+    --haze-fallback-front: rgba(199, 126, 232, 0.2);
   }
 
   :root:not([data-theme="light"])[data-dark="dune"] {
@@ -708,6 +774,12 @@
     --ink-3: #9a8d87;
     --accent: #ffad7a;
     --focus: #ffbe96;
+    --haze-ground: #1b1817;
+    --haze-back: #8a2f4f;
+    --haze-front: #e8785a;
+    --haze-strength: 0.32;
+    --haze-fallback-back: rgba(138, 47, 79, 0.42);
+    --haze-fallback-front: rgba(232, 120, 90, 0.22);
   }
 
   :root:not([data-theme="light"])[data-dark="tide"] {
@@ -721,6 +793,12 @@
     --ink-3: #808aac;
     --accent: #9db1ff;
     --focus: #aabdff;
+    --haze-ground: #0b0e1d;
+    --haze-back: #2c3cb0;
+    --haze-front: #8a6bff;
+    --haze-strength: 0.38;
+    --haze-fallback-back: rgba(44, 60, 176, 0.42);
+    --haze-fallback-front: rgba(138, 107, 255, 0.22);
   }
 
   :root:not([data-theme="light"])[data-dark="mono"] {
@@ -734,6 +812,12 @@
     --ink-3: #86868f;
     --accent: #b9a3ff;
     --focus: #c9b4ff;
+    --haze-ground: #0a0a0b;
+    --haze-back: #4b3fc4;
+    --haze-front: #d07ee8;
+    --haze-strength: 0.32;
+    --haze-fallback-back: rgba(75, 63, 196, 0.34);
+    --haze-fallback-front: rgba(208, 126, 232, 0.2);
   }
 
   :root:not([data-theme="light"])[data-dark="forest"] {
@@ -747,6 +831,12 @@
     --ink-3: #84968c;
     --accent: #7fd6b8;
     --focus: #9be3c8;
+    --haze-ground: #0e1411;
+    --haze-back: #16594a;
+    --haze-front: #b4d368;
+    --haze-strength: 0.28;
+    --haze-fallback-back: rgba(22, 89, 74, 0.55);
+    --haze-fallback-front: rgba(180, 211, 104, 0.18);
   }
 }
 
@@ -896,6 +986,15 @@ body {
 
 [data-app-shell="macos"] main :is(a, button, input, select, textarea, summary) {
   -webkit-app-region: no-drag;
+}
+
+.haze-band {
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom, black 30%, transparent);
+}
+
+.haze-fallback {
+  background: radial-gradient(30% 95% at 22% 0%, var(--haze-fallback-back), transparent 70%), radial-gradient(24% 75% at 46% 0%, var(--haze-fallback-front), transparent 70%);
 }
 
 @layer base {
