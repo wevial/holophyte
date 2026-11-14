@@ -25,7 +25,7 @@ class StepFailed(Exception):
 
 
 def thread_id(output):
-    for line in (output or "").splitlines():
+    for line in output.splitlines():
         match = THREAD_LINE.fullmatch(line.strip())
         if match:
             return match.group(1)
