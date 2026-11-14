@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
   createHashHistory,
   createRootRoute,
@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { APP_DRAG, inMacApp } from "../lib/view";
-import { readHeaderEffect } from "./appearance";
+import { FULL, useHeaderEffect, useTextSize } from "./appearance";
 import { Haze } from "./components/Haze";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
@@ -42,11 +42,13 @@ import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./s
 
 function Shell() {
   const [macApp] = useState(inMacApp);
-  const [effect] = useState(readHeaderEffect);
+  const { effect } = useHeaderEffect();
+  const { textSize } = useTextSize();
+  const scaled = textSize === FULL ? undefined : { zoom: textSize / 100, "--text-scale": textSize / 100 } as CSSProperties;
   return (
     <ToastProvider>
       <SettingsMarksProvider>
-      <div data-app-shell={macApp ? "macos" : undefined} className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
+      <div data-app-shell={macApp ? "macos" : undefined} data-text-size={scaled ? textSize : undefined} data-text-floor={textSize < FULL ? "" : undefined} style={scaled} className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
         <main className="relative isolate min-w-0 flex-1 min-[720px]:overflow-y-auto">
           {macApp && (

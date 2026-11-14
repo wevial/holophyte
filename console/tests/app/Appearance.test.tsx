@@ -5,7 +5,7 @@ import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import type { Status } from "../../src/lib/types";
 import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
-import { declarations, resolveToken } from "../cssTokens";
+import { declarations } from "../cssTokens";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -24,61 +24,178 @@ function radio(group: string, name: string) {
   return within(screen.getByRole("radiogroup", { name: group })).getByRole("radio", { name: new RegExp(`^${name}\\b`, "i") }) as HTMLInputElement;
 }
 
+const scheme = (name: string) => within(screen.getByRole("radiogroup", { name: "Theme" })).getByRole("radio", { name });
+const tile = (row: string, name: string) => within(screen.getByRole("group", { name: row })).getByRole("button", { name: new RegExp(`^${name}`) });
+const pressed = (row: string) => within(screen.getByRole("group", { name: row })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
+const slider = (name: string) => screen.getByRole("slider", { name }) as HTMLInputElement;
+const motion = () => screen.getByRole("switch", { name: "Motion" });
+const shell = () => screen.getByRole("main").parentElement!;
+const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.hazeStrength", "holophyte.next.font", "holophyte.next.density"];
+const stored = () => KEYS.filter((key) => localStorage.getItem(key) !== null);
+
+function reducedMotion(reduced: boolean) {
+  return spyOn(window, "matchMedia").mockImplementation((media: string) => ({
+    matches: media === "(prefers-reduced-motion: reduce)" ? reduced : false,
+    media,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }) as unknown as MediaQueryList);
+}
+
 const sidebarTheme = (name: string) => within(screen.getByRole("group", { name: "Theme" })).getByRole("button", { name });
 const sidebarPressed = () =>
   within(screen.getByRole("group", { name: "Theme" })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("aria-label"));
 
 beforeAll(() => happyDOM.setURL(`${ORIGIN}/`));
 afterAll(() => happyDOM.setURL("about:blank"));
+function clearRoot() {
+  for (const name of ["data-theme", "data-light", "data-dark", "data-font", "data-density", "style"]) root.removeAttribute(name);
+}
+
 beforeEach(() => {
   localStorage.clear();
-  root.removeAttribute("data-theme");
-  root.removeAttribute("data-font");
+  clearRoot();
 });
 afterEach(() => {
   cleanup();
   window.location.hash = "";
   localStorage.clear();
-  root.removeAttribute("data-theme");
-  root.removeAttribute("data-font");
+  clearRoot();
 });
 
-test("Appearance and the sidebar share theme choices and System resumes following the computer", async () => {
-  let dark = true;
-  const changes = new EventTarget();
-  const query = {
-    get matches() { return dark; },
-    media: "(prefers-color-scheme: dark)",
-    addEventListener: changes.addEventListener.bind(changes),
-    removeEventListener: changes.removeEventListener.bind(changes),
-  } as MediaQueryList;
-  const media = spyOn(window, "matchMedia").mockReturnValue(query);
+test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and every slider reads 100%", async () => {
+  await mount();
+  expect(scheme("System").getAttribute("aria-checked")).toBe("true");
+  expect(pressed("Light")).toEqual(["Lotus"]);
+  expect(pressed("Dark")).toEqual(["Lotus"]);
+  expect(pressed("Header")).toEqual(["Haze"]);
+  expect(motion().getAttribute("aria-checked")).toBe("true");
+  expect([slider("Text size").value, slider("Grain").value, slider("Haze strength").value]).toEqual(["100", "100", "100"]);
+  expect(screen.getAllByText("100%")).toHaveLength(3);
+});
+
+test("Tide in the Dark row and Dune in the Light row are pressed, stored and resolve the canvas to Tide dark under the Dark scheme", async () => {
+  const style = document.createElement("style");
+  style.textContent = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text()).replace(/@import[^;]*;/, "");
   try {
     await mount();
-    expect(radio("Theme", "System").checked).toBe(true);
-    expect(screen.getByText("now Night, from your computer")).toBeTruthy();
-    fireEvent.click(radio("Theme", "Dawn"));
-    expect(root.getAttribute("data-theme")).toBe("light");
-    expect(localStorage.getItem("holophyte.theme")).toBe("light");
-    expect(sidebarPressed()).toEqual(["Dawn"]);
-    fireEvent.click(sidebarTheme("Night"));
-    expect(radio("Theme", "Night").checked).toBe(true);
-    expect(root.getAttribute("data-theme")).toBe("dark");
-    fireEvent.click(sidebarTheme("System"));
-    expect(radio("Theme", "System").checked).toBe(true);
-    expect(root.hasAttribute("data-theme")).toBe(false);
-    expect(localStorage.getItem("holophyte.theme")).toBeNull();
-    act(() => {
-      dark = false;
-      changes.dispatchEvent(new Event("change"));
-    });
-    expect(radio("Theme", "System").checked).toBe(true);
-    expect(screen.getByText("now Dawn, from your computer")).toBeTruthy();
-    expect(sidebarPressed()).toEqual(["System"]);
+    fireEvent.click(tile("Dark", "Tide"));
+    fireEvent.click(tile("Light", "Dune"));
+    fireEvent.click(scheme("Dark"));
+    expect(pressed("Dark")).toEqual(["Tide"]);
+    expect(pressed("Light")).toEqual(["Dune"]);
+    expect([localStorage.getItem("holophyte.theme.dark"), localStorage.getItem("holophyte.theme.light"), localStorage.getItem("holophyte.theme")]).toEqual(["tide", "dune", "dark"]);
+    document.head.appendChild(style);
+    expect(getComputedStyle(root).getPropertyValue("--canvas").trim()).toBe("#0b0e1d");
+    expect(sidebarPressed()).toEqual(["Night"]);
+  } finally {
+    style.remove();
+  }
+});
+
+test("Caustics is disabled, and picking None stores none and removes the shell's haze band", async () => {
+  await mount();
+  expect((tile("Header", "Caustics") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole("main").querySelectorAll("[data-haze]")).toHaveLength(1);
+  fireEvent.click(tile("Header", "None"));
+  expect(pressed("Header")).toEqual(["None"]);
+  expect(localStorage.getItem("holophyte.next.effect")).toBe("none");
+  expect(screen.getByRole("main").querySelector("[data-haze]")).toBeNull();
+});
+
+test("under prefers-reduced-motion the Motion switch is off and disabled", async () => {
+  const media = reducedMotion(true);
+  try {
+    await mount();
+    expect(motion().getAttribute("aria-checked")).toBe("false");
+    expect((motion() as HTMLButtonElement).disabled).toBe(true);
   } finally {
     cleanup();
     media.mockRestore();
   }
+});
+
+test("text at 110% is stored, zooms the shell by 1.1 and shows the Text reset, which returns 100% and hides", async () => {
+  await mount();
+  expect(screen.queryByRole("button", { name: "Reset text size" })).toBeNull();
+  fireEvent.change(slider("Text size"), { target: { value: "110" } });
+  expect(localStorage.getItem("holophyte.textSize")).toBe("110");
+  expect(shell().style.getPropertyValue("zoom")).toBe("1.1");
+  fireEvent.click(screen.getByRole("button", { name: "Reset text size" }));
+  expect(slider("Text size").value).toBe("100");
+  expect(localStorage.getItem("holophyte.textSize")).toBeNull();
+  expect(shell().style.getPropertyValue("zoom")).toBe("");
+  expect(screen.queryByRole("button", { name: "Reset text size" })).toBeNull();
+});
+
+test("grain at 50% and haze at 150% set the document's scales, and each row's reset restores 100%", async () => {
+  await mount();
+  fireEvent.change(slider("Grain"), { target: { value: "50" } });
+  fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
+  expect([root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["0.5", "1.5"]);
+  fireEvent.click(screen.getByRole("button", { name: "Reset grain" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset haze strength" }));
+  expect([slider("Grain").value, slider("Haze strength").value]).toEqual(["100", "100"]);
+  expect([root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["", ""]);
+});
+
+test("Reset to default asks inline: Cancel keeps every choice and Confirm restores every default and clears the stored keys", async () => {
+  await mount();
+  fireEvent.click(scheme("Dark"));
+  fireEvent.click(tile("Dark", "Tide"));
+  fireEvent.click(tile("Light", "Dune"));
+  fireEvent.click(tile("Header", "None"));
+  fireEvent.click(motion());
+  fireEvent.change(slider("Text size"), { target: { value: "110" } });
+  fireEvent.change(slider("Grain"), { target: { value: "50" } });
+  fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
+  const changed = stored();
+  expect(changed).toEqual(KEYS.slice(0, 8));
+
+  fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+  expect(screen.getByText("Reset?")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Reset to default" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByText("Reset?")).toBeNull();
+  expect(stored()).toEqual(changed);
+  expect(pressed("Dark")).toEqual(["Tide"]);
+
+  fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect(stored()).toEqual([]);
+  expect(scheme("System").getAttribute("aria-checked")).toBe("true");
+  expect([pressed("Light"), pressed("Dark"), pressed("Header")]).toEqual([["Lotus"], ["Lotus"], ["Haze"]]);
+  expect(motion().getAttribute("aria-checked")).toBe("true");
+  expect([slider("Text size").value, slider("Grain").value, slider("Haze strength").value]).toEqual(["100", "100", "100"]);
+  expect(["data-theme", "data-light", "data-dark"].filter((name) => root.hasAttribute(name))).toEqual([]);
+  expect(root.style.getPropertyValue("--grain-scale")).toBe("");
+  expect(screen.getByRole("main").querySelectorAll("[data-haze]")).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Reset to default" })).toBeTruthy();
+});
+
+test("Reset to default also returns Reading font and Density to their defaults", async () => {
+  await mount();
+  fireEvent.click(radio("Reading font", "Plex Serif"));
+  fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+  expect([root.getAttribute("data-font"), root.getAttribute("data-density")]).toEqual(["serif", "compact"]);
+  fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect(radio("Reading font", "Plex Sans").checked).toBe(true);
+  expect(screen.getByRole("button", { name: "Comfortable" }).getAttribute("aria-pressed")).toBe("true");
+  expect([root.hasAttribute("data-font"), root.hasAttribute("data-density")]).toEqual([false, false]);
+  expect(stored()).toEqual([]);
+});
+
+test("the Appearance scheme switch and the sidebar share one theme store", async () => {
+  await mount();
+  fireEvent.click(scheme("Light"));
+  expect(root.getAttribute("data-theme")).toBe("light");
+  expect(sidebarPressed()).toEqual(["Dawn"]);
+  fireEvent.click(sidebarTheme("Night"));
+  expect(scheme("Dark").getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(sidebarTheme("System"));
+  expect(scheme("System").getAttribute("aria-checked")).toBe("true");
+  expect(localStorage.getItem("holophyte.theme")).toBeNull();
 });
 
 test("reading font choices persist in this browser and Plex Sans removes the override", async () => {
@@ -113,10 +230,10 @@ test("blocked browser storage still applies reading font and shared theme choice
     fireEvent.click(radio("Reading font", "Plex Sans"));
     expect(root.hasAttribute("data-font")).toBe(false);
     expect(radio("Reading font", "Plex Sans").checked).toBe(true);
-    fireEvent.click(radio("Theme", "Dawn"));
+    fireEvent.click(scheme("Light"));
     expect(root.getAttribute("data-theme")).toBe("light");
     fireEvent.click(sidebarTheme("Night"));
-    expect(radio("Theme", "Night").checked).toBe(true);
+    expect(scheme("Dark").getAttribute("aria-checked")).toBe("true");
   } finally {
     cleanup();
     for (const mock of access) mock.mockRestore();
@@ -128,19 +245,4 @@ test("font attributes select the promised reading stacks", async () => {
   const font = (selector: string) => css.find((entry) => entry.path.length === 1 && entry.path[0] === selector && entry.name === "--font-read")?.value;
   expect(font(':root[data-font="serif"]')).toBe('"IBM Plex Serif", Georgia, serif');
   expect(font(':root[data-font="hyperlegible"]')).toBe('"Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif');
-});
-
-test("the theme cards show the theme file's canvas, paper and action colours, Night reading deep violet", async () => {
-  const css = declarations(await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text());
-  const trio = (path: string[]) => ["--canvas", "--paper", "--act"].map((name) => resolveToken(css, path, name));
-  const night = trio([':root[data-theme="dark"]']);
-  const dawn = trio([":root"]);
-  await mount();
-  const card = (name: string) => radio("Theme", name).closest("label")!;
-  const swatches = (name: string) => Array.from(card(name).querySelectorAll<HTMLElement>("[aria-hidden] > span"), (span) => span.style.backgroundColor);
-  expect(swatches("Night")).toEqual(night);
-  expect(swatches("Dawn")).toEqual(dawn);
-  expect(swatches("System")).toEqual([night[0], dawn[0], night[1], dawn[1], night[2], dawn[2]]);
-  expect(card("Night").textContent).toContain("deep violet, pink for you");
-  expect(screen.getByRole("radiogroup", { name: "Theme" }).textContent).not.toContain("deep blue");
 });

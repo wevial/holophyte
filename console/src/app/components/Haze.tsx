@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { mount, PALETTES, type HazeHandle } from "../../vendor/spectra/haze";
-import { readMotion, useTheme } from "../appearance";
+import { useHazeStrength, useMotion, useTheme } from "../appearance";
 
 const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed: 0.8 };
 
@@ -8,7 +8,7 @@ function themePaint(palette: string): { palette: string; intensity: number } {
   const style = getComputedStyle(document.documentElement);
   const token = (name: string) => style.getPropertyValue(name).trim();
   PALETTES[palette] = [token("--haze-ground"), token("--haze-back"), token("--haze-front")];
-  return { palette, intensity: Number(token("--haze-strength")) };
+  return { palette, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
 }
 
 export function Haze() {
@@ -17,12 +17,14 @@ export function Haze() {
   const [fallback, setFallback] = useState(false);
   const { resolvedTheme, lightPick, darkPick } = useTheme();
   const palette = `${resolvedTheme === "dark" ? darkPick : lightPick}-${resolvedTheme}`;
+  const { hazeStrength } = useHazeStrength();
+  const { motion } = useMotion();
 
   useEffect(() => {
     const container = band.current!;
     let haze: HazeHandle;
     try {
-      haze = mount(container, { ...OPTIONS, ...themePaint(palette), motion: readMotion() });
+      haze = mount(container, { ...OPTIONS, ...themePaint(palette), motion });
     } catch {
       container.querySelector("canvas")?.remove();
       setFallback(true);
@@ -48,8 +50,8 @@ export function Haze() {
   }, []);
 
   useEffect(() => {
-    if (live.current) Object.assign(live.current.config, themePaint(palette));
-  }, [palette]);
+    if (live.current) Object.assign(live.current.config, themePaint(palette), { motion });
+  }, [palette, hazeStrength, motion]);
 
   return (
     <div

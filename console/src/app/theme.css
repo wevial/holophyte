@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
-:root {
+:root,
+[data-tile="light-lotus"] {
   color-scheme: light;
 
   --neutral-1: #eceaf3;
@@ -217,7 +218,8 @@
 }
 
 /* Before the dark blocks: under a dark scheme they override every token set here. */
-:root[data-light="dune"] {
+:root[data-light="dune"],
+[data-tile="light-dune"] {
   --canvas: #fcfaf7;
   --side: #f4f0ea;
   --raised: #ffffff;
@@ -236,7 +238,8 @@
   --haze-fallback-front: rgba(240, 181, 200, 0.6);
 }
 
-:root[data-light="tide"] {
+:root[data-light="tide"],
+[data-tile="light-tide"] {
   --canvas: #f5f7fb;
   --side: #eaeef6;
   --raised: #ffffff;
@@ -256,7 +259,8 @@
   --haze-fallback-front: rgba(207, 196, 246, 0.55);
 }
 
-:root[data-light="mono"] {
+:root[data-light="mono"],
+[data-tile="light-mono"] {
   --canvas: #fafafa;
   --side: #f0f0f1;
   --raised: #ffffff;
@@ -275,7 +279,8 @@
   --haze-fallback-front: rgba(242, 195, 220, 0.5);
 }
 
-:root[data-light="forest"] {
+:root[data-light="forest"],
+[data-tile="light-forest"] {
   --canvas: #f6f8f4;
   --side: #ecf1ea;
   --raised: #ffffff;
@@ -294,7 +299,8 @@
   --haze-fallback-front: rgba(232, 240, 162, 0.6);
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+[data-tile="dark-lotus"] {
   color-scheme: dark;
 
   --neutral-1: #0d0a15;
@@ -490,7 +496,8 @@
   --haze-fallback-front: rgba(199, 126, 232, 0.2);
 }
 
-:root[data-theme="dark"][data-dark="dune"] {
+:root[data-theme="dark"][data-dark="dune"],
+[data-tile="dark-dune"] {
   --canvas: #1b1817;
   --side: #221e1d;
   --raised: #252120;
@@ -509,7 +516,8 @@
   --haze-fallback-front: rgba(232, 120, 90, 0.22);
 }
 
-:root[data-theme="dark"][data-dark="tide"] {
+:root[data-theme="dark"][data-dark="tide"],
+[data-tile="dark-tide"] {
   --canvas: #0b0e1d;
   --side: #10142a;
   --raised: #131830;
@@ -528,7 +536,8 @@
   --haze-fallback-front: rgba(138, 107, 255, 0.22);
 }
 
-:root[data-theme="dark"][data-dark="mono"] {
+:root[data-theme="dark"][data-dark="mono"],
+[data-tile="dark-mono"] {
   --canvas: #0a0a0b;
   --side: #111113;
   --raised: #141416;
@@ -547,7 +556,8 @@
   --haze-fallback-front: rgba(208, 126, 232, 0.2);
 }
 
-:root[data-theme="dark"][data-dark="forest"] {
+:root[data-theme="dark"][data-dark="forest"],
+[data-tile="dark-forest"] {
   --canvas: #0e1411;
   --side: #131a16;
   --raised: #16201b;
@@ -997,13 +1007,63 @@ body {
   background: radial-gradient(30% 95% at 22% 0%, var(--haze-fallback-back), transparent 70%), radial-gradient(24% 75% at 46% 0%, var(--haze-fallback-front), transparent 70%);
 }
 
+.haze-fallback {
+  opacity: min(1, var(--haze-scale, 1));
+}
+
+@media (width >= 720px) {
+  [data-text-size],
+  [data-text-size] aside[aria-label="Console"] {
+    height: calc(100vh / var(--text-scale));
+  }
+}
+
+[data-text-floor] .text-\[9px\] {
+  font-size: max(9px, calc(11px / var(--text-scale)));
+}
+
+[data-text-floor] .text-\[10\.5px\] {
+  font-size: max(10.5px, calc(11px / var(--text-scale)));
+}
+
+[data-text-floor] .text-\[11px\] {
+  font-size: max(11px, calc(11px / var(--text-scale)));
+}
+
+[data-text-floor] .text-\[11\.5px\] {
+  font-size: max(11.5px, calc(11px / var(--text-scale)));
+}
+
+[data-text-floor] :is(.text-\[12px\], .text-xs) {
+  font-size: max(12px, calc(11px / var(--text-scale)));
+}
+
+.theme-tile {
+  background:
+    radial-gradient(40% 90% at 40% 0%, var(--haze-back), transparent 70%),
+    radial-gradient(34% 80% at 72% 0%, var(--haze-front), transparent 70%),
+    linear-gradient(to right, var(--side) 22%, var(--canvas) 22%);
+}
+
+.theme-tile-dot {
+  background: var(--accent);
+}
+
+.effect-haze {
+  background: radial-gradient(45% 110% at 30% 0%, var(--haze-back), transparent 75%), radial-gradient(40% 100% at 68% 0%, var(--haze-front), transparent 75%), var(--canvas);
+}
+
+.effect-caustics {
+  background: repeating-radial-gradient(circle at 50% 60%, var(--hair-2) 0 1px, transparent 1px 5px), var(--canvas);
+}
+
 @layer base {
   main {
-    background-image: var(--grain);
+    background-image: linear-gradient(rgb(from var(--canvas) r g b / calc(1 - var(--grain-scale, 1) / 2)), rgb(from var(--canvas) r g b / calc(1 - var(--grain-scale, 1) / 2))), var(--grain), var(--grain);
   }
 
   aside[aria-label="Console"] {
-    background-image: var(--grain-side);
+    background-image: linear-gradient(rgb(from var(--side) r g b / calc(1 - var(--grain-scale, 1) / 2)), rgb(from var(--side) r g b / calc(1 - var(--grain-scale, 1) / 2))), var(--grain-side), var(--grain-side);
   }
 
   button:not(:disabled),
