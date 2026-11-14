@@ -77,6 +77,8 @@ def after_fix(project, conn, run_id, beat_s, wt, budget_min, ticket, candidate,
               sha, verify_cmd, checks):
     """Check the fix diff `candidate..sha`; on a failure, take one more fix
     turn; return the head the next round reviews."""
+    if sha == candidate:
+        return sha
     failures = _failures(project, conn, run_id, beat_s, wt, candidate,
                          verify_cmd, checks)
     if not failures:
