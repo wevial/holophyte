@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,6 +25,7 @@ from test_critic import RealCritic, filed  # noqa: E402
 
 import holophyte.review.freshness  # noqa: E402 - after the sys.path insert above
 from holophyte.agents.agent_routes import reset  # noqa: E402
+from holophyte.agents.t3_cleanup import clean_thread  # noqa: E402
 
 STILL_RUNNING = "Thread mcp:t1 is still running. Stop it before settling."
 FAKE_T3 = """\
@@ -200,6 +202,43 @@ class T3CleanupTests(LoopFixture):
                           "SELECT summary FROM runEvents WHERE kind = 'warning'"
                           " AND summary LIKE 'critic:%'")][0])
 
+
+
+class CleanupFailureTests(unittest.TestCase):
+    def t3(self, issue, revoke):
+        """A fake `t3` that runs `issue` for `auth session issue` and `revoke`
+        for `auth session revoke`; the T3 home holds no runtime state."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.enterContext(patch.dict(os.environ, {"T3CODE_HOME": str(root)}))
+        binary = root / "t3"
+        binary.write_text(f"#!{sys.executable}\nimport sys\n"
+                          "if sys.argv[1:4] == ['auth', 'session', 'issue']:\n"
+                          f"{issue}"
+                          "if sys.argv[1:4] == ['auth', 'session', 'revoke']:\n"
+                          f"{revoke}")
+        binary.chmod(0o755)
+        return str(binary)
+
+    def test_a_secret_cut_by_the_detail_limit_leaves_no_prefix(self):
+        secret = "s3cr3t-credential-value-0123456789"
+        binary = self.t3(f"    sys.exit('x' * 190 + {secret!r})\n",
+                         "    sys.exit(0)\n")
+
+        [step] = clean_thread(binary, "Thread mcp:t1", False, {secret})
+
+        self.assertEqual((step["step"], step["ok"]), ("settle", False))
+        self.assertNotIn(secret[:10], step["detail"])
+
+    def test_a_failed_revoke_is_recorded_as_a_failed_step(self):
+        binary = self.t3("    print('{\"sessionId\": \"s1\", \"token\": \"tok\"}')\n"
+                         "    sys.exit(0)\n",
+                         "    sys.exit('database is locked')\n")
+
+        steps = clean_thread(binary, "Thread mcp:t1", False)
+
+        self.assertEqual([(s["step"], s["ok"]) for s in steps],
+                         [("settle", False), ("revoke", False)])
+        self.assertIn("database is locked", steps[1]["detail"])
 
 if __name__ == "__main__":
     unittest.main()

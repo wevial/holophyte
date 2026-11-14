@@ -459,8 +459,8 @@ only when the thread's worktree still exists, the factory runs `git worktree
 remove --force` on it in its repository and then `git branch -D` on its branch;
 a thread that ran in the project folder gets neither step, and a failed settle
 leaves the worktree alone. Each step (`thread`, `interrupt`, `settle`,
-`worktree`, `branch`) is a detail-level `t3_cleanup` event on the claimed run
-with `thread`, `step`, `ok` and a redacted first error line in `detail`; a
+`worktree`, `branch`, and `revoke` when revoking the token fails) is a
+detail-level `t3_cleanup` event on the claimed run with `thread`, `step`, `ok` and a redacted first error line in `detail`; a
 ticket the critic parks prints them instead. A failed step never changes the
 verdict or stops the claim.
 

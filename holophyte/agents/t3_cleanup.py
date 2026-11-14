@@ -32,8 +32,8 @@ def thread_id(output):
     return None
 
 
-def first_line(error):
-    text = str(error).strip()
+def first_line(error, secrets=()):
+    text = redact_prose(str(error), secrets).strip()
     return (text.splitlines() or [type(error).__name__])[0][:200]
 
 
@@ -128,7 +128,7 @@ def settle(mcp, thread, interrupted):
 
 
 def outcome(thread, step, error=None, secrets=()):
-    detail = "" if error is None else redact_prose(first_line(error), secrets)
+    detail = "" if error is None else first_line(error, secrets)
     return dict(thread=thread, step=step, ok=error is None, detail=detail)
 
 
@@ -176,6 +176,6 @@ def clean_thread(binary, output, timed_out, secrets=()):
         if session.get("sessionId"):
             try:
                 t3(binary, "auth", "session", "revoke", session["sessionId"])
-            except Exception:
-                pass
+            except Exception as e:
+                steps.append(outcome(thread, "revoke", e, hidden))
     return steps
