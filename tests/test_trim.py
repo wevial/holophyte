@@ -846,8 +846,28 @@ class RetireLoopTests(TrimFixture):
         hook = ("def load_tests(loader, tests, pattern):\n"
                 "    tests.addTest(unittest.FunctionTestCase(lambda: None))\n"
                 "    return tests\n\n\n")
-        self.cut_from_copy(COPY.replace("class CopyTests", hook + "class CopyTests"),
-                           unittest_module("CopyTests", "test_kept"), "load_tests")
+        hooked = unittest_module("CopyTests", "test_dropped").replace(
+            "class CopyTests", hook + "class CopyTests")
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+                  "protects nothing", {"tests/test_copy.py": "import unittest\n"}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": hooked}),))
+        self.assert_reverted("deleted lines that kept tests own or use: "
+                             "tests/test_copy.py::load_tests")
+
+    def test_a_retire_commit_cutting_a_kept_tests_framework_attribute_is_reverted(self):
+        def unskipped(source):
+            return source.replace(
+                "class CopyTests(unittest.TestCase):\n",
+                '@unittest.skip("base")\nclass Base(unittest.TestCase):\n'
+                "    pass\n\n\nclass CopyTests(Base):\n"
+                "    __unittest_skip__ = False\n\n")
+
+        self.cut_from_copy(unskipped(COPY), unskipped(unittest_module(
+            "CopyTests", "test_kept")).replace("    __unittest_skip__ = False\n\n", ""),
+            "CopyTests")
 
     def test_a_retire_commit_cutting_a_hook_kept_tests_use_is_reverted(self):
         hooked = COPY.replace("    def test_kept", "    def tearDown(self):\n"

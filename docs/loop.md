@@ -175,10 +175,13 @@ machines it walks. Back to the [README](index.md).
    deleted statement: a removed candidate, an import, or a helper, class
    or assignment whose name the kept file no longer uses. A framework
    hook (`setUp`, `tearDown`, `setUpClass`, `tearDownClass`,
-   `setUpModule`, `tearDownModule`, `load_tests`, the pytest xunit hooks
-   or a pytest fixture) passes only when every test in its class, or for
-   a module hook or fixture its file, is a removed candidate; nothing
-   deleted in a `conftest.py` but an import passes, and nothing deleted
+   `setUpModule`, `tearDownModule`, the pytest xunit hooks or a pytest
+   fixture), or an assignment in a class body or to a `__` or `pytest`
+   name, passes only when every test in its class, or for a module hook,
+   fixture or assignment, or a class another class names, its file, is a
+   removed candidate; a `load_tests`, `pytest_generate_tests` or
+   `pytest_collect_file`, which can supply checks no test name shows,
+   never passes; nothing deleted in a `conftest.py` but an import passes, and nothing deleted
    inside a function that survives passes. Only a line holding nothing
    but a comment or whitespace, as Python's tokenizer reads the file, is
    exempt, so a `#` line inside a string still counts. In any other file

@@ -37,10 +37,10 @@ SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
 NOT_REPRODUCED = "the run took the not-reproduced path"
 HOOKS = {"setUp", "tearDown", "setUpClass", "tearDownClass", "asyncSetUp",
-         "asyncTearDown", "setUpModule", "tearDownModule", "load_tests",
-         "setup_module", "teardown_module", "setup_function",
-         "teardown_function", "setup_class", "teardown_class", "setup_method",
-         "teardown_method"}
+         "asyncTearDown", "setUpModule", "tearDownModule", "setup_module",
+         "teardown_module", "setup_function", "teardown_function",
+         "setup_class", "teardown_class", "setup_method", "teardown_method"}
+TEST_SUPPLIERS = {"load_tests", "pytest_generate_tests", "pytest_collect_file"}
 QUIET_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
                 tokenize.DEDENT, tokenize.ENDMARKER}
 SKIPPED = re.compile(r"'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\""
@@ -345,7 +345,7 @@ def _owner(tree, number, kept, gone, used):
     if whole is not None and not any(
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             for node in inside) and _only_gone_use(
-                whole, gone, used, _served(tree, chain, whole)):
+                whole, gone, used, _served(tree, chain, whole, used)):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]
@@ -364,9 +364,10 @@ def _enclosing(tree, number):
                 if isinstance(child, ast.AST)]
 
 
-def _served(tree, chain, node):
+def _served(tree, chain, node, used):
     parent = chain[chain.index(node) - 1] if chain.index(node) else None
-    if isinstance(parent, ast.ClassDef) and not _is_fixture(node):
+    if (isinstance(parent, ast.ClassDef) and not _is_fixture(node)
+            and used is not None and parent.name not in used):
         return parent
     return tree
 
@@ -387,19 +388,32 @@ def _only_gone_use(node, gone, used, scope):
     if _is_test_def(node):
         return node.name in gone
     if isinstance(node, ast.ClassDef):
-        return node.name not in used and all(
-            child.name in gone for child in ast.walk(node)
-            if _is_test_def(child))
+        return node.name not in used and _serves_only_gone(node, gone)
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if node.name in TEST_SUPPLIERS:
+            return False
         if node.name in HOOKS or _is_fixture(node):
-            return all(child.name in gone for child in ast.walk(scope)
-                       if _is_test_def(child))
+            return _serves_only_gone(scope, gone)
         return node.name not in used
+    return _unused_assignment(node, gone, used, scope)
+
+
+def _unused_assignment(node, gone, used, scope):
     targets = (node.targets if isinstance(node, ast.Assign)
                else [node.target] if isinstance(node, ast.AnnAssign) else None)
-    return targets is not None and all(
-        isinstance(target, ast.Name) and target.id not in used
-        for target in targets)
+    if targets is None or not all(isinstance(target, ast.Name)
+                                  and target.id not in used
+                                  for target in targets):
+        return False
+    framework_read = (isinstance(scope, ast.ClassDef) or node not in scope.body
+                      or any(
+        target.id.startswith(("__", "pytest")) for target in targets))
+    return not framework_read or _serves_only_gone(scope, gone)
+
+
+def _serves_only_gone(scope, gone):
+    return all(child.name in gone for child in ast.walk(scope)
+               if _is_test_def(child))
 
 
 def _is_test_def(node):
