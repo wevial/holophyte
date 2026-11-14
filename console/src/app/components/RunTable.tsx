@@ -132,14 +132,8 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
   );
 }
 
-interface Day {
-  key: string;
-  label: string;
-  rows: RunRow[];
-}
-
-function daysOf(rows: RunRow[], now: number): Day[] {
-  const days: Day[] = [];
+function daysOf(rows: RunRow[], now: number) {
+  const days: { key: string; label: string; rows: RunRow[] }[] = [];
   for (const row of rows) {
     const date = new Date(row.started_ms);
     const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
