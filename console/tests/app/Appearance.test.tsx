@@ -6,6 +6,7 @@ import { ConsoleApp } from "../../src/app/router";
 import type { Status } from "../../src/lib/types";
 import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
 import { declarations } from "../cssTokens";
+import { oklchToHex } from "../../src/lib/oklch";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -60,6 +61,7 @@ beforeAll(() => happyDOM.setURL(`${ORIGIN}/`));
 afterAll(() => happyDOM.setURL("about:blank"));
 function clearRoot() {
   for (const name of ["data-theme", "data-light", "data-dark", "data-font", "data-density", "data-text-size", "data-text-floor", "style"]) root.removeAttribute(name);
+  root.style.cssText = "";
 }
 
 beforeEach(() => {
@@ -265,4 +267,77 @@ test("font attributes select the promised reading stacks", async () => {
   const font = (selector: string) => css.find((entry) => entry.path.length === 1 && entry.path[0] === selector && entry.name === "--font-read")?.value;
   expect(font(':root[data-font="serif"]')).toBe('"IBM Plex Serif", Georgia, serif');
   expect(font(':root[data-font="hyperlegible"]')).toBe('"Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif');
+});
+
+const editor = () => within(screen.getByRole("region", { name: "Theme editor" }));
+const nameField = () => editor().getByRole("textbox", { name: "Theme name" }) as HTMLInputElement;
+const flag = (name: string) => within(screen.getByRole("list", { name: "Contrast" })).getByRole("listitem", { name: new RegExp(`^${name} \\d`) });
+const isDisabled = (control: HTMLElement) => (control as HTMLInputElement).disabled || control.getAttribute("aria-disabled") === "true";
+
+/** The square spans chroma 0 to 0.1 left to right and lightness 1 to 0 top to bottom. */
+function pickGround(l: number, c: number, h: number) {
+  const thumb = editor().getByRole("slider", { name: "Ground lightness and chroma" });
+  const square = thumb.parentElement!;
+  square.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) });
+  fireEvent.pointerDown(square, { clientX: c * 1000, clientY: (1 - l) * 100, pointerId: 1 });
+  fireEvent.change(editor().getByRole("slider", { name: "Ground hue" }), { target: { value: String(h) } });
+  expect(thumb.getAttribute("aria-valuetext")).toBe(`Lightness ${l.toFixed(2)}, chroma ${c.toFixed(3)}`);
+}
+
+async function saveDarkTheme() {
+  await mount();
+  fireEvent.click(scheme("Dark"));
+  fireEvent.click(within(screen.getByRole("group", { name: "Dark" })).getByRole("button", { name: /New theme/ }));
+  fireEvent.change(nameField(), { target: { value: "Plum night" } });
+  pickGround(0.2, 0.05, 330);
+  fireEvent.click(editor().getByRole("button", { name: "Save" }));
+}
+
+test("a mid-grey light ground raises the Muted text flag with its ratio under 4.5 while Text passes", async () => {
+  await mount();
+  fireEvent.click(within(screen.getByRole("group", { name: "Light" })).getByRole("button", { name: /New theme/ }));
+  pickGround(0.62, 0.01, 250);
+  const muted = flag("Muted text");
+  const ratio = Number(muted.getAttribute("title")!.match(/^Muted text (\d+\.\d):1 · under 4\.5$/)![1]);
+  expect(ratio).toBeLessThan(4.5);
+  expect(muted.hasAttribute("data-fails")).toBe(true);
+  expect(flag("Text").hasAttribute("data-fails")).toBe(false);
+  expect(flag("Text").getAttribute("title")).not.toContain("under");
+});
+
+test("Lotus dark in the editor is read-only, and Edit a copy opens an editable Lotus dark copy", async () => {
+  await mount();
+  fireEvent.click(tile("Dark", "Lotus"));
+  expect(nameField().value).toBe("Lotus dark");
+  const controls = [nameField(), ...editor().getAllByRole("slider"), ...within(editor().getByRole("group", { name: "Haze colours" })).getAllByRole("button")];
+  expect(controls.length).toBeGreaterThan(5);
+  expect(controls.filter((control) => !isDisabled(control))).toEqual([]);
+  expect(editor().queryByRole("button", { name: "Save" })).toBeNull();
+  fireEvent.click(editor().getByRole("button", { name: "Edit a copy" }));
+  expect(nameField().value).toBe("Lotus dark copy");
+  expect(nameField().disabled).toBe(false);
+  expect(editor().getAllByRole("slider").filter(isDisabled)).toEqual([]);
+});
+
+test("a saved dark custom theme is marked custom and pressed in the Dark row, survives a remount and sets the document's canvas to its ground", async () => {
+  await saveDarkTheme();
+  const canvas = oklchToHex({ l: 0.2, c: 0.05, h: 330 });
+  expect(pressed("Dark")).toEqual(["Plum night custom"]);
+  expect(root.style.getPropertyValue("--canvas")).toBe(canvas);
+  cleanup();
+  await mount();
+  expect(pressed("Dark")).toEqual(["Plum night custom"]);
+  expect(root.style.getPropertyValue("--canvas")).toBe(canvas);
+  fireEvent.click(scheme("Light"));
+  expect(root.style.getPropertyValue("--canvas")).toBe("");
+});
+
+test("deleting the picked custom theme through its confirm removes its tile and returns the dark pick to Lotus", async () => {
+  await saveDarkTheme();
+  fireEvent.click(editor().getByRole("button", { name: "Delete" }));
+  fireEvent.click(within(editor().getByRole("group", { name: "Delete?" })).getByRole("button", { name: "Delete" }));
+  expect(within(screen.getByRole("group", { name: "Dark" })).queryByRole("button", { name: /^Plum night/ })).toBeNull();
+  expect(pressed("Dark")).toEqual(["Lotus"]);
+  expect(localStorage.getItem("holophyte.theme.dark")).toBeNull();
+  expect(root.style.getPropertyValue("--canvas")).toBe("");
 });

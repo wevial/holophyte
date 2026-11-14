@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { mount, PALETTES, type HazeHandle } from "../../vendor/spectra/haze";
-import { useHazeStrength, useMotion, useTheme } from "../appearance";
+import { useCustomThemes, useHazeStrength, useMotion, useTheme } from "../appearance";
 
 const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed: 0.8 };
 
@@ -19,6 +19,7 @@ export function Haze() {
   const palette = `${resolvedTheme === "dark" ? darkPick : lightPick}-${resolvedTheme}`;
   const { hazeStrength } = useHazeStrength();
   const { motion } = useMotion();
+  const { customThemes } = useCustomThemes();
 
   useEffect(() => {
     const container = band.current!;
@@ -51,7 +52,7 @@ export function Haze() {
 
   useEffect(() => {
     if (live.current) Object.assign(live.current.config, themePaint(palette), { motion });
-  }, [palette, hazeStrength, motion]);
+  }, [palette, hazeStrength, motion, customThemes]);
 
   return (
     <div

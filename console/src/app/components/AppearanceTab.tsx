@@ -1,13 +1,14 @@
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { SegmentedControl, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
 import {
-  FULL, resetAppearance, STRENGTHS, TEXT_SIZES, useDensity, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
+  FULL, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
   type HeaderEffect, type ReadingFont,
 } from "../appearance";
-import type { Theme, ThemeMode, ThemePick } from "../../lib/theme";
+import { builtinSpec, deriveTheme, isCustom, type BuiltinPick, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
+import { copyOf, ThemeEditor, type EditorSubject } from "./ThemeEditor";
 
 const SCHEMES: { value: Theme; name: string; icon: ReactNode }[] = [
   { value: "system", name: "System", icon: <SystemIcon /> },
@@ -15,7 +16,7 @@ const SCHEMES: { value: Theme; name: string; icon: ReactNode }[] = [
   { value: "dark", name: "Dark", icon: <MoonIcon /> },
 ];
 
-const PICKS: { value: ThemePick; name: string }[] = [
+const PICKS: { value: BuiltinPick; name: string }[] = [
   { value: "lotus", name: "Lotus" },
   { value: "dune", name: "Dune" },
   { value: "tide", name: "Tide" },
@@ -74,22 +75,50 @@ function RowReset({ label, onReset }: { label: string; onReset: () => void }) {
   );
 }
 
-function ThemeRow({ mode }: { mode: ThemeMode }) {
+const TILE_TOKENS = ["--canvas", "--side", "--accent", "--haze-back", "--haze-front"];
+
+function tileStyle(theme: CustomTheme): CSSProperties {
+  const { tokens } = deriveTheme(theme);
+  return Object.fromEntries(TILE_TOKENS.map((token) => [token, tokens[token]]));
+}
+
+function ThemeTile({ name, pressed, onPick, tile, style, custom = false }: {
+  name: string; pressed: boolean; onPick: () => void; tile?: string; style?: CSSProperties; custom?: boolean;
+}) {
+  return (
+    <button type="button" aria-pressed={pressed} onClick={onPick} className="group flex w-[122px] flex-col gap-1.5 text-left">
+      <span aria-hidden="true" data-tile={tile} style={style}
+        className={`theme-tile relative block h-[58px] w-full rounded-card border ${pressed ? "border-focus outline-2 outline-offset-2 outline-focus" : "border-rule group-hover:border-ink-3"}`}>
+        <span className="theme-tile-dot absolute right-2 bottom-2 size-2.5 rounded-full" />
+      </span>
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span className={`truncate text-[13px] ${pressed ? "text-ink" : "text-ink-2"}`}>{name}</span>
+        {custom && <span className="font-mono text-[11px] text-ink-3"> custom</span>}
+      </span>
+    </button>
+  );
+}
+
+function ThemeRow({ mode, onSubject }: { mode: ThemeMode; onSubject: (subject: EditorSubject) => void }) {
   const { lightPick, setLightPick, darkPick, setDarkPick } = useTheme();
+  const { customThemes } = useCustomThemes();
   const [picked, pick] = mode === "light" ? [lightPick, setLightPick] : [darkPick, setDarkPick];
+  const choose = (value: ThemePick) => { pick(value); onSubject({ mode, pick: value }); };
+  const customs = customThemes.filter((theme) => deriveTheme(theme).mode === mode);
+  const pickedTheme = isCustom(picked) ? customs.find((theme) => theme.id === picked) : builtinSpec(mode, picked);
   return (
     <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={mode === "light" ? "Light" : "Dark"} labelTop="pt-[15px]">
       <div role="group" aria-labelledby={`appearance-${mode}`} className="flex flex-wrap gap-3">
         {PICKS.map((item) => (
-          <button key={item.value} type="button" aria-pressed={picked === item.value} onClick={() => pick(item.value)}
-            className="group flex w-[122px] flex-col gap-1.5 text-left">
-            <span aria-hidden="true" data-tile={`${mode}-${item.value}`}
-              className={`theme-tile relative block h-[58px] w-full rounded-card border ${picked === item.value ? "border-focus outline-2 outline-offset-2 outline-focus" : "border-rule group-hover:border-ink-3"}`}>
-              <span className="theme-tile-dot absolute right-2 bottom-2 size-2.5 rounded-full" />
-            </span>
-            <span className={`text-[13px] ${picked === item.value ? "text-ink" : "text-ink-2"}`}>{item.name}</span>
-          </button>
+          <ThemeTile key={item.value} name={item.name} pressed={picked === item.value} tile={`${mode}-${item.value}`} onPick={() => choose(item.value)} />
         ))}
+        {customs.map((theme) => (
+          <ThemeTile key={theme.id} name={theme.name} pressed={picked === theme.id} style={tileStyle(theme)} custom onPick={() => choose(theme.id)} />
+        ))}
+        <button type="button" onClick={() => onSubject({ draft: copyOf(pickedTheme ?? builtinSpec(mode, "lotus")) })}
+          className="flex h-[58px] w-[122px] flex-col items-center justify-center gap-1 rounded-card text-[13px] text-ink-2 hover:bg-hover hover:text-ink">
+          <span aria-hidden="true" className="text-[18px] leading-none">+</span>New theme
+        </button>
       </div>
     </Row>
   );
@@ -231,13 +260,16 @@ export function AppearanceHeader() {
 }
 
 export function AppearanceTab() {
+  const { resolvedTheme, lightPick, darkPick } = useTheme();
+  const [chosen, setChosen] = useState<EditorSubject | null>(null);
+  const subject = chosen ?? { mode: resolvedTheme, pick: resolvedTheme === "dark" ? darkPick : lightPick };
   const { textSize, setTextSize } = useTextSize();
   const { grain, setGrain } = useGrain();
   const { hazeStrength, setHazeStrength } = useHazeStrength();
   return (
     <div>
-      <ThemeRow mode="light" />
-      <ThemeRow mode="dark" />
+      <ThemeRow mode="light" onSubject={setChosen} />
+      <ThemeRow mode="dark" onSubject={setChosen} />
       <EffectRow />
       <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} pillFirst />
       <SliderRow id="appearance-grain" icon={<GrainGlyph />} title="Grain" label="Grain" value={grain} range={STRENGTHS} onChange={setGrain} />
@@ -246,6 +278,7 @@ export function AppearanceTab() {
         <FontRow />
         <DensityRow />
       </div>
+      <ThemeEditor subject={subject} onSubject={setChosen} />
     </div>
   );
 }
