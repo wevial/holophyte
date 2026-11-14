@@ -15,6 +15,7 @@ from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids
 from holophyte.review.witness_precheck import GLOB, named_files
+from holophyte.tickets import witness_once
 
 EVENT = "main_baseline"
 OUTPUT_CLAUSE = "that run's output is in the implementer output"
@@ -151,10 +152,20 @@ def lines_for(verify_cmd, files):
     return commands
 
 
+def once_blob(wt, path):
+    if not (Path(wt) / path).is_file():
+        return None
+    return sh(["git", "hash-object", "-w", "--", path], wt).strip()
+
+
 def _blobs(wt, sha, files):
     tree = sh(["git", "ls-tree", "-r", "--name-only", sha], wt).splitlines()
     blobs = {}
     for named in files:
+        if witness_once.is_once(named):
+            if blob := once_blob(wt, named):
+                blobs[named] = blob
+            continue
         for path in ([found for found in tree if fnmatchcase(found, named)]
                      if GLOB.search(named) else [named]):
             found = subprocess.run(["git", "rev-parse", "--verify", "--quiet",
@@ -227,13 +238,28 @@ def _recorded(conn, run_id, key):
     return None
 
 
-def _run(project, conn, run_id, beat_s, wt, base, sha, files, command):
+def _place(tree, sha, blobs):
+    committed = [path for path in blobs if not witness_once.is_once(path)]
+    if committed:
+        sh(["git", "checkout", sha, "--", *committed], tree)
+    for path, blob in blobs.items():
+        if witness_once.is_once(path):
+            read = subprocess.run(["git", "cat-file", "blob", blob],
+                                  cwd=tree, capture_output=True)
+            if read.returncode:
+                raise RuntimeError(f"blob {blob} of {path} is unreadable")
+            (tree / path).parent.mkdir(parents=True, exist_ok=True)
+            (tree / path).write_bytes(read.stdout)
+
+
+def _run(project, conn, run_id, beat_s, wt, base, sha, blobs, command):
+    files = list(blobs)
     with detached_main(project, conn, run_id, beat_s, wt, base) as (
             tree, setup_failure):
         if setup_failure is not None:
             return {"ran": False,
                     "reason": f"its worktree setup failed:\n{setup_failure}"}
-        sh(["git", "checkout", sha, "--", *files], tree)
+        _place(tree, sha, blobs)
         with heartbeat_while(conn, run_id, beat_s):
             ok, out = run_verify(command, tree,
                                  timeout=verify_config(project).timeout_sec,
@@ -261,7 +287,7 @@ def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
         return dict(reused, criterion=n, form=form, sha=sha)
     try:
         result.update(_run(project, conn, run_id, beat_s, wt, base, sha,
-                           list(blobs), command))
+                           blobs, command))
     except RuntimeError as exc:
         result.update(ran=False, reason=f"the detached tree failed: {exc}")
     status = (f"exit {result['exit_status']}" if result["ran"]

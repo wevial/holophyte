@@ -378,6 +378,10 @@ class SaveLabel(unittest.TestCase):
     def test_the_label_reads_done(self):
         self.assertEqual(label.SAVE, "Done")
 """
+BOTH_ONCE = Reply(
+    f"CRITERION 1: met \u2014 {ONCE_PATH}::SaveLabel::test_the_label_reads_done"
+    "\nCRITERION 2: met \u2014 tests/test_label.py::SaveLabel::"
+    "test_the_label_reads_done\nVERDICT: APPROVE")
 
 
 class WritesOnce(Writes):
@@ -492,6 +496,28 @@ class WitnessedOnce(RunningRepo):
                       "not exist in the task worktree", turn)
         self.assertIn("1 of 1 criteria witnessed",
                       self.summaries("witness_precheck")[-1])
+
+    def test_round_one_records_only_the_one_time_witness(self):
+        durable = "A test in `tests/test_label.py` witnesses it."
+        self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: ONCE_TEST,
+                    "tests/test_label.py": ONCE_TEST}),
+            BOTH_ONCE, criteria=(ONCE_CRITERION, durable),
+            verify="python3 -m unittest discover -s tests -p 'test_label.py'"
+                   f"\n{ONCE_VERIFY}")
+
+        candidate = self.git("log", "main", "--format=%H", "--grep",
+                             "change and test").strip()
+        blob = subprocess.run(["git", "hash-object", "--stdin"],
+                              input=ONCE_TEST, capture_output=True, text=True,
+                              check=True).stdout.strip()
+        (payload,) = self.read("SELECT payload FROM runEvents"
+                               " WHERE kind = 'witness_once'")
+        recorded = json.loads(payload[0])
+        self.assertEqual(recorded["sha"], candidate)
+        self.assertEqual(recorded["criteria"], [
+            {"criterion": 1, "file": ONCE_PATH, "blob": blob,
+             "candidate": "passed", "base_run": "failed"}])
 
     def test_both_briefs_keep_the_one_time_test_out_of_commits(self):
         fake = self.run_task(WritesOnce(), APPROVE,

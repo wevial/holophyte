@@ -204,6 +204,18 @@ path named as a durable witness, and a one-time path no verify line names,
 and suggests the one-time form for a criterion that checks only copy, a
 label or presence.
 
+A one-time witness runs at the merge base like any other: the base tree
+gets the worktree file, by the blob `git hash-object -w` writes, so editing
+the file costs a new base run. Each round's pre-check ends with one
+`witness_once` event (detail level), ``one-time witnesses at SHA: N
+recorded``, whose payload holds the candidate `sha`, the `base` and one entry
+per one-time criterion: its `file`, `blob`, `candidate` (`passed` when
+verify was green and the file ran, else the pre-check's reading) and
+`base_run` (`failed`, `passed` or `did not run: REASON`). The pull request
+body gets a `## One-time witnesses` section from the run's latest such
+event, one line per criterion; a `mode = "main"` merge has no body, so the
+event is the record.
+
 When gaps or criteria naming no test file remain, the review prompt lists
 them after the criteria, for the reviewer to judge; the list is not a
 finding. Once a run has used both turns, a later round's gaps go to that

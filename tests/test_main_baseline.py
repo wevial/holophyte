@@ -56,6 +56,10 @@ APPROVE_APP = Reply("CRITERION 1: met — tests/test_app.py::AppTests::"
 REQUEST_CHANGES = Reply("Blocker: tidy the notes.\nVERDICT: REQUEST_CHANGES")
 CHANGE_AND_TEST = {"app.py": NEW,
                    "tests/test_app.py": TEST_APP.format(expected="new")}
+ONCE_PATH = ".holophyte-witness/test_value.py"
+ONCE = f"VALUE reads new (witnessed once: `{ONCE_PATH}`)."
+ONCE_VERIFY = ("python3 -m unittest discover -s .holophyte-witness"
+               " -p 'test_value.py'")
 TRUTHY_APP = TEST_APP.replace("self.assertEqual(VALUE, {expected!r})",
                               "self.assertTrue(VALUE)")
 
@@ -379,6 +383,41 @@ class BaselineRuns(unittest.TestCase):
                      + "# revised\n"})
         self.baselines([ON_MAIN], verify, session=session)
         self.assertEqual(len(counter.read_text().split()), 2)
+
+    def once(self, expected):
+        folder = self.wt / ".holophyte-witness"
+        folder.mkdir(exist_ok=True)
+        (folder / ".gitignore").write_text("*\n")
+        (self.wt / ONCE_PATH).write_text(TEST_APP.format(expected=expected))
+
+    def test_a_one_time_witness_runs_at_the_base_with_its_worktree_blob(self):
+        self.once("new")
+        self.assertEqual(git(self.wt, "status", "--porcelain"), "")
+        conn, run, (fails,) = self.baselines([ONCE], verify=ONCE_VERIFY)
+        self.assertTrue(fails["ran"])
+        self.assertFalse(fails["passed"])
+        self.assertIn("AssertionError", fails["output"])
+        self.assertIsNone(main_baseline.gap(fails))
+        (event,) = payloads(conn, run)
+        self.assertEqual(event["blobs"], {
+            ONCE_PATH: git(self.wt, "hash-object", ONCE_PATH)})
+        self.once("old")
+        _, _, (passes,) = self.baselines([ONCE], verify=ONCE_VERIFY)
+        self.assertTrue(passes["passed"])
+        self.assertEqual(main_baseline.gap(passes),
+                         f"criterion C1's named test passes at the merge base "
+                         f"{self.base[:12]} without the change")
+
+    def test_a_one_time_base_run_is_reused_until_the_worktree_file_changes(self):
+        self.once("new")
+        session = self.run_store([ONCE])
+        self.baselines([ONCE], verify=ONCE_VERIFY, session=session)
+        conn, run, _ = self.baselines([ONCE], verify=ONCE_VERIFY,
+                                      session=session)
+        self.assertEqual(len(payloads(conn, run)), 1)
+        self.once("newer")
+        self.baselines([ONCE], verify=ONCE_VERIFY, session=session)
+        self.assertEqual(len(payloads(conn, run)), 2)
 
 
 class Writes(Commit):
