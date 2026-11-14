@@ -32,8 +32,6 @@ export function useOpenEntry(entries: NeedsYouEntry[]): { open: number | null; t
   return { open, toggle };
 }
 
-const hostOf = (hosts: Host[], item: AttentionItem) => hosts.find((host) => host.key === item.daemon);
-
 /** The title the item names, else the one its live run carries. */
 function namedTitle(item: AttentionItem, host: Host | undefined): string | null {
   const run = num(item.run);
@@ -70,10 +68,6 @@ function whyOf(body: string, item: AttentionItem): string {
   return triage == null ? body : `${body}. ${triage}`;
 }
 
-function stateOfEntry(entry: NeedsYouEntry) {
-  return stateOf({ attention: entry.item, readiness: { ready: entry.readyToMerge } });
-}
-
 function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: Host | undefined; now: number; title: string | null; id: string }) {
   const { item } = entry;
   const description = describeOn(item, host, now);
@@ -99,11 +93,11 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const deps = useContext(PollDepsContext);
   const detailId = useId();
   const { item } = entry;
-  const host = hostOf(hosts, item);
+  const host = hosts.find((candidate) => candidate.key === item.daemon);
   const unreachable = item.kind === UNREACHABLE;
   const runId = unreachable ? null : num(item.run);
   const run = useRun(open && runId != null ? (host?.base ?? null) : null, runId, deps);
-  const state = stateOfEntry(entry);
+  const state = stateOf({ attention: item, readiness: { ready: entry.readyToMerge } });
   const key = str(item.ticket);
   const name = key ?? str(item.host) ?? str(item.daemon) ?? item.kind;
   const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));

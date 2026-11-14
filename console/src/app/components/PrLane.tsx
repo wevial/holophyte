@@ -43,13 +43,11 @@ export function waitingRows(hosts: Host[], items: AttentionItem[], now: number):
   return orderByAge(rows, (row) => row.ageMs);
 }
 
-const runOf = (item: AttentionItem) => (typeof item.run === "number" ? item.run : null);
-
 function WaitingLine({ row, readiness }: { row: WaitingRow; readiness: ReadinessMap }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const { item, host } = row;
-  const run = runOf(item);
+  const run = typeof item.run === "number" ? item.run : null;
   const ready = run == null ? undefined : readiness.get(runKey(host.key, run));
   const state = stateOf({ attention: item, readiness: ready });
   const wait = prWait(state, item, row.ageMs, ready?.reason);
