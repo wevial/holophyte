@@ -934,6 +934,36 @@ class RetireLoopTests(TrimFixture):
         self.assert_reverted("deleted lines outside retired tests and unused imports: "
                              "tests/flags.test.js:3")
 
+    def test_a_retire_cutting_a_same_named_surviving_tests_assertion_is_reverted(self):
+        twins = unittest_module("CopyTests", "test_common") + "\n\n" + (
+            unittest_module("TwinTests", "test_common").split("\n\n\n", 1)[1]
+            .replace("(True)\n", "(True)\n        self.assertEqual(1, 1)\n"))
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_common: "
+                  "protects nothing", {"tests/test_copy.py": twins.replace(
+                      "        self.assertEqual(1, 1)\n", "").replace(
+                      unittest_module("CopyTests", "test_common").split(
+                          "\n\n\n", 1)[1] + "\n\n", "")}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": twins}),))
+        self.assert_reverted("deleted lines outside retired tests and unused imports: "
+                             "tests/test_copy.py::test_common")
+
+    def test_a_js_retire_cutting_under_a_commented_candidate_title_is_reverted(self):
+        flags = ('test("dropped", () => { assert.ok(true); });\n'
+                 'test("kept", () => {\n  // test("dropped", () => {\n'
+                 '  assert.ok(true);\n});\n')
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/flags.test.js::dropped: pins a label",
+                  {"tests/flags.test.js": 'test("kept", () => {\n'
+                   '  // test("dropped", () => {\n});\n'}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/flags.test.js": flags}),))
+        self.assert_reverted("deleted lines outside retired tests and unused imports: "
+                             "tests/flags.test.js:4")
+
     def test_a_retire_commit_adding_a_statement_after_an_import_is_reverted(self):
         self.retired(Files(
             f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "

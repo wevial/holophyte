@@ -305,12 +305,15 @@ def _cut_tests(wt, sha, head, path, gone):
         return []
     deleted = {number for hunk in hunks for number in hunk}
     if tree is None:
-        owned = _candidate_lines(text, PurePosixPath(path).suffix, gone)
+        owned = _candidate_lines(text, PurePosixPath(path).suffix, gone,
+                                 deleted | quiet)
         return [f"{path}:{min(set(hunk) - owned)}"
                 for hunk in hunks if set(hunk) - owned]
     kept = set(range(1, text.count("\n") + 2)) - quiet - deleted
     used = _used_names(wt, head, path)
-    owners = (_owner(tree, number, kept, gone, used)
+    removed = [node for node in ast.walk(tree) if _is_test_def(node)
+               and node.name in gone and kept.isdisjoint(_span(node))]
+    owners = (_owner(tree, number, kept, removed, used)
               for number in sorted(deleted))
     return sorted({f"{path}{owner}" for owner in owners if owner})
 
@@ -337,22 +340,22 @@ def _used_names(wt, head, path):
         node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
 
 
-def _owner(tree, number, kept, gone, used):
+def _owner(tree, number, kept, removed, used):
     chain = _enclosing(tree, number)
     for node in chain:
-        if _is_test_def(node) and node.name in gone:
+        if any(node is gone for gone in removed):
             return None
         if not isinstance(node, ast.ClassDef):
             break
     if len(chain) == 1 and used is not None and _retirable(
-            chain[0], kept, gone, used):
+            chain[0], kept, removed, used):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]
     return f"::{(tests or named)[-1].name}" if named else f":{number}"
 
 
-def _retirable(node, kept, gone, used):
+def _retirable(node, kept, removed, used):
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         bound = _imported(node)
         return bool(bound) and all(
@@ -361,7 +364,7 @@ def _retirable(node, kept, gone, used):
     return (isinstance(node, ast.ClassDef) and kept.isdisjoint(_span(node))
             and not node.decorator_list and not node.keywords
             and node.name not in used and all(
-                (_is_test_def(child) and child.name in gone)
+                any(child is gone for gone in removed)
                 or (index == 0 and isinstance(child, ast.Expr))
                 for index, child in enumerate(node.body)))
 
@@ -402,9 +405,12 @@ def _span(node):
     return range(start, node.end_lineno + 1)
 
 
-def _candidate_lines(text, suffix, gone):
+def _candidate_lines(text, suffix, gone, cut):
+    masked = [match.span() for match in SKIPPED.finditer(text)]
     starts = [(match.start(), name, opener)
-              for match, name, opener in _declarations(text, suffix)]
+              for match, name, opener in _declarations(text, suffix)
+              if not any(start <= match.start() < end
+                         for start, end in masked)]
     lines = set()
     for index, (start, name, opener) in enumerate(starts):
         if name not in gone:
@@ -413,7 +419,9 @@ def _candidate_lines(text, suffix, gone):
         close = _closing(text, text.find(opener, start), bound)
         if close is not None:
             first = text.count("\n", 0, start) + 1
-            lines.update(range(first, text.count("\n", 0, close) + 2))
+            span = range(first, text.count("\n", 0, close) + 2)
+            if cut.issuperset(span):
+                lines.update(span)
     return lines
 
 
