@@ -101,7 +101,7 @@ test("every Overview running and waiting row and Runs and Tickets table row opts
   cleanup();
 
   await mount("#/runs");
-  const runs = within(screen.getByRole("list", { name: "Runs, newest first" })).getAllByRole("listitem");
+  const runs = document.querySelectorAll("li[data-run]");
   expect(runs).toHaveLength(3);
   for (const row of runs) {
     expect(row.hasAttribute("data-row")).toBe(true);
