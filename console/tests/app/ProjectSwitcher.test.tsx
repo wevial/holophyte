@@ -231,3 +231,12 @@ test("with the link naming a project no host serves, opening highlights All proj
   expect(location()).toEqual({ path: "/runs", project: null });
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("Shift+Tab from the filter closes the switcher with focus on its button", async () => {
+  await mount("#/runs");
+  await key(switcher(), "ArrowDown");
+  await userEvent.tab({ shift: true });
+  await act(settle);
+  expect(document.activeElement).toBe(switcher());
+  expect(screen.queryByRole("dialog")).toBeNull();
+});

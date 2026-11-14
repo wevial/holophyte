@@ -61,6 +61,7 @@ const switcher = definePrimitive({
         listbox.move("first");
       },
       keydown(event: KeyboardEvent) {
+        if (event.key === "Tab" && event.shiftKey) setTimeout(() => popup.close({ reason: "focus-out", event }));
         if (event.key !== "Enter") return listbox.keydown(event);
         event.preventDefault();
         choose(context.store.get().highlighted, event);
@@ -108,7 +109,10 @@ const switcher = definePrimitive({
       }),
       press: ({ key, api }, event) => api.choose(key, event),
       on: { pointermove: (event, { key, api }) => api.listbox.highlight(key, { event }) },
-      bind: (el, part) => part.api.listbox.bind(el, part),
+      bind: (el, part) => {
+        if (part.key === part.store.get().highlighted) el.scrollIntoView?.({ block: "nearest" });
+        return part.api.listbox.bind(el, part);
+      },
     }),
   }),
 });
@@ -230,6 +234,9 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
             sideOffset={4}
             collisionPadding={EDGE}
             anchor={folded ? besideRail : undefined}
+            onFocus={(event) => {
+              if (event.target === event.currentTarget) document.getElementById(findId)?.focus();
+            }}
             style={{ maxHeight: "var(--available-height)", width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
             className="fixed z-50 flex flex-col border border-rule bg-paper p-2 shadow-card"
             onMouseDown={(event) => {
