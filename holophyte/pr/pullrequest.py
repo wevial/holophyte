@@ -352,14 +352,12 @@ def _with_concerns(text, conn, run_id):
 
 
 def _witnessed_once_line(entry, sha, base):
-    blob = (entry["blob"] or "none")[:12]
-    candidate = f"{entry['candidate']} at {sha[:12]}"
     outcome, _, reason = entry["base_run"].partition(": ")
     reason = reason.splitlines()[0].rstrip(":") if reason else ""
-    at_base = f"{outcome} at the merge base {base[:12]}" + (
-        f": {reason}" if reason else "")
-    return (f"- C{entry['criterion']} `{entry['file']}` (blob {blob}): "
-            f"{candidate}; {at_base}")
+    return (f"- C{entry['criterion']} `{entry['file']}` (blob "
+            f"{(entry['blob'] or 'none')[:12]}): {entry['candidate']} at "
+            f"{sha[:12]}; {outcome} at the merge base {base[:12]}"
+            + (f": {reason}" if reason else ""))
 
 
 def _with_witnessed_once(text, conn, run_id):
