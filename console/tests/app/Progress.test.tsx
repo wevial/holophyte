@@ -208,6 +208,11 @@ test("a passing round reads passed, and a note withdrawn after the agent read it
   ]);
 });
 
+test("the Progress section is addressable by its progress id", async () => {
+  await mount(progressFetch({ detail: liveDetail, asks }));
+  expect(document.getElementById("progress")).toBe(section());
+});
+
 /** Cap 1: round 1 asks for changes, then the terminal adjudication records round 2 as `last`. */
 function adjudicated(last: Partial<RunDetail["rounds"][number]>): RunDetail {
   return {
