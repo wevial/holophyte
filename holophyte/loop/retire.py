@@ -29,11 +29,15 @@ from holophyte.loop.trim import (
 )
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
-from holophyte.review.reply_parsing import test_references
+from holophyte.review.reply_parsing import _GO_NAMES, _JS_TITLE, test_references
 
 SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
 NOT_REPRODUCED = "the run took the not-reproduced path"
+HOOKS = {"setUp", "tearDown", "setUpClass", "tearDownClass", "asyncSetUp",
+         "asyncTearDown", "setUpModule", "tearDownModule"}
+SKIPPED = re.compile(r"'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\""
+                     r"|`(?:[^`\\]|\\.)*`|//[^\n]*|/\*.*?\*/", re.S)
 TEST_VALUE_GATE = """\
 **The test-value gate.** Before adding a test, answer four questions: what
 behavior, invariant or contract does it protect? What credible regression
@@ -205,7 +209,7 @@ def _unsound(wt, base, sha, ticket, candidates, green):
                test.partition("::")[2] for test in removed
                if test in candidates and test.startswith(f"{path}::")})]
     if cut:
-        reasons.append("the commit deleted lines inside tests it keeps: "
+        reasons.append("the commit deleted lines that kept tests own or use: "
                        + ", ".join(cut))
     unexplained = [test for test in removed
                    if test not in _reasons(wt, head, removed)]
@@ -276,15 +280,18 @@ def _cut_tests(wt, sha, head, path, gone):
     hunks = [hunk for hunk in _deleted_hunks(wt, sha, head, path) if hunk]
     if not hunks:
         return []
+    deleted = {number for hunk in hunks for number, _ in hunk}
     tree, text = _tree(wt, sha, path)
     if tree is None:
-        return [f"{path}:{hunk[0][0]}" for hunk in hunks
-                if not any(name in line for name in gone for _, line in hunk)]
-    deleted = {number for hunk in hunks for number, _ in hunk}
+        owned = _candidate_lines(text, PurePosixPath(path).suffix, gone)
+        return [f"{path}:{min(number for number, _ in hunk if number not in owned)}"
+                for hunk in hunks if any(number not in owned for number, _ in hunk)]
     kept = {number for number, line in enumerate(text.splitlines(), 1)
             if line.strip() and not line.strip().startswith("#")} - deleted
-    owners = (_owner(tree, number, kept, gone) for number in sorted(deleted))
-    return sorted({f"{path}::{owner}" for owner in owners if owner})
+    used = _used_names(wt, head, path)
+    owners = (_owner(tree, number, kept, gone, used)
+              for number in sorted(deleted))
+    return sorted({f"{path}{owner}" for owner in owners if owner})
 
 
 def _tree(wt, sha, path):
@@ -299,18 +306,55 @@ def _tree(wt, sha, path):
         return None, text
 
 
-def _owner(tree, number, kept, gone):
-    test = _innermost(tree, number, _is_test_def)
-    if test:
-        whole = test.name in gone and kept.isdisjoint(_span(test))
-        return None if whole else test.name
-    cls = _innermost(tree, number, lambda node: isinstance(node, ast.ClassDef))
-    if cls is None or all(node.name in gone for node in cls.body
-                          if _is_test_def(node)):
+def _used_names(wt, head, path):
+    tree, _ = _tree(wt, head, path)
+    if tree is None:
         return None
-    helper = _innermost(cls, number, lambda node: isinstance(
-        node, (ast.FunctionDef, ast.AsyncFunctionDef)))
-    return None if helper and kept.isdisjoint(_span(helper)) else cls.name
+    return ({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+            | {node.attr for node in ast.walk(tree)
+               if isinstance(node, ast.Attribute)})
+
+
+def _owner(tree, number, kept, gone, used):
+    chain = _enclosing(tree, number)
+    whole = next((node for node in chain if kept.isdisjoint(_span(node))), None)
+    if whole is not None and _only_gone_use(whole, gone, used):
+        return None
+    named = [node for node in chain if hasattr(node, "name")]
+    tests = [node for node in named if _is_test_def(node)]
+    return f"::{(tests or named)[-1].name}" if named else f":{number}"
+
+
+def _enclosing(tree, number):
+    chain, body = [], tree.body
+    while True:
+        node = next((node for node in body if number in _span(node)), None)
+        if node is None:
+            return chain
+        chain.append(node)
+        body = [child for field in ("body", "orelse", "finalbody", "handlers")
+                for child in getattr(node, field, [])
+                if isinstance(child, ast.AST)]
+
+
+def _only_gone_use(node, gone, used):
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return True
+    if used is None:
+        return False
+    if _is_test_def(node):
+        return node.name in gone
+    if isinstance(node, ast.ClassDef):
+        return node.name not in used and all(
+            child.name in gone for child in ast.walk(node)
+            if _is_test_def(child))
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return node.name not in HOOKS | used
+    targets = (node.targets if isinstance(node, ast.Assign)
+               else [node.target] if isinstance(node, ast.AnnAssign) else None)
+    return targets is not None and all(
+        isinstance(target, ast.Name) and target.id not in used
+        for target in targets)
 
 
 def _is_test_def(node):
@@ -319,14 +363,51 @@ def _is_test_def(node):
 
 
 def _span(node):
-    start = min([node.lineno, *(dec.lineno for dec in node.decorator_list)])
+    start = min([node.lineno, *(dec.lineno for dec in
+                                getattr(node, "decorator_list", []))])
     return range(start, node.end_lineno + 1)
 
 
-def _innermost(tree, number, kind):
-    found = [node for node in ast.walk(tree) if kind(node)
-             and number in _span(node)]
-    return max(found, key=lambda node: _span(node).start, default=None)
+def _candidate_lines(text, suffix, gone):
+    starts = [(match.start(), name, opener)
+              for match, name, opener in _declarations(text, suffix)]
+    lines = set()
+    for index, (start, name, opener) in enumerate(starts):
+        if name not in gone:
+            continue
+        bound = starts[index + 1][0] if index + 1 < len(starts) else len(text)
+        close = _closing(text, text.find(opener, start), bound)
+        if close is not None:
+            first = text.count("\n", 0, start) + 1
+            lines.update(range(first, text.count("\n", 0, close) + 2))
+    return lines
+
+
+def _declarations(text, suffix):
+    if suffix == ".go":
+        return [(match, match[1] if match[1] is not None else match[2],
+                 "{" if match[1] is not None else "(")
+                for match in _GO_NAMES.finditer(text)
+                if match[1] is not None or match[2] is not None]
+    if suffix == ".py":
+        return []
+    return [(match, match[2] if match[2] is not None else match[3], "(")
+            for match in _JS_TITLE.finditer(text)]
+
+
+def _closing(text, i, bound):
+    depth = 0
+    while 0 <= i < bound:
+        skip = SKIPPED.match(text, i)
+        if skip:
+            i = skip.end()
+            continue
+        depth += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(
+            text[i], 0)
+        if depth == 0:
+            return i
+        i += 1
+    return None
 
 
 def _head(wt):

@@ -824,8 +824,34 @@ class RetireLoopTests(TrimFixture):
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
                                  "tests/test_copy.py": checked}),))
-        self.assert_reverted("deleted lines inside tests it keeps: "
+        self.assert_reverted("deleted lines that kept tests own or use: "
                              "tests/test_copy.py::test_kept")
+
+    def test_a_retire_commit_cutting_a_hook_kept_tests_use_is_reverted(self):
+        hooked = COPY.replace("    def test_kept", "    def tearDown(self):\n"
+                              "        self.assertTrue(True)\n\n    def test_kept")
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+                  "protects nothing", {"tests/test_copy.py": unittest_module(
+                      "CopyTests", "test_kept")}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": hooked}),))
+        self.assert_reverted("deleted lines that kept tests own or use: "
+                             "tests/test_copy.py::tearDown")
+
+    def test_a_js_retire_cutting_a_kept_assertion_naming_the_retired_is_reverted(self):
+        flags = ('test("dropped", () => { assert.ok(true); });\n'
+                 'test("kept", () => {\n  assert.equal(state(), "dropped");\n'
+                 '});\n')
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/flags.test.js::dropped: pins a label",
+                  {"tests/flags.test.js": 'test("kept", () => {\n});\n'}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/flags.test.js": flags}),))
+        self.assert_reverted("deleted lines that kept tests own or use: "
+                             "tests/flags.test.js:3")
 
     def test_a_retire_commit_adding_a_statement_after_an_import_is_reverted(self):
         self.retired(Files(
@@ -848,16 +874,10 @@ class RetireLoopTests(TrimFixture):
         self.assertNotIn("test_copy.py::test_kept", fake.turns[-1].goal)
 
     def test_a_retire_commit_that_turns_verify_red_is_reverted(self):
-        helped = unittest_module("CopyTests", "test_kept", "test_dropped",
-                                 helper=True)
         self.retired(
             Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
                   "protects nothing", {"tests/test_copy.py": unittest_module(
-                "CopyTests", "test_kept", helper=True).replace(
-                    "def value():\n    return 1\n\n\n", "")}),
-            work=(Files("work", {"thing.txt": "the thing\n",
-                                 "tests/test_new.py": NEW,
-                                 "tests/test_copy.py": helped}),))
+                      "CopyTests", "test_kept").replace("import unittest\n", "")}))
         self.assert_reverted("verify was red at the retire commit")
 
     def test_a_retire_commit_that_edits_a_factory_module_is_reverted(self):

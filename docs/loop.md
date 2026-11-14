@@ -168,10 +168,15 @@ machines it walks. Back to the [README](index.md).
    factory keeps the commit only when it is one non-merge commit on the
    approved head with that subject, changes only test files, adds no line
    but a whole import statement, removes only candidates, deletes no line
-   inside a test it keeps (a Python file maps each deleted line to its
-   enclosing test function and class), gives each removed test its
+   a kept test owns or uses, gives each removed test its
    `RETIRED` line, passes verify, and leaves no
-   test file outside In scope with fewer tests than at the review base;
+   test file outside In scope with fewer tests than at the review base.
+   In a Python file each deleted line belongs to its outermost wholly
+   deleted statement: a removed candidate, an import, or a helper, class
+   or assignment whose name the kept file no longer uses; a `setUp` or
+   `tearDown` hook counts as used while its class stays. In any other file
+   each deleted line must fall inside a removed candidate's call, from its
+   declaration to the matching close bracket;
    otherwise the branch returns to the approved head. No review round
    follows either way. The `retire` event names the outcome and a
    `retire_result` detail event holds `outcome` (`skipped`, `nothing`,
