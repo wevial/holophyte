@@ -112,7 +112,16 @@ function LinkBadge({ badge, folded, tone = "text-need" }: { badge: number; folde
   );
 }
 
-type PageLinkProps = {
+function PageLink({
+  to,
+  label,
+  icon,
+  noun,
+  badge,
+  tone,
+  folded,
+  active,
+}: {
   to: PageTo;
   label: string;
   icon: ReactNode;
@@ -121,32 +130,20 @@ type PageLinkProps = {
   tone?: string;
   folded: boolean;
   active: boolean;
-};
-
-const PAGE_LINK =
-  "group relative flex items-center rounded-[6px] text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink";
-
-function pageLinkProps({ to, label, noun, badge, active }: PageLinkProps) {
-  return {
-    to,
-    search: keepScope,
-    activeOptions: { exact: to === "/", includeSearch: false },
-    ...(active ? { "data-status": "active", "aria-current": "page" as const } : {}),
-    "aria-label": badge > 0 ? `${label}, ${badge} ${noun}` : label,
-  };
-}
-
-function PageLink(props: PageLinkProps) {
-  const { label, icon, badge, tone, folded } = props;
+}) {
   return (
     <Tooltip delay={300} disabled={!folded}>
       <TooltipTrigger
         render={({ type: _button, "aria-describedby": described, ...trigger }) => (
           <Link
             {...trigger}
-            {...pageLinkProps(props)}
+            to={to}
+            search={keepScope}
+            activeOptions={{ exact: to === "/", includeSearch: false }}
+            {...(active ? { "data-status": "active", "aria-current": "page" as const } : {})}
+            aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
             aria-describedby={folded ? described : undefined}
-            className={`${PAGE_LINK} ${folded ? "mx-auto h-9 w-10 justify-center" : "mx-2 h-row gap-2.5 px-2.5 text-[13px] font-medium"}`}
+            className={`group relative flex items-center rounded-[6px] text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink ${folded ? "mx-auto h-9 w-10 justify-center" : "mx-2 h-row gap-2.5 px-2.5 text-[13px] font-medium"}`}
           >
             <span className="relative">
               <span className="flex group-data-[status=active]:text-focus">{icon}</span>
