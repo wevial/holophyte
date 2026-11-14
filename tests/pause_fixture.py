@@ -91,7 +91,7 @@ class PauseFailureCases:
         def verify(*args, **kwargs):
             nonlocal calls
             calls += 1
-            if calls == 3:
+            if calls == 5:
                 store.pause(kwargs["conn"], kwargs["run_id"], "inspect failed verify")
                 return False, "terminal check failed"
             return True, "ok"

@@ -186,9 +186,9 @@ def _importing_tests(root, runs, since=None):
         modules = {name: path for path in changed
                    for name in module_names(path, packages)}
         found = importers(root, "HEAD", modules) if modules else {}
-        if since:
-            found = {**found, **{path: [path] for path in changed
-                                  if os.path.isfile(os.path.join(root, path))}}
+        for path in changed if since else ():
+            if os.path.isfile(os.path.join(root, path)):
+                found[path] = [*found.get(path, ()), path]
     except (RuntimeError, OSError, subprocess.CalledProcessError):
         return []
     nearest = {}

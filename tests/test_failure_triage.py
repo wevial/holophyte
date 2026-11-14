@@ -426,8 +426,9 @@ class EscalationTests(LoopFixture):
     def test_infra_on_a_profile_and_verify_on_the_default_are_not_escalated(self):
         self.configure(PROFILES)
         self.run_ticket(InfraRefuse())
-        self.run_ticket(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES,
-                        Commit(), body=VALID_BODY, verify="exit 3", n=2)
+        self.run_ticket(Commit(), REQUEST_CHANGES, Commit(), Commit(),
+                        REQUEST_CHANGES, Commit(), Commit(), body=VALID_BODY,
+                        verify="exit 3", n=2)
 
         self.assertEqual(self.read("SELECT failureKind FROM runs ORDER BY id"),
                          [("infra",), ("verify",)])
