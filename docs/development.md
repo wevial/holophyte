@@ -1100,10 +1100,15 @@ The ticket checker, in `holophyte/tickets/`:
 - `holophyte/tickets/ticket_advisories.py` — the checker's verify-block and
   criterion advisories: a whole-suite discover, a hard-coded test count, a
   verify wider than In scope, a repository-wide `ruff check` that fails on
-  main, and a criterion asking for a run's output the factory does not make.
+  main, a criterion asking for a run's output the factory does not make, and
+  a criterion checking only copy, a label or presence; it also blocks a
+  misplaced or unrun one-time witness.
 - `holophyte/tickets/ticket_header.py` — finds, parses and checks the `+++`
   TOML header a ticket can open with, setting the same `Ticket` fields as the
   magic lines.
+- `holophyte/tickets/witness_once.py` — a criterion witnessed once: the
+  ignored `.holophyte-witness/` folder, the `(witnessed once: PATH)` tail,
+  and the implementer and reviewer briefs that keep its test out of commits.
 - `holophyte/tickets/ticket_depends.py` — finds a ticket body's estimate line
   and rewrites its `Depends on:` list, for story filing and a cancel's rewire.
 - `holophyte/tickets/story_template.py` — validator for a story directory's

@@ -8,6 +8,8 @@ Run: python3 -m unittest discover -s tests -p 'test_witness_turns.py' -v
 """
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -358,6 +360,108 @@ class WitnessTurns(RunningRepo):
         self.assertTrue(cap.startswith("out of time:"), cap)
         self.assertEqual(self.read("SELECT outcomeReason, failureKind FROM runs"),
                          [(cap, "budget")])
+
+
+ONCE_PATH = ".holophyte-witness/test_save_label.py"
+ONCE_CRITERION = ("The Save button label reads Done (witnessed once: "
+                  f"`{ONCE_PATH}`).")
+ONCE_VERIFY = ("python3 -m unittest discover -s .holophyte-witness"
+               " -p 'test_save_label.py'")
+ONCE_TEST = """import unittest
+
+import label
+
+
+class SaveLabel(unittest.TestCase):
+    def test_the_label_reads_done(self):
+        self.assertEqual(label.SAVE, "Done")
+"""
+
+
+class WritesOnce(Writes):
+    """Writes the label module and the one-time test, commits with
+    `git add -A` (or also `git add -f` the test), and keeps what
+    `git check-ignore` says of the test in the task worktree."""
+
+    def __init__(self, force=False):
+        super().__init__({"label.py": 'SAVE = "Done"\n', ONCE_PATH: ONCE_TEST})
+        self.force, self.ignored = force, None
+
+    def play(self, cwd, turn):
+        if self.force:
+            (cwd / ONCE_PATH).write_text(ONCE_TEST)
+            _git(cwd, "add", "-f", ONCE_PATH)
+        reply = super().play(cwd, turn)
+        self.ignored = subprocess.run(
+            ["git", "check-ignore", "-q", ONCE_PATH], cwd=cwd).returncode == 0
+        return reply
+
+
+class Untracks:
+
+    role = IMPLEMENT
+
+    def play(self, cwd, turn):
+        _git(cwd, "rm", "-q", "--cached", ONCE_PATH)
+        _git(cwd, "commit", "-q", "-m", "keep the one-time test out")
+        return "committed: keep the one-time test out"
+
+
+class WitnessedOnce(RunningRepo):
+
+    def results(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents"
+            " WHERE kind = 'witness_precheck_results' ORDER BY seq")]
+
+    def test_an_ignored_one_time_test_is_run_and_never_committed(self):
+        writes = WritesOnce()
+        fake = self.run_task(writes, APPROVE, criteria=(ONCE_CRITERION,),
+                             verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertTrue(writes.ignored)
+        (result,) = self.results()
+        listed = self.git("ls-tree", "-r", "--name-only",
+                          result["sha"]).split()
+        self.assertIn("label.py", listed)
+        self.assertNotIn(ONCE_PATH, listed)
+        (entry,) = result["criteria"]
+        self.assertEqual(entry["checks"], [
+            {"file": ONCE_PATH, "exists": True, "changed": None,
+             "ran": "ran"}])
+        self.assertEqual(entry["gaps"], [])
+        self.assertEqual(self.summaries("witness_turn"), [])
+
+    def test_a_force_added_one_time_test_gets_a_witness_turn(self):
+        fake = self.run_task(WritesOnce(force=True), Untracks(), APPROVE,
+                             criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"criterion C1's one-time witness `{ONCE_PATH}` is "
+                      "committed; it stays out of the branch", turn)
+
+    def test_an_unwritten_one_time_test_gets_a_witness_turn(self):
+        fake = self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n'}), Idle(), APPROVE,
+            criteria=(ONCE_CRITERION,),
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"criterion C1's one-time witness `{ONCE_PATH}` does "
+                      "not exist in the task worktree", turn)
+
+    def test_both_briefs_keep_the_one_time_test_out_of_commits(self):
+        fake = self.run_task(WritesOnce(), APPROVE,
+                             criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)
+
+        self.assertIn(f"C1: `{ONCE_PATH}`", fake.turns[0].goal)
+        self.assertIn("leave it uncommitted", fake.turns[0].goal)
+        review = self.review_goal(fake)
+        self.assertIn(f"C1: `{ONCE_PATH}`", review)
+        self.assertIn("in the worktree but in no commit", review)
 
 
 class FixSelfCheck(RunningRepo):

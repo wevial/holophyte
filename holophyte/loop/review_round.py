@@ -64,7 +64,7 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
-from holophyte.tickets import ticket_template
+from holophyte.tickets import ticket_template, witness_once
 
 
 def _verify_brief(verify_cmd, ok, out):
@@ -147,6 +147,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         f"{ticket}\n\n"
         + _verify_brief(verify_cmd, ok, out)
         + criteria_brief(criteria)
+        + witness_once.reviewer_brief(criteria)
         + witness
         + stale_approval_brief(stale)
         + earlier

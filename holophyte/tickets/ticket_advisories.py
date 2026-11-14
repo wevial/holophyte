@@ -1,4 +1,4 @@
-"""Verify-block and criterion advisories that never block a filing."""
+"""Verify-block and criterion advisories, and the one-time witness rules."""
 import fnmatch
 import functools
 import io
@@ -12,6 +12,7 @@ from pathlib import Path
 from holophyte.review import main_baseline
 from holophyte.review.witness_precheck import named_files
 from holophyte.tickets import ticket_template as tt
+from holophyte.tickets import witness_once
 
 COUNT_RE = re.compile(
     r"\bRan \d+ tests?\b"
@@ -43,6 +44,10 @@ PULL_REQUEST_WITNESS_RE = re.compile(
     r"|\bci (?:checks?|runs?|jobs?)\b"
     r"|\bwhen (?:the|a) (?:pr|pull request) is opened\b"
     r"|\bopening (?:the|a) (?:pr|pull request)\b", re.IGNORECASE)
+COPY_ONLY_RE = re.compile(
+    r"\b(?:labels?|labelled|copy|wording|placeholder|tooltip|caption)\b"
+    r"|\b(?:is|are) (?:gone|absent|present|no longer shown)\b"
+    r"|\breads\s+[`\"'\u201c]?[A-Z]")
 
 
 def _discovers_whole_suite(tokens):
@@ -252,8 +257,41 @@ def _pull_request_witness_advisories(t):
             and PULL_REQUEST_WITNESS_RE.search(" ".join(text.split()))]
 
 
+def _once_problems(t):
+    texts = t.acceptance_boxes
+    problems = []
+    for i, (text, once, files) in enumerate(zip(
+            texts, witness_once.tail_paths(texts), named_files(texts)), 1):
+        if once is None:
+            problems += [f"criterion {i} names `{path}` as a durable witness; "
+                         f"a {witness_once.DIRECTORY}/ file stays out of every "
+                         f"commit, so end it with (witnessed once: `{path}`)"
+                         for path in files if witness_once.is_once(path)]
+        elif not witness_once.is_once(once):
+            problems.append(f"criterion {i}'s one-time witness `{once}` is not "
+                            f"directly under {witness_once.DIRECTORY}/")
+        elif not any(main_baseline._names(line, once)
+                     for cmd in t.verify_commands for line in cmd.splitlines()):
+            problems.append(f"criterion {i}'s one-time witness `{once}` is "
+                            "named by no verify command")
+    return problems
+
+
+def _copy_only_advisories(t):
+    texts = t.acceptance_boxes
+    return [f"{tt.ADVISORY_PREFIX}criterion {i} checks only copy, a label or "
+            f"presence; consider witnessing it once: (witnessed once: "
+            f"{witness_once.DIRECTORY}/{Path(files[0]).name})"
+            for i, (text, once, files) in enumerate(zip(
+                texts, witness_once.tail_paths(texts), named_files(texts)), 1)
+            if once is None and files
+            and not any(witness_once.is_once(path) for path in files)
+            and COPY_ONLY_RE.search(" ".join(text.split()))]
+
+
 def advisories(t, repo=None):
-    found = (_suite_advisories(t) + _count_advisories(t)
+    found = (_once_problems(t) + _copy_only_advisories(t)
+             + _suite_advisories(t) + _count_advisories(t)
              + _baseline_advisories(t) + _pull_request_witness_advisories(t))
     if repo is not None:
         found += _wide_verify_advisories(t, repo)

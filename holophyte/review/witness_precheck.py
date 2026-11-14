@@ -6,6 +6,7 @@ import re
 import subprocess
 from fnmatch import fnmatchcase
 from functools import partial
+from pathlib import Path
 
 import store
 from holophyte.config.reader import VERIFY_TIMEOUT
@@ -13,6 +14,7 @@ from holophyte.loop.gates import _verify_command, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids, skipped_tests
+from holophyte.tickets import witness_once
 from store.working import working
 
 SPAN = re.compile(r"`([^`\n]+)`")
@@ -102,7 +104,24 @@ def _gaps(n, path, ran, detail):
             f"({missed['reason']})" for missed in detail]
 
 
-def _file(n, path, existing, tree, changed, sha, probed):
+def _once(n, path, wt, tree, probed):
+    result = {"file": path, "exists": (Path(wt) / path).is_file(),
+              "changed": None}
+    gaps = ([f"criterion C{n}'s one-time witness `{path}` is committed; it "
+             "stays out of the branch"] if path in tree else [])
+    if not result["exists"]:
+        return result, gaps + [f"criterion C{n}'s one-time witness `{path}` "
+                               "does not exist in the task worktree"]
+    ran, detail = _ran(path, probed)
+    result["ran"] = ran
+    if detail:
+        result["detail"] = detail
+    return result, gaps + _gaps(n, path, ran, detail)
+
+
+def _file(n, path, existing, tree, changed, sha, probed, wt):
+    if witness_once.is_once(path):
+        return _once(n, path, wt, tree, probed)
     glob = bool(GLOB.search(path))
     matches = ([found for found in tree if fnmatchcase(found, path)] if glob
                else [path] if path in tree else [])
@@ -158,7 +177,8 @@ def check(wt, base, sha, criteria, verify_cmd, probe):
                  "named": "ok" if files else "no_file", "checks": [],
                  "gaps": []}
         for path in files:
-            result, gaps = _file(n, path, existing, tree, changed, sha, probed)
+            result, gaps = _file(n, path, existing, tree, changed, sha,
+                                 probed, wt)
             entry["checks"].append(result)
             entry["gaps"] += gaps
         entries.append(entry)
