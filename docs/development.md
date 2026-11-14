@@ -879,7 +879,9 @@ Each module, one line:
   a pull request's head: the one empty-commit retrigger per candidate under
   `[merge] retrigger_missing_checks`, and the park naming them (KO-652).
 - `holophyte/babysit/check_fix.py` — a red check's rerun and its check fix
-  rounds per babysit, up to `[merge] check_fix_rounds`: the brief with each
+  rounds per babysit, up to `[merge] check_fix_rounds`: the failed jobs'
+  unittest ids run locally at the head first, a reproduced failure skipping
+  the rerun for the fix round; the brief with each
   failed Actions job's failure lines and log tail, the round's event and
   ledger line, and the park on a repeated failure or spent rounds.
 - `holophyte/babysit/capture_fix.py` — the capture fix round before the
@@ -888,7 +890,8 @@ Each module, one line:
   failing lines and capture log tail, the round's event and ledger line, the
   capture again at the round's head, and the park when it still fails.
 - `holophyte/babysit/check_failures.py` — a job log's failure lines (test
-  failure headers and error lines), their normalized signature, and the
+  failure headers and error lines), its unittest ids as `(module,
+  "Class.name")` pairs, their normalized signature, and the
   test whether a red read repeats a failure an earlier round was handed.
 - `holophyte/babysit/covering_fix.py` — what follows a covering review of a
   babysit fix that asks for changes: the operator note's fix, an automatic

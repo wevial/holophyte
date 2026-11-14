@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from time import monotonic
 from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
@@ -23,6 +25,15 @@ RERUN = "repos/example/repo/actions/runs/77/rerun-failed-jobs"
 JOB = "https://github.com/example/repo/actions/runs/77/job/"
 
 
+TEST_Y = "tests/test_y.py"
+CASE = ("import time\nimport unittest\n\n\n"
+        "class Case(unittest.TestCase):\n    def test_x(self):\n        {}\n")
+FAILING = CASE.format("self.assertTrue(1 == 2)")
+PASSING = CASE.format("self.assertTrue(1 == 1)")
+SLEEPING = CASE.format("time.sleep(30)")
+SHARD_LOG = "2024-05-01T10:00:00.1Z FAIL: test_x (test_y.Case.test_x)"
+
+
 class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
     """A flake goes green on its rerun and keeps the fix turn unspent."""
     UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
@@ -34,7 +45,8 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
     UNLISTED = None  # A starting rerun: GitHub lists no check run on the head.
 
     def red_check(self, *after_rerun, green_after_fix=False, refuse_rerun=False,
-                  config="", rollup="SUCCESS"):
+                  config="", rollup="SUCCESS",
+                  log="FAIL: test_x (tests.test_y.Case.test_x)"):
         """`UNIT` red on the candidate; once a rerun was sent, the rows of
         `after_rerun` read in order, the last for good (the rerun's own red
         job without them); green on a later head when `green_after_fix`.
@@ -42,7 +54,7 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.configure('[merge]\nmode = "pr"\n' + config)
         self.fake_route(refuse_rerun=refuse_rerun,
                         states=[self.pr_state(checks=rollup)])
-        self.job_log.write_text("FAIL: test_x (tests.test_y.Case.test_x)")
+        self.job_log.write_text(log)
         self.naps = []
         self.enterContext(patch.object(holophyte.pr.github, "SLEEP", self.naps.append))
         heads, served = [], list(after_rerun or [self.RERUN_RED])
@@ -216,6 +228,112 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual(self.read("SELECT payload FROM runEvents WHERE runId = 2"
                                    " AND kind = 'approval_parked'"),
                          [(f'{{"sha": "{approved}"}}',)])
+
+    def rerun_summary(self):
+        (summary,) = self.events("check_rerun")
+        return summary
+
+    def test_a_failure_reproduced_locally_skips_the_rerun_for_the_fix_turn(self):
+        self.red_check(green_after_fix=True, log=SHARD_LOG)
+        fake, _ = self.loop(Commit("a failing test", path=TEST_Y, body=FAILING),
+                            APPROVE, Idle(""),
+                            Commit("fix: the unit failure"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(self.reruns(), [])
+        ((skip_id, summary, payload),) = self.read(
+            "SELECT id, summary, payload FROM runEvents"
+            " WHERE kind = 'check_rerun_skipped'")
+        self.assertIn("test_y.Case.test_x", summary)
+        self.assertIn("AssertionError", json.loads(payload)["output"])
+        ((round_id,),) = self.read(
+            "SELECT id FROM runEvents WHERE kind = 'check_fix_round'")
+        self.assertLess(skip_id, round_id)
+        self.assertEqual(fake.roles, ["implement", "review", "implement"] * 2)
+        self.assertIn("- FAIL: test_x (test_y.Case.test_x)", fake.turns[3].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_reproduced_failure_red_again_after_its_fix_parks_with_no_rerun(self):
+        self.red_check(log=SHARD_LOG)
+        fake, _ = self.loop(Commit("a failing test", path=TEST_Y, body=FAILING),
+                            APPROVE, Idle(""), Commit("fix: the unit failure"),
+                            provider=self.provider())
+        self.assertEqual(fake.roles,
+                         ["implement", "review", "implement", "implement"])
+        self.assertEqual(self.reruns(), [])
+        self.assertEqual(len(self.events("check_rerun_skipped")), 1)
+        self.assertIn("checks failure on the head commit", self.question())
+
+    def test_a_failure_passing_locally_is_rerun_and_merges_green(self):
+        self.red_check(self.QUEUED, self.GREEN, log=SHARD_LOG)
+        fake, _ = self.loop(Commit("a passing test", path=TEST_Y, body=PASSING),
+                            APPROVE, Idle(""), provider=self.provider())
+        self.assertEqual(len(self.reruns()), 1)
+        candidate = self.pushed()[-1][1]
+        self.assertTrue(self.rerun_summary().endswith(
+            f"; local run: passed at {candidate[:12]}"))
+        self.assertEqual(self.events("check_rerun_skipped"), [])
+        self.assert_merged_without_a_fix_turn(fake)
+
+    def test_a_job_log_with_no_unittest_id_is_rerun(self):
+        self.red_check(self.QUEUED, self.GREEN,
+                       log="python did not pass: failure")
+        fake, _ = self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                            provider=self.provider())
+        self.assertEqual(len(self.reruns()), 1)
+        self.assertTrue(self.rerun_summary().endswith(
+            "; local run: no unittest test id in the failed job logs"))
+        self.assert_merged_without_a_fix_turn(fake)
+
+    def test_a_named_module_missing_from_the_worktree_is_rerun(self):
+        self.red_check(self.QUEUED, self.GREEN)
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        self.assertEqual(len(self.reruns()), 1)
+        self.assertTrue(self.rerun_summary().endswith(
+            "; local run: module tests.test_y not found in the worktree"))
+
+    def test_a_local_run_over_its_cap_is_stopped_and_rerun(self):
+        self.red_check(self.QUEUED, self.GREEN, log=SHARD_LOG)
+        started = monotonic()
+        with patch("holophyte.babysit.check_fix.LOCAL_RUN_SEC", 2):
+            fake, _ = self.loop(
+                Commit("a slow test", path=TEST_Y, body=SLEEPING), APPROVE,
+                Idle(""), provider=self.provider())
+        self.assertLess(monotonic() - started, 30)
+        self.assertEqual(len(self.reruns()), 1)
+        self.assertTrue(self.rerun_summary().endswith(
+            "; local run: timed out after 2 s"))
+        self.assert_merged_without_a_fix_turn(fake)
+
+
+    def test_a_class_fixture_error_beside_a_reproduced_failure_skips_the_rerun(self):
+        self.red_check(log="ERROR: setUpClass (checks.test_sample.SetupBroken)\n"
+                       + SHARD_LOG)
+        self.loop(Commit("a failing test", path=TEST_Y, body=FAILING),
+                  APPROVE, Idle(""), Commit("fix: the unit failure"),
+                  provider=self.provider())
+        self.assertEqual(self.reruns(), [])
+        ((payload,),) = self.read("SELECT payload FROM runEvents"
+                                  " WHERE kind = 'check_rerun_skipped'")
+        self.assertEqual(json.loads(payload)["ids"], ["test_y.Case.test_x"])
+
+    def test_a_failure_is_reproduced_only_for_the_module_that_ran_it(self):
+        for package in ("first", "second"):
+            (self.target / package).mkdir()
+            (self.target / package / "test_shared.py").write_text(PASSING)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "two passing shared tests")
+        self.red_check(log="FAIL: test_x (first.test_shared.Case.test_x)\n"
+                       "FAIL: test_x (second.test_shared.Case.test_x)")
+        self.loop(Commit("a failing test", path="first/test_shared.py",
+                         body=FAILING),
+                  APPROVE, Idle(""), Commit("fix: the unit failure"),
+                  provider=self.provider())
+        self.assertEqual(self.reruns(), [])
+        ((payload,),) = self.read("SELECT payload FROM runEvents"
+                                  " WHERE kind = 'check_rerun_skipped'")
+        self.assertEqual(json.loads(payload)["reproduced"],
+                         ["first.test_shared.Case.test_x"])
 
 
 if __name__ == "__main__":
