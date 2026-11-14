@@ -812,6 +812,29 @@ class RetireLoopTests(TrimFixture):
             {"tests/test_old.py": OLD, "tests/test_new.py": "import unittest\n"}))
         self.assert_reverted("not candidates: tests/test_new.py::test_it")
 
+    def test_a_retire_commit_cutting_a_protected_tests_assertion_is_reverted(self):
+        checked = COPY.replace("(True)\n\n    def test_dropped",
+                               "(True)\n        self.assertEqual(1, 1)\n\n"
+                               "    def test_dropped")
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+                  "protects nothing", {"tests/test_copy.py": unittest_module(
+                      "CopyTests", "test_kept")}),
+            cited=["tests/test_copy.py::CopyTests::test_kept"],
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": checked}),))
+        self.assert_reverted("deleted lines inside tests it keeps: "
+                             "tests/test_copy.py::test_kept")
+
+    def test_a_retire_commit_adding_a_statement_after_an_import_is_reverted(self):
+        self.retired(Files(
+            f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+            "protects nothing", {"tests/test_copy.py": "import os; "
+                                 "os.environ['RETIRED'] = '1'\n"
+                                 + unittest_module("CopyTests", "test_kept")}))
+        self.assert_reverted("not an import in tests/test_copy.py")
+
     def test_a_test_the_approving_review_cited_is_protected(self):
         fake = self.retired(
             Idle("every candidate passes the gate"),

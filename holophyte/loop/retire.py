@@ -1,7 +1,10 @@
 """The retire step: after approval, one turn drops run-added tests the gate fails."""
+import ast
 import json
+import re
 import subprocess
 from functools import partial
+from pathlib import PurePosixPath
 
 import store
 import store.run_reads
@@ -197,6 +200,13 @@ def _unsound(wt, base, sha, ticket, candidates, green):
     if outside:
         reasons.append("the commit removed tests that are not candidates: "
                        + ", ".join(outside))
+    cut = [owner for path in changed if _is_test(path)
+           for owner in _cut_tests(wt, sha, head, path, {
+               test.partition("::")[2] for test in removed
+               if test in candidates and test.startswith(f"{path}::")})]
+    if cut:
+        reasons.append("the commit deleted lines inside tests it keeps: "
+                       + ", ".join(cut))
     unexplained = [test for test in removed
                    if test not in _reasons(wt, head, removed)]
     if unexplained:
@@ -222,14 +232,101 @@ def _shape(wt, sha):
     return None
 
 
-def _adds_non_import(wt, sha, head, path):
-    diff = subprocess.run(
+def _diff(wt, sha, head, path):
+    return subprocess.run(
         ["git", "--literal-pathspecs", "diff", "--no-renames", "--no-textconv",
          "--no-ext-diff", "--text", "-U0", sha, head, "--", path],
         cwd=wt, capture_output=True, check=True).stdout.decode(errors="replace")
-    hunks = diff.partition("\n@@")[2]
-    return any(not line[1:].strip().startswith(("import ", "from "))
+
+
+def _adds_non_import(wt, sha, head, path):
+    hunks = _diff(wt, sha, head, path).partition("\n@@")[2]
+    return any(not _is_import(line[1:], PurePosixPath(path).suffix)
                for line in hunks.splitlines() if line.startswith("+"))
+
+
+def _is_import(line, suffix):
+    if suffix != ".py":
+        return (line.strip().startswith(("import ", "from "))
+                and ";" not in line.strip().rstrip(";"))
+    try:
+        body = ast.parse(line.strip()).body
+    except (SyntaxError, ValueError):
+        return False
+    return bool(body) and all(isinstance(node, (ast.Import, ast.ImportFrom))
+                              for node in body)
+
+
+def _deleted_hunks(wt, sha, head, path):
+    hunks = []
+    for line in _diff(wt, sha, head, path).splitlines():
+        start = re.match(r"@@ -(\d+)", line)
+        if start:
+            hunks.append([])
+            number = int(start[1])
+        elif hunks and line.startswith("-"):
+            hunks[-1].append((number, line[1:]))
+            number += 1
+    return [[(number, text) for number, text in hunk
+             if text.strip() and not text.strip().startswith("#")]
+            for hunk in hunks]
+
+
+def _cut_tests(wt, sha, head, path, gone):
+    hunks = [hunk for hunk in _deleted_hunks(wt, sha, head, path) if hunk]
+    if not hunks:
+        return []
+    tree, text = _tree(wt, sha, path)
+    if tree is None:
+        return [f"{path}:{hunk[0][0]}" for hunk in hunks
+                if not any(name in line for name in gone for _, line in hunk)]
+    deleted = {number for hunk in hunks for number, _ in hunk}
+    kept = {number for number, line in enumerate(text.splitlines(), 1)
+            if line.strip() and not line.strip().startswith("#")} - deleted
+    owners = (_owner(tree, number, kept, gone) for number in sorted(deleted))
+    return sorted({f"{path}::{owner}" for owner in owners if owner})
+
+
+def _tree(wt, sha, path):
+    shown = subprocess.run(["git", "show", f"{sha}:{path}"], cwd=wt,
+                           capture_output=True)
+    text = shown.stdout.decode(errors="replace")
+    if PurePosixPath(path).suffix != ".py" or shown.returncode:
+        return None, text
+    try:
+        return ast.parse(text), text
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None, text
+
+
+def _owner(tree, number, kept, gone):
+    test = _innermost(tree, number, _is_test_def)
+    if test:
+        whole = test.name in gone and kept.isdisjoint(_span(test))
+        return None if whole else test.name
+    cls = _innermost(tree, number, lambda node: isinstance(node, ast.ClassDef))
+    if cls is None or all(node.name in gone for node in cls.body
+                          if _is_test_def(node)):
+        return None
+    helper = _innermost(cls, number, lambda node: isinstance(
+        node, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    return None if helper and kept.isdisjoint(_span(helper)) else cls.name
+
+
+def _is_test_def(node):
+    return (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test"))
+
+
+def _span(node):
+    start = min([node.lineno, *(dec.lineno for dec in node.decorator_list)])
+    return range(start, node.end_lineno + 1)
+
+
+def _innermost(tree, number, kind):
+    found = [node for node in ast.walk(tree) if kind(node)
+             and number in _span(node)]
+    return max(found, key=lambda node: _span(node).start, default=None)
 
 
 def _head(wt):
