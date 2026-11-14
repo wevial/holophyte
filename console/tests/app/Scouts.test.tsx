@@ -170,6 +170,19 @@ test("a row reads its state, title not ask, kind, routes, helper progress and ti
   expect([readRow(24).state, readRow(23).state]).toEqual(["done", "stopped"]);
 });
 
+test("a failed row shows at most 160 characters of its reason, the whole line in its tooltip", async () => {
+  const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(120)}`.slice(0, 5000);
+  const short = "helper route luna is down: probe failed.";
+  await mount("#/scouts?project=demo", scoutFetch({ demo: [scout(41, "failed", 1, { reason: long }), scout(40, "failed", 2, { reason: short })] }).fetch);
+  const cut = list().querySelector('[data-scout="41"] [data-reason]')!;
+  expect(long).toHaveLength(5000);
+  expect(cut.textContent).toHaveLength(160);
+  expect(cut.textContent).toBe(`${long.slice(0, 159)}…`);
+  expect(cut.getAttribute("title")).toBe(long);
+  expect(readRow(40).reason).toBe(short);
+  expect(readRow(40).text).not.toContain("…");
+});
+
 test("a wide list row reads its title, then one mono line of kind, time taken, start and what it found, to file in the need colour", async () => {
   const counts = { findings: 0, actions: 0, filed: 0, to_file: 0 };
   const started = new Date(2026, 9, 24, 2, 28).getTime();

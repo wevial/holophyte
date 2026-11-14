@@ -195,6 +195,12 @@ interface OutcomePart {
 /** What a scout found, as the wide list's row reads it: its counts, its helpers back before a report, or why it failed. */
 export type ScoutOutcome = { kind: "counts"; parts: OutcomePart[] } | { kind: "back"; text: string } | { kind: "failed"; text: string };
 
+const REASON_CAP = 160;
+
+export function cappedReason(line: string): string {
+  return line.length > REASON_CAP ? `${line.slice(0, REASON_CAP - 1)}…` : line;
+}
+
 export function scoutOutcome(row: ScoutRow): ScoutOutcome {
   if (row.phase === "failed") return { kind: "failed", text: firstLine(row.reason) };
   if (row.phase !== "done" && row.findings === 0 && row.actions === 0 && row.tasks_total > 0) return { kind: "back", text: `${row.tasks_done} of ${row.tasks_total} back` };

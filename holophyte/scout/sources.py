@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from holophyte.agents.review_workspace import scratch_git_environment
+from holophyte.files import copy_tree
 from holophyte.loop.gates import sh
 
 CLONE_TIMEOUT_S = 600
@@ -96,8 +97,8 @@ def place_sources(checkout, fetched):
             raise SourceUnfetched(
                 f"source {source.name}: the checkout already holds "
                 f"{source.name}")
-        shutil.copytree(source.path, target, symlinks=True,
-                        ignore=top_git(str(source.path)))
+        copy_tree(source.path, target, symlinks=True,
+                  ignore=top_git(str(source.path)))
     git_dir = Path(sh(["git", "rev-parse", "--absolute-git-dir"],
                       cwd=checkout, env=env))
     common = Path(sh(["git", "rev-parse", "--path-format=absolute",

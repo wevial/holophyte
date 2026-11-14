@@ -11,6 +11,7 @@ import { firstLine } from "../history";
 import type { ScopeSearch } from "../scope";
 import { SCOUT_DOTS, scoutPage } from "../scout";
 import {
+  cappedReason,
   countScouts,
   keepList,
   scoutGroups,
@@ -55,7 +56,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
         <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span data-cell="title" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
           {row.title}
-          {reason && <span data-reason className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{reason}</span>}
+          {reason && <span data-reason title={reason} className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{cappedReason(reason)}</span>}
         </span>
         <span className={`col-start-2 flex flex-wrap ${MONO} min-[720px]:contents`}>
           <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>

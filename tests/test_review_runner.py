@@ -156,6 +156,49 @@ class ReviewerBoundaryTests(unittest.TestCase):
                     self.assertIn(path, str(e.exception))
                     self.assertIn("carry", str(e.exception))
 
+    @unittest.skipIf(os.geteuid() == 0, "root reads files whatever their mode")
+    def test_an_unreadable_carry_names_its_directory_and_count_not_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, base, candidate = self._worktree_with_ignored_install(root)
+            installed = source / "console" / "node_modules" / "dep"
+            locked = [installed / f"locked-{n}.js" for n in range(3)]
+            for path in locked:
+                path.write_text("secret\n")
+                path.chmod(0o000)
+            stage = root / "stage"
+
+            with self.assertRaises(OSError) as e:
+                review_runner.stage_candidate(
+                    source, stage, base, candidate,
+                    carry=["console/node_modules"])
+
+            message = str(e.exception)
+            self.assertTrue(message.startswith("copying node_modules "), message)
+            self.assertIn("failed for 3 files", message)
+            for path in locked:
+                staged = stage / path.relative_to(source)
+                self.assertNotIn(path.name, message)
+                self.assertNotIn(str(staged), message)
+
+    def test_a_named_pipe_in_a_carry_is_reported_without_its_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, base, candidate = self._worktree_with_ignored_install(root)
+            pipe = source / "console" / "node_modules" / "dep" / "events.pipe"
+            os.mkfifo(pipe)
+
+            with self.assertRaises(OSError) as e:
+                review_runner.stage_candidate(
+                    source, root / "stage", base, candidate,
+                    carry=["console/node_modules"])
+
+            message = str(e.exception)
+            self.assertTrue(message.startswith(
+                "copying node_modules failed for 1 files: "), message)
+            self.assertIn("named pipe", message)
+            self.assertNotIn(pipe.name, message)
+
     def test_container_is_hardened_and_mounts_only_allowlisted_runtime(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
