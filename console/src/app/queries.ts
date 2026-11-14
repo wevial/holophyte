@@ -223,12 +223,12 @@ export function useTicketSearch(hosts: HostRecord<PollBodies>[], text: string, d
 }
 
 /** One `/search` hit and the host whose daemon answered it. */
-export interface HostHit<R, T> {
+interface HostHit<R, T> {
   host: R;
   hit: T;
 }
 
-export interface SearchAll<R> {
+interface SearchAll<R> {
   tickets: HostHit<R, SearchTicket>[];
   runs: HostHit<R, SearchRun>[];
   scouts: HostHit<R, SearchScout>[];

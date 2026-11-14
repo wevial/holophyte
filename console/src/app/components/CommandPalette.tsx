@@ -161,7 +161,7 @@ function useActions(project: string | undefined) {
   };
 }
 
-const contains = (text: string, query: string) => text.toLowerCase().includes(query.trim().toLowerCase());
+const contains = (text: string, query: string) => text.toLowerCase().includes(query.toLowerCase());
 
 function useDebounced(text: string): string {
   const [settled, setSettled] = useState(text);
@@ -435,11 +435,10 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
     },
   });
 
-  const firstKey = keyed[0]?.value ?? null;
   const shownKeys = keyed.map(({ value }) => value).join("\n");
   useEffect(() => {
     handle.api.listbox.move("first");
-  }, [shownKeys, firstKey, handle.api.listbox]);
+  }, [shownKeys, handle.api.listbox]);
 
   let at = 0;
   return usePart(

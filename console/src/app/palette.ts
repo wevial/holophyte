@@ -4,7 +4,7 @@ import { scoutState } from "./scouts";
 import { STATES, stateOf, type State } from "./state";
 
 /** Where a palette entry goes when chosen. */
-export type PaletteGo =
+type PaletteGo =
   | { kind: "page"; to: PagePath; q?: string }
   | { kind: "ticket"; project: string; key: string }
   | { kind: "run"; project: string; run: number }
@@ -44,7 +44,7 @@ export const PAGES = [
   { to: "/settings/appearance", label: "Appearance" },
 ] as const;
 
-export type PagePath = (typeof PAGES)[number]["to"];
+type PagePath = (typeof PAGES)[number]["to"];
 
 export type Chip = ">" | "#" | "@";
 
@@ -59,11 +59,11 @@ export function takeChip(chip: Chip | null, text: string): { chip: Chip | null; 
 
 const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
 
-export const isTicketKey = (text: string) => TICKET_KEY.test(text.trim());
+export const isTicketKey = (text: string) => TICKET_KEY.test(text);
 
 /** `text` split around each case-blind occurrence of `query`, the matches flagged. */
 export function marks(text: string, query: string): { text: string; match: boolean }[] {
-  const needle = query.trim().toLowerCase();
+  const needle = query.toLowerCase();
   if (needle === "") return [{ text, match: false }];
   const spans: { text: string; match: boolean }[] = [];
   const lower = text.toLowerCase();
@@ -77,7 +77,7 @@ export function marks(text: string, query: string): { text: string; match: boole
   return spans;
 }
 
-export const RECENT_KEY = "holophyte.palette.recent";
+const RECENT_KEY = "holophyte.palette.recent";
 const RECENT_MAX = 5;
 
 let kept: PaletteEntry[] = [];
