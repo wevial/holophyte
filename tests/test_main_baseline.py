@@ -420,6 +420,21 @@ class BaselineRuns(unittest.TestCase):
         self.assertNotIn("unattributed", once)
         self.assertIn("test_value.py", once["output"])
 
+    def test_a_one_time_file_sharing_a_durable_tests_name_runs_its_own_line(self):
+        self.commit({"tests/test_app.py": TRUTHY_APP})
+        self.once("new")
+        same = ".holophyte-witness/test_app.py"
+        (self.wt / ONCE_PATH).rename(self.wt / same)
+        line = "python3 -m unittest discover -s .holophyte-witness -p 'test_app.py'"
+        _, _, (durable, once) = self.baselines(
+            [f"`tests/test_app.py` reads new (witnessed once: `{same}`)."],
+            verify=f"{VERIFY}\n{line}")
+        self.assertTrue(durable["passed"])
+        self.assertEqual(once["files"], [same])
+        self.assertEqual(once["command"], line)
+        self.assertFalse(once["passed"])
+        self.assertIsNone(main_baseline.gap(once))
+
     def test_a_one_time_base_run_is_reused_until_the_worktree_file_changes(self):
         self.once("new")
         session = self.run_store([ONCE])

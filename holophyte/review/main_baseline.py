@@ -61,6 +61,9 @@ def wanted(pairs):
 
 
 def _names(line, path):
+    if (witness_once.is_once(path)
+            and witness_once.DIRECTORY.lstrip(".") not in line):
+        return False
     stem = Path(path).name.rsplit(".", 1)[0]
     spellings = ((path, r"[\w-]"),
                  (path.removesuffix(".py").replace("/", "."), r"[\w-]"),
