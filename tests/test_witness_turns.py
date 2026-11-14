@@ -530,6 +530,21 @@ class WitnessedOnce(RunningRepo):
                          "did not run: it stopped at `test -f label.py`, "
                          f"before the line that names {ONCE_PATH}")
 
+    def test_a_one_time_file_beside_a_durable_test_gets_its_own_base_run(self):
+        both = ("`tests/test_label.py` checks the label (witnessed once: "
+                f"`{ONCE_PATH}`).")
+        self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: RUNS,
+                    "tests/test_label.py": ONCE_TEST}),
+            Idle(), APPROVE, criteria=(both,),
+            verify="python3 -m unittest discover -s tests -p 'test_label.py'"
+                   f"\n{ONCE_VERIFY}")
+
+        (payload,) = self.read("SELECT payload FROM runEvents"
+                               " WHERE kind = 'witness_once'")
+        (entry,) = json.loads(payload[0])["criteria"]
+        self.assertEqual(entry["base_run"], "passed")
+
     def test_both_briefs_keep_the_one_time_test_out_of_commits(self):
         fake = self.run_task(WritesOnce(), APPROVE,
                              criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)

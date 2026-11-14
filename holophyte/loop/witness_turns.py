@@ -114,12 +114,13 @@ def _record_once(conn, run_id, wt, base_sha, sha, ok, criteria, entries,
     named = witness_precheck.named_files([text for _, text in pairs])
     checks = {(entry["criterion"], check["file"]): check
               for entry in entries for check in entry["checks"]}
-    runs = {result["criterion"]: result for result in results}
+    runs = {(result["criterion"], path): result for result in results
+            for path in result["files"]}
     found = [{"criterion": n, "file": path,
-              "blob": runs.get(n, {}).get("blobs", {}).get(path)
+              "blob": runs.get((n, path), {}).get("blobs", {}).get(path)
               or main_baseline.once_blob(wt, path),
               "candidate": _candidate(ok, checks.get((n, path))),
-              "base_run": _base_run(runs.get(n))}
+              "base_run": _base_run(runs.get((n, path)))}
              for (n, _), files in zip(pairs, named) for path in files
              if witness_once.is_once(path)]
     if not found:

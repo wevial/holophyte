@@ -144,8 +144,10 @@ def _complete(text):
                           capture_output=True).returncode == 0
 
 
-def lines_for(verify_cmd, files):
-    commands = _commands(verify_cmd)
+def lines_for(verify_cmd, files, skip=()):
+    commands = [command for command in _commands(verify_cmd)
+                if any(_names(command, path) for path in files)
+                or not any(_names(command, path) for path in skip)]
     for end, command in enumerate(commands, 1):
         if any(_names(command, path) for path in files):
             return commands[:end]
@@ -273,14 +275,15 @@ def _run(project, conn, run_id, beat_s, wt, base, sha, blobs, command):
 
 
 def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
-    n, form, named = want
+    n, form, named, skip = want
     blobs = _blobs(wt, sha, named)
-    command = "\n".join(lines_for(verify_cmd, list(blobs)))
+    command = "\n".join(lines_for(verify_cmd, list(blobs), skip))
     key = {"base": base, "files": list(blobs), "blobs": blobs,
            "command": command}
     result = dict(key, criterion=n, form=form, sha=sha)
     if not blobs:
-        return dict(result, ran=False, reason=f"none of {', '.join(named)} "
+        return dict(result, files=named, ran=False,
+                    reason=f"none of {', '.join(named)} "
                     f"exists at the candidate {sha[:12]}")
     reused = _recorded(conn, run_id, key)
     if reused is not None:
@@ -299,20 +302,31 @@ def _baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd, want):
     return result
 
 
+def _apart(found):
+    for n, form, files in found:
+        once = [path for path in files if witness_once.is_once(path)]
+        durable = [path for path in files if path not in once]
+        if durable:
+            yield n, form, durable, ()
+        if once:
+            yield n, form, once, durable
+
+
 def baselines(project, conn, run_id, beat_s, wt, frozen, sha, criteria,
               verify_cmd, ok):
     """Per criterion naming a test file its baseline result, reused when the
     base, the command and the named files' blobs match a recorded run."""
     if conn is None or run_id is None:
         return []
-    found = wanted(criterion_ids.numbered(conn, run_id, criteria))
+    found = list(_apart(wanted(criterion_ids.numbered(conn, run_id,
+                                                      criteria))))
     if not found:
         return []
     base = review_base(wt, frozen, sha)
     if not ok:
         return [{"criterion": n, "base": base, "files": files, "sha": sha,
                  "form": form, "ran": False, "reason": VERIFY_FAILED}
-                for n, form, files in found]
+                for n, form, files, _ in found]
     return [_baseline(project, conn, run_id, beat_s, wt, base, sha, verify_cmd,
                       want) for want in found]
 

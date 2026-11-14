@@ -408,6 +408,18 @@ class BaselineRuns(unittest.TestCase):
                          f"criterion C1's named test passes at the merge base "
                          f"{self.base[:12]} without the change")
 
+    def test_a_one_time_file_named_beside_a_durable_test_runs_on_its_own(self):
+        self.once("new")
+        both = f"`tests/test_app.py` reads new (witnessed once: `{ONCE_PATH}`)."
+        _, _, (durable, once) = self.baselines(
+            [both], verify=f"{VERIFY}\n{ONCE_VERIFY}")
+        self.assertEqual(durable["files"], ["tests/test_app.py"])
+        self.assertEqual(once["files"], [ONCE_PATH])
+        self.assertEqual(once["command"], ONCE_VERIFY)
+        self.assertFalse(once["passed"])
+        self.assertNotIn("unattributed", once)
+        self.assertIn("test_value.py", once["output"])
+
     def test_a_one_time_base_run_is_reused_until_the_worktree_file_changes(self):
         self.once("new")
         session = self.run_store([ONCE])
