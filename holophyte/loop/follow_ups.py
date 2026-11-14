@@ -106,6 +106,14 @@ def capture(conn, run_id, wt, sha):
         print(f"[holo2] follow-ups not captured: {e}")
 
 
+def capture_review(conn, run_id, sha, lines):
+    for finding in parse("\n".join(lines)):
+        store.follow_ups.record_follow_up(
+            conn, run_id, sha, finding.kind, finding.kind_given, finding.text,
+            fingerprint(finding.text, finding.path), path=finding.path,
+            line=finding.line)
+
+
 def pending_prompt(conn, run_id):
     rows = _pending_features(conn, run_id)
     if not rows:

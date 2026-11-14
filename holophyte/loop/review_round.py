@@ -14,6 +14,7 @@ from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
 from holophyte.loop import contradiction, witness_turns
 from holophyte.loop.claim import merge_conflicts
+from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
@@ -38,8 +39,12 @@ from holophyte.redact import safe_print as print
 from holophyte.review import adversary, consolidate
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
+    CORNER_CASE_RULE,
+    ONE_PASS_RULE,
     criteria_brief,
+    earlier_rounds_brief,
     evidence_brief,
+    follow_up_place,
     scope_brief,
     scope_files,
     stale_approval_brief,
@@ -53,7 +58,9 @@ from holophyte.review.reply_parsing import (
     _review_reply,
     cited_approval,
     criteria_findings,
+    follow_up_lines,
     stale_approvals,
+    without_follow_ups,
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
@@ -129,7 +136,7 @@ def _evidence_brief(project, wt, task_id, ticket):
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
-                 witness=""):
+                 witness="", earlier=""):
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
         f"{review_refs(run_id)[0]} as the frozen base and "
@@ -142,6 +149,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + criteria_brief(criteria)
         + witness
         + stale_approval_brief(stale)
+        + earlier
         + verified_brief(mode)
         + tests_brief(wt)
         + scope_brief(wt, ticket, base_sha, sha)
@@ -151,7 +159,9 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         "line:\n"
         "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
         "If REQUEST_CHANGES, list only concrete blockers, each as one list "
-        f"item, {FINDING_FORMAT}.")
+        f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
+        "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
+        f"before {follow_up_place(criteria)}.")
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
@@ -166,7 +176,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
-                          witness=witness)
+                          witness=witness,
+                          earlier=earlier_rounds_brief(conn, run_id, wt, rnd,
+                                                       criteria))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,
@@ -185,6 +197,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
                  adversary=blocking + red + private)
+    if decision == "REQUEST_CHANGES" and conn is not None:
+        capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
         reason = "reviewer returned no verdict line twice"
         print(f"[holo2] round {rnd}: {reason}")
@@ -374,7 +388,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         spec = capture_spec_digest(project, wt, task_id, states)
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
-            without_refuted(verdict), sha, timed=_timed, check_cap=_check_run_cap,
+            without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
+            check_cap=_check_run_cap,
             criteria=numbered(conn, run_id, criteria))
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"

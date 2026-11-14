@@ -16,7 +16,7 @@ from holophyte.config.review_settings import review_config
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import safe_print as print
 from holophyte.review.blast_radius import continued_runs, high_path
-from holophyte.review.briefs import _changed_files
+from holophyte.review.briefs import CORNER_CASE_RULE, _changed_files
 from holophyte.review.reply_parsing import (
     BLOCK_BREAK_RE,
     FINDING_FORMAT,
@@ -187,7 +187,8 @@ def brief(plan, ticket, run_id):
         "EVIDENCE: concern — give the scenario and why it cannot be shown "
         "yet.\n"
         "Reproduced and traced findings block the change; concerns are "
-        "recorded and do not. After the findings, list each review subagent "
+        f"recorded and do not. {CORNER_CASE_RULE} Report such a case at "
+        "`EVIDENCE: concern`. After the findings, list each review subagent "
         "you started on one line, `SUBAGENT: MODEL — SURFACE`. End "
         f"your reply with exactly one line:\n{DONE}")
 
