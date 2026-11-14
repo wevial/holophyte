@@ -261,15 +261,14 @@ export function AppearanceHeader() {
 
 export function AppearanceTab() {
   const { resolvedTheme, lightPick, darkPick } = useTheme();
-  const [chosen, setChosen] = useState<EditorSubject | null>(null);
-  const subject = chosen ?? { mode: resolvedTheme, pick: resolvedTheme === "dark" ? darkPick : lightPick };
+  const [subject, setSubject] = useState<EditorSubject>(() => ({ mode: resolvedTheme, pick: resolvedTheme === "dark" ? darkPick : lightPick }));
   const { textSize, setTextSize } = useTextSize();
   const { grain, setGrain } = useGrain();
   const { hazeStrength, setHazeStrength } = useHazeStrength();
   return (
     <div>
-      <ThemeRow mode="light" onSubject={setChosen} />
-      <ThemeRow mode="dark" onSubject={setChosen} />
+      <ThemeRow mode="light" onSubject={setSubject} />
+      <ThemeRow mode="dark" onSubject={setSubject} />
       <EffectRow />
       <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} pillFirst />
       <SliderRow id="appearance-grain" icon={<GrainGlyph />} title="Grain" label="Grain" value={grain} range={STRENGTHS} onChange={setGrain} />
@@ -278,7 +277,7 @@ export function AppearanceTab() {
         <FontRow />
         <DensityRow />
       </div>
-      <ThemeEditor subject={subject} onSubject={setChosen} />
+      <ThemeEditor subject={subject} onSubject={setSubject} />
     </div>
   );
 }

@@ -61,6 +61,7 @@ function ColourSquare({ label, value, maxChroma, disabled, onChange }: {
 }) {
   const area = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const thumb = useRef<HTMLDivElement>(null);
   useEffect(() => drawSquare(canvas.current, value.h, maxChroma), [value.h, maxChroma]);
   const fromPointer = (event: PointerEvent<HTMLDivElement>) => {
     const rect = area.current!.getBoundingClientRect();
@@ -76,10 +77,10 @@ function ColourSquare({ label, value, maxChroma, disabled, onChange }: {
   };
   return (
     <div ref={area} className={`relative h-[136px] w-full touch-none overflow-hidden rounded-card ${disabled ? "cursor-not-allowed opacity-60" : "cursor-crosshair"}`}
-      onPointerDown={(event) => { if (disabled) return; event.currentTarget.setPointerCapture?.(event.pointerId); fromPointer(event); }}
+      onPointerDown={(event) => { if (disabled) return; event.currentTarget.setPointerCapture?.(event.pointerId); thumb.current?.focus(); fromPointer(event); }}
       onPointerMove={(event) => { if (!disabled && event.currentTarget.hasPointerCapture?.(event.pointerId)) fromPointer(event); }}>
       <canvas ref={canvas} width={64} height={48} aria-hidden="true" className="absolute inset-0 size-full" />
-      <div role="slider" aria-label={label} tabIndex={disabled ? -1 : 0} aria-disabled={disabled || undefined}
+      <div ref={thumb} role="slider" aria-label={label} tabIndex={disabled ? -1 : 0} aria-disabled={disabled || undefined}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value.l * 100)} aria-valuetext={`Lightness ${value.l.toFixed(2)}, chroma ${value.c.toFixed(3)}`}
         onKeyDown={onKeyDown}
         style={{ left: `${(value.c / maxChroma) * 100}%`, top: `${(1 - value.l) * 100}%`, background: oklchToHex(value) }}
@@ -156,13 +157,13 @@ function Confirming({ question, action, variant, onConfirm, onCancel }: {
   );
 }
 
-function Actions({ dirty, saved, onSave, onReset, onDelete }: { dirty: boolean; saved: boolean; onSave: () => void; onReset: () => void; onDelete: () => void }) {
+function Actions({ dirty, saved, named, onSave, onReset, onDelete }: { dirty: boolean; saved: boolean; named: boolean; onSave: () => void; onReset: () => void; onDelete: () => void }) {
   const [asking, setAsking] = useState<"reset" | "delete" | null>(null);
   if (asking === "reset") return <Confirming question="Reset?" action="Reset" variant="primary" onConfirm={() => { onReset(); setAsking(null); }} onCancel={() => setAsking(null)} />;
   if (asking === "delete") return <Confirming question="Delete?" action="Delete" variant="danger-fill" onConfirm={onDelete} onCancel={() => setAsking(null)} />;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Btn variant="primary" disabled={saved && !dirty} onClick={onSave}>{saved && !dirty ? "Saved" : "Save"}</Btn>
+      <Btn variant="primary" disabled={(saved && !dirty) || !named} onClick={onSave}>{saved && !dirty ? "Saved" : "Save"}</Btn>
       <Btn disabled={!dirty} onClick={() => setAsking("reset")}>Reset</Btn>
       {saved && <Btn variant="danger" onClick={() => setAsking("delete")}>Delete</Btn>}
     </div>
@@ -228,7 +229,7 @@ function ContrastFlags({ derived }: { derived: DerivedTheme }) {
   );
 }
 
-function Editor({ initial, saved, readOnly, onSubject }: { initial: CustomTheme | ThemeSpec; saved: CustomTheme | null; readOnly: boolean; onSubject: (subject: EditorSubject | null) => void }) {
+function Editor({ initial, saved, readOnly, onSubject }: { initial: CustomTheme | ThemeSpec; saved: CustomTheme | null; readOnly: boolean; onSubject: (subject: EditorSubject) => void }) {
   const { saveCustomTheme, deleteCustomTheme } = useCustomThemes();
   const [theme, setTheme] = useState(initial);
   const baseline = saved ?? initial;
@@ -264,8 +265,8 @@ function Editor({ initial, saved, readOnly, onSubject }: { initial: CustomTheme 
             <span className="text-[13px] text-ink-3">Built-in themes are read-only.</span>
           </div>
         ) : (
-          <Actions dirty={dirty} saved={saved !== null} onSave={save} onReset={() => setTheme(baseline)}
-            onDelete={() => { deleteCustomTheme(saved!.id); onSubject(null); }} />
+          <Actions dirty={dirty} saved={saved !== null} named={theme.name.trim() !== ""} onSave={save} onReset={() => setTheme(baseline)}
+            onDelete={() => { deleteCustomTheme(saved!.id); onSubject({ mode: deriveTheme(saved!).mode, pick: "lotus" }); }} />
         )}
       </div>
       <div className="flex min-w-0 flex-col gap-4">
@@ -276,7 +277,7 @@ function Editor({ initial, saved, readOnly, onSubject }: { initial: CustomTheme 
   );
 }
 
-export function ThemeEditor({ subject, onSubject }: { subject: EditorSubject; onSubject: (subject: EditorSubject | null) => void }) {
+export function ThemeEditor({ subject, onSubject }: { subject: EditorSubject; onSubject: (subject: EditorSubject) => void }) {
   const { customThemes } = useCustomThemes();
   const shown = subjectTheme(subject, customThemes);
   if (!shown) return null;
