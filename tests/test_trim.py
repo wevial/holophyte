@@ -638,7 +638,7 @@ def unittest_module(cls, *names, helper=False):
 
 
 class Files:
-    """One turn that writes or removes several files in a single commit."""
+    """One turn that writes several files in a single commit."""
 
     role = "implement"
 

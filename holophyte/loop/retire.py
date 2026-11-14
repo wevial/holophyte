@@ -87,8 +87,7 @@ def retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
     out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min,
                         goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
-    commits = _commits(wt, sha)
-    if not reason and not commits:
+    if not reason and not _commits(wt, sha) and _head(wt) == sha:
         record("nothing", None, out=out)
         return sha
     green = partial(_green, project, conn, run_id, beat_s, wt, verify_cmd,
@@ -98,7 +97,7 @@ def retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
         _land(wt, sha, untracked)
         record("reverted", reason, out=out)
         return sha
-    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    head = _head(wt)
     record("kept", None, retired=_retired(wt, sha, head), final=head, out=out)
     return head
 
@@ -117,8 +116,9 @@ def _run_added(wt, base, sha):
     added = []
     for old, new in _changed_pairs(wt, base, sha):
         if new and _is_test(new):
-            gained = _test_ids(wt, sha, new) - _test_ids(wt, base, old)
-            added += [f"{new}::{name}" for name in sorted(gained)]
+            held = _test_ids(wt, base, old)
+            added += [f"{new}::{name}" for name in sorted(_test_ids(wt, sha, new))
+                      if name not in held]
     return added
 
 
@@ -132,7 +132,6 @@ def _protected(conn, run_id, wt, sha, criteria, added):
         path, _, name = test.partition("::")
         why = ("in a criterion-named file" if path in files
                else "cited by the approving review" if test in cited
-               or (path, None) in cited
                else "in a story witness file" if path in witnessed
                else "held at the reproduction commit"
                if held and _test_ids(wt, held, path)[name] else None)
@@ -152,7 +151,7 @@ def _cited(conn, run_id):
             continue
         for ref in test_references(entry.get("note") or ""):
             path, _, name = tuple(ref)
-            cited.add(f"{path}::{name}" if name else (path, None))
+            cited.add(f"{path}::{name}")
         for resolved in entry.get("resolved") or ():
             path, *_, name = resolved["as"].split("::")
             cited.add(f"{path}::{name}")
@@ -180,9 +179,8 @@ def _unsound(wt, base, sha, ticket, candidates, green):
     shape = _shape(wt, sha)
     if shape:
         return shape
-    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    changed = sh(["git", "diff", "--name-only", "--no-renames", sha, head],
-                 cwd=wt).splitlines()
+    head = _head(wt)
+    changed = _changed(wt, sha, head)
     removed = _removed(wt, sha, head, changed)
     reasons = [f"the commit changed {path}, not a test file"
                for path in changed if not _is_test(path)]
@@ -217,9 +215,18 @@ def _adds_non_import(wt, sha, head, path):
         ["git", "--literal-pathspecs", "diff", "--no-renames", "--no-textconv",
          "--no-ext-diff", "--text", "-U0", sha, head, "--", path],
         cwd=wt, capture_output=True, check=True).stdout.decode(errors="replace")
+    hunks = diff.partition("\n@@")[2]
     return any(not line[1:].strip().startswith(("import ", "from "))
-               for line in diff.splitlines()
-               if line.startswith("+") and not line.startswith("+++"))
+               for line in hunks.splitlines() if line.startswith("+"))
+
+
+def _head(wt):
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt)
+
+
+def _changed(wt, sha, head):
+    return [path for path in sh(["git", "diff", "--name-only", "--no-renames",
+                                 "-z", sha, head], cwd=wt).split("\0") if path]
 
 
 def _removed(wt, sha, head, changed):
@@ -235,10 +242,8 @@ def _retired(wt, sha, head):
         test, colon, why = line.removeprefix("RETIRED ").partition(": ")
         if line.startswith("RETIRED ") and colon:
             reasons[test.strip()] = why.strip()
-    changed = sh(["git", "diff", "--name-only", "--no-renames", sha, head],
-                 cwd=wt).splitlines()
     return [{"test": test, "reason": reasons.get(test)}
-            for test in _removed(wt, sha, head, changed)]
+            for test in _removed(wt, sha, head, _changed(wt, sha, head))]
 
 
 def _record(project, conn, run_id, outcome, reason, *, candidates, protected,
