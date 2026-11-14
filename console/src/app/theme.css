@@ -1015,6 +1015,11 @@ body {
   [data-text-size],
   [data-text-size] aside[aria-label="Console"] {
     height: calc(100vh / var(--text-scale));
+    min-height: 0;
+  }
+
+  [data-text-floor] .min-\[720px\]\:text-\[11px\] {
+    font-size: max(11px, calc(11px / var(--text-scale)));
   }
 }
 
@@ -1059,10 +1064,12 @@ body {
 
 @layer base {
   main {
+    background-image: var(--grain);
     background-image: linear-gradient(rgb(from var(--canvas) r g b / calc(1 - var(--grain-scale, 1) / 2)), rgb(from var(--canvas) r g b / calc(1 - var(--grain-scale, 1) / 2))), var(--grain), var(--grain);
   }
 
   aside[aria-label="Console"] {
+    background-image: var(--grain-side);
     background-image: linear-gradient(rgb(from var(--side) r g b / calc(1 - var(--grain-scale, 1) / 2)), rgb(from var(--side) r g b / calc(1 - var(--grain-scale, 1) / 2))), var(--grain-side), var(--grain-side);
   }
 

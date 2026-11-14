@@ -22,11 +22,11 @@ export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
 export const FULL = 100;
 
-export function readHeaderEffect(): HeaderEffect {
+export function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
     return localStorage.getItem(EFFECT_KEY) === "none" ? "none" : "haze";
   } catch {
-    return "haze";
+    return fallback;
   }
 }
 
@@ -48,12 +48,12 @@ function writeMotion(motion: boolean): void {
   }
 }
 
-function readPercent(key: string, range: { min: number; max: number; step: number }): number {
+function readPercent(key: string, range: { min: number; max: number; step: number }, fallback = FULL): number {
   try {
     const stored = Number(localStorage.getItem(key) ?? FULL);
     return Number.isInteger(stored) && stored >= range.min && stored <= range.max && stored % range.step === 0 ? stored : FULL;
   } catch {
-    return FULL;
+    return fallback;
   }
 }
 
@@ -73,16 +73,16 @@ function applyScale(property: string) {
   };
 }
 
-export const readGrain = () => readPercent(GRAIN_KEY, STRENGTHS);
-export const readHazeStrength = () => readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
+export const readGrain = (fallback?: number) => readPercent(GRAIN_KEY, STRENGTHS, fallback);
+export const readHazeStrength = (fallback?: number) => readPercent(HAZE_STRENGTH_KEY, STRENGTHS, fallback);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
 
-export function readMotion(): boolean {
+export function readMotion(fallback = true): boolean {
   try {
     return localStorage.getItem(MOTION_KEY) !== "off";
   } catch {
-    return true;
+    return fallback;
   }
 }
 
@@ -160,7 +160,7 @@ const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, writeHeaderEffect, () => {});
 const motionStore = appearanceStore(readMotion, writeMotion, () => {});
-const textSizeStore = appearanceStore(() => readPercent(TEXT_SIZE_KEY, TEXT_SIZES), (value) => writePercent(TEXT_SIZE_KEY, value), () => {});
+const textSizeStore = appearanceStore((fallback?: number) => readPercent(TEXT_SIZE_KEY, TEXT_SIZES, fallback), (value) => writePercent(TEXT_SIZE_KEY, value), () => {});
 const grainStore = appearanceStore(readGrain, (value) => writePercent(GRAIN_KEY, value), (value) => applyGrain(value));
 const hazeStrengthStore = appearanceStore(readHazeStrength, (value) => writePercent(HAZE_STRENGTH_KEY, value), (value) => applyHazeStrength(value));
 
