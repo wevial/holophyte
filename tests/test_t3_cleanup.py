@@ -70,9 +70,7 @@ class FakeMcp(BaseHTTPRequestHandler):
             return
         params = message.get("params") or {}
         if message["method"] == "initialize":
-            result = {"protocolVersion": params["protocolVersion"],
-                      "capabilities": {"tools": {}},
-                      "serverInfo": {"name": "t3", "version": "0.1.9"}}
+            result = {"protocolVersion": params["protocolVersion"]}
         else:
             self.server.calls.append((params["name"], params["arguments"]))
             result = self.server.answer(params["name"])
