@@ -50,10 +50,12 @@ const GrainGlyph = () => <Glyph><path d="M3 3h.01M8 3h.01M13 3h.01M5.5 6h.01M10.
 const FontGlyph = () => <Glyph><path d="M3 13h4M5 13V3h6M5 8h4.5" /></Glyph>;
 const DensityGlyph = () => <Glyph><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></Glyph>;
 
-function Row({ id, icon, title, children, reset }: { id: string; icon: ReactNode; title: string; children: ReactNode; reset?: ReactNode }) {
+function Row({ id, icon, title, children, reset, labelTop = "pt-2" }: {
+  id: string; icon: ReactNode; title: string; children: ReactNode; reset?: ReactNode; labelTop?: string;
+}) {
   return (
-    <div className="grid gap-x-6 gap-y-3 py-4 min-[860px]:grid-cols-[130px_minmax(0,1fr)]">
-      <div className="flex items-center gap-2 self-start">
+    <div className="grid gap-x-3 gap-y-3 py-4 min-[860px]:grid-cols-[84px_minmax(0,1fr)]">
+      <div className={`flex items-center gap-1 self-start ${labelTop}`}>
         <h3 id={id} className="flex min-h-7 items-center gap-2 font-sans text-[14px] font-semibold text-ink">
           <span className="text-ink-2">{icon}</span>{title}
         </h3>
@@ -76,7 +78,7 @@ function ThemeRow({ mode }: { mode: ThemeMode }) {
   const { lightPick, setLightPick, darkPick, setDarkPick } = useTheme();
   const [picked, pick] = mode === "light" ? [lightPick, setLightPick] : [darkPick, setDarkPick];
   return (
-    <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={mode === "light" ? "Light" : "Dark"}>
+    <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={mode === "light" ? "Light" : "Dark"} labelTop="pt-[15px]">
       <div role="group" aria-labelledby={`appearance-${mode}`} className="flex flex-wrap gap-3">
         {PICKS.map((item) => (
           <button key={item.value} type="button" aria-pressed={picked === item.value} onClick={() => pick(item.value)}
@@ -97,7 +99,7 @@ function EffectRow() {
   const { effect, setEffect } = useHeaderEffect();
   const { motion, reduced, setMotion } = useMotion();
   return (
-    <Row id="appearance-header" icon={<WavesGlyph />} title="Header">
+    <Row id="appearance-header" icon={<WavesGlyph />} title="Header" labelTop="pt-1.5">
       <div className="flex flex-wrap items-start gap-3">
         <div role="group" aria-labelledby="appearance-header" className="flex flex-wrap gap-3">
           {EFFECTS.map((item) => {
@@ -127,15 +129,16 @@ function EffectRow() {
   );
 }
 
-function SliderRow({ id, icon, title, label, value, range, onChange }: {
-  id: string; icon: ReactNode; title: string; label: string; value: number; range: typeof STRENGTHS; onChange: (value: number) => void;
+function SliderRow({ id, icon, title, label, value, range, onChange, pillFirst = false }: {
+  id: string; icon: ReactNode; title: string; label: string; value: number; range: typeof STRENGTHS; onChange: (value: number) => void; pillFirst?: boolean;
 }) {
+  const slider = <input type="range" aria-label={label} min={range.min} max={range.max} step={range.step} value={value}
+    onChange={(event) => onChange(Number(event.currentTarget.value))} className={`h-11 min-w-0 accent-act ${pillFirst ? "w-[72px] shrink-0" : "flex-1"}`} />;
+  const pill = <output aria-label={`${label} value`} className={`rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2 ${pillFirst ? "min-w-0 flex-1" : "min-w-[56px]"}`}>{value}%</output>;
   return (
     <Row id={id} icon={icon} title={title} reset={value !== FULL && <RowReset label={`Reset ${label.toLowerCase()}`} onReset={() => onChange(FULL)} />}>
-      <div className="flex max-w-[520px] items-center gap-4">
-        <input type="range" aria-label={label} min={range.min} max={range.max} step={range.step} value={value}
-          onChange={(event) => onChange(Number(event.currentTarget.value))} className="h-11 min-w-0 flex-1 accent-act" />
-        <output aria-label={`${label} value`} className="min-w-[56px] rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2">{value}%</output>
+      <div className={`flex items-center gap-4 ${pillFirst ? "max-w-[460px]" : "max-w-[520px]"}`}>
+        {pillFirst ? <>{pill}{slider}</> : <>{slider}{pill}</>}
       </div>
     </Row>
   );
@@ -210,28 +213,33 @@ function PageReset() {
   );
 }
 
-export function AppearanceTab() {
+export function AppearanceHeader() {
   const { theme, setTheme } = useTheme();
+  return (
+    <div className="ml-auto flex flex-wrap items-center gap-3 self-center">
+      <SegmentedControl<Theme> aria-label="Theme" value={theme} onValueChange={(value) => { if (value) setTheme(value); }} className="inline-flex rounded-button border border-rule bg-paper-2 p-0.5">
+        {SCHEMES.map((item) => (
+          <SegmentedControlItem key={item.value} value={item.value}
+            className="flex min-h-9 items-center gap-1.5 rounded-button px-3 text-[13px] text-ink-3 hover:text-ink data-checked:bg-raised data-checked:text-ink">
+            {item.icon}{item.name}
+          </SegmentedControlItem>
+        ))}
+      </SegmentedControl>
+      <PageReset />
+    </div>
+  );
+}
+
+export function AppearanceTab() {
   const { textSize, setTextSize } = useTextSize();
   const { grain, setGrain } = useGrain();
   const { hazeStrength, setHazeStrength } = useHazeStrength();
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-end gap-3 pb-2">
-        <SegmentedControl<Theme> aria-label="Theme" value={theme} onValueChange={(value) => { if (value) setTheme(value); }} className="inline-flex rounded-button border border-rule bg-paper-2 p-0.5">
-          {SCHEMES.map((item) => (
-            <SegmentedControlItem key={item.value} value={item.value}
-              className="flex min-h-9 items-center gap-1.5 rounded-button px-3 text-[13px] text-ink-3 hover:text-ink data-checked:bg-raised data-checked:text-ink">
-              {item.icon}{item.name}
-            </SegmentedControlItem>
-          ))}
-        </SegmentedControl>
-        <PageReset />
-      </div>
       <ThemeRow mode="light" />
       <ThemeRow mode="dark" />
       <EffectRow />
-      <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} />
+      <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} pillFirst />
       <SliderRow id="appearance-grain" icon={<GrainGlyph />} title="Grain" label="Grain" value={grain} range={STRENGTHS} onChange={setGrain} />
       <SliderRow id="appearance-haze" icon={<WavesGlyph />} title="Haze" label="Haze strength" value={hazeStrength} range={STRENGTHS} onChange={setHazeStrength} />
       <div className="mt-2 border-t border-rule-2">

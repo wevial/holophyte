@@ -32,6 +32,13 @@ const motion = () => screen.getByRole("switch", { name: "Motion" });
 const shell = () => screen.getByRole("main").parentElement!;
 const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.hazeStrength", "holophyte.next.font", "holophyte.next.density"];
 const stored = () => KEYS.filter((key) => localStorage.getItem(key) !== null);
+const storedValues = () => Object.fromEntries(KEYS.map((key) => [key, localStorage.getItem(key)]));
+const controls = () => ({
+  scheme: within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio").filter((radio) => radio.getAttribute("aria-checked") === "true").map((radio) => radio.textContent),
+  light: pressed("Light"), dark: pressed("Dark"), header: pressed("Header"),
+  motion: motion().getAttribute("aria-checked"),
+  sliders: [slider("Text size").value, slider("Grain").value, slider("Haze strength").value],
+});
 
 function reducedMotion(reduced: boolean) {
   return spyOn(window, "matchMedia").mockImplementation((media: string) => ({
@@ -49,7 +56,7 @@ const sidebarPressed = () =>
 beforeAll(() => happyDOM.setURL(`${ORIGIN}/`));
 afterAll(() => happyDOM.setURL("about:blank"));
 function clearRoot() {
-  for (const name of ["data-theme", "data-light", "data-dark", "data-font", "data-density", "style"]) root.removeAttribute(name);
+  for (const name of ["data-theme", "data-light", "data-dark", "data-font", "data-density", "data-text-size", "data-text-floor", "style"]) root.removeAttribute(name);
 }
 
 beforeEach(() => {
@@ -74,7 +81,7 @@ test("with nothing stored, System, Lotus in both rows, Haze and Motion are on an
   expect(screen.getAllByText("100%")).toHaveLength(3);
 });
 
-test("Tide in the Dark row and Dune in the Light row are pressed, stored and resolve the canvas to Tide dark under the Dark scheme", async () => {
+test("Tide in the Dark row and Dune in the Light row are pressed, stored and carried by the document, the canvas resolving to Tide dark under Dark and Dune light under Light", async () => {
   const style = document.createElement("style");
   style.textContent = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text()).replace(/@import[^;]*;/, "");
   try {
@@ -85,9 +92,12 @@ test("Tide in the Dark row and Dune in the Light row are pressed, stored and res
     expect(pressed("Dark")).toEqual(["Tide"]);
     expect(pressed("Light")).toEqual(["Dune"]);
     expect([localStorage.getItem("holophyte.theme.dark"), localStorage.getItem("holophyte.theme.light"), localStorage.getItem("holophyte.theme")]).toEqual(["tide", "dune", "dark"]);
+    expect([root.getAttribute("data-dark"), root.getAttribute("data-light")]).toEqual(["tide", "dune"]);
     document.head.appendChild(style);
     expect(getComputedStyle(root).getPropertyValue("--canvas").trim()).toBe("#0b0e1d");
     expect(sidebarPressed()).toEqual(["Night"]);
+    fireEvent.click(scheme("Light"));
+    expect(getComputedStyle(root).getPropertyValue("--canvas").trim()).toBe("#fcfaf7");
   } finally {
     style.remove();
   }
@@ -115,16 +125,17 @@ test("under prefers-reduced-motion the Motion switch is off and disabled", async
   }
 });
 
-test("text at 110% is stored, zooms the shell by 1.1 and shows the Text reset, which returns 100% and hides", async () => {
+test("text at 110% is stored, zooms the document around the shell by 1.1 and shows the Text reset, which returns 100% and hides", async () => {
   await mount();
   expect(screen.queryByRole("button", { name: "Reset text size" })).toBeNull();
   fireEvent.change(slider("Text size"), { target: { value: "110" } });
   expect(localStorage.getItem("holophyte.textSize")).toBe("110");
-  expect(shell().style.getPropertyValue("zoom")).toBe("1.1");
+  expect(root.contains(shell())).toBe(true);
+  expect(root.style.getPropertyValue("zoom")).toBe("1.1");
   fireEvent.click(screen.getByRole("button", { name: "Reset text size" }));
   expect(slider("Text size").value).toBe("100");
   expect(localStorage.getItem("holophyte.textSize")).toBeNull();
-  expect(shell().style.getPropertyValue("zoom")).toBe("");
+  expect(root.style.getPropertyValue("zoom")).toBe("");
   expect(screen.queryByRole("button", { name: "Reset text size" })).toBeNull();
 });
 
@@ -149,16 +160,19 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   fireEvent.change(slider("Text size"), { target: { value: "110" } });
   fireEvent.change(slider("Grain"), { target: { value: "50" } });
   fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
-  const changed = stored();
-  expect(changed).toEqual(KEYS.slice(0, 8));
+  expect(stored()).toEqual(KEYS.slice(0, 8));
+  const values = storedValues();
+  const before = controls();
 
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
   expect(screen.getByText("Reset?")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Reset to default" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(screen.queryByText("Reset?")).toBeNull();
-  expect(stored()).toEqual(changed);
-  expect(pressed("Dark")).toEqual(["Tide"]);
+  expect(storedValues()).toEqual(values);
+  expect(controls()).toEqual(before);
+  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50", "150"] });
+  expect([root.style.getPropertyValue("zoom"), root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["1.1", "0.5", "1.5"]);
 
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));

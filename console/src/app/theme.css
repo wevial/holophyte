@@ -1008,11 +1008,11 @@ body {
 }
 
 .haze-fallback {
-  opacity: min(1, var(--haze-scale, 1));
+  background: radial-gradient(30% 95% at 22% 0%, rgb(from var(--haze-fallback-back) r g b / calc(alpha * var(--haze-scale, 1))), transparent 70%), radial-gradient(24% 75% at 46% 0%, rgb(from var(--haze-fallback-front) r g b / calc(alpha * var(--haze-scale, 1))), transparent 70%);
 }
 
 @media (width >= 720px) {
-  [data-text-size],
+  [data-text-size] [data-shell],
   [data-text-size] aside[aria-label="Console"] {
     height: calc(100vh / var(--text-scale));
     min-height: 0;

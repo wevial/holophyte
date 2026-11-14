@@ -61,6 +61,17 @@ function applyScale(property: string) {
   };
 }
 
+/** Zoom the document, not the shell, so dialogs and toasts portalled to the body scale too. */
+export function applyTextSize(percent: number, root: HTMLElement = document.documentElement): void {
+  const scaled = percent !== FULL;
+  for (const property of ["zoom", "--text-scale"]) {
+    if (scaled) root.style.setProperty(property, String(percent / 100));
+    else root.style.removeProperty(property);
+  }
+  root.toggleAttribute("data-text-size", scaled);
+  root.toggleAttribute("data-text-floor", percent < FULL);
+}
+
 export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
 export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
