@@ -52,7 +52,7 @@ const strip = () => screen.queryByLabelText("Notices");
 const banners = (kind: string) => Array.from(document.querySelectorAll(`[data-notice="${kind}"]`));
 const footer = () => document.querySelector("[data-footer-line]")!;
 const section = (name: string) => screen.getByRole("region", { name });
-const SECTIONS = ["Waiting on you", "Running", "Pull requests", "Merged today"];
+const SECTIONS = ["Running", "Waiting", "Merged today"];
 
 interface Project {
   name: string;
@@ -150,7 +150,7 @@ test("a host that stopped answering gets a banner dated from its last answer, an
   expect(banners("host-silent")).toHaveLength(1);
   expect(within(banner as HTMLElement).getByText("writer-host-2 is not answering.")).toBeTruthy();
   expect(within(banner as HTMLElement).getByText("last seen 4m ago · its rows below are from 16:48 and may be out of date")).toBeTruthy();
-  expect(document.querySelector("[data-count-line]")!.textContent).toStartWith("1 running");
+  expect(within(document.querySelector<HTMLElement>("[data-glyph-counts]")!).getByRole("img", { name: "1 running" })).toBeTruthy();
   cleanup();
 
   const silent = { [DEMO]: projectDaemon("/srv/dev/demo", at(16, 48)), [SECOND]: { down: new Error("connection refused") } };
@@ -175,18 +175,20 @@ test("before any host /peers lists answers the sections show bare labels under a
   const asking = () => screen.getAllByRole("status").filter((line) => line.textContent?.startsWith("Asking")).map((line) => line.textContent);
   expect(asking()).toEqual(["Asking writer-host for its projects…"]);
   for (const name of SECTIONS) {
-    expect(section(name).querySelector("h2 > span")).toBeNull();
+    expect(section(name).querySelector("[data-count]")).toBeNull();
     expect(section(name).querySelector("p")).toBeNull();
   }
-  expect(screen.queryByText("The factory has it from here.")).toBeNull();
-  expect(screen.queryByText("No pull request waits on you.")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Needs you" })).toBeNull();
+  expect(screen.queryByText("Nothing running.")).toBeNull();
+  expect(screen.queryByText("Nothing waits on a pull request.")).toBeNull();
 
   daemons[DEMO] = projectDaemon("/srv/dev/demo", NOW);
   daemons[SAME_HOST] = projectDaemon("/srv/dev/writer", NOW);
   await refetch(queries);
   expect(asking()).toEqual([]);
-  expect(section("Waiting on you").querySelector("h2 > span")!.textContent).toBe("0");
-  expect(screen.getByText("The factory has it from here.")).toBeTruthy();
+  expect(section("Running").querySelector("[data-count]")!.textContent).toBe("0");
+  expect(screen.getByText("Nothing running.")).toBeTruthy();
+  expect(screen.getByText("Nothing waits on a pull request.")).toBeTruthy();
   cleanup();
 
   await mount(peersFetch(DEMO, { [DEMO]: refused, [SECOND]: refused }), NOW);

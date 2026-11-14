@@ -158,7 +158,7 @@ function stageWords(facts: Facts): { stage: string; sentence: string } {
     }
     case "stale": {
       const silent = formatSettled(facts.heartbeatMs);
-      return { stage: `Stale · no beat ${silent}`, sentence: `No heartbeat for ${silent}. It is up in Waiting on you.` };
+      return { stage: `Stale · no beat ${silent}`, sentence: `No heartbeat for ${silent}. It is up in Needs you on the Overview.` };
     }
     case "question":
       return { stage: "Asks you", sentence: clause("It asks you", firstLine(item?.question)) };

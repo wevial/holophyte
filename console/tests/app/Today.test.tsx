@@ -150,17 +150,16 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("Merged today lists each host's merges newest first, with the pull request or short sha and rounds", async () => {
+test("Merged today lists each host's merges newest first, with the pull request number or short sha and the clock time", async () => {
   const { fetch } = fleet({ shipped: [demo10] }, { shipped: [writer4] });
-  localStorage.setItem("holophyte.next.fold.done", "open");
   await mount("#/", fetch);
   const [first, second] = mergeRows();
   expect(mergeRows()).toHaveLength(2);
   expect(first!.textContent).toContain("DEMO-10");
-  expect(first!.textContent).toContain("PR #521 · 1 round");
+  expect(within(first!).getByRole("link", { name: "#521" }).getAttribute("href")).toBe("https://github.com/example/demo/pull/521");
   expect(first!.textContent).toContain("11:15");
   expect(second!.textContent).toContain("WRITER-4");
-  expect(second!.textContent).toContain("3c9a2f1 · 2 rounds");
+  expect(second!.querySelector("[data-sha]")!.textContent).toBe("3c9a2f1");
   expect(second!.textContent).toContain("08:47");
   cleanup();
 
