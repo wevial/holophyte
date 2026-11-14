@@ -141,7 +141,7 @@ def _rerun_unless_reproduced(run, beat_s, pull, state, reviewed, check_fix,
     check_fix.awaited = tuple(dict.fromkeys(check.name for check in failed))
     pull = replace(pull, awaited=check_fix.awaited)
     return pull, _rerun_and_settle(run, beat_s, pull, state, reviewed,
-                                   approval, local=reason), None
+                                   approval, reason), None
 
 
 def _local_run(run, beat_s, named):
@@ -269,8 +269,7 @@ def _park_on_checks(run, pull, why, reviewed):
                 run.branch, run.sha, pull, why, (), reviewed=reviewed)
 
 
-def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval=None,
-                      local=None):
+def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval, local):
     failed = state.failed_checks
     runs = tuple(dict.fromkeys(check.workflow_run_id for check in failed))
     names = ", ".join(check.name for check in failed)
@@ -280,8 +279,8 @@ def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval=None,
     if run.conn is not None and run.run_id is not None:
         store.record_event(run.conn, run.run_id, "check_rerun",
                            f"rerunning the failed jobs of {names} on"
-                           f" {pull.url}: workflow run(s) {listed}"
-                           + (f"; local run: {local}" if local else ""))
+                           f" {pull.url}: workflow run(s) {listed};"
+                           f" local run: {local}")
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
             for workflow_run_id in runs:
