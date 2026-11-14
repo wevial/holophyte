@@ -174,7 +174,8 @@ machines it walks. Back to the [README](index.md).
    In a Python file each deleted line belongs to its outermost wholly
    deleted statement: a removed candidate, an import, or a helper, class
    or assignment whose name the kept file no longer uses; a `setUp` or
-   `tearDown` hook counts as used while its class stays. In any other file
+   `tearDown` hook counts as used while its class stays, and nothing
+   deleted inside a function that survives passes. In any other file
    each deleted line must fall inside a removed candidate's call, from its
    declaration to the matching close bracket;
    otherwise the branch returns to the approved head. No review round

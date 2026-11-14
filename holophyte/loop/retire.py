@@ -318,7 +318,10 @@ def _used_names(wt, head, path):
 def _owner(tree, number, kept, gone, used):
     chain = _enclosing(tree, number)
     whole = next((node for node in chain if kept.isdisjoint(_span(node))), None)
-    if whole is not None and _only_gone_use(whole, gone, used):
+    inside = chain[:chain.index(whole)] if whole is not None else chain
+    if whole is not None and not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            for node in inside) and _only_gone_use(whole, gone, used):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]

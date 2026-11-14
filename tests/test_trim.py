@@ -813,9 +813,14 @@ class RetireLoopTests(TrimFixture):
         self.assert_reverted("not candidates: tests/test_new.py::test_it")
 
     def test_a_retire_commit_cutting_a_protected_tests_assertion_is_reverted(self):
+        self.cut_from_test_kept("        self.assertEqual(1, 1)\n")
+
+    def test_a_retire_commit_cutting_an_assigned_assertion_is_reverted(self):
+        self.cut_from_test_kept("        unused = self.assertEqual(1, 1)\n")
+
+    def cut_from_test_kept(self, line):
         checked = COPY.replace("(True)\n\n    def test_dropped",
-                               "(True)\n        self.assertEqual(1, 1)\n\n"
-                               "    def test_dropped")
+                               f"(True)\n{line}\n    def test_dropped")
         self.retired(
             Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
                   "protects nothing", {"tests/test_copy.py": unittest_module(
