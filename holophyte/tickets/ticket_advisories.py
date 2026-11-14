@@ -262,12 +262,14 @@ def _once_problems(t):
     problems = []
     for i, (text, once, files) in enumerate(zip(
             texts, witness_once.tail_paths(texts), named_files(texts)), 1):
+        problems += [f"criterion {i} names `{path}` as a durable witness; "
+                     f"a {witness_once.DIRECTORY}/ file stays out of every "
+                     f"commit, so end it with (witnessed once: `{path}`)"
+                     for path in files
+                     if witness_once.is_once(path) and path != once]
         if once is None:
-            problems += [f"criterion {i} names `{path}` as a durable witness; "
-                         f"a {witness_once.DIRECTORY}/ file stays out of every "
-                         f"commit, so end it with (witnessed once: `{path}`)"
-                         for path in files if witness_once.is_once(path)]
-        elif not witness_once.is_once(once):
+            continue
+        if not witness_once.is_once(once):
             problems.append(f"criterion {i}'s one-time witness `{once}` is not "
                             f"directly under {witness_once.DIRECTORY}/")
         elif not any(main_baseline._names(line, once)

@@ -191,9 +191,9 @@ worktree and in no commit; a verify line must name it, and that line runs it
 before each review. The pre-check reads the worktree file rather than the
 tree at the candidate: `exists` comes from the file, `changed` is null, and
 `ran` comes from the verbose verify rerun. A one-time witness the candidate
-commits is a gap, `criterion Cn's one-time witness `PATH` is committed; it
-stays out of the branch`, and so is a missing one, `criterion Cn's one-time
-witness `PATH` does not exist in the task worktree`. `holo ticket check`
+commits is a gap, ``criterion Cn's one-time witness `PATH` is committed; it
+stays out of the branch``, and so is a missing one, ``criterion Cn's one-time
+witness `PATH` does not exist in the task worktree``. `holo ticket check`
 blocks a one-time path outside `.holophyte-witness/`, a `.holophyte-witness/`
 path named as a durable witness, and a one-time path no verify line names,
 and suggests the one-time form for a criterion that checks only copy, a
