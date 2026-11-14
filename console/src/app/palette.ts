@@ -3,7 +3,6 @@ import { SCOUT_DOTS } from "./scout";
 import { scoutState } from "./scouts";
 import { STATES, stateOf, type State } from "./state";
 
-/** Where a palette entry goes when chosen. */
 type PaletteGo =
   | { kind: "page"; to: PagePath; q?: string }
   | { kind: "ticket"; project: string; key: string }
@@ -14,7 +13,6 @@ type PaletteGo =
 
 export type PaletteAction = "new-ticket" | "launch-scout" | "switch-theme" | "run-sweep";
 
-/** A glyph is a state's dot or a kind's icon, each with its accessible name. */
 export type PaletteGlyph = { state: State; label: string } | { icon: GlyphIcon; label: string; tone?: string };
 
 export type GlyphIcon = "page" | "project" | "all-projects" | "finding" | "action";
