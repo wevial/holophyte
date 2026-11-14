@@ -13,6 +13,7 @@ from holophyte.loop import (
     adjudicate,
     branch_sync,
     claim,
+    fix_self_check,
     gates,
     implement,
     merge_gate,
@@ -243,7 +244,7 @@ class WorkingTimeTests(SweepTestCase):
             stack.enter_context(patch.object(roles, 'publish_review_refs'))
             stack.enter_context(patch.object(roles, 'check_review_refs'))
             for module in (implement, review_round, adjudicate, babysitter,
-                           merge_gate, claim, pullrequest):
+                           merge_gate, claim, pullrequest, fix_self_check):
                 for name, result in (('sh', 'after'),
                                      ('main_merge_base', 'after'),
                                      ('ledger', None),
@@ -264,6 +265,8 @@ class WorkingTimeTests(SweepTestCase):
             for module, name, result in (
                     (implement, '_check_run_cap', None),
                     (review_round, '_check_run_cap', None),
+                    (fix_self_check, '_changed_files', []),
+                    (fix_self_check, '_commits', []),
                     (branch_sync, '_candidate_drift', ''),
                     (branch_sync, 'onto_pushed', 'after'),
                     (merge_gate, '_is_ancestor', True),
@@ -278,7 +281,7 @@ class WorkingTimeTests(SweepTestCase):
             scenarios = (
                 (implement._implement, 'working', ['done'], 1),
                 (review_round._review_rounds, 'working',
-                 ['done', 'VERDICT: REQUEST_CHANGES', 'fixed'], 3),
+                 ['done', 'VERDICT: REQUEST_CHANGES', 'fixed'], 4),
                 (claim._resolve_merge_conflict, 'merge_gate', ['fixed'], 1),
                 (pullrequest._written_pr_text, 'merge_gate',
                  ['TITLE: change\nDescription'], 1),

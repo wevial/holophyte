@@ -1409,10 +1409,11 @@ class VerifyTimeoutRoundTests(LoopFixture):
 
     def test_a_timed_out_round_with_findings_still_gets_its_fix_turn(self):
         fake, _ = self.run_capped_loop(Commit("work"), REQUEST_CHANGES,
-                                       Commit("fix round 1"), APPROVE)
+                                       Commit("fix round 1"),
+                                       Commit("self-check turn"), APPROVE)
 
-        self.assertEqual(fake.roles,
-                         ["implement", "review", "implement", "review"])
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
         self.assertIn("fix round 1", self.subjects(BRANCH))
         ((outcome, reason),) = self.read(
             "SELECT outcome, outcomeReason FROM runs")

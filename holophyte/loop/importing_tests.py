@@ -176,15 +176,19 @@ def _distance(one, other):
     return len(one) + len(other) - 2 * shared
 
 
-def _importing_tests(root, runs):
+def _importing_tests(root, runs, since=None):
     try:
-        base = sh(["git", "merge-base", main_ref(root), "HEAD"], cwd=root)
+        base = since or sh(["git", "merge-base", main_ref(root), "HEAD"],
+                           cwd=root)
         changed = [path for path in _changed_files(root, base, "HEAD")
                    if path.endswith(".py")]
         packages = package_dirs(root, "HEAD") if changed else set()
         modules = {name: path for path in changed
                    for name in module_names(path, packages)}
         found = importers(root, "HEAD", modules) if modules else {}
+        for path in changed if since else ():
+            if os.path.isfile(os.path.join(root, path)):
+                found[path] = [*found.get(path, ()), path]
     except (RuntimeError, OSError, subprocess.CalledProcessError):
         return []
     nearest = {}
@@ -197,20 +201,45 @@ def _importing_tests(root, runs):
     return sorted(nearest, key=lambda test: (nearest[test], test))
 
 
-def run_importing_tests(project, wt, command, conn, run_id):
-    runs = unittest_runs(command)
-    if not runs:
-        return True, None
-    top = _top_level(runs)
-    clauses = {}
-    for test in _importing_tests(wt, runs):
+def _selected(wt, runs, base=None, ran=(), covering=None):
+    top, clauses = _top_level(runs), {}
+    for test in _importing_tests(wt, runs if covering is None else covering,
+                                 base):
         if len(clauses) == IMPORTER_CAP:
             break
         clause = _module_clause(runs[0], top, test)
-        if clause is not None:
+        if clause is not None and test not in ran:
             clauses[test] = clause
+    return clauses
+
+
+def _each(project, wt, conn, run_id, setup, clauses):
+    reports = []
+    for test, clause in clauses.items():
+        ok, out = run_verify(" && ".join([*setup, clause]), wt,
+                             timeout=verify_config(project).timeout_sec,
+                             conn=conn, run_id=run_id, project=project)
+        if not ok:
+            reports.append(f"[verify] FAILED: {test} is changed or imports a "
+                           f"changed module and failed\n{out}")
+    return not reports, {"source": "importers",
+                         "command": " && ".join([*setup, *clauses.values()]),
+                         "exitCode": 1 if reports else 0,
+                         "output": "\n".join(reports)}
+
+
+def run_importing_tests(project, wt, command, conn, run_id, *, base=None,
+                        after_importers=False, executed=None):
+    runs = unittest_runs(command)
+    if not runs:
+        return True, None
+    ran = _selected(wt, runs) if after_importers else {}
+    covering = None if executed is None else unittest_runs(executed)
+    clauses = _selected(wt, runs, base, ran, covering)
     if not clauses:
         return True, None
+    if base:
+        return _each(project, wt, conn, run_id, runs[0].setup, clauses)
     tests, setup = list(clauses), runs[0].setup
     joined = " && ".join([*setup, *clauses.values()])
     ok, out = run_verify(joined, wt, timeout=verify_config(project).timeout_sec,

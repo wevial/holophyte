@@ -899,8 +899,9 @@ class FailurePayloadTests(MergeModeFixture):
 
         command = "sh -c 'echo boom; exit 3'"
         task = dict(a_task(), verify=f"echo first\n{command}")
-        self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES,
-                  Commit(), provider=StubProvider(task))
+        self.loop(Commit(), REQUEST_CHANGES, Commit(), Commit(),
+                  REQUEST_CHANGES, Commit(), Commit(),
+                  provider=StubProvider(task))
         ((reason,),) = self.read('SELECT outcomeReason FROM runs')
         ((summary, payload),) = self.read(
             "SELECT summary, payload FROM runEvents WHERE kind = 'failure'")

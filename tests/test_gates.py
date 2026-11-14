@@ -498,8 +498,9 @@ class MergeLockTests(unittest.TestCase):
 class BaselineTests(LoopFixture):
     def test_failed_baseline_records_both_sources_before_review(self):
         self.configure('[verify]\nalways = ["echo baseline-broke; exit 7"]\n')
-        output = self.main_output(Commit("candidate"), APPROVE, Commit("fix"), APPROVE,
-                                  Commit("last fix"))
+        output = self.main_output(Commit("candidate"), APPROVE, Commit("fix"),
+                                  Commit("self-check fix"), APPROVE,
+                                  Commit("last fix"), Commit("last self-check fix"))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn("baseline-broke", output)
         rows = json.loads(self.read(

@@ -31,8 +31,8 @@ class FailureReasonTests(LoopFixture):
     def fail_verify(self):
         task = a_task()
         task['verify'] = "echo first\nsh -c 'echo boom; exit 3'"
-        self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES,
-                  Commit(), provider=StubProvider(task))
+        self.loop(Commit(), REQUEST_CHANGES, Commit(), Commit(),
+                  REQUEST_CHANGES, Commit(), Commit(), provider=StubProvider(task))
         return self.reason()
 
     def test_second_verify_command(self):

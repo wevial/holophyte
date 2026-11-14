@@ -39,8 +39,8 @@ class FailureKindCases:
 
     def test_verify_kind_survives_builder_and_dispatch(self):
         task = dict(a_task(), verify="echo first\nsh -c 'echo boom; exit 3'")
-        self.loop(Commit(), REQUEST_CHANGES, Commit(), REQUEST_CHANGES, Commit(),
-                  provider=StubProvider(task))
+        self.loop(Commit(), REQUEST_CHANGES, Commit(), Commit(), REQUEST_CHANGES,
+                  Commit(), Commit(), provider=StubProvider(task))
         ((kind, reason),) = self.read('SELECT failureKind, outcomeReason FROM runs')
         self.assertEqual(kind, 'verify')
         self.assertIn("verify failed: command 2 [sh -c 'echo boom; exit 3'], exit 3",

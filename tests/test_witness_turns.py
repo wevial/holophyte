@@ -1,5 +1,7 @@
 """A gap the witness pre-check finds before round 1 goes back to the
-implementer, up to two turns a run, before the review sees what is left.
+implementer, up to two turns a run, before the review sees what is left;
+a fix turn's diff that fails its self-check gets one more turn before the
+next round's review.
 
 Verify is real unittest in a temporary repository; the agents are scripted.
 Run: python3 -m unittest discover -s tests -p 'test_witness_turns.py' -v
@@ -17,6 +19,7 @@ sys.path.insert(0, str(HERE))
 from fake_agent import (  # noqa: E402 - after sys.path
     APPROVE,
     IMPLEMENT,
+    PASS,
     REQUEST_CHANGES,
     REVIEW_ROLES,
     Commit,
@@ -71,6 +74,19 @@ class Broken(unittest.TestCase):
         self.fail("broken by the witness turn")
 """
 
+FIX_BROKE = BROKEN.replace("broken by the witness turn", "broken by the fix")
+CITED = "fix\n\nADDRESS: lib/thing.py:3 the finding\n"
+COUNTED = """import unittest
+
+import {name}
+
+
+class Counted(unittest.TestCase):
+    def test_it_runs(self):
+        with open({log!r}, "a") as log:
+            log.write("{name}\\n")
+"""
+LIB = {"lib/thing.py": "THING = 1\n", "lib/other.py": "OTHER = 1\n"}
 BOTH_MET = Reply("CRITERION 1: met \u2014 tests/test_gate.py::test_it_gates\n"
                  "CRITERION 2: met \u2014 tests/test_runs.py::test_it_runs\n"
                  "VERDICT: APPROVE")
@@ -123,7 +139,7 @@ class StaleApproval:
                 "tests/test_gate.py::test_it_gates\nVERDICT: APPROVE")
 
 
-class WitnessTurns(LoopFixture):
+class RunningRepo(LoopFixture):
 
     def setUp(self):
         super().setUp()
@@ -147,6 +163,9 @@ class WitnessTurns(LoopFixture):
     def review_goal(self, fake):
         (goal,) = [turn.goal for turn in fake.turns if turn.role == "review"][:1]
         return goal
+
+
+class WitnessTurns(RunningRepo):
 
     def assert_merged_after_round_one(self):
         self.assertEqual(self.read("SELECT round FROM reviewRounds"), [(1,)])
@@ -339,6 +358,198 @@ class WitnessTurns(LoopFixture):
         self.assertTrue(cap.startswith("out of time:"), cap)
         self.assertEqual(self.read("SELECT outcomeReason, failureKind FROM runs"),
                          [(cap, "budget")])
+
+
+class FixSelfCheck(RunningRepo):
+
+    def run_fix(self, fix, *after, verify=VERIFY):
+        return self.run_task(Writes(LIB), REQUEST_CHANGES, fix, *after,
+                             criteria=a_task()["criteria"], verify=verify)
+
+    def head(self, grep):
+        return self.git("log", "main", "--format=%H", "--grep", grep).strip()
+
+    def test_a_fix_that_turns_verify_red_gets_one_more_turn(self):
+        fake = self.run_fix(
+            Commit("break", path="tests/test_runs.py", body=FIX_BROKE),
+            Commit("mend", path="tests/test_runs.py", body=RUNS), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("verify failed:", fake.turns[3].goal)
+        self.assertIn("broken by the fix", fake.turns[3].goal)
+        mend = self.head("mend")
+        self.assertIn(f"Review commit {mend}", fake.turns[4].goal)
+        (event,) = self.summaries("fix_self_check")
+        self.assertTrue(event.startswith(
+            f"fix self-check at {self.head('break')[:12]}: 1 failures; the"
+            f" extra turn committed, head {mend[:12]}\n"), event)
+
+    def test_a_changed_test_verify_skips_is_run_and_named(self):
+        fake = self.run_fix(
+            Commit("break", path="tests/test_other.py", body=FIX_BROKE),
+            Commit("mend", path="tests/test_other.py", body=RUNS), APPROVE,
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertNotIn("verify failed:", fake.turns[3].goal)
+        self.assertIn("tests/test_other.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+        self.assertIn("broken by the fix", fake.turns[3].goal)
+
+    def test_an_address_citing_a_file_the_fix_leaves_gets_a_turn(self):
+        fake = self.run_fix(Commit(CITED, path="NOTES.md"), Idle(), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("`ADDRESS: lib/thing.py:3 the finding` cites"
+                      " `lib/thing.py`, but the fix changes no file in its"
+                      " directory", fake.turns[3].goal)
+        (event,) = self.summaries("fix_self_check")
+        self.assertIn("1 failures; the extra turn made no commit", event)
+
+    def test_a_fix_passing_every_check_takes_no_extra_turn(self):
+        fake = self.run_fix(
+            Commit(CITED, path="lib/other.py", body="OTHER = 2\n"), APPROVE)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "review"])
+        self.assertEqual(self.summaries("fix_self_check"), [
+            f"fix self-check passed at {self.head('ADDRESS')[:12]}"])
+
+    def test_a_still_failing_extra_turn_takes_no_second_turn(self):
+        fake = self.run_fix(
+            Commit("break", path="tests/test_runs.py", body=FIX_BROKE),
+            Commit("still", path="NOTES.md"), APPROVE,
+            Commit("mend", path="tests/test_runs.py", body=RUNS), PASS)
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review", "implement",
+                                      "adjudicate"])
+        self.assertIn("FAILED with output below", fake.turns[4].goal)
+        still = self.head("still")
+        self.assertIn(f"Review commit {still}", fake.turns[4].goal)
+        first, _ = self.summaries("fix_self_check")
+        self.assertTrue(first.startswith(
+            f"fix self-check at {self.head('break')[:12]}: 1 failures; the"
+            f" extra turn committed, head {still[:12]}\nverify failed:"),
+            first)
+        self.assertIn("broken by the fix", first)
+
+    def test_a_test_verify_ran_as_an_importer_is_not_run_again(self):
+        log = str(self.target.parent / "ran.log")
+        counted = {f"tests/test_{name}.py": COUNTED.format(name=name, log=log)
+                   for name in ("alpha", "beta")}
+        self.run_task(
+            Writes({"alpha.py": "A = 1\n", "beta.py": "B = 1\n", **counted}),
+            REQUEST_CHANGES, Commit("fix", path="alpha.py", body="A = 2\n"),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        ran = Path(log).read_text().split()
+        self.assertEqual(ran.count("alpha"), ran.count("beta"), ran)
+
+    def test_an_importer_verify_stopped_before_is_run_by_the_self_check(self):
+        asserting = """import unittest
+
+import {name}
+
+
+class Asserting(unittest.TestCase):
+    def test_it_holds(self):
+        self.assertEqual({name}.VALUE, 1)
+"""
+        tests = {f"tests/test_{name}.py": asserting.format(name=name)
+                 for name in ("alpha", "beta")}
+        fake = self.run_task(
+            Writes({"alpha.py": "VALUE = 2\n", "beta.py": "VALUE = 1\n",
+                    **tests}),
+            REQUEST_CHANGES, Commit("fix", path="beta.py", body="VALUE = 1 + 1\n"),
+            Writes({"alpha.py": "VALUE = 1 * 1 * 1\n",
+                    "beta.py": "VALUE = 1 * 1 * 1\n"}),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("tests/test_beta.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+
+    def test_a_verify_command_an_earlier_failure_skipped_is_run(self):
+        tests = {"tests/test_alpha.py": RUNS, "tests/test_beta.py": RUNS}
+        broken = {name: FIX_BROKE for name in tests}
+        fake = self.run_task(
+            Writes(tests), REQUEST_CHANGES, Writes(broken), Writes(tests),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_alpha.py'"
+                   " && python3 -m unittest discover -s tests"
+                   " -p 'test_beta.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("tests/test_beta.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+
+    def test_a_module_a_failfast_verify_stopped_before_is_run(self):
+        tests = {"tests/test_alpha.py": RUNS, "tests/test_beta.py": RUNS}
+        broken = {name: FIX_BROKE for name in tests}
+        fake = self.run_task(
+            Writes(tests), REQUEST_CHANGES, Writes(broken), Writes(tests),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -f -s tests -p 'test_*.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("tests/test_beta.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+
+    def test_the_run_beats_while_the_self_check_runs_tests(self):
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
+        beating = f"""import sqlite3
+import time
+import unittest
+
+
+def beat():
+    return sqlite3.connect({str(self.db)!r}).execute(
+        "SELECT lastHeartbeat FROM runs WHERE endedAt IS NULL").fetchone()
+
+
+class Beating(unittest.TestCase):
+    def test_the_run_beats(self):
+        first = beat()
+        time.sleep(4)
+        self.assertNotEqual(beat(), first)
+"""
+        fake = self.run_task(
+            Writes(LIB), REQUEST_CHANGES,
+            Commit("a slow test", path="tests/test_beating.py", body=beating),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "review"])
+        (event,) = self.summaries("fix_self_check")
+        self.assertTrue(event.startswith("fix self-check passed at"), event)
+
+    def test_a_spent_time_box_still_records_the_self_check(self):
+        fake = FakeAgent(Writes(LIB), REQUEST_CHANGES,
+                         Commit("break", path="tests/test_runs.py",
+                                body=FIX_BROKE))
+        real = holophyte.loop.implement.agent_work
+
+        def spent(run, now):
+            return 10 ** 10 if len(fake.turns) == 3 else real(run, now)
+
+        with patch.object(holophyte.loop.implement, "agent_work", spent):
+            self.run_task(fake=fake, criteria=a_task()["criteria"])
+
+        self.assertEqual(len(fake.turns), 3)
+        (event,) = self.summaries("fix_self_check")
+        self.assertIn("1 failures; the extra turn never started", event)
+        self.assertIn("broken by the fix", event)
+        self.assertEqual(len(self.summaries("run_cap")), 1)
 
 
 if __name__ == "__main__":
