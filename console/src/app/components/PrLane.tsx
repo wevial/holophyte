@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { ageOf, orderByAge, prTitle, type NeedsYouEntry, type ReadinessMap } from "../../lib/attention";
+import { ageOf, orderByAge, prTitle, type ReadinessMap } from "../../lib/attention";
 import { formatAge } from "../../lib/format";
 import type { HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
@@ -32,12 +32,11 @@ export function PullRequestGlyph() {
   );
 }
 
-/** The runs parked on a pull request that are not Needs you items, oldest first. */
-export function waitingRows(hosts: Host[], items: AttentionItem[], needs: NeedsYouEntry[], now: number): WaitingRow[] {
-  const needed = new Set(needs.map((entry) => entry.item));
+/** The runs parked on a pull request, oldest first. */
+export function waitingRows(hosts: Host[], items: AttentionItem[], now: number): WaitingRow[] {
   const rows = items.flatMap((item) => {
     const host = hosts.find((candidate) => candidate.key === item.daemon);
-    return needed.has(item) || host == null ? [] : [{ item, host, ageMs: ageOf(item, now) }];
+    return host == null ? [] : [{ item, host, ageMs: ageOf(item, now) }];
   });
   return orderByAge(rows, (row) => row.ageMs);
 }

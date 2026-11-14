@@ -6,12 +6,12 @@ import { FocusCard, useOpenEntry } from "../components/FocusCard";
 import { MergedToday, SHOWN_MERGES } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
 import { PullRequestGlyph, waitingRows, WaitingRows } from "../components/PrLane";
-import { laneGroups, RunningRows, liveRuns } from "../components/RunLane";
+import { laneGroups, liveRuns, RunningRows, witnessLines } from "../components/RunLane";
 import { STATE_ICONS, TONE_TEXT } from "../components/StateDot";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
 import { useDayLedger, usePeerList } from "../queries";
-import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
+import { keepScope, OriginContext, PollDepsContext, useConsolePeers, type ScopeSearch } from "../scope";
 import type { Tone } from "../state";
 
 function Glyph({ children, className = "" }: { children: ReactNode; className?: string }) {
@@ -32,7 +32,7 @@ function GlyphCount({ count, words, tone, icon }: { count: number; words: string
   );
 }
 
-function Rows({ label, count, aside, empty, children }: { label: string; count?: number; aside?: ReactNode; empty: string; children?: ReactNode }) {
+function Rows({ label, count, aside, empty, footer, children }: { label: string; count?: number; aside?: ReactNode; empty: string; footer?: ReactNode; children?: ReactNode }) {
   return (
     <section aria-label={label} className="flex flex-col">
       <header className="flex min-h-8 items-baseline gap-2 border-b border-rule-2 px-2.5 pb-2">
@@ -41,6 +41,7 @@ function Rows({ label, count, aside, empty, children }: { label: string; count?:
         {aside != null && <span className="ml-auto">{aside}</span>}
       </header>
       {count == null ? null : count === 0 ? <p className="px-2.5 py-2.5 font-mono text-[12px] text-ink-3">{empty}</p> : children}
+      {count != null && footer}
     </section>
   );
 }
@@ -58,7 +59,8 @@ export function Overview() {
   const need = view.needs.length;
   const lanes = laneGroups(view.hosts);
   const running = liveRuns(lanes, view.now);
-  const waiting = waitingRows(view.hosts, view.pullRequests, view.needs, view.now);
+  const witnesses = witnessLines(lanes, view.now);
+  const waiting = waitingRows(view.hosts, view.pullRequests, view.now);
   const merged = view.mergedToday;
   const more = merged.length - SHOWN_MERGES;
   const shown = (count: number) => (loaded ? count : undefined);
@@ -70,11 +72,11 @@ export function Overview() {
             <header data-overview-head className="flex flex-col gap-3 pt-4">
               <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
                 <h1 className="flex items-baseline gap-3 font-sans text-ink">
-                  <span data-numeral className={`text-[56px] font-light leading-none tracking-[-0.02em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : view.running}</span>{" "}
+                  <span data-numeral className={`text-[56px] font-light leading-none tracking-[-0.02em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : running.length}</span>{" "}
                   <span className="text-[22px] font-normal leading-none">{need > 0 ? "need you" : "running"}</span>
                 </h1>
                 <div data-glyph-counts className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  <GlyphCount count={view.running} words="running" tone="live" icon={STATE_ICONS.running} />
+                  <GlyphCount count={running.length} words="running" tone="live" icon={STATE_ICONS.running} />
                   <GlyphCount count={waiting.length} words="waiting on a pull request" tone="wait" icon={<PullRequestGlyph />} />
                   <GlyphCount count={view.queued.length} words="queued" tone="ink-2" icon={STATE_ICONS.queued} />
                   <GlyphCount count={merged.length} words="merged today" tone="live" icon={STATE_ICONS.merged} />
@@ -100,7 +102,14 @@ export function Overview() {
             <FocusCard entries={view.needs} open={opened.open} toggle={opened.toggle} hosts={view.hosts} now={view.now} />
           </Rows>
         )}
-        <Rows label="Running" count={shown(running.length)} empty="Nothing running.">
+        <Rows
+          label="Running"
+          count={shown(running.length)}
+          empty="Nothing running."
+          footer={witnesses.map((line) => (
+            <p key={line} data-witnesses className="px-2.5 pt-2.5 font-mono text-[12px] text-ink-3">{line}</p>
+          ))}
+        >
           <RunningRows rows={running} />
         </Rows>
         <Rows label="Waiting" count={shown(waiting.length)} empty="Nothing waits on a pull request.">
@@ -111,7 +120,7 @@ export function Overview() {
           count={shown(merged.length)}
           empty="Nothing merged yet today."
           aside={more > 0 ? (
-            <Link to="/runs" search={{ state: "merged", range: "today" }} className="inline-flex items-center gap-1.5 font-sans text-[13px] text-ink-2 hover:text-ink">
+            <Link to="/runs" search={(previous: ScopeSearch) => ({ ...keepScope(previous), state: "merged", range: "today" })} className="inline-flex items-center gap-1.5 font-sans text-[13px] text-ink-2 hover:text-ink">
               {more} more <span aria-hidden="true">→</span>
             </Link>
           ) : undefined}

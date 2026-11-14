@@ -82,6 +82,17 @@ test("with five merges today, Merged today lists the three newest and a 2 more l
   expect(screen.getByRole("heading", { level: 1, name: "Runs" })).toBeTruthy();
 });
 
+test("on a picked project, the more link counts that project's merges and keeps the scope on Runs", async () => {
+  const merges = (prefix: string, count: number) => Array.from({ length: count }, (_, index) => merged(20 + index, `${prefix}-${20 + index}`, NOW - (index + 1) * 10 * MINUTE));
+  await mount("#/?project=demo", fleet({ items: [], shipped: merges("DEMO", 5) }, { items: [], shipped: merges("WRITER", 4) }));
+  const more = within(screen.getByRole("region", { name: "Merged today" })).getByRole("link", { name: "2 more" });
+  await act(async () => {
+    fireEvent.click(more);
+  });
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(Object.fromEntries(new URLSearchParams(window.location.hash.split("?")[1]))).toEqual({ project: "demo", state: "merged", range: "today" });
+});
+
 test("with two Needs you rows and the first opened, only the opened row carries the need tint", async () => {
   await mount("#/", fleet({ items: [blocked, ...failed] }, { items: [] }));
   const tinted = (row: HTMLElement) => row.hasAttribute("data-open") && classes(row).includes("data-open:bg-(image:--need-tint)") && classes(row).includes("data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]");

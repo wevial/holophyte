@@ -155,4 +155,29 @@ test("a host whose last status is kept beside a contract error draws no Running 
   await page.answerDemo(unqueued);
   expect(rows()).toEqual([]);
   expect(running().textContent).toContain("Nothing running.");
+  expect(screen.getByRole("img", { name: "0 running" })).toBeTruthy();
+});
+
+test("a running row's activity line is its run's newest event, else its step", async () => {
+  const at = (minutes: number, kind: string, summary: string) => ({ ...served12.events[0]!, at: NOW - minutes * MINUTE, kind, summary });
+  const events = [at(9, "phase_change", "claimed -> working"), at(2, "agent_tool", "edit holophyte/serve/views.py"), at(5, "phase_change", "working -> verifying")];
+  const detail = { ...served12, run: { ...served12.run, id: 7, ticket: "DEMO-7" }, events };
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun]), statusOf("/srv/dev/writer", [{ ...writerRun, step: "fixing round 2" }])], { 7: detail });
+  const activity = (ticket: string) => rowOf(ticket).querySelector("[data-activity]")?.textContent;
+  expect(activity("DEMO-7")).toBe("edit holophyte/serve/views.py");
+  expect(activity("WRITER-3")).toBe("fixing round 2");
+});
+
+const witnessesOf = (keys: string[], elapsedMs: number) => ({ story: "DEMO-20", keys, started_ms: NOW - elapsedMs, elapsed_ms: elapsedMs });
+const witnessLines = () => [...running().querySelectorAll("[data-witnesses]")].map((line) => line.textContent);
+
+test("a running witness set is a line under Running naming its story, key range and time, even with nothing running", async () => {
+  await mount("#/", [statusOf("/srv/dev/demo", [], { witnesses: witnessesOf(["W3", "W4", "W5", "W6"], 4 * MINUTE + 30_000) }), statusOf("/srv/dev/writer", [])]);
+  expect(running().textContent).toContain("Nothing running.");
+  expect(witnessLines()).toEqual(["Witnesses · DEMO-20 · W3–W6 · running 4m"]);
+  cleanup();
+
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun], { witnesses: witnessesOf(["W1", "W3"], 12 * MINUTE) }), statusOf("/srv/dev/writer", [])]);
+  expect(rows()).toHaveLength(1);
+  expect(witnessLines()).toEqual(["Witnesses · DEMO-20 · W1, W3 · running 12m"]);
 });

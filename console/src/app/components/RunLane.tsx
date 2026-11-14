@@ -4,7 +4,7 @@ import { isStale } from "../../lib/derive";
 import { formatSettled } from "../../lib/format";
 import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { agentMs, boxPercent, groupByProject, latestEvents, phaseLabel, type ProjectGroup } from "../../lib/runs";
-import type { StatusRun } from "../../lib/contract.gen";
+import type { StatusRun, WitnessSet } from "../../lib/contract.gen";
 import type { ContractBodies } from "../fleet";
 import { useRun } from "../queries";
 import { runPage } from "../run";
@@ -20,6 +20,7 @@ const TRACK_AT: Record<string, number> = { working: 0, addressing: 0, verifying:
 
 export interface LaneGroup extends ProjectGroup {
   runs: StatusRun[];
+  witnesses: WitnessSet | null;
 }
 
 export interface RunningRow {
@@ -40,6 +41,7 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[]): LaneGroup[] {
     return {
       ...group,
       runs: own.flatMap((entry) => entry.status.runs),
+      witnesses: own.find((entry) => entry.status.witnesses)?.status.witnesses ?? null,
     };
   });
 }
@@ -53,6 +55,19 @@ export function liveRuns(groups: LaneGroup[], now: number): RunningRow[] {
       .filter((run) => !isStale(run.heartbeat_age_ms + sinceMs, threshold))
       .map((run) => ({ run, project: group.path, base: group.base, sinceMs }));
   });
+}
+
+function witnessKeys(keys: string[]): string {
+  const numbers = keys.map((key) => (/^W\d+$/.test(key) ? Number(key.slice(1)) : NaN));
+  const run = keys.length > 1 && numbers.every((n, index) => n === numbers[0]! + index);
+  return run ? `${keys[0]}–${keys.at(-1)}` : keys.join(", ");
+}
+
+/** A line per running witness set: its story, keys and time so far. */
+export function witnessLines(groups: LaneGroup[], now: number): string[] {
+  return groups.flatMap(({ witnesses, seen_ms }) =>
+    witnesses == null ? [] : [`Witnesses · ${witnesses.story} · ${witnessKeys(witnesses.keys)} · running ${formatSettled(witnesses.elapsed_ms + sinceSeen(seen_ms, now))}`],
+  );
 }
 
 function stageOf(run: StatusRun): { at: number | null; label: string } {
