@@ -301,6 +301,7 @@ PINNED = {
     "holophyte/serve/contract_prefs.py": 0,
     "holophyte/serve/contract_routes.py": 0,
     "holophyte/serve/contract_run.py": 0,
+    "holophyte/serve/contract_search.py": 0,
     "holophyte/serve/day_log.py": 1,
     "holophyte/serve/serve_actions.py": 4,
     "holophyte/serve/serve_ask.py": 0,

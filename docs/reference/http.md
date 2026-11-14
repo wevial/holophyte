@@ -27,7 +27,7 @@ those writing routes. A project with no store answers 503.
 `GET /runs/N/merge`, `GET /runs/N/asks`, `GET /runs/N/files`,
 `GET /runs/N/turns` and `GET /runs/N/turns/T/transcript`, and of the list routes
 `GET /shipped`, `GET /history`, `GET /flow`, `GET /holds`, `GET /ledger`, `GET /board`,
-`GET /tickets/KEY` and `GET /tickets?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
+`GET /tickets/KEY` and `GET /tickets?q=TEXT`, of `GET /search?q=TEXT`, of the scout reads `GET /scouts`, `GET /scouts/ID`
 and `GET /scouts/routes`, of `GET /merge-queue`, of `GET /config/path-matches`,
 of `GET /config/tracked-tree`, and of `POST /tickets/check`: one
 JSON Schema per route, generated from `holophyte/serve/contract.py`.
@@ -1611,6 +1611,37 @@ tickets are included. A missing or blank `q` is 400
 `{"error": "q is required"}`. The read takes the read token, like
 `GET /board`, and a host daemon serves it as
 `GET /projects/NAME/tickets?q=TEXT`. It reads the store's mirror and
+never calls the provider.
+
+## `GET /search?q=TEXT`
+
+The tickets, runs, scouts and review findings whose text holds a search,
+in four groups: how the console's command palette searches a project with
+one request, past any list's polling window.
+
+```json
+{"q": "witness", "limit": 20,
+ "tickets": [{"ticket": "KO-69", "title": "Witness once", "status": "merged"}],
+ "runs": [{"id": 403, "ticket": "KO-69", "title": "Witness once",
+           "phase": "done", "outcome": "merged", "started_ms": 1788478203000}],
+ "scouts": [{"id": 3, "title": "Witness coverage", "phase": "done"}],
+ "findings": [{"run": 411, "round": 2, "severity": "p1",
+               "message": "the witness turn is skipped",
+               "path": "holophyte/loop/gates.py", "line": 212}]}
+```
+
+`q` is the search as asked, trimmed. Matching ignores case and covers every
+record in the project's store, ended ones included: a ticket by its
+identifier, title, labels or body, as `GET /tickets?q=TEXT` matches; a run
+by its ticket's identifier or title, or by its id when `q` is all digits
+and equals it; a scout by its title or ask; a review finding by its
+message, title or path. `tickets` is in identifier order, `runs` newest
+start first, `scouts` newest id first, and `findings` newest run first,
+then newest round, then in the round's order. Each group holds at most
+`limit` entries: 20 by default, capped at 50. A missing or blank `q` is 400
+`{"error": "q is required"}`, a `limit` that is not a positive integer 400
+too. The read takes the read token, like `GET /board`, and a host daemon
+serves it as `GET /projects/NAME/search?q=TEXT`. It reads the store and
 never calls the provider.
 
 ## `GET /stories/KO-n`

@@ -150,7 +150,7 @@ class GeneratedFilesTests(unittest.TestCase):
                              "run-asks",
                              "run-detail", "run-files",
                              "run-merge", "run-transcript", "run-turns",
-                             "scout-routes", "scout", "scouts", "shipped",
+                             "scout-routes", "scout", "scouts", "search", "shipped",
                              "status", "story", "ticket-check", "ticket-search",
                              "ticket", "tracked-tree")])
 

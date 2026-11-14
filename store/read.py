@@ -5,6 +5,7 @@ import sqlite3
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 
 import store.schema
@@ -234,15 +235,48 @@ def open_tickets(conn, project_id=None):
             for row in rows]
 
 
+def _holds(needle, *texts):
+    return any(needle in (text or "").lower() for text in texts)
+
+
+def _matching_tickets(conn, needle):
+    rows = conn.execute("SELECT linearIdentifier, title, status, body, labels"
+                        " FROM tickets ORDER BY linearIdentifier")
+    return (row for row in rows
+            if _holds(needle, *row[:2], row[3], *json.loads(row[4] or "[]")))
+
+
 def search_tickets(conn, query):
-    needle = query.lower()
-    rows = conn.execute(
-        "SELECT linearIdentifier, title, labels, body FROM tickets"
-        " ORDER BY linearIdentifier").fetchall()
-    return [row[0] for row in rows
-            if any(needle in text.lower() for text in
-                   (row[0], row[1] or "", row[3] or "",
-                    *json.loads(row[2] or "[]")))]
+    return [row[0] for row in _matching_tickets(conn, query.lower())]
+
+
+def search(conn, text, limit):
+    needle = text.lower()
+    run_id = int(text) if text.isascii() and text.isdigit() else None
+    runs = conn.execute(
+        "SELECT r.id, t.linearIdentifier, t.title, r.phase, r.outcome,"
+        " r.startedAt FROM runs r JOIN tickets t ON t.id = r.ticketId"
+        " ORDER BY r.startedAt DESC, r.id DESC")
+    scouts = conn.execute(
+        "SELECT s.id, s.phase, s.title, (SELECT json_extract(r.report,"
+        " '$.title') FROM scoutReports r WHERE r.scoutId = s.id"
+        " AND r.pass = 1), s.ask FROM scouts s ORDER BY s.id DESC")
+    return {"tickets": list(islice(_matching_tickets(conn, needle), limit)),
+            "runs": list(islice((row for row in runs if row[0] == run_id
+                                 or _holds(needle, *row[1:3])), limit)),
+            "scouts": list(islice((row for row in scouts
+                                   if _holds(needle, *row[2:])), limit)),
+            "findings": list(islice(_matching_findings(conn, needle), limit))}
+
+
+def _matching_findings(conn, needle):
+    rounds = conn.execute("SELECT runId, round, findings FROM reviewRounds"
+                          " ORDER BY runId DESC, round DESC")
+    for run_id, number, findings in rounds:
+        for finding in json.loads(findings):
+            if finding.get("kind") != "instruction" and _holds(
+                    needle, *map(finding.get, ("message", "title", "path"))):
+                yield run_id, number, finding
 
 
 @dataclass(frozen=True)
