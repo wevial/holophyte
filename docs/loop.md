@@ -167,7 +167,8 @@ machines it walks. Back to the [README](index.md).
    with one `RETIRED path::name: REASON` body line per deleted test. The
    factory keeps the commit only when it is one non-merge commit on the
    approved head with that subject, changes only test files, adds no line
-   but an import, removes only candidates, passes verify, and leaves no
+   but an import, removes only candidates, gives each removed test its
+   `RETIRED` line, passes verify, and leaves no
    test file outside In scope with fewer tests than at the review base;
    otherwise the branch returns to the approved head. No review round
    follows either way. The `retire` event names the outcome and a

@@ -638,7 +638,7 @@ def unittest_module(cls, *names, helper=False):
 
 
 class Files:
-    """One turn that writes several files in a single commit."""
+    """One turn that writes, or with a None body removes, files in one commit."""
 
     role = "implement"
 
@@ -648,6 +648,9 @@ class Files:
     def play(self, cwd, turn):
         for path, body in self.files.items():
             path = cwd / path
+            if body is None:
+                path.unlink()
+                continue
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body)
         subprocess.run(["git", "add", "--", *self.files], cwd=cwd, check=True)
@@ -662,6 +665,7 @@ OLD = unittest_module("OldTests", "test_one", "test_two")
 NEW = ("import unittest\nfrom pathlib import Path\n\n\n"
        "class NewTests(unittest.TestCase):\n    def test_it(self):\n"
        "        self.assertTrue(Path('thing.txt').exists())\n")
+COPY = unittest_module("CopyTests", "test_kept", "test_dropped")
 RETIRE_BODY = ("RETIRED tests/test_old.py::test_three: pins a one-off label\n"
                "RETIRED tests/test_copy.py::test_dropped: protects nothing")
 
@@ -673,11 +677,12 @@ def approving(*cited):
 
 
 class RetireLoopTests(TrimFixture):
-    def retired(self, *turns, config=TRIMMED, cited=(), work=None):
+    def retired(self, *turns, config=TRIMMED, cited=(), work=None,
+                body=VALID_BODY):
         self.on_main("tests/test_old.py", OLD)
         self.base = self.git("rev-parse", "main").strip()
         self.task = dict(a_task(), verify=RETIRE_VERIFY, criteria=[WITNESS],
-                         body=VALID_BODY)
+                         body=body)
         self.gated, real = [], holophyte.loop.pipeline._merge_gate
 
         def merge_gate(*args, **kwargs):
@@ -686,12 +691,11 @@ class RetireLoopTests(TrimFixture):
 
         with patch.object(holophyte.loop.pipeline, "_merge_gate", merge_gate):
             fake = self.trimmed(
-                work or Files("work", {
+                *(work or (Files("work", {
                     "thing.txt": "the thing\n", "tests/test_new.py": NEW,
                     "tests/test_old.py": unittest_module(
                         "OldTests", "test_one", "test_two", "test_three"),
-                    "tests/test_copy.py": unittest_module(
-                        "CopyTests", "test_kept", "test_dropped")}),
+                    "tests/test_copy.py": COPY}),)),
                 approving(*cited), *turns, config=config, task=self.task)
         self.assert_merged()
         [self.approved] = self.review_candidates(fake)
@@ -728,6 +732,36 @@ class RetireLoopTests(TrimFixture):
             f"{self.task['title']}\n\n{VALID_BODY}"), [])
         self.assertEqual(fake.roles.count("review"), 1)
         self.assertEqual(self.read("SELECT count(*) FROM reviewRounds"), [(1,)])
+        [(summary,)] = self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'retire'")
+        self.assertNotIn("test_dropped", summary)
+
+    def test_a_retire_commit_with_no_retired_reason_lines_is_reverted(self):
+        self.retired(Files(SUBJECT, {
+            "tests/test_old.py": OLD,
+            "tests/test_copy.py": unittest_module("CopyTests", "test_kept")}))
+        self.assert_reverted("no RETIRED line for: tests/test_copy.py::"
+                             "test_dropped, tests/test_old.py::test_three")
+
+    def test_a_reproduction_test_the_run_renamed_stays_protected(self):
+        regress = unittest_module("RegressTests", "test_bug").replace(
+            "self.assertTrue(True)", "self.assertTrue(Path('thing.txt').exists())"
+        ).replace("import unittest\n", "import unittest\nfrom pathlib import Path\n")
+        self.retired(
+            Idle("every candidate passes the gate"),
+            body=VALID_BODY.replace("## In scope", "## Reproduce\n\n"
+                                    "Run the thing.\n\n## In scope"),
+            work=(Files("reproduce", {"tests/test_regress.py": regress}),
+                  Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_regress.py": None,
+                                 "tests/test_bug.py": regress,
+                                 "tests/test_copy.py": COPY})))
+        [result] = self.retire_results()
+        self.assertIn({"test": "tests/test_bug.py::test_bug",
+                       "why": "held at the reproduction commit"},
+                      result["protected"])
+        self.assertNotIn("tests/test_bug.py::test_bug", result["candidates"])
 
     def test_a_retire_commit_deleting_a_criterion_witness_is_reverted(self):
         self.retired(Files(SUBJECT, {"tests/test_old.py": OLD,
@@ -750,12 +784,13 @@ class RetireLoopTests(TrimFixture):
         helped = unittest_module("CopyTests", "test_kept", "test_dropped",
                                  helper=True)
         self.retired(
-            Files(SUBJECT, {"tests/test_copy.py": unittest_module(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+                  "protects nothing", {"tests/test_copy.py": unittest_module(
                 "CopyTests", "test_kept", helper=True).replace(
                     "def value():\n    return 1\n\n\n", "")}),
-            work=Files("work", {"thing.txt": "the thing\n",
-                                "tests/test_new.py": NEW,
-                                "tests/test_copy.py": helped}))
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": helped}),))
         self.assert_reverted("verify was red at the retire commit")
 
     def test_a_retire_commit_that_edits_a_factory_module_is_reverted(self):
@@ -772,8 +807,8 @@ class RetireLoopTests(TrimFixture):
                              "tests/test_old.py")
 
     def test_only_criterion_file_tests_added_skips_with_no_turn(self):
-        fake = self.retired(work=Files("work", {"thing.txt": "the thing\n",
-                                                "tests/test_new.py": NEW}))
+        fake = self.retired(work=(Files("work", {"thing.txt": "the thing\n",
+                                                 "tests/test_new.py": NEW}),))
         self.assertEqual(fake.roles, ["implement", "review"])
         [result] = self.retire_results()
         self.assertEqual((result["outcome"], result["reason"]),

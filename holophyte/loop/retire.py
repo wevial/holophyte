@@ -127,6 +127,8 @@ def _protected(conn, run_id, wt, sha, criteria, added):
     cited = _cited(conn, run_id)
     witnessed = _story_files(conn, run_id)
     held = _reproduced_sha(conn, run_id)
+    renamed = ({new: old for old, new in _changed_pairs(wt, held, sha) if new}
+               if held else {})
     reasons = {}
     for test in added:
         path, _, name = test.partition("::")
@@ -134,7 +136,8 @@ def _protected(conn, run_id, wt, sha, criteria, added):
                else "cited by the approving review" if test in cited
                else "in a story witness file" if path in witnessed
                else "held at the reproduction commit"
-               if held and _test_ids(wt, held, path)[name] else None)
+               if held and _test_ids(wt, held, renamed.get(path, path))[name]
+               else None)
         if why:
             reasons[test] = why
     return reasons
@@ -190,6 +193,10 @@ def _unsound(wt, base, sha, ticket, candidates, green):
     if outside:
         reasons.append("the commit removed tests that are not candidates: "
                        + ", ".join(outside))
+    unexplained = [test for test in removed if test not in _reasons(wt, head)]
+    if unexplained:
+        reasons.append("the commit body has no RETIRED line for: "
+                       + ", ".join(unexplained))
     reasons += removed_outside_scope(wt, base, head, ticket)
     if not reasons and not green():
         reasons.append("verify was red at the retire commit")
@@ -235,14 +242,19 @@ def _removed(wt, sha, head, changed):
                                - _test_ids(wt, head, path))]
 
 
-def _retired(wt, sha, head):
+def _reasons(wt, head):
     reasons = {}
     for line in sh(["git", "log", "-1", "--format=%b", head],
                    cwd=wt).splitlines():
         test, colon, why = line.removeprefix("RETIRED ").partition(": ")
-        if line.startswith("RETIRED ") and colon:
+        if line.startswith("RETIRED ") and colon and why.strip():
             reasons[test.strip()] = why.strip()
-    return [{"test": test, "reason": reasons.get(test)}
+    return reasons
+
+
+def _retired(wt, sha, head):
+    reasons = _reasons(wt, head)
+    return [{"test": test, "reason": reasons[test]}
             for test in _removed(wt, sha, head, _changed(wt, sha, head))]
 
 
@@ -250,7 +262,7 @@ def _record(project, conn, run_id, outcome, reason, *, candidates, protected,
             approved, retired=(), final=None, out=""):
     summary = "; ".join(filter(None, (
         f"retire {outcome}",
-        retired and "retired " + ", ".join(r["test"] for r in retired),
+        retired and f"{len(retired)} retired",
         reason)))
     print(f"[holo2] {summary}")
     if conn is None or run_id is None:
