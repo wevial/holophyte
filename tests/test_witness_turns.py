@@ -450,6 +450,32 @@ class FixSelfCheck(RunningRepo):
         ran = Path(log).read_text().split()
         self.assertEqual(ran.count("alpha"), ran.count("beta"), ran)
 
+    def test_an_importer_verify_stopped_before_is_run_by_the_self_check(self):
+        asserting = """import unittest
+
+import {name}
+
+
+class Asserting(unittest.TestCase):
+    def test_it_holds(self):
+        self.assertEqual({name}.VALUE, 1)
+"""
+        tests = {f"tests/test_{name}.py": asserting.format(name=name)
+                 for name in ("alpha", "beta")}
+        fake = self.run_task(
+            Writes({"alpha.py": "VALUE = 2\n", "beta.py": "VALUE = 1\n",
+                    **tests}),
+            REQUEST_CHANGES, Commit("fix", path="beta.py", body="VALUE = 1 + 1\n"),
+            Writes({"alpha.py": "VALUE = 1 * 1 * 1\n",
+                    "beta.py": "VALUE = 1 * 1 * 1\n"}),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("tests/test_beta.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+
     def test_a_spent_time_box_still_records_the_self_check(self):
         fake = FakeAgent(Writes(LIB), REQUEST_CHANGES,
                          Commit("break", path="tests/test_runs.py",

@@ -37,7 +37,7 @@ def _unaddressed(wt, candidate):
 def _failures(project, conn, run_id, wt, candidate, verify_cmd, checks):
     ok, out = checks()
     failures = [] if ok else [f"verify failed:\n{out}"]
-    ran = any(row.get("source") == "importers"
+    ran = any(row.get("source") == "importers" and row.get("exitCode") == 0
               for row in getattr(out, "results", ()))
     ok, tests = run_importing_tests(project, wt, verify_cmd, conn, run_id,
                                     base=candidate, after_importers=ran)
