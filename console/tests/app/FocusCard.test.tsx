@@ -238,13 +238,16 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("an open Waiting on you row opens on the needs-you wash and an open Pull requests row on the act wash", async () => {
+test("an open Waiting on you row opens on the need tint and edge and an open Pull requests row on the act wash", async () => {
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR), park], details: { 1: { ...detail, events: [] }, 9: { ...detail, events: [] } } }));
   const prRow = document.querySelector<HTMLElement>("li[data-pr-row]")!;
   fireEvent.click(within(prRow).getByRole("button", { expanded: false }));
-  for (const [li, wash, rule] of [[row("A-1"), "need-wash", "need"], [prRow, "act-wash", "act"]] as const) {
+  for (const [li, classes] of [
+    [row("A-1"), ["data-open:bg-(image:--need-tint)", "data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]"]],
+    [prRow, ["data-open:bg-act-wash", "data-open:shadow-[inset_2px_0_0_var(--act)]"]],
+  ] as const) {
     expect(li.hasAttribute("data-open")).toBe(true);
-    expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining([`data-open:bg-${wash}`, `data-open:shadow-[inset_2px_0_0_var(--${rule})]`]));
+    expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining([...classes]));
   }
   expect(row("B-2").hasAttribute("data-open")).toBe(false);
 });

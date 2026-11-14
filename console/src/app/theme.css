@@ -960,7 +960,6 @@ body {
   animation: state-march var(--motion-march) linear infinite;
 }
 
-/* The clip cuts the inset edge off the corner, so ::after draws the diagonal back. */
 .btn {
   position: relative;
   display: inline-flex;
@@ -974,7 +973,7 @@ body {
   color: var(--btn-ink);
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--btn-edge);
-  clip-path: polygon(0 0, calc(100% - 9px) 0, 100% 9px, 100% 100%, 0 100%);
+  border-radius: var(--radius-button);
   isolation: isolate;
   transition: color var(--motion-colour) var(--ease-console);
 }
@@ -984,19 +983,9 @@ body {
   position: absolute;
   inset: 0;
   z-index: -1;
+  border-radius: inherit;
   background: linear-gradient(var(--btn-wipe), var(--btn-wipe)) no-repeat left / 0% 100%, var(--btn-face);
   transition: background-size var(--motion-wipe) var(--ease-console);
-}
-
-.btn::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 9px;
-  height: 9px;
-  background: linear-gradient(to bottom left, transparent calc(50% - 0.7px), var(--btn-edge) calc(50% - 0.7px),
-    var(--btn-edge) calc(50% + 0.7px), transparent calc(50% + 0.7px));
 }
 
 .btn:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible) {
@@ -1044,7 +1033,6 @@ body {
 .btn[aria-busy="true"] {
   color: var(--btn-edge);
   box-shadow: none;
-  clip-path: none;
   background-image:
     linear-gradient(90deg, var(--btn-edge) 50%, transparent 0), linear-gradient(90deg, var(--btn-edge) 50%, transparent 0),
     linear-gradient(0deg, var(--btn-edge) 50%, transparent 0), linear-gradient(0deg, var(--btn-edge) 50%, transparent 0);
@@ -1064,8 +1052,7 @@ body {
   color: var(--btn-edge);
 }
 
-.btn:is([aria-busy="true"], :disabled)::before,
-.btn[aria-busy="true"]::after {
+.btn:is([aria-busy="true"], :disabled)::before {
   display: none;
 }
 

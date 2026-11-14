@@ -155,7 +155,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const age = ageOf(item, now);
   const prUrl = str(item.pr_url);
   return (
-    <li data-wait-row={name} data-open={open || undefined} className="group border-rule-2 [&+&]:border-t data-open:bg-need-wash data-open:shadow-[inset_2px_0_0_var(--need)]">
+    <li data-wait-row={name} data-open={open || undefined} className="group border-rule-2 [&+&]:border-t data-open:bg-(image:--need-tint) data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]">
       <div className="flex items-center pr-4 hover:bg-paper-2 group-data-open:hover:bg-transparent">
         <button
           type="button"
