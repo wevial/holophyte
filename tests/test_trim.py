@@ -1016,6 +1016,21 @@ class RetireLoopTests(TrimFixture):
         self.assertIn("tests/test_copy.py::test_dropped", fake.turns[-1].goal)
         self.assertNotIn("test_copy.py::test_kept", fake.turns[-1].goal)
 
+    def test_a_cited_go_subtest_is_protected_from_retirement(self):
+        checks = ('package checks\n\nimport "testing"\n\n'
+                  'func TestChecks(t *testing.T) {\n'
+                  '\tt.Run("kept", func(t *testing.T) {})\n'
+                  '\tt.Run("dropped", func(t *testing.T) {})\n}\n')
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/checks_test.go::kept: pins a label",
+                  {"tests/checks_test.go": checks.replace(
+                      '\tt.Run("kept", func(t *testing.T) {})\n', "")}),
+            cited=['tests/checks_test.go::"TestChecks/kept"'],
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/checks_test.go": checks}),))
+        self.assert_reverted("not candidates: tests/checks_test.go::kept")
+
     def test_a_retire_commit_that_turns_verify_red_is_reverted(self):
         def leaning(source):
             return source.replace(

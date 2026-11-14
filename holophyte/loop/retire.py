@@ -151,7 +151,7 @@ def _protected(conn, run_id, wt, sha, criteria, added):
     for test in added:
         path, _, name = test.partition("::")
         why = ("in a criterion-named file" if path in files
-               else "cited by the approving review" if test in cited
+               else "cited by the approving review" if _cite_keys(path, name) & cited
                else "in a story witness file" if path in witnessed
                else "held at the reproduction commit"
                if held and _test_ids(wt, held, renamed.get(path, path))[name]
@@ -172,11 +172,17 @@ def _cited(conn, run_id):
             continue
         for ref in test_references(entry.get("note") or ""):
             path, _, name = ref
-            cited.add(f"{path}::{name}")
+            cited |= _cite_keys(path, name)
         for resolved in entry.get("resolved") or ():
             path, *_, name = resolved["as"].split("::")
-            cited.add(f"{path}::{name}")
+            cited |= _cite_keys(path, name)
     return cited
+
+
+def _cite_keys(path, name):
+    if PurePosixPath(path).suffix != ".go":
+        return {f"{path}::{name}"}
+    return {path + "::" + re.sub(r"\s", "_", part) for part in name.split("/")}
 
 
 def _story_files(conn, run_id):
