@@ -20,7 +20,14 @@ export function Haze() {
 
   useEffect(() => {
     const container = band.current!;
-    const haze = mount(container, { ...OPTIONS, ...themePaint(palette), motion: readMotion() });
+    let haze: HazeHandle;
+    try {
+      haze = mount(container, { ...OPTIONS, ...themePaint(palette), motion: readMotion() });
+    } catch {
+      container.querySelector("canvas")?.remove();
+      setFallback(true);
+      return;
+    }
     const canvas = container.querySelector("canvas");
     if (!canvas) {
       setFallback(true);

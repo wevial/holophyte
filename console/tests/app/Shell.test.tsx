@@ -431,6 +431,20 @@ test("a WebGL2 context whose shaders fail to compile leaves the shell up with th
   }
 });
 
+test("a canvas whose getContext throws leaves the shell up with the haze band on its fallback and no canvas left behind", async () => {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = (() => { throw new Error("context creation blocked"); }) as typeof getContext;
+  try {
+    await mount("#/");
+    expect(screen.getByRole("navigation", { name: "Pages" })).toBeTruthy();
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    expect(band.classList.contains("haze-fallback")).toBe(true);
+    expect(band.querySelector("canvas")).toBeNull();
+  } finally {
+    HTMLCanvasElement.prototype.getContext = getContext;
+  }
+});
+
 test("a stored header effect of none renders no haze band, and with nothing stored the shell renders one", async () => {
   localStorage.setItem("holophyte.next.effect", "none");
   await mount("#/");
