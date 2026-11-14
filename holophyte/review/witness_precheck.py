@@ -29,6 +29,7 @@ EXISTING = re.compile(r"unchanged|existing|already|still pass|as before", re.I)
 GLOB = re.compile(r"[*?[]")
 FIXTURES = (skipped_tests.MODULE_FIXTURE, skipped_tests.CLASS_FIXTURE)
 NOT_RUN = "witness pre-check not run: verify failed"
+ONCE_GAP = "'s one-time witness `"
 
 
 def _dotted_path(word):
@@ -208,13 +209,27 @@ def _probe(project, conn, run_id, beat_s, wt, command):
             return ""
 
 
+def _gaps_of(entries):
+    return [gap for entry in entries for gap in entry["gaps"]]
+
+
+def _once_gaps(wt, base, sha, pairs):
+    entries = check(wt, base, sha, pairs, "", lambda command: "")
+    for entry in entries:
+        entry["gaps"] = [gap for gap in entry["gaps"] if ONCE_GAP in gap]
+    return entries if _gaps_of(entries) else None
+
+
 def record(project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
            verify_cmd, ok):
     if conn is None or run_id is None:
         return
     if not ok:
-        store.record_event(conn, run_id, "witness_precheck", NOT_RUN)
-        return
+        entries = _once_gaps(wt, base_sha, sha,
+                             criterion_ids.numbered(conn, run_id, criteria))
+        store.record_event(conn, run_id, "witness_precheck", "\n".join(
+            [NOT_RUN] + _gaps_of(entries or ())))
+        return entries
     entries = check(wt, base_sha, sha,
                     criterion_ids.numbered(conn, run_id, criteria), verify_cmd,
                     partial(_probe, project, conn, run_id, beat_s, wt))

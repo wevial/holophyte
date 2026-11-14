@@ -479,14 +479,15 @@ class WitnessedOnce(RunningRepo):
 
     def test_an_unwritten_one_time_test_gets_a_witness_turn(self):
         fake = self.run_task(
-            Writes({"label.py": 'SAVE = "Done"\n'}), Idle(), APPROVE,
-            criteria=(ONCE_CRITERION,),
-            verify="python3 -m unittest discover -s tests -p 'test_runs.py'")
+            Writes({"label.py": 'SAVE = "Done"\n'}), RewritesUncommitted(),
+            APPROVE, criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
         (turn,) = self.summaries("witness_turn")
         self.assertIn(f"criterion C1's one-time witness `{ONCE_PATH}` does "
                       "not exist in the task worktree", turn)
+        self.assertIn("1 of 1 criteria witnessed",
+                      self.summaries("witness_precheck")[-1])
 
     def test_both_briefs_keep_the_one_time_test_out_of_commits(self):
         fake = self.run_task(WritesOnce(), APPROVE,

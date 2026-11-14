@@ -15,8 +15,10 @@ from sweep_fixture import SweepTestCase  # noqa: E402
 from holophyte.agents import review_workspace, roles  # noqa: E402
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.loop.review_round import round_prompt  # noqa: E402
+from holophyte.loop.task_worktree import write_ignored_directory  # noqa: E402
 from holophyte.pr import mockup, pr_media  # noqa: E402
 from holophyte.review import review_runner  # noqa: E402
+from holophyte.tickets import witness_once  # noqa: E402
 from tests import test_pr_media  # noqa: E402
 
 PNG = test_pr_media.PNG
@@ -231,6 +233,22 @@ class ContainerReviewCarryTests(SweepTestCase):
                 self.assertEqual(
                     (stage.path / mockup.CAPTURED / "01-gate.png").read_bytes(),
                     PNG)
+
+
+    def test_the_one_time_witness_directory_is_carried_unless_tracked(self):
+        write_ignored_directory(self.target, witness_once.DIRECTORY)
+        witness = f"{witness_once.DIRECTORY}/test_save_label.py"
+        (self.target / witness).write_text("import unittest\n")
+        carry = self.carry()
+        self.assertEqual(carry, ["deps", witness_once.DIRECTORY])
+        stage = review_runner.stage_candidate(
+            self.target, self.root / "stage", self.base, self.sha, carry=carry)
+        self.assertEqual((stage.path / witness).read_text(), "import unittest\n")
+        review_runner._check_clean(stage.path)
+
+        git(self.target, "add", "-f", witness)
+        git(self.target, "commit", "-q", "-m", "commit the witness")
+        self.assertEqual(self.carry(), ["deps"])
 
 
 class SeatReviewTests(unittest.TestCase):

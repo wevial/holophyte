@@ -108,7 +108,8 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                     "named": "ok" if files else "no_file"}
                    for (n, _), files in zip(pairs, files_by_criterion)]
     entries = _with_baseline(entries, results)
-    while ok and (gaps := _turn_gaps(entries)):
+    while (gaps := _turn_gaps(entries)) and (ok or all(
+            witness_precheck.ONCE_GAP in gap for gap in gaps)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
             break
@@ -134,6 +135,8 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
         results = baseline(sha, ok=ok)
         if fresh is not None:
             entries, checked = _with_baseline(fresh, results), sha
+        elif not ok:
+            break
     when = (None if checked is None else "before this review" if checked == sha
             else f"at {checked[:12]}, before verify went red")
     return sha, ok, out, (witness_brief(_gaps(entries), _unnamed(entries), when)

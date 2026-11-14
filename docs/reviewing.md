@@ -195,7 +195,10 @@ commits is a gap, ``criterion Cn's one-time witness `PATH` is committed; it
 stays out of the branch``, and so is a missing one, ``criterion Cn's one-time
 witness `PATH` does not exist in the task worktree``. A witness turn that
 changes a one-time witness without committing is checked again like one
-that commits. `holo ticket check`
+that commits. These two gaps start a witness turn even when verify is
+red, since a missing one-time witness leaves its verify line with no test to
+run. The reviewer's staged checkout carries `.holophyte-witness/` unless a
+file in it is tracked. `holo ticket check`
 blocks a one-time path outside `.holophyte-witness/`, a `.holophyte-witness/`
 path named as a durable witness, and a one-time path no verify line names,
 and suggests the one-time form for a criterion that checks only copy, a
