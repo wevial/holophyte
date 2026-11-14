@@ -110,12 +110,14 @@ test("with nothing stored both picks are Lotus and the canvas follows the system
   });
 });
 
-test("a Tide dark pick and a Dune light pick follow the system preference, and the Light scheme ignores the dark pick", () => {
+test("a Tide dark pick and a Dune light pick follow the system preference, and each explicit scheme ignores the other pick", () => {
   withPicks(() => {
     applyPick("dark", "tide");
     applyPick("light", "dune");
     expect([canvasUnder(null, "dark"), canvasUnder(null, "light")]).toEqual(["#0b0e1d", "#fcfaf7"]);
     expect([canvasUnder("light", "dark"), canvasUnder("dark", "light")]).toEqual(["#fcfaf7", "#0b0e1d"]);
+    applyPick("dark", "lotus");
+    expect([canvasUnder("dark", "light"), canvasUnder(null, "dark")]).toEqual(["#0d0a15", "#0d0a15"]);
   });
 });
 
