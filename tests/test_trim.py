@@ -831,7 +831,7 @@ class RetireLoopTests(TrimFixture):
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
                                  "tests/test_copy.py": approved, **dict(files)}),))
-        self.assert_reverted("deleted lines that kept tests own or use: "
+        self.assert_reverted("deleted lines outside retired tests and unused imports: "
                              f"tests/test_copy.py{named}")
 
     def test_a_retire_cutting_a_hash_line_from_a_kept_docstring_is_reverted(self):
@@ -854,7 +854,7 @@ class RetireLoopTests(TrimFixture):
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
                                  "tests/test_copy.py": hooked}),))
-        self.assert_reverted("deleted lines that kept tests own or use: "
+        self.assert_reverted("deleted lines outside retired tests and unused imports: "
                              "tests/test_copy.py::load_tests")
 
     def test_a_retire_commit_cutting_an_import_that_supplies_tests_is_reverted(self):
@@ -896,8 +896,30 @@ class RetireLoopTests(TrimFixture):
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
                                  "tests/test_copy.py": hooked}),))
-        self.assert_reverted("deleted lines that kept tests own or use: "
+        self.assert_reverted("deleted lines outside retired tests and unused imports: "
                              "tests/test_copy.py::tearDown")
+
+    def test_a_retire_commit_cutting_a_candidate_with_its_tear_down_is_reverted(self):
+        def documented(*names):
+            return unittest_module("CopyTests", *names).replace(
+                "(unittest.TestCase):\n", '(unittest.TestCase):\n    """Shared."""\n\n')
+
+        hooked = documented("test_dropped").replace(
+            "    def test_dropped", "    def tearDown(self):\n"
+            "        self.assertTrue(True)\n\n    def test_dropped")
+        heir = ("from test_copy import CopyTests\n\n\nclass HeirTests(CopyTests):\n"
+                "    def test_heir(self):\n        self.assertTrue(True)\n")
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+                  "protects nothing", {"tests/test_copy.py": documented().rstrip()
+                                       + "\n"}),
+            cited=["tests/test_heir.py::HeirTests::test_heir"],
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_heir.py": heir,
+                                 "tests/test_copy.py": hooked}),))
+        self.assert_reverted("deleted lines outside retired tests and unused "
+                             "imports: tests/test_copy.py::tearDown")
 
     def test_a_js_retire_cutting_a_kept_assertion_naming_the_retired_is_reverted(self):
         flags = ('test("dropped", () => { assert.ok(true); });\n'
@@ -909,7 +931,7 @@ class RetireLoopTests(TrimFixture):
             work=(Files("work", {"thing.txt": "the thing\n",
                                  "tests/test_new.py": NEW,
                                  "tests/flags.test.js": flags}),))
-        self.assert_reverted("deleted lines that kept tests own or use: "
+        self.assert_reverted("deleted lines outside retired tests and unused imports: "
                              "tests/flags.test.js:3")
 
     def test_a_retire_commit_adding_a_statement_after_an_import_is_reverted(self):

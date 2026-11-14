@@ -5,7 +5,6 @@ import json
 import re
 import subprocess
 import tokenize
-from collections import Counter
 from functools import partial
 from pathlib import PurePosixPath
 
@@ -37,10 +36,6 @@ from holophyte.review.reply_parsing import _GO_NAMES, _JS_TITLE, test_references
 SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
 NOT_REPRODUCED = "the run took the not-reproduced path"
-HOOKS = {"setUp", "tearDown", "setUpClass", "tearDownClass", "asyncSetUp",
-         "asyncTearDown", "setUpModule", "tearDownModule", "setup_module",
-         "teardown_module", "setup_function", "teardown_function",
-         "setup_class", "teardown_class", "setup_method", "teardown_method"}
 TEST_SUPPLIERS = {"load_tests", "pytest_generate_tests", "pytest_collect_file"}
 QUIET_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
                 tokenize.DEDENT, tokenize.ENDMARKER}
@@ -64,10 +59,13 @@ The repository's AGENTS.md states the gate:
 
 {gate}
 
-Read each candidate and the code it exercises. Delete only a listed test
-that fails the gate, plus a helper or import that only deleted tests used.
-Touch no other test, no file that is not a test file, and add no line but
-an import. Keep a listed test that passes the gate.
+Read each candidate and the code it exercises. Delete only a whole listed
+test that fails the gate, plus a top-level import no remaining code uses.
+Leave helpers, hooks such as setUp or tearDown, fixtures, constants and
+class bodies in place even when they become unused; delete a whole class
+only when every test in it is deleted and it holds nothing else but a
+docstring. Touch no other test, no file that is not a test file, and add
+no line but an import. Keep a listed test that passes the gate.
 
 The check command, run from the worktree root, must stay green:
 {commands}
@@ -217,8 +215,8 @@ def _unsound(wt, base, sha, ticket, candidates, green):
                test.partition("::")[2] for test in removed
                if test in candidates and test.startswith(f"{path}::")})]
     if cut:
-        reasons.append("the commit deleted lines that kept tests own or use: "
-                       + ", ".join(cut))
+        reasons.append("the commit deleted lines outside retired tests and"
+                       " unused imports: " + ", ".join(cut))
     unexplained = [test for test in removed
                    if test not in _reasons(wt, head, removed)]
     if unexplained:
@@ -311,10 +309,8 @@ def _cut_tests(wt, sha, head, path, gone):
         return [f"{path}:{min(set(hunk) - owned)}"
                 for hunk in hunks if set(hunk) - owned]
     kept = set(range(1, text.count("\n") + 2)) - quiet - deleted
-    used = (None if PurePosixPath(path).name == "conftest.py"
-            else _used_names(wt, head, path))
-    reads = _reads(tree)
-    owners = (_owner(tree, number, kept, gone, used, reads)
+    used = _used_names(wt, head, path)
+    owners = (_owner(tree, number, kept, gone, used)
               for number in sorted(deleted))
     return sorted({f"{path}{owner}" for owner in owners if owner})
 
@@ -335,23 +331,47 @@ def _used_names(wt, head, path):
     tree, _ = _tree(wt, head, path)
     if tree is None:
         return None
-    return ({node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-            | {node.attr for node in ast.walk(tree)
-               if isinstance(node, ast.Attribute)})
+    imported = {name for node in tree.body for name, _ in _imported(node)}
+    return imported | {node.id for node in ast.walk(tree)
+                       if isinstance(node, ast.Name)} | {
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
 
 
-def _owner(tree, number, kept, gone, used, reads):
+def _owner(tree, number, kept, gone, used):
     chain = _enclosing(tree, number)
-    whole = next((node for node in chain if kept.isdisjoint(_span(node))), None)
-    inside = chain[:chain.index(whole)] if whole is not None else chain
-    if whole is not None and not any(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            for node in inside) and _only_gone_use(
-                whole, gone, used, _served(tree, chain, whole, used), reads):
+    for node in chain:
+        if _is_test_def(node) and node.name in gone:
+            return None
+        if not isinstance(node, ast.ClassDef):
+            break
+    if len(chain) == 1 and used is not None and _retirable(
+            chain[0], kept, gone, used):
         return None
     named = [node for node in chain if hasattr(node, "name")]
     tests = [node for node in named if _is_test_def(node)]
     return f"::{(tests or named)[-1].name}" if named else f":{number}"
+
+
+def _retirable(node, kept, gone, used):
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        bound = _imported(node)
+        return bool(bound) and all(
+            name not in used and not _may_supply_tests(name)
+            and not _may_supply_tests(source) for name, source in bound)
+    return (isinstance(node, ast.ClassDef) and kept.isdisjoint(_span(node))
+            and not node.decorator_list and not node.keywords
+            and node.name not in used and all(
+                (_is_test_def(child) and child.name in gone)
+                or (index == 0 and isinstance(child, ast.Expr))
+                for index, child in enumerate(node.body)))
+
+
+def _imported(node):
+    if not isinstance(node, (ast.Import, ast.ImportFrom)) or any(
+            alias.name == "*" for alias in node.names):
+        return []
+    return [(alias.asname or alias.name.partition(".")[0],
+             alias.name.rpartition(".")[2]) for alias in node.names]
 
 
 def _enclosing(tree, number):
@@ -366,83 +386,9 @@ def _enclosing(tree, number):
                 if isinstance(child, ast.AST)]
 
 
-def _served(tree, chain, node, used):
-    parent = chain[chain.index(node) - 1] if chain.index(node) else None
-    if (isinstance(parent, ast.ClassDef) and not _is_fixture(node)
-            and used is not None and parent.name not in used):
-        return parent
-    return tree
-
-
-def _is_fixture(node):
-    for decorator in getattr(node, "decorator_list", []):
-        target = decorator.func if isinstance(decorator, ast.Call) else decorator
-        if getattr(target, "id", getattr(target, "attr", None)) == "fixture":
-            return True
-    return False
-
-
-def _only_gone_use(node, gone, used, scope, reads):
-    if used is None:
-        return False
-    if _is_test_def(node):
-        return node.name in gone
-    if isinstance(node, ast.ClassDef):
-        return node.name not in used and _serves_only_gone(node, gone)
-    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        if node.name in TEST_SUPPLIERS:
-            return False
-        if node.name in HOOKS or _is_fixture(node):
-            return _serves_only_gone(scope, gone)
-        return node.name not in used
-    return _unused_binding(node, gone, used, scope, reads)
-
-
-def _unused_binding(node, gone, used, scope, reads):
-    bound, sources = _bindings(node)
-    if not bound or any(_may_supply_tests(name) for name in bound + sources):
-        return False
-    if any(name in used for name in bound):
-        return False
-    if (isinstance(scope, ast.ClassDef) or node not in scope.body or any(
-            name in HOOKS or name.startswith(("__", "pytest")) for name in bound)):
-        return _serves_only_gone(scope, gone)
-    own = _reads(node)
-    return all(reads[name] > own[name] for name in bound)
-
-
-def _bindings(node):
-    if isinstance(node, (ast.Import, ast.ImportFrom)):
-        if any(alias.name == "*" for alias in node.names):
-            return [], []
-        return ([alias.asname or alias.name.partition(".")[0]
-                 for alias in node.names],
-                [alias.name.rpartition(".")[2] for alias in node.names])
-    targets = (node.targets if isinstance(node, ast.Assign)
-               else [node.target] if isinstance(node, ast.AnnAssign) else [])
-    if not all(isinstance(target, ast.Name) for target in targets):
-        return [], []
-    value = getattr(node, "value", None) or ast.Pass()
-    return ([target.id for target in targets],
-            [getattr(child, "id", getattr(child, "attr", ""))
-             for child in ast.walk(value)
-             if isinstance(child, (ast.Name, ast.Attribute))])
-
-
 def _may_supply_tests(name):
     return (name in TEST_SUPPLIERS or name.lower().startswith("test")
             or (name[:1].isupper() and not name.isupper()))
-
-
-def _reads(tree):
-    return Counter(node.id for node in ast.walk(tree)
-                   if isinstance(node, ast.Name)
-                   and isinstance(node.ctx, ast.Load))
-
-
-def _serves_only_gone(scope, gone):
-    return all(child.name in gone for child in ast.walk(scope)
-               if _is_test_def(child))
 
 
 def _is_test_def(node):

@@ -171,19 +171,15 @@ machines it walks. Back to the [README](index.md).
    a kept test owns or uses, gives each removed test its
    `RETIRED` line, passes verify, and leaves no
    test file outside In scope with fewer tests than at the review base.
-   In a Python file each deleted line belongs to its outermost wholly
-   deleted statement: a removed candidate, an import, or a helper, class
-   or assignment whose name the kept file no longer uses. A framework
-   hook (`setUp`, `tearDown`, `setUpClass`, `tearDownClass`,
-   `setUpModule`, `tearDownModule`, the pytest xunit hooks or a pytest
-   fixture), or an assignment in a class body or to a `__` or `pytest`
-   name, passes only when every test in its class, or for a module hook,
-   fixture or assignment, or a class another class names, its file, is a
-   removed candidate; a `load_tests`, `pytest_generate_tests` or
-   `pytest_collect_file`, which can supply checks no test name shows,
-   never passes; nothing deleted in a `conftest.py` but an import passes, and nothing deleted
-   inside a function that survives passes. Only a line holding nothing
-   but a comment or whitespace, as Python's tokenizer reads the file, is
+   In a Python file a deleted line may fall only inside a removed
+   candidate, inside a top-level import whose names the kept file does
+   not use and none of which could supply tests (a `load_tests`, a `test`
+   name or a class-like name), or inside a whole deleted class whose body was a
+   docstring and removed candidates and whose name the kept file does not
+   use. Any other deletion, of a hook, fixture, helper, constant, class
+   body line or line inside a surviving test, reverts the commit; a
+   helper left unused stays for trim. Only a line holding nothing but a
+   comment or whitespace, as Python's tokenizer reads the file, is
    exempt, so a `#` line inside a string still counts. In any other file
    each deleted line must fall inside a removed candidate's call, from its
    declaration to the matching close bracket;
