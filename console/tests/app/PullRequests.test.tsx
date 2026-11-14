@@ -47,15 +47,17 @@ interface Daemon {
   merge?: { ok: boolean; detail: string };
   /** What `demo` answers once mark-ready is posted; its `/attention` waits on `answer`. */
   woken?: { items: Item[]; queued: Status["queued"]; answer: Promise<void> };
+  /** How far the daemons' clock runs behind the console's. */
+  behindMs?: number;
 }
 
 let client: QueryClient | null = null;
 /** `demo`'s `/attention` requests made after the mark-ready post. */
 let readsAfterPost = 0;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken }: Daemon) {
-  const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
-  const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
+async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken, behindMs = 0 }: Daemon) {
+  const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW - behindMs, runs: own, queued: [], actions });
+  const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW - behindMs, project, items: list });
   const [first, second] = ["/srv/dev/demo", "/srv/dev/writer"];
   const fleet = peersFetch(DEMO, {
     [DEMO]: { status: statusOf(first, runs), attention: attention(first, items) },
@@ -150,6 +152,11 @@ test("Waiting lists every pull request park, a ci park and a ready one too, olde
   await mount({ items: [] });
   expect(rows()).toEqual([]);
   expect(section().textContent).toContain("Nothing waits on a pull request.");
+});
+
+test("a row's age counts on its daemon's clock, not the console's", async () => {
+  await mount({ items: [{ ...readyPark, asked_ms: NOW - 5 * MINUTE - 2 * MINUTE }], behindMs: 5 * MINUTE });
+  expect(waits()).toEqual([["Your review", "2m"]]);
 });
 
 test("a draft held for review labels its glyph Draft and its age with no second line, while a ready row reads Your review then ready to merge", async () => {

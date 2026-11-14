@@ -1,7 +1,7 @@
 import { useId, useState } from "react";
 import { ageOf, orderByAge, prTitle, type ReadinessMap } from "../../lib/attention";
 import { formatAge } from "../../lib/format";
-import type { HostRecord } from "../../lib/hosts";
+import { sinceSeen, type HostRecord } from "../../lib/hosts";
 import { runKey } from "../../lib/runs";
 import { prLabel } from "../../lib/shipped";
 import type { AttentionItem } from "../../lib/types";
@@ -32,11 +32,13 @@ export function PullRequestGlyph() {
   );
 }
 
-/** The runs parked on a pull request, oldest first. */
+/** The runs parked on a pull request, oldest first, aged on their daemon's clock. */
 export function waitingRows(hosts: Host[], items: AttentionItem[], now: number): WaitingRow[] {
   const rows = items.flatMap((item) => {
     const host = hosts.find((candidate) => candidate.key === item.daemon);
-    return host == null ? [] : [{ item, host, ageMs: ageOf(item, now) }];
+    if (host == null) return [];
+    const clock = host.status == null ? now : host.status.now + sinceSeen(host.seen_ms, now);
+    return [{ item, host, ageMs: ageOf(item, clock) }];
   });
   return orderByAge(rows, (row) => row.ageMs);
 }
@@ -57,7 +59,7 @@ function WaitingLine({ row, readiness }: { row: WaitingRow; readiness: Readiness
   const shown = open && run != null;
   return (
     <li data-pr-row data-open={shown || undefined} className="border-b border-rule-2">
-      <div data-row className="grid min-h-10 grid-cols-[16px_88px_minmax(0,1fr)_auto] items-center gap-x-3 px-2.5 font-mono text-[12px] text-ink-3 hover:bg-paper-2 max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]">
+      <div data-row className="grid min-h-10 grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-x-3 px-2.5 font-mono text-[12px] text-ink-3 hover:bg-paper-2 max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]">
         <StateDot state={state} hideWord label={wait.status} />
         <span className="truncate text-ink-2 max-[720px]:hidden">{ticket}</span>
         <button
@@ -84,7 +86,7 @@ function WaitingLine({ row, readiness }: { row: WaitingRow; readiness: Readiness
         </span>
       </div>
       {shown && (
-        <div id={detailId} className="border-t border-dashed border-rule-2 py-4 pl-[129px] pr-2.5 max-[720px]:px-2.5">
+        <div id={detailId} className="border-t border-dashed border-rule-2 py-4 pl-[134px] pr-2.5 max-[720px]:px-2.5">
           <PrRowDetail host={host} run={run} item={item} ready={state === "ready_to_merge"} bypass={ready?.reason === "review_bypassable"} />
         </div>
       )}

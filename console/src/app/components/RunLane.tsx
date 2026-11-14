@@ -15,11 +15,12 @@ import { plainTitle, TitleText } from "./TitleText";
 
 const MINUTE = 60_000;
 const HOT_PERCENT = 90;
-const TRACK = ["Implement", "Verify", "Review", "Merge"] as const;
-const TRACK_AT: Record<string, number> = { working: 0, addressing: 0, verifying: 1, reviewing: 2, merge_gate: 3, merging: 3, squashing: 3 };
+const TRACK = ["Implement", "Verify", "Review", "Merge gate", "Merge"] as const;
+const TRACK_AT: Record<string, number> = { working: 0, addressing: 0, verifying: 1, reviewing: 2, merge_gate: 3, merging: 4, squashing: 4 };
 
 interface LaneGroup extends ProjectGroup {
   runs: StatusRun[];
+  workers: number;
   witnesses: WitnessSet | null;
 }
 
@@ -41,6 +42,7 @@ export function laneGroups(hosts: HostRecord<ContractBodies>[]): LaneGroup[] {
     return {
       ...group,
       runs: own.flatMap((entry) => entry.status.runs),
+      workers: own[0]!.status.workers,
       witnesses: own.find((entry) => entry.status.witnesses)?.status.witnesses ?? null,
     };
   });
@@ -70,9 +72,23 @@ export function witnessLines(groups: LaneGroup[], now: number): string[] {
   );
 }
 
+/** One dot per worker in scope, the busy ones lit. */
+export function WorkerDots({ groups }: { groups: LaneGroup[] }) {
+  const workers = groups.reduce((sum, group) => sum + group.workers, 0);
+  const busy = Math.min(workers, groups.reduce((sum, group) => sum + group.runs.length, 0));
+  const label = `${busy} of ${workers} workers busy`;
+  return (
+    <span role="img" aria-label={label} title={label} className="flex items-center gap-[3px]">
+      {Array.from({ length: workers }, (_, index) => (
+        <i key={index} data-busy={index < busy || undefined} className={`block size-[5px] rounded-full ${index < busy ? "bg-live" : "bg-rule"}`} />
+      ))}
+    </span>
+  );
+}
+
 function stageOf(run: StatusRun): { at: number | null; label: string } {
   const at = TRACK_AT[run.phase] ?? null;
-  const word = at == null ? phaseLabel(run.phase) : TRACK[at];
+  const word = at == null ? phaseLabel(run.phase) : at === 3 && run.pr_url ? "Monitoring PR" : TRACK[at];
   const round = reviewRound({ phase: run.phase, round: run.round + 1, max_rounds: run.max_rounds });
   return { at, label: round == null ? word : `${word} · ${round}` };
 }
@@ -107,7 +123,7 @@ function RunRow({ row }: { row: RunningRow }) {
         data-row
         {...runPage(row.project, run.id)}
         aria-label={`${run.ticket} ${plainTitle(run.title ?? "")}, ${stage.label}${spoken}`}
-        className="grid grid-cols-[16px_88px_minmax(0,1fr)_200px_76px] items-start gap-x-3 px-2.5 py-3 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline max-[720px]:grid-cols-[16px_minmax(0,1fr)_76px]"
+        className="grid grid-cols-[16px_84px_minmax(0,1fr)_270px_70px] items-start gap-x-3 px-2.5 py-3 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline max-[720px]:grid-cols-[16px_minmax(0,1fr)_70px]"
       >
         <span className="pt-0.5"><StateDot state="running" hideWord /></span>
         <span className="truncate pt-0.5 text-ink-2 max-[720px]:hidden">{run.ticket}</span>

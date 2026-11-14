@@ -6,7 +6,7 @@ import { FocusCard, useOpenEntry } from "../components/FocusCard";
 import { MergedToday, SHOWN_MERGES } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
 import { PullRequestGlyph, waitingRows, WaitingRows } from "../components/PrLane";
-import { laneGroups, liveRuns, RunningRows, witnessLines } from "../components/RunLane";
+import { laneGroups, liveRuns, RunningRows, WorkerDots, witnessLines } from "../components/RunLane";
 import { STATE_ICONS, TONE_TEXT } from "../components/StateDot";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
@@ -38,7 +38,7 @@ function Rows({ label, count, aside, empty, footer, children }: { label: string;
       <header className="flex min-h-8 items-baseline gap-2 border-b border-rule-2 px-2.5 pb-2">
         <h2 className="font-sans text-[14px] font-semibold text-ink">{label}</h2>
         {count != null && <span data-count className="font-mono text-[12px] text-ink-3">{count}</span>}
-        {aside != null && <span className="ml-auto">{aside}</span>}
+        {aside != null && <span className="ml-auto self-center">{aside}</span>}
       </header>
       {count == null ? null : count === 0 ? <p className="px-2.5 py-2.5 font-mono text-[12px] text-ink-3">{empty}</p> : children}
       {count != null && footer}
@@ -65,12 +65,12 @@ export function Overview() {
   const more = merged.length - SHOWN_MERGES;
   const shown = (count: number) => (loaded ? count : undefined);
   return (
-    <div className="flex flex-col gap-8 px-8 pt-3.5 pb-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:gap-[36px]">
-      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-10">
+    <div className="flex flex-col gap-8 pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:flex-row min-[1200px]:items-start min-[1200px]:gap-[46px] min-[1200px]:pl-[54px]">
+      <div className="flex min-w-0 max-w-[780px] flex-1 flex-col gap-10">
         <div className="flex flex-col gap-6">
           {view.answered && (
-            <header data-overview-head className="flex flex-col gap-3 pt-4">
-              <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+            <header data-overview-head className="flex flex-col gap-3 pt-4 pl-2.5">
+              <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
                 <h1 className="flex items-baseline gap-3 font-sans text-ink">
                   <span data-numeral className={`text-[56px] font-light leading-none tracking-[-0.02em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : running.length}</span>{" "}
                   <span className="text-[22px] font-normal leading-none">{need > 0 ? "need you" : "running"}</span>
@@ -105,6 +105,7 @@ export function Overview() {
         <Rows
           label="Running"
           count={shown(running.length)}
+          aside={loaded && lanes.length > 0 ? <WorkerDots groups={lanes} /> : undefined}
           empty="Nothing running."
           footer={witnesses.map((line) => (
             <p key={line} data-witnesses className="px-2.5 pt-2.5 font-mono text-[12px] text-ink-3">{line}</p>

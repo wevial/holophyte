@@ -16,7 +16,7 @@ export function MergedToday({ rows, colours }: { rows: ShippedRow[]; colours: Ma
         <li
           key={`${row.daemon ?? ""}:${row.id}`}
           data-merge={row.ticket}
-          className="grid min-h-10 grid-cols-[16px_88px_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-rule-2 px-2.5 font-mono text-[12px] text-ink-3 max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
+          className="grid min-h-10 grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-x-3 border-b border-rule-2 px-2.5 font-mono text-[12px] text-ink-3 max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
         >
           <StateDot state="merged" hideWord />
           <span className="truncate text-ink-2 max-[720px]:hidden">{row.ticket}</span>

@@ -168,6 +168,14 @@ test("a running row's activity line is its run's newest event, else its step", a
   expect(activity("WRITER-3")).toBe("fixing round 2");
 });
 
+test("the Running heading's worker dots count busy workers against every worker in scope", async () => {
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun], { workers: 2 }), statusOf("/srv/dev/writer", [writerRun], { workers: 3 })]);
+  const dots = within(running()).getByRole("img", { name: "2 of 5 workers busy" });
+  expect(dots.getAttribute("title")).toBe("2 of 5 workers busy");
+  expect(dots.querySelectorAll("[data-busy]")).toHaveLength(2);
+  expect(dots.children).toHaveLength(5);
+});
+
 const witnessesOf = (keys: string[], elapsedMs: number) => ({ story: "DEMO-20", keys, started_ms: NOW - elapsedMs, elapsed_ms: elapsedMs });
 const witnessLines = () => [...running().querySelectorAll("[data-witnesses]")].map((line) => line.textContent);
 

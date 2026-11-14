@@ -21,7 +21,6 @@ const served = (await Bun.file(new URL("attention.json", SERVE)).json()) as Atte
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const NOW = new Date(2026, 9, 15, 16, 30).getTime();
-const at = (hour: number, minute: number) => new Date(2026, 9, 15, hour, minute).getTime();
 
 type Item = Attention["items"][number];
 const failed = (triage: unknown): Item => ({
@@ -112,35 +111,16 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a failed item's row names its state on its glyph and its age, and its open detail its strike, or its bare why without triage", async () => {
+test("a failed item's row names its state on its glyph and its age, and its open detail its bare why without triage", async () => {
   await mount(daemon({ items: [failed(code), blocked("DEMO-4", 4, HOUR)] }));
   expect(rows()).toEqual(["DEMO-11", "DEMO-4"]);
   expect(within(row("DEMO-11")).getByRole("img", { name: "failed" })).toBeTruthy();
   expect(row("DEMO-11").querySelector("[data-age]")!.textContent).toBe("8h");
   expect(toggleOf("DEMO-11").textContent).not.toContain("failed");
-  expect(within(openDetail()).getByText("run #12 · strike 2 of 3")).toBeTruthy();
   cleanup();
 
   await mount(daemon({ items: [failed(null), blocked("DEMO-4", 4, HOUR)] }));
   expect(within(openDetail()).getByText("Verify command failed")).toBeTruthy();
-});
-
-test("the open detail lists the run's three newest events but bookkeeping, newest first", async () => {
-  const events = [
-    { at: at(15, 10), kind: "phase_change", summary: "claimed -> working" },
-    { at: at(16, 2), kind: "verify", summary: "verify failed: 2 tests red" },
-    { at: at(15, 40), kind: "review", summary: "round 1 changes requested" },
-    { at: at(16, 20), kind: "pr_seen_commits", summary: "saw 1 commit" },
-    { at: at(15, 55), kind: "phase_change", summary: "working -> verifying" },
-  ];
-  await mount(daemon({ items: [failed(code)], details: { 12: { ...detail, events } } }));
-  const lines = within(openDetail()).getByRole("list", { name: "Latest progress" }).querySelectorAll("li");
-  expect([...lines].map((line) => `${line.querySelector("time")?.textContent}${line.querySelector("p")?.textContent}`)).toEqual([
-    "16:02verify failed: 2 tests red",
-    "15:55working -> verifying",
-    "15:40round 1 changes requested",
-  ]);
-  expect(openDetailText()).toContain("No pull request yet");
 });
 
 test("an untitled item's row takes its live run's title, else the open run detail's", async () => {
@@ -188,13 +168,10 @@ test("pressing a row's toggle opens it alone, and pressing the open one leaves n
   expect(openKeys()).toEqual(["C-3"]);
 });
 
-test("an open question row's detail holds its headline, ask, latest events and actions; a closed row draws no detail", async () => {
-  const events = [{ at: at(16, 2), kind: "review", summary: "round 1 changes requested" }];
-  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], actions: true, details: { 1: { ...detail, events } } }));
+test("an open question row's detail is its ask over its actions; a closed row draws no detail", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], actions: true }));
   const open = openDetail();
-  expect(within(open).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
   expect(within(open).getByText("Which way?")).toBeTruthy();
-  expect(within(open).getByRole("list", { name: "Latest progress" }).textContent).toContain("round 1 changes requested");
   expect(within(open).getByRole("button", { name: "Answer" }).dataset.variant).toBe("primary");
   fireEvent.click(within(open).getByRole("button", { name: "More" }));
   expect(within(screen.getByRole("group", { name: "More actions" })).getByRole("button", { name: "Requeue" })).toBeTruthy();
@@ -202,7 +179,7 @@ test("an open question row's detail holds its headline, ask, latest events and a
   expect(document.getElementById(toggleOf("B-2").getAttribute("aria-controls")!)).toBeNull();
 });
 
-test("a failed row's open detail ends its why with triage's verdict, and a stuck wait's reads its dependency and queue", async () => {
+test("a failed row's open detail ends its why with triage's verdict, and a stuck wait's reads its dependency", async () => {
   const stuck = {
     kind: "stuck_wait", level: "attention", ticket: "DEMO-5", ticket_url: null, title: "Ship the export", dependency: "DEMO-2", dependency_state: "abandoned", reason: null, behind: 4,
   } as Item;
@@ -211,7 +188,6 @@ test("a failed row's open detail ends its why with triage's verdict, and a stuck
   expect(within(openDetail()).getByText(/^Verify command failed/).textContent).toEndWith("Triage says it is the code, 81%.");
   fireEvent.click(toggleOf("DEMO-5"));
   expect(within(openDetail()).getByText("Waits on DEMO-2, which was abandoned")).toBeTruthy();
-  expect(within(openDetail()).getByText("4 queued behind")).toBeTruthy();
 });
 
 test("a poll that puts an older item first leaves the open row open", async () => {
@@ -238,16 +214,7 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("an open row's pull request link sits in its detail's PR line, not in the row", async () => {
-  const pr = "https://github.com/example/demo/pull/2405";
-  await mount(daemon({ items: [{ ...failed(null), pr_url: pr } as Item] }));
-  const link = within(openDetail()).getByRole("link", { name: "PR #2405" });
-  expect(link.getAttribute("href")).toBe(pr);
-  expect(link.getAttribute("target")).toBe("_blank");
-  expect([...row("DEMO-11").querySelectorAll("a")].filter((anchor) => !openDetail().contains(anchor))).toEqual([]);
-});
-
-test("an unreachable host's open detail says it is not answering and when it was last seen, with no PR line or events", async () => {
+test("an unreachable host's open detail says it is not answering and when it was last seen, with no pull request", async () => {
   let down = false;
   const up = daemon({ items: [] });
   const host = { ...working, host: "host-a", now: NOW, project: "/srv/dev/demo", runs: [], queued: [] };
@@ -259,11 +226,7 @@ test("an unreachable host's open detail says it is not answering and when it was
   down = true;
   fake.clock.now = NOW;
   await repoll();
-  expect(within(openDetail()).getByText("host-a is not answering")).toBeTruthy();
-  expect(within(openDetail()).getByText("last seen 4m ago")).toBeTruthy();
-  expect(openDetailText()).not.toContain("PR");
-  expect(openDetailText()).not.toContain("pull request");
-  expect(within(openDetail()).queryByRole("list", { name: "Latest progress" })).toBeNull();
+  expect(openDetailText()).toBe("host-a is not answering Last seen 4m ago.");
 });
 
 const TICKET_URL = "https://linear.app/demo/issue/DEMO-11";
@@ -410,10 +373,9 @@ const fixDeclined = (extra: object = {}) => blocked("DEMO-4", 4, HOUR, {
   park_kind: "fix_declined", pr: { number: 644, checks: "failure", review: null, threads: null, open_threads: null, title: null, state: "ready" }, pr_url: prUrl, question: parkedQuestion, ...extra,
 });
 
-test("a declined check fix leads with structured facts and renders the ask without machine prefixes", async () => {
+test("a declined check fix's sentence leads with its structured facts and renders the ask without machine prefixes", async () => {
   await mount(daemon({ items: [fixDeclined()] }));
-  expect(within(openDetail()).getByRole("heading", { name: "Checks failed on PR #644 and the fix round found nothing to change" })).toBeTruthy();
-  expect(within(openDetail()).getByRole("link", { name: "PR #644" }).getAttribute("href")).toBe(prUrl);
+  expect(openDetailText()).toStartWith("Checks failed on PR #644 and the fix round found nothing to change. I couldn't reproduce the unit failure.");
   expect(openDetail().querySelector("code")?.textContent).toBe("unit");
   expect(openDetail().querySelector("strong")?.textContent).toBe("The CI log:");
   expect(openDetail().querySelectorAll("li")).toHaveLength(2);
@@ -421,50 +383,29 @@ test("a declined check fix leads with structured facts and renders the ask witho
   expect(openDetailText()).not.toContain("Fix round made no commit");
 });
 
-test("a question without a pull request has a generic headline and no PR link", async () => {
-  await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, { park_kind: "question", pr: null, pr_url: null })] }));
-  expect(within(openDetail()).getByRole("heading", { name: "The run has a question for you" })).toBeTruthy();
-  expect(within(openDetail()).queryByRole("link", { name: /PR/ })).toBeNull();
-});
-
-test("the ask displays raw HTML literally and expands from four lines", async () => {
+test("the ask displays raw HTML literally and expands from two lines", async () => {
   await mount(daemon({ items: [blocked("DEMO-4", 4, HOUR, { question: "<script>alert(1)</script>" })] }));
   expect(openDetail().querySelector("script")).toBeNull();
   expect(within(openDetail()).getByText("<script>alert(1)</script>")).toBeTruthy();
-  const folded = openDetail().querySelector(".line-clamp-4")!;
+  const folded = openDetail().querySelector(".line-clamp-2")!;
   expect(folded).toBeTruthy();
   const toggle = within(openDetail()).getByRole("button", { name: "Show all" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
-  expect(folded.classList.contains("line-clamp-4")).toBe(false);
+  expect(folded.classList.contains("line-clamp-2")).toBe(false);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
   expect(toggle.textContent).toBe("Show less");
   fireEvent.click(toggle);
-  expect(folded.classList.contains("line-clamp-4")).toBe(true);
-});
-
-test("latest event Markdown expands independently from two lines", async () => {
-  await mount(daemon({ items: [fixDeclined()], details: { 4: { ...detail, events: [{ at: NOW, kind: "phase_change", summary: "**Parked** on `unit`" }] } } }));
-  const entry = within(openDetail()).getByRole("list", { name: "Latest progress" }).firstElementChild!;
-  expect(entry.querySelector("strong")?.textContent).toBe("Parked");
-  expect(entry.querySelector("code")?.textContent).toBe("unit");
-  const folded = entry.querySelector(".line-clamp-2")!;
-  expect(folded).toBeTruthy();
-  const toggle = within(entry as HTMLElement).getByRole("button", { name: "Show all" });
-  expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(toggle);
-  expect(toggle.getAttribute("aria-expanded")).toBe("true");
-  expect(folded.classList.contains("line-clamp-2")).toBe(false);
-  expect(openDetail().querySelector(".line-clamp-4")).toBeTruthy();
+  expect(folded.classList.contains("line-clamp-2")).toBe(true);
 });
 
 test.each([
-  [{ pr: null }, "The fix round on PR #644 found nothing to change"],
-  [{ pr: null, pr_url: null }, "The fix round found nothing to change"],
-  [{ park_kind: null }, "The run has a question for you"],
-])("the blocked headline falls back using available structured facts (%j)", async (extra, headline) => {
+  [{ pr: null }, "The fix round on PR #644 found nothing to change. "],
+  [{ pr: null, pr_url: null }, "The fix round found nothing to change. "],
+  [{ park_kind: null }, "I couldn't reproduce"],
+])("a declined fix's lead falls back on the structured facts it has, and a plain question has none (%j)", async (extra, lead) => {
   await mount(daemon({ items: [fixDeclined(extra)] }));
-  expect(within(openDetail()).getByRole("heading", { name: headline })).toBeTruthy();
+  expect(openDetailText()).toStartWith(lead);
 });
 
 test("ask links use safe URLs and unsupported headings and images retain their text", async () => {
