@@ -8,6 +8,8 @@ Run: python3 -m unittest discover -s tests -p 'test_witness_turns.py' -v
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import subprocess
 import sys
@@ -478,9 +480,11 @@ class WitnessedOnce(RunningRepo):
         self.assertIn("1 of 1 criteria witnessed", second)
 
     def test_an_unwritten_one_time_test_gets_a_witness_turn(self):
-        fake = self.run_task(
-            Writes({"label.py": 'SAVE = "Done"\n'}), RewritesUncommitted(),
-            APPROVE, criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)
+        with contextlib.redirect_stdout(io.StringIO()):
+            fake = self.run_task(
+                Writes({"label.py": 'SAVE = "Done"\n'}),
+                RewritesUncommitted(), APPROVE, criteria=(ONCE_CRITERION,),
+                verify=ONCE_VERIFY)
 
         self.assertEqual(fake.roles, ["implement", "implement", "review"])
         (turn,) = self.summaries("witness_turn")
