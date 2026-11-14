@@ -343,6 +343,7 @@ PINNED = {
     "holophyte/tickets/ticket_depends.py": 3,
     "holophyte/tickets/ticket_header.py": 4,
     "holophyte/tickets/ticket_template.py": 23,
+    "holophyte/tickets/witness_once.py": 2,
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,
