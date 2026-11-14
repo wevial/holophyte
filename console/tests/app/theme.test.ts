@@ -48,9 +48,7 @@ test("computed canvas and action colours honor explicit themes and otherwise fol
   }
 });
 
-type Scheme = "dark" | "light" | null;
-
-function tokenUnder(scheme: Scheme, preference: "light" | "dark", token = "--canvas"): string {
+function tokenUnder(scheme: "dark" | "light" | null, preference: "light" | "dark", token = "--canvas"): string {
   const root = document.documentElement;
   const device = (window as unknown as { happyDOM: { settings: { device: { prefersColorScheme: string } } } })
     .happyDOM.settings.device;
