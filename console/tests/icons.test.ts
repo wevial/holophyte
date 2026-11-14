@@ -62,18 +62,13 @@ test("the manifest names both PNGs with sizes and standalone display", async () 
   expect(manifest.display).toBe("standalone");
 });
 
-test("the favicon is the mark: a 100-unit square whose rounded tile is filled by a gradient", async () => {
+test("the favicon is its own drawing on a 16-unit grid", async () => {
   const svg = await Bun.file(new URL("favicon.svg", publicDir)).text();
-  expect(svg).toContain('viewBox="0 0 100 100"');
-  const tile = /<rect [^>]*>/.exec(svg)![0];
-  expect(tile).toMatch(/ rx="[1-9][\d.]*"/);
-  const gradient = /fill="url\(#([^)]+)\)"/.exec(tile)![1];
-  expect(svg).toContain(`<linearGradient id="${gradient}"`);
+  expect(svg).toContain('viewBox="0 0 16 16"');
 });
 
-test("the favicon and the docs site logo are copies of assets/logo.svg", async () => {
+test("the docs site logo is a copy of assets/logo.svg", async () => {
   const mark = await Bun.file(new URL("../../assets/logo.svg", import.meta.url)).text();
-  expect(await Bun.file(new URL("favicon.svg", publicDir)).text()).toBe(mark);
   expect(await Bun.file(new URL("../../docs/assets/logo.svg", import.meta.url)).text()).toBe(mark);
 });
 

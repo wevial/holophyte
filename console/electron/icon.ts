@@ -1,12 +1,12 @@
 /**
  * The app icon, rendered from the repository's own SVG so no image tool has
- * to exist on the machine: `assets/icon.svg` is the cosmic lotus, full-bleed
- * on its own indigo ground, because macOS 26 drops an icon without a ground
+ * to exist on the machine: `assets/icon.svg` is the ginkgo leaf, full-bleed
+ * on its own gradient ground, because macOS 26 drops an icon without a ground
  * onto a grey tile and shrinks it; and the tray's warn and bad variants, rendered
  * from the drawer's SVGs at the template PNG's 1x and 2x sizes since
  * Electron loads no SVG into a tray. `renderIcon` is pure; the CLI entry
  * writes the PNGs into the build output directory for `electron-builder`
- * and `main.ts` to pick up.
+ * and `main.ts`, or with `--public` the console's web icons into its public/.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -17,6 +17,11 @@ export const ICON_SIZE = 1024;
 /** The template PNG stands 20 px tall at 1x; the variants match it. */
 export const TRAY_HEIGHT = 20;
 export const TRAY_VARIANTS = ["warn", "bad"] as const;
+const PUBLIC_ICONS = [
+  ["apple-touch-icon.png", 180],
+  ["icon-192.png", 192],
+  ["icon-512.png", 512],
+] as const;
 
 export function renderIcon(
   svgText: string,
@@ -49,7 +54,14 @@ export function renderTrayIcons(outDir: string): string[] {
   return written;
 }
 
-if (import.meta.main) {
+if (import.meta.main && process.argv.includes("--public")) {
+  const svg = readFileSync(path.resolve(import.meta.dirname, "..", "..", "assets", "icon.svg"), "utf8");
+  for (const [file, size] of PUBLIC_ICONS) {
+    const outPath = path.resolve(import.meta.dirname, "..", "public", file);
+    writeFileSync(outPath, renderIcon(svg, size));
+    console.log(`wrote ${path.relative(process.cwd(), outPath)} (${size}x${size})`);
+  }
+} else if (import.meta.main) {
   const here = import.meta.dirname;
   const svgPath = path.resolve(here, "..", "..", "assets", "icon.svg");
   const outPath = path.join(here, "dist", "icon.png");
