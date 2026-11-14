@@ -52,6 +52,7 @@ PINNED = {
     "holophyte/agents/review_workspace.py": 6,
     "holophyte/agents/roles.py": 8,
     "holophyte/agents/session_arms.py": 0,
+    "holophyte/agents/t3_cleanup.py": 0,
     "holophyte/agents/transcript_config.py": 0,
     "holophyte/agents/transcripts.py": 4,
     "holophyte/agents/turn_progress.py": 0,
