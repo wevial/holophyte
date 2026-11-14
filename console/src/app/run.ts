@@ -213,10 +213,11 @@ function checkFixMarks(events: RunDetail["events"], fixing: boolean, merged: boo
   });
   return found.map(({ round, of, checks }, index) => {
     const latest = index === found.length - 1;
+    const label = `Check fix round ${round} of ${of}`;
     return {
-      label: `Check fix round ${round} of ${of}`,
+      label,
       glyph: !latest ? "failed" : fixing ? "running" : merged ? "pass" : "ended",
-      card: { title: `Check fix round ${round} of ${of}`, lines: [`failing: ${checks}`], model: null },
+      card: { title: label, lines: [`failing: ${checks}`], model: null },
       anchor: null,
       subs: [],
     };
