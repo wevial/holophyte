@@ -13,14 +13,26 @@ from holophyte.agents.harness import PROFILES_KEY
 from holophyte.babysit.babysit_steps import running_step
 from holophyte.cli.report import host_label, toil_status
 from holophyte.config.agent_settings import budget_scale, runs_implementer_route
-from holophyte.config.config_tables import board_mode, loop_config, sweep_config
+from holophyte.config.config_tables import (
+    board_mode,
+    loop_config,
+    merge_config,
+    sweep_config,
+)
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.config.serve_settings import console_colour, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
 from holophyte.review.criterion_ids import with_numbers
+from holophyte.scout.brief import scout_title
 from holophyte.serve.serve_levers import paused_item
-from holophyte.serve.serve_runs import json_host, no_store, served_round_caps
+from holophyte.serve.serve_runs import (
+    json_host,
+    no_store,
+    parse_limit,
+    served_round_caps,
+    split_instructions,
+)
 from holophyte.story.witness_running import running_set
 from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
@@ -28,6 +40,8 @@ from store.working import agent_work, chain_work, effective_work, verify_work
 # A failure that strands its ticket in flight stays past it: only the
 # operator will move that ticket.
 FAILED_WINDOW_MS = 24 * 60 * 60 * 1000
+SEARCH_LIMIT = 20
+SEARCH_CAP = 50
 
 
 def saved_colour(project):
@@ -345,6 +359,44 @@ def ticket_search(project, query):
         return 200, {"q": text, "tickets": store.read.search_tickets(conn, text)}
     finally:
         conn.close()
+
+
+def review_findings(project):
+    merge = merge_config(project)
+    bot_logins = merge.bot_authors + merge.bot_logins
+    return lambda rows: split_instructions(rows, bot_logins)["findings"]
+
+
+def search(project, query):
+    text = parse_qs(query).get("q", [""])[-1].strip()
+    if not text:
+        return 400, {"error": "q is required"}
+    try:
+        limit = parse_limit(query, default=SEARCH_LIMIT, cap=SEARCH_CAP)
+    except ValueError as bad:
+        return 400, {"error": str(bad)}
+    if not project.store_path.exists():
+        return 503, no_store(project)
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        found = store.read.search(conn, text, limit, review_findings(project))
+    finally:
+        conn.close()
+    return 200, {
+        "q": text, "limit": limit,
+        "tickets": [{"ticket": key, "title": title, "status": state}
+                    for key, title, state, *_ in found["tickets"]],
+        "runs": [dict(zip(("id", "ticket", "title", "phase", "outcome",
+                           "started_ms"), row)) for row in found["runs"]],
+        "scouts": [{"id": scout_id, "phase": phase,
+                    "title": next((t for t in titles if t and t.strip()),
+                                  None) or scout_title(ask)}
+                   for scout_id, phase, *titles, ask in found["scouts"]],
+        "findings": [{"run": run_id, "round": number,
+                      "severity": finding["severity"],
+                      "message": finding["message"], "path": finding["path"],
+                      "line": finding.get("line")}
+                     for run_id, number, finding in found["findings"]]}
 
 
 def story_json(story):

@@ -25,7 +25,7 @@ from urllib.request import (
 
 import store
 from holophyte.config.config_tables import merge_config
-from holophyte.tickets import ticket_header, ticket_template
+from holophyte.tickets import ticket_header, ticket_template, witness_once
 
 DIRECTORY = ".holophyte/mockup"
 CAPTURED = ".holophyte/captured"
@@ -491,8 +491,19 @@ def review_carry(wt, configured=()):
     except (Refused, OSError, subprocess.CalledProcessError):
         return []
     taken = [Path(entry).parts for entry in configured]
-    return [entry for entry in (DIRECTORY, CAPTURED) if (root / entry).is_dir()
+    entries = (DIRECTORY, CAPTURED) + ((witness_once.DIRECTORY,)
+                                       if _carriable(root, witness_once.DIRECTORY)
+                                       else ())
+    return [entry for entry in entries if (root / entry).is_dir()
             and not any(_nested(Path(entry).parts, other) for other in taken)]
+
+
+def _carriable(root, directory):
+    try:
+        _refuse_unsafe(root, directory)
+    except (Refused, OSError, subprocess.CalledProcessError):
+        return False
+    return True
 
 
 def _nested(one, other):

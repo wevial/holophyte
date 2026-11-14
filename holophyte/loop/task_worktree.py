@@ -21,6 +21,7 @@ from holophyte.loop.gates import InfraFailure, run_verify, sh
 from holophyte.loop.runs import set_phase
 from holophyte.redact import redact_values
 from holophyte.redact import safe_print as print
+from holophyte.tickets import witness_once
 
 
 def timeout_report(cmd, expired):
@@ -51,14 +52,11 @@ def write_worktree_environment(project, wt):
             os.unlink(temporary)
 
 
-def write_capture_ignore(project, wt):
+def write_ignored_directory(wt, relative):
     """Tracked symlinks are possible, so no path component is followed."""
-    cfg = merge_config(project)
-    if not cfg.ui_capture_local:
-        return
     root = Path(wt).resolve()
     directory = root
-    for part in Path(cfg.ui_capture_dir).parts:
+    for part in Path(relative).parts:
         directory = directory / part
         if directory.is_symlink():
             raise OSError(f"{directory.relative_to(root)} is a symlink")
@@ -67,7 +65,7 @@ def write_capture_ignore(project, wt):
     if ignore.is_symlink():
         raise OSError(f"{ignore.relative_to(root)} is a symlink")
     if not directory.resolve().is_relative_to(root):
-        raise OSError(f"{cfg.ui_capture_dir} resolves outside the worktree")
+        raise OSError(f"{relative} resolves outside the worktree")
     fd, temporary = tempfile.mkstemp(prefix=".gitignore-", dir=directory)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
@@ -77,6 +75,12 @@ def write_capture_ignore(project, wt):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def write_capture_ignore(project, wt):
+    cfg = merge_config(project)
+    if cfg.ui_capture_local:
+        write_ignored_directory(wt, cfg.ui_capture_dir)
 
 
 def run_worktree_setup(project, wt, conn=None, run_id=None, *, credential=True):
@@ -98,6 +102,10 @@ def prepare_worktree(project, wt, conn=None, run_id=None, deadline=None,
         write_capture_ignore(project, wt)
     except (SystemExit, OSError) as error:
         return False, f"[holo2] local capture directory not prepared: {error}", ""
+    try:
+        write_ignored_directory(wt, witness_once.DIRECTORY)
+    except OSError as error:
+        return False, f"[holo2] one-time witness directory not prepared: {error}", ""
     commands = setup_commands(project)
     if commands:
         set_phase(conn, run_id, "working",

@@ -11,6 +11,9 @@ from holophyte.tickets import ticket_template as tt
 from tests.test_ticket_template import FILLED
 
 SHIM = Path(__file__).resolve().parent.parent / 'ticket_template.py'
+ONCE_PATH = '.holophyte-witness/test_header.py'
+ONCE_VERIFY = ("python3 -m unittest discover -s .holophyte-witness"
+               " -p 'test_header.py'")
 
 
 class RepositoryChecksTests(unittest.TestCase):
@@ -91,6 +94,43 @@ class RepositoryChecksTests(unittest.TestCase):
                                 'Examples: `tests/test_*.py`, `--flag`, '
                                 '`python3 -m unittest`, `generated/result.py`.')
         self.assertEqual(self.missing(body), [])
+
+    def once(self, criterion, verify=ONCE_VERIFY):
+        return self.body.replace('then only the header row.', criterion) \
+            .replace('.venv/bin/python -m unittest tests.test_a', verify)
+
+    def test_an_unwritten_one_time_witness_does_not_block(self):
+        body = self.once(f'then only the header row. (witnessed once: '
+                         f'`{ONCE_PATH}`).')
+        self.assertEqual(self.problems(body), [])
+        (self.repo / '.holophyte-witness').mkdir()
+        (self.repo / '.holophyte-witness/.gitignore').write_text('*\n')
+        self.assertEqual(self.problems(body), [])
+        missing = body.replace(ONCE_VERIFY, ONCE_VERIFY + '\n'
+                               'ruff check tests/test_missing.py')
+        self.assertEqual(self.problems(missing), [
+            'path does not exist in verify command: tests/test_missing.py'])
+
+    def test_each_misused_one_time_witness_blocks_its_criterion(self):
+        for criterion, verify, problem in (
+                ('(witnessed once: `tests/test_header.py`)',
+                 '.venv/bin/python -m unittest tests.test_a',
+                 "criterion 2's one-time witness `tests/test_header.py` is not"
+                 " directly under .holophyte-witness/"),
+                (f'(`{ONCE_PATH}` witnesses it.)', ONCE_VERIFY,
+                 f'criterion 2 names `{ONCE_PATH}` as a durable witness'),
+                ('(`.holophyte-witness/nested/test_header.py` witnesses it.)',
+                 ONCE_VERIFY,
+                 'criterion 2 names `.holophyte-witness/nested/test_header.py`'
+                 ' as a durable witness'),
+                (f'(witnessed once: `{ONCE_PATH}`)',
+                 '.venv/bin/python -m unittest tests.test_a',
+                 f"criterion 2's one-time witness `{ONCE_PATH}` is named by no"
+                 " verify command")):
+            with self.subTest(criterion=criterion):
+                (blocker,) = self.problems(self.once(
+                    f'then only the header row. {criterion}', verify))
+                self.assertTrue(blocker.startswith(problem), blocker)
 
     def test_paths_must_resolve_inside_repository(self):
         with tempfile.TemporaryDirectory(dir=self.repo.parent) as outside:

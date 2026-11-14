@@ -540,7 +540,8 @@ class LinearImportTests(unittest.TestCase):
                      "holophyte/board/__init__.py",
                      "holophyte/tickets/__init__.py",
                      "holophyte/tickets/ticket_template.py",
-                     "holophyte/tickets/ticket_header.py"):
+                     "holophyte/tickets/ticket_header.py",
+                     "holophyte/tickets/witness_once.py"):
             shutil.copy(ROOT / name, Path(tmp.name, name))
         return Path(tmp.name)
 
