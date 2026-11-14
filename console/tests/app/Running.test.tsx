@@ -176,6 +176,20 @@ test("the Running heading's worker dots count busy workers against every worker 
   expect(dots.children).toHaveLength(5);
 });
 
+test.each([
+  ["working", null, "Implement", ["now", "later", "later", "later", "later"]],
+  ["verifying", null, "Verify", ["done", "now", "later", "later", "later"]],
+  ["merge_gate", "https://github.com/example/demo/pull/7", "Monitoring PR", ["done", "done", "done", "now", "later"]],
+  ["merge_gate", null, "Merge gate", ["done", "done", "done", "now", "later"]],
+  ["squashing", null, "Merge", ["done", "done", "done", "done", "now"]],
+  ["rebasing", null, "rebasing", ["later", "later", "later", "later", "later"]],
+] as const)("a %s run (pull request %s) reads %s and lights its five-step track up to its stage", async (phase, pr_url, label, steps) => {
+  await mount("#/", [statusOf("/srv/dev/demo", [runOf(40, "DEMO-40", "Track it", { phase, pr_url })]), statusOf("/srv/dev/writer", [])]);
+  const stage = rowOf("DEMO-40").querySelector("[data-stage]")!;
+  expect(stage.textContent).toBe(label);
+  expect([...stage.querySelectorAll("[data-step]")].map((step) => step.getAttribute("data-step"))).toEqual([...steps]);
+});
+
 const witnessesOf = (keys: string[], elapsedMs: number) => ({ story: "DEMO-20", keys, started_ms: NOW - elapsedMs, elapsed_ms: elapsedMs });
 const witnessLines = () => [...running().querySelectorAll("[data-witnesses]")].map((line) => line.textContent);
 
