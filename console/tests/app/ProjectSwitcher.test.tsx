@@ -44,6 +44,11 @@ const threeProjects = peersFetch(ORIGIN, {
   [LOTUS]: { status: statusOf("/srv/dev/Lotuspod", 1, "enabled"), attention: attentionOf([], "/srv/dev/Lotuspod") },
 });
 
+const accented = peersFetch(ORIGIN, {
+  [ORIGIN]: { status: statusOf("/srv/dev/café", 1, "enabled"), attention: attentionOf([], "/srv/dev/café") },
+  [PEER]: { status: statusOf("/srv/dev/cafe", 1, "enabled"), attention: attentionOf([], "/srv/dev/cafe") },
+});
+
 async function mount(hash: string, fetchImpl: Fetch = daemons) {
   window.location.hash = hash;
   render(
@@ -252,4 +257,14 @@ test("Shift+Tab from the filter closes the switcher with focus on its button", a
   await act(settle);
   expect(document.activeElement).toBe(switcher());
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("the filter matches accents exactly, so typing cafe and Enter picks cafe over café", async () => {
+  await mount("#/runs", accented);
+  fireEvent.click(switcher());
+  await act(settle);
+  await type("cafe");
+  expect(optionNames()).toEqual(["cafe1 open"]);
+  await key(find(), "Enter");
+  expect(location()).toEqual({ path: "/runs", project: "cafe" });
 });

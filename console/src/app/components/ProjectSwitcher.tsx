@@ -9,6 +9,7 @@ import { AllProjectsIcon, DropIcon, FolderIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
+const GAP = 4;
 
 type SwitcherOptions = {
   defaultOpen?: boolean;
@@ -34,6 +35,7 @@ const switcher = definePrimitive({
       focus: "virtual",
       items: () => context.options().items ?? [],
       query: () => context.store.get().query.trim(),
+      filter: () => (item, query) => item.label.toLowerCase().includes(query.toLowerCase()),
     });
     let wasOpen = context.store.get().open;
     context.onDestroy(
@@ -176,11 +178,12 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
     },
   });
 
-  const besideRail = {
+  const besideRailWhenRoom = {
     getBoundingClientRect: () => {
       const rect = buttonRef.current!.getBoundingClientRect();
       const rail = buttonRef.current!.closest("aside")?.getBoundingClientRect() ?? rect;
-      return new DOMRect(rail.right, rect.top, 0, rect.height);
+      const beside = rail.right + GAP <= window.innerWidth - DIALOG_WIDTH - EDGE;
+      return beside ? new DOMRect(rail.right + GAP, rect.top - GAP, 0, 0) : rect;
     },
   };
 
@@ -229,11 +232,11 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
           </Trigger>
 
           <Content
-            side={folded ? "right" : "bottom"}
+            side="bottom"
             align="start"
-            sideOffset={4}
+            sideOffset={GAP}
             collisionPadding={EDGE}
-            anchor={folded ? besideRail : undefined}
+            anchor={folded ? besideRailWhenRoom : undefined}
             onFocus={(event) => {
               if (event.target === event.currentTarget) document.getElementById(findId)?.focus();
             }}
