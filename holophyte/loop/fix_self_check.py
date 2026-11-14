@@ -7,7 +7,7 @@ from holophyte.agents.fix_session import self_check_turn
 from holophyte.loop.follow_ups import _commits
 from holophyte.loop.gates import sh
 from holophyte.loop.implement import _check_run_cap, _timed
-from holophyte.loop.importing_tests import run_importing_tests
+from holophyte.loop.importing_tests import run_importing_tests, unittest_runs
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
 from holophyte.review.briefs import _changed_files
@@ -35,11 +35,22 @@ def _unaddressed(wt, candidate):
                        f" in its directory")
 
 
+def _failfast(word):
+    if word in ("-f", "--failfast"):
+        return True
+    flags = re.match(r"-([a-z]+)", word) if word[1:2] != "-" else None
+    return bool(flags) and "f" in re.split("[pstk]", flags.group(1))[0]
+
+
 def _executed(verify_cmd, passed, out):
     failed = (getattr(out, "failure", None) or {}).get("command") or ""
     if passed or not failed or failed not in verify_cmd:
         return verify_cmd if passed else ""
-    return verify_cmd[:verify_cmd.index(failed) + len(failed)]
+    end = verify_cmd.index(failed)
+    if not any(map(_failfast, (word for run in unittest_runs(failed)
+                               for word in run.args))):
+        end += len(failed)
+    return verify_cmd[:end].rstrip().removesuffix("&&").rstrip()
 
 
 def _failures(project, conn, run_id, beat_s, wt, candidate, verify_cmd,

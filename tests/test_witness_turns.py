@@ -491,6 +491,19 @@ class Asserting(unittest.TestCase):
         self.assertIn("tests/test_beta.py is changed or imports a changed"
                       " module and failed", fake.turns[3].goal)
 
+    def test_a_module_a_failfast_verify_stopped_before_is_run(self):
+        tests = {"tests/test_alpha.py": RUNS, "tests/test_beta.py": RUNS}
+        broken = {name: FIX_BROKE for name in tests}
+        fake = self.run_task(
+            Writes(tests), REQUEST_CHANGES, Writes(broken), Writes(tests),
+            APPROVE, criteria=a_task()["criteria"],
+            verify="python3 -m unittest discover -f -s tests -p 'test_*.py'")
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement",
+                                      "implement", "review"])
+        self.assertIn("tests/test_beta.py is changed or imports a changed"
+                      " module and failed", fake.turns[3].goal)
+
     def test_the_run_beats_while_the_self_check_runs_tests(self):
         self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
         beating = f"""import sqlite3
