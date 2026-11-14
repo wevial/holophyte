@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import shlex
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -40,6 +41,13 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     MergeModeFixture,
     StubProvider,
     a_task,
+)
+from test_main_baseline import Writes  # noqa: E402
+from test_witness_turns import (  # noqa: E402
+    ONCE_CRITERION,
+    ONCE_PATH,
+    ONCE_TEST,
+    ONCE_VERIFY,
 )
 
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
@@ -899,6 +907,35 @@ class MergeModePullRequestTests(MergeModeFixture):
         self.assertNotIn(BRANCH, self.branches())
         self.assertEqual(self.read("SELECT outcome, prUrl FROM runs"),
                          [("merged", None)])
+
+    def test_the_body_lists_the_runs_one_time_witnesses(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        task = dict(a_task(), body=self.BODY, verify=ONCE_VERIFY,
+                    criteria=[a_task()["criteria"][0], ONCE_CRITERION])
+        self.loop(Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: ONCE_TEST}),
+                  Reply("CRITERION 1: met \u2014 tests/test_thing.py::"
+                        f"test_it_works\nCRITERION 2: met \u2014 {ONCE_PATH}"
+                        "::SaveLabel::test_the_label_reads_done\n"
+                        "VERDICT: APPROVE"),
+                  Idle(""), provider=StubProvider(task))
+        tip = self.git("rev-parse", BRANCH).strip()
+        blob = subprocess.run(["git", "hash-object", "--stdin"],
+                              input=ONCE_TEST, capture_output=True, text=True,
+                              check=True).stdout.strip()
+        self.assertIn(f"## One-time witnesses\n- C2 `{ONCE_PATH}` (blob "
+                      f"{blob[:12]}): passed at {tip[:12]}; failed at the "
+                      f"merge base {self.base[:12]}",
+                      self.pr_body.read_text())
+
+    def test_a_run_with_no_one_time_witness_gets_no_section(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("the scripted work"), APPROVE, Idle(""),
+                  provider=self.provider())
+        body = self.pr_body.read_text()
+        self.assertIn("Linear: KO-131", body)
+        self.assertNotIn("## One-time witnesses", body)
 
 
 if __name__ == "__main__":
