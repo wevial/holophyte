@@ -8,6 +8,26 @@ export type Density = "comfortable" | "compact";
 const DENSITY_KEY = "holophyte.next.density";
 const FONT_KEY = "holophyte.next.font";
 const DARK_QUERY = "(prefers-color-scheme: dark)";
+const EFFECT_KEY = "holophyte.next.effect";
+const MOTION_KEY = "holophyte.next.motion";
+
+export type HeaderEffect = "haze" | "none";
+
+export function readHeaderEffect(): HeaderEffect {
+  try {
+    return localStorage.getItem(EFFECT_KEY) === "none" ? "none" : "haze";
+  } catch {
+    return "haze";
+  }
+}
+
+export function readMotion(): boolean {
+  try {
+    return localStorage.getItem(MOTION_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
 
 export function readFont(fallback: ReadingFont = "sans"): ReadingFont {
   try {

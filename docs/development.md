@@ -272,6 +272,8 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
+- `holophyte/agents/t3_cleanup.py` — after a T3 critic turn, its thread settled
+  over T3's MCP endpoint and its worktree and branch removed.
 - `holophyte/agents/claude_sdk.py` — one critic turn over a Claude Agent SDK
   session: its options, credential environment, usage and stop at the timeout.
 - `holophyte/agents/turn_tools.py` — the `holo_run` tools an SDK critic turn
