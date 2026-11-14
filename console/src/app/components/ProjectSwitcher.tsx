@@ -192,7 +192,7 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
     "root",
     {},
     {
-      className: `pt-3 pb-1 ${folded ? "flex justify-center" : "px-2"}`,
+      className: `pb-1 ${folded ? "flex justify-center pt-3" : "px-2"}`,
       children: (
         <>
           <Trigger
