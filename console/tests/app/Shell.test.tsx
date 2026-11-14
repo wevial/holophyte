@@ -412,6 +412,25 @@ test("without WebGL2 the shell's haze band shows the fallback, hidden from assis
   }
 });
 
+test("a WebGL2 context whose shaders fail to compile leaves the shell up with the haze band on its fallback", async () => {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  const failingGl = new Proxy({}, {
+    get: (_, name) => (name === "getExtension"
+      ? (extension: string) => (extension === "EXT_color_buffer_float" ? {} : null)
+      : name === "getShaderParameter" ? () => false : () => ({})),
+  });
+  HTMLCanvasElement.prototype.getContext = ((kind: string) => (kind === "webgl2" ? failingGl : null)) as typeof getContext;
+  try {
+    await mount("#/");
+    expect(screen.getByRole("navigation", { name: "Pages" })).toBeTruthy();
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    expect(band.classList.contains("haze-fallback")).toBe(true);
+    expect(band.querySelector("canvas")).toBeNull();
+  } finally {
+    HTMLCanvasElement.prototype.getContext = getContext;
+  }
+});
+
 test("a stored header effect of none renders no haze band, and with nothing stored the shell renders one", async () => {
   localStorage.setItem("holophyte.next.effect", "none");
   await mount("#/");

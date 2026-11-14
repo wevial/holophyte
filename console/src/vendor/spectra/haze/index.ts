@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@9f2195d backgrounds/haze/src/index.ts (MIT, see ../LICENSE), trimmed to what the console calls and given a motion option.
+// Vendored from wevial/spectra@9f2195d backgrounds/haze/src/index.ts (MIT, see ../LICENSE), trimmed to what the console calls, given a motion option and a fallback when its shaders fail.
 // Haze background — an ambient smoky glow, after the AgentMail console header.
 // Two soft bands of smoke lean across a near-black base, bent by a slow wave
 // and billowed by domain-warped noise, under live film grain, fading out
@@ -79,9 +79,16 @@ export function mount(container: HTMLElement, opts: Partial<HazeConfig> = {}): H
     return { config, destroy() {} };
   }
   const { gl, canvas, reducedMotion } = stage;
+  let programs: [Program, Program];
+  try {
+    programs = [new Program(gl, VERTEX, GLOW), new Program(gl, VERTEX, COMPOSITE)];
+  } catch {
+    stage.destroy();
+    container.classList.add('haze-fallback');
+    return { config, destroy() {} };
+  }
+  const [glow, composite] = programs;
   const blit = makeBlit(gl);
-  const glow = new Program(gl, VERTEX, GLOW);
-  const composite = new Program(gl, VERTEX, COMPOSITE);
 
   // The smoke is soft, so it renders at half CSS resolution regardless of DPR.
   let light: FBO | null = null;
