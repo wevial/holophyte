@@ -150,7 +150,7 @@ def _cited(conn, run_id):
         if entry.get("status") != "met":
             continue
         for ref in test_references(entry.get("note") or ""):
-            path, _, name = tuple(ref)
+            path, _, name = ref
             cited.add(f"{path}::{name}")
         for resolved in entry.get("resolved") or ():
             path, *_, name = resolved["as"].split("::")
@@ -248,7 +248,6 @@ def _retired(wt, sha, head):
 
 def _record(project, conn, run_id, outcome, reason, *, candidates, protected,
             approved, retired=(), final=None, out=""):
-    retired = list(retired)
     summary = "; ".join(filter(None, (
         f"retire {outcome}",
         retired and "retired " + ", ".join(r["test"] for r in retired),
