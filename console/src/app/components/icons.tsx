@@ -20,18 +20,14 @@ function Stroke({ children, className }: { children: ReactNode; className?: stri
   );
 }
 
-/** The flat five-petal mark over its ground line. */
+const DISC = "M8 .5A7.5 7.5 0 1 1 8 15.5A7.5 7.5 0 1 1 8 .5Z";
+const LEAF = "M7.5 13.5V10.05L3 6C4 4 5.5 3 7 3V4.5L8 5.5L9 4.5V3C10.5 3 12 4 13 6L8.5 10.05V13.5Z";
+
+/** The ginkgo disc in the surrounding ink; even-odd filling cuts the leaf out of it. */
 export function Mark() {
   return (
-    <svg viewBox="0 0 24 24" width={24} height={24} aria-hidden="true" className="shrink-0">
-      <g className="fill-act stroke-canvas" strokeWidth={1.1} strokeLinejoin="round">
-        <path d="M12 17C7.4 17.6 3.6 15.6 2 12.2 5.6 11.8 9.4 13.6 12 17Z" />
-        <path d="M12 17C16.6 17.6 20.4 15.6 22 12.2 18.4 11.8 14.6 13.6 12 17Z" />
-        <path d="M12 17C8.2 16.6 5.6 13 6 8 9 9.2 11.2 12.6 12 17Z" />
-        <path d="M12 17C15.8 16.6 18.4 13 18 8 15 9.2 12.8 12.6 12 17Z" />
-        <path d="M12 4C15.2 7.2 15.2 13 12 17 8.8 13 8.8 7.2 12 4Z" />
-      </g>
-      <path d="M6 20.2H18" fill="none" className="stroke-ink-3" strokeWidth={1.3} strokeLinecap="round" />
+    <svg viewBox="0 0 16 16" width={20} height={20} aria-hidden="true" className="size-5 shrink-0">
+      <path d={`${DISC}${LEAF}`} fill="currentColor" fillRule="evenodd" />
     </svg>
   );
 }
