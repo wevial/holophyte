@@ -239,17 +239,14 @@ function roundUnderway(round: number, events: RunDetail["events"]): Round {
 export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string): StepperStage[] {
   const { run, rounds } = detail;
   const at = stageIndex(detail, phase);
-  const ended = run.outcome != null;
-  const stateAt = (index: number): StageState =>
-    index < at ? "finished" : index > at ? "not reached" : run.outcome === "failed" ? "failed" : "current";
   const underway = phase === "reviewing" && (rounds.length === 0 || rounds.at(-1)!.ended_ms != null);
   const shown = underway ? [...rounds, roundUnderway(rounds.length + 1, detail.events)] : rounds;
   const reviewLabel = at < 2 ? "Review" : at > 2 ? (rounds.length > 0 ? `Review · ${plural(rounds.length, "round")}` : "Review") : `Review · round ${shown.length} / ${run.max_rounds}`;
   const fixing = phase === "merge_gate" && checkFixRound(detail.events) != null;
   return STAGE_NAMES.map((name, index) => {
-    const state = stateAt(index);
+    const state: StageState = index < at ? "finished" : index > at ? "not reached" : run.outcome === "failed" ? "failed" : "current";
     if (name === "Review") {
-      const marks = shown.map((each, n) => roundMark(each, shown[n + 1], turns, ended));
+      const marks = shown.map((each, n) => roundMark(each, shown[n + 1], turns, run.outcome != null));
       return { name, label: reviewLabel, state, marks, slots: state === "current" ? Math.max(0, run.max_rounds - marks.length) : 0 };
     }
     const marks = name === "Merge gate" ? checkFixMarks(detail.events, fixing, run.outcome === "merged") : [];
