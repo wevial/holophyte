@@ -158,6 +158,16 @@ def _judge(wt, base_sha, sha, commits, green, untracked, protected):
 
 
 def _protected(conn, run_id, wt, base_sha, sha, criteria):
+    added = sh(["git", "diff", "--name-only", "--diff-filter=A",
+                f"{base_sha}...{sha}"], cwd=wt).splitlines()
+    runnable = {path for path in added if _is_test(path)
+                or PurePosixPath(path).suffix in SOURCE_SUFFIXES}
+    return sorted(path for path in criterion_files(conn, run_id, wt, sha,
+                                                   criteria) | runnable
+                  if _test_ids(wt, sha, path))
+
+
+def criterion_files(conn, run_id, wt, sha, criteria):
     claimed = [text for _, text in numbered(conn, run_id, criteria)]
     snapshot = store.read.run_snapshot(conn, run_id) if conn is not None else None
     rows = [row for row in (store.criteria.current(conn, snapshot.ticketId)
@@ -167,15 +177,9 @@ def _protected(conn, run_id, wt, base_sha, sha, criteria):
     patterns |= {path for row in rows
                  for path in (row["witnessTarget"] or "").split(",") if path}
     tree = sh(["git", "ls-tree", "-r", "--name-only", sha], cwd=wt).splitlines()
-    added = sh(["git", "diff", "--name-only", "--diff-filter=A",
-                f"{base_sha}...{sha}"], cwd=wt).splitlines()
     globs = patterns - set(tree)
-    candidates = {path for path in tree if path in patterns
-                  or any(fnmatchcase(path, pattern) for pattern in globs)}
-    runnable = {path for path in added if _is_test(path)
-                or PurePosixPath(path).suffix in SOURCE_SUFFIXES}
-    return sorted(path for path in candidates | runnable
-                  if _test_ids(wt, sha, path))
+    return {path for path in tree if path in patterns
+            or any(fnmatchcase(path, pattern) for pattern in globs)}
 
 
 def _witnessed(wt, sha, commits, protected):

@@ -22,16 +22,20 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REVIEW_ROLES,
     Commit,
     Idle,
+    Reply,
     block_until_killed,
 )
 from loop_fixture import VALID_BODY, LoopFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.pipeline  # noqa: E402
 import store  # noqa: E402 - after the sys.path insert above
 import store.criteria  # noqa: E402
 from holophyte.agents.agent_output import ImplementerOutput  # noqa: E402
 from holophyte.agents.roles import agent  # noqa: E402
+from holophyte.loop.retire import SUBJECT  # noqa: E402
+from holophyte.loop.test_removal import removed_outside_scope  # noqa: E402
 from holophyte.loop.trim import trim  # noqa: E402
 from tests.test_harness import CONFIG, FAKE_CLAUDE  # noqa: E402
 
@@ -231,6 +235,12 @@ class TrimFixture(LoopFixture):
     def review_candidates(self, fake):
         return [turn.candidate_sha for turn in fake.turns if turn.role == "review"]
 
+    def on_main(self, path, body):
+        (self.target / path).parent.mkdir(parents=True, exist_ok=True)
+        (self.target / path).write_text(body)
+        self.git("add", "--", path)
+        self.git("commit", "-q", "-m", f"add {path}")
+
 
 class TrimLoopTests(TrimFixture):
     def test_kept_passes_are_the_first_reviews_candidate_and_trim_runs_once(self):
@@ -268,12 +278,6 @@ class TrimLoopTests(TrimFixture):
         self.assertIn("verify was red at trim: tests", result["reason"])
         [summary] = self.trim_summaries()
         self.assertIn("reverted tests", summary)
-
-    def on_main(self, path, body):
-        (self.target / path).parent.mkdir(parents=True, exist_ok=True)
-        (self.target / path).write_text(body)
-        self.git("add", "--", path)
-        self.git("commit", "-q", "-m", f"add {path}")
 
     def test_a_pass_that_edits_a_module_outside_the_runs_diff_is_reverted(self):
         self.on_main("helpers.py", "def helper():\n    return 1\n")
@@ -623,6 +627,165 @@ class TrimLoopTests(TrimFixture):
         self.assertEqual(self.read(
             "SELECT count(*) FROM runEvents WHERE kind IN ('trim', 'trim_result')"),
             [(0,)])
+
+
+def unittest_module(cls, *names, helper=False):
+    head = "import unittest\n\n\n" + ("def value():\n    return 1\n\n\n"
+                                       if helper else "")
+    body = "".join(f"    def {name}(self):\n        self.assertTrue("
+                   f"{'value()' if helper else 'True'})\n\n" for name in names)
+    return f"{head}class {cls}(unittest.TestCase):\n{body}"
+
+
+class Files:
+    """One turn that writes or removes several files in a single commit."""
+
+    role = "implement"
+
+    def __init__(self, message, files):
+        self.message, self.files = message, files
+
+    def play(self, cwd, turn):
+        for path, body in self.files.items():
+            path = cwd / path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+        subprocess.run(["git", "add", "--", *self.files], cwd=cwd, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", self.message], cwd=cwd,
+                       check=True)
+        return "committed"
+
+
+RETIRE_VERIFY = "python3 -m unittest discover -s tests -p 'test_*.py'"
+WITNESS = "Given the thing, then it lands. (`tests/test_new.py` witnesses it.)"
+OLD = unittest_module("OldTests", "test_one", "test_two")
+NEW = ("import unittest\nfrom pathlib import Path\n\n\n"
+       "class NewTests(unittest.TestCase):\n    def test_it(self):\n"
+       "        self.assertTrue(Path('thing.txt').exists())\n")
+RETIRE_BODY = ("RETIRED tests/test_old.py::test_three: pins a one-off label\n"
+               "RETIRED tests/test_copy.py::test_dropped: protects nothing")
+
+
+def approving(*cited):
+    return Reply("Reviewed the diff; no blockers.\nCRITERION 1: met \u2014 "
+                 + ", ".join(("tests/test_new.py::NewTests::test_it", *cited))
+                 + "\nVERDICT: APPROVE")
+
+
+class RetireLoopTests(TrimFixture):
+    def retired(self, *turns, config=TRIMMED, cited=(), work=None):
+        self.on_main("tests/test_old.py", OLD)
+        self.base = self.git("rev-parse", "main").strip()
+        self.task = dict(a_task(), verify=RETIRE_VERIFY, criteria=[WITNESS],
+                         body=VALID_BODY)
+        self.gated, real = [], holophyte.loop.pipeline._merge_gate
+
+        def merge_gate(*args, **kwargs):
+            self.gated.append(args[9])
+            return real(*args, **kwargs)
+
+        with patch.object(holophyte.loop.pipeline, "_merge_gate", merge_gate):
+            fake = self.trimmed(
+                work or Files("work", {
+                    "thing.txt": "the thing\n", "tests/test_new.py": NEW,
+                    "tests/test_old.py": unittest_module(
+                        "OldTests", "test_one", "test_two", "test_three"),
+                    "tests/test_copy.py": unittest_module(
+                        "CopyTests", "test_kept", "test_dropped")}),
+                approving(*cited), *turns, config=config, task=self.task)
+        self.assert_merged()
+        [self.approved] = self.review_candidates(fake)
+        return fake
+
+    def retire_results(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'retire_result'"
+            " ORDER BY seq")]
+
+    def assert_reverted(self, named):
+        self.assertEqual(self.gated, [self.approved])
+        self.assertNotIn(SUBJECT, self.shas())
+        [result] = self.retire_results()
+        self.assertEqual(result["outcome"], "reverted")
+        self.assertIn(named, result["reason"])
+
+    def test_a_sound_retire_commit_is_what_the_merge_gate_lands(self):
+        fake = self.retired(Files(f"{SUBJECT}\n\n{RETIRE_BODY}", {
+            "tests/test_old.py": OLD,
+            "tests/test_copy.py": unittest_module("CopyTests", "test_kept")}))
+        retire_sha = self.shas()[SUBJECT]
+        self.assertEqual(self.gated, [retire_sha])
+        self.assertEqual(self.git("rev-parse", f"{retire_sha}^").strip(), self.approved)
+        [result] = self.retire_results()
+        self.assertEqual(result["outcome"], "kept")
+        self.assertEqual(result["retired"], [
+            {"test": "tests/test_copy.py::test_dropped",
+             "reason": "protects nothing"},
+            {"test": "tests/test_old.py::test_three",
+             "reason": "pins a one-off label"}])
+        self.assertEqual(removed_outside_scope(
+            self.target, self.base, retire_sha,
+            f"{self.task['title']}\n\n{VALID_BODY}"), [])
+        self.assertEqual(fake.roles.count("review"), 1)
+        self.assertEqual(self.read("SELECT count(*) FROM reviewRounds"), [(1,)])
+
+    def test_a_retire_commit_deleting_a_criterion_witness_is_reverted(self):
+        self.retired(Files(SUBJECT, {"tests/test_old.py": OLD,
+                                     "tests/test_new.py": "import unittest\n"}))
+        self.assert_reverted("tests/test_new.py::test_it")
+
+    def test_a_test_the_approving_review_cited_is_protected(self):
+        fake = self.retired(
+            Idle("every candidate passes the gate"),
+            cited=["tests/test_copy.py::CopyTests::test_kept"])
+        [result] = self.retire_results()
+        kept = "tests/test_copy.py::test_kept"
+        self.assertIn(kept, [entry["test"] for entry in result["protected"]])
+        self.assertNotIn(kept, result["candidates"])
+        self.assertIn("tests/test_copy.py::test_dropped", result["candidates"])
+        self.assertIn("tests/test_copy.py::test_dropped", fake.turns[-1].goal)
+        self.assertNotIn("test_copy.py::test_kept", fake.turns[-1].goal)
+
+    def test_a_retire_commit_that_turns_verify_red_is_reverted(self):
+        helped = unittest_module("CopyTests", "test_kept", "test_dropped",
+                                 helper=True)
+        self.retired(
+            Files(SUBJECT, {"tests/test_copy.py": unittest_module(
+                "CopyTests", "test_kept", helper=True).replace(
+                    "def value():\n    return 1\n\n\n", "")}),
+            work=Files("work", {"thing.txt": "the thing\n",
+                                "tests/test_new.py": NEW,
+                                "tests/test_copy.py": helped}))
+        self.assert_reverted("verify was red at the retire commit")
+
+    def test_a_retire_commit_that_edits_a_factory_module_is_reverted(self):
+        self.on_main("holophyte/helper.py", "VALUE = 1\n")
+        self.retired(Files(SUBJECT, {
+            "tests/test_old.py": OLD,
+            "holophyte/helper.py": "VALUE = 1\n\n\ndef unused():\n    pass\n"}))
+        self.assert_reverted("holophyte/helper.py, not a test file")
+
+    def test_deleting_a_base_held_test_outside_in_scope_is_reverted(self):
+        self.retired(Files(SUBJECT, {"tests/test_old.py": unittest_module(
+            "OldTests", "test_two")}))
+        self.assert_reverted("tests removed outside the ticket's scope: "
+                             "tests/test_old.py")
+
+    def test_only_criterion_file_tests_added_skips_with_no_turn(self):
+        fake = self.retired(work=Files("work", {"thing.txt": "the thing\n",
+                                                "tests/test_new.py": NEW}))
+        self.assertEqual(fake.roles, ["implement", "review"])
+        [result] = self.retire_results()
+        self.assertEqual((result["outcome"], result["reason"]),
+                         ("skipped", "no run-added test outside the protected set"))
+
+    def test_disabled_trim_records_no_retire_and_lands_the_approved_sha(self):
+        fake = self.retired(config="[trim]\nenabled = false\n")
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertEqual(self.gated, [self.approved])
+        self.assertEqual(self.read(
+            "SELECT count(*) FROM runEvents WHERE kind IN ('retire',"
+            " 'retire_result')"), [(0,)])
 
 
 class TrimStepTests(unittest.TestCase):

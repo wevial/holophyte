@@ -39,6 +39,7 @@ from holophyte.loop.merge_gate import (
     _park_for_approval,
     _resume_at_merge_gate,
 )
+from holophyte.loop.retire import retire
 from holophyte.loop.review_round import _review_cap, _review_rounds
 from holophyte.loop.runs import RunSwept
 from holophyte.loop.shadow_spawn import shadow_starter
@@ -192,6 +193,9 @@ def _run_stages(run, task):
         approved, resume, spent = True, None, spent + 1
 
     ticket = reviewed_ticket(conn, run_id, ticket)
+    if not unreproduced:
+        sha = retire(project, conn, run_id, beat_s, wt, base_sha, sha, ticket,
+                     verify_cmd, contracts, criteria)
     before_gate(project, conn, run_id, sha, rnd)
     return _merge_stage(run, beat_s, sha, rnd, ticket, verify_cmd, contracts,
                         body, criteria, issue_url)
