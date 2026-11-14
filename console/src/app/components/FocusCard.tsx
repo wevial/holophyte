@@ -142,7 +142,6 @@ export function FocusCard({
   hosts: Host[];
   now: number;
 }) {
-  if (entries.length === 0) return null;
   return (
     <ul aria-label="Needs you">
       {entries.map((entry, at) => (
