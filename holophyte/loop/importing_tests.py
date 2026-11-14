@@ -176,15 +176,19 @@ def _distance(one, other):
     return len(one) + len(other) - 2 * shared
 
 
-def _importing_tests(root, runs):
+def _importing_tests(root, runs, since=None):
     try:
-        base = sh(["git", "merge-base", main_ref(root), "HEAD"], cwd=root)
+        base = since or sh(["git", "merge-base", main_ref(root), "HEAD"],
+                           cwd=root)
         changed = [path for path in _changed_files(root, base, "HEAD")
                    if path.endswith(".py")]
         packages = package_dirs(root, "HEAD") if changed else set()
         modules = {name: path for path in changed
                    for name in module_names(path, packages)}
         found = importers(root, "HEAD", modules) if modules else {}
+        if since:
+            found = {**found, **{path: [path] for path in changed
+                                  if os.path.isfile(os.path.join(root, path))}}
     except (RuntimeError, OSError, subprocess.CalledProcessError):
         return []
     nearest = {}
@@ -197,13 +201,13 @@ def _importing_tests(root, runs):
     return sorted(nearest, key=lambda test: (nearest[test], test))
 
 
-def run_importing_tests(project, wt, command, conn, run_id):
+def run_importing_tests(project, wt, command, conn, run_id, *, base=None):
     runs = unittest_runs(command)
     if not runs:
         return True, None
     top = _top_level(runs)
     clauses = {}
-    for test in _importing_tests(wt, runs):
+    for test in _importing_tests(wt, runs, base):
         if len(clauses) == IMPORTER_CAP:
             break
         clause = _module_clause(runs[0], top, test)
@@ -222,7 +226,8 @@ def run_importing_tests(project, wt, command, conn, run_id):
     failure = getattr(out, "failure", None) or {}
     index = (failure.get("command_index") or 1) - len(setup)
     named = tests[index - 1] if 1 <= index <= len(tests) else ", ".join(tests)
-    report = (f"[verify] FAILED: {named} imports a changed module and failed\n"
-              f"{out}")
+    why = ("is changed or imports a changed module" if base
+           else "imports a changed module")
+    report = f"[verify] FAILED: {named} {why} and failed\n{out}"
     return False, {"source": "importers", "command": joined, "exitCode": 1,
                    "output": report, "failure": failure or None}

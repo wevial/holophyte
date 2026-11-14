@@ -23,7 +23,7 @@ NOTE = "also log the port"
 HINT = "the port is in config.toml"
 NO_STEER_PROMPTS = (Path(__file__).resolve().parent / "fixtures" / "steer_live"
                     / "no_steer_prompts.json")
-SHA = re.compile(r"\b[0-9a-f]{40}\b")
+SHA = re.compile(r"\b[0-9a-f]{12}(?:[0-9a-f]{28})?\b")
 
 
 class Steering:

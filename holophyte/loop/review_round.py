@@ -12,7 +12,7 @@ from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
-from holophyte.loop import contradiction, witness_turns
+from holophyte.loop import contradiction, fix_self_check, witness_turns
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
@@ -415,5 +415,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             pending = json.loads(findings) if findings else []
             raise RunFailure(failure_reason.fix_round(
                 pending, timed_out, f"branch {branch} preserved at {sha[:12]}"))
-        sha = head
+        sha = fix_self_check.after_fix(
+            project, conn, run_id, beat_s, wt, budget_min, reviewed, sha, head,
+            verify_cmd, partial(_verify, project, conn, run_id, beat_s, wt,
+                                base_sha, reviewed, verify_cmd, contracts,
+                                rnd + 1))
     return sha, rnd, False

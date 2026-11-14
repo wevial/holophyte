@@ -196,6 +196,7 @@ PINNED = {
     "holophyte/loop/implement.py": 8,
     "holophyte/loop/implementer_profile.py": 2,
     "holophyte/loop/importing_tests.py": 0,
+    "holophyte/loop/fix_self_check.py": 3,
     "holophyte/loop/merge_gate.py": 10,
     "holophyte/loop/merge_lock.py": 0,
     "holophyte/loop/pause_notice.py": 1,

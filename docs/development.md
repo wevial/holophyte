@@ -637,6 +637,11 @@ Each module, one line:
   base runs' gaps sent back to the implementer before each review round, at
   most two `witness_turn` turns a run, and the brief of gaps still open for
   that round's reviewer.
+- `holophyte/loop/fix_self_check.py` — after a fix turn commits, its diff
+  checked before the next review round: the round's verify, the Python test
+  modules the fix diff changes or affects, and each `ADDRESS:` line's cited
+  file's directory changed; on a failure one more fix turn, recorded as the
+  `fix_self_check` event.
 - `holophyte/review/main_baseline.py` — before each review round, each
   criterion naming a test file, bar one whose text says `still`,
   `unchanged` or `keeps`, has its verify lines run in a detached tree at the
