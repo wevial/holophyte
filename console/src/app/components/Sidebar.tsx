@@ -103,10 +103,19 @@ function ThemeGroup({ folded }: { folded: boolean }) {
   );
 }
 
+const RAIL_BADGE: Record<string, string> = { "text-need": "bg-need text-raised", "text-live": "bg-live text-raised" };
+
 function LinkBadge({ badge, folded, tone = "text-need" }: { badge: number; folded: boolean; tone?: string }) {
   if (badge <= 0) return null;
+  if (folded) {
+    return (
+      <span data-badge aria-hidden="true" className={`absolute -top-2 -right-2.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 font-mono text-[9px] leading-none font-semibold ${RAIL_BADGE[tone] ?? "bg-selected text-ink"}`}>
+        {badge}
+      </span>
+    );
+  }
   return (
-    <span data-badge aria-hidden="true" className={`font-mono font-medium tracking-normal ${tone} group-data-[status=active]:text-ink ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
+    <span data-badge aria-hidden="true" className={`font-mono text-[12px] font-medium tracking-normal ${tone} group-data-[status=active]:text-ink`}>
       {badge}
     </span>
   );
@@ -297,11 +306,20 @@ export function Sidebar() {
     </Link>
   );
 
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const refocusToggle = useRef(false);
   const fold = () => {
     if (settingsMenu) return;
+    refocusToggle.current = toggleRef.current != null && document.activeElement === toggleRef.current;
     setFolded(!folded);
     writeFolded(!folded);
   };
+
+  useEffect(() => {
+    if (!refocusToggle.current) return;
+    refocusToggle.current = false;
+    toggleRef.current?.focus();
+  }, [folded]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -313,6 +331,19 @@ export function Sidebar() {
     return () => document.removeEventListener("keydown", onKey);
   });
 
+  const toggle = (
+    <button
+      ref={toggleRef}
+      type="button"
+      aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
+      aria-expanded={!folded}
+      onClick={fold}
+      className={`flex items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${folded ? "h-9 w-10" : "size-7"} ${macApp ? APP_NO_DRAG : ""}`}
+    >
+      <PanelLeftIcon />
+    </button>
+  );
+
   return (
     <aside
       aria-label="Console"
@@ -322,9 +353,9 @@ export function Sidebar() {
       }`}
     >
       <div
-        className={`flex shrink-0 ${folded ? "flex-col items-center gap-1 py-3" : "h-[52px] items-center gap-1 pr-2"} ${
-          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "" : "pl-4"
-        }`}
+        className={`flex h-[52px] shrink-0 items-center gap-1 ${
+          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pl-4"
+        } ${folded ? "" : "pr-2"}`}
       >
         <Link
           to="/"
@@ -336,17 +367,7 @@ export function Sidebar() {
           <Mark />
           {!folded && <span aria-hidden="true">holophyte</span>}
         </Link>
-        {!settingsMenu && (
-          <button
-            type="button"
-            aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
-            aria-expanded={!folded}
-            onClick={fold}
-            className={`flex size-7 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
-          >
-            <PanelLeftIcon />
-          </button>
-        )}
+        {!folded && !settingsMenu && toggle}
       </div>
 
       {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
@@ -367,7 +388,9 @@ export function Sidebar() {
       </nav>
       </>}
 
-      <footer className={`mt-auto flex flex-col gap-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
+      {folded && <div className="mt-auto flex justify-center pt-3">{toggle}</div>}
+
+      <footer className={`flex flex-col gap-2 py-3 ${folded ? "items-center px-1.5" : "mt-auto px-3"}`}>
         <p className="flex min-w-0 items-start gap-1 font-mono text-[11px] leading-[1.4] tracking-[-0.02em] text-ink-3" title={folded ? polled : undefined}>
           <SignalIcon className={failing ? "text-bad" : "text-live"} />
           {!folded && (

@@ -305,7 +305,7 @@ const toggle = () => screen.getByRole("button", { name: /^(Collapse|Expand) side
 const headerRow = () => toggle().parentElement!;
 const aside = () => screen.getByRole("complementary", { name: "Console" });
 
-test("in a browser the title row holds the mark and word linking home, then the panel-left toggle; folded, the mark alone above it", async () => {
+test("in a browser the title row holds the mark and word linking home, then the panel-left toggle; folded, the mark alone, the toggle at the rail's foot with focus kept", async () => {
   await mount("#/");
   const header = headerRow();
   expect(header.classList.contains("h-[52px]")).toBe(true);
@@ -318,13 +318,20 @@ test("in a browser the title row holds the mark and word linking home, then the 
   expect(second!.getAttribute("aria-expanded")).toBe("true");
   expect(second!.classList.contains("size-7")).toBe(true);
 
+  act(() => (second as HTMLElement).focus());
   fireEvent.click(second!);
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
-  const folded = headerRow();
+  const folded = home.parentElement!;
+  expect(folded.classList.contains("h-[52px]")).toBe(true);
   const foldedHome = within(folded).getByRole("link", { name: "holophyte" });
   expect(foldedHome.textContent).toBe("");
   expect(foldedHome.querySelectorAll("svg").length).toBe(1);
-  expect(Array.from(folded.children)).toEqual([foldedHome, within(folded).getByRole("button", { name: "Expand sidebar" })]);
+  expect(Array.from(folded.children)).toEqual([foldedHome]);
+  const expand = screen.getByRole("button", { name: "Expand sidebar" });
+  expect(document.activeElement).toBe(expand);
+  const footer = aside().querySelector("footer")!;
+  expect(expand.parentElement!.nextElementSibling).toBe(footer);
+  expect(screen.getByRole("navigation", { name: "Pages" }).compareDocumentPosition(expand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test("the sidebar toggle draws one icon in both states, unlike the story list's chevron", async () => {
@@ -351,9 +358,9 @@ test("in the macOS app the title row clears the traffic lights and drags the win
 
   fireEvent.click(button);
   expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
-  const folded = headerRow();
-  for (const name of ["pl-[76px]", DRAG]) expect(folded.classList.contains(name)).toBe(true);
-  for (const control of [within(folded).getByRole("button", { name: "Expand sidebar" }), within(folded).getByRole("link", { name: "holophyte" })]) {
+  const folded = screen.getByRole("link", { name: "holophyte" }).parentElement!;
+  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(folded.classList.contains(name)).toBe(true);
+  for (const control of [screen.getByRole("button", { name: "Expand sidebar" }), within(folded).getByRole("link", { name: "holophyte" })]) {
     expect(control.classList.contains(NO_DRAG)).toBe(true);
   }
 });
