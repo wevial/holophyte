@@ -154,12 +154,13 @@ def _local_run(run, beat_s, named):
     files = _module_files(run.wt, dict.fromkeys(module for module, _ in named))
     if isinstance(files, str):
         return [], files, ""
+    paths = list(dict.fromkeys(files.values()))
     command = " && ".join(
         "python3 -m unittest discover -s "
         f"{shlex.quote(str(path.parent))} -p {shlex.quote(path.name)}"
         + "".join(f" -k {shlex.quote(name)}"
                   for module, name in named if files[module] == path)
-        for path in dict.fromkeys(files.values()))
+        for path in paths)
     with heartbeat_while(run.conn, run.run_id, beat_s):
         ok, out = run_verify(command, run.wt, timeout=LOCAL_RUN_SEC,
                              conn=run.conn, run_id=run.run_id,
@@ -170,8 +171,10 @@ def _local_run(run, beat_s, named):
         return [], f"timed out after {LOCAL_RUN_SEC:g} s", out
     local = {(module.rsplit(".", 1)[-1], name)
              for module, name in unittest_ids(out)}
+    clause = (getattr(out, "failure", None) or {}).get("command_index", 1)
+    ran = paths[clause - 1] if 1 <= clause <= len(paths) else None
     reproduced = [(module, name) for module, name in named
-                  if (files[module].stem, name) in local]
+                  if files[module] == ran and (ran.stem, name) in local]
     return reproduced, ("" if reproduced else
                         "the local run failed without reproducing a named"
                         " test"), out

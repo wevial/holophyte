@@ -306,5 +306,35 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         self.assert_merged_without_a_fix_turn(fake)
 
 
+    def test_a_class_fixture_error_beside_a_reproduced_failure_skips_the_rerun(self):
+        self.red_check(log="ERROR: setUpClass (checks.test_sample.SetupBroken)\n"
+                       + SHARD_LOG)
+        self.loop(Commit("a failing test", path=TEST_Y, body=FAILING),
+                  APPROVE, Idle(""), Commit("fix: the unit failure"),
+                  provider=self.provider())
+        self.assertEqual(self.reruns(), [])
+        ((payload,),) = self.read("SELECT payload FROM runEvents"
+                                  " WHERE kind = 'check_rerun_skipped'")
+        self.assertEqual(json.loads(payload)["ids"], ["test_y.Case.test_x"])
+
+    def test_a_failure_is_reproduced_only_for_the_module_that_ran_it(self):
+        for package in ("first", "second"):
+            (self.target / package).mkdir()
+            (self.target / package / "test_shared.py").write_text(PASSING)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "two passing shared tests")
+        self.red_check(log="FAIL: test_x (first.test_shared.Case.test_x)\n"
+                       "FAIL: test_x (second.test_shared.Case.test_x)")
+        self.loop(Commit("a failing test", path="first/test_shared.py",
+                         body=FAILING),
+                  APPROVE, Idle(""), Commit("fix: the unit failure"),
+                  provider=self.provider())
+        self.assertEqual(self.reruns(), [])
+        ((payload,),) = self.read("SELECT payload FROM runEvents"
+                                  " WHERE kind = 'check_rerun_skipped'")
+        self.assertEqual(json.loads(payload)["reproduced"],
+                         ["first.test_shared.Case.test_x"])
+
+
 if __name__ == "__main__":
     unittest.main()
