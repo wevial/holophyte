@@ -92,7 +92,7 @@ test("Details loads files from the run's host only after opening, the turns alre
   expect(fold.open).toBe(false);
   expect(urls.filter((url) => /\/runs\/12\/(files|turns)$/.test(url))).toEqual([`${WRITER}/runs/12/turns`]);
   await openDetails();
-  expect([...new Set(urls.filter((url) => /\/runs\/12\/(files|turns)$/.test(url)))].sort()).toEqual([
+  expect(urls.filter((url) => /\/runs\/12\/(files|turns)$/.test(url)).sort()).toEqual([
     `${WRITER}/runs/12/files`, `${WRITER}/runs/12/turns`,
   ]);
   const changed = within(screen.getByRole("region", { name: "Files changed" }));

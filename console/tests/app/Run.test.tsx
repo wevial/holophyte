@@ -64,6 +64,10 @@ const runs: Record<number, RunDetail> = {
   12: detail(12, "DEMO-12", { title: "Count the rounds", phase: "reviewing", agent_ms: 16 * MINUTE, time_box_ms: 25 * MINUTE, max_rounds: 3 }, [changes]),
   50: detail(50, "DEMO-50", { phase: "verifying", max_rounds: 6 }),
   51: detail(51, "DEMO-51", { phase: "reviewing", max_rounds: 6 }, [roundOne, roundTwo, reviewRound(3, "", 30, null)]),
+  53: {
+    ...detail(53, "DEMO-53", { phase: "reviewing", max_rounds: 6 }, [roundOne, roundTwo]),
+    events: [phaseChange(22, "reviewing -> addressing"), phaseChange(30, "verifying -> reviewing: round 3 review")],
+  },
   52: {
     ...detail(52, "DEMO-52", { phase: "merge_gate", max_rounds: 6 }, [roundOne, roundTwo, passed]),
     events: [
@@ -104,7 +108,7 @@ const runs: Record<number, RunDetail> = {
     max_rounds: 6,
     merge_sha: "5acc1384b2e0f6a7c9d8e1f203a4b5c6d7e8f901",
     ended_ms: new Date(2026, 9, 15, 11, 15).getTime(),
-  }, [roundOne, passed]),
+  }, [roundOne, { ...passed, round: 2 }]),
 };
 
 const failedItem = {
@@ -286,6 +290,14 @@ test("a run in review round 3 of 6 shows two loop marks, a running mark and thre
   expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Round 1: changes requested", "Round 2: changes requested", "Round 3: in review"]);
   expect(links.map((link) => link.getAttribute("data-mark"))).toEqual(["loop", "loop", "running"]);
   expect(links[0]!.getAttribute("href")).toEndWith("#round-1");
+  expect(rounds.getAllByRole("img", { name: "unused round" })).toHaveLength(3);
+});
+
+test("a reviewing run whose round under way has no row yet shows that round as a running mark, not an unused slot", async () => {
+  await mount("#/runs/demo/53");
+  expect(stages()[2]).toBe("Review · round 3 / 6: current");
+  const rounds = within(screen.getByRole("group", { name: "Review rounds" }));
+  expect(rounds.getAllByRole("link").map((link) => link.getAttribute("data-mark"))).toEqual(["loop", "loop", "running"]);
   expect(rounds.getAllByRole("img", { name: "unused round" })).toHaveLength(3);
 });
 

@@ -199,7 +199,7 @@ function roundMark(round: Round, next: Round | undefined, turns: RunTurn[], ende
     glyph,
     card: {
       title: `Round ${round.round} · ${verdict}`,
-      lines: [`${plural(round.findings.length, "finding")} · ${plural(blockers, "blocker")}`, ...(first == null ? [] : [first.title ?? firstLine(first.message)])],
+      lines: open ? [] : [`${plural(round.findings.length, "finding")} · ${plural(blockers, "blocker")}`, ...(first == null ? [] : [first.title ?? firstLine(first.message)])],
       model: round.reviewer_model,
     },
     anchor: `round-${round.round}`,
@@ -224,6 +224,16 @@ function checkFixMarks(events: RunDetail["events"], fixing: boolean, merged: boo
   });
 }
 
+/** The round a reviewing run is in before its row exists, as rounds are
+ *  recorded only once they end: begun at the newest change into review. */
+function roundUnderway(round: number, events: RunDetail["events"]): Round {
+  const begun = orderEvents(events).findLast((event) => event.kind === "phase_change" && edge(event.summary)?.[1] === "reviewing");
+  return {
+    round, started_ms: begun?.at ?? Number.MAX_SAFE_INTEGER, ended_ms: null, verdict: "", reviewer_model: null,
+    findings: [], instructions: [], operator_notes: [], criteria: [],
+  };
+}
+
 /** The Run page's stepper: five fixed stages, the review rounds as marks
  *  under Review and the check fix rounds under Merge gate. */
 export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string): StepperStage[] {
@@ -232,14 +242,14 @@ export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string): S
   const ended = run.outcome != null;
   const stateAt = (index: number): StageState =>
     index < at ? "finished" : index > at ? "not reached" : run.outcome === "failed" ? "failed" : "current";
-  const reviewing = phase === "reviewing" && (rounds.length === 0 || rounds.at(-1)!.ended_ms != null);
-  const round = rounds.length + (reviewing ? 1 : 0);
-  const reviewLabel = at < 2 ? "Review" : at > 2 ? (rounds.length > 0 ? `Review · ${plural(rounds.length, "round")}` : "Review") : `Review · round ${round} / ${run.max_rounds}`;
+  const underway = phase === "reviewing" && (rounds.length === 0 || rounds.at(-1)!.ended_ms != null);
+  const shown = underway ? [...rounds, roundUnderway(rounds.length + 1, detail.events)] : rounds;
+  const reviewLabel = at < 2 ? "Review" : at > 2 ? (rounds.length > 0 ? `Review · ${plural(rounds.length, "round")}` : "Review") : `Review · round ${shown.length} / ${run.max_rounds}`;
   const fixing = phase === "merge_gate" && checkFixRound(detail.events) != null;
   return STAGE_NAMES.map((name, index) => {
     const state = stateAt(index);
     if (name === "Review") {
-      const marks = rounds.map((each, n) => roundMark(each, rounds[n + 1], turns, ended));
+      const marks = shown.map((each, n) => roundMark(each, shown[n + 1], turns, ended));
       return { name, label: reviewLabel, state, marks, slots: state === "current" ? Math.max(0, run.max_rounds - marks.length) : 0 };
     }
     const marks = name === "Merge gate" ? checkFixMarks(detail.events, fixing, run.outcome === "merged") : [];
