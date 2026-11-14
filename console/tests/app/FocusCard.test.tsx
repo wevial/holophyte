@@ -214,6 +214,63 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
+test("only the open Needs you row carries the need tint and edge, and the tint follows the row that opens", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
+  const tint = ["data-open:bg-(image:--need-tint)", "data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]"];
+  expect(row("A-1").className.split(/\s+/)).toEqual(expect.arrayContaining(tint));
+  expect(waitRows().filter((li) => li.hasAttribute("data-open")).map((li) => li.dataset.waitRow)).toEqual(["A-1"]);
+  fireEvent.click(toggleOf("B-2"));
+  expect(waitRows().filter((li) => li.hasAttribute("data-open")).map((li) => li.dataset.waitRow)).toEqual(["B-2"]);
+});
+
+test("the open detail sits in its own row under the toggle and holds only its sentence and its actions, even when the run has events", async () => {
+  const events = [{ at: NOW - MINUTE, kind: "review", summary: "round 1 changes requested" }];
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], actions: true, details: { 1: { ...detail, events } } }));
+  const open = openDetail();
+  expect(open.parentElement).toBe(row("A-1"));
+  expect(open.previousElementSibling).toBe(toggleOf("A-1"));
+  expect(open.children).toHaveLength(2);
+  expect(open.children[0]!.textContent).toStartWith("Which way?");
+  expect(open.children[1]!.hasAttribute("data-card-actions")).toBe(true);
+  expect(openDetailText()).not.toContain("round 1 changes requested");
+});
+
+test("a row reads its run's detail only while it is open", async () => {
+  const asked: string[] = [];
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], details: { 1: detail, 2: detail }, asked }));
+  const runReads = () => asked.filter((url) => /\/runs\/\d+$/.test(url)).map((url) => url.slice(url.lastIndexOf("/") + 1));
+  expect(runReads()).toContain("1");
+  expect(runReads()).not.toContain("2");
+  fireEvent.click(toggleOf("B-2"));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(runReads()).toContain("2");
+});
+
+test("a row whose item carries no ask, end or heartbeat time leaves its age cell empty", async () => {
+  const stuck = {
+    kind: "stuck_wait", level: "attention", ticket: "DEMO-5", ticket_url: null, title: "Ship the export", dependency: "DEMO-2", dependency_state: "abandoned", reason: null, behind: 4,
+  } as Item;
+  await mount(daemon({ items: [stuck, stale] }));
+  expect(rows()).toEqual(["DEMO-7", "DEMO-5"]);
+  expect(row("DEMO-7").querySelector("[data-age]")!.textContent).toBe("20m");
+  expect(row("DEMO-5").querySelector("[data-age]")!.textContent).toBe("");
+});
+
+test("an unreachable host's row is keyed by the host's name and draws no title", async () => {
+  let down = false;
+  const up = daemon({ items: [] });
+  const host = { ...working, host: "host-a", now: NOW, project: "/srv/dev/demo", runs: [], queued: [] };
+  await mount(async (url) => {
+    if (down && !url.endsWith("/peers")) throw new Error("connection refused");
+    if (url.endsWith("/status")) return Response.json(host);
+    return up(url);
+  });
+  down = true;
+  await repoll();
+  expect(rows()).toEqual(["host-a"]);
+  expect([...toggleOf("host-a").children].map((part) => part.textContent).slice(1, 3)).toEqual(["host-a", ""]);
+});
+
 test("an unreachable host's open detail says it is not answering and when it was last seen, with no pull request", async () => {
   let down = false;
   const up = daemon({ items: [] });

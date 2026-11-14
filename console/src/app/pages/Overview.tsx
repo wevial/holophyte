@@ -7,6 +7,7 @@ import { MergedToday, SHOWN_MERGES } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
 import { PullRequestGlyph, waitingRows, WaitingRows } from "../components/PrLane";
 import { laneGroups, liveRuns, RunningRows, WorkerDots, witnessLines } from "../components/RunLane";
+import { Section } from "../components/Section";
 import { STATE_ICONS, TONE_TEXT } from "../components/StateDot";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
@@ -29,20 +30,6 @@ function GlyphCount({ count, words, tone, icon }: { count: number; words: string
       <Glyph className={TONE_TEXT[tone]}>{icon}</Glyph>
       {count}
     </span>
-  );
-}
-
-function Rows({ label, count, aside, empty, footer, children }: { label: string; count?: number; aside?: ReactNode; empty: string; footer?: ReactNode; children?: ReactNode }) {
-  return (
-    <section aria-label={label} className="flex flex-col">
-      <header className="flex min-h-8 items-baseline gap-2 border-b border-rule-2 px-2.5 pb-2">
-        <h2 className="font-sans text-[14px] font-semibold text-ink">{label}</h2>
-        {count != null && <span data-count className="font-mono text-[12px] text-ink-3">{count}</span>}
-        {aside != null && <span className="ml-auto self-center">{aside}</span>}
-      </header>
-      {count == null ? null : count === 0 ? <p className="px-2.5 py-2.5 font-mono text-[12px] text-ink-3">{empty}</p> : children}
-      {count != null && footer}
-    </section>
   );
 }
 
@@ -98,11 +85,11 @@ export function Overview() {
           />
         </div>
         {loaded && need > 0 && (
-          <Rows label="Needs you" count={need} empty="">
+          <Section label="Needs you" count={need} empty="">
             <FocusCard entries={view.needs} open={opened.open} toggle={opened.toggle} hosts={view.hosts} now={view.now} />
-          </Rows>
+          </Section>
         )}
-        <Rows
+        <Section
           label="Running"
           count={shown(running.length)}
           aside={loaded && lanes.length > 0 ? <WorkerDots groups={lanes} /> : undefined}
@@ -112,11 +99,11 @@ export function Overview() {
           ))}
         >
           <RunningRows rows={running} />
-        </Rows>
-        <Rows label="Waiting" count={shown(waiting.length)} empty="Nothing waits on a pull request.">
+        </Section>
+        <Section label="Waiting" count={shown(waiting.length)} empty="Nothing waits on a pull request.">
           <WaitingRows rows={waiting} readiness={view.readiness} />
-        </Rows>
-        <Rows
+        </Section>
+        <Section
           label="Merged today"
           count={shown(merged.length)}
           empty="Nothing merged yet today."
@@ -127,7 +114,7 @@ export function Overview() {
           ) : undefined}
         >
           <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={projectColours(view.hosts)} />
-        </Rows>
+        </Section>
       </div>
       <div className="hidden min-w-0 min-[1200px]:block min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:flex-[0_0_330px] min-[1600px]:self-start">
         <DayLog entries={log.entries} />

@@ -10,7 +10,7 @@ import bypassable from "../../../tests/fixtures/serve/run-merge-bypassable.json"
 import ready from "../../../tests/fixtures/serve/run-merge-ready.json";
 import ticketDetail from "../../../tests/fixtures/serve/ticket.json";
 import { fakeFetch } from "../actionFakes";
-import { fakeDeps, peersFetch, settle } from "../harness";
+import { fakeDeps, peersFetch, settle, type StubDaemon } from "../harness";
 
 const DEMO = "http://writer-host:7710";
 const WRITER = "http://writer-host:7711";
@@ -49,20 +49,29 @@ interface Daemon {
   woken?: { items: Item[]; queued: Status["queued"]; answer: Promise<void> };
   /** How far the daemons' clock runs behind the console's. */
   behindMs?: number;
+  /** The second daemon's parks, how far its clock runs behind, and its ready runs. */
+  writer?: { items: Item[]; behindMs?: number; readyRuns?: number[] } | "down";
+  hash?: string;
 }
 
 let client: QueryClient | null = null;
 /** `demo`'s `/attention` requests made after the mark-ready post. */
 let readsAfterPost = 0;
+/** The daemons the fleet poll reads, by base; a test may swap one for a `down` stub. */
+let daemons: Record<string, StubDaemon> = {};
+let clock = { now: NOW };
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken, behindMs = 0 }: Daemon) {
-  const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW - behindMs, runs: own, queued: [], actions });
-  const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW - behindMs, project, items: list });
+async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken, behindMs = 0, writer, hash = "#/" }: Daemon) {
+  const statusOf = (project: string, own: StatusRun[] = [], behind = behindMs): Status => ({ ...served, project, now: NOW - behind, runs: own, queued: [], actions });
+  const attention = (project: string, list: Item[], behind = behindMs) => ({ level: list.length ? "attention" : "none", now: NOW - behind, project, items: list });
   const [first, second] = ["/srv/dev/demo", "/srv/dev/writer"];
-  const fleet = peersFetch(DEMO, {
+  const answering = writer === "down" ? undefined : writer;
+  const writerBehind = answering?.behindMs ?? behindMs;
+  daemons = {
     [DEMO]: { status: statusOf(first, runs), attention: attention(first, items) },
-    [WRITER]: { status: statusOf(second), attention: attention(second, []) },
-  });
+    [WRITER]: writer === "down" ? { down: new Error("connection refused") } : { status: statusOf(second, [], writerBehind), attention: attention(second, answering?.items ?? [], writerBehind) },
+  };
+  const fleet = peersFetch(DEMO, daemons);
   const { seen, fetchImpl } = fakeFetch({});
   let posted = false;
   readsAfterPost = 0;
@@ -75,9 +84,11 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], answe
     if (posted && woken && url === `${DEMO}/status`) return Response.json({ ...statusOf(first, runs), queued: woken.queued });
     const readiness = url.match(/\/runs\/(\d+)\/merge$/);
     if (readiness) {
-      const answer = answers[Number(readiness[1])];
+      const onWriter = url.startsWith(`${WRITER}/`);
+      const answer = onWriter ? undefined : answers[Number(readiness[1])];
       if (typeof answer === "number") return new Response("readiness failed", { status: answer });
-      return Response.json(answer ?? { ...ready, run: Number(readiness[1]), ready: readyRuns.includes(Number(readiness[1])) });
+      const readyHere = onWriter ? answering?.readyRuns ?? [] : readyRuns;
+      return Response.json(answer ?? { ...ready, run: Number(readiness[1]), ready: readyHere.includes(Number(readiness[1])) });
     }
     const ticket = url.match(/\/tickets\/([^/?]+)$/);
     if (ticket) {
@@ -99,9 +110,10 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], answe
     }
     return fleet(url, init);
   };
-  window.location.hash = "#/";
+  window.location.hash = hash;
   const fake = fakeDeps(routed);
   fake.clock.now = NOW;
+  clock = fake.clock;
   client = consoleQueryClient();
   render(
     <QueryClientProvider client={client}>
@@ -125,9 +137,18 @@ const waits = () => rows().map((row) => [
   within(line(row)).getByRole("img").getAttribute("aria-label"),
   row.querySelector("[data-age]")?.textContent ?? "",
 ]);
-const rowButton = (run: number) => within(section()).getByRole("button", { name: new RegExp(`^DEMO-${run} `) });
+/** A row's title button, by its run on `demo` or by its ticket key. */
+const rowButton = (run: number | string) => within(section()).getByRole("button", { name: new RegExp(`^${typeof run === "number" ? `DEMO-${run}` : run} `) });
+const keys = () => rows().map((row) => line(row).textContent!.match(/^[A-Z]+-\d+/)![0]);
+const repoll = async () => {
+  await act(async () => {
+    await client!.refetchQueries();
+    await settle();
+  });
+  for (let round = 0; round < 3; round += 1) await act(settle);
+};
 
-async function openRow(run: number) {
+async function openRow(run: number | string) {
   await act(async () => {
     fireEvent.click(rowButton(run));
     await settle();
@@ -611,4 +632,162 @@ test("a backticked span in a row's title shows as inline code, and its accessibl
   const button = rowButton(9);
   expect(button.getAttribute("aria-label")).toStartWith("DEMO-9 Read a +++ TOML header, ");
   expect([...button.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
+});
+
+const writerPark = (run: number, ageMs: number, pr: object = {}): Item => ({
+  ...park(run, "pull_request", ageMs, { number: run + 70, checks: "success", review: "approved", threads: 0, open_threads: 0, ...pr }),
+  ticket: `WRITER-${run}`, pr_url: `https://github.com/example/writer/pull/${run + 70}`,
+} as Item);
+
+test("a run working on a pull request it is not parked on draws no Waiting row", async () => {
+  const [base] = served.runs as [StatusRun];
+  const fixing = { ...base, id: 20, ticket: "DEMO-20", title: "Fix the slot", phase: "working", heartbeat_age_ms: 1000, round: 2,
+    pr_url: "https://github.com/example/demo/pull/2374" };
+  await mount({ items: [readyPark], runs: [fixing] });
+  expect(screen.getByRole("region", { name: "Running" }).textContent).toContain("DEMO-20");
+  expect(keys()).toEqual(["DEMO-9"]);
+  expect(section().textContent).not.toMatch(/DEMO-20|#2374/);
+});
+
+test("a row parked on a second daemon reads its ticket from that daemon and opens its run under that daemon's project", async () => {
+  const seen = await mount({ items: [readyPark], readyRuns: [], writer: { items: [writerPark(7, 3 * HOUR)] }, ticketBody: WHAT });
+  expect(keys()).toEqual(["WRITER-7", "DEMO-9"]);
+  await openRow("WRITER-7");
+  const row = rows()[0]!;
+  expect(within(row).getByText("Adds a slot that takes pages.")).toBeTruthy();
+  expect(seen.map((request) => request.url)).toEqual([`${WRITER}/tickets/WRITER-7`]);
+  expect(within(row).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/writer/7");
+  expect(within(row).getByRole("link", { name: "Open PR to review" }).getAttribute("href")).toBe("https://github.com/example/writer/pull/77");
+});
+
+test("Send back on a second daemon's row posts to that daemon", async () => {
+  const seen = await mount({ items: [], actions: true, writer: { items: [writerPark(7, HOUR)] } });
+  await openRow("WRITER-7");
+  await act(async () => {
+    fireEvent.click(within(rows()[0]!).getByRole("button", { name: "Send back with a note" }));
+    await settle();
+  });
+  fireEvent.change(within(rows()[0]!).getByLabelText("Note for the factory"), { target: { value: "Split the change" } });
+  await act(async () => {
+    fireEvent.click(within(rows()[0]!).getByRole("button", { name: "Send" }));
+    await settle();
+  });
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${WRITER}/actions/send-back`, body: { run: 7, note: "Split the change" } }]);
+});
+
+test("the same run number on two daemons reads each daemon's own merge readiness", async () => {
+  await mount({ items: [readyPark], actions: true, readyRuns: [], writer: { items: [writerPark(9, HOUR)], readyRuns: [9] } });
+  const glyph = (key: string) => within(line(rows().find((row) => line(row).textContent!.startsWith(key))!)).getByRole("img");
+  expect(glyph("WRITER-9").getAttribute("data-state")).toBe("ready_to_merge");
+  expect(glyph("DEMO-9").getAttribute("data-state")).toBe("parked");
+  expect(rowButton("WRITER-9").getAttribute("aria-label")).toBe("WRITER-9 Ticket 9, Your review, ready to merge · 1h");
+  expect(rowButton("DEMO-9").getAttribute("aria-label")).toBe("DEMO-9 Ticket 9, Your review, 2h");
+});
+
+test("rows from two daemons age each on its own daemon's clock and order by those ages", async () => {
+  await mount({
+    items: [{ ...readyPark, asked_ms: NOW - 5 * MINUTE - 2 * MINUTE }], behindMs: 5 * MINUTE,
+    writer: { items: [writerPark(7, 3 * MINUTE)], behindMs: 0 },
+  });
+  expect(keys()).toEqual(["WRITER-7", "DEMO-9"]);
+  expect(waits().map(([, age]) => age)).toEqual(["3m", "2m"]);
+});
+
+test("a daemon that stops answering keeps its Waiting row, aged on from its last answer", async () => {
+  await mount({ items: [readyPark], writer: { items: [writerPark(7, 2 * MINUTE)] } });
+  expect(keys()).toEqual(["DEMO-9", "WRITER-7"]);
+  expect(waits()[1]![1]).toBe("2m");
+  daemons[WRITER] = { down: new Error("connection refused") };
+  clock.now = NOW + 4 * MINUTE;
+  await repoll();
+  expect(keys()).toEqual(["DEMO-9", "WRITER-7"]);
+  expect(waits()[1]![1]).toBe("6m");
+});
+
+test("a daemon that never answers leaves the other daemons' Waiting rows standing", async () => {
+  await mount({ items: [readyPark, threadPark], writer: "down" });
+  expect(keys()).toEqual(["DEMO-9", "DEMO-10"]);
+  expect(section().querySelector("[data-count]")!.textContent).toBe("2");
+});
+
+test("a picked project's Waiting lists and counts only its daemon's rows, and a row's Open run keeps the pick", async () => {
+  await mount({ items: [readyPark, threadPark], readyRuns: [], writer: { items: [writerPark(7, HOUR)] }, hash: "#/?project=writer" });
+  expect(keys()).toEqual(["WRITER-7"]);
+  expect(section().querySelector("[data-count]")!.textContent).toBe("1");
+  await openRow("WRITER-7");
+  expect(within(rows()[0]!).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/writer/7?project=writer");
+});
+
+test("a second click on an open row closes it and drops its detail, and while open its button controls that detail", async () => {
+  await mount({ items: [readyPark], readyRuns: [] });
+  await openRow(9);
+  const detail = document.getElementById(rowButton(9).getAttribute("aria-controls")!)!;
+  expect(rows()[0]!.contains(detail)).toBe(true);
+  expect(within(detail).getByRole("link", { name: "Open run" })).toBeTruthy();
+  await openRow(9);
+  expect(rowButton(9).getAttribute("aria-expanded")).toBe("false");
+  expect(rows()[0]!.hasAttribute("data-open")).toBe(false);
+  expect(rows()[0]!.querySelector("[data-pr-detail]")).toBeNull();
+});
+
+test("a poll that brings an older park above an open row keeps that row open and the new row closed", async () => {
+  const items = [readyPark];
+  await mount({ items, readyRuns: [] });
+  await openRow(9);
+  items.push(park(14, "pull_request", 5 * HOUR, { number: 47, checks: "success", review: "approved", threads: 0, open_threads: 0 }));
+  await repoll();
+  expect(keys()).toEqual(["DEMO-14", "DEMO-9"]);
+  expect(rows().map((row) => row.hasAttribute("data-open"))).toEqual([false, true]);
+  expect(rowButton(14).getAttribute("aria-expanded")).toBe("false");
+  expect(rowButton(9).getAttribute("aria-expanded")).toBe("true");
+});
+
+test("an open row's detail follows a readiness poll that turns it ready, gaining Merge while it stays open", async () => {
+  const readyRuns: number[] = [];
+  await mount({ items: [readyPark], actions: true, readyRuns });
+  await openRow(9);
+  expect(detailButton("Merge")).toBeNull();
+  readyRuns.push(9);
+  await repoll();
+  expect(rowButton(9).getAttribute("aria-expanded")).toBe("true");
+  expect(detailButton("Merge")!.dataset.variant).toBe("primary");
+  expect(rowButton(9).getAttribute("aria-label")).toBe("DEMO-9 Ticket 9, Your review, ready to merge · 2h");
+});
+
+test("a park with no run lists as a row whose title cannot open it", async () => {
+  const seen = await mount({ items: [{ ...readyPark, run: null, ticket: "DEMO-30" } as Item] });
+  const button = rowButton("DEMO-30");
+  expect(button.hasAttribute("disabled")).toBe(true);
+  expect(button.hasAttribute("aria-expanded")).toBe(false);
+  await act(async () => {
+    fireEvent.click(button);
+    await settle();
+  });
+  expect(rows()[0]!.hasAttribute("data-open")).toBe(false);
+  expect(rows()[0]!.querySelector("[data-pr-detail]")).toBeNull();
+  expect(seen).toEqual([]);
+});
+
+test("a park with no asked time draws no age, names no age, and sorts after the aged rows", async () => {
+  await mount({ items: [{ ...threadPark, asked_ms: null } as Item, readyPark], readyRuns: [] });
+  expect(keys()).toEqual(["DEMO-9", "DEMO-10"]);
+  expect(rows()[1]!.querySelector("[data-age]")).toBeNull();
+  expect(rowButton(10).getAttribute("aria-label")).toBe("DEMO-10 Ticket 10, Your review");
+});
+
+test("an On CI row names what it waits on in CI after its status: checks running, or green checks in their quiet period", async () => {
+  const green = park(11, "ci", HOUR, { number: 44, checks: "success", review: null, threads: 0, open_threads: 0 });
+  await mount({ items: [onCi, green] });
+  expect(rowButton(8).getAttribute("aria-label")).toBe("DEMO-8 Ticket 8, On CI, checks running · 3h");
+  expect(rowButton(11).getAttribute("aria-label")).toBe("DEMO-11 Ticket 11, On CI, checks green, quiet period · 1h");
+});
+
+test("an opened On CI row offers no Merge of either kind, even where its run's readiness would allow a bypass", async () => {
+  await mount({ items: [onCi], actions: true, answers: { 8: notReady(8, "review_bypassable") } });
+  await openRow(8);
+  expect(waits()).toEqual([["On CI", "3h"]]);
+  expect(detailButton("Merge")).toBeNull();
+  expect(detailButton("Merge without review")).toBeNull();
+  expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
 });

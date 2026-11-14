@@ -203,3 +203,106 @@ test("a running witness set is a line under Running naming its story, key range 
   expect(rows()).toHaveLength(1);
   expect(witnessLines()).toEqual(["Witnesses · DEMO-20 · W1, W3 · running 12m"]);
 });
+
+const dotsLabel = () => within(running()).getByRole("img", { name: /workers busy$/ }).getAttribute("aria-label");
+const tickets = () => rows().map((row) => row.getAttribute("aria-label")!.split(" ")[0]);
+
+test("a run gone quiet draws no row but still holds a busy worker in the heading's dots", async () => {
+  const quiet = runOf(9, "DEMO-9", "Went quiet", { heartbeat_age_ms: STALE_MS + MINUTE });
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun, quiet], { workers: 2 }), statusOf("/srv/dev/writer", [], { workers: 1 })]);
+  expect(tickets()).toEqual(["DEMO-7"]);
+  expect(dotsLabel()).toBe("2 of 3 workers busy");
+});
+
+test("a scoped page's worker dots count only the workers and runs of the project in scope", async () => {
+  const demo = statusOf("/srv/dev/demo", [demoRun, runOf(8, "DEMO-8", "Draw the row", { phase: "working" })], { workers: 3 });
+  await mount("#/?project=writer", [demo, statusOf("/srv/dev/writer", [writerRun], { workers: 2 })]);
+  expect(dotsLabel()).toBe("1 of 2 workers busy");
+});
+
+test("more live runs than workers light every dot and add none", async () => {
+  const live = [demoRun, runOf(8, "DEMO-8", "Second", { phase: "working" }), runOf(9, "DEMO-9", "Third", { phase: "verifying" })];
+  await mount("#/", [statusOf("/srv/dev/demo", live, { workers: 1 }), statusOf("/srv/dev/writer", [], { workers: 1 })]);
+  expect(rows()).toHaveLength(3);
+  expect(dotsLabel()).toBe("2 of 2 workers busy");
+  expect(within(running()).getByRole("img", { name: /workers busy$/ }).children).toHaveLength(2);
+});
+
+test("an idle project adds its workers to the dots and no row", async () => {
+  const alpha = statusOf("/srv/dev/alpha", [demoRun], { workers: 2 });
+  const beta = statusOf("/srv/dev/beta", [], { workers: 2 });
+  const gamma = statusOf("/srv/dev/gamma", [], { workers: 2 });
+  await mount("#/", [alpha, beta, gamma]);
+  expect(tickets()).toEqual(["DEMO-7"]);
+  expect(dotsLabel()).toBe("1 of 6 workers busy");
+});
+
+test("with every project idle, Running draws no row, counts none and says Nothing running.", async () => {
+  await mount("#/", [statusOf("/srv/dev/alpha", []), statusOf("/srv/dev/beta", []), statusOf("/srv/dev/gamma", [])]);
+  expect(rows()).toEqual([]);
+  expect(running().querySelector("[data-count]")!.textContent).toBe("0");
+  expect(running().textContent).toContain("Nothing running.");
+  expect(dotsLabel()).toBe("0 of 3 workers busy");
+});
+
+test("a host kept beside a contract error adds no workers to the dots", async () => {
+  const demo = statusOf("/srv/dev/demo", [demoRun], { workers: 2 });
+  const page = await mount("#/", [demo, statusOf("/srv/dev/writer", [writerRun], { workers: 1 })]);
+  expect(dotsLabel()).toBe("2 of 3 workers busy");
+  const { queued: _queued, ...unqueued } = demo;
+  await page.answerDemo(unqueued);
+  expect(tickets()).toEqual(["WRITER-3"]);
+  expect(dotsLabel()).toBe("1 of 1 workers busy");
+});
+
+test("a running witness set holds no worker busy", async () => {
+  await mount("#/", [statusOf("/srv/dev/demo", [], { workers: 2, witnesses: witnessesOf(["W1", "W2"], MINUTE) }), statusOf("/srv/dev/writer", [], { workers: 1 })]);
+  expect(witnessLines()).toHaveLength(1);
+  expect(dotsLabel()).toBe("0 of 3 workers busy");
+});
+
+test("with no witness set running, a live run draws no witness line", async () => {
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun], { witnesses: null }), statusOf("/srv/dev/writer", [writerRun], { witnesses: null })]);
+  expect(rows()).toHaveLength(2);
+  expect(witnessLines()).toEqual([]);
+});
+
+test("a check-fix round's multi-line step shows only its first line in the activity line", async () => {
+  const fixing = runOf(30, "DEMO-30", "Fix the checks", { phase: "merge_gate", step: "fixing checks (round 1 of 2)\nruff check . failed" });
+  await mount("#/", [statusOf("/srv/dev/demo", []), statusOf("/srv/dev/writer", [fixing])]);
+  expect(rowOf("DEMO-30").querySelector("[data-activity]")!.textContent).toBe("fixing checks (round 1 of 2)");
+});
+
+test("a run with no event, step or stop draws no activity line under its title", async () => {
+  await mount("#/", [statusOf("/srv/dev/demo", []), statusOf("/srv/dev/writer", [{ ...writerRun, step: null }])]);
+  expect(rowOf("WRITER-3").querySelector("[data-activity]")).toBeNull();
+  expect(within(rowOf("WRITER-3")).getByText("Name the writer")).toBeTruthy();
+});
+
+test("a run with no time box shows its minutes without a bar, and its name says the minutes alone", async () => {
+  const unboxed = runOf(50, "DEMO-50", "No box", { phase: "working", agent_ms: 7 * MINUTE, time_box_ms: null });
+  await mount("#/", [statusOf("/srv/dev/demo", [unboxed]), statusOf("/srv/dev/writer", [])]);
+  const row = rowOf("DEMO-50");
+  expect(row.getAttribute("aria-label")).toBe("DEMO-50 No box, Implement, 7 minutes");
+  expect(within(row).getByText("7m")).toBeTruthy();
+  expect(row.querySelector("[data-bar]")).toBeNull();
+});
+
+test("a run with no agent time yet shows no time or bar, and its name stops at its stage", async () => {
+  const fresh = runOf(51, "DEMO-51", "Just claimed", { phase: "working", agent_ms: null, working_ms: null, time_box_ms: 25 * MINUTE });
+  await mount("#/", [statusOf("/srv/dev/demo", [fresh]), statusOf("/srv/dev/writer", [])]);
+  const row = rowOf("DEMO-51");
+  expect(row.getAttribute("aria-label")).toBe("DEMO-51 Just claimed, Implement");
+  expect(row.querySelector("[data-bar]")).toBeNull();
+  expect(row.textContent).not.toMatch(/\d+[ms]$/);
+});
+
+test("the Running list is a size container whose every row layout keeps a shrinkable title column", async () => {
+  await mount("#/", [statusOf("/srv/dev/demo", [demoRun]), statusOf("/srv/dev/writer", [])]);
+  const list = within(running()).getByRole("list", { name: "Running runs" });
+  expect(list.classList.contains("@container")).toBe(true);
+  const layouts = [...rowOf("DEMO-7").classList].filter((name) => name.includes("grid-cols-"));
+  expect(layouts.length).toBeGreaterThan(1);
+  expect(layouts.filter((name) => /(^|:)(min|max)-\[|^(sm|md|lg|xl|2xl):/.test(name))).toEqual([]);
+  expect(layouts.every((name) => name.includes("minmax(0,1fr)"))).toBe(true);
+});

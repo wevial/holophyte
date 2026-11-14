@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ConfirmDialog } from "../../src/app/components/ConfirmDialog";
 import { Btn } from "../../src/app/components/Btn";
 import { BarChart, Change, LineChart } from "../../src/app/components/FlowCharts";
+import { Section } from "../../src/app/components/Section";
 import { StageChip } from "../../src/app/components/StageChip";
 import { StateDot } from "../../src/app/components/StateDot";
 import { flowWeekly, weeklyTips } from "../../src/app/flow";
@@ -70,6 +71,25 @@ test("busy and disabled buttons swallow clicks, the busy one says so, and an idl
   expect(busy).not.toHaveBeenCalled();
   expect(disabled).not.toHaveBeenCalled();
   expect(idle).toHaveBeenCalledTimes(1);
+});
+
+test("a Section heads its rows with its name and count and no fold, says its empty line at zero, and draws only its heading while uncounted", () => {
+  const section = (count?: number) => (
+    <Section label="Waiting" count={count} empty="Nothing waits on a pull request." footer={<p>witness line</p>}>
+      <ul><li>HOLO-405</li></ul>
+    </Section>
+  );
+  const { rerender } = render(section(2));
+  const region = screen.getByRole("region", { name: "Waiting" });
+  expect(region.querySelector("header")!.textContent).toBe("Waiting2");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByText("HOLO-405")).toBeTruthy();
+  expect(screen.getByText("witness line")).toBeTruthy();
+  rerender(section(0));
+  expect(screen.getByText("Nothing waits on a pull request.")).toBeTruthy();
+  expect(screen.queryByText("HOLO-405")).toBeNull();
+  rerender(section(undefined));
+  expect(region.textContent).toBe("Waiting");
 });
 
 test("a StageChip reads the review round against its cap, and a merge gate with a PR without a round", () => {
