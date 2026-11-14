@@ -1,20 +1,46 @@
 export type Declaration = { path: string[]; name: string; value: string };
 
+/** A selector list's selectors, split at the commas outside brackets and quotes. */
+function selectors(list: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote = "";
+  let current = "";
+  for (const char of list) {
+    if (quote) quote = char === quote ? "" : quote;
+    else if (char === '"' || char === "'") quote = char;
+    else if (char === "(" || char === "[") depth += 1;
+    else if (char === ")" || char === "]") depth -= 1;
+    else if (char === "," && depth === 0) {
+      parts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  return [...parts, current.trim()];
+}
+
+/** Every custom property and property declared, once for each selector of
+ *  each enclosing selector list. */
 export function declarations(source: string): Declaration[] {
   const text = source.replace(/\/\*[\s\S]*?\*\//g, "");
   const out: Declaration[] = [];
-  const path: string[] = [];
+  const path: string[][] = [];
   let buffer = "";
   for (const char of text) {
     if (char === "{") {
-      path.push(buffer.trim());
+      path.push(selectors(buffer.trim()));
       buffer = "";
     } else if (char === "}") {
       path.pop();
       buffer = "";
     } else if (char === ";") {
       const match = /^\s*(--[a-z0-9-]+|-?[a-z][a-z0-9-]*)\s*:\s*([\s\S]*)$/.exec(buffer);
-      if (match) out.push({ path: [...path], name: match[1]!, value: match[2]!.trim() });
+      if (match) {
+        const paths = path.reduce<string[][]>((prefixes, list) => prefixes.flatMap((prefix) => list.map((selector) => [...prefix, selector])), [[]]);
+        for (const each of paths) out.push({ path: each, name: match[1]!, value: match[2]!.trim() });
+      }
       buffer = "";
     } else {
       buffer += char;

@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { inflateSync } from "node:zlib";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { buildConsole } from "../build";
+import { Mark } from "../src/app/components/icons";
 
 const publicDir = new URL("../public/", import.meta.url);
 const bytes = async (name: string) => new Uint8Array(await Bun.file(new URL(name, publicDir)).arrayBuffer());
@@ -65,6 +68,23 @@ test("the manifest names both PNGs with sizes and standalone display", async () 
 test("the favicon is its own drawing on a 16-unit grid", async () => {
   const svg = await Bun.file(new URL("favicon.svg", publicDir)).text();
   expect(svg).toContain('viewBox="0 0 16 16"');
+});
+
+test("the mark is one current-colour disc whose leaf is an even-odd hole, with no gradient", () => {
+  const holder = document.createElement("div");
+  holder.innerHTML = renderToStaticMarkup(createElement(Mark));
+  const svg = holder.querySelector("svg")!;
+  const painted = svg.querySelectorAll("path, circle, ellipse, rect, polygon, use, image");
+  expect(painted.length).toBe(1);
+  const shape = painted[0]!;
+  expect(shape.getAttribute("fill")).toBe("currentColor");
+  expect(shape.getAttribute("fill-rule")).toBe("evenodd");
+  expect(shape.hasAttribute("stroke")).toBe(false);
+  const outlines = shape.getAttribute("d")!.match(/M[^M]*/g)!;
+  expect(outlines.length).toBe(2);
+  for (const outline of outlines) expect(outline.trim().endsWith("Z")).toBe(true);
+  expect(svg.querySelector("linearGradient, radialGradient, mask, pattern")).toBeNull();
+  expect(svg.outerHTML).not.toContain("url(");
 });
 
 test("the docs site logo is a copy of assets/logo.svg", async () => {
