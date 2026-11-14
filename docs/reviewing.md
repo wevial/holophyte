@@ -467,8 +467,17 @@ One pass:
    merge: a red check the rules do not require does not, and the run
    records it once per head as an `optional_checks_failed` event when the
    pass reaches "ready to merge". With no required check every red check
-   holds the merge. Red Actions checks are rerun
-   once a pass; still red, they get a check fix round, an implementer turn
+   holds the merge. Before a red Actions check is rerun, the failing
+   unittest ids its job logs name (`FAIL: name (module.Class.name)`) run
+   once in the run's worktree at the pull request head, capped at five
+   minutes: a named test that fails there too skips the rerun, records a
+   `check_rerun_skipped` event with the ids and the local output's tail,
+   and goes straight to the check fix round. Otherwise -- the tests pass
+   locally, or the logs name no unittest id, a module is not found once
+   in the worktree, the worktree is not at the head, or the local run
+   times out or fails without reproducing a named test -- the failed jobs
+   are rerun once a pass, and the `check_rerun` event says why after
+   `local run:`. Still red, they get a check fix round, an implementer turn
    handed the failure lines of each job log and its tail. A red read on
    the fix's commit gets another round only when its failure is new and
    `[merge] check_fix_rounds` is not spent; a repeated failure, spent

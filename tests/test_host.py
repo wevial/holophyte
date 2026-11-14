@@ -211,8 +211,14 @@ class HostRegistryTests(HostFixture):
         alpha = self.repo("alpha")
         self.cli("project", "add", str(alpha))
         host = Host.locate()
+        probe = host.path.with_name("atime-probe")
+        probe.write_text("probe")
+        if not read_moves_access_time(probe):
+            self.skipTest("the home's filesystem does not move access times")
+        held_back = hold_access_time_back(host.path)
         registry = host.path.stat()
         first = host.projects()
+        self.assertGreater(host.path.stat().st_atime_ns, held_back)
         self.assertIs(host.projects(), first)
         [entry] = first
         self.assertEqual(board_mode(entry.target).kind, "linear")
@@ -221,7 +227,26 @@ class HostRegistryTests(HostFixture):
             '[board]\nkind = "native"\nkey = "NAT"\n')
         [entry] = host.projects()
         self.assertEqual(board_mode(entry.target).kind, "native")
-        self.assertEqual(host.path.stat(), registry)
+        self.assertEqual(rewrite_stamp(host.path.stat()),
+                         rewrite_stamp(registry))
+
+
+def hold_access_time_back(path):
+    """Set `path`'s access time two seconds behind its modification time, so
+    the next read moves it under `relatime`; return the access time set."""
+    mtime_ns = path.stat().st_mtime_ns
+    os.utime(path, ns=(mtime_ns - 2_000_000_000, mtime_ns))
+    return mtime_ns - 2_000_000_000
+
+
+def read_moves_access_time(path):
+    held_back = hold_access_time_back(path)
+    path.read_bytes()
+    return path.stat().st_atime_ns > held_back
+
+
+def rewrite_stamp(stat):
+    return stat.st_ino, stat.st_size, stat.st_mtime_ns
 
 
 class HostStatusTests(HostFixture):

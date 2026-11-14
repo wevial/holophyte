@@ -8,6 +8,7 @@ _FAILURE = re.compile(
     r"|(?:FAILED|ERROR) \S*::"
     r"|\d+\) \[[^\]]+\] › "
     r"|[\w.]*(?:Error|Exception):")
+_UNITTEST = re.compile(r"(?:FAIL|ERROR): (\w+) \((\S+)\.(\w+\.\1)\)")
 _DURATION = re.compile(
     r"\(\s*(?:\d+(?:\.\d+)?\s*(?:ms|s|m|h|sec|seconds?|min)\s*)+\)", re.I)
 _RETRY = re.compile(r"\(?\bretry #\d+\)?", re.I)
@@ -19,6 +20,14 @@ def failure_lines(log):
     """A job log's test failure headers and error lines, first seen first."""
     found = (_STAMP.sub("", line).strip() for line in (log or "").splitlines())
     return list(dict.fromkeys(line for line in found if _FAILURE.match(line)))
+
+
+def unittest_ids(log):
+    found = (_UNITTEST.match(_STAMP.sub("", line).strip())
+             for line in (log or "").splitlines())
+    return list(dict.fromkeys(
+        match.groups()[1:] for match in found
+        if match and not f"{match[2]}.".startswith("unittest.")))
 
 
 def normalized(line):
