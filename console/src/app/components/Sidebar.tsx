@@ -105,7 +105,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
 function LinkBadge({ badge, folded, tone = "text-need" }: { badge: number; folded: boolean; tone?: string }) {
   if (badge <= 0) return null;
   return (
-    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal ${tone} ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
+    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal ${tone} group-data-[status=active]:text-ink ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
       {badge}
     </span>
   );
@@ -138,7 +138,7 @@ function PageLink({
       {...(active ? { "data-status": "active", "aria-current": "page" as const } : {})}
       aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
       title={folded ? label : undefined}
-      className={`relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:border-act data-[status=active]:bg-row-selected data-[status=active]:text-ink ${
+      className={`group relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:border-act data-[status=active]:bg-row-selected data-[status=active]:text-ink ${
         folded ? "justify-center px-0" : "px-4"
       }`}
     >
@@ -167,10 +167,10 @@ function ViewList() {
               search={(previous: ScopeSearch) => ({ ...keepScope(previous), filter })}
               activeOptions={{ exact: true, includeSearch: true }}
               aria-label={FILTER_LABELS[filter]}
-              className="flex min-h-9 items-center justify-between gap-2 px-3 font-sans text-[13px] text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-row-selected data-[status=active]:text-ink"
+              className="group flex min-h-9 items-center justify-between gap-2 px-3 font-sans text-[13px] text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-row-selected data-[status=active]:text-ink"
             >
               <span>{FILTER_LABELS[filter]}</span>
-              <span data-count className="font-mono text-[11px] font-medium text-ink-3">
+              <span data-count className="font-mono text-[11px] font-medium text-ink-3 group-data-[status=active]:text-ink-2">
                 {cards.filter((card) => ticketView(card) === filter).length}
               </span>
             </Link>
@@ -212,9 +212,9 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
                 search={keepScope}
                 activeOptions={{ exact: true, includeSearch: false }}
                 aria-label={`${story.ticket} ${plainTitle(story.title)}, ${story.merged} of ${story.total} merged`}
-                className="flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-row-selected data-[status=active]:text-ink"
+                className="group flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-row-selected data-[status=active]:text-ink"
               >
-                <span className="flex justify-between gap-2 font-mono text-[11px] leading-[1.3] font-medium text-ink-3">
+                <span className="flex justify-between gap-2 font-mono text-[11px] leading-[1.3] font-medium text-ink-3 group-data-[status=active]:text-ink-2">
                   <span>{story.ticket}</span>
                   <span>
                     {story.merged}/{story.total}
