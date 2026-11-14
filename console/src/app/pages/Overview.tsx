@@ -1,81 +1,47 @@
-import { Fragment, useContext, useState, type ReactNode } from "react";
-import { ageOf } from "../../lib/attention";
-import { formatClock, formatSettled } from "../../lib/format";
+import { useContext, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
+import { projectColours } from "../dayLog";
 import { DayLog } from "../components/DayLog";
 import { FocusCard, useOpenEntry } from "../components/FocusCard";
-import { MergedToday } from "../components/MergedToday";
+import { MergedToday, SHOWN_MERGES } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
-import { prLaneGroups, PullRequestLanes, readyToMergeCount } from "../components/PrLane";
-import { hasWork, laneGroups, RunningLanes } from "../components/RunLane";
-import { Section } from "../components/Section";
+import { PullRequestGlyph, waitingRows, WaitingRows } from "../components/PrLane";
+import { laneGroups, RunningRows, liveRuns } from "../components/RunLane";
+import { STATE_ICONS, TONE_TEXT } from "../components/StateDot";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
-import { useDayLedger, useMergeQueues, usePeerList } from "../queries";
+import { useDayLedger, usePeerList } from "../queries";
 import { OriginContext, PollDepsContext, useConsolePeers } from "../scope";
+import type { Tone } from "../state";
 
-const FOLD_KEY = "holophyte.next.fold.";
-const FOLDED_BY_DEFAULT = new Set(["done"]);
-
-function readOpen(id: string): boolean {
-  const fallback = !FOLDED_BY_DEFAULT.has(id);
-  try {
-    const stored = localStorage.getItem(FOLD_KEY + id);
-    return stored === "open" ? true : stored === "folded" ? false : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeOpen(id: string, open: boolean): void {
-  try {
-    localStorage.setItem(FOLD_KEY + id, open ? "open" : "folded");
-  } catch {
-    // Storage may be disabled; the fold still holds for this page.
-  }
-}
-
-const COLUMN = "flex min-w-0 flex-col gap-[44px] min-[1600px]:row-start-2 min-[1600px]:@container/ov-col";
-
-const counted = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
-
-function Empty({ children }: { children: ReactNode }) {
-  return <p className="font-mono text-[13px] text-ink-3">{children}</p>;
-}
-
-function FoldingSection({
-  id,
-  label,
-  count,
-  hot,
-  summary,
-  empty,
-  isEmpty = count === 0,
-  loading = false,
-  open = readOpen(id),
-  onFold,
-  children,
-}: {
-  id: string;
-  label: string;
-  count: number;
-  hot?: boolean;
-  summary?: string;
-  empty: string;
-  isEmpty?: boolean;
-  loading?: boolean;
-  open?: boolean;
-  onFold?: (open: boolean) => void;
-  children?: ReactNode;
-}) {
+function Glyph({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <Section label={label} count={loading ? undefined : count} hot={hot} summary={loading ? undefined : summary} defaultOpen={open}
-      onToggle={(next) => {
-        writeOpen(id, next);
-        onFold?.(next);
-      }}
-    >
-      {loading ? null : isEmpty ? <Empty>{empty}</Empty> : children}
-    </Section>
+    <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`size-3.5 shrink-0 ${className}`}>
+      {children}
+    </svg>
+  );
+}
+
+function GlyphCount({ count, words, tone, icon }: { count: number; words: string; tone: Tone; icon: ReactNode }) {
+  const label = `${count} ${words}`;
+  return (
+    <span role="img" aria-label={label} title={label} className="inline-flex items-center gap-1.5 font-mono text-[13px] text-ink-2">
+      <Glyph className={TONE_TEXT[tone]}>{icon}</Glyph>
+      {count}
+    </span>
+  );
+}
+
+function Rows({ label, count, aside, empty, children }: { label: string; count?: number; aside?: ReactNode; empty: string; children?: ReactNode }) {
+  return (
+    <section aria-label={label} className="flex flex-col">
+      <header className="flex min-h-8 items-baseline gap-2 border-b border-rule-2 px-2.5 pb-2">
+        <h2 className="font-sans text-[14px] font-semibold text-ink">{label}</h2>
+        {count != null && <span data-count className="font-mono text-[12px] text-ink-3">{count}</span>}
+        {aside != null && <span className="ml-auto">{aside}</span>}
+      </header>
+      {count == null ? null : count === 0 ? <p className="px-2.5 py-2.5 font-mono text-[12px] text-ink-3">{empty}</p> : children}
+    </section>
   );
 }
 
@@ -87,115 +53,73 @@ export function Overview() {
   const { hosts: everyHost } = useConsolePeers();
   const peers = usePeerList(origin, everyHost.length === 0, deps);
   const asking = firstLoadLine(view.hosts, origin, peers);
-  const firstLoad = asking != null;
+  const loaded = asking == null;
   const opened = useOpenEntry(view.needs);
   const need = view.needs.length;
-  const oldest = view.needs[0] ? ageOf(view.needs[0].item, view.now) : null;
-  const queued = view.queued.length;
-  const newest = view.mergedToday[0];
-  const lanes = laneGroups(view.hosts, view.pullRequests, view.now);
-  const busy = lanes.reduce((sum, group) => sum + group.runs.length, 0);
-  const workers = lanes.reduce((sum, group) => sum + group.workers, 0);
-  const laneQueued = lanes.reduce((sum, group) => sum + (group.queued ?? []).length, 0);
-  const queues = useMergeQueues(view.hosts, deps);
-  const prLanes = prLaneGroups(view.hosts, view.pullRequests, view.now, queues);
-  const openPrs = prLanes.reduce((sum, group) => sum + group.rows.length, 0);
-  const waiting = readyToMergeCount(prLanes, view.readiness);
-  const [needOpen, setNeedOpen] = useState(() => readOpen("need"));
+  const lanes = laneGroups(view.hosts);
+  const running = liveRuns(lanes, view.now);
+  const waiting = waitingRows(view.hosts, view.pullRequests, view.needs, view.now);
+  const merged = view.mergedToday;
+  const more = merged.length - SHOWN_MERGES;
+  const shown = (count: number) => (loaded ? count : undefined);
   return (
-    <div className="flex flex-col gap-8 px-8 pt-3.5 pb-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:grid min-[1600px]:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)_330px] min-[1600px]:grid-rows-[auto_1fr] min-[1600px]:gap-x-[36px] min-[1600px]:gap-y-[32px]">
-      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-8 min-[1600px]:contents">
-        <div data-overview-head className="contents min-[1600px]:col-span-2 min-[1600px]:col-start-1 min-[1600px]:row-start-1 min-[1600px]:flex min-[1600px]:min-w-0 min-[1600px]:flex-col min-[1600px]:gap-8">
-        {view.answered && (
-          <header className="flex flex-col gap-1.5 border-b border-rule pb-[18px]">
-            <h1 className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">
-              {need === 0 ? (
-                <>
-                  <span className="text-live">Nothing</span> waiting on you.
-                </>
-              ) : (
-                <>
-                  <span className="text-need">{need}</span> waiting on you.
-                </>
+    <div className="flex flex-col gap-8 px-8 pt-3.5 pb-7 min-[1200px]:flex-row min-[1200px]:items-start min-[1600px]:gap-[36px]">
+      <div className="flex min-w-0 max-w-[880px] flex-1 flex-col gap-10">
+        <div className="flex flex-col gap-6">
+          {view.answered && (
+            <header data-overview-head className="flex flex-col gap-3 pt-4">
+              <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+                <h1 className="flex items-baseline gap-3 font-sans text-ink">
+                  <span data-numeral className={`text-[56px] font-light leading-none tracking-[-0.02em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : view.running}</span>{" "}
+                  <span className="text-[22px] font-normal leading-none">{need > 0 ? "need you" : "running"}</span>
+                </h1>
+                <div data-glyph-counts className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <GlyphCount count={view.running} words="running" tone="live" icon={STATE_ICONS.running} />
+                  <GlyphCount count={waiting.length} words="waiting on a pull request" tone="wait" icon={<PullRequestGlyph />} />
+                  <GlyphCount count={view.queued.length} words="queued" tone="ink-2" icon={STATE_ICONS.queued} />
+                  <GlyphCount count={merged.length} words="merged today" tone="live" icon={STATE_ICONS.merged} />
+                </div>
+              </div>
+              {need === 0 && (
+                <p className="flex items-center gap-2 font-sans text-[14px] text-ink-2">
+                  <Glyph className="text-live">{STATE_ICONS.ready_to_merge}</Glyph>
+                  Nothing needs you
+                </p>
               )}
-            </h1>
-            <p data-count-line className="font-mono text-[13px] text-ink-2">
-              {(
-                [
-                  [view.running, "running"],
-                  [openPrs, openPrs === 1 ? "open PR" : "open PRs"],
-                  [queued, "queued"],
-                  [view.mergedToday.length, "merged today"],
-                ] as const
-              ).map(([count, words], index) => (
-                <Fragment key={words}>
-                  {index > 0 && <span className="text-ink-3"> · </span>}
-                  <b className="font-semibold text-ink">{count}</b> {words}
-                </Fragment>
-              ))}
-            </p>
-          </header>
-        )}
-        {asking != null && tokenWanted(everyHost).length === 0 && <FirstLoad line={asking} />}
-        <Notices
-          stale={staleConsole(everyHost, origin)}
-          silent={silentHosts(view.hosts, view.now)}
-          lines={noticeLines(view.hosts, log.answers, view.now)}
-        />
+            </header>
+          )}
+          {asking != null && tokenWanted(everyHost).length === 0 && <FirstLoad line={asking} />}
+          <Notices
+            stale={staleConsole(everyHost, origin)}
+            silent={silentHosts(view.hosts, view.now)}
+            lines={noticeLines(view.hosts, log.answers, view.now)}
+          />
         </div>
-        <div className="flex flex-col gap-[44px] min-[1600px]:contents">
-          <div data-overview-column className={`${COLUMN} min-[1600px]:col-start-1`}>
-          <FoldingSection
-            loading={firstLoad}
-            id="need"
-            open={needOpen}
-            onFold={setNeedOpen}
-            label="Waiting on you"
-            count={need}
-            hot
-            summary={oldest == null ? (need === 0 ? "all clear" : undefined) : `oldest ${formatSettled(oldest)}`}
-            empty={view.project == null ? "The factory has it from here." : `Nothing in ${view.project} is waiting on you.`}
-          >
+        {loaded && need > 0 && (
+          <Rows label="Needs you" count={need} empty="">
             <FocusCard entries={view.needs} open={opened.open} toggle={opened.toggle} hosts={view.hosts} now={view.now} />
-          </FoldingSection>
-          <FoldingSection
-            loading={firstLoad}
-            id="run"
-            label="Running"
-            count={view.running}
-            summary={`${busy} of ${workers} workers busy · ${laneQueued === 0 ? "nothing queued" : `${laneQueued} queued`}`}
-            empty="Nothing running and nothing queued."
-            isEmpty={!lanes.some(hasWork)}
-          >
-            <RunningLanes groups={lanes} now={view.now} />
-          </FoldingSection>
-          </div>
-          <div data-overview-column className={`${COLUMN} min-[1600px]:col-start-2`}>
-          <FoldingSection
-            loading={firstLoad}
-            id="pr"
-            label="Pull requests"
-            count={openPrs}
-            summary={waiting === 0 ? "none wait on you" : `${counted(waiting, "waits", "wait")} on you`}
-            empty="No pull request waits on you."
-            isEmpty={prLanes.length === 0}
-          >
-            <PullRequestLanes groups={prLanes} readiness={view.readiness} />
-          </FoldingSection>
-          <FoldingSection
-            loading={firstLoad}
-            id="done"
-            label="Merged today"
-            count={view.mergedToday.length}
-            summary={newest ? `last at ${formatClock(newest.ended_ms)}` : undefined}
-            empty="Nothing merged yet today."
-          >
-            <MergedToday rows={view.mergedToday} />
-          </FoldingSection>
-          </div>
-        </div>
+          </Rows>
+        )}
+        <Rows label="Running" count={shown(running.length)} empty="Nothing running.">
+          <RunningRows rows={running} />
+        </Rows>
+        <Rows label="Waiting" count={shown(waiting.length)} empty="Nothing waits on a pull request.">
+          <WaitingRows rows={waiting} readiness={view.readiness} />
+        </Rows>
+        <Rows
+          label="Merged today"
+          count={shown(merged.length)}
+          empty="Nothing merged yet today."
+          aside={more > 0 ? (
+            <Link to="/runs" search={{ state: "merged", range: "today" }} className="inline-flex items-center gap-1.5 font-sans text-[13px] text-ink-2 hover:text-ink">
+              {more} more <span aria-hidden="true">→</span>
+            </Link>
+          ) : undefined}
+        >
+          <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={projectColours(view.hosts)} />
+        </Rows>
       </div>
-      <div className="hidden min-w-0 min-[1200px]:block min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:self-start min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:col-start-3 min-[1600px]:row-span-2 min-[1600px]:row-start-1 min-[1600px]:w-[330px]">
+      <div className="hidden min-w-0 min-[1200px]:block min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:flex-[0_0_330px] min-[1600px]:self-start">
         <DayLog entries={log.entries} />
       </div>
     </div>

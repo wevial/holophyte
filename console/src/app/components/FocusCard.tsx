@@ -11,7 +11,7 @@ import { LimitedMarkdown } from "./LimitedMarkdown";
 import type { ContractBodies } from "../fleet";
 import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
-import { STATES, stateOf } from "../state";
+import { stateOf } from "../state";
 import { CardActions } from "./CardActions";
 import { StateDot } from "./StateDot";
 import { TitleText } from "./TitleText";
@@ -108,7 +108,7 @@ function Detail({ entry, host, now, run, title, id }: { entry: NeedsYouEntry; ho
   const { item } = entry;
   const description = describeOn(item, host, now);
   const seen = num(item.last_seen_ms);
-  const detailClass = "border-t border-dashed border-rule-2 py-4 pl-[148px] pr-5 max-[720px]:px-4";
+  const detailClass = "py-4 pl-[138px] pr-2.5 max-[720px]:px-2.5";
   if (item.kind === UNREACHABLE) {
     return (
       <div id={id} className={detailClass}>
@@ -153,42 +153,26 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const name = key ?? str(item.host) ?? str(item.daemon) ?? item.kind;
   const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));
   const age = ageOf(item, now);
-  const prUrl = str(item.pr_url);
   return (
-    <li data-wait-row={name} data-open={open || undefined} className="group border-rule-2 [&+&]:border-t data-open:bg-(image:--need-tint) data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]">
-      <div className="flex items-center pr-4 hover:bg-paper-2 group-data-open:hover:bg-transparent">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={detailId}
-          onClick={onToggle}
-          className="grid min-h-[50px] min-w-0 flex-1 grid-cols-[20px_88px_minmax(0,1fr)_auto] items-center gap-3 py-2 pl-4 pr-3 text-left font-mono text-[12px] text-ink-3 max-[720px]:grid-cols-[20px_minmax(0,1fr)_auto]"
-        >
-          <StateDot state={state} hideWord />
-          <span className="truncate text-ink-2">{name}</span>
-          <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
-          <span>
-            {STATES[state].word}
-            {age != null && ` · ${formatAge(age)}`}
-          </span>
-        </button>
-        {prUrl != null && (
-          <a
-            href={prUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0 whitespace-nowrap border-b border-rule font-mono text-[12px] text-ink hover:border-ink"
-          >
-            {prLabel(prUrl).replace(/^PR (?=#)/, "")}
-          </a>
-        )}
-      </div>
+    <li data-wait-row={name} data-open={open || undefined} className="group border-b border-rule-2 data-open:bg-(image:--need-tint) data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={detailId}
+        onClick={onToggle}
+        className="grid min-h-8 w-full grid-cols-[16px_88px_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 group-data-open:hover:bg-transparent max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
+      >
+        <StateDot state={state} hideWord />
+        <span className="truncate text-ink-2">{name}</span>
+        <span className="truncate font-read text-[14.5px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
+        <span data-age>{age != null && formatAge(age)}</span>
+      </button>
       {open && <Detail entry={entry} host={host} now={now} run={run} title={title ?? key} id={detailId} />}
     </li>
   );
 }
 
-/** Waiting on you: a row each, oldest first, the open one showing what the
+/** Needs you: a row each, oldest first, the open one showing what the
  *  entry asks and the actions that answer it. */
 export function FocusCard({
   entries,
@@ -205,7 +189,7 @@ export function FocusCard({
 }) {
   if (entries.length === 0) return null;
   return (
-    <ul aria-label="Waiting on you" className="border border-rule bg-paper">
+    <ul aria-label="Needs you">
       {entries.map((entry, at) => (
         <WaitRow key={entryKey(entry, at)} entry={entry} hosts={hosts} now={now} open={at === open} onToggle={() => toggle(at)} />
       ))}

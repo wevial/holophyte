@@ -481,8 +481,8 @@ export function needsYouEntries(items: AttentionItem[], readiness: ReadinessMap,
   return orderByAge(entries, (entry) => ageOf(entry.item, now));
 }
 
-/** The Overview's Waiting on you: the Needs you entries but a pull request
- *  ready to merge, which Pull requests shows with its Merge. */
+/** The Overview's Needs you: the Needs you entries but a pull request
+ *  ready to merge, which Waiting shows with its Merge. */
 export function waitingOnYou(items: AttentionItem[], readiness: ReadinessMap, now: number): NeedsYouEntry[] {
   return needsYouEntries(items, readiness, now).filter((entry) => !entry.readyToMerge);
 }

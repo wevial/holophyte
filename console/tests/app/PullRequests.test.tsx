@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
-import type { Attention, MergeQueue, MergeQueueEntry, Status, StatusRun } from "../../src/lib/contract.gen";
+import type { Attention, Status, StatusRun } from "../../src/lib/contract.gen";
 import { addressOf } from "../../src/lib/hosts";
 import { storeToken } from "../../src/lib/token";
 import { consoleQueryClient } from "../../src/app/fleet";
@@ -16,7 +16,6 @@ const DEMO = "http://writer-host:7710";
 const WRITER = "http://writer-host:7711";
 const SERVE = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const served = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
-const servedQueue = (await Bun.file(new URL("merge-queue.json", SERVE)).json()) as MergeQueue;
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -42,25 +41,22 @@ interface Daemon {
   readyRuns?: number[];
   /** A run's `/runs/N/merge` answer, or the status it fails with, over `readyRuns`. */
   answers?: Record<number, object | number>;
-  projects?: [string, string];
   ticketBody?: string;
   sendBack?: { ok: boolean; detail: string };
   markReady?: { ok: boolean; detail: string };
   merge?: { ok: boolean; detail: string };
   /** What `demo` answers once mark-ready is posted; its `/attention` waits on `answer`. */
   woken?: { items: Item[]; queued: Status["queued"]; answer: Promise<void> };
-  /** The first project's `/merge-queue` answer; with none the route is missing. */
-  queue?: MergeQueue;
 }
 
 let client: QueryClient | null = null;
 /** `demo`'s `/attention` requests made after the mark-ready post. */
 let readsAfterPost = 0;
 
-async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, projects = ["demo", "writer"], ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken, queue }: Daemon) {
+async function mount({ items, runs = [], actions = false, readyRuns = [9], answers = {}, ticketBody = "", sendBack = { ok: true, detail: "sent back" }, markReady = { ok: true, detail: "marked ready" }, merge = { ok: true, detail: "approved" }, woken }: Daemon) {
   const statusOf = (project: string, own: StatusRun[] = []): Status => ({ ...served, project, now: NOW, runs: own, queued: [], actions });
   const attention = (project: string, list: Item[]) => ({ level: list.length ? "attention" : "none", now: NOW, project, items: list });
-  const [first, second] = projects.map((name) => `/srv/dev/${name}`) as [string, string];
+  const [first, second] = ["/srv/dev/demo", "/srv/dev/writer"];
   const fleet = peersFetch(DEMO, {
     [DEMO]: { status: statusOf(first, runs), attention: attention(first, items) },
     [WRITER]: { status: statusOf(second), attention: attention(second, []) },
@@ -74,7 +70,6 @@ async function mount({ items, runs = [], actions = false, readyRuns = [9], answe
       await woken.answer;
       return Response.json(attention(first, woken.items));
     }
-    if (queue && url === `${DEMO}/merge-queue`) return Response.json(queue);
     if (posted && woken && url === `${DEMO}/status`) return Response.json({ ...statusOf(first, runs), queued: woken.queued });
     const readiness = url.match(/\/runs\/(\d+)\/merge$/);
     if (readiness) {
@@ -120,20 +115,19 @@ function unmount() {
   client?.clear();
 }
 
-const section = () => screen.getByRole("region", { name: "Pull requests" });
-const lane = (name: string) => within(section()).getByRole("group", { name });
+const section = () => screen.getByRole("region", { name: "Waiting" });
 const rows = () => [...section().querySelectorAll<HTMLElement>("[data-pr-row]")];
+const line = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-row]")!;
+/** Each row's state glyph label and its age, top to bottom. */
 const waits = () => rows().map((row) => [
-  row.querySelector("[data-pr-wait]")!.textContent,
-  row.querySelector("[data-pr-since]")?.textContent ?? "",
+  within(line(row)).getByRole("img").getAttribute("aria-label"),
+  row.querySelector("[data-age]")?.textContent ?? "",
 ]);
-const facts = (row: Element) => [...row.querySelectorAll("[data-fact]")].map((fact) => fact.textContent);
-const onCiRows = () => [...document.querySelectorAll<HTMLElement>("[data-on-ci]")];
-const rowButton = (pr: number) => within(section()).getByRole("button", { name: new RegExp(`^PR #${pr}, `) });
+const rowButton = (run: number) => within(section()).getByRole("button", { name: new RegExp(`^DEMO-${run} `) });
 
-async function openRow(pr: number) {
+async function openRow(run: number) {
   await act(async () => {
-    fireEvent.click(rowButton(pr));
+    fireEvent.click(rowButton(run));
     await settle();
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
@@ -146,56 +140,37 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a lane per project counts the pull requests waiting on you, longest waiting first, and with only a ci park left the section says none waits on you", async () => {
-  await mount({ items: [threadPark, readyPark], projects: ["alpha", "beta"] });
-  expect(lane("alpha").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
-  expect(within(section()).queryByRole("group", { name: "beta" })).toBeNull();
-  expect(section().textContent).not.toContain("0 open");
-  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#42", "#43"]);
+test("Waiting lists every pull request park, a ci park and a ready one too, oldest first under its count, and says when none waits", async () => {
+  await mount({ items: [threadPark, readyPark, onCi] });
+  expect(section().querySelector("[data-count]")!.textContent).toBe("3");
+  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#41", "#42", "#43"]);
+  expect(waits()).toEqual([["On CI", "3h"], ["Your review", "2h"], ["Your review", "1h"]]);
   unmount();
 
-  await mount({ items: [onCi], projects: ["alpha", "beta"] });
-  expect(within(section()).queryAllByRole("group")).toEqual([]);
-  expect(section().textContent).toContain("No pull request waits on you.");
+  await mount({ items: [] });
+  expect(rows()).toEqual([]);
+  expect(section().textContent).toContain("Nothing waits on a pull request.");
 });
 
-test("only rows waiting on you stay: a draft and a ready park, not a ci park or a run fixing another pull request", async () => {
-  const draft = park(12, "pull_request", 3 * HOUR, { state: "draft", checks: "success", review: "review_required", threads: 0, open_threads: 0 });
-  const [base] = served.runs as [StatusRun];
-  const fixing = { ...base, id: 20, ticket: "DEMO-20", title: "Fix the slot", phase: "working", heartbeat_age_ms: 1000, round: 2,
-    pr_url: "https://github.com/example/demo/pull/2374" };
-  await mount({ items: [draft, readyPark, onCi], runs: [fixing] });
-  expect(lane("demo").querySelector("[data-lane-head]")!.textContent).toContain("2 open");
-  expect(rows().map((row) => within(row).getByRole("link", { name: /^#/ }).textContent)).toEqual(["#45", "#42"]);
-  expect(waits()).toEqual([["Draft · 3h", ""], ["Your review", "ready to merge · 2h"]]);
-  expect(section().textContent).not.toMatch(/waiting on the factory|On CI|Factory fixing|#41|#2374/);
-});
-
-test("a draft held for review reads Draft and its age with no second line, while a ready row keeps Your review over ready to merge", async () => {
+test("a draft held for review labels its glyph Draft and its age with no second line, while a ready row reads Your review then ready to merge", async () => {
   await mount({ items: [park(12, "pull_request", 30 * MINUTE, {
     state: "draft", title: "Improve the overview", checks: "success", review: "review_required", threads: 0, open_threads: 0,
   }), readyPark] });
-  const [ready, row] = rows() as [HTMLElement, HTMLElement];
-  expect(row.querySelector("[data-pr-wait]")!.textContent).toBe("Draft · 30m");
-  expect(row.querySelector("[data-pr-since]")).toBeNull();
-  expect(ready.querySelector("[data-pr-wait]")!.textContent).toBe("Your review");
-  expect(ready.querySelector("[data-pr-since]")!.textContent).toBe("ready to merge · 2h");
-  expect(row.textContent).not.toContain("held for your review");
-  expect(row.textContent).not.toContain("review pending");
+  expect(waits()).toEqual([["Your review", "2h"], ["Draft · 30m", "30m"]]);
+  expect(rowButton(12).getAttribute("aria-label")).toBe("DEMO-12 Improve the overview, Draft · 30m");
+  expect(rowButton(9).getAttribute("aria-label")).toBe("DEMO-9 Ticket 9, Your review, ready to merge · 2h");
 });
 
-test("a row names its pull request by its bare number from its URL and draws its facts line", async () => {
+test("a row names its pull request by the bare number in its URL", async () => {
   await mount({ items: [readyPark, threadPark] });
-  const second = rows()[1]!;
-  expect(within(second).getByRole("link", { name: "#43" })).toBeTruthy();
-  expect(facts(second)).toEqual(["checks ✓", "1 open thread"]);
+  expect(within(rows()[1]!).getByRole("link", { name: "#43" }).getAttribute("href")).toBe("https://github.com/example/demo/pull/43");
 });
 
 test("an opened row shows its ticket's What line and the links that move it, not the classic detail", async () => {
   const seen = await mount({ items: [readyPark], readyRuns: [], ticketBody: WHAT });
-  await openRow(42);
+  await openRow(9);
   const row = rows()[0]!;
-  expect(rowButton(42).getAttribute("aria-expanded")).toBe("true");
+  expect(rowButton(9).getAttribute("aria-expanded")).toBe("true");
   expect(within(row).getByText("Adds a slot that takes pages.")).toBeTruthy();
   expect(within(row).getByRole("link", { name: "Open PR to review" }).getAttribute("href")).toBe(PR_42);
   expect(within(row).getByRole("link", { name: "Open run" }).getAttribute("href")).toEndWith("#/runs/demo/9");
@@ -219,7 +194,7 @@ test("Send back posts the typed note for the run, keeps it on a refusal, and is 
     });
   };
   const seen = await mount({ items: [readyPark], actions: true, readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   await sendNote();
   const posts = seen.filter((request) => request.method === "POST");
   expect(posts.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/send-back`, body: { run: 9, note: "Rebase on main first" } }]);
@@ -227,14 +202,14 @@ test("Send back posts the typed note for the run, keeps it on a refusal, and is 
   unmount();
 
   await mount({ items: [readyPark], actions: true, readyRuns: [], sendBack: { ok: false, detail: "run 9 is not parked" } });
-  await openRow(42);
+  await openRow(9);
   await sendNote();
   expect((within(row()).getByLabelText("Note for the factory") as HTMLTextAreaElement).value).toBe("Rebase on main first");
   expect(within(row()).getByRole("alert").textContent).toBe("run 9 is not parked");
   unmount();
 
   await mount({ items: [readyPark], actions: false, readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   expect(within(row()).getByRole("link", { name: "Open run" })).toBeTruthy();
   expect(within(row()).queryByRole("button", { name: "Send back with a note" })).toBeNull();
 });
@@ -254,7 +229,7 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
     });
   };
   const seen = await mount({ items: [draftPark], actions: true, readyRuns: [] });
-  await openRow(45);
+  await openRow(12);
   const buttons = [...row().querySelectorAll("[data-pr-detail] a, [data-pr-detail] button")].map((node) => node.textContent);
   expect(buttons.slice(0, 2)).toEqual(["Open PR to review", "Mark ready for review"]);
   await markReady();
@@ -265,19 +240,18 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
   unmount();
 
   await mount({ items: [draftPark], actions: true, readyRuns: [], markReady: { ok: false, detail: "run 12 is not a draft held for review" } });
-  await openRow(45);
+  await openRow(12);
   await markReady();
   expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
-  expect(waits()).toEqual([["Draft · 1h", ""]]);
-  expect(onCiRows()).toEqual([]);
+  expect(waits()).toEqual([["Draft · 1h", "1h"]]);
 });
 
-test("an ok Mark ready moves #45 to its project's On CI list at once, and the read after the post settles it as queued", async () => {
+test("an ok Mark ready turns #45's Waiting row On CI at once, and the read after the post settles it off Waiting and into the queued count", async () => {
   let answer = () => {};
   const held = new Promise<void>((resolve) => (answer = resolve));
   const queued = [{ ...served.queued[0]!, ticket: "DEMO-12", pr_url: "https://github.com/example/demo/pull/45" }];
   await mount({ items: [draftPark], actions: true, readyRuns: [], woken: { items: [], queued, answer: held } });
-  await openRow(45);
+  await openRow(12);
   await act(async () => {
     fireEvent.click(within(rows()[0]!).getByRole("button", { name: "Mark ready for review" }));
     await settle();
@@ -288,9 +262,9 @@ test("an ok Mark ready moves #45 to its project's On CI list at once, and the re
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(readsAfterPost).toBe(1);
-  expect(waits()).toEqual([]);
-  expect(onCiRows().map((row) => row.textContent)).toEqual([expect.stringContaining("checks running")]);
-  expect(onCiRows()[0]!.textContent).toContain("#45");
+  expect(waits()).toEqual([["On CI", "1h"]]);
+  expect(within(rows()[0]!).getByRole("link", { name: "#45" })).toBeTruthy();
+  expect(screen.getByRole("img", { name: "0 queued" })).toBeTruthy();
 
   await act(async () => {
     answer();
@@ -298,14 +272,14 @@ test("an ok Mark ready moves #45 to its project's On CI list at once, and the re
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(readsAfterPost).toBe(1);
-  expect(onCiRows()).toEqual([]);
-  expect(screen.getByRole("group", { name: "demo" }).querySelector("[data-queued='DEMO-12']")).toBeTruthy();
+  expect(rows()).toEqual([]);
+  expect(screen.getByRole("img", { name: "1 queued" })).toBeTruthy();
 });
 
 test("Mark ready for review is absent on a ready pull request and on a daemon without actions", async () => {
-  for (const [item, actions, pr] of [[readyPark, true, 42], [draftPark, false, 45]] as const) {
+  for (const [item, actions] of [[readyPark, true], [draftPark, false]] as const) {
     await mount({ items: [item], actions, readyRuns: [] });
-    await openRow(pr);
+    await openRow(item.run as number);
     expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" })).toBeTruthy();
     expect(within(rows()[0]!).queryByRole("button", { name: "Mark ready for review" })).toBeNull();
     unmount();
@@ -325,7 +299,7 @@ const pressMerge = async (name: string) => {
 test("an opened ready-to-merge row leads with Merge, whose confirmed dialog posts the run with the bearer and toasts", async () => {
   storeToken(addressOf(DEMO), TOKEN);
   const seen = await mount({ items: [readyPark], actions: true });
-  await openRow(42);
+  await openRow(9);
   expect(detailButton("Merge")!.dataset.variant).toBe("primary");
   expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("quiet");
   await pressMerge("Merge");
@@ -348,7 +322,7 @@ test("an opened ready-to-merge row leads with Merge, whose confirmed dialog post
 
 test("a refused merge keeps the row's dialog open with the daemon's reason and its confirm pressable again", async () => {
   const seen = await mount({ items: [readyPark], actions: true, merge: { ok: false, detail: "GitHub's review decision is REVIEW_REQUIRED" } });
-  await openRow(42);
+  await openRow(9);
   await pressMerge("Merge");
   await pressMerge("Merge PR #42");
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
@@ -362,7 +336,7 @@ test("a refused merge keeps the row's dialog open with the daemon's reason and i
 
 test("an opened row whose readiness answers not ready draws no Merge and keeps Open PR to review primary", async () => {
   await mount({ items: [readyPark], actions: true, readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   expect(detailButton("Merge")).toBeNull();
   expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
 });
@@ -370,7 +344,7 @@ test("an opened row whose readiness answers not ready draws no Merge and keeps O
 const notReady = (run: number, reason: string) => ({ ...bypassable, run, reason });
 const bypassAnswer = { 9: notReady(9, "review_bypassable") };
 
-test("a not-ready row reads its readiness reason in its status word, keeping its age and Your review for a reason without copy", async () => {
+test("a not-ready row labels its glyph and its button with its readiness reason, keeping its age and Your review for a reason without copy", async () => {
   const failing = park(10, "pull_request", 90 * MINUTE, { checks: "failure", review: "approved", threads: 0, open_threads: 0 });
   const conflict = park(11, "pull_request", 45 * MINUTE, { checks: "success", review: "approved", threads: 0, open_threads: 0 });
   const unapproved = park(13, "pull_request", 30 * MINUTE, { checks: "success", review: "review_required", threads: 0, open_threads: 0 });
@@ -378,14 +352,14 @@ test("a not-ready row reads its readiness reason in its status word, keeping its
     ...bypassAnswer, 10: notReady(10, "checks_failing"), 11: notReady(11, "conflicting"), 13: notReady(13, "review_not_approved"),
   } });
   expect(waits()).toEqual([["Review required", "2h"], ["Checks failing", "1h"], ["Merge conflict with main", "45m"], ["Your review", "30m"]]);
-  for (const [pr, word] of [[42, "Review required"], [43, "Checks failing"], [44, "Merge conflict with main"], [46, "Your review"]] as const) {
-    expect(rowButton(pr).getAttribute("aria-label")).toContain(word);
+  for (const [run, word] of [[9, "Review required"], [10, "Checks failing"], [11, "Merge conflict with main"], [13, "Your review"]] as const) {
+    expect(rowButton(run).getAttribute("aria-label")).toContain(word);
   }
 });
 
-test("a row whose readiness read fails reads Your review and opens with no Merge of either kind", async () => {
+test("a row whose readiness read fails labels its glyph Your review and opens with no Merge of either kind", async () => {
   await mount({ items: [readyPark], actions: true, answers: { 9: 500 } });
-  await openRow(42);
+  await openRow(9);
   expect(waits()).toEqual([["Your review", "2h"]]);
   expect(detailButton("Merge without review")).toBeNull();
   expect(detailButton("Merge")).toBeNull();
@@ -393,7 +367,7 @@ test("a row whose readiness read fails reads Your review and opens with no Merge
 
 test("an opened bypassable row leads with Merge without review with actions on, and draws none with actions off", async () => {
   await mount({ items: [readyPark], actions: true, answers: bypassAnswer });
-  await openRow(42);
+  await openRow(9);
   const detail = rows()[0]!.querySelector<HTMLElement>("[data-pr-detail]")!;
   const first = within(detail).getAllByRole("button")[0]!;
   expect([first.textContent, first.dataset.variant]).toEqual(["Merge without review", "primary"]);
@@ -402,7 +376,7 @@ test("an opened bypassable row leads with Merge without review with actions on, 
   unmount();
 
   await mount({ items: [readyPark], actions: false, answers: bypassAnswer });
-  await openRow(42);
+  await openRow(9);
   expect(detailButton("Merge without review")).toBeNull();
   expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("primary");
 });
@@ -418,7 +392,7 @@ const pressBypass = async () => {
 test("Merge without review confirms over the readiness facts with the review fact flagged, and posts the bypass with the bearer", async () => {
   storeToken(addressOf(DEMO), TOKEN);
   const seen = await mount({ items: [readyPark], actions: true, answers: bypassAnswer });
-  await openRow(42);
+  await openRow(9);
   await pressBypass();
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42 without its review?" });
   const safe = [...within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li")];
@@ -443,7 +417,7 @@ test("Merge without review confirms over the readiness facts with the review fac
 test("a refused bypass merge keeps its dialog open with the daemon's detail and its confirm pressable", async () => {
   const detail = "the pull request's merge readiness is now checks_failing, not review_bypassable";
   await mount({ items: [readyPark], actions: true, answers: bypassAnswer, merge: { ok: false, detail } });
-  await openRow(42);
+  await openRow(9);
   await pressBypass();
   await pressMerge("Merge PR #42");
   const dialog = screen.getByRole("dialog", { name: "Merge PR #42 without its review?" });
@@ -455,7 +429,7 @@ test("a refused bypass merge keeps its dialog open with the daemon's detail and 
 test("the PR number links to GitHub without toggling or fetching the row detail", async () => {
   const seen = await mount({ items: [readyPark], readyRuns: [] });
   const link = within(rows()[0]!).getByRole("link", { name: "#42" });
-  const button = rowButton(42);
+  const button = rowButton(9);
   expect(link.getAttribute("href")).toBe(PR_42);
   expect(link.getAttribute("target")).toBe("_blank");
   expect(link.getAttribute("rel")).toBe("noreferrer");
@@ -492,34 +466,31 @@ const press = (key: string, shiftKey = false) => act(() => void fireEvent.keyDow
 
 async function openMedia(name: string) {
   await mount({ items: [mediaPark({ screenshots: SHOTS, videos: VIDEOS })], readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   await act(async () => {
     fireEvent.click(tile(name));
     await settle();
   });
 }
 
-test("a row reads its bare number and its key before its title, and opening it marks only its row and shows Open Vercel preview", async () => {
+test("a row reads its key before its title and its bare number after, and opening it marks only its row and shows Open Vercel preview", async () => {
   await mount({ items: [onCi, park(9, "pull_request", 2 * HOUR, {
     number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0,
-    changed_files: 13, additions: 718, deletions: 85, preview_url: "https://preview.example", screenshots: SHOTS,
+    preview_url: "https://preview.example", screenshots: SHOTS,
   }), threadPark], readyRuns: [] });
   const demo9 = () => rows().find((row) => row.textContent!.includes("DEMO-9"))!;
   expect(within(demo9()).getByRole("link", { name: "#42" }).getAttribute("href")).toBe(PR_42);
-  expect(rowButton(42).textContent).toStartWith("DEMO-9Ticket 9");
-  expect(within(demo9()).queryByRole("button", { name: /needs you/i })).toBeNull();
+  expect(line(demo9()).textContent).toBe("DEMO-9Ticket 9#422h");
   expect(rows().filter((row) => row.hasAttribute("data-open"))).toEqual([]);
-  await openRow(42);
+  await openRow(9);
   expect(rows().filter((row) => row.hasAttribute("data-open"))).toEqual([demo9()]);
-  const detail = demo9().querySelector("[data-pr-detail]")!;
   expect(within(demo9()).getByRole("link", { name: "Open Vercel preview" }).getAttribute("href")).toBe("https://preview.example");
   expect(within(demo9()).queryByRole("link", { name: "Open preview" })).toBeNull();
-  expect(detail.textContent).not.toContain("13 files");
 });
 
 test("an opened row draws a tile button per screenshot, then per video, and none when it has no media", async () => {
   await mount({ items: [mediaPark({ screenshots: SHOTS, videos: VIDEOS })], readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES);
   for (const name of TILE_NAMES) expect(tile(name).tagName).toBe("BUTTON");
   expect(within(rows()[0]!.querySelector("[data-media]")!).queryAllByRole("link")).toEqual([]);
@@ -527,12 +498,12 @@ test("an opened row draws a tile button per screenshot, then per video, and none
   unmount();
 
   await mount({ items: [mediaPark({ screenshots: SHOTS })], readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   expect(tileNames(rows()[0]!)).toEqual(TILE_NAMES.slice(0, 3));
   unmount();
 
   await mount({ items: [mediaPark({ screenshots: [] })], readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   expect(tileNames(rows()[0]!)).toEqual([]);
   expect(within(rows()[0]!).queryByRole("link", { name: "Open Vercel preview" })).toBeNull();
 });
@@ -600,7 +571,7 @@ test("the lightbox keeps focus inside, and Esc or Close returns it to the tile o
 test("a poll that leaves the row no media closes the lightbox onto Open run, and returning media does not reopen it", async () => {
   const item = mediaPark({ screenshots: SHOTS, videos: VIDEOS });
   await mount({ items: [item], readyRuns: [] });
-  await openRow(42);
+  await openRow(9);
   await act(async () => {
     fireEvent.click(tile("02 custom slot"));
     await settle();
@@ -630,203 +601,7 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
 
 test("a backticked span in a row's title shows as inline code, and its accessible name drops the backticks", async () => {
   await mount({ items: [{ ...readyPark, title: "Read a `+++` TOML header" }] });
-  const button = rowButton(42);
-  expect(button.getAttribute("aria-label")).toStartWith("PR #42, DEMO-9 Read a +++ TOML header, ");
+  const button = rowButton(9);
+  expect(button.getAttribute("aria-label")).toStartWith("DEMO-9 Read a +++ TOML header, ");
   expect([...button.querySelectorAll("code")].map((code) => code.textContent)).toEqual(["+++"]);
-});
-
-const entry = (position: number, number: number, title: string, rest: Partial<MergeQueueEntry> = {}): MergeQueueEntry => ({
-  position, state: "QUEUED", enqueued_ms: NOW - 10 * MINUTE, estimated_s: position * 600, jump: false, solo: false,
-  pr: { number, title, author: "wevial", url: `https://github.com/example/relos/pull/${number}`, head_oid: null },
-  group_sha: null, building_ms: null, run: null, checks: { done: 0, total: 0, failed: 0, runs: [] }, ...rest,
-});
-const vite = entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5", {
-  state: "AWAITING_CHECKS", group_sha: "3f9c2ab0d1e2f3a4", building_ms: NOW - 3 * MINUTE, checks: { done: 5, total: 13, failed: 0, runs: [] },
-});
-const queueOf = (first: MergeQueueEntry): MergeQueue => ({
-  ...servedQueue, configured: true, now: NOW, left: [],
-  entries: [first, entry(2, 2549, "[MCP] Add the unit lookup read tool"), entry(3, 2550, "[PDF] Keep the page position"), entry(4, 2552, "[Auth] Stop the sign-in loop")],
-});
-const queueRows = () => [...section().querySelectorAll<HTMLElement>("[data-queue-entry]")];
-const queueTab = () => lane("relos").querySelector<HTMLElement>("[data-queue-tab]")!;
-const moreButton = () => within(queueTab()).getByRole("button", { name: /more$/ });
-const numbers = () => queueRows().map((row) => within(row).getAllByRole("link")[0]!.textContent);
-const tabChip = () => queueTab().firstElementChild!.textContent;
-
-test("the Queue tab reads position 1's time to merge after its label, as its row does", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
-  expect(tabChip()).toBe("Queue · ~10m");
-  expect(queueRows()[0]!.textContent).toContain("merges ~10m");
-});
-
-const waited = (enqueued_ms: number | null) => queueOf({ ...vite, enqueued_ms, estimated_s: 720, checks: { done: 14, total: 17, failed: 0, runs: [] } });
-
-const checksLine = () => queueRows()[0]!.querySelector("[data-queue-checks]")!.textContent;
-const waitLine = () => queueRows()[0]!.querySelector("[data-queue-wait]");
-
-test("a queue row reads its checks then its estimate, and how long its pull request has waited in a separate element", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: waited(NOW - 23 * MINUTE) });
-  expect(checksLine()).toBe("14/17 done · merges ~12m");
-  expect(waitLine()!.textContent).toBe("in queue 23m");
-});
-
-test("a queue row past an hour reads its wait in hours and padded minutes", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: waited(NOW - 65 * MINUTE) });
-  expect(waitLine()!.textContent).toBe("in queue 1h 05m");
-});
-
-test("a queue row with no enqueue time reads its checks then its estimate, with no wait line", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: waited(null) });
-  expect(checksLine()).toBe("14/17 done · merges ~12m");
-  expect(waitLine()).toBeNull();
-  expect(queueRows()[0]!.textContent).not.toContain("in queue");
-});
-
-test("the Queue tab reads Queue alone when position 1 has no estimate", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf({ ...vite, estimated_s: null }) });
-  expect(tabChip()).toBe("Queue");
-});
-
-test("with nothing waiting on you, a project's lane shows a Queue tab over its queue's position 1 alone, the rest behind a count", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
-  const relos = lane("relos");
-  expect(relos.querySelector("[data-lane-head]")!.textContent).toContain("relos");
-  expect(queueTab().textContent).toContain("Queue");
-  expect(queueTab().querySelector("[data-state]")!.getAttribute("data-state")).toBe("on_ci");
-  expect(moreButton().textContent).toBe("3 more");
-  expect(moreButton().getAttribute("aria-expanded")).toBe("false");
-  expect(rows()).toEqual([]);
-  expect(numbers()).toEqual(["#2547"]);
-  const text = queueRows()[0]!.textContent!;
-  for (const words of ["#2547", "[Dependency Update]: Update Vite to 8.3.5", "checks running", "5/13 done", "merges ~10m"]) expect(text).toContain(words);
-  expect(within(queueRows()[0]!).getByRole("link", { name: "#2547" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
-  expect(section().textContent).not.toMatch(/#2549|#2550|#2552/);
-  expect(section().textContent).not.toContain("Next in queue");
-  expect(section().textContent).not.toContain("No pull request waits on you.");
-});
-
-test("the Queue tab's count unfolds the rest of the queue after position 1 in position order, and a second click folds it", async () => {
-  const queue = queueOf(vite);
-  await mount({ items: [], projects: ["relos", "writer"], queue: { ...queue, entries: [...queue.entries].reverse() } });
-  const more = moreButton();
-  expect(document.getElementById(more.getAttribute("aria-controls")!)!.contains(queueRows()[0]!)).toBe(true);
-  await clickIn(more);
-  expect(more.getAttribute("aria-expanded")).toBe("true");
-  expect(numbers()).toEqual(["#2547", "#2549", "#2550", "#2552"]);
-  await clickIn(more);
-  expect(more.getAttribute("aria-expanded")).toBe("false");
-  expect(numbers()).toEqual(["#2547"]);
-});
-
-const check = (name: string, required: boolean) => ({
-  name, workflow: "ci", status: "completed", conclusion: "success", started_ms: NOW - 3 * MINUTE, completed_ms: NOW - MINUTE,
-  url: `https://github.com/example/relos/actions/runs/7/job/${name}`, required,
-});
-const checkedVite = { ...vite, checks: { done: 2, total: 2, failed: 0, runs: [check("unit", true), check("preview", false)] } };
-const titleButton = (row: HTMLElement) => within(row).getAllByRole("button")[0]!;
-const clickIn = (target: HTMLElement) => act(async () => {
-  fireEvent.click(target);
-  await settle();
-});
-
-test("an unfolded row's title opens its own detail with Open on GitHub to its pull request, leaving position 1 closed", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(vite) });
-  await clickIn(moreButton());
-  const row = queueRows().find((line) => within(line).queryByRole("link", { name: "#2550" }))!;
-  await clickIn(titleButton(row));
-  const detail = row.querySelector<HTMLElement>("[data-entry-detail]")!;
-  expect(within(detail).getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2550");
-  expect(queueRows()[0]!.hasAttribute("data-open")).toBe(false);
-  expect(queueRows()[0]!.querySelector("[data-entry-detail]")).toBeNull();
-});
-
-test("clicking a queue row's title opens its checks, Open on GitHub and a Merge queue link under it, and a second click closes it", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-  const [line] = queueRows() as [HTMLElement];
-  const button = titleButton(line);
-  expect(line.querySelector("[data-entry-detail]")).toBeNull();
-  await clickIn(button);
-  expect(button.getAttribute("aria-expanded")).toBe("true");
-  expect(line.hasAttribute("data-open")).toBe(true);
-  const detail = line.querySelector<HTMLElement>("[data-entry-detail]")!;
-  expect(button.getAttribute("aria-controls")).toBe(detail.id);
-  expect(within(within(detail).getByRole("region", { name: "Required" })).getByRole("link", { name: "unit" })).toBeTruthy();
-  expect(within(within(detail).getByRole("region", { name: "Other" })).getByRole("link", { name: "preview" })).toBeTruthy();
-  expect(within(detail).getByRole("link", { name: "Open on GitHub" }).getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
-  expect(within(detail).getByRole("link", { name: "Merge queue" }).getAttribute("href")).toEndWith("#/merge-queue?project=relos");
-  await clickIn(button);
-  expect(button.getAttribute("aria-expanded")).toBe("false");
-  expect(line.hasAttribute("data-open")).toBe(false);
-  expect(line.querySelector("[data-entry-detail]")).toBeNull();
-});
-
-test("clicking a queue row's state words opens and closes it like its title", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-  const [line] = queueRows() as [HTMLElement];
-  const state = line.querySelector<HTMLElement>("[data-queue-state]")!;
-  await clickIn(state);
-  expect(titleButton(line).getAttribute("aria-expanded")).toBe("true");
-  expect(line.hasAttribute("data-open")).toBe(true);
-  await clickIn(state);
-  expect(titleButton(line).getAttribute("aria-expanded")).toBe("false");
-  expect(line.querySelector("[data-entry-detail]")).toBeNull();
-});
-
-test("a queue row's PR number links to GitHub without opening the row", async () => {
-  await mount({ items: [], projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-  const [line] = queueRows() as [HTMLElement];
-  const link = within(line).getByRole("link", { name: "#2547" });
-  await clickIn(link);
-  expect(link.getAttribute("href")).toBe("https://github.com/example/relos/pull/2547");
-  expect(titleButton(line).getAttribute("aria-expanded")).toBe("false");
-  expect(line.hasAttribute("data-open")).toBe(false);
-  expect(line.querySelector("[data-entry-detail]")).toBeNull();
-});
-
-test("an open position 1 row closes when a poll brings a different pull request to position 1", async () => {
-  const queue = queueOf(checkedVite);
-  await mount({ items: [], actions: true, projects: ["relos", "writer"], queue });
-  await clickIn(titleButton(queueRows()[0]!));
-  expect(queueRows()[0]!.querySelector("[data-entry-detail]")).not.toBeNull();
-  queue.entries = [{ ...queue.entries[1]!, position: 1 }, ...queue.entries.slice(2)];
-  await act(async () => {
-    await client!.refetchQueries();
-    await settle();
-  });
-  for (let round = 0; round < 3; round += 1) await act(settle);
-  const [line] = queueRows() as [HTMLElement];
-  expect(within(line).getByRole("link", { name: "#2549" })).toBeTruthy();
-  expect(titleButton(line).getAttribute("aria-expanded")).toBe("false");
-  expect(line.hasAttribute("data-open")).toBe(false);
-  expect(line.querySelector("[data-entry-detail]")).toBeNull();
-});
-
-for (const actions of [true, false]) {
-  test(`an open queue row with no store run ${actions ? "offers" : "has no"} Remove from queue with actions ${actions ? "on" : "off"}`, async () => {
-    await mount({ items: [], actions, projects: ["relos", "writer"], queue: queueOf(checkedVite) });
-    const [line] = queueRows() as [HTMLElement];
-    await clickIn(titleButton(line));
-    const detail = line.querySelector<HTMLElement>("[data-entry-detail]")!;
-    expect(within(detail).queryByRole("button", { name: "Remove from queue" }) != null).toBe(actions);
-  });
-}
-
-test("a queue of one entry with no merge group draws a queued tab icon with no count and its row reads queued", async () => {
-  const lone = entry(1, 2547, "[Dependency Update]: Update Vite to 8.3.5");
-  await mount({ items: [], projects: ["relos", "writer"], queue: { ...queueOf(lone), entries: [lone] } });
-  expect(queueTab().querySelector("[data-state]")!.getAttribute("data-state")).toBe("queued");
-  expect(within(queueTab()).queryByRole("button", { name: /more/ })).toBeNull();
-  const [line] = queueRows() as [HTMLElement];
-  expect(line.querySelector("[data-queue-state]")!.textContent).toBe("queued");
-  expect(line.textContent).not.toContain("checks running");
-});
-
-test("a lane with a waiting row and a queue draws the row first, then the Queue tab and position 1, and counts only the row", async () => {
-  await mount({ items: [readyPark], projects: ["relos", "writer"], queue: queueOf(vite) });
-  const items = [...lane("relos").querySelectorAll("li")];
-  const kind = (item: Element) =>
-    item.hasAttribute("data-pr-row") ? "row" : item.hasAttribute("data-queue-tab") ? "tab" : item.hasAttribute("data-queue-entry") ? within(item as HTMLElement).getAllByRole("link")[0]!.textContent : "other";
-  expect(items.map(kind)).toEqual(["row", "tab", "#2547"]);
-  expect(lane("relos").querySelector("[data-lane-head]")!.textContent).toContain("1 open");
-  expect(section().querySelector("header")!.textContent).toContain("Pull requests1");
 });

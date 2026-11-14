@@ -93,7 +93,7 @@ async function repoll() {
 const waitRows = () => [...document.querySelectorAll<HTMLElement>("li[data-wait-row]")];
 const rows = () => waitRows().map((row) => row.dataset.waitRow);
 const row = (key: string) => document.querySelector<HTMLElement>(`li[data-wait-row="${key}"]`)!;
-const toggleOf = (key: string) => row(key).querySelector<HTMLButtonElement>(":scope > div > button")!;
+const toggleOf = (key: string) => row(key).querySelector<HTMLButtonElement>(":scope > button")!;
 const openKeys = () => waitRows().filter((li) => toggleOf(li.dataset.waitRow!).getAttribute("aria-expanded") === "true").map((li) => li.dataset.waitRow);
 const openRow = () => document.querySelector<HTMLElement>("li[data-wait-row][data-open]")!;
 const openDetail = () => document.getElementById(toggleOf(openRow().dataset.waitRow!).getAttribute("aria-controls")!)!;
@@ -112,11 +112,12 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a failed item's row names its state, key and age, and its open detail its strike, or its bare why without triage", async () => {
+test("a failed item's row names its state on its glyph and its age, and its open detail its strike, or its bare why without triage", async () => {
   await mount(daemon({ items: [failed(code), blocked("DEMO-4", 4, HOUR)] }));
   expect(rows()).toEqual(["DEMO-11", "DEMO-4"]);
   expect(within(row("DEMO-11")).getByRole("img", { name: "failed" })).toBeTruthy();
-  expect(toggleOf("DEMO-11").textContent).toEndWith("failed · 8h");
+  expect(row("DEMO-11").querySelector("[data-age]")!.textContent).toBe("8h");
+  expect(toggleOf("DEMO-11").textContent).not.toContain("failed");
   expect(within(openDetail()).getByText("run #12 · strike 2 of 3")).toBeTruthy();
   cleanup();
 
@@ -163,16 +164,15 @@ test("a pinned question park behind an older failure reads its filed title in it
 const titled = (ticket: string, run: number, askedAgo: number, extra: object = {}) =>
   blocked(ticket, run, askedAgo, { park_kind: "question", title: `Title of ${ticket}`, ...extra });
 
-test("Waiting on you draws a row per entry, oldest first with the oldest open, and no card, pager or Later", async () => {
+test("Needs you draws a row per entry of glyph, key, title and age, oldest first with the oldest open, and no pager or Later", async () => {
   await mount(daemon({ items: [titled("C-3", 3, HOUR), titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
   expect(rows()).toEqual(["A-1", "B-2", "C-3"]);
   for (const [key, age] of [["A-1", "3h"], ["B-2", "2h"], ["C-3", "1h"]] as const) {
     const line = toggleOf(key);
     expect(within(line).getByRole("img", { name: "question" })).toBeTruthy();
-    expect([...line.children].map((part) => part.textContent)).toEqual(["", key, `Title of ${key}`, `question · ${age}`]);
+    expect([...line.children].map((part) => part.textContent)).toEqual(["", key, `Title of ${key}`, age]);
   }
   expect(openKeys()).toEqual(["A-1"]);
-  expect(screen.queryByRole("article", { name: "Focus" })).toBeNull();
   expect(screen.queryByText(/1 of 3/)).toBeNull();
   for (const name of ["Previous item", "Next item", "Later, show the next one"]) expect(screen.queryByRole("button", { name })).toBeNull();
 });
@@ -238,30 +238,13 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("an open Waiting on you row opens on the need tint and edge and an open Pull requests row on the act wash", async () => {
-  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR), park], details: { 1: { ...detail, events: [] }, 9: { ...detail, events: [] } } }));
-  const prRow = document.querySelector<HTMLElement>("li[data-pr-row]")!;
-  fireEvent.click(within(prRow).getByRole("button", { expanded: false }));
-  for (const [li, classes] of [
-    [row("A-1"), ["data-open:bg-(image:--need-tint)", "data-open:shadow-[inset_0_0_0_1px_var(--need-edge)]"]],
-    [prRow, ["data-open:bg-act-wash", "data-open:shadow-[inset_2px_0_0_var(--act)]"]],
-  ] as const) {
-    expect(li.hasAttribute("data-open")).toBe(true);
-    expect(li.className.split(/\s+/)).toEqual(expect.arrayContaining([...classes]));
-  }
-  expect(row("B-2").hasAttribute("data-open")).toBe(false);
-});
-
-test("a row with a pull request links it as #N beside its toggle without toggling; a row without one shows no link", async () => {
+test("an open row's pull request link sits in its detail's PR line, not in the row", async () => {
   const pr = "https://github.com/example/demo/pull/2405";
-  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR, { pr_url: pr })] }));
-  const link = within(row("B-2")).getByRole("link", { name: "#2405" });
+  await mount(daemon({ items: [{ ...failed(null), pr_url: pr } as Item] }));
+  const link = within(openDetail()).getByRole("link", { name: "PR #2405" });
   expect(link.getAttribute("href")).toBe(pr);
   expect(link.getAttribute("target")).toBe("_blank");
-  expect(toggleOf("B-2").contains(link)).toBe(false);
-  fireEvent.click(link);
-  expect(openKeys()).toEqual(["A-1"]);
-  expect(within(row("A-1")).queryByRole("link", { name: /^#/ })).toBeNull();
+  expect([...row("DEMO-11").querySelectorAll("a")].filter((anchor) => !openDetail().contains(anchor))).toEqual([]);
 });
 
 test("an unreachable host's open detail says it is not answering and when it was last seen, with no PR line or events", async () => {
@@ -288,11 +271,6 @@ const failedAt = (extra: object = {}): Item => ({ ...failed(code), ticket_url: T
 const stale = {
   kind: "stale_run", level: "attention", run: 7, ticket: "DEMO-7", ticket_url: null, phase: "working", heartbeat_age_ms: 20 * MINUTE,
   pr_url: "https://github.com/example/demo/pull/40",
-} as Item;
-const park = {
-  kind: "pr_open", level: "attention", ticket: "DEMO-9", ticket_url: null, title: "Link each run to its pull request", run: 9,
-  park_kind: "pull_request", asked_ms: NOW - HOUR, reason: "PR open", pr_url: "https://github.com/example/demo/pull/42",
-  pr: { number: 42, checks: "success", review: "approved", threads: 0, open_threads: 0, title: "Link each run", state: "ready" },
 } as Item;
 const paused = {
   kind: "paused", level: "attention", ticket: "DEMO-6", ticket_url: null, title: "Hold the migration", note: "hold", run: 6, asked_ms: NOW - HOUR, pr_url: null,
