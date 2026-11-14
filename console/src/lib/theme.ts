@@ -37,8 +37,8 @@ export function applyTheme(theme: Theme, root: HTMLElement = document.documentEl
 export type ThemeMode = "light" | "dark";
 export type ThemePick = "lotus" | "dune" | "tide" | "mono" | "forest";
 
-export const THEME_PICKS: ThemePick[] = ["lotus", "dune", "tide", "mono", "forest"];
-export const PICK_KEYS: Record<ThemeMode, string> = { light: "holophyte.theme.light", dark: "holophyte.theme.dark" };
+const THEME_PICKS: ThemePick[] = ["lotus", "dune", "tide", "mono", "forest"];
+const PICK_KEYS: Record<ThemeMode, string> = { light: "holophyte.theme.light", dark: "holophyte.theme.dark" };
 
 function isPick(value: unknown): value is ThemePick {
   return typeof value === "string" && (THEME_PICKS as string[]).includes(value);
