@@ -215,6 +215,9 @@ EXPECTED_READ = [
     "review_rounds",
     "rounds_of",
     "run_detail",
+    # HOLO-720: the `serve` daemon's `/search` read of the tickets, runs,
+    # scouts and review findings that hold the text.
+    "search",
     # The `serve` daemon's `/tickets?q=` read of the tickets whose
     # identifier, title, labels or body hold the text.
     "search_tickets",
