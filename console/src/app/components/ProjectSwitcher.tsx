@@ -38,12 +38,11 @@ const switcher = definePrimitive({
     let wasOpen = context.store.get().open;
     context.onDestroy(
       context.store.subscribe(() => {
-        const { open } = context.store.get();
+        const { open, current } = context.store.get();
         if (open === wasOpen) return;
         wasOpen = open;
         if (!open) return;
         context.store.set({ query: "" });
-        const { current } = context.store.get();
         if (context.options().items?.some((item) => item.value === current)) listbox.highlight(current);
         else listbox.move("first");
       }),
