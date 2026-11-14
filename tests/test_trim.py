@@ -867,6 +867,27 @@ class RetireLoopTests(TrimFixture):
                            ":2", files={"tests/checks.py": unittest_module(
                                "SharedChecks", "test_shared")})
 
+    def test_a_retire_commit_cutting_an_imported_module_hook_is_reverted(self):
+        hooked = COPY.replace("import unittest\n", "import unittest\n"
+                              "from hooks import setUpModule\n")
+        self.cut_from_copy(hooked, unittest_module("CopyTests", "test_kept"),
+                           ":2", files={"tests/hooks.py": "def setUpModule():\n"
+                                        "    pass\n"})
+
+    def test_a_retire_commit_cutting_an_import_sharing_a_line_is_reverted(self):
+        shared = COPY.replace("import unittest\n", "import unittest\n"
+                              "import os; os.environ.setdefault('KEPT', '1')\n")
+        self.retired(
+            Files(f"{SUBJECT}\n\nRETIRED tests/test_copy.py::test_dropped: "
+                  "protects nothing", {"tests/test_copy.py": unittest_module(
+                      "CopyTests", "test_kept")}),
+            cited=["tests/test_copy.py::CopyTests::test_kept"],
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/test_copy.py": shared}),))
+        self.assert_reverted("deleted a line holding more than one statement: "
+                             "tests/test_copy.py:2")
+
     def test_a_retire_commit_cutting_an_assigned_load_tests_is_reverted(self):
         hooked = COPY.replace("import unittest\n", "import unittest\n"
                               "load_tests = lambda loader, tests, pattern: (\n"

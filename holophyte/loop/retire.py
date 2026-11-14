@@ -36,7 +36,8 @@ from holophyte.review.reply_parsing import _GO_NAMES, _JS_TITLE, test_references
 SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
 NOT_REPRODUCED = "the run took the not-reproduced path"
-TEST_SUPPLIERS = {"load_tests", "pytest_generate_tests", "pytest_collect_file"}
+TEST_SUPPLIERS = {"load_tests", "setUp", "tearDown", "setUpClass",
+                  "tearDownClass", "setUpModule", "tearDownModule"}
 QUIET_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT,
                 tokenize.DEDENT, tokenize.ENDMARKER}
 SKIPPED = re.compile(r"'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\""
@@ -217,6 +218,11 @@ def _unsound(wt, base, sha, ticket, candidates, green):
     if cut:
         reasons.append("the commit deleted lines outside retired tests and"
                        " unused imports: " + ", ".join(cut))
+    crowded = [line for path in changed if _is_test(path)
+               for line in _crowded(wt, sha, head, path)]
+    if crowded:
+        reasons.append("the commit deleted a line holding more than one"
+                       " statement: " + ", ".join(crowded))
     unexplained = [test for test in removed
                    if test not in _reasons(wt, head, removed)]
     if unexplained:
@@ -310,12 +316,26 @@ def _cut_tests(wt, sha, head, path, gone):
         return [f"{path}:{min(set(hunk) - owned)}"
                 for hunk in hunks if set(hunk) - owned]
     kept = set(range(1, text.count("\n") + 2)) - quiet - deleted
-    used = _used_names(wt, head, path)
+    used = (None if PurePosixPath(path).name == "conftest.py"
+            else _used_names(wt, head, path))
     removed = [node for node in ast.walk(tree) if _is_test_def(node)
                and node.name in gone and kept.isdisjoint(_span(node))]
     owners = (_owner(tree, number, removed, used)
               for number in sorted(deleted))
     return sorted({f"{path}{owner}" for owner in owners if owner})
+
+
+def _crowded(wt, sha, head, path):
+    tree, _ = _tree(wt, sha, path)
+    if tree is None:
+        return []
+    deleted = {number for hunk in _deleted_hunks(wt, sha, head, path)
+               for number in hunk}
+    held = [number for node in ast.walk(tree) if isinstance(node, ast.stmt)
+            and not hasattr(node, "body")
+            for number in range(node.lineno, node.end_lineno + 1)]
+    return [f"{path}:{number}" for number in sorted(deleted)
+            if held.count(number) > 1]
 
 
 def _tree(wt, sha, path):
@@ -337,7 +357,8 @@ def _used_names(wt, head, path):
     imported = {name for node in tree.body for name, _ in _imported(node)}
     return imported | {node.id for node in ast.walk(tree)
                        if isinstance(node, ast.Name)} | {
-        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+        node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)} | {
+        node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)}
 
 
 def _owner(tree, number, removed, used):
@@ -383,6 +404,7 @@ def _enclosing(tree, number):
 
 def _may_supply_tests(name):
     return (name in TEST_SUPPLIERS or name.lower().startswith("test")
+            or name.startswith("pytest_") or "fixture" in name.lower()
             or (name[:1].isupper() and not name.isupper()))
 
 
