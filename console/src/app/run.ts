@@ -88,14 +88,14 @@ function clause(head: string, detail: string): string {
   return detail ? `${head}: ${detail.replace(/[.\s]+$/, "")}.` : `${head}.`;
 }
 
-const STEPS: Record<string, { stage: string; doing: string }> = {
-  working: { stage: "Implement", doing: "Implementing" },
-  addressing: { stage: "Implement", doing: "Implementing" },
-  verifying: { stage: "Verify", doing: "Verifying" },
-  reviewing: { stage: "Review", doing: "Reviewing" },
-  merge_gate: { stage: "Merge", doing: "Merging" },
-  merging: { stage: "Merge", doing: "Merging" },
-  squashing: { stage: "Merge", doing: "Merging" },
+const DOING: Record<string, string> = {
+  working: "Implementing",
+  addressing: "Implementing",
+  verifying: "Verifying",
+  reviewing: "Reviewing",
+  merge_gate: "Merging",
+  merging: "Merging",
+  squashing: "Merging",
 };
 
 interface Facts {
@@ -109,12 +109,11 @@ interface Facts {
   now: number;
 }
 
-const stepOf = (phase: string) => STEPS[phase] ?? { stage: capital(phaseLabel(phase)), doing: capital(phaseLabel(phase)) };
+const doingOf = (phase: string) => DOING[phase] ?? capital(phaseLabel(phase));
 
 /** What an abort stops, said the way the verdict says the step. */
 function stopsWord(phase: string, live: StatusRun | null): string {
-  const step = stepOf(phase);
-  return phase === "reviewing" && live != null ? `${step.stage} round ${live.round + 1}` : step.doing;
+  return phase === "reviewing" && live != null ? `Review round ${live.round + 1}` : doingOf(phase);
 }
 
 export const CHECK_FIX_ROUND = /^check fix round (\d+) of (\d+) on \S+: (.+?); failing: /;
@@ -258,12 +257,12 @@ export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string): S
 }
 
 function liveSentence({ detail, live, phase }: Facts): string {
-  const step = stepOf(phase);
+  const doing = doingOf(phase);
   const fixing = phase === "merge_gate" && live?.stop_requested == null ? checkFixRound(detail.events) : null;
   if (fixing != null) return `Fixing CI: ${fixing}.`;
   const round = phase === "reviewing" && live != null ? roundLabel(live.round + 1, live.max_rounds) : null;
   const stop = live?.stop_requested == null ? null : clause(live.stop_action === "pause" ? "Pause requested" : "Abort requested", live.stop_requested);
-  return stop ?? (round == null ? `${step.doing}.` : `${step.doing} ${round}.`);
+  return stop ?? (round == null ? `${doing}.` : `${doing} ${round}.`);
 }
 
 /** The sentence the run's header says. */
