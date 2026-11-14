@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
 import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
@@ -67,7 +68,7 @@ function writeFolded(folded: boolean, key = RAIL_KEY): void {
 }
 
 const FOOTER_BUTTON =
-  "flex min-h-11 min-w-11 items-center justify-center gap-1.5 border border-rule bg-paper px-2 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-paper-2 hover:text-ink";
+  "flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[6px] px-2 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-hover hover:text-ink";
 
 const THEME_CHOICES: { theme: Theme; name: string; icon: ReactNode }[] = [
   { theme: "light", name: "Dawn", icon: <SunIcon /> },
@@ -81,7 +82,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
     <div
       role="group"
       aria-label="Theme"
-      className={`flex shrink-0 border border-rule bg-paper ${folded ? "flex-col [&>*+*]:border-t" : "[&>*+*]:border-l"} [&>*+*]:border-rule`}
+      className={`flex shrink-0 overflow-hidden rounded-[6px] border border-rule-2 ${folded ? "flex-col [&>*+*]:border-t" : "[&>*+*]:border-l"} [&>*+*]:border-rule-2`}
     >
       {THEME_CHOICES.map((choice) => (
         <button
@@ -92,7 +93,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
           aria-pressed={choice.theme === theme}
           onClick={() => setTheme(choice.theme)}
           className={`flex items-center justify-center hover:text-ink ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
-            choice.theme === theme ? "bg-act-wash text-act" : "text-ink-3"
+            choice.theme === theme ? "bg-selected text-focus" : "text-ink-3 hover:bg-hover"
           }`}
         >
           {choice.icon}
@@ -105,22 +106,13 @@ function ThemeGroup({ folded }: { folded: boolean }) {
 function LinkBadge({ badge, folded, tone = "text-need" }: { badge: number; folded: boolean; tone?: string }) {
   if (badge <= 0) return null;
   return (
-    <span data-badge aria-hidden="true" className={`font-mono font-semibold tracking-normal ${tone} group-data-[status=active]:text-ink ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
+    <span data-badge aria-hidden="true" className={`font-mono font-medium tracking-normal ${tone} group-data-[status=active]:text-ink ${folded ? "absolute -top-2 -right-2.5 text-[9px] leading-none" : "text-[12px]"}`}>
       {badge}
     </span>
   );
 }
 
-function PageLink({
-  to,
-  label,
-  icon,
-  noun,
-  badge,
-  tone,
-  folded,
-  active,
-}: {
+type PageLinkProps = {
   to: PageTo;
   label: string;
   icon: ReactNode;
@@ -129,26 +121,53 @@ function PageLink({
   tone?: string;
   folded: boolean;
   active: boolean;
-}) {
+};
+
+const PAGE_LINK =
+  "group relative flex items-center rounded-[6px] text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink";
+
+function pageLinkProps({ to, label, noun, badge, active }: PageLinkProps) {
+  return {
+    to,
+    search: keepScope,
+    activeOptions: { exact: to === "/", includeSearch: false },
+    ...(active ? { "data-status": "active", "aria-current": "page" as const } : {}),
+    "aria-label": badge > 0 ? `${label}, ${badge} ${noun}` : label,
+  };
+}
+
+function PageLink(props: PageLinkProps) {
+  const { label, icon, badge, tone, folded } = props;
   return (
-    <Link
-      to={to}
-      search={keepScope}
-      activeOptions={{ exact: to === "/", includeSearch: false }}
-      {...(active ? { "data-status": "active", "aria-current": "page" as const } : {})}
-      aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
-      title={folded ? label : undefined}
-      className={`group relative flex min-h-11 items-center gap-3 border-l-2 border-transparent text-[12px] font-medium uppercase tracking-[0.12em] text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:border-act data-[status=active]:bg-row-selected data-[status=active]:text-ink ${
-        folded ? "justify-center px-0" : "px-4"
-      }`}
-    >
-      <span className="relative">
-        {icon}
-        {folded && <LinkBadge badge={badge} folded tone={tone} />}
-      </span>
-      {!folded && <span className="flex-1">{label}</span>}
-      {!folded && <LinkBadge badge={badge} folded={false} tone={tone} />}
-    </Link>
+    <Tooltip delay={300} disabled={!folded}>
+      <TooltipTrigger
+        render={({ type: _button, "aria-describedby": described, ...trigger }) => (
+          <Link
+            {...trigger}
+            {...pageLinkProps(props)}
+            aria-describedby={folded ? described : undefined}
+            className={`${PAGE_LINK} ${folded ? "mx-auto h-9 w-10 justify-center" : "mx-2 h-row gap-2.5 px-2.5 text-[13px] font-medium"}`}
+          >
+            <span className="relative">
+              <span className="flex group-data-[status=active]:text-focus">{icon}</span>
+              {folded && <LinkBadge badge={badge} folded tone={tone} />}
+            </span>
+            {!folded && <span className="flex-1">{label}</span>}
+            {!folded && <LinkBadge badge={badge} folded={false} tone={tone ?? "text-ink-3"} />}
+          </Link>
+        )}
+      />
+      {folded && (
+        <TooltipContent
+          side="right"
+          sideOffset={10}
+          className="z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card"
+        >
+          {label}
+          {badge > 0 && <span className="font-mono text-ink-3"> {badge}</span>}
+        </TooltipContent>
+      )}
+    </Tooltip>
   );
 }
 
@@ -167,7 +186,7 @@ function ViewList() {
               search={(previous: ScopeSearch) => ({ ...keepScope(previous), filter })}
               activeOptions={{ exact: true, includeSearch: true }}
               aria-label={FILTER_LABELS[filter]}
-              className="group flex min-h-9 items-center justify-between gap-2 px-3 font-sans text-[13px] text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-row-selected data-[status=active]:text-ink"
+              className="group mr-2 flex min-h-9 items-center justify-between gap-2 rounded-[6px] px-3 font-sans text-[13px] text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink"
             >
               <span>{FILTER_LABELS[filter]}</span>
               <span data-count className="font-mono text-[11px] font-medium text-ink-3 group-data-[status=active]:text-ink-2">
@@ -212,7 +231,7 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
                 search={keepScope}
                 activeOptions={{ exact: true, includeSearch: false }}
                 aria-label={`${story.ticket} ${plainTitle(story.title)}, ${story.merged} of ${story.total} merged`}
-                className="group flex min-h-11 flex-col justify-center px-3 text-ink-2 hover:bg-side-hover hover:text-ink data-[status=active]:bg-row-selected data-[status=active]:text-ink"
+                className="group mr-2 flex min-h-11 flex-col justify-center rounded-[6px] px-3 text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink"
               >
                 <span className="flex justify-between gap-2 font-mono text-[11px] leading-[1.3] font-medium text-ink-3 group-data-[status=active]:text-ink-2">
                   <span>{story.ticket}</span>
@@ -301,36 +320,35 @@ export function Sidebar() {
     <aside
       aria-label="Console"
       data-folded={folded}
-      className={`flex w-full shrink-0 flex-col border-r border-b border-rule bg-side min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
+      className={`flex w-full shrink-0 flex-col border-r border-b border-rule-2 bg-side min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
         folded ? (macApp ? "min-[720px]:w-[112px]" : "min-[720px]:w-[56px]") : "min-[720px]:w-[232px]"
       }`}
     >
       <div
-        className={`flex h-[52px] shrink-0 items-center gap-1 border-b border-rule-2 ${
-          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pl-3"
+        className={`flex shrink-0 ${folded ? "flex-col items-center gap-1 py-3" : "h-[52px] items-center gap-1 pr-2"} ${
+          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "" : "pl-4"
         }`}
       >
+        <Link
+          to="/"
+          search={keepScope}
+          aria-label="holophyte"
+          title="holophyte"
+          className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : "mr-auto"} ${macApp ? APP_NO_DRAG : ""}`}
+        >
+          <Mark />
+          {!folded && <span aria-hidden="true">holophyte</span>}
+        </Link>
         {!settingsMenu && (
           <button
             type="button"
             aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
             aria-expanded={!folded}
             onClick={fold}
-            className={`flex size-7 items-center justify-center text-ink-3 hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+            className={`flex size-7 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
           >
             <PanelLeftIcon />
           </button>
-        )}
-        {!folded && (
-          <Link
-            to="/"
-            search={keepScope}
-            aria-label="holophyte"
-            title="holophyte"
-            className={`flex size-7 items-center justify-center text-act ${macApp ? APP_NO_DRAG : ""}`}
-          >
-            <Mark />
-          </Link>
         )}
       </div>
 
@@ -352,7 +370,7 @@ export function Sidebar() {
       </nav>
       </>}
 
-      <footer className={`mt-auto flex flex-col gap-2 border-t border-rule-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
+      <footer className={`mt-auto flex flex-col gap-2 py-3 ${folded ? "items-center px-1.5" : "px-3"}`}>
         <p className="flex min-w-0 items-start gap-1 font-mono text-[11px] leading-[1.4] tracking-[-0.02em] text-ink-3" title={folded ? polled : undefined}>
           <SignalIcon className={failing ? "text-bad" : "text-live"} />
           {!folded && (
