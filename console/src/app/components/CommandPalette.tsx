@@ -25,6 +25,7 @@ import {
   takeChip,
   ticketEntry,
   type Chip,
+  type GlyphIcon,
   type PaletteAction,
   type PaletteEntry,
   type PaletteGlyph,
@@ -268,7 +269,7 @@ function ActionIcon() {
   );
 }
 
-const ICONS: Record<Exclude<PaletteGlyph, { state: unknown }>["icon"], () => ReactNode> = {
+const ICONS: Record<GlyphIcon, () => ReactNode> = {
   page: () => <PageIcon />,
   project: () => <FolderIcon />,
   "all-projects": () => <AllProjectsIcon />,
