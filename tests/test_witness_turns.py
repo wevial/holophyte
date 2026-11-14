@@ -503,8 +503,8 @@ class WitnessedOnce(RunningRepo):
             Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: ONCE_TEST,
                     "tests/test_label.py": ONCE_TEST}),
             BOTH_ONCE, criteria=(ONCE_CRITERION, durable),
-            verify="python3 -m unittest discover -s tests -p 'test_label.py'"
-                   f"\n{ONCE_VERIFY}")
+            verify=f"{ONCE_VERIFY}\npython3 -m unittest discover -s tests"
+                   " -p 'test_label.py'")
 
         candidate = self.git("log", "main", "--format=%H", "--grep",
                              "change and test").strip()
@@ -518,6 +518,17 @@ class WitnessedOnce(RunningRepo):
         self.assertEqual(recorded["criteria"], [
             {"criterion": 1, "file": ONCE_PATH, "blob": blob,
              "candidate": "passed", "base_run": "failed"}])
+
+    def test_a_base_run_stopped_before_the_one_time_test_did_not_run(self):
+        self.run_task(WritesOnce(), APPROVE, criteria=(ONCE_CRITERION,),
+                      verify=f"test -f label.py\n{ONCE_VERIFY}")
+
+        (payload,) = self.read("SELECT payload FROM runEvents"
+                               " WHERE kind = 'witness_once'")
+        (entry,) = json.loads(payload[0])["criteria"]
+        self.assertEqual(entry["base_run"],
+                         "did not run: it stopped at `test -f label.py`, "
+                         f"before the line that names {ONCE_PATH}")
 
     def test_both_briefs_keep_the_one_time_test_out_of_commits(self):
         fake = self.run_task(WritesOnce(), APPROVE,

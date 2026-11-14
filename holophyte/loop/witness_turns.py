@@ -103,6 +103,8 @@ def _base_run(result):
         return "did not run: no base run is asked for"
     if not result["ran"]:
         return f"did not run: {result['reason']}"
+    if result.get("unattributed"):
+        return f"did not run: {result['unattributed']}"
     return "passed" if result["passed"] else "failed"
 
 
