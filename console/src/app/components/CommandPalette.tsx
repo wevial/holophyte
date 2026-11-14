@@ -177,9 +177,10 @@ interface Listing {
   groups: PaletteGroup[];
   loading: boolean;
   empty: string | null;
+  actions: ReturnType<typeof useActions>;
 }
 
-function useListing(chip: Chip | null, text: string, project: string | undefined): Listing & { actions: ReturnType<typeof useActions> } {
+function useListing(chip: Chip | null, text: string, project: string | undefined): Listing {
   const { hosts } = useConsolePeers();
   const deps = useContext(PollDepsContext);
   const scoped = scopedHosts(hosts, project);
@@ -225,8 +226,7 @@ function useListing(chip: Chip | null, text: string, project: string | undefined
     });
   }
   const named = chip == null || chip === ">" ? actions.all.filter((entry) => contains(entry.title, query)) : [];
-  const shown = groups.filter((group) => group.entries.length > 0);
-  const matched = shown.length > 0 || named.length > 0;
+  const matched = groups.some((group) => group.entries.length > 0) || named.length > 0;
   if (chip == null || chip === ">") {
     const offer = query === "" ? [] : [actions.newTicket(query)];
     groups.push({ name: "Actions", entries: [...named, ...offer] });
@@ -252,29 +252,21 @@ function Marked({ text, query }: { text: string; query: string }) {
   );
 }
 
-function PageIcon() {
-  return (
+const ICONS: Record<GlyphIcon, () => ReactNode> = {
+  page: () => (
     <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 2h5.5L12 4.5V14H4z" />
       <path d="M9.5 2v2.5H12" />
     </svg>
-  );
-}
-
-function ActionIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />
-    </svg>
-  );
-}
-
-const ICONS: Record<GlyphIcon, () => ReactNode> = {
-  page: () => <PageIcon />,
+  ),
   project: () => <FolderIcon />,
   "all-projects": () => <AllProjectsIcon />,
   finding: () => <FindingsIcon />,
-  action: () => <ActionIcon />,
+  action: () => (
+    <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 1.5 3.5 9H8l-1 5.5L12.5 7H8z" />
+    </svg>
+  ),
 };
 
 function Glyph({ glyph }: { glyph: PaletteGlyph }) {
@@ -423,14 +415,10 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
       if (taken.chip !== chip) {
         setChip(taken.chip);
         handle.api.replaceQuery(taken.text);
-        setText(taken.text);
-        return;
       }
-      setText(typed);
+      setText(taken.text);
     },
-    onEmptyBackspace: () => {
-      if (chip != null) setChip(null);
-    },
+    onEmptyBackspace: () => setChip(null),
     onOpenChangeComplete: (opened) => {
       if (!opened) onClosed();
     },
