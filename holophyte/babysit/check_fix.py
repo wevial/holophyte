@@ -1,12 +1,21 @@
+import json
+import shlex
 from dataclasses import dataclass, field, replace
+from pathlib import PurePosixPath
 from time import monotonic
 
 import store
 from holophyte.babysit import maintainer_notes
-from holophyte.babysit.check_failures import LISTED_MAX, Failure, failure_lines
+from holophyte.babysit.check_failures import (
+    LISTED_MAX,
+    Failure,
+    failure_lines,
+    unittest_ids,
+)
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
-from holophyte.loop.gates import InfraFailure
+from holophyte.files import git
+from holophyte.loop.gates import InfraFailure, run_verify, verify_timed_out
 from holophyte.loop.runs import heartbeat_while, warn_on_run
 from holophyte.loop.stop import stop_if_requested
 from holophyte.pr import github, pr_status
@@ -14,6 +23,8 @@ from holophyte.pr.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
 
 LOG_TAIL_LINES = 80
+LOCAL_RUN_SEC = 300
+LOCAL_TAIL_LINES = 40
 
 
 @dataclass
@@ -81,18 +92,18 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     from holophyte.babysit.babysitter import _fix_threads
     _park_unless_fixable(run, pull, state, reviewed, group)
     stop_if_requested(run.conn, run.run_id, "merge_gate")
+    logs = None
     if group is None and not check_fix.reran and not check_fix.handed and all(
             check.workflow_run_id for check in state.failed_checks):
-        check_fix.reran = True
-        check_fix.awaited = tuple(dict.fromkeys(
-            check.name for check in state.failed_checks))
-        pull = replace(pull, awaited=check_fix.awaited)
-        state = _rerun_and_settle(run, beat_s, pull, state, reviewed, approval)
-        if not _red(state, run.sha):
+        pull, state, logs = _rerun_unless_reproduced(
+            run, beat_s, pull, state, reviewed, check_fix, approval)
+        if logs is None and not _red(state, run.sha):
             return run.sha, state
-        _park_unless_fixable(run, pull, state, reviewed)
+        if logs is None:
+            _park_unless_fixable(run, pull, state, reviewed)
     why, failed = _why(state, group), state.failed_checks
-    logs = _job_logs(run, beat_s, pull, failed)
+    if logs is None:
+        logs = _job_logs(run, beat_s, pull, failed)
     failure = Failure.read([check.name for check in failed], logs)
     cap = merge_config(run.project).check_fix_rounds
     number = _next_round(check_fix.handed, failure, cap)
@@ -114,6 +125,90 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     return sha, _just_pushed_state(run.project, run.conn, run.run_id,
                                    run.provider, run.task_id, run.branch, sha,
                                    beat_s, pull, reviewed)
+
+
+def _rerun_unless_reproduced(run, beat_s, pull, state, reviewed, check_fix,
+                             approval):
+    check_fix.reran = True
+    failed = state.failed_checks
+    logs = _job_logs(run, beat_s, pull, failed)
+    named = list(dict.fromkeys(
+        found for log in logs for found in unittest_ids(log)))
+    reproduced, reason, out = _local_run(run, beat_s, named)
+    if reproduced:
+        _record_skip(run, pull, failed, named, reproduced, out)
+        return pull, state, logs
+    check_fix.awaited = tuple(dict.fromkeys(check.name for check in failed))
+    pull = replace(pull, awaited=check_fix.awaited)
+    return pull, _rerun_and_settle(run, beat_s, pull, state, reviewed,
+                                   approval, local=reason), None
+
+
+def _local_run(run, beat_s, named):
+    if not named:
+        return [], "no unittest test id in the failed job logs", ""
+    head = git(run.wt, "rev-parse", "HEAD")[1].strip()
+    if head != run.sha:
+        return [], (f"the worktree is at {head[:12] or 'no commit'}, not the"
+                    f" pull request head {run.sha[:12]}"), ""
+    files = _module_files(run.wt, dict.fromkeys(module for module, _ in named))
+    if isinstance(files, str):
+        return [], files, ""
+    command = " && ".join(
+        "python3 -m unittest discover -s "
+        f"{shlex.quote(str(path.parent))} -p {shlex.quote(path.name)}"
+        + "".join(f" -k {shlex.quote(name)}"
+                  for module, name in named if files[module] == path)
+        for path in dict.fromkeys(files.values()))
+    with heartbeat_while(run.conn, run.run_id, beat_s):
+        ok, out = run_verify(command, run.wt, timeout=LOCAL_RUN_SEC,
+                             conn=run.conn, run_id=run.run_id,
+                             project=run.project, rerun=False)
+    if ok:
+        return [], f"passed at {run.sha[:12]}", out
+    if verify_timed_out(out):
+        return [], f"timed out after {LOCAL_RUN_SEC:g} s", out
+    local = {(module.rsplit(".", 1)[-1], name)
+             for module, name in unittest_ids(out)}
+    reproduced = [(module, name) for module, name in named
+                  if (files[module].stem, name) in local]
+    return reproduced, ("" if reproduced else
+                        "the local run failed without reproducing a named"
+                        " test"), out
+
+
+def _module_files(wt, modules):
+    tracked = [PurePosixPath(path)
+               for path in git(wt, "ls-files")[1].splitlines()]
+    files = {}
+    for module in modules:
+        dotted = PurePosixPath(module.replace(".", "/") + ".py")
+        found = [dotted] if dotted in tracked else [
+            path for path in tracked
+            if path.name == f"{module.rsplit('.', 1)[-1]}.py"]
+        if len(found) != 1:
+            return (f"module {module} not found in the worktree" if not found
+                    else f"module {module} found {len(found)} times in the"
+                    " worktree")
+        files[module] = found[0]
+    return files
+
+
+def _record_skip(run, pull, failed, named, reproduced, out):
+    names = ", ".join(check.name for check in failed)
+    ids = ", ".join(f"{module}.{name}" for module, name in reproduced)
+    print(f"[holo2] checks failed on {pull.url} ({names}); {ids} failed"
+          f" locally at {run.sha[:12]}, so no rerun")
+    if run.conn is not None and run.run_id is not None:
+        tail = "\n".join(str(out).splitlines()[-LOCAL_TAIL_LINES:])
+        store.record_event(
+            run.conn, run.run_id, "check_rerun_skipped",
+            f"not rerunning {names} on {pull.url}: {ids} failed locally at"
+            f" {run.sha[:12]}", level="detail", payload=json.dumps({
+                "ids": [f"{module}.{name}" for module, name in named],
+                "reproduced": [f"{module}.{name}"
+                               for module, name in reproduced],
+                "output": tail}))
 
 
 def _job_logs(run, beat_s, pull, failed):
@@ -174,7 +269,8 @@ def _park_on_checks(run, pull, why, reviewed):
                 run.branch, run.sha, pull, why, (), reviewed=reviewed)
 
 
-def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval=None):
+def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval=None,
+                      local=None):
     failed = state.failed_checks
     runs = tuple(dict.fromkeys(check.workflow_run_id for check in failed))
     names = ", ".join(check.name for check in failed)
@@ -184,7 +280,8 @@ def _rerun_and_settle(run, beat_s, pull, state, reviewed, approval=None):
     if run.conn is not None and run.run_id is not None:
         store.record_event(run.conn, run.run_id, "check_rerun",
                            f"rerunning the failed jobs of {names} on"
-                           f" {pull.url}: workflow run(s) {listed}")
+                           f" {pull.url}: workflow run(s) {listed}"
+                           + (f"; local run: {local}" if local else ""))
     try:
         with heartbeat_while(run.conn, run.run_id, beat_s):
             for workflow_run_id in runs:
