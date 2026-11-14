@@ -192,7 +192,7 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
     "root",
     {},
     {
-      className: `pt-3 pb-1 ${folded ? "flex justify-center" : "px-3"}`,
+      className: `pt-3 pb-1 ${folded ? "flex justify-center" : "px-2"}`,
       children: (
         <>
           <Trigger
@@ -204,8 +204,8 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className={`relative flex min-h-11 items-center gap-2 border border-rule bg-paper text-[13px] text-ink hover:bg-paper-2 ${
-              folded ? "size-11 justify-center" : "w-full px-3"
+            className={`relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink hover:bg-hover ${
+              folded ? "size-11 justify-center" : "h-row w-full px-2.5"
             }`}
           >
             <RowIcon row={current} />

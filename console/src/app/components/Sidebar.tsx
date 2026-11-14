@@ -82,7 +82,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
     <div
       role="group"
       aria-label="Theme"
-      className={`flex shrink-0 overflow-hidden rounded-[6px] border border-rule-2 ${folded ? "flex-col [&>*+*]:border-t" : "[&>*+*]:border-l"} [&>*+*]:border-rule-2`}
+      className={`flex shrink-0 gap-0.5 ${folded ? "flex-col" : ""}`}
     >
       {THEME_CHOICES.map((choice) => (
         <button
@@ -92,7 +92,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
           title={choice.name}
           aria-pressed={choice.theme === theme}
           onClick={() => setTheme(choice.theme)}
-          className={`flex items-center justify-center hover:text-ink focus-visible:-outline-offset-2! ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
+          className={`flex items-center justify-center rounded-[6px] hover:text-ink ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
             choice.theme === theme ? "bg-selected text-focus" : "text-ink-3 hover:bg-hover"
           }`}
         >
