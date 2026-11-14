@@ -18,12 +18,12 @@ const HOT_PERCENT = 90;
 const TRACK = ["Implement", "Verify", "Review", "Merge"] as const;
 const TRACK_AT: Record<string, number> = { working: 0, addressing: 0, verifying: 1, reviewing: 2, merge_gate: 3, merging: 3, squashing: 3 };
 
-export interface LaneGroup extends ProjectGroup {
+interface LaneGroup extends ProjectGroup {
   runs: StatusRun[];
   witnesses: WitnessSet | null;
 }
 
-export interface RunningRow {
+interface RunningRow {
   run: StatusRun;
   project: string;
   base: string;

@@ -14,7 +14,7 @@ import { plainTitle, TitleText } from "./TitleText";
 
 type Host = HostRecord<ContractBodies>;
 
-export interface WaitingRow {
+interface WaitingRow {
   item: AttentionItem;
   host: Host;
   ageMs: number | null;
