@@ -222,3 +222,12 @@ test("typing filters the options, ArrowDown moves through the matches and Enter 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(switcher().getAttribute("aria-label")).toBe("Project: Lotuspod. Switch project");
 });
+
+test("with the link naming a project no host serves, opening highlights All projects and Enter picks it", async () => {
+  await mount("#/runs?project=ghost");
+  await key(switcher(), "ArrowDown");
+  expect(activeName()).toContain("All projects");
+  await key(find(), "Enter");
+  expect(location()).toEqual({ path: "/runs", project: null });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
