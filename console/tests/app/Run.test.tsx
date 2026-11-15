@@ -66,7 +66,7 @@ const runs: Record<number, RunDetail> = {
   51: detail(51, "DEMO-51", { phase: "reviewing", max_rounds: 6 }, [roundOne, roundTwo, reviewRound(3, "", 30, null)]),
   53: {
     ...detail(53, "DEMO-53", { phase: "reviewing", max_rounds: 6 }, [roundOne, roundTwo]),
-    events: [phaseChange(22, "reviewing -> addressing"), phaseChange(30, "verifying -> reviewing: round 3 review")],
+    events: [phaseChange(22, "reviewing -> addressing"), phaseChange(26, "addressing -> verifying"), phaseChange(30, "verifying -> reviewing: round 3 review")],
   },
   52: {
     ...detail(52, "DEMO-52", { phase: "merge_gate", max_rounds: 6 }, [roundOne, roundTwo, passed]),
@@ -301,20 +301,22 @@ test("a reviewing run whose round under way has no row yet shows that round as a
   expect(rounds.getAllByRole("img", { name: "unused round" })).toHaveLength(3);
 });
 
-test("a review mark scrolls to its own round in Progress", async () => {
-  await mount("#/runs/demo/51");
-  const scrolled: Element[] = [];
-  const scroll = Element.prototype.scrollIntoView;
-  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
-  try {
-    fireEvent.click(screen.getByRole("link", { name: "Round 2: changes requested" }));
-  } finally {
-    Element.prototype.scrollIntoView = scroll;
+test("a review mark, its round recorded or still under way, scrolls to its own round in Progress", async () => {
+  for (const [run, name, round] of [[51, "Round 2: changes requested", "Round 2"], [53, "Round 3: in review", "Round 3"]] as const) {
+    await mount(`#/runs/demo/${run}`);
+    const scrolled: Element[] = [];
+    const scroll = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
+    try {
+      fireEvent.click(screen.getByRole("link", { name }));
+    } finally {
+      Element.prototype.scrollIntoView = scroll;
+    }
+    expect(scrolled).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "Progress" }).contains(scrolled[0]!)).toBe(true);
+    expect(scrolled[0]!.querySelector("[data-group-title]")!.textContent).toStartWith(round);
+    cleanup();
   }
-  expect(scrolled).toHaveLength(1);
-  expect(scrolled[0]!.id).toBe("round-2");
-  expect(screen.getByRole("region", { name: "Progress" }).contains(scrolled[0]!)).toBe(true);
-  expect(scrolled[0]!.querySelector("[data-group-title]")!.textContent).toStartWith("Round 2");
 });
 
 test("a review mark's card names its round, verdict, findings and blockers on keyboard focus and goes on blur", async () => {
