@@ -5,6 +5,7 @@ import {
 } from "../../lib/theme";
 import { useCustomThemes } from "../appearance";
 import { Btn } from "./Btn";
+import { STATE_ICONS } from "./StateDot";
 
 export type EditorSubject = { mode: ThemeMode; pick: ThemePick } | { draft: CustomTheme };
 
@@ -117,10 +118,19 @@ function ResetIcon({ label, onReset }: { label: string; onReset: () => void }) {
   );
 }
 
-function HazeField({ theme, derived, disabled, onChange }: { theme: ThemeSpec; derived: DerivedTheme; disabled: boolean; onChange: (haze: ThemeSpec["haze"]) => void }) {
+function HazeHue({ label, hue, disabled, onChange }: { label: string; hue: number; disabled: boolean; onChange: (hue: number) => void }) {
+  return (
+    <input type="range" aria-label={label} min={0} max={359} step={1} value={Math.round(hue)} disabled={disabled}
+      onChange={(event) => onChange(Number(event.currentTarget.value))} className="h-6 w-full min-w-0 accent-act disabled:cursor-not-allowed" />
+  );
+}
+
+function HazeField({ theme, derived, disabled, onChange, reset }: {
+  theme: ThemeSpec; derived: DerivedTheme; disabled: boolean; onChange: (haze: ThemeSpec["haze"]) => void; reset?: ReactNode;
+}) {
   const sources: [HazeSource, string][] = [["accent", "From accent"], ["hand", "By hand"]];
   return (
-    <Field title="Haze">
+    <Field title="Haze" reset={reset}>
       <div className="flex items-center gap-3">
         <div role="group" aria-label="Haze colours" className="inline-flex rounded-button border border-rule bg-paper-2 p-0.5">
           {sources.map(([source, name]) => (
@@ -137,8 +147,8 @@ function HazeField({ theme, derived, disabled, onChange }: { theme: ThemeSpec; d
       </div>
       {theme.haze.source === "hand" && (
         <div className="flex flex-col gap-3 pt-1">
-          <HueStrip label="Haze back hue" hue={theme.haze.back} disabled={disabled} onChange={(back) => onChange({ ...theme.haze, back })} />
-          <HueStrip label="Haze front hue" hue={theme.haze.front} disabled={disabled} onChange={(front) => onChange({ ...theme.haze, front })} />
+          <HazeHue label="Haze back hue" hue={theme.haze.back} disabled={disabled} onChange={(back) => onChange({ ...theme.haze, back })} />
+          <HazeHue label="Haze front hue" hue={theme.haze.front} disabled={disabled} onChange={(front) => onChange({ ...theme.haze, front })} />
         </div>
       )}
     </Field>
@@ -170,10 +180,10 @@ function Actions({ dirty, saved, named, onSave, onReset, onDelete }: { dirty: bo
   );
 }
 
-const PREVIEW_ROWS: [token: "live" | "ask" | "bad", title: string, age: string][] = [
-  ["live", "Prompt for a different contract PDF", "12m"],
-  ["ask", "Retry a flaky verify once", "1h"],
-  ["bad", "Retry the board sync", "50m"],
+const PREVIEW_ROWS: [token: "live" | "ask" | "bad", state: "running" | "question" | "failed", title: string, age: string][] = [
+  ["live", "running", "Prompt for a different contract PDF", "12m"],
+  ["ask", "question", "Retry a flaky verify once", "1h"],
+  ["bad", "failed", "Retry the board sync", "50m"],
 ];
 
 function Preview({ derived }: { derived: DerivedTheme }) {
@@ -191,9 +201,10 @@ function Preview({ derived }: { derived: DerivedTheme }) {
         <p className="flex items-baseline gap-2 text-ink"><span className="font-sans text-[34px] leading-none font-light text-accent">3</span><span className="text-[16px]">running</span></p>
         <p className="mt-2 flex items-center gap-1.5 text-[12px] text-ink-3"><span className="text-live">✓</span>Nothing needs you</p>
         <div className="mt-4">
-          {PREVIEW_ROWS.map(([token, title, age]) => (
+          {PREVIEW_ROWS.map(([token, state, title, age]) => (
             <div key={title} className="flex items-center gap-2.5 border-t border-[var(--preview-rule)] py-2 text-[12.5px]">
-              <span className="size-2.5 rounded-full border-2" style={{ borderColor: `var(--${token})` }} />
+              <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
+                className="size-3.5 shrink-0" style={{ color: `var(--${token})` }}>{STATE_ICONS[state]}</svg>
               <span className="min-w-0 flex-1 truncate text-ink">{title}</span>
               <span className="font-mono text-[11px] text-ink-3">{age}</span>
             </div>
@@ -251,8 +262,9 @@ function Editor({ initial, saved, readOnly, onSubject }: { initial: CustomTheme 
         <OklchPicker name="Ground" value={theme.ground} maxChroma={GROUND_CHROMA} disabled={readOnly} onChange={(ground) => edit({ ground })} />
         <OklchPicker name="Accent" value={theme.accent} maxChroma={ACCENT_CHROMA} disabled={readOnly} onChange={(accent) => edit({ accent })}
           reset={accentMoved && <ResetIcon label="Reset accent" onReset={() => edit({ accent: origin })} />} />
-        <HazeField theme={theme} derived={derived} disabled={readOnly} onChange={(haze) => edit({ haze })} />
-        <Field title="Grain">
+        <HazeField theme={theme} derived={derived} disabled={readOnly} onChange={(haze) => edit({ haze })}
+          reset={!readOnly && JSON.stringify(theme.haze) !== JSON.stringify(baseline.haze) && <ResetIcon label="Reset haze" onReset={() => edit({ haze: baseline.haze })} />} />
+        <Field title="Grain" reset={!readOnly && theme.grain !== baseline.grain && <ResetIcon label="Reset theme grain" onReset={() => edit({ grain: baseline.grain })} />}>
           <div className="flex items-center gap-4">
             <input type="range" aria-label="Theme grain" min={GRAIN.min} max={GRAIN.max} step={GRAIN.step} value={theme.grain} disabled={readOnly}
               onChange={(event) => edit({ grain: Number(event.currentTarget.value) })} className="h-8 min-w-0 flex-1 accent-act disabled:cursor-not-allowed" />

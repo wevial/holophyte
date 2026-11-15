@@ -7,6 +7,7 @@ import type { Status } from "../../src/lib/types";
 import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
 import { declarations } from "../cssTokens";
 import { oklchToHex } from "../../src/lib/oklch";
+import * as haze from "../../src/vendor/spectra/haze";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -340,4 +341,26 @@ test("deleting the picked custom theme through its confirm removes its tile and 
   expect(pressed("Dark")).toEqual(["Lotus"]);
   expect(localStorage.getItem("holophyte.theme.dark")).toBeNull();
   expect(root.style.getPropertyValue("--canvas")).toBe("");
+});
+
+test("re-saving the picked custom theme with new haze colours hands the header renderer a changed config naming those colours", async () => {
+  const configs: Record<string, unknown>[] = [];
+  const renderer = spyOn(haze, "mount").mockImplementation((container: HTMLElement, options = {}) => {
+    container.appendChild(document.createElement("canvas"));
+    const config = { ...options } as Record<string, unknown>;
+    configs.push(config);
+    return { config, destroy: () => {} } as unknown as ReturnType<typeof haze.mount>;
+  });
+  try {
+    await saveDarkTheme();
+    const config = configs.at(-1)!;
+    const before = String(config.palette);
+    fireEvent.change(editor().getByRole("slider", { name: "Haze back hue" }), { target: { value: "120" } });
+    fireEvent.click(editor().getByRole("button", { name: "Save" }));
+    expect(String(config.palette)).not.toBe(before);
+    expect(haze.PALETTES[String(config.palette)]![1]).toBe(root.style.getPropertyValue("--haze-back"));
+  } finally {
+    cleanup();
+    renderer.mockRestore();
+  }
 });

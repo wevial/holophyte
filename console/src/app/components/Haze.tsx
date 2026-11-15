@@ -7,8 +7,11 @@ const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed
 function themePaint(palette: string): { palette: string; intensity: number } {
   const style = getComputedStyle(document.documentElement);
   const token = (name: string) => style.getPropertyValue(name).trim();
-  PALETTES[palette] = [token("--haze-ground"), token("--haze-back"), token("--haze-front")];
-  return { palette, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
+  const colours: [string, string, string] = [token("--haze-ground"), token("--haze-back"), token("--haze-front")];
+  // A static frame redraws only when the config changes, so the palette's name carries its colours.
+  const named = `${palette}:${colours.join(":")}`;
+  PALETTES[named] = colours;
+  return { palette: named, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
 }
 
 export function Haze() {
