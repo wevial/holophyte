@@ -237,7 +237,7 @@ function fixingRound(events: RunEvent[], fix: number): RegExpExecArray | null {
   return round < 0 ? null : CHECK_FIX_ROUND.exec(events[round]!.summary);
 }
 
-export const roundAnchor = (round: number) => `round-${round}`;
+const roundAnchor = (round: number) => `round-${round}`;
 
 /** One group per round a covering review step holds, since retries collapse into the step, then the round a live run is reviewing. */
 function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, babysat: Map<Round, RunEvent>): Draft[] {

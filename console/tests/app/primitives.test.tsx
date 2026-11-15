@@ -302,30 +302,44 @@ test("a rounds point taken over several hosts names the host medians it is the m
   expect(weeklyTips(spread, false).rounds(spread.rounds[0]!, 0).context).toBe("median across 2 hosts' medians");
 });
 
-test("each round a retried covering review recorded under one collapsed step is its own target in Progress", () => {
-  const T = Date.UTC(2026, 9, 22, 14, 0);
-  const MIN = 60_000;
+const T = Date.UTC(2026, 9, 22, 14, 0);
+const MIN = 60_000;
+
+/** A babysat run whose one covering_review step holds a covering round per verdict, ten minutes apart. */
+function coveringRun(phase: string, verdicts: string[]): RunDetail {
   const url = "https://github.com/o/r/pull/2400";
-  const covering = (n: number, verdict: string): Round =>
-    ({ ...served.rounds[0]!, round: n, verdict, instructions: [], operator_notes: [], criteria: [], findings: [], started_ms: T + n * 10 * MIN, ended_ms: T + n * 10 * MIN + 5 * MIN }) as Round;
-  const detail: RunDetail = {
+  const covering = (verdict: string, index: number): Round =>
+    ({ ...served.rounds[0]!, round: index + 1, verdict, instructions: [], operator_notes: [], criteria: [], findings: [], started_ms: T + (index + 1) * 10 * MIN, ended_ms: T + (index + 1) * 10 * MIN + 5 * MIN }) as Round;
+  return {
     ...served,
-    run: { ...served.run, id: 12, phase: "merge_gate", started_ms: T, ended_ms: null, outcome: null, max_rounds: 3 },
+    run: { ...served.run, id: 12, phase, started_ms: T, ended_ms: null, outcome: null, max_rounds: 3 },
     events: [
       { at: T, kind: "pull_request", summary: `resuming run 392's candidate holo/x at f1da4c08e5f4 on ${url} for another babysit pass` },
       { at: T + 5 * MIN, kind: "babysit_step", summary: "covering_review" },
     ],
-    rounds: [covering(1, "changes_requested"), covering(2, "changes_requested"), covering(3, "approved")],
+    rounds: verdicts.map(covering),
     steer_notes: [],
     criteria: [],
     precheck: null,
   };
-  const { container } = render(<RunActivity activity={runActivity(detail, [], T + 60 * MIN)} detail={detail} base="http://daemon" project="holophyte" />);
-  const targets = ["round-1", "round-2", "round-3"].map((id) => container.querySelector(`#${id}`));
+}
+
+const progressOf = (detail: RunDetail) =>
+  render(<RunActivity activity={runActivity(detail, [], T + 60 * MIN)} detail={detail} base="http://daemon" project="holophyte" />).container;
+
+test("each round a retried covering review recorded under one collapsed step is its own target in Progress", () => {
+  const progress = progressOf(coveringRun("merge_gate", ["changes_requested", "changes_requested", "approved"]));
+  const targets = ["round-1", "round-2", "round-3"].map((id) => progress.querySelector(`#${id}`));
   expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
   expect(targets.map((target) => target!.querySelector("[data-group-title]")!.textContent)).toEqual([
     "Covering review · round 1 · changes requested",
     "Covering review · round 2 · changes requested",
     "Covering review · round 3 · passed",
   ]);
+});
+
+test("the covering round a live run is still reviewing is a target in Progress after the recorded ones", () => {
+  const progress = progressOf(coveringRun("reviewing", ["changes_requested", "changes_requested"]));
+  const covering = [...progress.querySelectorAll('[data-group="covering_review"]')];
+  expect(covering.map((group) => [group.id, group.hasAttribute("data-running")])).toEqual([["round-1", false], ["round-2", false], ["round-3", true]]);
 });
