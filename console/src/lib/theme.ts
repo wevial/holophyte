@@ -232,7 +232,6 @@ export function writeCustomThemes(themes: CustomTheme[]): void {
   writeChoice(CUSTOM_KEY, JSON.stringify(themes), "[]");
 }
 
-/** Set a custom theme's derived tokens as inline properties on the document, or clear them for `null`. */
 export function applyCustomTheme(theme: CustomTheme | null, root: HTMLElement = document.documentElement): void {
   for (const property of CUSTOM_PROPERTIES) root.style.removeProperty(property);
   if (!theme) return;
