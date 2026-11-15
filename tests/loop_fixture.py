@@ -45,6 +45,7 @@ import holophyte.review.freshness  # noqa: E402 - after the sys.path insert abov
 # from `factory`'s slug rule: an expectation computed by the code under test
 # is not an expectation.
 BRANCH = "task/ko-131-add-a-thing"
+UNTRIMMED = "[trim]\nenabled = false\n"
 
 
 class StubProvider:

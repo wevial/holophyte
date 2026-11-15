@@ -149,6 +149,44 @@ machines it walks. Back to the [README](index.md).
    `min(review_rounds_max, review_rounds + changed_lines // review_rounds_per_lines)`
    from `[loop]` (see [Config](config.md)): 2 by default, one more per 800
    changed lines, never above 4.
+
+   **Retire step.** After the review approves and before the merge gate, a
+   run that implemented gets one bounded pass over the tests it added. The
+   candidates are the test ids the approved head holds and the review base
+   does not, counted per test file with renames followed. A test is
+   protected when its file is criterion-named or named by a stored
+   criterion row, when the approving round's `criteria` event cites it,
+   when its file is one of the ticket's story witnesses, or when the
+   commit of the run's latest `reproduced` event already held it. With no
+   candidate, the trimmer route down, the run cap refusing a
+   `[trim] budget_min` turn or a run on the not-reproduced path, the step
+   records `skipped` and runs no turn; `[trim] enabled = false` turns it
+   off, and a run resumed at the merge gate skips it unrecorded.
+   Otherwise one turn on the trimmer route gets the candidates as `path::name` and the test-value gate from
+   `AGENTS.md`, and may make one commit, subject `retire: run-added tests`,
+   with one `RETIRED path::name: REASON` body line per deleted test. The
+   factory keeps the commit only when it is one non-merge commit on the
+   approved head with that subject, changes only test files, adds no line
+   but a whole import statement, removes only candidates, deletes no line
+   a kept test owns or uses, gives each removed test its
+   `RETIRED` line, passes verify, and leaves no
+   test file outside In scope with fewer tests than at the review base.
+   In a Python file a deleted line may fall only inside a removed
+   candidate, inside a top-level import whose names the kept file does
+   not use and none of which could supply tests (a `load_tests`, a `test`
+   name or a class-like name). Any other deletion, of a class, hook,
+   fixture, helper, constant, class body line or line inside a surviving
+   test, reverts the commit, even a class every test of which is retired;
+   a helper or class left unused stays for trim. Only a line holding nothing but a
+   comment or whitespace, as Python's tokenizer reads the file, is
+   exempt, so a `#` line inside a string still counts. In any other file
+   each deleted line must fall inside a removed candidate's call, from its
+   declaration to the matching close bracket;
+   otherwise the branch returns to the approved head. No review round
+   follows either way. The `retire` event names the outcome and a
+   `retire_result` detail event holds `outcome` (`skipped`, `nothing`,
+   `kept` or `reverted`), `reason`, `candidates`, `protected`, `retired`,
+   and the approved and final shas.
 6. Merge gate: the gate runs under a per-project merge lock (a file in the
    project's state directory naming the run and when it took it), so two runs
    reaching it together take turns and merges into `main` serialise; a gate

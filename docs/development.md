@@ -586,6 +586,10 @@ Each module, one line:
   verify.
 - `holophyte/loop/trim_brief.py` — `TRIM_BRIEF`, the vendored trim procedure
   the trim turn is sent, and the `trim:` pass subjects it commits under.
+- `holophyte/loop/retire.py` — the retire step between the approving review
+  and the merge gate: one turn deleting run-added tests that fail the
+  test-value gate, its commit kept only while scope, verify and the
+  net-test-removal guard hold.
 - `holophyte/loop/shadow.py` — `run_shadow`: one shadow implementation of a
   run's ticket by `[agents.implementer_shadow]` in its own worktree, recorded
   as a `shadow_result` event.
@@ -1364,6 +1368,16 @@ A find box filters them; arrow keys move, Enter picks, Esc closes. A pick
 rewrites `project` on the current route and is kept in session storage under
 `holophyte.next.project`, so opening `/` with an empty hash starts
 at Overview in that scope; a hash that names a route is shown as written.
+
+⌘K (Ctrl+K off macOS) opens the command palette,
+`console/src/app/components/CommandPalette.tsx`, which shares the switcher's
+combobox input and option slots. Empty, it lists Recent, Jump to and Switch
+project; typed, it reads `useSearchAll()` in `console/src/app/queries.ts`,
+one `GET /search?q=` per scoped host, and lists its tickets, runs, scouts and
+findings with matching pages and actions. `console/src/app/palette.ts` builds
+its entries, its `>`, `#` and `@` scope chips and the five Recent entries kept
+under `holophyte.palette.recent`. Switch theme and Run sweep ask an inline
+confirm first.
 
 `console/src/app/pages/NewTicket.tsx` presents the ticket template as text
 fields and files to an editable project’s Backlog from the Tickets page.

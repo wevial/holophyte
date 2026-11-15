@@ -73,28 +73,23 @@ test("busy and disabled buttons swallow clicks, the busy one says so, and an idl
   expect(idle).toHaveBeenCalledTimes(1);
 });
 
-test("a Section's label folds its children away and back, turning its chevron and reporting each fold", () => {
-  const onToggle = mock((_open: boolean) => {});
-  render(
-    <Section label="Needs you" count={5} summary="2 questions, 3 failed" onToggle={onToggle}>
-      <p>HOLO-9 asks a question</p>
-    </Section>,
+test("a Section heads its rows with its name and count and no fold, says its empty line at zero, and draws only its heading while uncounted", () => {
+  const section = (count?: number) => (
+    <Section label="Waiting" count={count} empty="Nothing waits on a pull request." footer={<p>witness line</p>}>
+      <ul><li>HOLO-405</li></ul>
+    </Section>
   );
-  const label = screen.getByRole("button", { name: "Needs you" });
-  const turned = () => label.querySelector("svg[data-chevron]")!.getAttribute("class")!.split(/\s+/).includes("rotate-90");
-  expect(screen.getByText("5")).toBeTruthy();
-  expect(turned()).toBe(true);
-  expect(screen.getByText("2 questions, 3 failed")).toBeTruthy();
-  fireEvent.click(label);
-  expect(label.getAttribute("aria-expanded")).toBe("false");
-  expect(turned()).toBe(false);
-  expect(screen.queryByText("HOLO-9 asks a question")).toBeNull();
-  expect(onToggle).toHaveBeenLastCalledWith(false);
-  expect(document.getElementById(label.getAttribute("aria-controls") ?? "")?.hidden).toBe(true);
-  fireEvent.click(label);
-  expect(label.getAttribute("aria-expanded")).toBe("true");
-  expect(turned()).toBe(true);
-  expect(screen.getByText("HOLO-9 asks a question")).toBeTruthy();
+  const { rerender } = render(section(2));
+  const region = screen.getByRole("region", { name: "Waiting" });
+  expect(region.querySelector("header")!.textContent).toBe("Waiting2");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByText("HOLO-405")).toBeTruthy();
+  expect(screen.getByText("witness line")).toBeTruthy();
+  rerender(section(0));
+  expect(screen.getByText("Nothing waits on a pull request.")).toBeTruthy();
+  expect(screen.queryByText("HOLO-405")).toBeNull();
+  rerender(section(undefined));
+  expect(region.textContent).toBe("Waiting");
 });
 
 test("a StageChip reads the review round against its cap, and a merge gate with a PR without a round", () => {
