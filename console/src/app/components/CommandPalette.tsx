@@ -32,7 +32,7 @@ import {
   type PaletteGroup,
 } from "../palette";
 import { storeScope } from "../projects";
-import { useSearchAll } from "../queries";
+import { useBoards, useSearchAll } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 import { Btn } from "./Btn";
 import { AllProjectsIcon, FindingsIcon, FolderIcon } from "./icons";
@@ -136,17 +136,21 @@ function actionEntry(action: PaletteAction, meta: string, disabled?: string, que
 
 function useActions(project: string | undefined) {
   const { hosts } = useConsolePeers();
+  const deps = useContext(PollDepsContext);
   const { theme } = useTheme();
   const scoped = scopedHosts(hosts, project);
-  const named = scoped.flatMap((host) => (host.status ? [projectName(host.status.project)] : []));
-  const ticketProject = project ?? named[0];
+  const takers = useBoards(scoped, deps).flatMap(({ host, board }) =>
+    board.editable && host.status?.actions === true ? [projectName(host.status.project)] : []);
+  const ticketProject = takers[0];
+  const ticketOff = ticketProject != null ? undefined
+    : scoped.some((host) => host.status?.actions === true) ? "No project here takes tickets from the console: its board is on Linear" : ACTIONS_OFF;
   const launchProject = scoped.find((host) => host.status?.actions === true)?.status?.project;
   const daemons = byDaemon(scoped).flatMap((records) => (records[0]?.host_status ? [records[0]] : []));
   const sweeps = daemons.filter((daemon) => daemon.host_status?.actions === true);
   const sweepOff = daemons.length === 0 ? "No host daemon in this scope runs a sweep" : sweeps.length === 0 ? ACTIONS_OFF : undefined;
   const sweepOn = sweeps.map(hostName).join(" and ");
   const newTicket = (query?: string) =>
-    actionEntry("new-ticket", ticketProject == null ? "" : `in ${ticketProject}`, ticketProject == null ? "No project answers yet" : undefined, query);
+    actionEntry("new-ticket", ticketProject == null ? "" : `in ${ticketProject}`, ticketOff, query);
   return {
     newTicket,
     ticketProject,
@@ -278,7 +282,7 @@ function Glyph({ glyph }: { glyph: PaletteGlyph }) {
   );
 }
 
-const KBD = "inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-[5px] border border-rule bg-paper px-1.5 font-mono text-[11px] leading-none text-ink-2";
+const KBD = "inline-flex h-5 min-w-5 items-center justify-center rounded-[5px] border border-rule bg-paper px-1.5 font-mono text-[11px] leading-none text-ink-2";
 
 function Hint({ keys, tip }: { keys: string; tip: string }) {
   return (
@@ -437,7 +441,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
     {
       children: (
         <>
-        <Backdrop className="fixed inset-0 z-50 bg-scrim" />
+        <Backdrop className="fixed inset-0 z-50 bg-[rgb(20_16_12/0.3)]" />
         <Content
           onKeyDown={(event) => {
             if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return;
@@ -446,7 +450,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
           }}
           initialFocus={`#${CSS.escape(inputId)}`}
           finalFocus={() => returnTo()}
-          className="fixed inset-x-0 top-[120px] z-50 mx-auto flex max-h-[calc(100vh-160px)] w-[min(640px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-rule bg-raised text-ink shadow-[0_24px_60px_rgba(0,0,0,.35)]"
+          className="fixed inset-x-0 top-[120px] z-50 mx-auto flex max-h-[min(552px,calc(100vh-160px))] w-[min(640px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-rule bg-raised text-ink shadow-[0_8px_24px_rgba(0,0,0,.14)]"
         >
           <Title className="sr-only">Command palette</Title>
           <div className="flex h-14 shrink-0 items-center gap-3 border-b border-rule-2 px-4">
@@ -497,8 +501,9 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
                             <Option
                               key={value}
                               value={value}
+                              disabled={entry.disabled != null}
                               title={entry.disabled}
-                              className="group flex min-h-12 cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-1.5 aria-disabled:cursor-default aria-disabled:opacity-55 data-[active=true]:bg-selected"
+                              className="group flex min-h-12 cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-1.5 aria-disabled:cursor-default aria-disabled:opacity-55 data-[active=true]:bg-hover"
                             >
                               <span className="flex size-4 shrink-0 items-center justify-center">
                                 <Glyph glyph={entry.glyph} />
@@ -520,7 +525,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
               </>
             )}
           </div>
-          <div className="flex h-11 shrink-0 items-center gap-2 border-t border-rule-2 px-3.5">
+          <div className="flex h-9 shrink-0 items-center gap-2 border-t border-rule-2 px-3.5">
             <span className="flex gap-1">
               <Hint keys="↑" tip="Move up" />
               <Hint keys="↓" tip="Move down" />

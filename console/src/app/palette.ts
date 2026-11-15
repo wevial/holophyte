@@ -79,6 +79,7 @@ const RECENT_KEY = "holophyte.palette.recent";
 const RECENT_MAX = 5;
 
 let kept: PaletteEntry[] = [];
+let unsaved = false;
 
 function isEntry(value: unknown): value is PaletteEntry {
   const entry = value as PaletteEntry;
@@ -87,8 +88,9 @@ function isEntry(value: unknown): value is PaletteEntry {
 }
 
 /** The entries last opened from the palette, newest first: storage's, or
- *  this page's own while storage is blocked. */
+ *  this page's own while storage cannot be read or its last write failed. */
 export function readRecent(): PaletteEntry[] {
+  if (unsaved) return kept;
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
     return Array.isArray(stored) ? stored.filter(isEntry).slice(0, RECENT_MAX) : [];
@@ -102,7 +104,9 @@ export function pushRecent(entry: PaletteEntry): void {
   kept = [stored, ...readRecent().filter((each) => each.key !== entry.key)].slice(0, RECENT_MAX);
   try {
     localStorage.setItem(RECENT_KEY, JSON.stringify(kept));
+    unsaved = false;
   } catch {
+    unsaved = true;
     // Storage may be disabled; the list still holds for this page.
   }
 }

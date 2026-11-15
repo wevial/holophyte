@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
+import { ACTIONS_OFF } from "../../src/lib/actions";
 import { THEME_KEY } from "../../src/lib/theme";
 import { APP_SHELL_KEY } from "../../src/lib/view";
 import { TICK_MS, type Fetch } from "../../src/lib/poll";
@@ -872,4 +873,40 @@ test("a query that is exactly a ticket key puts that ticket first under Go to, a
   await typeIn("");
   await typeIn("@DEMO-69");
   expect(groupNames()).toEqual(["Runs"]);
+});
+
+test("Recent keeps the items opened this page while storage refuses writes", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  await mount("#/", searchDaemons());
+  const write = Storage.prototype.setItem;
+  Storage.prototype.setItem = () => {
+    throw new DOMException("full", "QuotaExceededError");
+  };
+  try {
+    for (const page of ["Runs", "Findings"]) {
+      await paletteKey();
+      await flush();
+      fireEvent.click(optionsOf("Jump to")[titlesOf("Jump to").indexOf(page)]!);
+      await flush();
+    }
+    await paletteKey();
+    await flush();
+    expect(titlesOf("Recent")).toEqual(["Findings", "Runs"]);
+  } finally {
+    Storage.prototype.setItem = write;
+  }
+});
+
+test("New ticket shows disabled with the actions-off reason while no daemon in scope takes tickets", async () => {
+  await mount("#/", searchDaemons());
+  await paletteKey();
+  await typeIn(">new");
+  const option = optionsOf("Actions")[0]!;
+  expect(option.getAttribute("aria-disabled")).toBe("true");
+  expect(option.getAttribute("title")).toBe(ACTIONS_OFF);
+  const hash = window.location.hash;
+  fireEvent.click(option);
+  await flush();
+  expect(palette()).toBeTruthy();
+  expect(window.location.hash).toBe(hash);
 });

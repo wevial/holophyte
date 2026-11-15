@@ -58,7 +58,7 @@ export function comboInput<State extends { query: string }, Api extends ComboApi
   });
 }
 
-type OptionProps = { value: string } & BaseSlotProps;
+type OptionProps = { value: string; disabled?: boolean } & BaseSlotProps;
 
 /** An option of that list: highlighted as the pointer moves, chosen on a
  *  press, `aria-selected` where `selected` says, re-rendered as `reads` selects. */
@@ -67,10 +67,10 @@ export function virtualOption<State extends { highlighted: string | null }, Api 
   selected: (state: State, key: string) => boolean,
   reads: ReturnType<typeof selects<State, Api, OptionProps>>,
 ) {
-  return slot<{ value: string }>({
+  return slot<{ value: string; disabled?: boolean }>({
     role: "option",
     focus: "active-descendant",
-    props: { value: "string" },
+    props: { value: "string", disabled: "boolean" },
     selects: reads,
     attrs: (state, part) => ({
       ...part.api.listbox.attrs(state, part),
