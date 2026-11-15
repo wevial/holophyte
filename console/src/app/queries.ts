@@ -20,6 +20,7 @@ import {
   runDetailSchema,
   runFilesSchema,
   runTurnsSchema,
+  searchSchema,
   shippedSchema,
   storyDetailSchema,
   ticketDetailSchema,
@@ -34,6 +35,10 @@ import {
   type LedgerEntry,
   type MergeQueue,
   type Peers,
+  type SearchFinding,
+  type SearchRun,
+  type SearchScout,
+  type SearchTicket,
   type StoryDetail,
 } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
@@ -51,8 +56,8 @@ import {
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
 import { PollDepsContext, scopedHosts } from "./scope";
-import { shippedUrl, tagRows, todayMerges } from "../lib/shipped";
-import type { ShippedRow } from "../lib/types";
+import { mergedRows, shippedUrl, tagRows, todayMerges } from "../lib/shipped";
+import type { ShippedRow, ShippedWireRow } from "../lib/types";
 
 /** One daemon route's cache key: the base it hangs off and its path. */
 export function routeKey(base: string, path: string): readonly ["route", string, string] {
@@ -217,6 +222,49 @@ export function useTicketSearch(hosts: HostRecord<PollBodies>[], text: string, d
   return hits;
 }
 
+/** One `/search` hit and the host whose daemon answered it. */
+interface HostHit<R, T> {
+  host: R;
+  hit: T;
+}
+
+interface SearchAll<R> {
+  tickets: HostHit<R, SearchTicket>[];
+  runs: HostHit<R, SearchRun>[];
+  scouts: HostHit<R, SearchScout>[];
+  findings: HostHit<R, SearchFinding>[];
+  /** Whether a host asked has yet to answer or fail. */
+  pending: boolean;
+}
+
+/** Each status-answering host's `/search?q=` answer for `text`, merged per
+ *  group in fleet order, each hit with its host; idle while `text` is
+ *  blank. A host whose daemon lacks the route, or whose read failed, adds
+ *  nothing. */
+export function useSearchAll<R extends HostRecord<PollBodies>>(hosts: R[], text: string, deps: { fetch: Fetch }): SearchAll<R> {
+  const asked = text.trim() === "" ? [] : hosts.filter((host) => host.status != null);
+  const path = `/search?q=${encodeURIComponent(text.trim())}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, searchSchema),
+      staleTime: POLL_INTERVAL_MS,
+      retry: false,
+    })),
+  });
+  const answers = asked.flatMap((host, index) => {
+    const data = results[index]?.data;
+    return data ? [{ host, data }] : [];
+  });
+  return {
+    tickets: answers.flatMap(({ host, data }) => data.tickets.map((hit) => ({ host, hit }))),
+    runs: answers.flatMap(({ host, data }) => data.runs.map((hit) => ({ host, hit }))),
+    scouts: answers.flatMap(({ host, data }) => data.scouts.map((hit) => ({ host, hit }))),
+    findings: answers.flatMap(({ host, data }) => data.findings.map((hit) => ({ host, hit }))),
+    pending: results.some((result) => result.status === "pending"),
+  };
+}
+
 export interface StoryAnswer<R> {
   /** The host whose project bears the asked name, if one does. */
   host: R | null;
@@ -269,6 +317,13 @@ export function useDayLedger(hosts: HostRecord<PollBodies>[], now: number, deps:
 
 const WINDOW_DAYS = 7;
 const FINDINGS_LIMIT = 500;
+
+/** The local midnight that starts `now`'s Monday-to-Sunday week. */
+function localMonday(now: number): number {
+  const day = new Date(localMidnight(now));
+  day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+  return day.getTime();
+}
 
 /** Local midnight `WINDOW_DAYS - 1` days before `now`: today and the six
  *  days before it. */
@@ -421,6 +476,45 @@ export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fet
     return result?.status === "success" ? tagRows(host, result.data.rows) : [];
   });
   return todayMerges(rows, now);
+}
+
+const WEEK_PAGE = 200;
+
+/** `base`'s merged `/shipped` rows, newest first, paged back until a page
+ *  reaches past `since` or the ledger ends; null when the daemon lacks the route. */
+async function shippedSince(fetch: Fetch, base: string, since: number): Promise<ShippedWireRow[] | null> {
+  const rows: ShippedWireRow[] = [];
+  let before: number | undefined;
+  for (;;) {
+    const page = await routeOrNone(fetch, shippedUrl(base, WEEK_PAGE, before), shippedSchema);
+    if (page == null) return before == null ? null : rows;
+    rows.push(...page.rows);
+    const oldest = page.rows.at(-1);
+    if (page.next_before == null || oldest == null || oldest.ended_ms < since) return rows;
+    before = page.next_before;
+  }
+}
+
+/** Every status-answering host's merges since local Monday's midnight
+ *  before `now`; a host without `/shipped`, or whose read
+ *  failed, adds none. */
+export function useMergedWeek(hosts: HostRecord<PollBodies>[], now: number, fetch: Fetch): ShippedRow[] {
+  const since = localMonday(now);
+  const asked = hosts.filter((host) => host.status != null);
+  const path = shippedUrl("", WEEK_PAGE);
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: [...routeKey(host.base, path), since],
+      queryFn: () => shippedSince(fetch, host.base, since),
+      refetchInterval: POLL_INTERVAL_MS,
+      staleTime: POLL_INTERVAL_MS,
+    })),
+  });
+  const rows = asked.flatMap((host, index) => {
+    const data = results[index]?.data;
+    return data ? tagRows(host, data) : [];
+  });
+  return mergedRows(rows).filter((row) => row.ended_ms >= since);
 }
 
 function useBoardResults<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }) {

@@ -532,7 +532,7 @@ const box = (name: string) => screen.getByRole("checkbox", { name }) as HTMLInpu
 const pressed = () => within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
 const ticked = () => screen.getAllByRole("checkbox").filter((input) => (input as HTMLInputElement).checked).map((input) => input.getAttribute("aria-label"));
 const HIGHLIGHT_TICKS = ["Merged", "Failed", "Needs you", "Parked", "Merge requeued", "Operator actions", "Requeues", "Steers", "Notes", "Approvals", "Pause, abort, start", "Factory amendments", "demo", "writer", "relos"];
-const logPhrases = () => Array.from(screen.getByRole("complementary", { name: "Today's log" }).querySelectorAll("li"), (row) => {
+const logPhrases = () => Array.from(screen.getByRole("complementary", { name: "Today" }).querySelectorAll("li"), (row) => {
   const key = row.querySelector('a[href*="/tickets/"]')?.textContent;
   return key ? `${key} ${row.querySelector("[data-phrase]")?.textContent}` : null;
 }).filter(Boolean);
