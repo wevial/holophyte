@@ -242,6 +242,10 @@ function fixingRound(events: RunEvent[], fix: number): RegExpExecArray | null {
 
 const roundAnchor = (round: number) => `round-${round}`;
 
+/** The newest change into a covering review at or after `since`, from `events` in order. */
+export const coveringBegun = (events: RunEvent[], since: number) =>
+  events.findLast((event) => isEdge(event, null, "reviewing") && COVERING_BEGUN.test(event.summary) && event.at >= since);
+
 /** One group per round a covering review step holds, since retries collapse into the step, then the round a live run is reviewing. */
 function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, babysat: Map<Round, RunEvent>): Draft[] {
   const held = [...babysat].filter(([, at]) => at === step).map(([round]) => round).sort((a, b) => a.round - b.round);
@@ -253,7 +257,7 @@ function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, b
   const newest = events.findLast((event) => event.kind === "babysit_step") === step;
   const reviewing = detail.run.outcome == null && detail.run.phase === "reviewing" && held.every((round) => round.ended_ms != null);
   const since = Math.max(0, ...held.map((round) => round.ended_ms!));
-  const begun = events.findLast((event) => isEdge(event, null, "reviewing") && COVERING_BEGUN.test(event.summary) && event.at >= since);
+  const begun = coveringBegun(events, since);
   if (!newest || !reviewing || begun == null) return groups;
   const number = Math.max(0, ...detail.rounds.map((round) => round.round)) + 1;
   return [...groups, draft("covering_review", Math.max(step.at, begun.at), "Covering review", { sub: [`round ${number}`], tone: "neutral", number, anchor: roundAnchor(number) })];

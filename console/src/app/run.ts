@@ -9,7 +9,7 @@ import { AnswerError } from "../lib/poll";
 import { agentMs, phaseLabel, runKey } from "../lib/runs";
 import { prLabel, shortSha } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
-import { PASSED, runActivity, type RunActivity } from "./activity";
+import { coveringBegun, PASSED, runActivity, type RunActivity } from "./activity";
 import type { ContractBodies } from "./fleet";
 import { failureWord } from "./history";
 import { progressLines, type ProgressLine } from "./progress";
@@ -241,7 +241,9 @@ function roundUnderway(round: number, events: RunDetail["events"]): Round {
  *  under Review, and the `covering` rounds and check fix rounds under Merge gate. */
 export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string, covering: ReadonlySet<number>): StepperStage[] {
   const { run, rounds } = detail;
-  const underway = phase === "reviewing" && (rounds.length === 0 || rounds.at(-1)!.ended_ms != null);
+  const last = rounds.at(-1);
+  const next = last == null || (last.ended_ms != null && (!covering.has(last.round) || coveringBegun(orderEvents(detail.events), last.ended_ms) != null));
+  const underway = phase === "reviewing" && next;
   const shown = underway ? [...rounds, roundUnderway(rounds.length + 1, detail.events)] : rounds;
   const reviews = shown.filter((round) => !covering.has(round.round));
   const covers = shown.filter((round) => covering.has(round.round));

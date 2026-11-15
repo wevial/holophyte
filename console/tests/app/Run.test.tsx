@@ -83,6 +83,13 @@ const runs: Record<number, RunDetail> = {
     ...detail(56, "DEMO-56", { phase: "merge_gate", max_rounds: 3 }, [{ ...passed, round: 1 }, reviewRound(2, "pass", 41, 43), reviewRound(3, "pass", 46, 48), reviewRound(4, "pass", 51, 53)]),
     events: [{ at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" }],
   },
+  57: {
+    ...detail(57, "DEMO-57", { phase: "reviewing", max_rounds: 3 }, [{ ...passed, round: 1 }, reviewRound(2, "approved", 41, 43)]),
+    events: [
+      { at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" },
+      phaseChange(40, "merge_gate -> reviewing: review of the fix at 0123456789ab"),
+    ],
+  },
   52: {
     ...detail(52, "DEMO-52", { phase: "merge_gate", max_rounds: 6 }, [roundOne, roundTwo, passed]),
     events: [
@@ -354,6 +361,13 @@ test("a covering review retried twice shows its three rounds under Merge gate, e
   const targets = rechecks.map((mark) => document.getElementById(mark.getAttribute("href")!.slice(1)));
   expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
   expect(new Set(targets).size).toBe(3);
+});
+
+test("an approved covering review still reviewing, with no later review begun, adds no round and keeps Merge gate current", async () => {
+  await mount("#/runs/demo/57");
+  expect(stages()).toEqual(["Implement: finished", "Verify: finished", "Review · 1 round: finished", "Merge gate: current", "Merged: not reached"]);
+  expect(markNames("Review rounds")).toEqual(["Round 1: pass"]);
+  expect(markNames("Merge gate rounds")).toEqual(["Round 2: approved"]);
 });
 
 test("a review mark's card names its round, verdict, findings and blockers on keyboard focus and goes on blur", async () => {
