@@ -132,7 +132,7 @@ async function mount(hash: string, fetchImpl: Fetch) {
 }
 
 const mergeRows = () => within(screen.getByRole("region", { name: "Merged today" })).getAllByRole("listitem");
-const log = () => screen.getByRole("complementary", { name: "Today's log" });
+const log = () => screen.getByRole("complementary", { name: "Today" });
 const entryRows = () => within(log()).queryAllByRole("listitem").filter((row) => row.querySelector("time") != null);
 const lineOf = (row: HTMLElement) => {
   const key = row.querySelector('a[href*="/tickets/"]')?.textContent;

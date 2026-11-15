@@ -4,6 +4,10 @@ import type { ShippedRow } from "../../lib/types";
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const BAR_PX = 64;
 
+/** A bar's height: its share of the busiest day's, but never so short that a
+ *  segment's pixel and the pixel gap above it would clip a project away. */
+const barHeight = (day: Day, busiest: number) => Math.max((day.total / busiest) * BAR_PX, day.projects.length * 2 - 1);
+
 interface Day {
   name: string;
   total: number;
@@ -50,7 +54,8 @@ function DayCard({ day, colours }: { day: Day; colours: Map<string, string> }) {
 /** This week's merges, Monday to Sunday in local time: each day's bar
  *  scaled to the busiest day and stacked by project in `colours`' order. */
 export function WeekBars({ rows, now, colours }: { rows: ShippedRow[]; now: number; colours: Map<string, string> }) {
-  const [shown, setShown] = useState<number | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [focused, setFocused] = useState<number | null>(null);
   const days = daysOf(rows, [...colours.keys()]);
   const today = weekday(now);
   const busiest = Math.max(...days.map((day) => day.total));
@@ -67,13 +72,13 @@ export function WeekBars({ rows, now, colours }: { rows: ShippedRow[]; now: numb
           return (
             <li key={day.name} className="flex">
               <button type="button" aria-label={labelOf(day)} data-day={day.name}
-                onMouseEnter={() => setShown(index)} onMouseLeave={() => setShown(null)}
-                onFocus={() => setShown(index)} onBlur={() => setShown(null)}
+                onMouseEnter={() => setHovered(index)} onMouseLeave={() => setHovered(null)}
+                onFocus={() => setFocused(index)} onBlur={() => setFocused(null)}
                 className="relative flex flex-1 cursor-default flex-col items-center gap-1.5 font-mono text-[11px] text-ink-3">
                 <span className="h-4 leading-4 text-ink-2">{index === today ? day.total : ""}</span>
                 <span className="flex h-16 items-end">
                   {drawn ? (
-                    <span data-bar className="flex w-2.5 flex-col-reverse gap-px overflow-hidden rounded-[2px]" style={{ height: `${(day.total / busiest) * BAR_PX}px` }}>
+                    <span data-bar className="flex w-2.5 flex-col-reverse gap-px overflow-hidden rounded-[2px]" style={{ height: `${barHeight(day, busiest)}px` }}>
                       {day.projects.map(([project, count]) => (
                         <span key={project} data-segment={project} className="min-h-px bg-ink-3" style={{ flexGrow: count, background: colours.get(project) }} />
                       ))}
@@ -83,7 +88,7 @@ export function WeekBars({ rows, now, colours }: { rows: ShippedRow[]; now: numb
                   )}
                 </span>
                 <span data-day-letter className={index === today ? "font-semibold text-ink" : ""}>{day.name[0]}</span>
-                {shown === index && <DayCard day={day} colours={colours} />}
+                {(hovered ?? focused) === index && <DayCard day={day} colours={colours} />}
               </button>
             </li>
           );

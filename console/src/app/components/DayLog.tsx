@@ -195,7 +195,7 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
       className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
       <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 bg-canvas py-1">
         <Heading id={heading} className="mr-auto font-sans text-[14px] font-semibold leading-none text-ink">
-          Today's log
+          {preview ? "Today's log" : "Today"}
         </Heading>
         {preview && <span className="font-sans text-[13.5px] text-ink">{kept.length} of {entries.length}</span>}
         {!preview && hidden > 0 && (

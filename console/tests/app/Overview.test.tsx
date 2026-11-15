@@ -202,6 +202,13 @@ test("This week scales each day's bar to the busiest day, stacks it by project i
   expect(weekTotal()).toBe("10 merged");
 });
 
+test("a day far below the busiest still draws a pixel for each of its projects", async () => {
+  const busy = { [DEMO]: [[...mergesOn(10, "HOLO", 100, on(13, 20)), merged(5, "HOLO-5", on(12, 11))]], [WRITER]: [[merged(6, "CROTON-6", on(12, 10))]], [LOTUS]: [[merged(7, "LOTUS-7", on(12, 9))]] };
+  await mountWeek("#/", weekFleet(busy));
+  expect(barOf("Monday")!.style.height).toBe("5px");
+  expect(segmentsOf("Monday").map(([project]) => project)).toEqual(["holophyte", "croton", "lotuspod"]);
+});
+
 test("This week starts at local Monday's midnight: a Sunday 23:30 merge on the next page is left out and no later page is asked", async () => {
   const asked: string[] = [];
   const monday = merged(21, "HOLO-21", on(12, 0, 30));
@@ -226,7 +233,7 @@ test("on a Wednesday, Thursday to Sunday draw a stub and no bar, and only Wednes
   expect(bold).toEqual(["Wednesday"]);
 });
 
-test("each day's button names its merges by project, the card on hover lists them, and a picked project counts its own alone", async () => {
+test("each day's button names its merges by project, its card shows while hovered or focused, and a picked project counts its own alone", async () => {
   const tuesday = { [DEMO]: [mergesOn(10, "HOLO", 18, on(13, 18))], [WRITER]: [mergesOn(40, "CROTON", 9, on(13, 17))], [LOTUS]: [mergesOn(60, "LOTUS", 4, on(13, 16))] };
   await mountWeek("#/", weekFleet(tuesday));
   const button = screen.getByRole("button", { name: "Tuesday, 31 merged: holophyte 18, croton 9, lotuspod 4" });
@@ -234,6 +241,12 @@ test("each day's button names its merges by project, the card on hover lists the
   fireEvent.mouseEnter(button);
   expect(button.textContent).toContain("Tuesday 31 merged");
   expect(button.textContent).toContain("holophyte18croton9lotuspod4");
+
+  fireEvent.focus(button);
+  fireEvent.mouseLeave(button);
+  expect(button.textContent).toContain("Tuesday 31 merged");
+  fireEvent.blur(button);
+  expect(button.textContent).not.toContain("croton");
   cleanup();
 
   await mountWeek("#/?project=croton", weekFleet(tuesday));
