@@ -20,6 +20,7 @@ import {
   runDetailSchema,
   runFilesSchema,
   runTurnsSchema,
+  searchSchema,
   shippedSchema,
   storyDetailSchema,
   ticketDetailSchema,
@@ -34,6 +35,10 @@ import {
   type LedgerEntry,
   type MergeQueue,
   type Peers,
+  type SearchFinding,
+  type SearchRun,
+  type SearchScout,
+  type SearchTicket,
   type StoryDetail,
 } from "../lib/contract.gen";
 import type { HostRecord } from "../lib/hosts";
@@ -215,6 +220,49 @@ export function useTicketSearch(hosts: HostRecord<PollBodies>[], text: string, d
     if (result?.status === "success" && result.data) hits.set(host.base, new Set(result.data.tickets));
   });
   return hits;
+}
+
+/** One `/search` hit and the host whose daemon answered it. */
+interface HostHit<R, T> {
+  host: R;
+  hit: T;
+}
+
+interface SearchAll<R> {
+  tickets: HostHit<R, SearchTicket>[];
+  runs: HostHit<R, SearchRun>[];
+  scouts: HostHit<R, SearchScout>[];
+  findings: HostHit<R, SearchFinding>[];
+  /** Whether a host asked has yet to answer or fail. */
+  pending: boolean;
+}
+
+/** Each status-answering host's `/search?q=` answer for `text`, merged per
+ *  group in fleet order, each hit with its host; idle while `text` is
+ *  blank. A host whose daemon lacks the route, or whose read failed, adds
+ *  nothing. */
+export function useSearchAll<R extends HostRecord<PollBodies>>(hosts: R[], text: string, deps: { fetch: Fetch }): SearchAll<R> {
+  const asked = text.trim() === "" ? [] : hosts.filter((host) => host.status != null);
+  const path = `/search?q=${encodeURIComponent(text.trim())}`;
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: routeKey(host.base, path),
+      queryFn: () => routeOrNone(deps.fetch, `${host.base}${path}`, searchSchema),
+      staleTime: POLL_INTERVAL_MS,
+      retry: false,
+    })),
+  });
+  const answers = asked.flatMap((host, index) => {
+    const data = results[index]?.data;
+    return data ? [{ host, data }] : [];
+  });
+  return {
+    tickets: answers.flatMap(({ host, data }) => data.tickets.map((hit) => ({ host, hit }))),
+    runs: answers.flatMap(({ host, data }) => data.runs.map((hit) => ({ host, hit }))),
+    scouts: answers.flatMap(({ host, data }) => data.scouts.map((hit) => ({ host, hit }))),
+    findings: answers.flatMap(({ host, data }) => data.findings.map((hit) => ({ host, hit }))),
+    pending: results.some((result) => result.status === "pending"),
+  };
 }
 
 export interface StoryAnswer<R> {
