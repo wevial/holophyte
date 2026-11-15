@@ -61,6 +61,7 @@ const RERUN = /^rerunning the failed jobs of (.+?) on \S+:/;
 const LINE_DELTA = /line delta ([+-]\d+)/;
 const CARRIED_AT = /\bat ([0-9a-f]{7,})\b/;
 const WITNESSED = /(\d+) of (\d+) criteria witnessed/;
+const COVERING_BEGUN = /: review of the fix at [0-9a-f]+$/;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -249,10 +250,11 @@ function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, b
   });
   const newest = events.findLast((event) => event.kind === "babysit_step") === step;
   const reviewing = detail.run.outcome == null && detail.run.phase === "reviewing" && held.every((round) => round.ended_ms != null);
-  if (!newest || !reviewing) return groups;
+  const since = Math.max(0, ...held.map((round) => round.ended_ms!));
+  const begun = events.findLast((event) => isEdge(event, null, "reviewing") && COVERING_BEGUN.test(event.summary) && event.at >= since);
+  if (!newest || !reviewing || begun == null) return groups;
   const number = Math.max(0, ...detail.rounds.map((round) => round.round)) + 1;
-  const at = Math.max(step.at, ...held.map((round) => round.ended_ms!));
-  return [...groups, draft("covering_review", at, "Covering review", { sub: [`round ${number}`], tone: "neutral", anchor: roundAnchor(number) })];
+  return [...groups, draft("covering_review", Math.max(step.at, begun.at), "Covering review", { sub: [`round ${number}`], tone: "neutral", anchor: roundAnchor(number) })];
 }
 
 function babysitGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
