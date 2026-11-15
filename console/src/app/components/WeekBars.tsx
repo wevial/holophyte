@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { ShippedRow } from "../../lib/types";
-import { localMonday } from "../queries";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const BAR_PX = 64;
@@ -14,11 +13,9 @@ interface Day {
 
 const weekday = (ms: number) => (new Date(ms).getDay() + 6) % 7;
 
-function daysOf(rows: ShippedRow[], now: number, order: string[]): Day[] {
+function daysOf(rows: ShippedRow[], order: string[]): Day[] {
   const counts = DAY_NAMES.map(() => new Map<string, number>());
-  const since = localMonday(now);
   for (const row of rows) {
-    if (row.ended_ms < since) continue;
     const day = counts[weekday(row.ended_ms)]!;
     day.set(row.project, (day.get(row.project) ?? 0) + 1);
   }
@@ -54,9 +51,9 @@ function DayCard({ day, colours }: { day: Day; colours: Map<string, string> }) {
  *  scaled to the busiest day and stacked by project in `colours`' order. */
 export function WeekBars({ rows, now, colours }: { rows: ShippedRow[]; now: number; colours: Map<string, string> }) {
   const [shown, setShown] = useState<number | null>(null);
-  const days = daysOf(rows, now, [...colours.keys()]);
+  const days = daysOf(rows, [...colours.keys()]);
   const today = weekday(now);
-  const busiest = Math.max(0, ...days.map((day) => day.total));
+  const busiest = Math.max(...days.map((day) => day.total));
   const week = days.reduce((sum, day) => sum + day.total, 0);
   return (
     <div data-week className="flex flex-col gap-3">

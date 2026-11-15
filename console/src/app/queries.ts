@@ -271,7 +271,7 @@ const WINDOW_DAYS = 7;
 const FINDINGS_LIMIT = 500;
 
 /** The local midnight that starts `now`'s Monday-to-Sunday week. */
-export function localMonday(now: number): number {
+function localMonday(now: number): number {
   const day = new Date(localMidnight(now));
   day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
   return day.getTime();
