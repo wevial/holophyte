@@ -32,6 +32,8 @@ export interface ActivityGroup {
   number: number | null;
   /** The round's criteria that were not met or unwitnessed. */
   marks: RoundCriterion[];
+  /** The element id a link to this group's round scrolls to. */
+  anchor: string | null;
 }
 
 export interface ActivityNow {
@@ -61,6 +63,7 @@ const RERUN = /^rerunning the failed jobs of (.+?) on \S+:/;
 const LINE_DELTA = /line delta ([+-]\d+)/;
 const CARRIED_AT = /\bat ([0-9a-f]{7,})\b/;
 const WITNESSED = /(\d+) of (\d+) criteria witnessed/;
+const COVERING_BEGUN = /: review of the fix at [0-9a-f]+$/;
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -70,7 +73,7 @@ const isEdge = (event: RunEvent, from: string | null, to: string | null) => {
 };
 
 function draft(kind: ActivityKind, at: number, title: string, fields: Partial<Draft> = {}): Draft {
-  return { kind, at, title, sub: [], tone: "ok", steps: [], round: null, number: null, marks: [], end: null, ...fields };
+  return { kind, at, title, sub: [], tone: "ok", steps: [], round: null, number: null, marks: [], anchor: null, end: null, ...fields };
 }
 
 /** Notes this run read, and unread ones made before it ended. */
@@ -237,10 +240,37 @@ function fixingRound(events: RunEvent[], fix: number): RegExpExecArray | null {
   return round < 0 ? null : CHECK_FIX_ROUND.exec(events[round]!.summary);
 }
 
-function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>, next: number): Draft[] {
-  const covering = events.findLastIndex((event) => event.kind === "babysit_step" && event.summary === "covering_review");
+const roundAnchor = (round: number) => `round-${round}`;
+
+/** The newest change into a covering review at or after `since`, from `events` in order. */
+export const coveringBegun = (events: RunEvent[], since: number) =>
+  events.findLast((event) => isEdge(event, null, "reviewing") && COVERING_BEGUN.test(event.summary) && event.at >= since);
+
+/** One group per round a covering review step holds, since retries collapse into the step, then the round a live run is reviewing. */
+function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, babysat: Map<Round, RunEvent>): Draft[] {
+  const held = [...babysat].filter(([, at]) => at === step).map(([round]) => round).sort((a, b) => a.round - b.round);
+  const groups = held.map((round) => {
+    const marks = round.criteria.filter((criterion) => criterion.status !== "met");
+    const words = reviewWords(round);
+    return draft("covering_review", round.started_ms, "Covering review", { ...words, sub: [`round ${round.round}`, ...words.sub], round, number: round.round, marks, anchor: roundAnchor(round.round), end: round.ended_ms });
+  });
+  const newest = events.findLast((event) => event.kind === "babysit_step") === step;
+  const reviewing = detail.run.outcome == null && detail.run.phase === "reviewing" && held.every((round) => round.ended_ms != null);
+  const since = Math.max(0, ...held.map((round) => round.ended_ms!));
+  const begun = coveringBegun(events, since);
+  if (!newest || !reviewing || begun == null) return groups;
+  const number = Math.max(0, ...detail.rounds.map((round) => round.round)) + 1;
+  return [...groups, draft("covering_review", Math.max(step.at, begun.at), "Covering review", { sub: [`round ${number}`], tone: "neutral", number, anchor: roundAnchor(number) })];
+}
+
+function babysitGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
   return events.flatMap((event, index): Draft[] => {
     if (event.kind !== "babysit_step") return [];
+    if (event.summary === "covering_review") {
+      const groups = coveringGroups(detail, events, event, babysat);
+      if (groups.length > 0) used.add(event);
+      return groups;
+    }
     const round = [...babysat].find(([, step]) => step === event)?.[0] ?? null;
     const held = { round, number: round?.round ?? null, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
     if (event.summary === "checks") {
@@ -251,11 +281,6 @@ function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: 
       used.add(event);
       const found = round?.findings.length ?? 0;
       return [draft("threads", event.at, "Review threads", { ...held, sub: round ? [plural(found, "thread")] : [], tone: found > 0 ? "warn" : "ok" })];
-    }
-    if (event.summary === "covering_review") {
-      used.add(event);
-      const number = round?.round ?? (index === covering ? next : null);
-      return [draft("covering_review", event.at, "Covering review", { ...held, ...(round == null ? { tone: "neutral" } : reviewWords(round)), number })];
     }
     const fixing = event.summary === "fix" ? fixingRound(events, index) : null;
     if (fixing == null) return [];
@@ -324,7 +349,7 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
     ...implementGroup(detail, events, used),
     ...roundGroups(detail, events, babysat, used),
     ...pullRequestGroups(events, used),
-    ...babysitGroups(events, babysat, used, Math.max(0, ...detail.rounds.map((round) => round.round)) + 1),
+    ...babysitGroups(detail, events, babysat, used),
   ].sort((a, b) => a.at - b.at);
   const during = notes.filter((note) => !carried.includes(note));
   place(drafts, [...eventSteps(detail, events, used), ...during.map(noteStep), ...askSteps(detail, asks)]);

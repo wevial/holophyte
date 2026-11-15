@@ -79,6 +79,17 @@ const runs: Record<number, RunDetail> = {
       phaseChange(40, "merge_gate -> reviewing: review of the fix at 0123456789ab"),
     ],
   },
+  56: {
+    ...detail(56, "DEMO-56", { phase: "merge_gate", max_rounds: 3 }, [{ ...passed, round: 1 }, reviewRound(2, "pass", 41, 43), reviewRound(3, "pass", 46, 48), reviewRound(4, "pass", 51, 53)]),
+    events: [{ at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" }],
+  },
+  57: {
+    ...detail(57, "DEMO-57", { phase: "reviewing", max_rounds: 3 }, [{ ...passed, round: 1 }, reviewRound(2, "approved", 41, 43)]),
+    events: [
+      { at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" },
+      phaseChange(40, "merge_gate -> reviewing: review of the fix at 0123456789ab"),
+    ],
+  },
   52: {
     ...detail(52, "DEMO-52", { phase: "merge_gate", max_rounds: 6 }, [roundOne, roundTwo, passed]),
     events: [
@@ -241,7 +252,7 @@ test("a run in its merge gate during a check fix round says it is fixing CI and 
 test("a merge gate run whose babysitter moved on from its fix step to checks reads as merging again, its check fix mark no longer live", async () => {
   await mount("#/runs/demo/15", runFetch({ ...liveRow, id: 15, ticket: "DEMO-15", phase: "merge_gate" }));
   expect(verdict()).toStartWith("Merging.");
-  expect(marks("Check fix rounds").map((mark) => mark.getAttribute("data-mark"))).toEqual(["ended"]);
+  expect(marks("Merge gate rounds").map((mark) => mark.getAttribute("data-mark"))).toEqual(["ended"]);
 });
 
 test("a later check fix round on two checks names both and its own round, not the earlier one", async () => {
@@ -342,6 +353,23 @@ test("a covering review under way links its mark to its round's covering review 
   expect(target?.getAttribute("data-group")).toBe("covering_review");
 });
 
+test("a covering review retried twice shows its three rounds under Merge gate, each linked to its own covering review in Progress", async () => {
+  await mount("#/runs/demo/56");
+  expect(markNames("Review rounds")).toEqual(["Round 1: pass"]);
+  const rechecks = within(screen.getByRole("group", { name: "Merge gate rounds" })).getAllByRole("link");
+  expect(rechecks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 2: pass", "Round 3: pass", "Round 4: pass"]);
+  const targets = rechecks.map((mark) => document.getElementById(mark.getAttribute("href")!.slice(1)));
+  expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
+  expect(new Set(targets).size).toBe(3);
+});
+
+test("an approved covering review still reviewing, with no later review begun, adds no round and keeps Merge gate current", async () => {
+  await mount("#/runs/demo/57");
+  expect(stages()).toEqual(["Implement: finished", "Verify: finished", "Review · 1 round: finished", "Merge gate: current", "Merged: not reached"]);
+  expect(markNames("Review rounds")).toEqual(["Round 1: pass"]);
+  expect(markNames("Merge gate rounds")).toEqual(["Round 2: approved"]);
+});
+
 test("a review mark's card names its round, verdict, findings and blockers on keyboard focus and goes on blur", async () => {
   await mount("#/runs/demo/51");
   const first = screen.getByRole("link", { name: "Round 1: changes requested" });
@@ -371,7 +399,7 @@ test("a merge gate run after three rounds ending in a pass reads Review done, na
   await mount("#/runs/demo/52");
   expect(stages()).toEqual(["Implement: finished", "Verify: finished", "Review · 3 rounds: finished", "Merge gate · babysit 2: current", "Merged: not reached"]);
   expect(within(screen.getByRole("group", { name: "Review rounds" })).queryAllByRole("img", { name: "unused round" })).toEqual([]);
-  const fixes = within(screen.getByRole("group", { name: "Check fix rounds" })).getAllByRole("button");
+  const fixes = within(screen.getByRole("group", { name: "Merge gate rounds" })).getAllByRole("button");
   expect(fixes.map((mark) => [mark.getAttribute("aria-label"), mark.getAttribute("data-mark")])).toEqual([
     ["Check fix round 1 of 3", "failed"],
     ["Check fix round 2 of 3", "running"],

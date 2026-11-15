@@ -6,7 +6,11 @@ import { BarChart, Change, LineChart } from "../../src/app/components/FlowCharts
 import { Section } from "../../src/app/components/Section";
 import { StageChip } from "../../src/app/components/StageChip";
 import { StateDot } from "../../src/app/components/StateDot";
+import { RunActivity } from "../../src/app/components/RunActivity";
+import { runActivity } from "../../src/app/activity";
 import { flowWeekly, weeklyTips } from "../../src/app/flow";
+import type { Round, RunDetail } from "../../src/lib/contract.gen";
+import { SERVE } from "./needsFleet";
 import { STATES, type State } from "../../src/app/state";
 
 afterEach(cleanup);
@@ -16,6 +20,7 @@ const sheet = new DOMParser().parseFromString(
   "text/html",
 );
 const themeCss = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
+const served = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const GEOMETRY = ["d", "cx", "cy", "r", "x", "y", "width", "height", "pathLength", "stroke-dasharray"];
 
 function shapes(svg: Element) {
@@ -295,4 +300,54 @@ test("a rounds point taken over several hosts names the host medians it is the m
   expect(weeklyTips(single, false).rounds(single.rounds[0]!, 0).context).toBe("median over 100 merges");
   expect(spread.rounds).toEqual([5]);
   expect(weeklyTips(spread, false).rounds(spread.rounds[0]!, 0).context).toBe("median across 2 hosts' medians");
+});
+
+const T = Date.UTC(2026, 9, 22, 14, 0);
+const MIN = 60_000;
+
+/** A babysat run whose one covering_review step holds a covering round per verdict, ten minutes apart, each begun by a phase change into reviewing; `begun` reviews have begun in all. */
+function coveringRun(phase: string, verdicts: string[], begun = verdicts.length): RunDetail {
+  const url = "https://github.com/o/r/pull/2400";
+  const startOf = (index: number) => T + (index + 1) * 10 * MIN;
+  const covering = (verdict: string, index: number): Round =>
+    ({ ...served.rounds[0]!, round: index + 1, verdict, instructions: [], operator_notes: [], criteria: [], findings: [], started_ms: startOf(index), ended_ms: startOf(index) + 5 * MIN }) as Round;
+  const began = Array.from({ length: begun }, (_, index) => ({ at: startOf(index) - MIN, kind: "phase_change", summary: `${index === 0 ? "merge_gate" : "reviewing"} -> reviewing: review of the fix at f1da4c08e5f4` }));
+  return {
+    ...served,
+    run: { ...served.run, id: 12, phase, started_ms: T, ended_ms: null, outcome: null, max_rounds: 3 },
+    events: [
+      { at: T, kind: "pull_request", summary: `resuming run 392's candidate holo/x at f1da4c08e5f4 on ${url} for another babysit pass` },
+      { at: T + 5 * MIN, kind: "babysit_step", summary: "covering_review" },
+      ...began,
+    ],
+    rounds: verdicts.map(covering),
+    steer_notes: [],
+    criteria: [],
+    precheck: null,
+  };
+}
+
+const progressOf = (detail: RunDetail) =>
+  render(<RunActivity activity={runActivity(detail, [], T + 60 * MIN)} detail={detail} base="http://daemon" project="holophyte" />).container;
+
+test("each round a retried covering review recorded under one collapsed step is its own target in Progress", () => {
+  const progress = progressOf(coveringRun("merge_gate", ["changes_requested", "changes_requested", "approved"]));
+  const targets = ["round-1", "round-2", "round-3"].map((id) => progress.querySelector(`#${id}`));
+  expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
+  expect(targets.map((target) => target!.querySelector("[data-group-title]")!.textContent)).toEqual([
+    "Covering review · round 1 · changes requested",
+    "Covering review · round 2 · changes requested",
+    "Covering review · round 3 · passed",
+  ]);
+});
+
+test("the covering round a live run is still reviewing is a target in Progress after the recorded ones", () => {
+  const progress = progressOf(coveringRun("reviewing", ["changes_requested", "changes_requested"], 3));
+  const covering = [...progress.querySelectorAll('[data-group="covering_review"]')];
+  expect(covering.map((group) => [group.id, group.hasAttribute("data-running")])).toEqual([["round-1", false], ["round-2", false], ["round-3", true]]);
+});
+
+test("an approved covering round still in reviewing while its pull request text refreshes has no next round in Progress", () => {
+  const progress = progressOf(coveringRun("reviewing", ["approved"]));
+  expect([...progress.querySelectorAll('[data-group="covering_review"]')].map((group) => group.id)).toEqual(["round-1"]);
 });

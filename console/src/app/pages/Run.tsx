@@ -48,7 +48,8 @@ function Stepper({ page }: { page: Extract<RunPageFacts, { kind: "run" }> }) {
   const deps = useContext(PollDepsContext);
   const turns = useRunTurns(page.base, page.detail.run.id, true, page.live, deps);
   const drawn = new Set(page.activity.groups.flatMap((group) => (group.number == null ? [] : [`round-${group.number}`])));
-  const stages = stepperOf(page.detail, turns.data?.turns ?? [], page.phase).map((stage) => ({
+  const covering = new Set(page.activity.groups.flatMap((group) => (group.kind === "covering_review" && group.number != null ? [group.number] : [])));
+  const stages = stepperOf(page.detail, turns.data?.turns ?? [], page.phase, covering).map((stage) => ({
     ...stage,
     marks: stage.marks.map((mark) => (mark.anchor != null && drawn.has(mark.anchor) ? mark : { ...mark, anchor: null })),
   }));
