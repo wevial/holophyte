@@ -117,7 +117,7 @@ export function RunStepper({ stages }: { stages: StepperStage[] }) {
   return (
     <ol aria-label="Stages" data-run-stepper className="m-0 mt-4 flex max-w-full list-none items-start overflow-x-auto p-0.5 pb-1">
       {stages.map((stage, index) => (
-        <li key={stage.name} aria-label={`${stage.label}: ${stage.state}`} data-stage={stage.state} className={`flex min-w-0 items-start ${index === 0 ? "flex-none" : "flex-1"}`}>
+        <li key={stage.name} aria-label={`${stage.label}: ${stage.state}`} data-stage={stage.state} className={`flex items-start ${index === 0 ? "flex-none" : "flex-1"}`}>
           {index > 0 && (
             <span
               data-link={stage.state === "finished" ? "solid" : "dashed"}
