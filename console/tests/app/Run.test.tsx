@@ -68,6 +68,17 @@ const runs: Record<number, RunDetail> = {
     ...detail(53, "DEMO-53", { phase: "reviewing", max_rounds: 6 }, [roundOne, roundTwo]),
     events: [phaseChange(22, "reviewing -> addressing"), phaseChange(26, "addressing -> verifying"), phaseChange(30, "verifying -> reviewing: round 3 review")],
   },
+  54: {
+    ...detail(54, "DEMO-54", { phase: "merge_gate", max_rounds: 1 }, [roundOne, { ...passed, round: 2 }, reviewRound(3, "changes_requested", 50, 52)]),
+    events: [{ at: STARTED + 45 * MINUTE, kind: "babysit_step", summary: "threads" }],
+  },
+  55: {
+    ...detail(55, "DEMO-55", { phase: "reviewing", max_rounds: 6 }, [{ ...passed, round: 1 }]),
+    events: [
+      { at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" },
+      phaseChange(40, "merge_gate -> reviewing: review of the fix at 0123456789ab"),
+    ],
+  },
   52: {
     ...detail(52, "DEMO-52", { phase: "merge_gate", max_rounds: 6 }, [roundOne, roundTwo, passed]),
     events: [
@@ -302,7 +313,12 @@ test("a reviewing run whose round under way has no row yet shows that round as a
 });
 
 test("a review mark, its round recorded or still under way, scrolls to its own round in Progress", async () => {
-  for (const [run, name, round] of [[51, "Round 2: changes requested", "Round 2"], [53, "Round 3: in review", "Round 3"]] as const) {
+  for (const [run, name, round] of [
+    [51, "Round 2: changes requested", "Round 2"],
+    [53, "Round 3: in review", "Round 3"],
+    [54, "Round 2: pass", "Final check"],
+    [54, "Round 3: changes requested", "Review threads"],
+  ] as const) {
     await mount(`#/runs/demo/${run}`);
     const scrolled: Element[] = [];
     const scroll = Element.prototype.scrollIntoView;
@@ -317,6 +333,13 @@ test("a review mark, its round recorded or still under way, scrolls to its own r
     expect(scrolled[0]!.querySelector("[data-group-title]")!.textContent).toStartWith(round);
     cleanup();
   }
+});
+
+test("a review mark whose round Progress does not draw, as a covering review under way, is a button with its card and not a link", async () => {
+  await mount("#/runs/demo/55");
+  expect(screen.getByRole("link", { name: "Round 1: pass" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "Round 2: in review" })).toBeNull();
+  expect(within(screen.getByRole("group", { name: "Review rounds" })).getByRole("button", { name: "Round 2: in review" })).toBeTruthy();
 });
 
 test("a review mark's card names its round, verdict, findings and blockers on keyboard focus and goes on blur", async () => {

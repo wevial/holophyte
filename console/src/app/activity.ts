@@ -172,7 +172,7 @@ function roundGroup(detail: RunDetail, events: RunEvent[], round: Round, opened:
   const model = round.reviewer_model ? ` · ${round.reviewer_model}` : "";
   const review: ActivityStep = { at: round.started_ms, text: `${final ? "Adjudication" : "Review"}${model}`, ms: span(round.started_ms, round.ended_ms), quiet: false };
   const marks = round.criteria.filter((criterion) => criterion.status !== "met");
-  if (final) return draft("final", opened, "Final check", { ...finalWords(round), steps: [verify, review], round, marks, end: round.ended_ms });
+  if (final) return draft("final", opened, "Final check", { ...finalWords(round), steps: [verify, review], round, number: round.round, marks, end: round.ended_ms });
   const loop = events.find((event) => isEdge(event, "reviewing", "addressing") && event.at >= round.started_ms && event.at < nextStart);
   const fixed = loop == null ? undefined : events.find((event) => isEdge(event, "addressing", "verifying") && event.at >= loop.at);
   const fix: ActivityStep[] = loop == null ? [] : [{ at: loop.at, text: "Fix", ms: span(loop.at, fixed?.at), quiet: false }];
@@ -241,7 +241,7 @@ function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: 
   return events.flatMap((event, index): Draft[] => {
     if (event.kind !== "babysit_step") return [];
     const round = [...babysat].find(([, step]) => step === event)?.[0] ?? null;
-    const held = { round, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
+    const held = { round, number: round?.round ?? null, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
     if (event.summary === "checks") {
       used.add(event);
       return [draft("checks", event.at, "Checks", held)];

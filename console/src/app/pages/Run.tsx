@@ -47,7 +47,12 @@ function RunTicket({ base, ticket }: { base: string; ticket: string }) {
 function Stepper({ page }: { page: Extract<RunPageFacts, { kind: "run" }> }) {
   const deps = useContext(PollDepsContext);
   const turns = useRunTurns(page.base, page.detail.run.id, true, page.live, deps);
-  return <RunStepper stages={stepperOf(page.detail, turns.data?.turns ?? [], page.phase)} />;
+  const drawn = new Set(page.activity.groups.flatMap((group) => (group.number == null ? [] : [`round-${group.number}`])));
+  const stages = stepperOf(page.detail, turns.data?.turns ?? [], page.phase).map((stage) => ({
+    ...stage,
+    marks: stage.marks.map((mark) => (mark.anchor != null && drawn.has(mark.anchor) ? mark : { ...mark, anchor: null })),
+  }));
+  return <RunStepper stages={stages} />;
 }
 
 function Dot() {
