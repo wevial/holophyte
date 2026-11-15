@@ -272,6 +272,8 @@ Each module, one line:
   configured reviewer or the critic runs in.
 - `holophyte/agents/agent_output.py` — a turn's text with its route, exit status
   and transport failure.
+- `holophyte/agents/t3_cleanup.py` — after a T3 critic turn, its thread settled
+  over T3's MCP endpoint and its worktree and branch removed.
 - `holophyte/agents/claude_sdk.py` — one critic turn over a Claude Agent SDK
   session: its options, credential environment, usage and stop at the timeout.
 - `holophyte/agents/turn_tools.py` — the `holo_run` tools an SDK critic turn
@@ -541,6 +543,8 @@ Each module, one line:
 - `holophyte/serve/contract_routes.py` — a seat's and an implementer
   profile's route, last probes and labels, as the contract declares them
   on `/status`.
+- `holophyte/serve/contract_search.py` — the tickets, runs, scouts and
+  review findings `GET /search` answers, as the contract declares them.
 - `holophyte/serve/contract_run.py` — a run's review round as `/runs/N`
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
@@ -1107,10 +1111,15 @@ The ticket checker, in `holophyte/tickets/`:
 - `holophyte/tickets/ticket_advisories.py` — the checker's verify-block and
   criterion advisories: a whole-suite discover, a hard-coded test count, a
   verify wider than In scope, a repository-wide `ruff check` that fails on
-  main, and a criterion asking for a run's output the factory does not make.
+  main, a criterion asking for a run's output the factory does not make, and
+  a criterion checking only copy, a label or presence; it also blocks a
+  misplaced or unrun one-time witness.
 - `holophyte/tickets/ticket_header.py` — finds, parses and checks the `+++`
   TOML header a ticket can open with, setting the same `Ticket` fields as the
   magic lines.
+- `holophyte/tickets/witness_once.py` — a criterion witnessed once: the
+  ignored `.holophyte-witness/` folder, the `(witnessed once: PATH)` tail,
+  and the implementer and reviewer briefs that keep its test out of commits.
 - `holophyte/tickets/ticket_depends.py` — finds a ticket body's estimate line
   and rewrites its `Depends on:` list, for story filing and a cancel's rewire.
 - `holophyte/tickets/story_template.py` — validator for a story directory's

@@ -39,7 +39,10 @@ interface Daemon {
 
 const NO_COUNTS: HistoryCounts = { state: { active: 0, merged: 0, failed: 0, abandoned: 0 }, failure: {}, implementer: {} };
 
-/** Each daemon answers any `/history` with its rows whose ticket or title holds `q`, cut at `offset` and
+/** A run's state group as the daemon files it: an open run is active, an ended one by its outcome. */
+const groupOf = (row: HistoryRow) => (row.outcome == null ? "active" : row.outcome === "merged" || row.outcome === "abandoned" ? row.outcome : "failed");
+
+/** Each daemon answers any `/history` with its rows whose ticket or title holds `q` and whose group is in `state`, cut at `offset` and
  *  `limit`, its `total` counting every row it would answer; every query lands in `asked`. */
 function fleet(demo: Daemon, writer: Daemon, writerPath = "/srv/dev/writer") {
   const asked: { base: string; params: URLSearchParams }[] = [];
@@ -54,7 +57,8 @@ function fleet(demo: Daemon, writer: Daemon, writerPath = "/srv/dev/writer") {
       const params = new URL(url).searchParams;
       asked.push({ base, params });
       const q = params.get("q") ?? "";
-      const matching = daemon.rows.filter((row) => row.ticket.includes(q) || row.title.includes(q));
+      const states = params.get("state")?.split(",");
+      const matching = daemon.rows.filter((row) => (row.ticket.includes(q) || row.title.includes(q)) && (states == null || states.includes(groupOf(row))));
       const offset = Number(params.get("offset") ?? 0);
       const limit = Number(params.get("limit") ?? 200);
       return Response.json({
@@ -111,6 +115,10 @@ const checkedIn = async (name: string) =>
   ((await section(name)).getAllByRole("checkbox").slice(1) as HTMLInputElement[]).filter((box) => box.checked).map((box) => box.getAttribute("aria-label"));
 const head = async (name: string) => (await section(name)).getAllByRole("checkbox")[0] as HTMLInputElement;
 const check = async (sectionName: string, value: string) => press((await section(sectionName)).getByRole("checkbox", { name: value }));
+const tabs = () => within(screen.getByRole("group", { name: "Run states" })).getAllByRole("button");
+const tabTexts = () => tabs().map((tab) => tab.textContent);
+const pressedTabs = () => tabs().filter((tab) => tab.getAttribute("aria-pressed") === "true").map((tab) => tab.textContent!.split(" ")[0]);
+const shownIds = () => Array.from(document.querySelectorAll("li[data-run]"), (row) => row.getAttribute("data-run"));
 const typeSearch = async (text: string) => {
   fireEvent.change(field(), { target: { value: text } });
   await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
@@ -193,7 +201,7 @@ test("typing a search from a later page goes back to page 1", async () => {
 
 test("Escape and a press outside close the Filter popover and give focus back to its button", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
-  await check("State", "Failed");
+  await check("Failure kind", "verify");
   expect(document.activeElement).not.toBe(filterButton());
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
   expect(dialog()).toBeNull();
@@ -201,7 +209,7 @@ test("Escape and a press outside close the Filter popover and give focus back to
   expect(document.activeElement).toBe(filterButton());
 
   await openFilter();
-  (await section("State")).getByRole("checkbox", { name: "Merged" }).focus();
+  (await section("Failure kind")).getByRole("checkbox", { name: "review" }).focus();
   await act(async () => void fireEvent.pointerDown(document.querySelector("[data-count-line]")!));
   expect(dialog()).toBeNull();
   expect(document.activeElement).toBe(filterButton());
@@ -214,7 +222,7 @@ test("Escape and a press outside close the Filter popover and give focus back to
   expect(document.activeElement).toBe(filterButton());
 });
 
-test("a run started before yesterday shows its date with its clock, and yesterday's keeps yest", async () => {
+test("a run started before yesterday names its date with its clock, and yesterday's keeps yest", async () => {
   const older = new Date(2026, 9, 9, 10, 30).getTime();
   const yesterday = new Date(2026, 9, 14, 21, 5).getTime();
   const rows = [
@@ -225,10 +233,6 @@ test("a run started before yesterday shows its date with its clock, and yesterda
   const label = (id: number) => screen.getByRole("link", { name: new RegExp(`^Run ${id}, `) }).getAttribute("aria-label");
   expect(label(1)).toEndWith("started Oct 9 10:30");
   expect(label(2)).toEndWith("started yest 21:05");
-  const lastWeek = screen.getByRole("link", { name: /^Run 1, / }).closest("li")!.textContent;
-  expect(lastWeek).toContain("Oct 9 10:30");
-  expect(lastWeek).toContain("Oct 9 11:00");
-  expect(lastWeek).not.toContain("yest");
 });
 
 test("Escape with focus moved from the Filter popover to Search still closes it and gives focus back to its button", async () => {
@@ -242,7 +246,7 @@ test("Escape with focus moved from the Filter popover to Search still closes it 
 
 test("Clear filters empties Search and drops a search still waiting on its debounce", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
-  await mount("#/runs?state=failed", daemons.fetchImpl);
+  await mount("#/runs?failure=verify", daemons.fetchImpl);
   fireEvent.change(field(), { target: { value: "lock" } });
   await press(screen.getByRole("button", { name: "Clear filters" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
@@ -299,13 +303,12 @@ const countedFleet = (demoRows = 6) => fleet(
   },
 );
 
-test("the Filter popover holds Project, State, Failure kind and Implementer with the hosts' summed counts, and closes when the row hides", async () => {
+test("the Filter popover holds Sort, Project, Failure kind and Implementer with the hosts' summed counts, and closes when the row hides", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
   const box = await openFilter();
   expect(filterButton().getAttribute("aria-expanded")).toBe("true");
-  expect(within(box).getAllByRole("group")).toEqual(["Project", "State", "Failure kind", "Implementer"].map((name) => within(box).getByRole("group", { name })));
+  expect(within(box).getAllByRole("group")).toEqual(["Sort", "Project", "Failure kind", "Implementer"].map((name) => within(box).getByRole("group", { name })));
   expect((within(box).getAllByRole("checkbox") as HTMLInputElement[]).filter((each) => each.checked || each.indeterminate)).toEqual([]);
-  expect(await valueRows("State")).toEqual(["Active 1", "Merged 4", "Failed 2", "Abandoned 2"]);
   expect((await valueRows("Failure kind")).slice(0, 2)).toEqual(["verify 3", "review 1"]);
   expect((await section("Implementer")).getAllByRole("checkbox").slice(1).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
 
@@ -316,34 +319,64 @@ test("the Filter popover holds Project, State, Failure kind and Implementer with
   expect(controls().hasAttribute("data-hidden")).toBe(true);
 });
 
-test("checking State and Failure kind boxes writes them as comma lists in section order, and the State head checks all, then none", async () => {
+test("checking Failure kind boxes writes them as a comma list in the section's order, and its head checks all, then none", async () => {
   const daemons = countedFleet(60);
   await mount("#/runs?page=2", daemons.fetchImpl);
   expect(hashSearch().get("page")).toBe("2");
-  await check("State", "Failed");
-  await check("Failure kind", "verify");
   await check("Failure kind", "review");
-  expect(hashSearch().get("state")).toBe("failed");
+  await check("Failure kind", "verify");
   expect(hashSearch().get("failure")).toBe("verify,review_route");
   expect(hashSearch().has("page")).toBe(false);
-  for (const base of [DEMO, WRITER]) {
-    expect(daemons.lastOf(base).state).toBe("failed");
-    expect(daemons.lastOf(base).failure).toBe("verify,review_route");
-  }
-  expect(filterButton().textContent).toBe("Filter · 3");
-  const stateHead = await head("State");
-  expect([stateHead.checked, stateHead.indeterminate]).toEqual([false, true]);
-  expect(stateHead.closest("label")!.textContent).toContain("1 of 4");
-  expect(chips()).toEqual(["State: Failed", "Failure: verify, review"]);
+  for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).failure).toBe("verify,review_route");
+  expect(filterButton().textContent).toBe("Filter · 2");
+  const failureHead = await head("Failure kind");
+  expect([failureHead.checked, failureHead.indeterminate]).toEqual([false, true]);
+  expect(failureHead.closest("label")!.textContent).toContain("2 of 9");
+  expect(chips()).toEqual(["Failure: verify, review"]);
 
-  await press(await head("State"));
-  expect(await checkedIn("State")).toEqual(["Active", "Merged", "Failed", "Abandoned"]);
-  expect([(await head("State")).checked, (await head("State")).indeterminate]).toEqual([true, false]);
-  expect(hashSearch().get("state")).toBe("active,merged,failed,abandoned");
+  await press(await head("Failure kind"));
+  expect(await checkedIn("Failure kind")).toHaveLength(9);
+  expect([(await head("Failure kind")).checked, (await head("Failure kind")).indeterminate]).toEqual([true, false]);
 
-  await press(await head("State"));
-  expect(await checkedIn("State")).toEqual([]);
-  expect(hashSearch().has("state")).toBe(false);
+  await press(await head("Failure kind"));
+  expect(await checkedIn("Failure kind")).toEqual([]);
+  expect(hashSearch().has("failure")).toBe(false);
+});
+
+test("each state tab shows its group's count summed over the hosts and All their sum; Failed writes state=failed and lists only failed runs", async () => {
+  const ended = (outcome: string) => ({ phase: "done", outcome, ended_ms: today(17, 0) });
+  const demoRows = [
+    run({ id: 5, ticket: "DEMO-5", title: "Draft", started_ms: today(17, 0) }),
+    run({ id: 4, ticket: "DEMO-4", title: "Break", started_ms: today(16, 0), ...ended("failed") }),
+    run({ id: 3, ticket: "DEMO-3", title: "Ship", started_ms: today(15, 0), ...ended("merged") }),
+  ];
+  const writerRows = [run({ id: 9, ticket: "WRITER-9", title: "Break too", started_ms: today(16, 30), ...ended("failed") })];
+  const daemons = fleet(
+    { rows: demoRows, counts: { state: { active: 1, merged: 3, failed: 1, abandoned: 4 } } },
+    { rows: writerRows, counts: { state: { active: 0, merged: 0, failed: 1, abandoned: 0 } } },
+  );
+  await mount("#/runs", daemons.fetchImpl);
+  expect(tabTexts()).toEqual(["All 10", "Active 1", "Merged 3", "Failed 2", "Abandoned 4"]);
+  expect(pressedTabs()).toEqual(["All"]);
+
+  await press(tabs().find((tab) => tab.textContent!.startsWith("Failed "))!);
+  expect(hashSearch().get("state")).toBe("failed");
+  for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).state).toBe("failed");
+  expect(pressedTabs()).toEqual(["Failed"]);
+  expect(shownIds()).toEqual(["9", "4"]);
+});
+
+test("Took picked under Sort in the Filter popover orders the runs longest first with no day headings", async () => {
+  const rows = [
+    run({ id: 3, ticket: "DEMO-3", title: "Short", started_ms: today(17, 0), elapsed_ms: 5 * MINUTE }),
+    run({ id: 2, ticket: "DEMO-2", title: "Long", started_ms: new Date(2026, 9, 14, 9, 0).getTime(), elapsed_ms: 90 * MINUTE }),
+    run({ id: 1, ticket: "DEMO-1", title: "Middle", started_ms: new Date(2026, 9, 12, 9, 0).getTime(), elapsed_ms: 30 * MINUTE }),
+  ];
+  await mount("#/runs", fleet({ rows }, { rows: [] }).fetchImpl);
+  expect(document.querySelectorAll("[data-day]")).toHaveLength(3);
+  await press((await section("Sort")).getByRole("radio", { name: "Took" }));
+  expect(shownIds()).toEqual(["2", "1", "3"]);
+  expect(document.querySelectorAll("[data-day]")).toHaveLength(0);
 });
 
 test("two hosts serving one project give it one Project box counting both hosts' runs", async () => {
@@ -358,12 +391,11 @@ test("checking a Project draws only its rows and asks the other host for one row
   await check("Project", "demo");
   expect(hashSearch().get("projects")).toBe("demo");
   expect(hashSearch().has("project")).toBe(false);
-  const shown = Array.from(document.querySelectorAll("ol[aria-label^='Runs, '] > li"), (row) => row.textContent);
+  const shown = Array.from(document.querySelectorAll("li[data-run]"), (row) => row.textContent);
   expect(shown).toHaveLength(6);
   expect(shown.every((text) => text!.includes("DEMO-"))).toBe(true);
   expect(daemons.lastOf(WRITER).limit).toBe("1");
   expect(await valueRows("Project")).toEqual(["demo 6", "writer 3"]);
-  expect(await valueRows("State")).toEqual(["Active 1", "Merged 4", "Failed 2", "Abandoned 2"]);
   expect((await valueRows("Failure kind")).slice(0, 1)).toEqual(["verify 3"]);
   expect(await valueRows("Implementer")).toEqual(["claude opus 5", "codex gpt-6-astra 2"]);
   expect(countLine()).toStartWith("demo · ");
@@ -388,9 +420,10 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   expect(field().value).toBe("lock");
   expect(pressedRanges()).toEqual(["30d"]);
   expect(await checkedIn("Project")).toEqual(["demo"]);
-  expect(await checkedIn("State")).toEqual(["Failed", "Abandoned"]);
   expect(await checkedIn("Failure kind")).toEqual(["verify"]);
-  expect(chips()).toEqual(["Search: “lock”", "Project: demo", "State: Failed, Abandoned", "Failure: verify", "Started: Last 30 days"]);
+  expect((await section("Sort")).getByRole("radio", { name: "Took" })).toHaveProperty("checked", true);
+  expect(pressedTabs()).toEqual([]);
+  expect(chips()).toEqual(["Search: “lock”", "Project: demo", "Failure: verify", "State: Failed, Abandoned", "Started: Last 30 days"]);
   expect(daemons.lastOf(DEMO)).toMatchObject({ q: "lock", state: "failed,abandoned", failure: "verify", since: midnight(9, 16), sort: "duration", order: "desc", limit: "25" });
 
   await press(screen.getByRole("button", { name: "Remove Failure: verify" }));
@@ -417,8 +450,6 @@ test("an Implementer the hosts do not list is dropped from the query, the boxes 
 test("a filter no run matches reads No runs match once with no pager, and an empty scope with no filter names the project and the 7 days", async () => {
   await mount("#/runs?q=nothing", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
   expect(screen.getAllByText("No runs match")).toHaveLength(1);
-  const heads = document.querySelector("[data-run-heads]")!;
-  expect(heads.compareDocumentPosition(screen.getByText("No runs match")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.queryByRole("navigation", { name: "Pages of runs" })).toBeNull();
   cleanup();
 
@@ -427,14 +458,14 @@ test("a filter no run matches reads No runs match once with no pager, and an emp
 });
 
 for (const [hash, checked, asked] of [
-  ["state=all", [], {}],
+  ["state=all", ["All"], {}],
   ["state=failed", ["Failed"], { state: "failed" }],
   ["state=failed,nope&failure=verify,nope", ["Failed"], { state: "failed", failure: "verify" }],
 ] as const) {
-  test(`an old or partly unknown link, ${hash}, checks only the values it knows and asks the hosts with them`, async () => {
+  test(`an old or partly unknown link, ${hash}, picks only the state it knows and asks the hosts with it`, async () => {
     const daemons = countedFleet();
     await mount(`#/runs?${hash}`, daemons.fetchImpl);
-    expect(await checkedIn("State")).toEqual([...checked]);
+    expect(pressedTabs()).toEqual([...checked]);
     for (const base of [DEMO, WRITER]) {
       const { state, failure } = daemons.lastOf(base);
       expect({ ...(state ? { state } : {}), ...(failure ? { failure } : {}) }).toEqual(asked);

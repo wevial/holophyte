@@ -24,6 +24,7 @@ OUTPUT = "and that run's output is in the implementer output."
 ONLY_ON_MAIN = 'the factory makes only on-main runs'
 NO_TEST_FILE = 'names no test file for the factory to run'
 PULL_REQUEST_WITNESS = 'reads as a pull request or CI witness'
+COPY_ONLY = 'checks only copy, a label or presence'
 
 
 def ticket(verify=VERIFY, in_scope=IN_SCOPE, criterion=CRITERION_2):
@@ -232,6 +233,31 @@ class PullRequestWitnessTests(unittest.TestCase):
         self.assertEqual(self.advised(
             'then the PR description lists the changes. '
             '(`tests/test_orders_export.py` witnesses it.)'), [])
+
+
+class CopyOnlyTests(unittest.TestCase):
+    def advised(self, criterion):
+        verify = ("python3 -m unittest discover -s .holophyte-witness"
+                  " -p 'test_save_label.py'")
+        return matching(ticket_advisories.advisories(
+            ticket(verify=verify, criterion=criterion)), COPY_ONLY)
+
+    def test_a_label_criterion_naming_a_committed_test_is_advised(self):
+        (advice,) = self.advised('then the Save button label reads Done. '
+                                 '(`tests/test_save_label.py` witnesses it.)')
+        self.assertEqual(advice, (
+            f'{tt.ADVISORY_PREFIX}criterion 2 checks only copy, a label or '
+            'presence; consider witnessing it once: (witnessed once: '
+            '.holophyte-witness/test_save_label.py)'))
+
+    def test_behaviour_and_one_time_criteria_are_not_advised(self):
+        for criterion in (
+                'then the requeued run is claimed again with its ticket. '
+                '(`tests/test_requeue.py` witnesses it.)',
+                'then the Save button label reads Done. (witnessed once: '
+                '`.holophyte-witness/test_save_label.py`)'):
+            with self.subTest(criterion=criterion):
+                self.assertEqual(self.advised(criterion), [])
 
 
 class ScriptTests(unittest.TestCase):

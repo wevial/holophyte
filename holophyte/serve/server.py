@@ -102,6 +102,7 @@ from holophyte.serve.views import (  # noqa: F401
     attention,
     board,
     parked_item,
+    search,
     status,
     supervisor_view,
     ticket_detail,
@@ -133,7 +134,7 @@ OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
                         "/flow", "/attention", "/board", "/report", "/findings",
-                        "/tickets", SCOUTS_PATH, MERGE_QUEUE_PATH})
+                        "/tickets", "/search", SCOUTS_PATH, MERGE_QUEUE_PATH})
 CONFIG_READS = frozenset({CONFIG_PATH, PATH_MATCHES_PATH, TRACKED_TREE_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
@@ -286,6 +287,7 @@ QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/history": history, "/holds": holds, "/report": window_report,
                 "/flow": flow,
                 "/findings": findings, "/tickets": ticket_search,
+                "/search": search,
                 SCOUTS_PATH: scouts, MERGE_QUEUE_PATH: merge_queue}
 
 

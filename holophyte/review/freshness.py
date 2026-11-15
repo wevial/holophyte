@@ -8,6 +8,7 @@ from pathlib import Path
 import store
 import store.board
 import store.read
+from holophyte.agents import t3_cleanup
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import record_turn, timed_turn
 from holophyte.agents.harness import critic_seat
@@ -22,6 +23,7 @@ from holophyte.board.projection import (
 )
 from holophyte.config.config_tables import loop_config
 from holophyte.files import RangeError, touched_files
+from holophyte.redact import known_secrets
 from holophyte.redact import safe_print as print
 from holophyte.review import moved_landmarks
 from holophyte.review.landmarks import (
@@ -66,6 +68,7 @@ FRESHNESS_LINE = re.compile(r"FRESHNESS:\s+(FRESH|STALE|UNSURE)(?:\s+(.*))?")
 WARNINGS = {}
 ADVISORIES = {}
 TURNS = {}
+CLEANUPS = {}
 
 
 def _git(repo, *args):
@@ -447,12 +450,37 @@ def ask_critic(conn, project, task):
     from holophyte.agents.review_workspace import critic_workspace
     goal = critic_brief(conn, project, task)
     with critic_workspace(project) as checkout:
-        return timed_turn(
-            project, "critic", "critic",
-            lambda: holophyte.loop.review_round.agent(
-                project, "critic", goal, checkout, timeout=CRITIC_TIMEOUT,
-                task=task),
-            lambda payload, _: TURNS.__setitem__(task["id"], payload))
+        try:
+            output = timed_turn(
+                project, "critic", "critic",
+                lambda: holophyte.loop.review_round.agent(
+                    project, "critic", goal, checkout, timeout=CRITIC_TIMEOUT,
+                    task=task),
+                lambda payload, _: TURNS.__setitem__(task["id"], payload))
+        except Exception as e:
+            _clean_t3(project, task, getattr(e, "output", None),
+                      isinstance(e, subprocess.TimeoutExpired))
+            raise
+        _clean_t3(project, task, output, False)
+        return output
+
+
+def _clean_t3(project, task, output, timed_out):
+    seat = critic_seat(project)
+    if (routes(project).commands.get("critic") is not None
+            or getattr(seat, "name", None) != "t3"):
+        return
+    secrets = known_secrets(project.config())
+    try:
+        CLEANUPS[task["id"]] = t3_cleanup.clean_thread(
+            seat.binary, str(output or ""), timed_out, secrets)
+    except Exception as e:
+        CLEANUPS[task["id"]] = [t3_cleanup.outcome(None, "thread", e, secrets)]
+
+
+def _cleanup_summary(step):
+    state = "ok" if step["ok"] else f"failed ({step['detail']})"
+    return f"t3 {step['step']} of thread {step['thread']}: {state}"
 
 
 def _failure(error):
@@ -465,6 +493,7 @@ def _failure(error):
 def critic_admits(project, conn, project_id, provider, task):
     WARNINGS.pop(task["id"], None)
     TURNS.pop(task["id"], None)
+    CLEANUPS.pop(task["id"], None)
     if not critic_due(project, task):
         return True
     try:
@@ -482,6 +511,8 @@ def critic_admits(project, conn, project_id, provider, task):
     if verdict == "fresh":
         return True
     TURNS.pop(task["id"], None)
+    for step in CLEANUPS.pop(task["id"], []):
+        print(f"[holo2] {task['id']} {_cleanup_summary(step)}")
     park_stale(project, conn, project_id, provider, task,
                [f"critic: {verdict} \u2014 {reason}"],
                why=f"the critic answered {verdict.upper()}", admitted=True,
@@ -493,6 +524,9 @@ def carry_warning(conn, run_id, task):
     turn = TURNS.pop(task["id"], None)
     if turn is not None:
         record_turn(conn, run_id, turn)
+    for step in CLEANUPS.pop(task["id"], []):
+        store.record_event(conn, run_id, "t3_cleanup", _cleanup_summary(step),
+                           level="detail", payload=json.dumps(step))
     warning = WARNINGS.pop(task["id"], None)
     if warning is not None:
         store.record_event(conn, run_id, "warning", warning)

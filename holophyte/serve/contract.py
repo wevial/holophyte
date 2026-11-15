@@ -14,6 +14,7 @@ from holophyte.serve.contract_routes import (
 )
 from holophyte.serve.contract_routes import RouteProbe as RouteProbe
 from holophyte.serve.contract_run import Precheck, Round
+from holophyte.serve.contract_search import Search
 from holophyte.serve.serve_history import Flow
 from holophyte.serve.serve_merge_queue import MergeQueue
 
@@ -953,6 +954,7 @@ ROUTES = {
     "ticket": (TicketDetail, "GET /tickets/KEY"),
     "ticket-check": (TicketCheck, "POST /tickets/check"),
     "ticket-search": (TicketSearch, "GET /tickets?q=TEXT"),
+    "search": (Search, "GET /search?q=TEXT"),
     "story": (StoryDetail, "GET /stories/KEY"),
     "scouts": (Scouts, "GET /scouts"),
     "scout": (ScoutDetail, "GET /scouts/ID"),

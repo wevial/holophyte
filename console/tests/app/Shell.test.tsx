@@ -79,11 +79,11 @@ test("a scoped hash opens its page, marks its link current and keeps the scope o
   }
 });
 
-test("the Overview badge counts the scope's Waiting on you entries, as the heading does, and hides at zero", async () => {
+test("the Overview badge counts the scope's Needs you entries, as the heading does, and hides at zero", async () => {
   await mount("#/", needsDaemons());
   expect(screen.getByRole("link", { name: "Overview, 2 waiting on you" })).toBeTruthy();
   expect(badge()!.textContent).toBe("2");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("2 waiting on you.");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("2 need you");
   cleanup();
 
   await mount("#/?project=demo", needsDaemons());
@@ -147,12 +147,12 @@ test("an unknown route links back to Overview", async () => {
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);
 });
 
-test("the sidebar sits on its own ground with a rule beside the main area, which keeps the page's ground", async () => {
+test("the sidebar sits on its own ground with a hairline beside the main area, which keeps the page's ground", async () => {
   await mount("#/");
   const sidebar = screen.getByRole("complementary", { name: "Console" }).classList;
   expect(sidebar.contains("bg-side")).toBe(true);
   expect(sidebar.contains("border-r")).toBe(true);
-  expect(sidebar.contains("border-rule")).toBe(true);
+  expect(sidebar.contains("border-rule-2")).toBe(true);
   expect(screen.getByRole("main").classList.contains("bg-side")).toBe(false);
 });
 
@@ -305,27 +305,33 @@ const toggle = () => screen.getByRole("button", { name: /^(Collapse|Expand) side
 const headerRow = () => toggle().parentElement!;
 const aside = () => screen.getByRole("complementary", { name: "Console" });
 
-test("in a browser the title row holds the panel-left toggle, then the lotus mark alone linking home", async () => {
+test("in a browser the title row holds the mark and word linking home, then the panel-left toggle; folded, the mark alone, the toggle at the rail's foot with focus kept", async () => {
   await mount("#/");
   const header = headerRow();
   expect(header.classList.contains("h-[52px]")).toBe(true);
-  expect(header.classList.contains("pl-3")).toBe(true);
   const [first, second] = Array.from(header.children);
-  expect(first).toBe(screen.getByRole("button", { name: "Collapse sidebar" }));
-  expect(first!.getAttribute("aria-expanded")).toBe("true");
-  expect(first!.classList.contains("size-7")).toBe(true);
   const home = screen.getByRole("link", { name: "holophyte" });
-  expect(second).toBe(home);
-  expect(home.textContent).toBe("");
-  expect(home.getAttribute("title")).toBe("holophyte");
+  expect(first).toBe(home);
+  expect(home.textContent).toBe("holophyte");
   expect(home.querySelectorAll("svg").length).toBe(1);
+  expect(second).toBe(screen.getByRole("button", { name: "Collapse sidebar" }));
+  expect(second!.getAttribute("aria-expanded")).toBe("true");
+  expect(second!.classList.contains("size-7")).toBe(true);
 
-  fireEvent.click(first!);
+  act(() => (second as HTMLElement).focus());
+  fireEvent.click(second!);
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
-  const folded = headerRow();
+  const folded = home.parentElement!;
   expect(folded.classList.contains("h-[52px]")).toBe(true);
-  expect(within(folded).getByRole("button", { name: "Expand sidebar" }).getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByRole("link", { name: "holophyte" })).toBeNull();
+  const foldedHome = within(folded).getByRole("link", { name: "holophyte" });
+  expect(foldedHome.textContent).toBe("");
+  expect(foldedHome.querySelectorAll("svg").length).toBe(1);
+  expect(Array.from(folded.children)).toEqual([foldedHome]);
+  const expand = screen.getByRole("button", { name: "Expand sidebar" });
+  expect(document.activeElement).toBe(expand);
+  const footer = aside().querySelector("footer")!;
+  expect(expand.parentElement!.nextElementSibling).toBe(footer);
+  expect(screen.getByRole("navigation", { name: "Pages" }).compareDocumentPosition(expand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test("the sidebar toggle draws one icon in both states, unlike the story list's chevron", async () => {
@@ -347,16 +353,16 @@ test("in the macOS app the title row clears the traffic lights and drags the win
   for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(header.classList.contains(name)).toBe(true);
   const button = screen.getByRole("button", { name: "Collapse sidebar" });
   const home = screen.getByRole("link", { name: "holophyte" });
-  expect(button.compareDocumentPosition(home) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(home.textContent).toBe("");
+  expect(home.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   for (const control of [button, home]) expect(control.classList.contains(NO_DRAG)).toBe(true);
 
   fireEvent.click(button);
   expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
-  const folded = headerRow();
+  const folded = screen.getByRole("link", { name: "holophyte" }).parentElement!;
   for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(folded.classList.contains(name)).toBe(true);
-  expect(within(folded).getByRole("button", { name: "Expand sidebar" }).classList.contains(NO_DRAG)).toBe(true);
-  expect(screen.queryByRole("link", { name: "holophyte" })).toBeNull();
+  for (const control of [screen.getByRole("button", { name: "Expand sidebar" }), within(folded).getByRole("link", { name: "holophyte" })]) {
+    expect(control.classList.contains(NO_DRAG)).toBe(true);
+  }
 });
 
 test("in the macOS app a zero-height layer drags the main pane's top 52px and no band pushes the page down", async () => {
@@ -391,6 +397,70 @@ test("theme.css lets the app's controls inside the main pane cut through its dra
   for (const name of ["main", "a", "button"]) expect(selector).toMatch(new RegExp(`\\b${name}\\b`));
 });
 
+test("without WebGL2 the shell's haze band shows the fallback, hidden from assistive technology and taking no pointer events", async () => {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = (() => null) as typeof getContext;
+  const style = document.createElement("style");
+  style.textContent = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text()).replace(/@import[^;]*;/, "");
+  document.head.appendChild(style);
+  try {
+    await mount("#/");
+    const bands = screen.getByRole("main").querySelectorAll<HTMLElement>("[data-haze]");
+    expect(bands.length).toBe(1);
+    const band = bands[0]!;
+    expect(band.classList.contains("haze-fallback")).toBe(true);
+    expect(band.querySelector("canvas")).toBeNull();
+    expect(band.getAttribute("aria-hidden")).toBe("true");
+    expect(getComputedStyle(band).pointerEvents).toBe("none");
+  } finally {
+    HTMLCanvasElement.prototype.getContext = getContext;
+    style.remove();
+  }
+});
+
+test("a WebGL2 context whose shaders fail to compile leaves the shell up with the haze band on its fallback", async () => {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  const failingGl = new Proxy({}, {
+    get: (_, name) => (name === "getExtension"
+      ? (extension: string) => (extension === "EXT_color_buffer_float" ? {} : null)
+      : name === "getShaderParameter" ? () => false : () => ({})),
+  });
+  HTMLCanvasElement.prototype.getContext = ((kind: string) => (kind === "webgl2" ? failingGl : null)) as typeof getContext;
+  try {
+    await mount("#/");
+    expect(screen.getByRole("navigation", { name: "Pages" })).toBeTruthy();
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    expect(band.classList.contains("haze-fallback")).toBe(true);
+    expect(band.querySelector("canvas")).toBeNull();
+  } finally {
+    HTMLCanvasElement.prototype.getContext = getContext;
+  }
+});
+
+test("a canvas whose getContext throws leaves the shell up with the haze band on its fallback and no canvas left behind", async () => {
+  const getContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = (() => { throw new Error("context creation blocked"); }) as typeof getContext;
+  try {
+    await mount("#/");
+    expect(screen.getByRole("navigation", { name: "Pages" })).toBeTruthy();
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    expect(band.classList.contains("haze-fallback")).toBe(true);
+    expect(band.querySelector("canvas")).toBeNull();
+  } finally {
+    HTMLCanvasElement.prototype.getContext = getContext;
+  }
+});
+
+test("a stored header effect of none renders no haze band, and with nothing stored the shell renders one", async () => {
+  localStorage.setItem("holophyte.next.effect", "none");
+  await mount("#/");
+  expect(screen.getByRole("main").querySelector("[data-haze]")).toBeNull();
+  cleanup();
+  localStorage.clear();
+  await mount("#/");
+  expect(screen.getByRole("main").querySelectorAll("[data-haze]").length).toBe(1);
+});
+
 test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords leave it", async () => {
   await mount("#/");
   fireEvent.keyDown(document, { key: "\\", metaKey: true });
@@ -405,6 +475,63 @@ test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords
     fireEvent.keyDown(document, { key: "\\", ...chord });
     expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-expanded")).toBe("true");
   }
+});
+
+const tooltip = () => screen.queryByRole("tooltip");
+const keyboardFocus = (link: HTMLElement) => act(async () => {
+  fireEvent.keyDown(document.body, { key: "Tab" });
+  link.focus();
+});
+const pointerOver = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+};
+const pointerAway = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+};
+
+test("folded, a rail link's tooltip names its page and count on keyboard focus or hover, describes the link, and leaves on blur or pointer leave", async () => {
+  localStorage.setItem("holophyte.next.rail", "folded");
+  await mount("#/", needsDaemons());
+  const overview = screen.getByRole("link", { name: "Overview, 2 waiting on you" });
+  expect(tooltip()).toBeNull();
+
+  await keyboardFocus(overview);
+  expect(tooltip()!.textContent).toBe("Overview 2");
+  expect(overview.getAttribute("aria-describedby")).toBe(tooltip()!.id);
+  await act(async () => overview.blur());
+  expect(tooltip()).toBeNull();
+
+  await pointerOver(overview);
+  expect(tooltip()!.textContent).toBe("Overview 2");
+  await pointerAway(overview);
+  expect(tooltip()).toBeNull();
+
+  const runs = screen.getByRole("link", { name: "Runs" });
+  await pointerOver(runs);
+  expect(tooltip()!.textContent).toBe("Runs");
+  expect(runs.getAttribute("aria-describedby")).toBe(tooltip()!.id);
+});
+
+test("folding and unfolding with Cmd+backslash keeps keyboard focus on the focused page link", async () => {
+  await mount("#/");
+  const runs = screen.getByRole("link", { name: "Runs" });
+  await keyboardFocus(runs);
+  for (const _press of [1, 2]) {
+    fireEvent.keyDown(document, { key: "\\", metaKey: true });
+    expect(document.activeElement).toBe(runs);
+  }
+});
+
+test("expanded, no page link carries a tooltip on focus or hover, and the current page's link is marked current", async () => {
+  await mount("#/findings", needsDaemons());
+  const findings = screen.getByRole("link", { name: /^Findings/ });
+  expect(findings.getAttribute("aria-current")).toBe("page");
+  await keyboardFocus(findings);
+  await pointerOver(findings);
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(pages().filter((link) => link.hasAttribute("aria-describedby"))).toEqual([]);
 });
 
 test("each page's heading section opens on the title row's padding", async () => {

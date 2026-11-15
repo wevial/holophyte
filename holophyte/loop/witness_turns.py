@@ -1,9 +1,12 @@
 """Witness pre-check gaps sent back to the implementer before each review round."""
+import json
 from functools import partial
+from pathlib import Path
 
 import store
 import store.read
 from holophyte.agents.fix_session import witness_turn
+from holophyte.agents.review_workspace import review_base
 from holophyte.board.projection import ledger
 from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.runs import set_phase
@@ -11,6 +14,7 @@ from holophyte.loop.stop import boundary
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids, main_baseline, witness_precheck
 from holophyte.review.briefs import witness_brief
+from holophyte.tickets import witness_once
 
 WITNESS_TURNS = 2
 
@@ -51,6 +55,13 @@ def _unnamed(entries):
             if entry["named"] == "no_file"]
 
 
+def _once_files(wt, entries):
+    paths = [check["file"] for entry in entries for check in entry["checks"]
+             if witness_once.is_once(check["file"])]
+    return {path: (Path(wt) / path).read_bytes()
+            if (Path(wt) / path).is_file() else None for path in paths}
+
+
 def _continued(conn, run_id):
     runs = [run_id]
     for earlier, outcome in conn.execute(
@@ -79,6 +90,48 @@ def _record_turn(conn, run_id, provider, task_id, turn, sha, gaps, rnd):
            provider)
 
 
+def _candidate(ok, check):
+    if check is None:
+        return "not checked"
+    if not check["exists"]:
+        return "does not exist"
+    return "passed" if ok and check.get("ran") == "ran" else check.get("ran")
+
+
+def _base_run(result):
+    if result is None:
+        return "did not run: no base run is asked for"
+    if not result["ran"]:
+        return f"did not run: {result['reason']}"
+    if result.get("unattributed"):
+        return f"did not run: {result['unattributed']}"
+    return "passed" if result["passed"] else "failed"
+
+
+def _record_once(conn, run_id, wt, base_sha, sha, ok, criteria, entries,
+                 results):
+    pairs = criterion_ids.numbered(conn, run_id, criteria)
+    named = witness_precheck.named_files([text for _, text in pairs])
+    checks = {(entry["criterion"], check["file"]): check
+              for entry in entries for check in entry["checks"]}
+    runs = {(result["criterion"], path): result for result in results
+            for path in result["files"]}
+    found = [{"criterion": n, "file": path,
+              "blob": runs.get((n, path), {}).get("blobs", {}).get(path)
+              or main_baseline.once_blob(wt, path),
+              "candidate": _candidate(ok, checks.get((n, path))),
+              "base_run": _base_run(runs.get((n, path)))}
+             for (n, _), files in zip(pairs, named) for path in files
+             if witness_once.is_once(path)]
+    if not found:
+        return
+    store.record_event(conn, run_id, "witness_once",
+                       f"one-time witnesses at {sha[:12]}: {len(found)} "
+                       "recorded", level="detail", payload=json.dumps(
+                           {"sha": sha, "base": review_base(wt, base_sha, sha),
+                            "criteria": found}))
+
+
 def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                   base_sha, sha, ticket, verify_cmd, criteria, budget_min, ok,
                   out, checks, rnd):
@@ -99,19 +152,21 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
                     "named": "ok" if files else "no_file"}
                    for (n, _), files in zip(pairs, files_by_criterion)]
     entries = _with_baseline(entries, results)
-    while ok and (gaps := _turn_gaps(entries)):
+    while (gaps := _turn_gaps(entries)) and (ok or all(
+            witness_precheck.ONCE_GAP in gap for gap in gaps)):
         turn = _turns_taken(conn, run_id) + 1
         if turn > WITNESS_TURNS:
             break
         _check_run_cap(project, conn, run_id, budget_min, sha)
         boundary(conn, run_id, "verifying", rnd=rnd)
         _record_turn(conn, run_id, provider, task_id, turn, sha, gaps, rnd)
+        uncommitted = _once_files(wt, entries)
         set_phase(conn, run_id, "verifying",
                   f"round {rnd}: witness turn {turn} of {WITNESS_TURNS}")
         head = witness_turn(project, conn, run_id, beat_s, wt, budget_min,
                             ticket, sha, gaps, timed=_timed,
                             check_cap=_check_run_cap)
-        if head == sha:
+        if head == sha and _once_files(wt, entries) == uncommitted:
             idle = (f"witness turn {turn} made no commit; review goes ahead "
                     f"with {len(gaps)} gaps")
             print(f"[holo2] {idle}")
@@ -124,6 +179,10 @@ def before_review(project, conn, run_id, provider, task_id, beat_s, wt,
         results = baseline(sha, ok=ok)
         if fresh is not None:
             entries, checked = _with_baseline(fresh, results), sha
+        elif not ok:
+            break
+    _record_once(conn, run_id, wt, base_sha, sha, ok, criteria, entries,
+                 results)
     when = (None if checked is None else "before this review" if checked == sha
             else f"at {checked[:12]}, before verify went red")
     return sha, ok, out, (witness_brief(_gaps(entries), _unnamed(entries), when)

@@ -2,10 +2,12 @@
 rerun before each review: it exists, the branch adds or changes it,
 and the verify commands ran it."""
 import json
+import posixpath
 import re
 import subprocess
 from fnmatch import fnmatchcase
 from functools import partial
+from pathlib import Path
 
 import store
 from holophyte.config.reader import VERIFY_TIMEOUT
@@ -13,6 +15,7 @@ from holophyte.loop.gates import _verify_command, sh
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids, skipped_tests
+from holophyte.tickets import witness_once
 from store.working import working
 
 SPAN = re.compile(r"`([^`\n]+)`")
@@ -26,6 +29,7 @@ EXISTING = re.compile(r"unchanged|existing|already|still pass|as before", re.I)
 GLOB = re.compile(r"[*?[]")
 FIXTURES = (skipped_tests.MODULE_FIXTURE, skipped_tests.CLASS_FIXTURE)
 NOT_RUN = "witness pre-check not run: verify failed"
+ONCE_GAP = "'s one-time witness `"
 
 
 def _dotted_path(word):
@@ -102,7 +106,25 @@ def _gaps(n, path, ran, detail):
             f"({missed['reason']})" for missed in detail]
 
 
-def _file(n, path, existing, tree, changed, sha, probed):
+def _once(n, path, wt, tree, probed):
+    canonical = posixpath.normpath(path)
+    result = {"file": path, "exists": (Path(wt) / canonical).is_file(),
+              "changed": None}
+    gaps = ([f"criterion C{n}'s one-time witness `{path}` is committed; it "
+             "stays out of the branch"] if canonical in tree else [])
+    if not result["exists"]:
+        return result, gaps + [f"criterion C{n}'s one-time witness `{path}` "
+                               "does not exist in the task worktree"]
+    ran, detail = _ran(path, probed)
+    result["ran"] = ran
+    if detail:
+        result["detail"] = detail
+    return result, gaps + _gaps(n, path, ran, detail)
+
+
+def _file(n, path, existing, tree, changed, sha, probed, wt):
+    if witness_once.is_once(path):
+        return _once(n, path, wt, tree, probed)
     glob = bool(GLOB.search(path))
     matches = ([found for found in tree if fnmatchcase(found, path)] if glob
                else [path] if path in tree else [])
@@ -158,7 +180,8 @@ def check(wt, base, sha, criteria, verify_cmd, probe):
                  "named": "ok" if files else "no_file", "checks": [],
                  "gaps": []}
         for path in files:
-            result, gaps = _file(n, path, existing, tree, changed, sha, probed)
+            result, gaps = _file(n, path, existing, tree, changed, sha,
+                                 probed, wt)
             entry["checks"].append(result)
             entry["gaps"] += gaps
         entries.append(entry)
@@ -186,13 +209,27 @@ def _probe(project, conn, run_id, beat_s, wt, command):
             return ""
 
 
+def _gaps_of(entries):
+    return [gap for entry in entries for gap in entry["gaps"]]
+
+
+def _once_gaps(wt, base, sha, pairs):
+    entries = check(wt, base, sha, pairs, "", lambda command: "")
+    for entry in entries:
+        entry["gaps"] = [gap for gap in entry["gaps"] if ONCE_GAP in gap]
+    return entries if _gaps_of(entries) else None
+
+
 def record(project, conn, run_id, beat_s, wt, base_sha, sha, criteria,
            verify_cmd, ok):
     if conn is None or run_id is None:
         return
     if not ok:
-        store.record_event(conn, run_id, "witness_precheck", NOT_RUN)
-        return
+        entries = _once_gaps(wt, base_sha, sha,
+                             criterion_ids.numbered(conn, run_id, criteria))
+        store.record_event(conn, run_id, "witness_precheck", "\n".join(
+            [NOT_RUN] + _gaps_of(entries or ())))
+        return entries
     entries = check(wt, base_sha, sha,
                     criterion_ids.numbered(conn, run_id, criteria), verify_cmd,
                     partial(_probe, project, conn, run_id, beat_s, wt))

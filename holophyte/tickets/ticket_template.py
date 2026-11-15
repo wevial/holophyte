@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from holophyte.tickets import ticket_header
+from holophyte.tickets import ticket_header, witness_once
 
 TEMPLATE_ORDER = [
     "Summary", "What / Why / How", "Reproduce", "Mock-up", "In scope",
@@ -402,6 +402,8 @@ def _gitignored_path_problems(t, repo):
     unchecked = False
     for label, text in _witnessable_texts(t):
         for token in path_candidates(text):
+            if witness_once.is_once(token):
+                continue
             ignored = _gitignored(repo, token)
             if ignored:
                 problems.append(f"gitignored path in {label}: {token}")
@@ -515,6 +517,7 @@ def _available(repo, path, declarations):
     files, directories = declarations
     normalized = str(Path(path))
     return ((repo / path).exists() or normalized in files
+            or witness_once.is_once(path)
             or any(normalized.startswith(d + "/") for d in directories)
             or _gitignored(repo, path) is True)
 

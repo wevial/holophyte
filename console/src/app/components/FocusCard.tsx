@@ -1,17 +1,16 @@
 import { useContext, useId, useState } from "react";
 import { ageOf, describe, entryKey, type NeedsYouEntry } from "../../lib/attention";
 import type { Triage } from "../../lib/contract.gen";
-import { formatAge, formatClock } from "../../lib/format";
+import { formatAge } from "../../lib/format";
 import { sinceSeen, UNREACHABLE, type HostRecord } from "../../lib/hosts";
-import { agentMs, latestEvents, workingMs } from "../../lib/runs";
-import { prLabel } from "../../lib/shipped";
+import { agentMs, workingMs } from "../../lib/runs";
 import type { AttentionItem } from "../../lib/types";
-import { blockedAsk, blockedHeadline, focusPrLabel } from "../focus";
+import { blockedAsk, blockedHeadline } from "../focus";
 import { LimitedMarkdown } from "./LimitedMarkdown";
 import type { ContractBodies } from "../fleet";
 import { useRun } from "../queries";
 import { PollDepsContext } from "../scope";
-import { STATES, stateOf } from "../state";
+import { stateOf } from "../state";
 import { CardActions } from "./CardActions";
 import { StateDot } from "./StateDot";
 import { TitleText } from "./TitleText";
@@ -32,8 +31,6 @@ export function useOpenEntry(entries: NeedsYouEntry[]): { open: number | null; t
   const toggle = (index: number) => setHeld(index === open ? null : keys[index]);
   return { open, toggle };
 }
-
-const hostOf = (hosts: Host[], item: AttentionItem) => hosts.find((host) => host.key === item.daemon);
 
 /** The title the item names, else the one its live run carries. */
 function namedTitle(item: AttentionItem, host: Host | undefined): string | null {
@@ -71,71 +68,23 @@ function whyOf(body: string, item: AttentionItem): string {
   return triage == null ? body : `${body}. ${triage}`;
 }
 
-const linkClass = "border-b border-rule text-ink-2 hover:border-ink hover:text-ink";
-
-function PullRequestLine({ item }: { item: AttentionItem }) {
-  const url = str(item.pr_url);
-  if (url == null) return <p className="text-ink-3">No pull request yet</p>;
-  return (
-    <p data-pr-line>
-      <a href={url} target="_blank" rel="noreferrer" className={linkClass}>{prLabel(url)}</a>
-    </p>
-  );
-}
-
-function LatestEvents({ run }: { run: ReturnType<typeof useRun> }) {
-  if (run.isPending) return <p className="text-ink-3">Reading the run…</p>;
-  if (run.isError) return <p className="text-bad">The run could not be read: {run.error.message}</p>;
-  const events = latestEvents(run.data.events, 3);
-  if (events.length === 0) return null;
-  return (
-    <ol aria-label="Latest progress" className="flex flex-col">
-      {events.map((event, index) => (
-        <li key={`${event.at}-${index}`} className="grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-0.5">
-          <time className="text-ink-3">{formatClock(event.at)}</time>
-          <LimitedMarkdown lines={2}>{event.summary}</LimitedMarkdown>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function stateOfEntry(entry: NeedsYouEntry) {
-  return stateOf({ attention: entry.item, readiness: { ready: entry.readyToMerge } });
-}
-
-function Detail({ entry, host, now, run, title, id }: { entry: NeedsYouEntry; host: Host | undefined; now: number; run: ReturnType<typeof useRun>; title: string | null; id: string }) {
+function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: Host | undefined; now: number; title: string | null; id: string }) {
   const { item } = entry;
   const description = describeOn(item, host, now);
   const seen = num(item.last_seen_ms);
-  const detailClass = "border-t border-dashed border-rule-2 py-4 pl-[148px] pr-5 max-[720px]:px-4";
-  if (item.kind === UNREACHABLE) {
-    return (
-      <div id={id} className={detailClass}>
-        <p className="font-read text-[16px] leading-[1.5] text-ink-2">{description.body}</p>
-        <p className="mt-1.5 font-mono text-[12px] text-ink-3">{seen == null ? "never answered" : `last seen ${formatAge(now - seen)} ago`}</p>
-      </div>
-    );
-  }
+  const sentence = "max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink";
   return (
-    <div id={id} className={detailClass}>
-      {item.kind === "blocked" ? (
-        <>
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-[16px] font-semibold text-ink">{blockedHeadline(item)}</h4>
-            {str(item.pr_url) && <a href={str(item.pr_url)!} target="_blank" rel="noreferrer" className="rounded border border-rule px-2 py-0.5 font-mono text-xs text-ink-2 hover:text-ink">{focusPrLabel(item)}</a>}
-          </div>
-          <div className="mt-2.5 max-w-[75ch] font-read text-[16px] leading-[1.5] text-ink-2 [&_button]:font-sans">
-            <LimitedMarkdown lines={4}>{blockedAsk(item)}</LimitedMarkdown>
-          </div>
-        </>
-      ) : description.body !== "" && <p className="max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink-2">{whyOf(description.body, item)}</p>}
-      {description.meta != null && <p className="mt-1.5 font-mono text-[12px] text-ink-3">{description.meta}</p>}
-      <div className="mt-4 flex flex-col gap-3.5 border-t border-dashed border-rule pt-4 font-mono text-[12.5px] leading-normal text-ink-2">
-        {item.kind !== "blocked" && <PullRequestLine item={item} />}
-        {num(item.run) != null && <LatestEvents run={run} />}
-      </div>
-      <CardActions entry={entry} host={host} actions={description.actions} title={title} />
+    <div id={id} data-need-detail className="mt-1.5 mb-2.5 flex flex-col gap-3 rounded-lg bg-(image:--need-tint) py-4 pl-12 pr-4 shadow-[inset_0_0_0_1px_var(--need-edge)] max-[720px]:px-3 [&>[data-card-actions]]:mt-0">
+      {item.kind === UNREACHABLE ? (
+        <p className={sentence}>{description.body} {seen == null ? "It never answered." : `Last seen ${formatAge(now - seen)} ago.`}</p>
+      ) : item.kind === "blocked" ? (
+        <div className={`${sentence} [&_button]:font-sans`}>
+          <LimitedMarkdown lines={2}>{item.park_kind === "fix_declined" ? `${blockedHeadline(item)}. ${blockedAsk(item)}` : blockedAsk(item)}</LimitedMarkdown>
+        </div>
+      ) : (
+        description.body !== "" && <p className={sentence}>{whyOf(description.body, item)}</p>
+      )}
+      {item.kind !== UNREACHABLE && <CardActions entry={entry} host={host} actions={description.actions} title={title} />}
     </div>
   );
 }
@@ -144,51 +93,35 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const deps = useContext(PollDepsContext);
   const detailId = useId();
   const { item } = entry;
-  const host = hostOf(hosts, item);
+  const host = hosts.find((candidate) => candidate.key === item.daemon);
   const unreachable = item.kind === UNREACHABLE;
   const runId = unreachable ? null : num(item.run);
   const run = useRun(open && runId != null ? (host?.base ?? null) : null, runId, deps);
-  const state = stateOfEntry(entry);
+  const state = stateOf({ attention: item, readiness: { ready: entry.readyToMerge } });
   const key = str(item.ticket);
   const name = key ?? str(item.host) ?? str(item.daemon) ?? item.kind;
   const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));
   const age = ageOf(item, now);
-  const prUrl = str(item.pr_url);
   return (
-    <li data-wait-row={name} data-open={open || undefined} className="group border-rule-2 [&+&]:border-t data-open:bg-need-wash data-open:shadow-[inset_2px_0_0_var(--need)]">
-      <div className="flex items-center pr-4 hover:bg-paper-2 group-data-open:hover:bg-transparent">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={detailId}
-          onClick={onToggle}
-          className="grid min-h-[50px] min-w-0 flex-1 grid-cols-[20px_88px_minmax(0,1fr)_auto] items-center gap-3 py-2 pl-4 pr-3 text-left font-mono text-[12px] text-ink-3 max-[720px]:grid-cols-[20px_minmax(0,1fr)_auto]"
-        >
-          <StateDot state={state} hideWord />
-          <span className="truncate text-ink-2">{name}</span>
-          <span className="truncate font-read text-[15px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
-          <span>
-            {STATES[state].word}
-            {age != null && ` · ${formatAge(age)}`}
-          </span>
-        </button>
-        {prUrl != null && (
-          <a
-            href={prUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="shrink-0 whitespace-nowrap border-b border-rule font-mono text-[12px] text-ink hover:border-ink"
-          >
-            {prLabel(prUrl).replace(/^PR (?=#)/, "")}
-          </a>
-        )}
-      </div>
-      {open && <Detail entry={entry} host={host} now={now} run={run} title={title ?? key} id={detailId} />}
+    <li data-wait-row={name} data-open={open || undefined} className="group border-b border-rule-2 data-open:border-b-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={detailId}
+        onClick={onToggle}
+        className="grid min-h-8 w-full grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 group-data-open:border-b group-data-open:border-rule-2 max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
+      >
+        <StateDot state={state} hideWord />
+        <span className="truncate text-ink-2">{name}</span>
+        <span className="truncate font-read text-[14.5px] font-medium leading-[1.35] text-ink max-[720px]:hidden">{title != null && <TitleText>{title}</TitleText>}</span>
+        <span data-age>{age != null && formatAge(age)}</span>
+      </button>
+      {open && <Detail entry={entry} host={host} now={now} title={title ?? key} id={detailId} />}
     </li>
   );
 }
 
-/** Waiting on you: a row each, oldest first, the open one showing what the
+/** Needs you: a row each, oldest first, the open one showing what the
  *  entry asks and the actions that answer it. */
 export function FocusCard({
   entries,
@@ -203,9 +136,8 @@ export function FocusCard({
   hosts: Host[];
   now: number;
 }) {
-  if (entries.length === 0) return null;
   return (
-    <ul aria-label="Waiting on you" className="border border-rule bg-paper">
+    <ul aria-label="Needs you">
       {entries.map((entry, at) => (
         <WaitRow key={entryKey(entry, at)} entry={entry} hosts={hosts} now={now} open={at === open} onToggle={() => toggle(at)} />
       ))}

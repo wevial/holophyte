@@ -52,6 +52,7 @@ PINNED = {
     "holophyte/agents/review_workspace.py": 6,
     "holophyte/agents/roles.py": 8,
     "holophyte/agents/session_arms.py": 0,
+    "holophyte/agents/t3_cleanup.py": 0,
     "holophyte/agents/transcript_config.py": 0,
     "holophyte/agents/transcripts.py": 4,
     "holophyte/agents/turn_progress.py": 0,
@@ -302,6 +303,7 @@ PINNED = {
     "holophyte/serve/contract_prefs.py": 0,
     "holophyte/serve/contract_routes.py": 0,
     "holophyte/serve/contract_run.py": 0,
+    "holophyte/serve/contract_search.py": 0,
     "holophyte/serve/day_log.py": 1,
     "holophyte/serve/serve_actions.py": 4,
     "holophyte/serve/serve_ask.py": 0,
@@ -343,6 +345,7 @@ PINNED = {
     "holophyte/tickets/ticket_depends.py": 3,
     "holophyte/tickets/ticket_header.py": 4,
     "holophyte/tickets/ticket_template.py": 23,
+    "holophyte/tickets/witness_once.py": 2,
 
     "store/__init__.py": 16,
     "store/agent_routes.py": 1,

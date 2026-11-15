@@ -8,6 +8,10 @@ Run: python3 -m unittest discover -s tests -p 'test_witness_turns.py' -v
 """
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -364,6 +368,198 @@ class WitnessTurns(RunningRepo):
         self.assertTrue(cap.startswith("out of time:"), cap)
         self.assertEqual(self.read("SELECT outcomeReason, failureKind FROM runs"),
                          [(cap, "budget")])
+
+
+ONCE_PATH = ".holophyte-witness/test_save_label.py"
+ONCE_CRITERION = ("The Save button label reads Done (witnessed once: "
+                  f"`{ONCE_PATH}`).")
+ONCE_VERIFY = ("python3 -m unittest discover -s .holophyte-witness"
+               " -p 'test_save_label.py'")
+ONCE_TEST = """import unittest
+
+import label
+
+
+class SaveLabel(unittest.TestCase):
+    def test_the_label_reads_done(self):
+        self.assertEqual(label.SAVE, "Done")
+"""
+BOTH_ONCE = Reply(
+    f"CRITERION 1: met \u2014 {ONCE_PATH}::SaveLabel::test_the_label_reads_done"
+    "\nCRITERION 2: met \u2014 tests/test_label.py::SaveLabel::"
+    "test_the_label_reads_done\nVERDICT: APPROVE")
+
+
+class WritesOnce(Writes):
+    """Writes the label module and the one-time test, commits with
+    `git add -A` (or also `git add -f` the test), and keeps what
+    `git check-ignore` says of the test in the task worktree."""
+
+    def __init__(self, force=False):
+        super().__init__({"label.py": 'SAVE = "Done"\n', ONCE_PATH: ONCE_TEST})
+        self.force, self.ignored = force, None
+
+    def play(self, cwd, turn):
+        if self.force:
+            (cwd / ONCE_PATH).write_text(ONCE_TEST)
+            _git(cwd, "add", "-f", ONCE_PATH)
+        reply = super().play(cwd, turn)
+        self.ignored = subprocess.run(
+            ["git", "check-ignore", "-q", ONCE_PATH], cwd=cwd).returncode == 0
+        return reply
+
+
+class RewritesUncommitted:
+
+    role = IMPLEMENT
+
+    def play(self, cwd, turn):
+        (cwd / ONCE_PATH).write_text(ONCE_TEST)
+        return "rewrote the one-time test; nothing to commit"
+
+
+class Untracks:
+
+    role = IMPLEMENT
+
+    def play(self, cwd, turn):
+        _git(cwd, "rm", "-q", "--cached", ONCE_PATH)
+        _git(cwd, "commit", "-q", "-m", "keep the one-time test out")
+        return "committed: keep the one-time test out"
+
+
+class WitnessedOnce(RunningRepo):
+
+    def results(self):
+        return [json.loads(payload) for (payload,) in self.read(
+            "SELECT payload FROM runEvents"
+            " WHERE kind = 'witness_precheck_results' ORDER BY seq")]
+
+    def test_an_ignored_one_time_test_is_run_and_never_committed(self):
+        writes = WritesOnce()
+        fake = self.run_task(writes, APPROVE, criteria=(ONCE_CRITERION,),
+                             verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "review"])
+        self.assertTrue(writes.ignored)
+        (result,) = self.results()
+        listed = self.git("ls-tree", "-r", "--name-only",
+                          result["sha"]).split()
+        self.assertIn("label.py", listed)
+        self.assertNotIn(ONCE_PATH, listed)
+        (entry,) = result["criteria"]
+        self.assertEqual(entry["checks"], [
+            {"file": ONCE_PATH, "exists": True, "changed": None,
+             "ran": "ran"}])
+        self.assertEqual(entry["gaps"], [])
+        self.assertEqual(self.summaries("witness_turn"), [])
+
+    def test_a_force_added_one_time_test_gets_a_witness_turn(self):
+        fake = self.run_task(WritesOnce(force=True), Untracks(), APPROVE,
+                             criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"criterion C1's one-time witness `{ONCE_PATH}` is "
+                      "committed; it stays out of the branch", turn)
+
+    def test_a_dot_slash_one_time_path_committed_gets_a_witness_turn(self):
+        dotted = f"./{ONCE_PATH}"
+        fake = self.run_task(
+            WritesOnce(force=True), Untracks(), APPROVE, verify=ONCE_VERIFY,
+            criteria=(ONCE_CRITERION.replace(ONCE_PATH, dotted),))
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"criterion C1's one-time witness `{dotted}` is "
+                      "committed; it stays out of the branch", turn)
+
+    def test_an_uncommitted_repair_of_a_one_time_test_is_checked_again(self):
+        skipped = ONCE_TEST.replace("    def test_",
+                                    '    @unittest.skip("not yet")\n'
+                                    "    def test_")
+        fake = self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: skipped}),
+            RewritesUncommitted(), APPROVE, criteria=(ONCE_CRITERION,),
+            verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        self.assertEqual(self.summaries("witness_turn_idle"), [])
+        first, second = self.summaries("witness_precheck")
+        self.assertIn("ran only skipped in verify (not yet)", first)
+        self.assertIn("1 of 1 criteria witnessed", second)
+
+    def test_an_unwritten_one_time_test_gets_a_witness_turn(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            fake = self.run_task(
+                Writes({"label.py": 'SAVE = "Done"\n'}),
+                RewritesUncommitted(), APPROVE, criteria=(ONCE_CRITERION,),
+                verify=ONCE_VERIFY)
+
+        self.assertEqual(fake.roles, ["implement", "implement", "review"])
+        (turn,) = self.summaries("witness_turn")
+        self.assertIn(f"criterion C1's one-time witness `{ONCE_PATH}` does "
+                      "not exist in the task worktree", turn)
+        self.assertIn("1 of 1 criteria witnessed",
+                      self.summaries("witness_precheck")[-1])
+
+    def test_round_one_records_only_the_one_time_witness(self):
+        durable = "A test in `tests/test_label.py` witnesses it."
+        self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: ONCE_TEST,
+                    "tests/test_label.py": ONCE_TEST}),
+            BOTH_ONCE, criteria=(ONCE_CRITERION, durable),
+            verify=f"{ONCE_VERIFY}\npython3 -m unittest discover -s tests"
+                   " -p 'test_label.py'")
+
+        candidate = self.git("log", "main", "--format=%H", "--grep",
+                             "change and test").strip()
+        blob = subprocess.run(["git", "hash-object", "--stdin"],
+                              input=ONCE_TEST, capture_output=True, text=True,
+                              check=True).stdout.strip()
+        (payload,) = self.read("SELECT payload FROM runEvents"
+                               " WHERE kind = 'witness_once'")
+        recorded = json.loads(payload[0])
+        self.assertEqual(recorded["sha"], candidate)
+        self.assertEqual(recorded["criteria"], [
+            {"criterion": 1, "file": ONCE_PATH, "blob": blob,
+             "candidate": "passed", "base_run": "failed"}])
+
+    def test_a_base_run_stopped_before_the_one_time_test_did_not_run(self):
+        self.run_task(WritesOnce(), APPROVE, criteria=(ONCE_CRITERION,),
+                      verify=f"test -f label.py\n{ONCE_VERIFY}")
+
+        (payload,) = self.read("SELECT payload FROM runEvents"
+                               " WHERE kind = 'witness_once'")
+        (entry,) = json.loads(payload[0])["criteria"]
+        self.assertEqual(entry["base_run"],
+                         "did not run: it stopped at `test -f label.py`, "
+                         f"before the line that names {ONCE_PATH}")
+
+    def test_a_one_time_file_beside_a_durable_test_gets_its_own_base_run(self):
+        both = ("`tests/test_label.py` checks the label (witnessed once: "
+                f"`{ONCE_PATH}`).")
+        self.run_task(
+            Writes({"label.py": 'SAVE = "Done"\n', ONCE_PATH: RUNS,
+                    "tests/test_label.py": ONCE_TEST}),
+            Idle(), APPROVE, criteria=(both,),
+            verify="python3 -m unittest discover -s tests -p 'test_label.py'"
+                   f"\n{ONCE_VERIFY}")
+
+        (payload,) = self.read("SELECT payload FROM runEvents"
+                               " WHERE kind = 'witness_once'")
+        (entry,) = json.loads(payload[0])["criteria"]
+        self.assertEqual(entry["base_run"], "passed")
+
+    def test_both_briefs_keep_the_one_time_test_out_of_commits(self):
+        fake = self.run_task(WritesOnce(), APPROVE,
+                             criteria=(ONCE_CRITERION,), verify=ONCE_VERIFY)
+
+        self.assertIn(f"C1: `{ONCE_PATH}`", fake.turns[0].goal)
+        self.assertIn("leave it uncommitted", fake.turns[0].goal)
+        review = self.review_goal(fake)
+        self.assertIn(f"C1: `{ONCE_PATH}`", review)
+        self.assertIn("in the worktree but in no commit", review)
 
 
 class FixSelfCheck(RunningRepo):

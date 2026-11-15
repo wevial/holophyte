@@ -1,52 +1,15 @@
-import { useId, useState, type ReactNode } from "react";
-import { FoldChevron } from "./icons";
+import type { ReactNode } from "react";
 
-export function Section({
-  label,
-  count,
-  hot = false,
-  summary,
-  defaultOpen = true,
-  onToggle,
-  children,
-}: {
-  label: string;
-  count?: number;
-  hot?: boolean;
-  summary?: ReactNode;
-  defaultOpen?: boolean;
-  onToggle?: (open: boolean) => void;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const body = useId();
-  const toggle = () => {
-    setOpen(!open);
-    onToggle?.(!open);
-  };
+export function Section({ label, count, aside, empty, footer, children }: { label: string; count?: number; aside?: ReactNode; empty: string; footer?: ReactNode; children?: ReactNode }) {
   return (
-    <section aria-label={label} className="flex flex-col gap-3.5">
-      <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h2 className="flex items-center gap-2.5">
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={body}
-            onClick={toggle}
-            className="group -ml-1.5 inline-flex min-h-10 items-center gap-2.5 pl-1.5 font-sans text-[19px] font-bold tracking-[-0.005em] text-ink"
-          >
-            <FoldChevron open={open} />
-            {label}
-          </button>
-          {count != null && (
-            <span className={`font-mono text-[13px] font-medium leading-none ${hot && count > 0 ? "text-need" : "text-ink-3"}`}>{count}</span>
-          )}
-        </h2>
-        {summary != null && <span className="truncate font-mono text-[12.5px] leading-[1.4] text-ink-3">{summary}</span>}
+    <section aria-label={label} className="flex flex-col">
+      <header className="flex min-h-8 items-baseline gap-2 border-b border-rule-2 px-2.5 pb-2">
+        <h2 className="font-sans text-[14px] font-semibold text-ink">{label}</h2>
+        {count != null && <span data-count className="font-mono text-[12px] text-ink-3">{count}</span>}
+        {aside != null && <span className="ml-auto self-center">{aside}</span>}
       </header>
-      <div id={body} hidden={!open}>
-        {open && children}
-      </div>
+      {count == null ? null : count === 0 ? <p className="px-2.5 py-2.5 font-mono text-[12px] text-ink-3">{empty}</p> : children}
+      {count != null && footer}
     </section>
   );
 }

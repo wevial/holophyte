@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Search",
+  "description": "GET /search?q=TEXT",
+  "$ref": "#/$defs/Search",
+  "$defs": {
+    "SearchTicket": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ticket",
+        "title",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "SearchRun": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "started_ms": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "ticket",
+        "title",
+        "phase",
+        "outcome",
+        "started_ms"
+      ],
+      "additionalProperties": true
+    },
+    "SearchScout": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "queued",
+            "planning",
+            "swarming",
+            "synthesizing",
+            "answering",
+            "done",
+            "failed",
+            "stopped"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "phase"
+      ],
+      "additionalProperties": true
+    },
+    "SearchFinding": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "round": {
+          "type": "integer"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "line": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "run",
+        "round",
+        "severity",
+        "message",
+        "path",
+        "line"
+      ],
+      "additionalProperties": true
+    },
+    "Search": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer"
+        },
+        "tickets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SearchTicket"
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SearchRun"
+          }
+        },
+        "scouts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SearchScout"
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SearchFinding"
+          }
+        }
+      },
+      "required": [
+        "q",
+        "limit",
+        "tickets",
+        "runs",
+        "scouts",
+        "findings"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

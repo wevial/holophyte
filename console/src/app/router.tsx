@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import {
   createHashHistory,
   createRootRoute,
@@ -10,6 +10,8 @@ import {
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { APP_DRAG, inMacApp } from "../lib/view";
+import { applyTextSize, useHeaderEffect, useTextSize } from "./appearance";
+import { Haze } from "./components/Haze";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
@@ -40,12 +42,15 @@ import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./s
 
 function Shell() {
   const [macApp] = useState(inMacApp);
+  const { effect } = useHeaderEffect();
+  const { textSize } = useTextSize();
+  useLayoutEffect(() => applyTextSize(textSize), [textSize]);
   return (
     <ToastProvider>
       <SettingsMarksProvider>
-      <div data-app-shell={macApp ? "macos" : undefined} className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
+      <div data-app-shell={macApp ? "macos" : undefined} data-shell="" className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
-        <main className="min-w-0 flex-1 min-[720px]:overflow-y-auto">
+        <main className="relative isolate min-w-0 flex-1 min-[720px]:overflow-y-auto">
           {macApp && (
             <div aria-hidden="true" className="sticky top-0 z-10 h-0">
               <div className={`pointer-events-none absolute inset-x-0 top-0 h-[52px] ${APP_DRAG}`} />
@@ -53,6 +58,7 @@ function Shell() {
           )}
           <TokenPrompt />
           <Outlet />
+          {effect === "haze" && <Haze />}
         </main>
       </div>
       </SettingsMarksProvider>
