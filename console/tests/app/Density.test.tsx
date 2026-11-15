@@ -89,16 +89,13 @@ test("density still switches the document and pressed choice when every storage 
   }
 });
 
-test("every Overview running, queued and pull request row and Runs and Tickets table row opts into density", async () => {
+test("every Overview running and waiting row and Runs and Tickets table row opts into density", async () => {
   await mount("#/");
   const running = screen.getByRole("region", { name: "Running" });
   const liveRows = within(running).getAllByRole("link", { name: /^DEMO-(3|7) / });
   expect(liveRows).toHaveLength(2);
   for (const row of liveRows) expect(row.hasAttribute("data-row")).toBe(true);
-  const queued = running.querySelectorAll("[data-queued]");
-  expect(queued).toHaveLength(1);
-  for (const row of queued) expect(row.hasAttribute("data-row")).toBe(true);
-  const prs = screen.getByRole("region", { name: "Pull requests" }).querySelectorAll("[data-pr-row] > div:first-child");
+  const prs = screen.getByRole("region", { name: "Waiting" }).querySelectorAll("[data-pr-row] > div:first-child");
   expect(prs).toHaveLength(1);
   for (const row of prs) expect(row.hasAttribute("data-row")).toBe(true);
   cleanup();

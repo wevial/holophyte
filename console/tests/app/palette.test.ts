@@ -130,7 +130,7 @@ describe("the Hybrid palette", () => {
     }
   });
 
-  test("next components take their colours from theme tokens, leaving only the Appearance swatches as hex", async () => {
+  test("next components, the Appearance tiles included, take their colours from theme tokens with no hex", async () => {
     expect(colourHits('className="bg-p1 text-[#171a2c]"')).toEqual(["#171a2c"]);
     const root = new URL("../../src/app/", import.meta.url).pathname;
     const hits: Record<string, string[]> = {};
@@ -138,8 +138,6 @@ describe("the Hybrid palette", () => {
       const found = colourHits(await Bun.file(root + file).text());
       if (found.length > 0) hits[file] = [...new Set(found)].sort();
     }
-    expect(hits).toEqual({
-      "components/AppearanceTab.tsx": ["#0d0a15", "#15121f", "#5a4ebf", "#b9a3ff", "#f6f5fa", "#ffffff"],
-    });
+    expect(hits).toEqual({});
   });
 });

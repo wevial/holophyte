@@ -32,7 +32,12 @@ from fake_agent import (  # noqa: E402 - after sys.path
     Reply,
     _git,
 )
-from loop_fixture import LoopFixture, StubProvider, a_task  # noqa: E402 - as above
+from loop_fixture import (  # noqa: E402 - as above
+    UNTRIMMED,
+    LoopFixture,
+    StubProvider,
+    a_task,
+)
 
 import holophyte.loop.implement  # noqa: E402 - as above
 import store  # noqa: E402 - as above
@@ -147,6 +152,7 @@ class RunningRepo(LoopFixture):
 
     def setUp(self):
         super().setUp()
+        self.configure(UNTRIMMED)
         (self.target / ".gitignore").write_text("__pycache__/\n")
         (self.target / "tests" / "test_runs.py").write_text(RUNS)
         self.git("add", "-A")
@@ -701,7 +707,7 @@ class Asserting(unittest.TestCase):
                       " module and failed", fake.turns[3].goal)
 
     def test_the_run_beats_while_the_self_check_runs_tests(self):
-        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n")
+        self.configure("[supervisor]\nheartbeat_stale_min = 0.05\n" + UNTRIMMED)
         beating = f"""import sqlite3
 import time
 import unittest

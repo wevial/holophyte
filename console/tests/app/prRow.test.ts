@@ -1,62 +1,26 @@
 import { expect, test } from "bun:test";
-import { rowFacts } from "../../src/app/prRow";
+import type { AttentionItem } from "../../src/lib/types";
+import { prWait } from "../../src/app/prRow";
 
-test("a row's facts colour only what is off and name a change request only when one stands", () => {
-  expect(rowFacts({ checks: "success", open_threads: 0, review: "review_required" })).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-  ]);
-  expect(rowFacts({ checks: "failure", open_threads: 3, review: "changes_requested" })).toEqual([
-    { label: "checks failing", tone: "bad" },
-    { label: "3 open threads", tone: "warn" },
-    { label: "changes requested", tone: "bad" },
-  ]);
-  expect(rowFacts({ checks: null, open_threads: null, review: null })).toEqual([
-    { label: "checks unknown", tone: "neutral" },
-    { label: "threads unknown", tone: "neutral" },
-  ]);
+const MINUTE = 60_000;
+const parkOn = (parkKind: string, pr: object): AttentionItem => ({
+  kind: "pr_open", level: "attention", run: 12, ticket: "DEMO-12", park_kind: parkKind,
+  pr_url: "https://github.com/example/demo/pull/45", pr: { state: "ready", ...pr },
 });
 
-test("a row's facts add its review rounds and, in warn, each pull request or ticket it waits on, only when sent", () => {
-  const pr = { checks: "success", open_threads: 0, review: "review_required" };
-  const waits_on = [
-    { ticket: "KO-1", pr_url: "https://github.com/example/repo/pull/2375" },
-    { ticket: "KO-3", pr_url: null },
-  ];
-  expect(rowFacts(pr, { round: 6, waits_on })).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-    { label: "6 rounds", tone: "neutral" },
-    { label: "waits on PR #2375", tone: "warn" },
-    { label: "waits on KO-3", tone: "warn" },
-  ]);
-  expect(rowFacts(pr, { round: 1 })).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-    { label: "1 round", tone: "neutral" },
-  ]);
-  expect(rowFacts(pr, {})).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-  ]);
+test("a draft parked on CI reads On CI with what CI is doing, not Draft", () => {
+  const wait = prWait("on_ci", parkOn("ci", { state: "draft", checks: "pending" }), 20 * MINUTE);
+  expect([wait.status, wait.line]).toEqual(["On CI", "checks running · 20m"]);
 });
 
-test("a row's facts end in its diff size when all three counts are sent, after its rounds and what it waits on", () => {
-  const pr = { checks: "success", open_threads: 0, review: "review_required", changed_files: 13, additions: 718, deletions: 85 };
-  expect(rowFacts(pr, { round: 4, waits_on: [{ ticket: "KO-3", pr_url: null }] })).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-    { label: "4 rounds", tone: "neutral" },
-    { label: "waits on KO-3", tone: "warn" },
-    { label: "13 files +718 −85", tone: "neutral" },
-  ]);
-  expect(rowFacts({ ...pr, changed_files: 1, additions: 3, deletions: 0 })).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-    { label: "1 file +3 −0", tone: "neutral" },
-  ]);
-  expect(rowFacts({ ...pr, deletions: null })).toEqual([
-    { label: "checks ✓", tone: "ok" },
-    { label: "0 threads", tone: "neutral" },
-  ]);
+test("a draft held for review reads Draft over any not-ready reason its readiness gives", () => {
+  const wait = prWait("parked", parkOn("pull_request", { state: "draft", checks: "pending" }), 20 * MINUTE, "checks_pending");
+  expect([wait.status, wait.line]).toEqual(["Draft · 20m", ""]);
+});
+
+test("an On CI line drops what it cannot name: failing checks leave the age alone, and no age leaves the CI words alone", () => {
+  const failing = prWait("on_ci", parkOn("ci", { checks: "failure" }), 20 * MINUTE);
+  expect([failing.status, failing.line]).toEqual(["On CI", "20m"]);
+  const unaged = prWait("on_ci", parkOn("ci", { checks: "success" }), null);
+  expect(unaged.line).toBe("checks green, quiet period");
 });

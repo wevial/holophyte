@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   createHashHistory,
   createRootRoute,
@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { APP_DRAG, inMacApp } from "../lib/view";
-import { readHeaderEffect } from "./appearance";
+import { applyTextSize, useHeaderEffect, useTextSize } from "./appearance";
 import { CommandPalette } from "./components/CommandPalette";
 import { Haze } from "./components/Haze";
 import { Sidebar } from "./components/Sidebar";
@@ -43,7 +43,9 @@ import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./s
 
 function Shell() {
   const [macApp] = useState(inMacApp);
-  const [effect] = useState(readHeaderEffect);
+  const { effect } = useHeaderEffect();
+  const { textSize } = useTextSize();
+  useLayoutEffect(() => applyTextSize(textSize), [textSize]);
   const [palette, setPalette] = useState(false);
   const opener = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -61,7 +63,7 @@ function Shell() {
   return (
     <ToastProvider>
       <SettingsMarksProvider>
-      <div data-app-shell={macApp ? "macos" : undefined} className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
+      <div data-app-shell={macApp ? "macos" : undefined} data-shell="" className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
         <Sidebar />
         <main className="relative isolate min-w-0 flex-1 min-[720px]:overflow-y-auto">
           {macApp && (

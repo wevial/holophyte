@@ -586,6 +586,10 @@ Each module, one line:
   verify.
 - `holophyte/loop/trim_brief.py` — `TRIM_BRIEF`, the vendored trim procedure
   the trim turn is sent, and the `trim:` pass subjects it commits under.
+- `holophyte/loop/retire.py` — the retire step between the approving review
+  and the merge gate: one turn deleting run-added tests that fail the
+  test-value gate, its commit kept only while scope, verify and the
+  net-test-removal guard hold.
 - `holophyte/loop/shadow.py` — `run_shadow`: one shadow implementation of a
   run's ticket by `[agents.implementer_shadow]` in its own worktree, recorded
   as a `shadow_result` event.

@@ -2,7 +2,7 @@ import type { PrFacts } from "../lib/attention";
 import { prLabel } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 
-export function focusPrLabel(item: AttentionItem): string | null {
+function focusPrLabel(item: AttentionItem): string | null {
   const pr = item.pr as PrFacts | null | undefined;
   if (typeof pr?.number === "number" && Number.isFinite(pr.number)) return `PR #${pr.number}`;
   return typeof item.pr_url === "string" && item.pr_url ? prLabel(item.pr_url) : null;
