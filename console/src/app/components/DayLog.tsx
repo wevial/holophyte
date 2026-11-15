@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useState } from "react";
+import { useId, useLayoutEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { LedgerEntry } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
@@ -8,6 +8,7 @@ import { categoryOf, keeps, phraseOf, projectColours, useDayLogFilter, type DayL
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
 import { SettingsIcon } from "./icons";
+import { STATE_ICONS } from "./StateDot";
 
 const DAY_LOG_LINES = 25;
 
@@ -66,7 +67,49 @@ function TicketKey({ entry, colour }: { entry: LedgerEntry; colour: string | und
   );
 }
 
-function DayLogEntry({ entry, quiet, colour }: { entry: LedgerEntry; quiet: boolean; colour: string | undefined }) {
+const GLYPHS: Partial<Record<LineTone, ReactNode>> = {
+  live: STATE_ICONS.merged,
+  bad: STATE_ICONS.failed,
+  ask: STATE_ICONS.needs_you,
+  act: STATE_ICONS.todo,
+};
+
+const GLYPH_TEXT: Record<LineTone, string> = { live: "text-live", bad: "text-bad", act: "text-act", ask: "text-ask-ink", wait: "text-wait", "ink-3": "text-ink-3" };
+
+function Glyph({ tone }: { tone: LineTone }) {
+  const icon = GLYPHS[tone];
+  return (
+    <span data-tone={tone} aria-hidden="true" className={`relative flex size-4 items-center justify-center bg-canvas ${GLYPH_TEXT[tone]}`}>
+      {icon == null ? (
+        <span className="block size-1 rounded-full bg-current" />
+      ) : (
+        <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+          {icon}
+        </svg>
+      )}
+    </span>
+  );
+}
+
+/** The log's connecting line beside one row: from the first row's glyph
+ *  down, solid beside each row and fading beside the last. */
+function Rail({ first, last }: { first: boolean; last: boolean }) {
+  const fill = last ? "bg-linear-to-b from-rule to-transparent" : "bg-rule";
+  return <span data-rail aria-hidden="true" className={`absolute bottom-0 left-1/2 w-px -translate-x-1/2 ${first ? "top-4" : "top-0"} ${fill}`} />;
+}
+
+const ROW = "grid min-h-8 grid-cols-[40px_16px_minmax(0,1fr)] gap-x-2.5";
+
+function RailCell({ tone, first, last }: { tone?: LineTone; first: boolean; last: boolean }) {
+  return (
+    <span className="relative flex justify-center self-stretch pt-2">
+      <Rail first={first} last={last} />
+      {tone != null && <Glyph tone={tone} />}
+    </span>
+  );
+}
+
+function DayLogEntry({ entry, quiet, colour, first, last }: { entry: LedgerEntry; quiet: boolean; colour: string | undefined; first: boolean; last: boolean }) {
   const [open, setOpen] = useState(false);
   const phrase = phraseOf(entry);
   const [clipped, setClipped] = useState(false);
@@ -84,14 +127,14 @@ function DayLogEntry({ entry, quiet, colour }: { entry: LedgerEntry; quiet: bool
   const tone = quiet ? "ink-3" : toneOf(entry);
   const phraseTone = quiet ? "text-ink-3" : tone === "ask" ? "text-ask-ink" : "";
   return (
-    <li data-quiet={quiet || undefined} className={`${LINE} grid grid-cols-[44px_minmax(0,1fr)] gap-2.5 py-[7px] pl-4 ${quiet ? "text-ink-3" : ""}`}>
-      <span data-tone={tone} aria-hidden="true" className={`absolute top-3 -left-1 size-[7px] ${MARK[tone]}`} />
-      <time dateTime={new Date(entry.at).toISOString()} className="text-ink-3">
+    <li data-quiet={quiet || undefined} className={`${ROW} ${quiet ? "text-ink-3" : ""}`}>
+      <time dateTime={new Date(entry.at).toISOString()} className="py-[7px] font-mono text-[12px] leading-[18px] text-ink-3">
         {formatClock(entry.at)}
       </time>
-      <div className="min-w-0">
-        <span className="flex flex-wrap items-baseline gap-x-2">
-          <span className={quiet ? "opacity-75" : ""}>
+      <RailCell tone={tone} first={first} last={last} />
+      <div className="min-w-0 py-[7px] leading-[18px]">
+        <span className="flex flex-wrap items-baseline gap-x-1.5">
+          <span className={quiet ? "opacity-75" : "text-ink"}>
             <TicketKey entry={entry} colour={colour} />
           </span>
           {more ? (
@@ -113,7 +156,7 @@ function DayLogEntry({ entry, quiet, colour }: { entry: LedgerEntry; quiet: bool
         </span>
         <Chips entry={entry} />
         {open && (
-          <pre className="mt-1.5 max-h-[calc(16*1.45em)] overflow-y-auto whitespace-pre-wrap break-words border-l border-rule pl-2 text-ink-3">
+          <pre className="mt-1.5 max-h-[calc(16*1.45em)] overflow-y-auto whitespace-pre-wrap break-words border-l border-rule pl-2 font-mono text-[12px] text-ink-3">
             {entry.text}
           </pre>
         )}
@@ -150,11 +193,12 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
   const shown = listed.slice(0, DAY_LOG_LINES);
   const earlier = listed.length - shown.length;
   const keys = keysOf(shown);
+  const rows = shown.length + (earlier > 0 ? 1 : 0);
   return (
     <aside aria-labelledby={preview ? undefined : heading} aria-label={preview ? "Today's log preview" : undefined}
       className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
       <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 bg-canvas py-1">
-        <Heading id={heading} className="mr-auto font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
+        <Heading id={heading} className="mr-auto font-sans text-[14px] font-semibold leading-none text-ink">
           Today's log
         </Heading>
         {preview && <span className="font-sans text-[13.5px] text-ink">{kept.length} of {entries.length}</span>}
@@ -172,12 +216,18 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
       {shown.length === 0 ? (
         <p className="font-mono text-[12.5px] text-ink-3">{entries.length === 0 ? "Nothing logged since midnight." : "Nothing in the filter since midnight."}</p>
       ) : (
-        <ol className="ml-[5px] pt-1 font-mono text-[13px] leading-[1.5] text-ink-2">
+        <ol className="pt-1 font-sans text-[13px] text-ink-2">
           {shown.map((entry, index) => (
-            <DayLogEntry key={keys[index]} entry={entry} quiet={!keeps(filter, entry)}
+            <DayLogEntry key={keys[index]} entry={entry} quiet={!keeps(filter, entry)} first={index === 0} last={index === rows - 1}
               colour={entry.project == null ? undefined : colours.get(projectName(entry.project))} />
           ))}
-          {earlier > 0 && <li className={`${LINE} py-[7px] pl-4 text-ink-3`}>and {earlier} earlier today</li>}
+          {earlier > 0 && (
+            <li className={`${ROW} text-ink-3`}>
+              <span />
+              <RailCell first={false} last />
+              <span className="py-[7px] leading-[18px]">and {earlier} earlier today</span>
+            </li>
+          )}
         </ol>
       )}
     </aside>

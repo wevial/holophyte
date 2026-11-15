@@ -4,8 +4,9 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
-import { fakeDeps, settle } from "../harness";
-import { blocked, ciPark, DEMO, failed, fleet, merged, MINUTE, NOW, prPark, run } from "./needsFleet";
+import type { ShippedRow, Status } from "../../src/lib/contract.gen";
+import { fakeDeps, peersFetch, settle } from "../harness";
+import { blocked, ciPark, DEMO, failed, fleet, merged, MINUTE, NOW, prPark, run, SERVE, WRITER } from "./needsFleet";
 
 async function mount(hash: string, fetchImpl: Fetch) {
   window.location.hash = hash;
@@ -146,62 +147,96 @@ test("before any scoped host answers there is no heading and the sections stand 
   }
 });
 
-const ledgerOf = (count: number): Fetch => {
-  const hosts = fleet({ items: [] }, { items: [] });
-  const entries = Array.from({ length: count }, (_, index) => ({
-    at: NOW - (index + 1) * MINUTE, run: index + 1, ticket: `DEMO-${index + 1}`, pr_url: null, kind: "merge", source: "loop", text: `MERGED to main as ${index + 1}.`,
-  }));
-  const ledger = (url: string) => Response.json({ active_outages: [], since: 0, limit: 200, entries: url.startsWith(`${DEMO}/`) ? entries : [] });
-  return async (url, init) => (url.includes("/ledger?") ? ledger(url) : hosts(url, init));
-};
+const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
+const LOTUS = "http://runner-host:7710";
+const WEDNESDAY = new Date(2026, 9, 14, 15, 0).getTime();
+const on = (date: number, hour: number, minute = 0) => new Date(2026, 9, date, hour, minute).getTime();
 
-const dayLog = () => screen.getByRole("complementary", { name: "Today's log" });
-
-const STATE = { "first:": ":first-child", "last:": ":last-child", "not-last:": ":not(:last-child)" } as const;
-
-function lineOf(item: Element): string[] {
-  return classes(item).flatMap((name) => {
-    if (name.startsWith("before:")) return [name.slice("before:".length)];
-    const state = Object.entries(STATE).find(([prefix]) => name.startsWith(prefix + "before:"));
-    if (!state || !item.matches(state[1])) return [];
-    return [name.slice(state[0].length + "before:".length)];
-  });
+/** holophyte on DEMO, croton on WRITER and lotuspod on LOTUS, each paging
+ *  its `/shipped` merges from `pages`; every `/shipped` url asked is kept. */
+function weekFleet(pages: Record<string, ShippedRow[][]>, asked: string[] = []): Fetch {
+  const projects: Record<string, string> = { [DEMO]: "/srv/dev/holophyte", [WRITER]: "/srv/dev/croton", [LOTUS]: "/srv/dev/lotuspod" };
+  const polls = peersFetch(DEMO, Object.fromEntries(Object.entries(projects).map(([base, project]) => [base, {
+    status: { ...working, project, runs: [], queued: [] },
+    attention: { level: "none", now: WEDNESDAY, project, items: [] },
+  }])));
+  return async (url) => {
+    const base = Object.keys(projects).find((candidate) => url.startsWith(`${candidate}/shipped?`));
+    if (base == null) return polls(url);
+    asked.push(url);
+    const own = pages[base] ?? [[]];
+    const before = new URL(url).searchParams.get("before");
+    const at = before == null ? 0 : own.findIndex((page) => String(page.at(-1)?.id) === before) + 1;
+    const page = own[at] ?? [];
+    return Response.json({ rows: page, next_before: at < own.length - 1 ? page.at(-1)!.id : null, limit: 200 });
+  };
 }
 
-const SOLID = ["bg-rule"];
-const FADE = ["bg-linear-to-b", "from-rule", "to-transparent"];
-const fill = (line: string[]) => line.filter((name) => name.startsWith("bg-") || name.startsWith("from-") || name.startsWith("to-"));
-const logItems = () => [...within(dayLog()).getByRole("list").children];
+const mergesOn = (first: number, ticket: string, count: number, endedMs: number) =>
+  Array.from({ length: count }, (_, index) => merged(first + index, `${ticket}-${first + index}`, endedMs - index * MINUTE));
 
-test("Today's log draws its line per entry, solid beside each entry and fading to transparent beside the last, from the first marker down", async () => {
-  await mount("#/", ledgerOf(2));
-  expect(classes(within(dayLog()).getByRole("list")).filter((name) => name.startsWith("border"))).toEqual([]);
-  const [first, last] = logItems();
-  expect(logItems()).toHaveLength(2);
-  expect(fill(lineOf(first!))).toEqual(SOLID);
-  expect(fill(lineOf(last!))).toEqual(FADE);
-  for (const item of logItems()) {
-    expect(classes(item)).toContain("relative");
-    expect(lineOf(item)).toEqual(expect.arrayContaining(["absolute", "-left-px", "w-px", "inset-y-0"]));
-    expect(classes(item.querySelector("[data-tone]"))).toEqual(expect.arrayContaining(["top-3", "-left-1"]));
+async function mountWeek(hash: string, fetchImpl: Fetch, now = WEDNESDAY) {
+  window.location.hash = hash;
+  const fake = fakeDeps(fetchImpl);
+  fake.clock.now = now;
+  render(
+    <QueryClientProvider client={consoleQueryClient()}>
+      <ConsoleApp base={DEMO} pollDeps={fake.deps} />
+    </QueryClientProvider>,
+  );
+  for (let round = 0; round < 6; round += 1) await act(settle);
+}
+
+const weekTotal = () => within(screen.getByRole("heading", { name: "This week" }).parentElement!).getByText(/merged$/).textContent;
+const dayButton = (day: string) => screen.getByRole("button", { name: new RegExp(`^${day}, `) });
+const barOf = (day: string) => dayButton(day).querySelector<HTMLElement>("[data-bar]");
+const segmentsOf = (day: string) => [...barOf(day)!.querySelectorAll<HTMLElement>("[data-segment]")].map((segment) => [segment.getAttribute("data-segment"), segment.style.flexGrow, segment.style.background]);
+
+test("This week scales each day's bar to the busiest day, stacks it by project in each project's colour and totals the week", async () => {
+  const wednesday = [...mergesOn(10, "HOLO", 6, on(14, 11)), ...mergesOn(30, "HOLO", 2, on(12, 10))];
+  await mountWeek("#/", weekFleet({ [DEMO]: [wednesday], [WRITER]: [mergesOn(50, "CROTON", 2, on(14, 9))] }));
+  expect(barOf("Wednesday")!.style.height).toBe("64px");
+  expect(segmentsOf("Wednesday")).toEqual([["holophyte", "6", "var(--p-violet)"], ["croton", "2", "var(--p-teal)"]]);
+  expect(barOf("Monday")!.style.height).toBe("16px");
+  expect(segmentsOf("Monday")).toEqual([["holophyte", "2", "var(--p-violet)"]]);
+  expect(weekTotal()).toBe("10 merged");
+});
+
+test("This week starts at local Monday's midnight: a Sunday 23:30 merge on the next page is left out and no later page is asked", async () => {
+  const asked: string[] = [];
+  const monday = merged(21, "HOLO-21", on(12, 0, 30));
+  const sunday = merged(20, "HOLO-20", on(11, 23, 30));
+  const older = merged(19, "HOLO-19", on(10, 12));
+  await mountWeek("#/", weekFleet({ [DEMO]: [[monday], [sunday], [older]] }, asked));
+  expect(weekTotal()).toBe("1 merged");
+  expect(dayButton("Monday").getAttribute("aria-label")).toBe("Monday, 1 merged: holophyte 1");
+  expect(asked.filter((url) => url.startsWith(`${DEMO}/shipped?limit=200`))).toEqual([`${DEMO}/shipped?limit=200`, `${DEMO}/shipped?limit=200&before=21`]);
+});
+
+test("on a Wednesday, Thursday to Sunday draw a stub and no bar, and only Wednesday's letter is in --ink at weight 600", async () => {
+  await mountWeek("#/", weekFleet({ [DEMO]: [mergesOn(10, "HOLO", 3, on(14, 11))] }));
+  for (const day of ["Thursday", "Friday", "Saturday", "Sunday"]) {
+    expect(barOf(day)).toBeNull();
+    expect(dayButton(day).querySelector("[data-stub]")).not.toBeNull();
   }
-  expect(lineOf(first!)).toContain("top-3");
-  expect(lineOf(last!)).not.toContain("top-3");
+  const bold = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].filter((day) => {
+    const letter = classes(dayButton(day).querySelector("[data-day-letter]"));
+    return letter.includes("text-ink") && letter.includes("font-semibold");
+  });
+  expect(bold).toEqual(["Wednesday"]);
 });
 
-test("with an and N earlier today line, that line fades and every entry above it is solid", async () => {
-  await mount("#/", ledgerOf(27));
-  const items = logItems();
-  const earlier = items.at(-1)!;
-  expect(earlier.textContent).toBe("and 2 earlier today");
-  expect(fill(lineOf(earlier))).toEqual(FADE);
-  for (const item of items.slice(0, -1)) expect(fill(lineOf(item))).toEqual(SOLID);
-});
+test("each day's button names its merges by project, the card on hover lists them, and a picked project counts its own alone", async () => {
+  const tuesday = { [DEMO]: [mergesOn(10, "HOLO", 18, on(13, 18))], [WRITER]: [mergesOn(40, "CROTON", 9, on(13, 17))], [LOTUS]: [mergesOn(60, "LOTUS", 4, on(13, 16))] };
+  await mountWeek("#/", weekFleet(tuesday));
+  const button = screen.getByRole("button", { name: "Tuesday, 31 merged: holophyte 18, croton 9, lotuspod 4" });
+  expect(button.textContent).not.toContain("croton");
+  fireEvent.mouseEnter(button);
+  expect(button.textContent).toContain("Tuesday 31 merged");
+  expect(button.textContent).toContain("holophyte18croton9lotuspod4");
+  cleanup();
 
-test("a one-entry log's line fades and starts at its marker", async () => {
-  await mount("#/", ledgerOf(1));
-  const [only] = logItems();
-  expect(logItems()).toHaveLength(1);
-  expect(fill(lineOf(only!))).toEqual(FADE);
-  expect(lineOf(only!)).toContain("top-3");
+  await mountWeek("#/?project=croton", weekFleet(tuesday));
+  expect(dayButton("Tuesday").getAttribute("aria-label")).toBe("Tuesday, 9 merged: croton 9");
+  expect(weekTotal()).toBe("9 merged");
 });

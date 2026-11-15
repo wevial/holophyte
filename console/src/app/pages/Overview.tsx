@@ -9,9 +9,10 @@ import { PullRequestGlyph, waitingRows, WaitingRows } from "../components/PrLane
 import { laneGroups, liveRuns, RunningRows, WorkerDots, witnessLines } from "../components/RunLane";
 import { Section } from "../components/Section";
 import { STATE_ICONS, TONE_TEXT } from "../components/StateDot";
+import { WeekBars } from "../components/WeekBars";
 import { firstLoadLine, noticeLines, silentHosts, staleConsole, tokenWanted } from "../notices";
 import { useOverview } from "../overview";
-import { useDayLedger, usePeerList } from "../queries";
+import { useDayLedger, useMergedWeek, usePeerList } from "../queries";
 import { keepScope, OriginContext, PollDepsContext, useConsolePeers, type ScopeSearch } from "../scope";
 import type { Tone } from "../state";
 
@@ -37,6 +38,8 @@ export function Overview() {
   const view = useOverview();
   const deps = useContext(PollDepsContext);
   const log = useDayLedger(view.hosts, view.now, deps);
+  const week = useMergedWeek(view.hosts, view.now, deps.fetch);
+  const colours = projectColours(view.hosts);
   const origin = useContext(OriginContext);
   const { hosts: everyHost } = useConsolePeers();
   const peers = usePeerList(origin, everyHost.length === 0, deps);
@@ -113,11 +116,12 @@ export function Overview() {
             </Link>
           ) : undefined}
         >
-          <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={projectColours(view.hosts)} />
+          <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
         </Section>
       </div>
-      <div className="hidden min-w-0 min-[1200px]:block min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:flex-[0_0_330px] min-[1600px]:self-start">
-        <DayLog entries={log.entries} />
+      <div className="hidden min-w-0 flex-col gap-8 min-[1200px]:flex min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:flex-[0_0_330px] min-[1600px]:self-start">
+        <WeekBars rows={week} now={view.now} colours={colours} />
+        <DayLog entries={log.entries} className="min-h-0 flex-1" />
       </div>
     </div>
   );

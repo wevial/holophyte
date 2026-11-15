@@ -444,3 +444,28 @@ test("each host's whole ledger answer stays readable by its key beside the folde
   expect(hook.result.current.answers.get(addressOf(WRITER))?.entries).toHaveLength(1);
   queries.clear();
 });
+
+const merges = (count: number) => ledgerOf(...Array.from({ length: count }, (_, index) => entry(at(11, 59 - index), "merge", "loop", `DEMO-${index + 1}`, "MERGED to main.")));
+const SOLID = ["bg-rule"];
+const FADE = ["bg-linear-to-b", "from-rule", "to-transparent"];
+const railsOf = () => within(log()).getAllByRole("listitem").map((row) => {
+  const rail = row.querySelector("[data-rail]")!.getAttribute("class")!.split(/\s+/);
+  return { fill: rail.filter((name) => /^(bg|from|to)-/.test(name)), fromGlyph: rail.includes("top-4") };
+});
+
+test("with three Today entries the rail starts at the first glyph, is solid beside the first two and fades beside the last", async () => {
+  await mount("#/", fleet({ ledger: merges(3) }, {}).fetch);
+  expect(railsOf()).toEqual([{ fill: SOLID, fromGlyph: true }, { fill: SOLID, fromGlyph: false }, { fill: FADE, fromGlyph: false }]);
+});
+
+test("with an and N earlier today line, that line's rail fades and every entry above it is solid", async () => {
+  await mount("#/", fleet({ ledger: merges(27) }, {}).fetch);
+  const rows = within(log()).getAllByRole("listitem");
+  expect(rows.at(-1)!.textContent).toBe("and 2 earlier today");
+  expect(railsOf().map((rail) => rail.fill)).toEqual([...Array.from({ length: 25 }, () => SOLID), FADE]);
+});
+
+test("a one-entry log's rail starts at its glyph and fades", async () => {
+  await mount("#/", fleet({ ledger: merges(1) }, {}).fetch);
+  expect(railsOf()).toEqual([{ fill: FADE, fromGlyph: true }]);
+});
