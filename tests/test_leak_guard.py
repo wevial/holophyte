@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
 from loop_fixture import (  # noqa: E402
+    UNTRIMMED,
     IdleThenTimeout,
     LoopFixture,
     MergeModeFixture,
@@ -401,7 +402,7 @@ class Amend(Commit):
 
 class ReviewRoundTests(PrivateText, LoopFixture):
     def test_an_approved_candidate_adding_a_match_gets_a_fix_turn(self):
-        self.configure(CONFIG)
+        self.configure(CONFIG + UNTRIMMED)
         out = self.main_output(
             Commit("Add the client test", path="tests/test_api.py",
                    body=f"def test_api():\n    URL = '{LEAK}'\n"),

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   createHashHistory,
   createRootRoute,
@@ -11,6 +11,7 @@ import {
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { APP_DRAG, inMacApp } from "../lib/view";
 import { applyTextSize, useHeaderEffect, useTextSize } from "./appearance";
+import { CommandPalette } from "./components/CommandPalette";
 import { Haze } from "./components/Haze";
 import { Sidebar } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
@@ -45,6 +46,20 @@ function Shell() {
   const { effect } = useHeaderEffect();
   const { textSize } = useTextSize();
   useLayoutEffect(() => applyTextSize(textSize), [textSize]);
+  const [palette, setPalette] = useState(false);
+  const opener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (palette) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      event.preventDefault();
+      opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setPalette(true);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [palette]);
   return (
     <ToastProvider>
       <SettingsMarksProvider>
@@ -61,6 +76,7 @@ function Shell() {
           {effect === "haze" && <Haze />}
         </main>
       </div>
+      {palette && <CommandPalette onClosed={() => setPalette(false)} returnTo={() => opener.current} />}
       </SettingsMarksProvider>
     </ToastProvider>
   );

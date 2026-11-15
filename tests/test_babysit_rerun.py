@@ -15,7 +15,7 @@ sys.path.insert(0, str(HERE.parent))  # factory.py imports store by name
 sys.path.insert(0, str(HERE))  # `discover -s tests` and `-m unittest` alike
 import babysit_fixture as cases  # noqa: E402
 from fake_agent import APPROVE, Commit, Idle  # noqa: E402
-from loop_fixture import MergeModeFixture, StubProvider, a_task  # noqa: E402
+from loop_fixture import UNTRIMMED, MergeModeFixture, StubProvider, a_task  # noqa: E402
 
 import holophyte.cli.operator  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
@@ -51,7 +51,7 @@ class BabysitRerunTests(cases.BabysitHelpers, MergeModeFixture):
         `after_rerun` read in order, the last for good (the rerun's own red
         job without them); green on a later head when `green_after_fix`.
         `rollup` is the head's status rollup state, None for none."""
-        self.configure('[merge]\nmode = "pr"\n' + config)
+        self.configure('[merge]\nmode = "pr"\n' + config + UNTRIMMED)
         self.fake_route(refuse_rerun=refuse_rerun,
                         states=[self.pr_state(checks=rollup)])
         self.job_log.write_text(log)
