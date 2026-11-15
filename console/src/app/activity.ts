@@ -28,6 +28,8 @@ export interface ActivityGroup {
   running: boolean;
   steps: ActivityStep[];
   round: Round | null;
+  /** The review round's number, set before its row exists. */
+  number: number | null;
   /** The round's criteria that were not met or unwitnessed. */
   marks: RoundCriterion[];
   /** The element id a link to this group's round scrolls to. */
@@ -71,7 +73,7 @@ const isEdge = (event: RunEvent, from: string | null, to: string | null) => {
 };
 
 function draft(kind: ActivityKind, at: number, title: string, fields: Partial<Draft> = {}): Draft {
-  return { kind, at, title, sub: [], tone: "ok", steps: [], round: null, marks: [], anchor: null, end: null, ...fields };
+  return { kind, at, title, sub: [], tone: "ok", steps: [], round: null, number: null, marks: [], anchor: null, end: null, ...fields };
 }
 
 /** Notes this run read, and unread ones made before it ended. */
@@ -173,12 +175,12 @@ function roundGroup(detail: RunDetail, events: RunEvent[], round: Round, opened:
   const model = round.reviewer_model ? ` · ${round.reviewer_model}` : "";
   const review: ActivityStep = { at: round.started_ms, text: `${final ? "Adjudication" : "Review"}${model}`, ms: span(round.started_ms, round.ended_ms), quiet: false };
   const marks = round.criteria.filter((criterion) => criterion.status !== "met");
-  if (final) return draft("final", opened, "Final check", { ...finalWords(round), steps: [verify, review], round, marks, end: round.ended_ms });
+  if (final) return draft("final", opened, "Final check", { ...finalWords(round), steps: [verify, review], round, number: round.round, marks, end: round.ended_ms });
   const loop = events.find((event) => isEdge(event, "reviewing", "addressing") && event.at >= round.started_ms && event.at < nextStart);
   const fixed = loop == null ? undefined : events.find((event) => isEdge(event, "addressing", "verifying") && event.at >= loop.at);
   const fix: ActivityStep[] = loop == null ? [] : [{ at: loop.at, text: "Fix", ms: span(loop.at, fixed?.at), quiet: false }];
   const end = loop == null ? round.ended_ms : (fixed?.at ?? null);
-  return draft("round", opened, `Round ${round.round}`, { ...reviewWords(round), steps: [verify, review, ...fix], round, marks, end });
+  return draft("round", opened, `Round ${round.round}`, { ...reviewWords(round), steps: [verify, review, ...fix], round, number: round.round, marks, end });
 }
 
 /** Each review round from the verify that led into it, then the verify a live run is in before its next round. */
@@ -198,7 +200,7 @@ function roundGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round, 
   const number = (reviewed.at(-1)?.round ?? 0) + 1;
   const final = number > detail.run.max_rounds;
   const verify: ActivityStep = { at: pending.at, text: verifyText(events, pending.at, Infinity, used), ms: null, quiet: false };
-  return [...groups, draft(final ? "final" : "round", pending.at, final ? "Final check" : `Round ${number}`, { steps: [verify], tone: "neutral" })];
+  return [...groups, draft(final ? "final" : "round", pending.at, final ? "Final check" : `Round ${number}`, { steps: [verify], tone: "neutral", number })];
 }
 
 /** The pull request's writing, push and opening as one group, and a resumed run's pickup. */
@@ -246,7 +248,7 @@ function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, b
   const groups = held.map((round) => {
     const marks = round.criteria.filter((criterion) => criterion.status !== "met");
     const words = reviewWords(round);
-    return draft("covering_review", round.started_ms, "Covering review", { ...words, sub: [`round ${round.round}`, ...words.sub], round, marks, anchor: roundAnchor(round.round), end: round.ended_ms });
+    return draft("covering_review", round.started_ms, "Covering review", { ...words, sub: [`round ${round.round}`, ...words.sub], round, number: round.round, marks, anchor: roundAnchor(round.round), end: round.ended_ms });
   });
   const newest = events.findLast((event) => event.kind === "babysit_step") === step;
   const reviewing = detail.run.outcome == null && detail.run.phase === "reviewing" && held.every((round) => round.ended_ms != null);
@@ -254,7 +256,7 @@ function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, b
   const begun = events.findLast((event) => isEdge(event, null, "reviewing") && COVERING_BEGUN.test(event.summary) && event.at >= since);
   if (!newest || !reviewing || begun == null) return groups;
   const number = Math.max(0, ...detail.rounds.map((round) => round.round)) + 1;
-  return [...groups, draft("covering_review", Math.max(step.at, begun.at), "Covering review", { sub: [`round ${number}`], tone: "neutral", anchor: roundAnchor(number) })];
+  return [...groups, draft("covering_review", Math.max(step.at, begun.at), "Covering review", { sub: [`round ${number}`], tone: "neutral", number, anchor: roundAnchor(number) })];
 }
 
 function babysitGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
@@ -266,7 +268,7 @@ function babysitGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round
       return groups;
     }
     const round = [...babysat].find(([, step]) => step === event)?.[0] ?? null;
-    const held = { round, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
+    const held = { round, number: round?.round ?? null, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
     if (event.summary === "checks") {
       used.add(event);
       return [draft("checks", event.at, "Checks", held)];
