@@ -5,7 +5,7 @@ import { prLabel, shortSha } from "../lib/shipped";
 import { noteAuthor } from "./progress";
 import { CHECK_FIX_ROUND } from "./run";
 
-export type ActivityKind = "before" | "implement" | "round" | "final" | "pull_request" | "pickup" | "threads" | "checks" | "fix_ci";
+export type ActivityKind = "before" | "implement" | "round" | "final" | "pull_request" | "pickup" | "threads" | "checks" | "fix_ci" | "covering_review";
 
 export type ActivityTone = "ok" | "warn" | "bad" | "wait" | "act" | "live" | "neutral";
 
@@ -30,6 +30,8 @@ export interface ActivityGroup {
   round: Round | null;
   /** The round's criteria that were not met or unwitnessed. */
   marks: RoundCriterion[];
+  /** The element id a link to this group's round scrolls to. */
+  anchor: string | null;
 }
 
 export interface ActivityNow {
@@ -68,7 +70,7 @@ const isEdge = (event: RunEvent, from: string | null, to: string | null) => {
 };
 
 function draft(kind: ActivityKind, at: number, title: string, fields: Partial<Draft> = {}): Draft {
-  return { kind, at, title, sub: [], tone: "ok", steps: [], round: null, marks: [], end: null, ...fields };
+  return { kind, at, title, sub: [], tone: "ok", steps: [], round: null, marks: [], anchor: null, end: null, ...fields };
 }
 
 /** Notes this run read, and unread ones made before it ended. */
@@ -235,9 +237,32 @@ function fixingRound(events: RunEvent[], fix: number): RegExpExecArray | null {
   return round < 0 ? null : CHECK_FIX_ROUND.exec(events[round]!.summary);
 }
 
-function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
+export const roundAnchor = (round: number) => `round-${round}`;
+
+/** One group per round a covering review step holds, since retries collapse into the step, then the round a live run is reviewing. */
+function coveringGroups(detail: RunDetail, events: RunEvent[], step: RunEvent, babysat: Map<Round, RunEvent>): Draft[] {
+  const held = [...babysat].filter(([, at]) => at === step).map(([round]) => round).sort((a, b) => a.round - b.round);
+  const groups = held.map((round) => {
+    const marks = round.criteria.filter((criterion) => criterion.status !== "met");
+    const words = reviewWords(round);
+    return draft("covering_review", round.started_ms, "Covering review", { ...words, sub: [`round ${round.round}`, ...words.sub], round, marks, anchor: roundAnchor(round.round), end: round.ended_ms });
+  });
+  const newest = events.findLast((event) => event.kind === "babysit_step") === step;
+  const reviewing = detail.run.outcome == null && detail.run.phase === "reviewing" && held.every((round) => round.ended_ms != null);
+  if (!newest || !reviewing) return groups;
+  const number = Math.max(0, ...detail.rounds.map((round) => round.round)) + 1;
+  const at = Math.max(step.at, ...held.map((round) => round.ended_ms!));
+  return [...groups, draft("covering_review", at, "Covering review", { sub: [`round ${number}`], tone: "neutral", anchor: roundAnchor(number) })];
+}
+
+function babysitGroups(detail: RunDetail, events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
   return events.flatMap((event, index): Draft[] => {
     if (event.kind !== "babysit_step") return [];
+    if (event.summary === "covering_review") {
+      const groups = coveringGroups(detail, events, event, babysat);
+      if (groups.length > 0) used.add(event);
+      return groups;
+    }
     const round = [...babysat].find(([, step]) => step === event)?.[0] ?? null;
     const held = { round, marks: round?.criteria.filter((criterion) => criterion.status !== "met") ?? [] };
     if (event.summary === "checks") {
@@ -316,7 +341,7 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
     ...implementGroup(detail, events, used),
     ...roundGroups(detail, events, babysat, used),
     ...pullRequestGroups(events, used),
-    ...babysitGroups(events, babysat, used),
+    ...babysitGroups(detail, events, babysat, used),
   ].sort((a, b) => a.at - b.at);
   const during = notes.filter((note) => !carried.includes(note));
   place(drafts, [...eventSteps(detail, events, used), ...during.map(noteStep), ...askSteps(detail, asks)]);

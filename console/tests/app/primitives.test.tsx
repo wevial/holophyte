@@ -6,7 +6,11 @@ import { BarChart, Change, LineChart } from "../../src/app/components/FlowCharts
 import { Section } from "../../src/app/components/Section";
 import { StageChip } from "../../src/app/components/StageChip";
 import { StateDot } from "../../src/app/components/StateDot";
+import { RunActivity } from "../../src/app/components/RunActivity";
+import { runActivity } from "../../src/app/activity";
 import { flowWeekly, weeklyTips } from "../../src/app/flow";
+import type { Round, RunDetail } from "../../src/lib/contract.gen";
+import { SERVE } from "./needsFleet";
 import { STATES, type State } from "../../src/app/state";
 
 afterEach(cleanup);
@@ -16,6 +20,7 @@ const sheet = new DOMParser().parseFromString(
   "text/html",
 );
 const themeCss = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
+const served = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const GEOMETRY = ["d", "cx", "cy", "r", "x", "y", "width", "height", "pathLength", "stroke-dasharray"];
 
 function shapes(svg: Element) {
@@ -295,4 +300,32 @@ test("a rounds point taken over several hosts names the host medians it is the m
   expect(weeklyTips(single, false).rounds(single.rounds[0]!, 0).context).toBe("median over 100 merges");
   expect(spread.rounds).toEqual([5]);
   expect(weeklyTips(spread, false).rounds(spread.rounds[0]!, 0).context).toBe("median across 2 hosts' medians");
+});
+
+test("each round a retried covering review recorded under one collapsed step is its own target in Progress", () => {
+  const T = Date.UTC(2026, 9, 22, 14, 0);
+  const MIN = 60_000;
+  const url = "https://github.com/o/r/pull/2400";
+  const covering = (n: number, verdict: string): Round =>
+    ({ ...served.rounds[0]!, round: n, verdict, instructions: [], operator_notes: [], criteria: [], findings: [], started_ms: T + n * 10 * MIN, ended_ms: T + n * 10 * MIN + 5 * MIN }) as Round;
+  const detail: RunDetail = {
+    ...served,
+    run: { ...served.run, id: 12, phase: "merge_gate", started_ms: T, ended_ms: null, outcome: null, max_rounds: 3 },
+    events: [
+      { at: T, kind: "pull_request", summary: `resuming run 392's candidate holo/x at f1da4c08e5f4 on ${url} for another babysit pass` },
+      { at: T + 5 * MIN, kind: "babysit_step", summary: "covering_review" },
+    ],
+    rounds: [covering(1, "changes_requested"), covering(2, "changes_requested"), covering(3, "approved")],
+    steer_notes: [],
+    criteria: [],
+    precheck: null,
+  };
+  const { container } = render(<RunActivity activity={runActivity(detail, [], T + 60 * MIN)} detail={detail} base="http://daemon" project="holophyte" />);
+  const targets = ["round-1", "round-2", "round-3"].map((id) => container.querySelector(`#${id}`));
+  expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
+  expect(targets.map((target) => target!.querySelector("[data-group-title]")!.textContent)).toEqual([
+    "Covering review · round 1 · changes requested",
+    "Covering review · round 2 · changes requested",
+    "Covering review · round 3 · passed",
+  ]);
 });

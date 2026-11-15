@@ -74,6 +74,7 @@ function Group({ group, open, onToggle, line, fates, current, tail }: GroupProps
   const folds = group.steps.length > 0 || findings.length > 0 || tail != null;
   return (
     <li
+      id={group.anchor ?? undefined}
       data-group={group.kind}
       data-running={group.running ? "" : undefined}
       data-current={current ?? undefined}
