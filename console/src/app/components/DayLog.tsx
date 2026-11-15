@@ -91,19 +91,15 @@ function Glyph({ tone }: { tone: LineTone }) {
   );
 }
 
-/** The log's connecting line beside one row: from the first row's glyph
- *  down, solid beside each row and fading beside the last. */
-function Rail({ first, last }: { first: boolean; last: boolean }) {
-  const fill = last ? "bg-linear-to-b from-rule to-transparent" : "bg-rule";
-  return <span data-rail aria-hidden="true" className={`absolute bottom-0 left-1/2 w-px -translate-x-1/2 ${first ? "top-4" : "top-0"} ${fill}`} />;
-}
-
 const ROW = "grid min-h-8 grid-cols-[40px_16px_minmax(0,1fr)] gap-x-2.5";
 
+/** A row's glyph over the log's connecting line: from the first row's glyph
+ *  down, solid beside each row and fading beside the last. */
 function RailCell({ tone, first, last }: { tone?: LineTone; first: boolean; last: boolean }) {
+  const fill = last ? "bg-linear-to-b from-rule to-transparent" : "bg-rule";
   return (
     <span className="relative flex justify-center self-stretch pt-2">
-      <Rail first={first} last={last} />
+      <span data-rail aria-hidden="true" className={`absolute bottom-0 left-1/2 w-px -translate-x-1/2 ${first ? "top-4" : "top-0"} ${fill}`} />
       {tone != null && <Glyph tone={tone} />}
     </span>
   );
