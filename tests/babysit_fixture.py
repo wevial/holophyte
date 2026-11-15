@@ -14,7 +14,7 @@ import holophyte.pr.pr_status
 import store
 import store.tickets
 from tests.fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle, Reply
-from tests.loop_fixture import BRANCH, IdleThenTimeout
+from tests.loop_fixture import BRANCH, UNTRIMMED, IdleThenTimeout
 
 MINUTE = 60 * 1000
 T0 = 1_700_000_000_000
@@ -589,7 +589,7 @@ class ConflictingMainHelpers:
         """A run parked on its pull request by a declined nit thread,
         under `approve = "human"`; `work` is the implementer step that
         made the candidate. Returns the approved candidate's sha."""
-        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n' + UNTRIMMED)
         self.fake_route(states=[self.pr_state([self.NIT])])
         self.loop(work, APPROVE, Idle(""),
                   Reply("THREAD 1: DECLINE -- a naming preference"),

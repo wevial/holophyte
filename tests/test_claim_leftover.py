@@ -21,6 +21,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
+    UNTRIMMED,
     CommitThenTimeout,
     IdleThenTimeout,
     LoopFixture,
@@ -357,6 +358,7 @@ class LeftoverWorktreeTests(LoopFixture):
         """The conflict is the implementer's first commit, not a person's
         park: the brief opens by naming the path, and the run reaches its
         first verify with the merge committed -- MERGE_HEAD gone."""
+        self.configure(UNTRIMMED)
         self.conflicting_leftover()
         resolve = ResolveMerge(self.TEST_FILE, self.BOTH_TESTS)
         review = ApproveNotingMergeHead()

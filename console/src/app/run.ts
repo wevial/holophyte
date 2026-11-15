@@ -278,7 +278,7 @@ function verdictSentence(facts: Facts): string {
       return clause(`Parked on ${pr}`, blocker?.label ?? "");
     }
     case "stale":
-      return `No heartbeat for ${formatSettled(facts.heartbeatMs)}. It is up in Waiting on you.`;
+      return `No heartbeat for ${formatSettled(facts.heartbeatMs)}. It is up in Needs you on the Overview.`;
     case "question":
       return clause("It asks you", firstLine(item?.question));
     case "paused":

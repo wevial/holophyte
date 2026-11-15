@@ -1,7 +1,6 @@
-import { waitingOnCi, type Fact } from "../lib/attention";
+import { waitingOnCi } from "../lib/attention";
 import type { PullRequestFacts } from "../lib/contract.gen";
 import { formatAge } from "../lib/format";
-import { prLabel } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import type { State, Tone } from "./state";
 
@@ -34,44 +33,4 @@ export function prWait(state: State, item: AttentionItem, ageMs: number | null, 
   if (state === "on_ci") return { status: "On CI", tone: "ink-2", line };
   const notReady = state === "ready_to_merge" || reason == null ? undefined : NOT_READY[reason];
   return { status: notReady ?? "Your review", tone: "need", line };
-}
-
-const CHECKS: Record<string, Fact> = {
-  success: { label: "checks ✓", tone: "ok" },
-  failure: { label: "checks failing", tone: "bad" },
-  pending: { label: "checks running", tone: "neutral" },
-};
-
-function threadsFact(open: unknown): Fact {
-  if (open === 0) return { label: "0 threads", tone: "neutral" };
-  if (typeof open === "number") return { label: `${open} open ${open === 1 ? "thread" : "threads"}`, tone: "warn" };
-  if (typeof open === "string" && open !== "") return { label: `${open} open threads`, tone: "warn" };
-  return { label: "threads unknown", tone: "neutral" };
-}
-
-function waitsOnFacts(waitsOn: unknown): Fact[] {
-  if (!Array.isArray(waitsOn)) return [];
-  return waitsOn.flatMap((entry: { ticket?: unknown; pr_url?: unknown }) => {
-    const label = typeof entry?.pr_url === "string" ? prLabel(entry.pr_url) : typeof entry?.ticket === "string" ? entry.ticket : null;
-    return label == null ? [] : [{ label: `waits on ${label}`, tone: "warn" as const }];
-  });
-}
-
-function sizeFact(pr: Pick<PullRequestFacts, "changed_files" | "additions" | "deletions"> | null): Fact[] {
-  const { changed_files: files, additions, deletions } = pr ?? {};
-  if (typeof files !== "number" || typeof additions !== "number" || typeof deletions !== "number") return [];
-  return [{ label: `${files} ${files === 1 ? "file" : "files"} +${additions} −${deletions}`, tone: "neutral" }];
-}
-
-export function rowFacts(
-  pr: Pick<PullRequestFacts, "checks" | "review" | "open_threads" | "changed_files" | "additions" | "deletions"> | null,
-  { round, waits_on }: { round?: unknown; waits_on?: unknown } = {},
-): Fact[] {
-  const facts: Fact[] = [
-    (pr?.checks != null ? CHECKS[pr.checks] : undefined) ?? { label: "checks unknown", tone: "neutral" },
-    threadsFact(pr?.open_threads),
-  ];
-  if (pr?.review === "changes_requested") facts.push({ label: "changes requested", tone: "bad" });
-  if (typeof round === "number") facts.push({ label: `${round} ${round === 1 ? "round" : "rounds"}`, tone: "neutral" });
-  return [...facts, ...waitsOnFacts(waits_on), ...sizeFact(pr)];
 }

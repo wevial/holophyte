@@ -1,4 +1,3 @@
-import type { ComponentProps } from "react";
 import { phaseLabel } from "../../lib/runs";
 import type { State } from "../state";
 import { StateDot } from "./StateDot";
@@ -42,18 +41,5 @@ export function StageChip(props: StageText & { state?: State; sub?: string | nul
         {sub != null && <span className="text-ink-3"> · {sub}</span>}
       </span>
     </span>
-  );
-}
-
-/** A tab over the rows after it in a lane's list: `label` behind `state`'s
- *  icon, then `sub`, with `children` beside it. */
-export function StageTab({ label, state, sub, children, ...item }: { label: string; state: State; sub?: string | null } & ComponentProps<"li">) {
-  return (
-    <li {...item} className="flex flex-wrap items-end gap-x-3 border-b border-rule px-5 pt-1.5">
-      <span className="relative -mb-px border border-b-0 border-rule bg-paper px-2 py-1">
-        <StageChip label={label} state={state} sub={sub} />
-      </span>
-      {children}
-    </li>
   );
 }
