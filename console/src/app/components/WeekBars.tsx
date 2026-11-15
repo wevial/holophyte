@@ -75,9 +75,9 @@ export function WeekBars({ rows, now, colours }: { rows: ShippedRow[]; now: numb
                 <span className="h-4 leading-4 text-ink-2">{index === today ? day.total : ""}</span>
                 <span className="flex h-16 items-end">
                   {drawn ? (
-                    <span data-bar className="flex w-2.5 flex-col-reverse gap-px" style={{ height: `${(day.total / busiest) * BAR_PX}px` }}>
+                    <span data-bar className="flex w-2.5 flex-col-reverse rounded-[2px]" style={{ height: `${(day.total / busiest) * BAR_PX}px`, overflow: "hidden" }}>
                       {day.projects.map(([project, count]) => (
-                        <span key={project} data-segment={project} className="min-h-px shrink-0 bg-ink-3 first:rounded-b-[2px] last:rounded-t-[2px]" style={{ flexGrow: count, background: colours.get(project) }} />
+                        <span key={project} data-segment={project} className="bg-ink-3 not-first:shadow-[inset_0_-1px_0_var(--canvas)]" style={{ flex: `${count} 1 0px`, background: colours.get(project) }} />
                       ))}
                     </span>
                   ) : (

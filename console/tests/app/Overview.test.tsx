@@ -202,11 +202,13 @@ test("This week scales each day's bar to the busiest day, stacks it by project i
   expect(weekTotal()).toBe("10 merged");
 });
 
-test("a day far below the busiest keeps its share of the height and a segment for each of its projects", async () => {
+test("a day far below the busiest keeps its share of the height, its segments sharing it from no base and clipped to it", async () => {
   const busy = { [DEMO]: [[...mergesOn(10, "HOLO", 100, on(13, 20)), merged(5, "HOLO-5", on(12, 11))]], [WRITER]: [[merged(6, "CROTON-6", on(12, 10))]], [LOTUS]: [[merged(7, "LOTUS-7", on(12, 9))]] };
   await mountWeek("#/", weekFleet(busy));
   expect(barOf("Monday")!.style.height).toBe("1.92px");
-  expect(segmentsOf("Monday").map(([project]) => project)).toEqual(["holophyte", "croton", "lotuspod"]);
+  expect(barOf("Monday")!.style.overflow).toBe("hidden");
+  const segments = [...barOf("Monday")!.querySelectorAll<HTMLElement>("[data-segment]")];
+  expect(segments.map((segment) => [segment.getAttribute("data-segment"), segment.style.flexBasis, segment.style.minHeight])).toEqual([["holophyte", "0px", ""], ["croton", "0px", ""], ["lotuspod", "0px", ""]]);
 });
 
 test("This week starts at local Monday's midnight: a Sunday 23:30 merge on the next page is left out and no later page is asked", async () => {
