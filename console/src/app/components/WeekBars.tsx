@@ -4,9 +4,6 @@ import type { ShippedRow } from "../../lib/types";
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const BAR_PX = 64;
 
-/** A bar's height: its share of the busiest day's, but never so short that a
- *  segment's pixel and the pixel gap above it would clip a project away. */
-const barHeight = (day: Day, busiest: number) => Math.max((day.total / busiest) * BAR_PX, day.projects.length * 2 - 1);
 
 interface Day {
   name: string;
@@ -78,9 +75,9 @@ export function WeekBars({ rows, now, colours }: { rows: ShippedRow[]; now: numb
                 <span className="h-4 leading-4 text-ink-2">{index === today ? day.total : ""}</span>
                 <span className="flex h-16 items-end">
                   {drawn ? (
-                    <span data-bar className="flex w-2.5 flex-col-reverse gap-px overflow-hidden rounded-[2px]" style={{ height: `${barHeight(day, busiest)}px` }}>
+                    <span data-bar className="flex w-2.5 flex-col-reverse gap-px" style={{ height: `${(day.total / busiest) * BAR_PX}px` }}>
                       {day.projects.map(([project, count]) => (
-                        <span key={project} data-segment={project} className="min-h-px bg-ink-3" style={{ flexGrow: count, background: colours.get(project) }} />
+                        <span key={project} data-segment={project} className="min-h-px shrink-0 bg-ink-3 first:rounded-b-[2px] last:rounded-t-[2px]" style={{ flexGrow: count, background: colours.get(project) }} />
                       ))}
                     </span>
                   ) : (
