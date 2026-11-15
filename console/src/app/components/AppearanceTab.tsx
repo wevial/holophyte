@@ -5,7 +5,7 @@ import {
   FULL, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
   type HeaderEffect, type ReadingFont,
 } from "../appearance";
-import { builtinSpec, deriveTheme, isCustom, type BuiltinPick, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
+import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
 import { copyOf, ThemeEditor, type EditorSubject } from "./ThemeEditor";
@@ -16,13 +16,6 @@ const SCHEMES: { value: Theme; name: string; icon: ReactNode }[] = [
   { value: "dark", name: "Dark", icon: <MoonIcon /> },
 ];
 
-const PICKS: { value: BuiltinPick; name: string }[] = [
-  { value: "lotus", name: "Lotus" },
-  { value: "dune", name: "Dune" },
-  { value: "tide", name: "Tide" },
-  { value: "mono", name: "Mono" },
-  { value: "forest", name: "Forest" },
-];
 
 const EFFECTS: { value: HeaderEffect | "caustics"; name: string; preview: string }[] = [
   { value: "haze", name: "Haze", preview: "effect-haze" },
@@ -109,8 +102,8 @@ function ThemeRow({ mode, onSubject }: { mode: ThemeMode; onSubject: (subject: E
   return (
     <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={mode === "light" ? "Light" : "Dark"} labelTop="pt-[15px]">
       <div role="group" aria-labelledby={`appearance-${mode}`} className="flex flex-wrap gap-3">
-        {PICKS.map((item) => (
-          <ThemeTile key={item.value} name={item.name} pressed={picked === item.value} tile={`${mode}-${item.value}`} onPick={() => choose(item.value)} />
+        {BUILTIN_PICKS.map((value) => (
+          <ThemeTile key={value} name={BUILTIN_NAMES[value]} pressed={picked === value} tile={`${mode}-${value}`} onPick={() => choose(value)} />
         ))}
         {customs.map((theme) => (
           <ThemeTile key={theme.id} name={theme.name} pressed={picked === theme.id} style={tileStyle(theme)} custom onPick={() => choose(theme.id)} />

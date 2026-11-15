@@ -18,6 +18,7 @@ function oklchToLinear({ l, c, h }: Oklch): Rgb {
 const encode = (x: number) => (x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055);
 const decode = (x: number) => (x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4);
 const clamp = (x: number) => Math.min(1, Math.max(0, x));
+const linear = (hex: string) => [1, 3, 5].map((at) => decode(parseInt(hex.slice(at, at + 2), 16) / 255)) as Rgb;
 
 /** sRGB channels in 0..1, each clamped into gamut. */
 export function oklchToRgb(colour: Oklch): Rgb {
@@ -29,7 +30,7 @@ export function oklchToHex(colour: Oklch): string {
 }
 
 export function hexToOklch(hex: string): Oklch {
-  const [r, g, b] = [1, 3, 5].map((at) => decode(parseInt(hex.slice(at, at + 2), 16) / 255)) as Rgb;
+  const [r, g, b] = linear(hex);
   const l_ = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
   const m_ = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
   const s_ = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
@@ -41,7 +42,7 @@ export function hexToOklch(hex: string): Oklch {
 }
 
 function luminance(hex: string): number {
-  const [r, g, b] = [1, 3, 5].map((at) => decode(parseInt(hex.slice(at, at + 2), 16) / 255)) as Rgb;
+  const [r, g, b] = linear(hex);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
