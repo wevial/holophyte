@@ -1307,6 +1307,9 @@ with a restricted Markdown vocabulary and expandable line clamps.
 Browser appearance choices live in `console/src/app/appearance.ts`;
 `console/src/app/components/AppearanceTab.tsx` renders theme and reading-font
 radio cards, sharing theme state with the sidebar.
+`console/src/app/components/ThemeEditor.tsx` edits custom themes, whose
+tokens `console/src/lib/theme.ts` derives through the OKLCH conversion and
+WCAG contrast in `console/src/lib/oklch.ts`.
 Its own `console/src/app/theme.css` supplies the Night and Dawn tokens and
 Archivo and IBM Plex Mono faces.
 

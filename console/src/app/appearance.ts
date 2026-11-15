@@ -1,5 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { applyPick, applyTheme, readPick, readTheme, writePick, writeTheme, type Theme, type ThemeMode, type ThemePick } from "../lib/theme";
+import {
+  applyCustomTheme, applyPick, applyTheme, deriveTheme, isCustom, parseCustomThemes, readCustomThemesRaw, readPick, readTheme, writeCustomThemes, writePick, writeTheme,
+  type CustomTheme, type Theme, type ThemeMode, type ThemePick,
+} from "../lib/theme";
 
 export type ReadingFont = "sans" | "serif" | "hyperlegible";
 
@@ -151,10 +154,36 @@ function appearanceStore<T>(read: (fallback?: T) => T, write: (value: T) => void
   return { getSnapshot, subscribe, set };
 }
 
-const themeStore = appearanceStore(readTheme, writeTheme, applyTheme);
-const pickStore = (mode: ThemeMode) => appearanceStore<ThemePick>(() => readPick(mode), (pick) => writePick(mode, pick), (pick) => applyPick(mode, pick));
+const themeStore = appearanceStore(readTheme, writeTheme, (theme) => { applyTheme(theme); applyCustomPick(); });
+const pickStore = (mode: ThemeMode) => appearanceStore<ThemePick>(() => readPick(mode), (pick) => writePick(mode, pick), (pick) => { applyPick(mode, pick); applyCustomPick(); });
 const lightPickStore = pickStore("light");
 const darkPickStore = pickStore("dark");
+const pickStores = { light: lightPickStore, dark: darkPickStore };
+
+function customThemesStore() {
+  const listeners = new Set<() => void>();
+  let raw: string | null = null;
+  let themes: CustomTheme[] = [];
+  let memory: CustomTheme[] | null = null;
+  const getSnapshot = () => {
+    if (memory) return memory;
+    const stored = readCustomThemesRaw();
+    if (stored !== raw) [raw, themes] = [stored, parseCustomThemes(stored)];
+    return themes;
+  };
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+  };
+  const set = (next: CustomTheme[]) => {
+    writeCustomThemes(next);
+    memory = readCustomThemesRaw() === (next.length ? JSON.stringify(next) : null) ? null : next;
+    listeners.forEach((listener) => listener());
+  };
+  return { getSnapshot, subscribe, set };
+}
+
+const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
@@ -177,6 +206,19 @@ function mediaQuery(media: string) {
 const systemDark = mediaQuery(DARK_QUERY);
 const reducedMotion = mediaQuery(REDUCED_MOTION_QUERY);
 
+function resolvedMode(): ThemeMode {
+  const theme = themeStore.getSnapshot();
+  return theme === "system" ? (systemDark.matches() ? "dark" : "light") : theme;
+}
+
+/** Custom tokens sit inline on the document, above every theme block, so they are set only while their mode shows. */
+export function applyCustomPick(): void {
+  const pick = pickStores[resolvedMode()].getSnapshot();
+  applyCustomTheme(isCustom(pick) ? customStore.getSnapshot().find((theme) => theme.id === pick) ?? null : null);
+}
+
+systemDark.subscribe(applyCustomPick);
+
 export function useTheme() {
   const theme: Theme = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot);
   const dark = useSyncExternalStore(systemDark.subscribe, systemDark.matches);
@@ -186,6 +228,25 @@ export function useTheme() {
     theme, setTheme: themeStore.set, resolvedTheme: theme === "system" ? (dark ? "dark" : "light") : theme,
     lightPick, setLightPick: lightPickStore.set, darkPick, setDarkPick: darkPickStore.set,
   };
+}
+
+/** Saving picks the theme in the mode its ground makes, and releases a pick it held in the other mode. */
+export function useCustomThemes() {
+  const customThemes = useSyncExternalStore(customStore.subscribe, customStore.getSnapshot);
+  const save = (theme: CustomTheme) => {
+    const others = customStore.getSnapshot().filter((saved) => saved.id !== theme.id);
+    const at = customStore.getSnapshot().findIndex((saved) => saved.id === theme.id);
+    customStore.set(at < 0 ? [...others, theme] : others.toSpliced(at, 0, theme));
+    const mode = deriveTheme(theme).mode;
+    const other = mode === "dark" ? "light" : "dark";
+    if (pickStores[other].getSnapshot() === theme.id) pickStores[other].set("lotus");
+    pickStores[mode].set(theme.id);
+  };
+  const remove = (id: CustomTheme["id"]) => {
+    customStore.set(customStore.getSnapshot().filter((saved) => saved.id !== id));
+    for (const store of Object.values(pickStores)) if (store.getSnapshot() === id) store.set("lotus");
+  };
+  return { customThemes, saveCustomTheme: save, deleteCustomTheme: remove };
 }
 
 export function useReadingFont() {

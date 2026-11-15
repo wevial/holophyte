@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { mount, PALETTES, type HazeHandle } from "../../vendor/spectra/haze";
-import { useHazeStrength, useMotion, useTheme } from "../appearance";
+import { useCustomThemes, useHazeStrength, useMotion, useTheme } from "../appearance";
 
 const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed: 0.8 };
 
 function themePaint(palette: string): { palette: string; intensity: number } {
   const style = getComputedStyle(document.documentElement);
   const token = (name: string) => style.getPropertyValue(name).trim();
-  PALETTES[palette] = [token("--haze-ground"), token("--haze-back"), token("--haze-front")];
-  return { palette, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
+  const colours: [string, string, string] = [token("--haze-ground"), token("--haze-back"), token("--haze-front")];
+  // A static frame redraws only when the config changes, so the palette's name carries its colours.
+  const named = `${palette}:${colours.join(":")}`;
+  PALETTES[named] = colours;
+  return { palette: named, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
 }
 
 export function Haze() {
@@ -19,6 +22,7 @@ export function Haze() {
   const palette = `${resolvedTheme === "dark" ? darkPick : lightPick}-${resolvedTheme}`;
   const { hazeStrength } = useHazeStrength();
   const { motion } = useMotion();
+  const { customThemes } = useCustomThemes();
 
   useEffect(() => {
     const container = band.current!;
@@ -51,7 +55,7 @@ export function Haze() {
 
   useEffect(() => {
     if (live.current) Object.assign(live.current.config, themePaint(palette), { motion });
-  }, [palette, hazeStrength, motion]);
+  }, [palette, hazeStrength, motion, customThemes]);
 
   return (
     <div

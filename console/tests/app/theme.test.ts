@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { applyPick, applyTheme, readPick, writePick, type ThemeMode, type ThemePick } from "../../src/lib/theme";
+import { oklchToHex } from "../../src/lib/oklch";
+import { applyPick, applyTheme, deriveTheme, readPick, writePick, type ThemeMode, type ThemePick, type ThemeSpec } from "../../src/lib/theme";
 import { declarations, resolveToken, tokensUnder } from "../cssTokens";
 
 const css = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
@@ -163,4 +164,26 @@ test("reading text uses Plex Sans with Avenir fallbacks while headings keep Arch
   expect(theme.get("--font-read")).toBe('"IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif');
   expect(theme.has("--font-plex")).toBe(false);
   expect(theme.get("--font-sans")).toStartWith('"Archivo"');
+});
+
+test("OKLCH converts to the CSS Color 4 reference points for white, black and sRGB red", () => {
+  expect([oklchToHex({ l: 1, c: 0, h: 0 }), oklchToHex({ l: 0, c: 0, h: 0 }), oklchToHex({ l: 0.628, c: 0.2577, h: 29.23 })])
+    .toEqual(["#ffffff", "#000000", "#ff0000"]);
+});
+
+const spec = (ground: ThemeSpec["ground"], haze: ThemeSpec["haze"] = { source: "hand", back: 280, front: 315 }): ThemeSpec =>
+  ({ name: "Test", ground, accent: { l: 0.77, c: 0.13, h: 300 }, haze, grain: 4 });
+
+test("a ground under L 0.5 derives a dark theme with the sidebar a step lighter and muted ink at L 0.66; a ground at L 0.97 is light", () => {
+  const dark = deriveTheme(spec({ l: 0.15, c: 0.03, h: 290 }));
+  expect(dark.mode).toBe("dark");
+  expect(dark.colours.side.l).toBeCloseTo(0.175, 6);
+  expect(dark.colours.side.c).toBeCloseTo(0.04, 6);
+  expect(dark.colours["ink-3"].l).toBe(0.66);
+  expect(deriveTheme(spec({ l: 0.97, c: 0.01, h: 290 })).mode).toBe("light");
+});
+
+test("haze from the accent puts the back band at the accent's hue and the front band 45 degrees on", () => {
+  const { haze } = deriveTheme(spec({ l: 0.15, c: 0.03, h: 290 }, { source: "accent", back: 10, front: 20 }));
+  expect([haze.back.h, haze.front.h]).toEqual([300, 345]);
 });
