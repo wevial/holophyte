@@ -218,7 +218,8 @@ class RunPhaseTests(unittest.TestCase):
         self.assertEqual({(level, kind) for _, level, kind, _, _ in events
                           if level == "narrative" or kind == "phase_change"},
                          {("narrative", "phase_change"), ("narrative", "trim"),
-                          ("narrative", "witness_precheck")})
+                          ("narrative", "witness_precheck"),
+                          ("narrative", "retire")})
 
     # --- the failed run --------------------------------------------------
 
