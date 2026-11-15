@@ -93,7 +93,7 @@ function Mark({ mark }: { mark: StepperMark }) {
 function Marks({ stage }: { stage: StepperStage }) {
   if (stage.marks.length === 0 && stage.slots === 0) return null;
   return (
-    <div role="group" aria-label={stage.name === "Review" ? "Review rounds" : "Check fix rounds"} className="mt-1.5 flex items-center gap-1">
+    <div role="group" aria-label={stage.name === "Review" ? "Review rounds" : "Merge gate rounds"} className="mt-1.5 flex items-center gap-1">
       {stage.marks.map((mark) => (
         <span key={mark.label} className="contents">
           <Mark mark={mark} />

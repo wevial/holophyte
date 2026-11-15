@@ -209,7 +209,7 @@ function roundMark(round: Round, next: Round | undefined, turns: RunTurn[], ende
 function checkFixRounds(events: RunDetail["events"]) {
   return orderEvents(events).flatMap((event) => {
     const match = event.kind === "check_fix_round" ? CHECK_FIX_ROUND.exec(event.summary) : null;
-    return match == null ? [] : [{ round: match[1]!, of: match[2]!, checks: match[3]! }];
+    return match == null ? [] : [{ at: event.at, round: match[1]!, of: match[2]!, checks: match[3]! }];
   });
 }
 
@@ -237,25 +237,32 @@ function roundUnderway(round: number, events: RunDetail["events"]): Round {
   };
 }
 
-/** The Run page's stepper: five fixed stages, the review rounds as marks
- *  under Review and the check fix rounds under Merge gate. */
-export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string): StepperStage[] {
+/** The Run page's stepper: five fixed stages, the loop's review rounds as marks
+ *  under Review, and the `covering` rounds and check fix rounds under Merge gate. */
+export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string, covering: ReadonlySet<number>): StepperStage[] {
   const { run, rounds } = detail;
-  const at = stageIndex(detail, phase);
   const underway = phase === "reviewing" && (rounds.length === 0 || rounds.at(-1)!.ended_ms != null);
   const shown = underway ? [...rounds, roundUnderway(rounds.length + 1, detail.events)] : rounds;
-  const reviewLabel = at < 2 ? "Review" : at > 2 ? (rounds.length > 0 ? `Review · ${plural(rounds.length, "round")}` : "Review") : `Review · round ${shown.length} / ${run.max_rounds}`;
+  const reviews = shown.filter((round) => !covering.has(round.round));
+  const covers = shown.filter((round) => covering.has(round.round));
+  const recheck = phase === "reviewing" && covering.has(shown.at(-1)?.round ?? 0);
+  const at = recheck ? 3 : stageIndex(detail, phase);
+  const reviewLabel = at < 2 ? "Review" : at > 2 ? (reviews.length > 0 ? `Review · ${plural(reviews.length, "round")}` : "Review") : `Review · round ${reviews.length} / ${run.max_rounds}`;
   const fixing = phase === "merge_gate" && checkFixRound(detail.events) != null;
+  const ended = run.outcome != null;
   return STAGE_NAMES.map((name, index) => {
     const state: StageState = index < at ? "finished" : index > at ? "not reached" : run.outcome === "failed" ? "failed" : "current";
     if (name === "Review") {
-      const marks = shown.map((each, n) => roundMark(each, shown[n + 1], turns, run.outcome != null));
+      const marks = reviews.map((each, n) => roundMark(each, reviews[n + 1], turns, ended));
       return { name, label: reviewLabel, state, marks, slots: state === "current" ? Math.max(0, run.max_rounds - marks.length) : 0 };
     }
     if (name === "Merge gate") {
       const found = checkFixRounds(detail.events);
       const label = fixing && found.length > 0 ? `${name} · babysit ${found.at(-1)!.round}` : name;
-      return { name, label, state, marks: checkFixMarks(found, fixing, run.outcome === "merged"), slots: 0 };
+      const fixes = checkFixMarks(found, fixing, run.outcome === "merged").map((mark, n) => ({ at: found[n]!.at, mark }));
+      const rechecks = covers.map((each, n) => ({ at: each.started_ms, mark: roundMark(each, covers[n + 1], turns, ended) }));
+      const marks = [...rechecks, ...fixes].sort((a, b) => a.at - b.at).map(({ mark }) => mark);
+      return { name, label, state, marks, slots: 0 };
     }
     return { name, label: name, state, marks: [], slots: 0 };
   });
