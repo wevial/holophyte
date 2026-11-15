@@ -17,7 +17,8 @@ const round = (x: number) => Math.round(x * 1000) / 1000;
 const clamp = (x: number, max = 1) => Math.min(max, Math.max(0, x));
 
 export function copyOf(spec: ThemeSpec): CustomTheme {
-  return { ...spec, name: `${spec.name} copy`, id: `custom:${crypto.randomUUID().slice(0, 8)}`, origin: spec.accent };
+  const suffix = Array.from(crypto.getRandomValues(new Uint8Array(4)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return { ...spec, name: `${spec.name} copy`, id: `custom:${suffix}`, origin: spec.accent };
 }
 
 /** The subject's theme as the editor holds it, `saved` when it is a stored custom theme. */
@@ -78,7 +79,7 @@ function ColourSquare({ label, value, maxChroma, disabled, onChange }: {
   };
   return (
     <div ref={area} className={`relative h-[136px] w-full touch-none overflow-hidden rounded-card ${disabled ? "cursor-not-allowed opacity-60" : "cursor-crosshair"}`}
-      onPointerDown={(event) => { if (disabled) return; event.currentTarget.setPointerCapture?.(event.pointerId); thumb.current?.focus(); fromPointer(event); }}
+      onPointerDown={(event) => { if (disabled) return; event.preventDefault(); event.currentTarget.setPointerCapture?.(event.pointerId); thumb.current?.focus(); fromPointer(event); }}
       onPointerMove={(event) => { if (!disabled && event.currentTarget.hasPointerCapture?.(event.pointerId)) fromPointer(event); }}>
       <canvas ref={canvas} width={64} height={48} aria-hidden="true" className="absolute inset-0 size-full" />
       <div ref={thumb} role="slider" aria-label={label} tabIndex={disabled ? -1 : 0} aria-disabled={disabled || undefined}

@@ -320,6 +320,19 @@ test("Lotus dark in the editor is read-only, and Edit a copy opens an editable L
   expect(editor().getAllByRole("slider").filter(isDisabled)).toEqual([]);
 });
 
+test("Edit a copy opens a copy where crypto.randomUUID is unavailable, as outside a secure context", async () => {
+  const randomUUID = spyOn(crypto, "randomUUID").mockImplementation(() => { throw new TypeError("crypto.randomUUID is not a function"); });
+  try {
+    await mount();
+    fireEvent.click(tile("Dark", "Lotus"));
+    fireEvent.click(editor().getByRole("button", { name: "Edit a copy" }));
+    expect(nameField().value).toBe("Lotus dark copy");
+    expect(nameField().disabled).toBe(false);
+  } finally {
+    randomUUID.mockRestore();
+  }
+});
+
 test("a saved dark custom theme is marked custom and pressed in the Dark row, survives a remount and sets the document's canvas to its ground", async () => {
   await saveDarkTheme();
   const canvas = oklchToHex({ l: 0.2, c: 0.05, h: 330 });
