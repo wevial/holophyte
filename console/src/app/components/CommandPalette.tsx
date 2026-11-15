@@ -337,6 +337,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   const [chip, setChip] = useState<Chip | null>(null);
   const [text, setText] = useState("");
   const [confirming, setConfirming] = useState<PaletteEntry | null>(null);
+  const confirmed = useRef<{ sweeps: typeof actions.sweeps; theme: typeof actions.nextTheme } | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const { setTheme } = useTheme();
   const sweep = useAction();
@@ -362,6 +363,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
       void navigate({ to: "/scouts", search: (previous: ScopeSearch) => ({ ...keepScope(previous), new: actions.launchProject }) });
     } else if (CONFIRMED.has(action)) {
       setRefusal(null);
+      confirmed.current = { sweeps: actions.sweeps, theme: actions.nextTheme };
       setConfirming(entry);
       return;
     }
@@ -387,12 +389,12 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   };
 
   const confirm = async () => {
-    if (!confirming || confirming.go.kind !== "action") return;
+    if (!confirming || confirming.go.kind !== "action" || !confirmed.current) return;
     if (confirming.go.action === "switch-theme") {
-      setTheme(actions.nextTheme);
+      setTheme(confirmed.current.theme);
       return close();
     }
-    for (const daemon of actions.sweeps.filter((each) => !swept.current.has(each.base))) {
+    for (const daemon of confirmed.current.sweeps.filter((each) => !swept.current.has(each.base))) {
       const result = await sweep
         .mutateAsync({ label: "Run sweep", base: daemon.base, route: ROUTES["Run sweep"]!, body: {}, said: `Asked ${hostName(daemon)} to sweep.` })
         .catch((failure: unknown) => ({ ok: false, detail: failure instanceof Error ? failure.message : String(failure) }));

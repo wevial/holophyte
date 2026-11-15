@@ -910,3 +910,32 @@ test("New ticket shows disabled with the actions-off reason while no daemon in s
   expect(palette()).toBeTruthy();
   expect(window.location.hash).toBe(hash);
 });
+
+test("Confirm sweeps only the daemons its confirm named, though another answers by then", async () => {
+  const posts: string[] = [];
+  const host = (await Bun.file(new URL("host-status.json", SERVE)).json()) as Status;
+  let peerUp = false;
+  const polls = searchDaemons(posts);
+  window.location.hash = "#/";
+  const client = consoleQueryClient();
+  const fetchImpl: Fetch = async (url, init) => {
+    if (init?.method !== "POST" && url === `${ORIGIN}/status`) return Response.json({ ...host, projects: [], actions: true });
+    if (init?.method !== "POST" && url.startsWith(`${PEER}/`) && !peerUp) throw new Error("connection refused");
+    if (init?.method !== "POST" && url === `${PEER}/status`) return Response.json({ ...host, host: "spare", projects: [], actions: true });
+    return polls(url, init);
+  };
+  render(<QueryClientProvider client={client}><ConsoleApp base={ORIGIN} pollDeps={fakeDeps(fetchImpl).deps} /></QueryClientProvider>);
+  await flush();
+  await paletteKey();
+  await typeIn(">sweep");
+  fireEvent.click(optionsOf("Actions")[0]!);
+  await flush();
+  expect(within(palette()!).getByText("on writer-host")).toBeTruthy();
+
+  peerUp = true;
+  await act(async () => void (await client.refetchQueries({ queryKey: ["fleet", ORIGIN] })));
+  await flush();
+  await act(async () => void fireEvent.click(within(palette()!).getByRole("button", { name: "Confirm" })));
+  await flush();
+  expect(posts).toEqual([`${ORIGIN}/actions/run-sweep`]);
+});
