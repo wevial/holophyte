@@ -206,11 +206,14 @@ function roundMark(round: Round, next: Round | undefined, turns: RunTurn[], ende
   };
 }
 
-function checkFixMarks(events: RunDetail["events"], fixing: boolean, merged: boolean): StepperMark[] {
-  const found = orderEvents(events).flatMap((event) => {
+function checkFixRounds(events: RunDetail["events"]) {
+  return orderEvents(events).flatMap((event) => {
     const match = event.kind === "check_fix_round" ? CHECK_FIX_ROUND.exec(event.summary) : null;
     return match == null ? [] : [{ round: match[1]!, of: match[2]!, checks: match[3]! }];
   });
+}
+
+function checkFixMarks(found: ReturnType<typeof checkFixRounds>, fixing: boolean, merged: boolean): StepperMark[] {
   return found.map(({ round, of, checks }, index) => {
     const latest = index === found.length - 1;
     const label = `Check fix round ${round} of ${of}`;
@@ -249,8 +252,12 @@ export function stepperOf(detail: RunDetail, turns: RunTurn[], phase: string): S
       const marks = shown.map((each, n) => roundMark(each, shown[n + 1], turns, run.outcome != null));
       return { name, label: reviewLabel, state, marks, slots: state === "current" ? Math.max(0, run.max_rounds - marks.length) : 0 };
     }
-    const marks = name === "Merge gate" ? checkFixMarks(detail.events, fixing, run.outcome === "merged") : [];
-    return { name, label: name, state, marks, slots: 0 };
+    if (name === "Merge gate") {
+      const found = checkFixRounds(detail.events);
+      const label = fixing && found.length > 0 ? `${name} · babysit ${found.at(-1)!.round}` : name;
+      return { name, label, state, marks: checkFixMarks(found, fixing, run.outcome === "merged"), slots: 0 };
+    }
+    return { name, label: name, state, marks: [], slots: 0 };
   });
 }
 

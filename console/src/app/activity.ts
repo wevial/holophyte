@@ -5,7 +5,7 @@ import { prLabel, shortSha } from "../lib/shipped";
 import { noteAuthor } from "./progress";
 import { CHECK_FIX_ROUND } from "./run";
 
-export type ActivityKind = "before" | "implement" | "round" | "final" | "pull_request" | "pickup" | "threads" | "checks" | "fix_ci";
+export type ActivityKind = "before" | "implement" | "round" | "final" | "pull_request" | "pickup" | "threads" | "checks" | "fix_ci" | "covering_review";
 
 export type ActivityTone = "ok" | "warn" | "bad" | "wait" | "act" | "live" | "neutral";
 
@@ -237,7 +237,8 @@ function fixingRound(events: RunEvent[], fix: number): RegExpExecArray | null {
   return round < 0 ? null : CHECK_FIX_ROUND.exec(events[round]!.summary);
 }
 
-function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>): Draft[] {
+function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: Set<RunEvent>, next: number): Draft[] {
+  const covering = events.findLastIndex((event) => event.kind === "babysit_step" && event.summary === "covering_review");
   return events.flatMap((event, index): Draft[] => {
     if (event.kind !== "babysit_step") return [];
     const round = [...babysat].find(([, step]) => step === event)?.[0] ?? null;
@@ -250,6 +251,11 @@ function babysitGroups(events: RunEvent[], babysat: Map<Round, RunEvent>, used: 
       used.add(event);
       const found = round?.findings.length ?? 0;
       return [draft("threads", event.at, "Review threads", { ...held, sub: round ? [plural(found, "thread")] : [], tone: found > 0 ? "warn" : "ok" })];
+    }
+    if (event.summary === "covering_review") {
+      used.add(event);
+      const number = round?.round ?? (index === covering ? next : null);
+      return [draft("covering_review", event.at, "Covering review", { ...held, ...(round == null ? { tone: "neutral" } : reviewWords(round)), number })];
     }
     const fixing = event.summary === "fix" ? fixingRound(events, index) : null;
     if (fixing == null) return [];
@@ -318,7 +324,7 @@ export function runActivity(detail: RunDetail, asks: ConsoleAsk[], now: number):
     ...implementGroup(detail, events, used),
     ...roundGroups(detail, events, babysat, used),
     ...pullRequestGroups(events, used),
-    ...babysitGroups(events, babysat, used),
+    ...babysitGroups(events, babysat, used, Math.max(0, ...detail.rounds.map((round) => round.round)) + 1),
   ].sort((a, b) => a.at - b.at);
   const during = notes.filter((note) => !carried.includes(note));
   place(drafts, [...eventSteps(detail, events, used), ...during.map(noteStep), ...askSteps(detail, asks)]);

@@ -335,11 +335,11 @@ test("a review mark, its round recorded or still under way, scrolls to its own r
   }
 });
 
-test("a review mark whose round Progress does not draw, as a covering review under way, is a button with its card and not a link", async () => {
+test("a covering review under way links its mark to its round's covering review in Progress", async () => {
   await mount("#/runs/demo/55");
-  expect(screen.getByRole("link", { name: "Round 1: pass" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: "Round 2: in review" })).toBeNull();
-  expect(within(screen.getByRole("group", { name: "Review rounds" })).getByRole("button", { name: "Round 2: in review" })).toBeTruthy();
+  const mark = screen.getByRole("link", { name: "Round 2: in review" });
+  const target = document.getElementById(mark.getAttribute("href")!.slice(1));
+  expect(target?.getAttribute("data-group")).toBe("covering_review");
 });
 
 test("a review mark's card names its round, verdict, findings and blockers on keyboard focus and goes on blur", async () => {
@@ -367,9 +367,9 @@ test("a turn between two review rounds other than the first implement turn after
   expect(markNames("Review rounds")).not.toContain("fix round 1");
 });
 
-test("a merge gate run after three rounds ending in a pass reads Review done and marks its two check fix rounds, the second live", async () => {
+test("a merge gate run after three rounds ending in a pass reads Review done, names its babysit round and marks its two check fix rounds, the second live", async () => {
   await mount("#/runs/demo/52");
-  expect(stages()).toEqual(["Implement: finished", "Verify: finished", "Review · 3 rounds: finished", "Merge gate: current", "Merged: not reached"]);
+  expect(stages()).toEqual(["Implement: finished", "Verify: finished", "Review · 3 rounds: finished", "Merge gate · babysit 2: current", "Merged: not reached"]);
   expect(within(screen.getByRole("group", { name: "Review rounds" })).queryAllByRole("img", { name: "unused round" })).toEqual([]);
   const fixes = within(screen.getByRole("group", { name: "Check fix rounds" })).getAllByRole("button");
   expect(fixes.map((mark) => [mark.getAttribute("aria-label"), mark.getAttribute("data-mark")])).toEqual([

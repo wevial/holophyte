@@ -39,7 +39,7 @@ function Heading({ group }: { group: ActivityGroup }) {
   );
 }
 
-const LISTS_FINDINGS = new Set<ActivityGroup["kind"]>(["round", "final", "threads"]);
+const LISTS_FINDINGS = new Set<ActivityGroup["kind"]>(["round", "final", "threads", "covering_review"]);
 
 function groupFindings(group: ActivityGroup): RoundFinding[] {
   if (group.round == null || !LISTS_FINDINGS.has(group.kind)) return [];
