@@ -71,7 +71,7 @@ implementer's command and isolation settings.
 | `consolidator` | Default: Hardened Codex review container on the reviewer's model pair | Non-empty command string; change to run the consolidator on another route. On a round with an adversarial pass that goes to a fix turn, it merges near-duplicate findings and orders the list the fix turn gets (see [Reviewing](reviewing.md)). It has no fallback key and no startup probe: a failed turn, or a reply without `CONSOLIDATED`, hands the fix turn the exact merge and the run goes on. |
 | `writer` | Default: Active implementer route | Non-empty command string for PR titles, descriptions and fix-round refreshes. Probed at startup; a failed probe is reported and writing uses the implementer. |
 | `trimmer` | Default: Active implementer route | Non-empty command string, or the table `[agents.trimmer]` with `harness` `"claude"`, `"codex"` or `"devin"` and the same `model` and `effort` rules as `[agents.implementer]` (no `orchestration`); set it to run the trim turn (`[trim]` below) on a cheaper model or another harness. The turn launches like an implementer turn, in the task worktree and under `implementer_isolation`, with the trim goal as the last argument, and records no session. Probed at startup; when it and `trimmer_fallback` both fail, startup prints "trimmer route down; runs skip trim" and each run's trim records `skipped`, without stopping the loop. |
-| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, `"claude"`, `"claude-sdk"` or `"t3"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude` and `claude-sdk`: default `"opus"`, `"high"`), with `harness = "t3"` only, the required `project`, `worktree`, `provider` and `model` and no `effort`, and, with `harness = "claude-sdk"` only, `api_key_file` (an absolute or `~` path outside the project checkout) and `base_url` (an `http(s)` URL, only beside `api_key_file`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
+| `critic` | Default: Absent (no critic) | Only the table `[agents.critic]`, with optional `harness` (`"codex"`, the default, `"claude"`, `"claude-sdk"` or `"t3"`), `model` and `effort` (`codex`: default `"gpt-6-luna"`, `"medium"`, effort one of `"low"`, `"medium"`, `"high"`, `"xhigh"`; `claude` and `claude-sdk`: default `"opus"`, `"high"`), with `harness = "t3"` only, the required `project`, `worktree`, `provider` and `model`, no `effort`, and an optional `token_file` (an absolute or `~` path outside the project checkout) holding the token the thread cleanup uses, and, with `harness = "claude-sdk"` only, `api_key_file` (an absolute or `~` path outside the project checkout) and `base_url` (an `http(s)` URL, only beside `api_key_file`); a command string is refused. Set it to give a cheap model a seat for judging whether a queued ticket is still relevant. Probed at startup in a throwaway detached checkout of `main`; a failed probe is reported and turns the critic off for the loop's life without stopping it. |
 | `review_model` | Default: `"gpt-6-astra"` | Non-empty Codex model ID; change for a different container review model. |
 | `review_effort` | Default: `"high"` | `"low"`, `"medium"`, `"high"`, `"xhigh"`; change the container review reasoning effort. |
 | `review_fallback_model` | Default: Absent (disabled) | Non-empty Codex model ID, set together with `review_fallback_effort`; the container reviewer's fallback model, run in the same container. |
@@ -446,13 +446,22 @@ After every turn on the `t3` seat (not on a `critic_fallback` command), whether
 the critic replied, failed or timed out, the factory settles the thread and
 removes the worktree and branch T3 made for it. The thread id is the CLI's
 `Thread <id>` line; with none, one `thread` step is recorded as failed and
-nothing else runs. The factory issues a short-lived token with `t3 auth session
+nothing else runs. With `token_file` set, the factory reads the token from
+that file at cleanup time, so a rotated token needs no restart, and uses it
+instead of issuing one; it neither issues nor revokes a session, and a missing
+or empty file is one failed step naming the file. T3 settles a thread that
+runs in `full-access` mode, its default and the critic's, only for a token
+approved at full access, and its CLI cannot issue one: the operator approves
+that token once in T3 and stores it in the file. Without `token_file`, the
+factory issues a short-lived token with `t3 auth session
 issue --subject mcp-client --scope orchestration:read --scope
-orchestration:operate --ttl 5m --label "holophyte critic cleanup" --json`, reads the server's origin from
+orchestration:operate --ttl 5m --label "holophyte critic cleanup" --json`,
+which T3 treats as `approval-required`, so its settle of a `full-access` thread
+fails with `runtime_mode_escalation_denied`. The factory reads the server's origin from
 `userdata/server-runtime.json` under the T3 home (`$T3CODE_HOME`, else `~/.t3`),
 and calls the server's MCP endpoint at `<origin>/mcp`: `t3_thread_read` for the
 thread's worktree and branch, then `t3_thread_organize` with action `settle`.
-It revokes the token afterwards, whatever happened. After a timeout it first
+It revokes an issued token afterwards, whatever happened. After a timeout it first
 calls `t3_thread_interrupt`, then retries the settle for up to 30 seconds while
 T3 answers that the thread is still running. Only after a settle succeeds, and
 only when the thread's worktree still exists, the factory runs `git worktree
@@ -471,6 +480,7 @@ project  = "holophyte-critic"   # required; a registered T3 project
 worktree = "main"               # required; passed to --worktree
 provider = "codex"              # required; passed to --provider
 model    = "gpt-6-luna"         # required; passed to --model
+token_file = "~/.config/t3/critic-token"  # optional; a full-access T3 token
 ```
 
 Container implementation uses the reviewer hardening flags, a 4 GiB memory cap,

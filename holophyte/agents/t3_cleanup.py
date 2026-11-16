@@ -140,7 +140,27 @@ def interrupt(mcp, thread, secrets):
     return outcome(thread, "interrupt")
 
 
-def clean_thread(binary, output, timed_out, secrets=()):
+def configured_token(token_file):
+    path = Path(token_file).expanduser()
+    try:
+        token = path.read_text().strip()
+    except FileNotFoundError:
+        raise StepFailed(f"token_file {path} does not exist") from None
+    except (OSError, UnicodeError) as e:
+        raise StepFailed(f"token_file {path} is unreadable ({e})") from None
+    if not token:
+        raise StepFailed(f"token_file {path} is empty")
+    return token
+
+
+def bearer(binary, token_file, session):
+    if token_file is not None:
+        return configured_token(token_file)
+    session.update(json.loads(t3(binary, *ISSUE)))
+    return session["token"]
+
+
+def clean_thread(binary, output, timed_out, secrets=(), token_file=None):
     thread = thread_id(output)
     if thread is None:
         return [outcome(None, "thread",
@@ -148,9 +168,9 @@ def clean_thread(binary, output, timed_out, secrets=()):
     steps, hidden, session = [], set(secrets), {}
     step = "interrupt" if timed_out else "settle"
     try:
-        session.update(json.loads(t3(binary, *ISSUE)))
-        hidden.add(session["token"])
-        mcp = Mcp(runtime_origin(), session["token"])
+        token = bearer(binary, token_file, session)
+        hidden.add(token)
+        mcp = Mcp(runtime_origin(), token)
         mcp.initialize()
         if timed_out:
             steps.append(interrupt(mcp, thread, hidden))
