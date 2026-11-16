@@ -269,3 +269,35 @@ test("each day's button names its merges by project, its card shows while hovere
   expect(dayButton("Tuesday").getAttribute("aria-label")).toBe("Tuesday, 9 merged: croton 9");
   expect(weekTotal()).toBe("9 merged");
 });
+
+const column = (name: string) => document.querySelector<HTMLElement>(`[data-overview-column="${name}"]`)!;
+const regionsIn = (container: HTMLElement) => within(container).queryAllByRole("region").map((region) => region.getAttribute("aria-label"));
+const threeColumns = "min-[1680px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_380px]";
+
+test("the Overview's three column containers hold now, landed and the log in order, under three-column grid classes that all carry the min-[1680px] prefix", async () => {
+  const merges = [merged(11, "DEMO-11", NOW - 20 * MINUTE), merged(12, "DEMO-12", NOW - 10 * MINUTE)];
+  await mount("#/", fleet({ items: [ciPark], runs: threeRuns, shipped: merges }, { items: [prPark] }));
+  const columns = [...document.querySelectorAll<HTMLElement>("[data-overview-column]")];
+  expect(columns.map((container) => container.getAttribute("data-overview-column"))).toEqual(["now", "landed", "log"]);
+  expect(regionsIn(column("now"))).toEqual(["Running", "Waiting"]);
+  const landed = column("landed");
+  expect(regionsIn(landed)).toEqual(["Merged today"]);
+  const week = within(landed).getByRole("heading", { name: "This week" });
+  expect(within(landed).getByRole("region", { name: "Merged today" }).compareDocumentPosition(week) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(within(column("log")).getByRole("complementary", { name: "Today" })).toBeTruthy();
+
+  const grid = classes(columns[0]!.parentElement);
+  expect(grid).toContain(threeColumns);
+  expect(grid.filter((name) => name.includes("1.15fr"))).toEqual([threeColumns]);
+});
+
+test("when someone is needed, Needs you sits in the first column above Running", async () => {
+  await mount("#/", fleet({ items: [blocked, ...failed], runs: threeRuns }, { items: [] }));
+  expect(regionsIn(column("now"))).toEqual(["Needs you", "Running", "Waiting"]);
+});
+
+test("This week and Today's log each render once on the Overview", async () => {
+  await mount("#/", fleet({ items: [], runs: threeRuns, shipped: [merged(11, "DEMO-11", NOW - 20 * MINUTE)] }, { items: [] }));
+  expect(screen.getAllByRole("heading", { name: "This week" })).toHaveLength(1);
+  expect(screen.getAllByRole("complementary", { name: "Today" })).toHaveLength(1);
+});
