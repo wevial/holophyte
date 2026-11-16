@@ -242,7 +242,7 @@ function CalendarIcon() {
 export interface FilterSection {
   label: string;
   param: string;
-  options: readonly (FilterOption & { count: number })[];
+  options: readonly (FilterOption & { count: number; colour?: string })[];
 }
 
 function Check({ name, checked, mixed = false, onChange, children, head = false, disabled = false }: {
@@ -318,6 +318,84 @@ function Sorting({ sorting }: { sorting: SortSection }) {
   );
 }
 
+const MENU_HEAD = "flex h-[26px] items-center gap-1.5 px-2 text-[12px] text-ink-3";
+const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
+
+function MenuCheck({ type, name, checked, mixed = false, disabled = false, onChange, children, className = MENU_ROW }: {
+  type: "checkbox" | "radio"; name: string; checked: boolean; mixed?: boolean; disabled?: boolean; onChange: () => void; children: ReactNode; className?: string;
+}) {
+  return (
+    <label className={className}>
+      <input type={type} name={type === "radio" ? name : undefined} aria-label={type === "checkbox" ? name : undefined} checked={checked} disabled={disabled} onChange={onChange}
+        ref={(input) => { if (input) input.indeterminate = mixed; }} className="sr-only" />
+      <span className={`inline-flex w-3.5 shrink-0 items-center justify-center ${checked || mixed ? "" : "invisible"}`}>{mixed ? <span className="h-px w-2.5 bg-ink" /> : <CheckMark />}</span>
+      {children}
+    </label>
+  );
+}
+
+function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
+  const id = useId();
+  const checked = checkedOf(search, section.param);
+  const on = section.options.filter((option) => checked.includes(option.value));
+  const all = section.options.length > 0 && on.length === section.options.length;
+  const set = (values: string[]) => {
+    const kept = section.options.map((option) => option.value).filter((value) => values.includes(value));
+    write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
+  };
+  return (
+    <fieldset aria-labelledby={id} className="m-0 mb-2 min-w-0 border-0 p-0">
+      <legend className="float-left w-full">
+        <MenuCheck type="checkbox" name={section.label} checked={all} mixed={on.length > 0 && !all} disabled={section.options.length === 0}
+          onChange={() => set(all ? [] : section.options.map((option) => option.value))}
+          className={`${MENU_HEAD} cursor-pointer rounded-button hover:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus`}>
+          <span id={id}>{section.label}</span>{" "}
+          {on.length > 0 && <span className="ml-auto font-mono text-[11px] tabular-nums">{on.length} of {section.options.length}</span>}
+        </MenuCheck>
+      </legend>
+      {section.options.map((option) => (
+        <MenuCheck key={option.value} type="checkbox" name={option.label} checked={checked.includes(option.value)}
+          onChange={() => set(checked.includes(option.value) ? checked.filter((value) => value !== option.value) : [...checked, option.value])}
+          className={`${MENU_ROW} ${option.count === 0 ? "text-ink-3" : ""}`}>
+          {option.colour && <i aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: option.colour }} />}
+          <span className="min-w-0 truncate">{option.label}</span>{" "}
+          <span className="ml-auto font-mono text-[12px] font-normal tabular-nums text-ink-3">{option.count}</span>
+        </MenuCheck>
+      ))}
+    </fieldset>
+  );
+}
+
+function OrderArrow({ down }: { down: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+      <path d={down ? "M8 3v10M4.5 9.5 8 13l3.5-3.5" : "M8 13V3M4.5 6.5 8 3l3.5 3.5"} />
+    </svg>
+  );
+}
+
+function MenuSorting({ sorting }: { sorting: SortSection }) {
+  const id = useId();
+  return (
+    <fieldset aria-labelledby={id} className="m-0 min-w-0 border-0 p-0">
+      <legend className={`${MENU_HEAD} float-left w-full`}>
+        <span id={id}>Sort</span>
+        <span className="ml-auto inline-flex gap-0.5">
+          {sorting.orders.map((order) => (
+            <button key={order.value} type="button" aria-pressed={sorting.order === order.value} aria-label={order.label} title={order.label} onClick={() => sorting.onOrder(order.value)}
+              className="inline-grid size-[22px] cursor-pointer place-items-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
+              <OrderArrow down={order.value === "desc"} />
+            </button>
+          ))}
+        </span>
+      </legend>
+      {sorting.keys.map((key) => (
+        <MenuCheck key={key.value} type="radio" name={`${id}-key`} checked={sorting.sort === key.value} onChange={() => sorting.onSort(key.value)}>{key.label}</MenuCheck>
+      ))}
+    </fieldset>
+  );
+}
+
 /** A Filter button over a dialog of checkbox `sections`, each section's
  *  checked values written to its own search param as a comma list in the
  *  section's order, after an optional `sorting` and `extra`; `hidden`
@@ -331,7 +409,6 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
   const { open, setOpen, box, button } = usePopover(hidden);
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
-  const groups = sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />);
   return (
     <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
       {icon ? (
@@ -355,19 +432,27 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       )}
       {open && icon && (
         <div role="dialog" aria-label={label}
-          className="absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(660px,calc(100vw-2rem))] grid-cols-[minmax(0,1fr)_minmax(0,2fr)] overflow-y-auto rounded-[9px] border border-hair-2 bg-raised py-1 text-[13px] shadow-card">
+          className="absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] grid-cols-3 gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
           <div>
-            {sorting && <Sorting sorting={sorting} />}
+            {sorting && <MenuSorting sorting={sorting} />}
             {extra}
           </div>
-          <div className="grid grid-cols-2 grid-rows-[auto_1fr] items-start [&>fieldset]:border-t-0! [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">{groups}</div>
+          <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
+            {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
+          </div>
+          <div className="col-span-3 mt-1.5 flex justify-end border-t border-hair pt-1.5">
+            <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
+              className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
+              Clear
+            </button>
+          </div>
         </div>
       )}
       {open && !icon && (
         <div role="dialog" aria-label={label}
           className="absolute top-full left-0 z-20 mt-1 max-h-[min(560px,calc(100vh-11rem))] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
           {sorting && <Sorting sorting={sorting} />}
-          {groups}
+          {sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />)}
         </div>
       )}
     </div>
@@ -381,9 +466,9 @@ export function PressedGroup<V extends string | number>({ label, options, value,
 }) {
   const id = useId();
   return (
-    <div className="px-4 py-2.5">
-      <div id={id} className="flex min-h-8 items-center font-semibold text-ink">{label}</div>
-      <div role="group" aria-labelledby={id} className="inline-flex gap-0.5 rounded-[7px] bg-canvas p-0.5">
+    <div className="mt-2">
+      <div id={id} className={MENU_HEAD}>{label}</div>
+      <div role="group" aria-labelledby={id} className="mx-2 mt-0.5 inline-flex rounded-[7px] bg-canvas p-0.5">
         {options.map((option) => (
           <button key={option} type="button" aria-pressed={option === value} onClick={() => onPick(option)}
             className="h-6 cursor-pointer rounded-[5px] px-2.5 font-mono text-[12px] font-medium text-ink-3 hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
@@ -458,18 +543,28 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
 
 export interface RangePreset extends FilterOption {
   name: string;
+  back: number | null;
+}
+
+function dayBefore(now: number, days: number): string {
+  const at = new Date(now);
+  const day = new Date(at.getFullYear(), at.getMonth(), at.getDate() - days);
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
 }
 
 /** A calendar button labelled with the picked range over a Range dialog of
  *  `presets`, picking one writes `range` (`fallback` dropping it) and
- *  closes it, and From and To dates write `from` and `to`, which win over
- *  `range` while set; `hidden` closes it. */
-export function RangePopover({ presets, fallback, hidden }: { presets: readonly RangePreset[]; fallback: string; hidden: boolean }) {
+ *  closes it, and From and To dates, showing the picked preset's days up to
+ *  `now`'s, write both `from` and `to`, which win over `range` while set;
+ *  `hidden` closes it. */
+export function RangePopover({ presets, fallback, hidden, now }: { presets: readonly RangePreset[]; fallback: string; hidden: boolean; now: number }) {
   const { range, from, to } = useSearch({ strict: false }) as { range?: string; from?: string; to?: string };
   const write = useWrite();
   const { open, setOpen, close, box, button } = usePopover(hidden);
   const custom = from != null || to != null;
   const picked = custom ? undefined : (presets.find((preset) => preset.value === (range ?? fallback)) ?? presets.find((preset) => preset.value === fallback));
+  const shownFrom = custom ? from : picked?.back != null ? dayBefore(now, picked.back) : undefined;
+  const shownTo = custom ? to : dayBefore(now, 0);
   const fromId = useId();
   const toId = useId();
   const field = "h-[28px] rounded-button border-0 bg-selected px-2 font-mono text-[12px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
@@ -499,11 +594,11 @@ export function RangePopover({ presets, fallback, hidden }: { presets: readonly 
           <div className="my-1.5 h-px bg-hair" />
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5 pb-1">
             <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
-            <input id={fromId} type="date" value={from ?? ""} max={to} className={field}
-              onChange={(event) => write({ range: undefined, from: event.target.value || undefined })} />
+            <input id={fromId} type="date" value={shownFrom ?? ""} max={shownTo} className={field}
+              onChange={(event) => write({ range: undefined, from: event.target.value || undefined, to: shownTo })} />
             <label htmlFor={toId} className="text-[12px] text-ink-3">To</label>
-            <input id={toId} type="date" value={to ?? ""} min={from} className={field}
-              onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
+            <input id={toId} type="date" value={shownTo ?? ""} min={shownFrom} className={field}
+              onChange={(event) => write({ range: undefined, from: shownFrom, to: event.target.value || undefined })} />
           </div>
         </div>
       )}

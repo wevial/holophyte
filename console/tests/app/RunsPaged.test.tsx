@@ -107,7 +107,13 @@ const popover = async () => {
 const radio = async (name: string) => (await popover()).getByRole("radio", { name }) as HTMLInputElement;
 const pressedSizes = async () => within((await popover()).getByRole("group", { name: "Per page" })).getAllByRole("button")
   .map((each) => `${each.textContent}${each.getAttribute("aria-pressed") === "true" ? " pressed" : ""}`);
-const checkedSort = async () => (await popover()).getAllByRole("radio").filter((each) => (each as HTMLInputElement).checked).map((each) => each.closest("label")!.textContent);
+const orderButton = async (name: string) => (await popover()).getByRole("button", { name });
+const checkedSort = async () => {
+  const box = await popover();
+  const key = box.getAllByRole("radio").filter((each) => (each as HTMLInputElement).checked).map((each) => each.closest("label")!.textContent);
+  const order = box.getAllByRole("button").filter((each) => each.getAttribute("aria-pressed") === "true" && /first$/.test(each.getAttribute("aria-label") ?? "")).map((each) => each.getAttribute("aria-label"));
+  return [...key, ...order];
+};
 const paged = (state: string | null, offset: number, limit: number, sort = "started", order = "desc") => ({
   since: String(SINCE), ...(state ? { state } : {}), sort, order, offset: String(offset), limit: String(limit),
 });
@@ -236,7 +242,7 @@ test("a sort picked in the Filter popover puts its sort and order in the hash, a
   expect(list().getAttribute("aria-label")).toBe("Runs, longest first");
   expect(await checkedSort()).toEqual(["Took", "longest first"]);
 
-  await press(await radio("shortest first"));
+  await press(await orderButton("shortest first"));
   expect(hashSearch().get("order")).toBe("asc");
   expect(list().getAttribute("aria-label")).toBe("Runs, shortest first");
 
@@ -263,7 +269,7 @@ test("sorted by took, two hosts' rows are drawn longest first, then shortest fir
   await press(await radio("Took"));
   expect(shownIds()).toEqual(["1", "3", "2", "4"]);
 
-  await press(await radio("shortest first"));
+  await press(await orderButton("shortest first"));
   expect(shownIds()).toEqual(["4", "2", "3", "1"]);
 });
 

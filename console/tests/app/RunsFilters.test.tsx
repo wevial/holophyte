@@ -344,6 +344,18 @@ test("From and To picked in the Range dialog show on its button and ask the host
   expect(chips()).toEqual(["Started: Oct 1 – Oct 20"]);
 });
 
+test("the Range dialog's dates show the picked preset's days up to today, and changing To alone keeps that From", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
+  await mount("#/runs", daemons.fetchImpl);
+  const box = await openRange();
+  expect([(box.getByLabelText("From") as HTMLInputElement).value, (box.getByLabelText("To") as HTMLInputElement).value]).toEqual(["2026-10-09", "2026-10-15"]);
+
+  await act(async () => void fireEvent.change(box.getByLabelText("To"), { target: { value: "2026-10-12" } }));
+  await settleAll();
+  expect([hashSearch().get("from"), hashSearch().get("to"), hashSearch().has("range")]).toEqual(["2026-10-09", "2026-10-12", false]);
+  expect(daemons.lastOf(DEMO).until).toBe(midnight(10, 13));
+});
+
 const countedFleet = (demoRows = 6) => fleet(
   {
     rows: runs("DEMO", 100, demoRows),
@@ -493,6 +505,18 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   expect(Object.fromEntries(hashSearch())).toMatchObject({ sort: "duration", order: "desc", size: "25" });
   expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort");
   expect(chips()).toEqual([]);
+});
+
+test("Clear in the Filter popover drops every checked filter and keeps the search, range and sort", async () => {
+  const daemons = countedFleet();
+  await mount("#/runs?q=DEMO&projects=demo&failure=verify&range=30d&sort=duration", daemons.fetchImpl);
+  const clear = within(await openFilter()).getByRole("button", { name: "Clear" });
+  await press(clear);
+  expect(["projects", "failure"].filter((name) => hashSearch().has(name))).toEqual([]);
+  expect(Object.fromEntries(hashSearch())).toMatchObject({ q: "DEMO", range: "30d", sort: "duration" });
+  expect(daemons.lastOf(DEMO).failure).toBeUndefined();
+  expect(filterDot()).toBeNull();
+  expect(within(await openFilter()).getByRole("button", { name: "Clear" }).hasAttribute("disabled")).toBe(true);
 });
 
 test("an Implementer the hosts do not list is dropped from the query, the boxes and the chips, and a listed one is kept", async () => {

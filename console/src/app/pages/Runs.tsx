@@ -9,7 +9,8 @@ import {
   DEFAULT_RANGE, DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
   type RunGroup, type RunOrder, type RunRange, type RunSort, type RunsFilters, type RunsSearch,
 } from "../history";
-import { PollDepsContext, type ScopeSearch } from "../scope";
+import { projectColours } from "../dayLog";
+import { PollDepsContext, useConsolePeers, type ScopeSearch } from "../scope";
 
 const STATE_LABELS: Record<RunGroup, string> = { active: "Active", merged: "Merged", failed: "Failed", abandoned: "Abandoned" };
 
@@ -26,11 +27,11 @@ const FAILURE_LABELS: Record<(typeof FAILURE_KINDS)[number], string> = {
 };
 
 const RANGES: (RangePreset & { value: RunRange; chip: string })[] = [
-  { value: "today", label: "Today", name: "Today", chip: "Today" },
-  { value: "2d", label: "2d", name: "2 days", chip: "Last 2 days" },
-  { value: "7d", label: "7d", name: "7 days", chip: "Last 7 days" },
-  { value: "30d", label: "30d", name: "30 days", chip: "Last 30 days" },
-  { value: "any", label: "Any", name: "Any time", chip: "Any time" },
+  { value: "today", label: "Today", name: "Today", back: 0, chip: "Today" },
+  { value: "2d", label: "2d", name: "2 days", back: 1, chip: "Last 2 days" },
+  { value: "7d", label: "7d", name: "7 days", back: 6, chip: "Last 7 days" },
+  { value: "30d", label: "30d", name: "30 days", back: 29, chip: "Last 30 days" },
+  { value: "any", label: "Any", name: "Any time", back: null, chip: "Any time" },
 ];
 
 const CHIP_WORDS = { projects: "Project", failure: "Failure", implementer: "Implementer" } as const;
@@ -135,6 +136,7 @@ export function Runs() {
   const page = search.page ?? 1;
   const size = search.size ?? DEFAULT_SIZE;
   const { now, rows, total, counts, implementers, projects, settled } = useRunPage({ ...search, state: search.state ?? "", sort, order, page, size });
+  const colours = projectColours(useConsolePeers().hosts);
   const navigate = useNavigate();
   const dock = useRef<HTMLDivElement>(null);
   const controls = useRef<HTMLDivElement>(null);
@@ -160,7 +162,7 @@ export function Runs() {
     onOrder: (picked) => sortBy(sort, picked as RunOrder),
   };
   const sections: FilterSection[] = [
-    { label: "Project", param: "projects", options: projects.map(({ name, count }) => ({ value: name, label: name, count })) },
+    { label: "Project", param: "projects", options: projects.map(({ name, count }) => ({ value: name, label: name, count, colour: colours.get(name) })) },
     { label: "Failure kind", param: "failure", options: FAILURE_KINDS.map((kind) => ({ value: kind, label: FAILURE_LABELS[kind], count: counts.failure[kind] ?? 0 })) },
     { label: "Implementer", param: "implementer", options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
   ];
@@ -179,7 +181,7 @@ export function Runs() {
           <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] tracking-[-0.01em] text-ink">Runs</h1>
           <div data-tools className="relative ml-auto flex min-w-0 items-center gap-1">
             <SearchToggle key={fieldKey} label="Search runs" />
-            <RangePopover presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
+            <RangePopover presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} now={now} />
             <FilterPopover icon label="Filter and sort" sections={sections} hidden={hidden} sorting={sorting}
               extra={<PressedGroup label="Per page" options={PAGE_SIZES} value={size} onPick={(picked) => go({ size: picked === DEFAULT_SIZE ? undefined : picked })} />} />
           </div>
