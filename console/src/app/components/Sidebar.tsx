@@ -3,6 +3,7 @@ import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
+import { SWEEP_OK } from "../../lib/hosts";
 import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine, type FooterLine } from "../notices";
@@ -77,8 +78,10 @@ const CONNECTION_FILL: Record<Connection, string> = { live: "fill-live", stale: 
 
 function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLine | null): Connection {
   if (hosts.length > 0 && hosts.every((host) => host.error != null)) return "down";
-  if (footer == null || footer.tail?.bad) return "stale";
-  return hosts.every((host) => host.status != null && host.error == null) ? "live" : "stale";
+  if (footer == null) return "stale";
+  const fine = (host: (typeof hosts)[number]) =>
+    host.seen_ms != null && host.error == null && (host.host_status == null || SWEEP_OK.has(host.host_status.sweep.state));
+  return hosts.every(fine) ? "live" : "stale";
 }
 
 function FootTip({ tip, folded, children }: { tip: string; folded: boolean; children: (trigger: Record<string, unknown>) => ReactNode }) {

@@ -223,3 +223,23 @@ test("the connection dot names a host daemon's answering projects and its sweep 
   expect(footer().getAttribute("aria-label")).toBe("writer-host · 3 projects answering · sweep stale");
   expect(footer().getAttribute("data-connection")).toBe("stale");
 });
+
+test("a host daemon answering with no project registered and a fresh sweep reads live", async () => {
+  const NOW = at(12, 0);
+  const sweep = { ...hostStatus.sweep, state: "fresh" as const, ended: NOW - 2 * MINUTE };
+  await mount(hostDaemon({ sweep }, [], NOW), NOW);
+  expect(footer().getAttribute("data-connection")).toBe("live");
+});
+
+test("with two answering hosts, a stale sweep on either reads stale", async () => {
+  const NOW = at(12, 0);
+  const sweep = { ...hostStatus.sweep, state: "stale" as const, ended: NOW - 20 * MINUTE };
+  const demo = hostDaemon({ sweep }, [{ name: "demo" }], NOW);
+  const second = peersFetch(SECOND, { [SECOND]: projectDaemon("/srv/dev/second", NOW, "writer-host-2") });
+  await mount((url, init) => {
+    if (url === `${DEMO}/peers`) return Promise.resolve(Response.json({ self: "writer-host:7710", peers: ["writer-host-2:7711"] }));
+    return url.startsWith(SECOND) ? second(url, init) : demo(url, init);
+  }, NOW);
+  expect(footer().getAttribute("aria-label")).toBe("2 hosts · 2 projects answering");
+  expect(footer().getAttribute("data-connection")).toBe("stale");
+});
