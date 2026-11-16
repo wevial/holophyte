@@ -10,15 +10,6 @@ import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { FoldChevron } from "./icons";
 
-/** The current group's wash and 4px left stripe: a live run's, or the tone its end took. */
-export const CURRENT_TINT: Record<Ending["tone"] | "live", string> = {
-  live: "bg-live-wash shadow-[inset_4px_0_0_var(--live)]",
-  bad: "bg-bad-wash shadow-[inset_4px_0_0_var(--bad)]",
-  wait: "bg-wait-wash shadow-[inset_4px_0_0_var(--wait)]",
-  ok: "bg-live-wash shadow-[inset_4px_0_0_var(--live)]",
-  neutral: "bg-paper-2 shadow-[inset_4px_0_0_var(--rule)]",
-};
-
 export type Ending =
   | { kind: "final_check"; tone: "bad"; final: Round; review: Round | null; parked: boolean }
   | { kind: "failed" | "other"; tone: "bad" | "neutral" }

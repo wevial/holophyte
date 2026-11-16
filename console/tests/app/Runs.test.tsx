@@ -270,7 +270,6 @@ const writerMerged = run({ id: 42, ticket: "WRITER-42", title: "Merge the notes"
 const writerAbandoned = run({ id: 43, ticket: "WRITER-43", title: "Drop the notes", started_ms: today(11, 0), ...ended("abandoned") });
 const sixRuns = () => fleet([demo12, demoParked, demoFailed], [writer41, writerMerged, writerAbandoned]);
 
-const countLine = () => document.querySelector("[data-count-line]")!.textContent;
 const tabs = () => within(screen.getByRole("group", { name: "Run states" })).getAllByRole("button");
 const tabTexts = () => tabs().map((tab) => tab.textContent);
 const pressedTabs = () => tabs().filter((tab) => tab.getAttribute("aria-pressed") === "true").map((tab) => tab.textContent!.split(" ")[0]);
@@ -310,16 +309,15 @@ test("the Active tab leaves out a paused run a later run resumed and does not co
   await mount("#/runs", resumedFleet());
   expect(pressedTabs()).toEqual(["All"]);
   expect(shownIds()).toEqual(["8", "5", "4"]);
-  expect(countLine()).toBe("all projects · 3 runs / 2 active / newest first");
+  expect(tabTexts()).toEqual(["All 2", "Active 2", "Merged 0", "Failed 0", "Abandoned 0"]);
   await pickTab("Active");
   expect(pressedTabs()).toEqual(["Active"]);
   expect(shownIds()).toEqual(["8", "4"]);
-  expect(countLine()).toBe("all projects · 2 runs / 2 active / newest first");
 });
 
-test("the count line and every state tab count the scoped runs, with All picked and every run listed by default", async () => {
+test("every state tab counts the scoped runs and All their sum, with no count line above them, All picked and every run listed by default", async () => {
   await mount("#/runs", sixRuns());
-  expect(countLine()).toBe("all projects · 6 runs / 3 active / newest first");
+  expect(document.querySelector("[data-count-line]")).toBeNull();
   expect(tabTexts()).toEqual(["All 6", "Active 3", "Merged 1", "Failed 1", "Abandoned 1"]);
   expect(pressedTabs()).toEqual(["All"]);
   expect(shownIds()).toEqual(["12", "13", "14", "41", "42", "43"]);
