@@ -139,6 +139,7 @@
   --ink-3: #655e7b;
   --accent: #5a4ebf;
   --focus: #5a4ebf;
+  --nav-on: linear-gradient(90deg, rgba(90, 78, 191, 0.28), rgba(90, 78, 191, 0.16));
   --need: #af2f6e;
   --live: #00794a;
   --ask: #8a6500;
@@ -230,6 +231,7 @@
   --ink-3: #655e62;
   --accent: #a4512e;
   --focus: #a4512e;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.28), rgb(from var(--focus) r g b / 0.16));
   --haze-ground: #fcfaf7;
   --haze-back: #f6c4ad;
   --haze-front: #f0b5c8;
@@ -250,6 +252,7 @@
   --ink-3: #5a6278;
   --accent: #3651c9;
   --focus: #3651c9;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.28), rgb(from var(--focus) r g b / 0.16));
   --wait: #3d4fc0;
   --haze-ground: #f5f7fb;
   --haze-back: #bcd0f5;
@@ -271,6 +274,7 @@
   --ink-3: #5f5f68;
   --accent: #5a4ebf;
   --focus: #5a4ebf;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.28), rgb(from var(--focus) r g b / 0.16));
   --haze-ground: #fafafa;
   --haze-back: #d4ccf3;
   --haze-front: #f2c3dc;
@@ -291,12 +295,17 @@
   --ink-3: #59665d;
   --accent: #1f7a5c;
   --focus: #1f7a5c;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.28), rgb(from var(--focus) r g b / 0.16));
   --haze-ground: #f6f8f4;
   --haze-back: #93cdb6;
   --haze-front: #e8f0a2;
   --haze-strength: 0.62;
   --haze-fallback-back: rgba(147, 205, 182, 0.75);
   --haze-fallback-front: rgba(232, 240, 162, 0.6);
+}
+
+:root[data-light="custom"] {
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.28), rgb(from var(--focus) r g b / 0.16));
 }
 
 :root[data-theme="dark"],
@@ -438,6 +447,7 @@
   --ink-3: #857fa2;
   --accent: #b9a3ff;
   --focus: #c9b4ff;
+  --nav-on: linear-gradient(90deg, rgba(164, 123, 255, 0.24), rgba(164, 123, 255, 0.05));
   --need: #f6a3c3;
   --live: #7fd6a0;
   --ask: #f0cf62;
@@ -508,6 +518,7 @@
   --ink-3: #9a8d87;
   --accent: #ffad7a;
   --focus: #ffbe96;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
   --haze-ground: #1b1817;
   --haze-back: #8a2f4f;
   --haze-front: #e8785a;
@@ -528,6 +539,7 @@
   --ink-3: #808aac;
   --accent: #9db1ff;
   --focus: #aabdff;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
   --haze-ground: #0b0e1d;
   --haze-back: #2c3cb0;
   --haze-front: #8a6bff;
@@ -548,6 +560,7 @@
   --ink-3: #86868f;
   --accent: #b9a3ff;
   --focus: #c9b4ff;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
   --haze-ground: #0a0a0b;
   --haze-back: #4b3fc4;
   --haze-front: #d07ee8;
@@ -568,12 +581,17 @@
   --ink-3: #84968c;
   --accent: #7fd6b8;
   --focus: #9be3c8;
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
   --haze-ground: #0e1411;
   --haze-back: #16594a;
   --haze-front: #b4d368;
   --haze-strength: 0.28;
   --haze-fallback-back: rgba(22, 89, 74, 0.55);
   --haze-fallback-front: rgba(180, 211, 104, 0.18);
+}
+
+:root[data-theme="dark"][data-dark="custom"] {
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -715,6 +733,7 @@
     --ink-3: #857fa2;
     --accent: #b9a3ff;
     --focus: #c9b4ff;
+    --nav-on: linear-gradient(90deg, rgba(164, 123, 255, 0.24), rgba(164, 123, 255, 0.05));
     --need: #f6a3c3;
     --live: #7fd6a0;
     --ask: #f0cf62;
@@ -784,6 +803,7 @@
     --ink-3: #9a8d87;
     --accent: #ffad7a;
     --focus: #ffbe96;
+    --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
     --haze-ground: #1b1817;
     --haze-back: #8a2f4f;
     --haze-front: #e8785a;
@@ -803,6 +823,7 @@
     --ink-3: #808aac;
     --accent: #9db1ff;
     --focus: #aabdff;
+    --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
     --haze-ground: #0b0e1d;
     --haze-back: #2c3cb0;
     --haze-front: #8a6bff;
@@ -822,6 +843,7 @@
     --ink-3: #86868f;
     --accent: #b9a3ff;
     --focus: #c9b4ff;
+    --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
     --haze-ground: #0a0a0b;
     --haze-back: #4b3fc4;
     --haze-front: #d07ee8;
@@ -841,12 +863,17 @@
     --ink-3: #84968c;
     --accent: #7fd6b8;
     --focus: #9be3c8;
+    --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
     --haze-ground: #0e1411;
     --haze-back: #16594a;
     --haze-front: #b4d368;
     --haze-strength: 0.28;
     --haze-fallback-back: rgba(22, 89, 74, 0.55);
     --haze-fallback-front: rgba(180, 211, 104, 0.18);
+  }
+
+  :root:not([data-theme="light"])[data-dark="custom"] {
+    --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
   }
 }
 
