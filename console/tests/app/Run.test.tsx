@@ -198,18 +198,57 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a reviewing run's header names its ticket, host, box and routes, says where it stands and shows its review round in the stepper", async () => {
+test("a reviewing run's breadcrumb names its ticket and run, its verdict says where it stands and its stepper shows its review round", async () => {
   await mount("#/runs/demo/12");
   const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
   expect(crumb.textContent).toBe("Runs / demo tickets / DEMO-12 / run 12");
   expect(within(crumb).getByRole("link", { name: "Runs" }).getAttribute("href")).toEndWith("#/runs");
   expect(within(crumb).getByRole("link", { name: "demo tickets" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Count the rounds");
-  expect(document.querySelector("[data-run-facts]")!.textContent).toBe(
-    "DEMO-12 · run 12 · demo on writer-1 · started 11:30 PDT · 16m of a 25m box · implementer claude opus · reviewer codex gpt-6-sol",
-  );
   expect(verdict()).toBe("Reviewing round 2 of 3. None of one criterion is met yet.");
   expect(stages()).toContain("Review · round 2 / 3: current");
+});
+
+test("a reviewing run's facts row gives its routes, start and host as named icons with values, each naming itself on keyboard focus", async () => {
+  await mount("#/runs/demo/12");
+  const icons = within(document.querySelector<HTMLElement>("[data-run-facts-row]")!).getAllByRole("img");
+  expect(icons.map((icon) => [icon.getAttribute("aria-label"), icon.parentElement!.textContent])).toEqual([
+    ["Implementer", "claude opus"],
+    ["Reviewer", "codex gpt-6-sol"],
+    ["Started", "11:30 PDT"],
+    ["Host", "writer-1"],
+  ]);
+  for (const icon of icons) {
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "Tab" });
+      icon.parentElement!.focus();
+    });
+    expect(tooltip()?.textContent).toBe(icon.getAttribute("aria-label") ?? "");
+    await act(async () => icon.parentElement!.blur());
+  }
+  expect(document.querySelector("[data-run-facts]")).toBeNull();
+});
+
+test("the verdict line follows its sentence with the agent time against its box, the bar filled to its share and the box named on focus", async () => {
+  await mount("#/runs/demo/12");
+  const line = document.querySelector<HTMLElement>("[data-run-verdict]")!;
+  expect(line.textContent).toBe("Reviewing round 2 of 3. None of one criterion is met yet.16m / 25m");
+  const fill = line.querySelector<HTMLElement>("[data-time-fill]")!;
+  expect(fill.style.width).toBe("64%");
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    fill.parentElement!.parentElement!.focus();
+  });
+  expect(tooltip()?.textContent).toBe("16m of a 25m box");
+});
+
+test("the run body sits on the canvas with no card, and Progress is a sentence-case head", async () => {
+  await mount("#/runs/demo/12");
+  const body = document.querySelector("[data-run-body]")!;
+  expect(body.className).not.toMatch(/\bborder\b|\bbg-paper\b/);
+  const progress = within(screen.getByRole("region", { name: "Progress" })).getByRole("heading", { level: 2 });
+  expect(progress.firstChild!.textContent).toBe("Progress");
+  expect(progress.className).not.toMatch(/uppercase|tracking-/);
 });
 
 test("neither a reviewing run nor a merged run says Nothing needs you; a failed run waiting in Needs you gives its failure and reason", async () => {

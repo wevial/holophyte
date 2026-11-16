@@ -137,16 +137,14 @@ test("a successful Ask toasts that the answer appears here and clears the questi
   expect(textbox().value).toBe("");
 });
 
-test("a live run disables Ask until the run parks on its pull request and the header link focuses its composer", async () => {
+test("a live run disables Ask until the run parks on its pull request, and its header offers no link to the composer", async () => {
   await mount();
   const ask = agent().getByRole("button", { name: "Ask" });
   expect(ask.hasAttribute("disabled")).toBe(true);
   expect(ask.getAttribute("title")).toBe("Ask opens once the run parks on its pull request.");
-  const link = screen.getByRole("link", { name: "Steer or ask" });
-  expect(link.getAttribute("href")).toBe("#agent");
-  await click(link);
-  expect(document.activeElement).toBe(textbox());
-  expect(window.location.hash).toBe("#/runs/demo/12");
+  expect(screen.queryByRole("link", { name: "Steer or ask" })).toBeNull();
+  expect(document.querySelector('a[href="#agent"]')).toBeNull();
+  expect(agent().getByRole("textbox")).toBeTruthy();
 });
 
 test("actions off disables both message modes and Send with the host explanation", async () => {

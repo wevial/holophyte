@@ -141,6 +141,8 @@
   --focus: #5a4ebf;
   --nav-on: linear-gradient(90deg, rgba(90, 78, 191, 0.28), rgba(90, 78, 191, 0.16));
   --need: #af2f6e;
+  --time-from: #6a4fd6;
+  --time-to: #c0478c;
   --live: #00794a;
   --ask: #8a6500;
   --wait: #5a4ebf;
@@ -449,6 +451,8 @@
   --focus: #c9b4ff;
   --nav-on: linear-gradient(90deg, rgba(164, 123, 255, 0.24), rgba(164, 123, 255, 0.05));
   --need: #f6a3c3;
+  --time-from: #5b4ae6;
+  --time-to: #c77ee8;
   --live: #7fd6a0;
   --ask: #f0cf62;
   --wait: #aaa7ff;
@@ -735,6 +739,8 @@
     --focus: #c9b4ff;
     --nav-on: linear-gradient(90deg, rgba(164, 123, 255, 0.24), rgba(164, 123, 255, 0.05));
     --need: #f6a3c3;
+    --time-from: #5b4ae6;
+    --time-to: #c77ee8;
     --live: #7fd6a0;
     --ask: #f0cf62;
     --wait: #aaa7ff;
@@ -913,6 +919,8 @@
   --color-rule-2: var(--rule-2);
   --color-act: var(--act);
   --color-need: var(--need);
+  --color-time-from: var(--time-from);
+  --color-time-to: var(--time-to);
   --color-act-ink: var(--act-ink);
   --color-act-wash: var(--act-wash);
   --color-need-wash: var(--need-wash);
