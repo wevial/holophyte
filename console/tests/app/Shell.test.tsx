@@ -165,12 +165,11 @@ test("the sidebar footer, folded or not, holds Settings and the theme toggle and
     expect(within(footer).getByRole("link", { name: "Settings" })).toBeTruthy();
     expect(within(footer).getByRole("group", { name: "Theme" })).toBeTruthy();
     expect(within(footer).queryByRole("button", { name: /colour theme|switch to/i })).toBeNull();
-    if (!fold) {
-      const row = within(footer).getByRole("link", { name: "Settings" }).parentElement!;
-      expect(row.parentElement).toBe(footer);
-      expect(row.previousElementSibling).toBe(footer.querySelector("p"));
-      expect([...row.children]).toEqual([within(footer).getByRole("link", { name: "Settings" }), within(footer).getByRole("group", { name: "Theme" })]);
-    }
+    expect([...footer.children]).toEqual([
+      footer.querySelector("[data-connection]")!,
+      within(footer).getByRole("group", { name: "Theme" }),
+      within(footer).getByRole("link", { name: "Settings" }),
+    ]);
     expect(screen.queryByRole("link", { name: /classic/i })).toBeNull();
     expect(document.querySelector('a[href*="classic"]')).toBeNull();
   }
@@ -238,6 +237,19 @@ test("the theme group's Dawn, Night and System buttons stamp and store the choic
   expect(pressed()).toEqual(["System"]);
 });
 
+test("folded or not, the Theme group holds Dawn, Night and System alone, draws no border or ground, and only the pressed one sits on selected", async () => {
+  await mount("#/");
+  for (const fold of [false, true]) {
+    if (fold) fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect([...themeGroup().children].map((child) => child.getAttribute("aria-label"))).toEqual(["Dawn", "Night", "System"]);
+    expect([...themeGroup().classList].filter((name) => /(^|:)(border|bg|ring|shadow)(-|$)/.test(name))).toEqual([]);
+    const onSelected = within(themeGroup()).getAllByRole("button").filter((button) => button.classList.contains("bg-selected"));
+    expect(onSelected.map((button) => button.getAttribute("aria-label"))).toEqual(pressed());
+    expect(pressed()).toEqual([fold ? "Dawn" : "System"]);
+    fireEvent.click(within(themeGroup()).getByRole("button", { name: "Dawn" }));
+  }
+});
+
 test("a stored Night presses Night, and with nothing stored System stays pressed across a system preference change", async () => {
   localStorage.setItem(THEME_KEY, "dark");
   await mount("#/");
@@ -261,16 +273,47 @@ test("a stored Night presses Night, and with nothing stored System stays pressed
   }
 });
 
-test("the footer names the host and how long ago it was polled, and reads polling before any answer", async () => {
+const tooltip = () => screen.queryByRole("tooltip");
+const keyboardFocus = (link: HTMLElement) => act(async () => {
+  fireEvent.keyDown(document.body, { key: "Tab" });
+  link.focus();
+});
+const pointerOver = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+};
+const pointerAway = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+};
+
+const connectionDot = () => screen.getByRole("complementary", { name: "Console" }).querySelector<HTMLElement>("[data-connection]")!;
+const breathes = () => connectionDot().querySelector(".state-pulse") != null;
+
+test("before any answer the connection dot is stale and still and named polling, and with every host refusing it is down", async () => {
   const pending: Fetch = () => new Promise(() => {});
   await mount("#/", pending);
-  expect(screen.getByText("polling…")).toBeTruthy();
+  expect(connectionDot().getAttribute("data-connection")).toBe("stale");
+  expect(connectionDot().getAttribute("aria-label")).toBe("polling…");
+  expect(breathes()).toBe(false);
   cleanup();
 
   await mount("#/", peersFetch(ORIGIN, { [ORIGIN]: { down: new Error("connection refused") } }));
-  expect(screen.getByText("polling…")).toBeTruthy();
-  cleanup();
+  expect(connectionDot().getAttribute("data-connection")).toBe("down");
+  expect(connectionDot().getAttribute("aria-label")).toBe("polling…");
+  expect(breathes()).toBe(false);
+});
 
+test("with one of two hosts refusing, the connection dot is stale and still", async () => {
+  await mount("#/", peersFetch(ORIGIN, {
+    [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf([]) },
+    [PEER]: { down: new Error("connection refused") },
+  }));
+  expect(connectionDot().getAttribute("data-connection")).toBe("stale");
+  expect(breathes()).toBe(false);
+});
+
+test("with the one host answering, the connection dot is live and breathing, its name and focus tooltip carry the footer sentence, and no sentence shows as text", async () => {
   const realSetInterval = globalThis.setInterval;
   const seconds: (() => void)[] = [];
   globalThis.setInterval = ((fn: () => void, ms?: number) => {
@@ -283,10 +326,26 @@ test("the footer names the host and how long ago it was polled, and reads pollin
     }));
     clock.now = 4000;
     act(() => seconds.forEach((tick) => tick()));
-    expect(document.querySelector("[data-footer-line]")?.textContent).toBe("writer-host · 1 project answering · polled 4s ago");
+    const sentence = "writer-host · 1 project answering · polled 4s ago";
+    expect(connectionDot().getAttribute("data-connection")).toBe("live");
+    expect(breathes()).toBe(true);
+    expect(screen.getByRole("img", { name: sentence })).toBe(connectionDot());
+    expect(screen.getByRole("complementary", { name: "Console" }).querySelector("footer")!.textContent).toBe("");
+    expect(tooltip()).toBeNull();
+    await keyboardFocus(connectionDot());
+    expect(tooltip()!.textContent).toBe(sentence);
   } finally {
     globalThis.setInterval = realSetInterval;
   }
+});
+
+test("expanded, the Settings link shows no text, keeps its name and tooltips Settings on keyboard focus", async () => {
+  await mount("#/");
+  const settings = within(screen.getByRole("complementary", { name: "Console" }).querySelector("footer")!).getByRole("link", { name: "Settings" });
+  expect(settings.textContent).toBe("");
+  expect(tooltip()).toBeNull();
+  await keyboardFocus(settings);
+  expect(tooltip()!.textContent).toBe("Settings");
 });
 
 test("the six page icons differ from one another, unfolded and folded", async () => {
@@ -494,20 +553,6 @@ test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords
   }
 });
 
-const tooltip = () => screen.queryByRole("tooltip");
-const keyboardFocus = (link: HTMLElement) => act(async () => {
-  fireEvent.keyDown(document.body, { key: "Tab" });
-  link.focus();
-});
-const pointerOver = async (link: HTMLElement) => {
-  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
-};
-const pointerAway = async (link: HTMLElement) => {
-  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
-};
-
 test("folded, a rail link's tooltip names its page and count on keyboard focus or hover, describes the link, and leaves on blur or pointer leave", async () => {
   localStorage.setItem("holophyte.next.rail", "folded");
   await mount("#/", needsDaemons());
@@ -547,7 +592,7 @@ test("expanded, no page link carries a tooltip on focus or hover, and the curren
   expect(findings.getAttribute("aria-current")).toBe("page");
   await keyboardFocus(findings);
   await pointerOver(findings);
-  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  expect(tooltip()).toBeNull();
   expect(pages().filter((link) => link.hasAttribute("aria-describedby"))).toEqual([]);
 });
 

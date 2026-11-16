@@ -129,14 +129,6 @@ export function FoldRightIcon() {
   );
 }
 
-export function SignalIcon({ className }: { className?: string }) {
-  return (
-    <Stroke className={className}>
-      <path d="M2.8 7a7.4 7.4 0 0 1 10.4 0M5 9.4a4.2 4.2 0 0 1 6 0M8 12.2v.1" />
-    </Stroke>
-  );
-}
-
 export function MoonIcon() {
   return (
     <Stroke>
@@ -157,8 +149,8 @@ export function SunIcon() {
 export function SystemIcon() {
   return (
     <Stroke>
-      <rect x="2" y="2.5" width="12" height="8.5" rx="1.5" />
-      <path d="M8 11v2.5M5.5 13.5h5" />
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 2a6 6 0 0 0 0 12Z" fill="currentColor" />
     </Stroke>
   );
 }
