@@ -177,6 +177,21 @@ function RowIcon({ row }: { row: SwitcherRow }) {
   return <span className={`flex ${iconColour(row)}`}>{row.name == null ? <AllProjectsIcon /> : <FolderIcon />}</span>;
 }
 
+function ScopeDots({ colours }: { colours: string[] }) {
+  return (
+    <span data-dots aria-hidden="true" className="flex shrink-0">
+      {colours.map((colour, at) => (
+        <i
+          key={at}
+          data-dot
+          style={{ background: colour }}
+          className="-mr-0.5 size-2 rounded-full shadow-[0_0_0_2px_var(--side)] last:mr-0 group-hover:shadow-[0_0_0_2px_var(--hover)]"
+        />
+      ))}
+    </span>
+  );
+}
+
 function HeldTag() {
   return <span className="font-mono text-[11px] font-normal text-wait">held</span>;
 }
@@ -195,7 +210,7 @@ function unknownRow(name: string): SwitcherRow {
 
 const rowKey = (row: SwitcherRow) => (row.name == null ? "all-projects-scope" : `project:${row.name}`);
 
-export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded: boolean }) {
+export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]; colours: Map<string, string>; folded: boolean }) {
   const { project } = useSearch({ from: "__root__" });
   const navigate = useNavigate();
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -203,6 +218,8 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
 
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const byKey = useMemo(() => new Map(rows.map((row) => [rowKey(row), row])), [rows]);
+  const inScope = current.name == null ? rows.flatMap((row) => (row.name == null ? [] : [row.name])) : [current.name];
+  const dots = inScope.flatMap((name) => colours.get(name) ?? []);
   const items = useMemo(() => rows.map((row) => ({ value: rowKey(row), label: row.label })), [rows]);
 
   const handle = usePrimitive(switcher, {
@@ -241,11 +258,11 @@ export function ProjectSwitcher({ rows, folded }: { rows: SwitcherRow[]; folded:
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className={`relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink hover:bg-hover ${
+            className={`group relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink hover:bg-hover ${
               folded ? "size-11 justify-center" : "h-row w-full px-2.5"
             }`}
           >
-            <RowIcon row={current} />
+            <ScopeDots colours={dots} />
             {folded ? (
               current.need > 0 && (
                 <span data-need aria-hidden="true" className="absolute top-0.5 right-1 font-mono text-[9px] leading-none font-semibold text-need">
