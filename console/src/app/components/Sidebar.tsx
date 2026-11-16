@@ -3,9 +3,10 @@ import { Link, useRouterState, useSearch } from "@tanstack/react-router";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
+import { SWEEP_OK } from "../../lib/hosts";
 import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
 import { useOpenCount } from "../findings";
-import { footerLine } from "../notices";
+import { footerLine, type FooterLine } from "../notices";
 import { hostsNeedingAttention, SETTINGS_TABS } from "../settings";
 import { projectColours } from "../dayLog";
 import { switcherRows } from "../projects";
@@ -24,7 +25,6 @@ import {
   PanelLeftIcon,
   RunsIcon,
   ScoutsIcon,
-  SignalIcon,
   SettingsIcon,
   SunIcon,
   SystemIcon,
@@ -68,8 +68,32 @@ function writeFolded(folded: boolean, key = RAIL_KEY): void {
   }
 }
 
-const FOOTER_BUTTON =
-  "flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-[6px] px-2 text-[11px] font-medium uppercase tracking-[0.1em] text-ink-2 hover:bg-hover hover:text-ink";
+const FOOT_ICON = "relative flex size-7 shrink-0 items-center justify-center rounded-[6px]";
+
+const TIP = "z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card";
+
+type Connection = "live" | "stale" | "down";
+
+const CONNECTION_FILL: Record<Connection, string> = { live: "fill-live", stale: "fill-ask", down: "fill-bad" };
+
+function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLine | null): Connection {
+  if (hosts.length > 0 && hosts.every((host) => host.error != null)) return "down";
+  if (footer == null) return "stale";
+  const fine = (host: (typeof hosts)[number]) =>
+    host.seen_ms != null && host.error == null && (host.host_status == null || SWEEP_OK.has(host.host_status.sweep.state));
+  return hosts.every(fine) ? "live" : "stale";
+}
+
+function FootTip({ tip, folded, children }: { tip: string; folded: boolean; children: (trigger: Record<string, unknown>) => ReactNode }) {
+  return (
+    <Tooltip delay={300}>
+      <TooltipTrigger render={({ type: _button, "aria-describedby": _same, ...trigger }) => <>{children(trigger)}</>} />
+      <TooltipContent side={folded ? "right" : "top"} sideOffset={folded ? 10 : 8} className={TIP}>
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 const THEME_CHOICES: { theme: Theme; name: string; icon: ReactNode }[] = [
   { theme: "light", name: "Dawn", icon: <SunIcon /> },
@@ -93,9 +117,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
           title={choice.name}
           aria-pressed={choice.theme === theme}
           onClick={() => setTheme(choice.theme)}
-          className={`flex items-center justify-center rounded-[6px] hover:text-ink ${folded ? "h-7 w-11" : "min-h-11 w-7"} ${
-            choice.theme === theme ? "bg-selected text-focus" : "text-ink-3 hover:bg-hover"
-          }`}
+          className={`${FOOT_ICON} ${choice.theme === theme ? "bg-selected text-ink" : "text-ink-3 hover:bg-hover hover:text-ink"}`}
         >
           {choice.icon}
         </button>
@@ -172,11 +194,7 @@ function PageLink({
         )}
       />
       {folded && (
-        <TooltipContent
-          side="right"
-          sideOffset={10}
-          className="z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card"
-        >
+        <TooltipContent side="right" sideOffset={10} className={TIP}>
           {label}
           {badge > 0 && <span className="font-mono text-ink-3"> {badge}</span>}
         </TooltipContent>
@@ -289,27 +307,46 @@ export function Sidebar() {
   const shown = PAGES.filter((page) => page.to !== "/merge-queue" || scopedQueues.some(({ queue }) => queue.configured === true));
   const badges: Partial<Record<PageTo, number>> = { "/": needs, "/merge-queue": queued, "/findings": open, "/scouts": scouting };
   const tones: Partial<Record<PageTo, string>> = { "/scouts": "text-live", "/merge-queue": queueWaits ? "text-need" : "text-live" };
-  const failing = hosts.some((host) => host.error != null);
   const footer = footerLine(hosts, now);
   const polled = footer == null ? "polling…" : footer.tail == null ? footer.lead : `${footer.lead} · ${footer.tail.text}`;
+  const connection = connectionOf(hosts, footer);
+
+  const dot = (
+    <FootTip tip={polled} folded={folded}>
+      {(trigger) => (
+        <span
+          {...trigger}
+          tabIndex={0}
+          role="img"
+          aria-label={polled}
+          data-connection={connection}
+          className={`flex h-7 shrink-0 items-center justify-center rounded-[6px] ${folded ? "w-7" : "mr-auto w-5"}`}
+        >
+          <svg viewBox="0 0 16 16" width={7} height={7} aria-hidden="true" className="size-[7px]">
+            <circle cx="8" cy="8" r="8" className={`${CONNECTION_FILL[connection]} ${connection === "live" ? "state-pulse" : ""}`} />
+          </svg>
+        </span>
+      )}
+    </FootTip>
+  );
 
   const settings = (
-    <Link
-      to="/settings/$tab"
-      params={{ tab: "general" }}
-      search={keepScope}
-      aria-current={onSettings ? "page" : undefined}
-      aria-label={hostNeeds > 0 ? `Settings, ${hostNeeds} ${hostNeeds === 1 ? "host needs" : "hosts need"} attention` : "Settings"}
-      title={folded ? "Settings" : undefined}
-      className={FOOTER_BUTTON}
-    >
-      <span className="relative">
-        <SettingsIcon />
-        {folded && <LinkBadge badge={hostNeeds} folded />}
-      </span>
-      {!folded && <span>Settings</span>}
-      {!folded && <LinkBadge badge={hostNeeds} folded={false} />}
-    </Link>
+    <FootTip tip="Settings" folded={folded}>
+      {(trigger) => (
+        <Link
+          {...trigger}
+          to="/settings/$tab"
+          params={{ tab: "general" }}
+          search={keepScope}
+          aria-current={onSettings ? "page" : undefined}
+          aria-label={hostNeeds > 0 ? `Settings, ${hostNeeds} ${hostNeeds === 1 ? "host needs" : "hosts need"} attention` : "Settings"}
+          className={`${FOOT_ICON} text-ink-3 hover:bg-hover hover:text-ink`}
+        >
+          <SettingsIcon />
+          <LinkBadge badge={hostNeeds} folded />
+        </Link>
+      )}
+    </FootTip>
   );
 
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -396,32 +433,10 @@ export function Sidebar() {
 
       {folded && <div className="mt-auto flex justify-center pt-3">{toggle}</div>}
 
-      <footer className={`flex flex-col gap-2 py-3 ${folded ? "items-center px-1.5" : "mt-auto px-3"}`}>
-        <p className="flex min-w-0 items-start gap-1 font-mono text-[11px] leading-[1.4] tracking-[-0.02em] text-ink-3" title={folded ? polled : undefined}>
-          <SignalIcon className={failing ? "text-bad" : "text-live"} />
-          {!folded && (
-            <span data-footer-line className="min-w-0 break-words">
-              {footer == null ? polled : footer.lead}
-              {footer?.tail && (
-                <>
-                  {" · "}
-                  <span className={footer.tail.bad ? "text-bad" : undefined}>{footer.tail.text}</span>
-                </>
-              )}
-            </span>
-          )}
-        </p>
-        {folded ? (
-          <>
-            {settings}
-            <ThemeGroup folded />
-          </>
-        ) : (
-          <div className="flex items-center justify-between">
-            {settings}
-            <ThemeGroup folded={false} />
-          </div>
-        )}
+      <footer className={`flex gap-0.5 py-3 ${folded ? "flex-col items-center px-1.5" : "mt-auto items-center px-3"}`}>
+        {dot}
+        <ThemeGroup folded={folded} />
+        {settings}
       </footer>
     </aside>
   );
