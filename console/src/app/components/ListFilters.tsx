@@ -367,7 +367,6 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
         <div role="dialog" aria-label={label}
           className="absolute top-full left-0 z-20 mt-1 max-h-[min(560px,calc(100vh-11rem))] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
           {sorting && <Sorting sorting={sorting} />}
-          {extra}
           {groups}
         </div>
       )}
