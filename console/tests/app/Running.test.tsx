@@ -300,12 +300,33 @@ test("a run with no event, step or stop draws no activity line under its title",
   expect(within(rowOf("WRITER-3")).getByText("Name the writer")).toBeTruthy();
 });
 
-test("a run with no time box shows its minutes without a bar, and its name says the minutes alone", async () => {
+const TIME_SLOT = ["inline-block", "w-[6ch]", "text-right", "tabular-nums"];
+const timeSlot = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-time]")!;
+
+test("each row's time sits after its bar in one fixed-width, right-aligned, tabular slot, whatever the label's length", async () => {
+  const times = [
+    runOf(61, "DEMO-61", "Seconds", { phase: "working", agent_ms: 54_000, time_box_ms: 25 * MINUTE }),
+    runOf(62, "DEMO-62", "Minutes", { phase: "working", agent_ms: 3 * MINUTE, time_box_ms: 25 * MINUTE }),
+    runOf(63, "DEMO-63", "Hours", { phase: "working", agent_ms: 65 * MINUTE, time_box_ms: 90 * MINUTE }),
+  ];
+  await mount("#/", [statusOf("/srv/dev/demo", times), statusOf("/srv/dev/writer", [])]);
+  const slots = ["DEMO-61", "DEMO-62", "DEMO-63"].map((ticket) => {
+    const row = rowOf(ticket);
+    const slot = timeSlot(row);
+    expect(row.querySelector("[data-bar]")!.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(TIME_SLOT.filter((name) => !slot.classList.contains(name))).toEqual([]);
+    return slot.textContent;
+  });
+  expect(slots).toEqual(["54s", "3m", "1h 05m"]);
+});
+
+test("a run with no time box shows its minutes without a bar in the same time slot, and its name says the minutes alone", async () => {
   const unboxed = runOf(50, "DEMO-50", "No box", { phase: "working", agent_ms: 7 * MINUTE, time_box_ms: null });
   await mount("#/", [statusOf("/srv/dev/demo", [unboxed]), statusOf("/srv/dev/writer", [])]);
   const row = rowOf("DEMO-50");
   expect(row.getAttribute("aria-label")).toBe("DEMO-50 No box, Implement, 7 minutes");
-  expect(within(row).getByText("7m")).toBeTruthy();
+  expect(timeSlot(row).textContent).toBe("7m");
+  expect(TIME_SLOT.filter((name) => !timeSlot(row).classList.contains(name))).toEqual([]);
   expect(row.querySelector("[data-bar]")).toBeNull();
 });
 
