@@ -155,7 +155,6 @@ test("one host in scope serves each page itself and Next walks to the last page"
   await press(button("Next"));
   expect(range()).toBe("101–120 of 120");
   expect(button("Next").hasAttribute("disabled")).toBe(true);
-
 });
 
 test("the Filter popover's Per page group holds 25, 50 and 100 with 50 pressed, and 25 writes size=25, goes back to page 1 and asks the hosts for 25 runs", async () => {

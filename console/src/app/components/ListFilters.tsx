@@ -75,6 +75,12 @@ export function SearchToggle({ label }: { label: string }) {
   const { q } = useSearch({ strict: false }) as { q?: string };
   const [opened, setOpened] = useState(false);
   const shown = opened || q != null;
+  const held = useRef(false);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!shown && held.current) button.current?.focus();
+    held.current = false;
+  }, [shown]);
   useEffect(() => {
     if (shown) return;
     const open = (event: KeyboardEvent) => {
@@ -87,15 +93,18 @@ export function SearchToggle({ label }: { label: string }) {
   }, [shown]);
   if (!shown) {
     return (
-      <button type="button" aria-label={label} title="Search" onClick={() => setOpened(true)} className={TOOL}>
+      <button ref={button} type="button" aria-label={label} title="Search" onClick={() => setOpened(true)} className={TOOL}>
         <SearchIcon />
       </button>
     );
   }
   return (
-    <label className="flex h-[28px] w-60 min-w-28 shrink items-center gap-2 rounded-button bg-selected px-2.5 text-ink-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+    <label onFocus={() => (held.current = true)} className="flex h-[28px] w-60 min-w-28 shrink items-center gap-2 rounded-button bg-selected px-2.5 text-ink-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
       <SearchIcon />
-      <SearchField label={label} autoFocus={opened} onBlur={(text) => { if (text.trim() === "") setOpened(false); }}
+      <SearchField label={label} autoFocus={opened} onBlur={(text) => {
+        held.current = false;
+        if (text.trim() === "") setOpened(false);
+      }}
         className="h-full min-w-0 flex-1 border-0 bg-transparent font-sans text-[14px] text-ink outline-none! placeholder:text-ink-3 [&::-webkit-search-cancel-button]:hidden" />
     </label>
   );

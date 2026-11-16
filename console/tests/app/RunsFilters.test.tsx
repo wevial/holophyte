@@ -206,6 +206,16 @@ test("Search runs opens a focused field writing q after its debounce, Escape cle
   expect(field().value).toBe("");
 });
 
+test("Escape in a search field the link opened clears q and gives focus to the Search runs button", async () => {
+  await mount("#/runs?q=lock", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
+  field().focus();
+  await act(async () => void fireEvent.keyDown(field(), { key: "Escape" }));
+  await settleAll();
+  expect(hashSearch().has("q")).toBe(false);
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(document.activeElement).toBe(searchButton());
+});
+
 test("typing a search from a later page goes back to page 1", async () => {
   const locks = runs("DEMO", 100, 60).map((row) => ({ ...row, title: `Fix the lock ${row.id}` }));
   const daemons = fleet({ rows: locks }, { rows: [] });
