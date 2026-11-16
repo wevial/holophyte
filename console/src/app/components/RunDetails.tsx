@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useContext, useState } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import type { Round, RunDetail, RunEvent, RunTurn } from "../../lib/contract.gen";
 import { isFinalCheck } from "../../lib/log";
 import { formatClock, formatDuration } from "../../lib/format";
@@ -8,9 +9,11 @@ import { useRunFiles, useRunTurns } from "../queries";
 import { PollDepsContext } from "../scope";
 import { CRUMB_LINK } from "../pages/runShared";
 import { turnPage, turnTitles } from "../turn";
-import { SECTION_LABEL } from "./Criteria";
+import { LoopIcon } from "./icons";
 import { RoundInstructions } from "./RoundInstructions";
 
+const HEAD = "m-0 mb-2 text-[13px] font-medium text-ink";
+const COUNT = "font-mono text-[12px] font-normal text-ink-3";
 const ROW = "flex justify-between gap-3 border-b border-dashed border-rule-2 py-1 font-mono text-[12.5px] leading-[1.8]";
 
 function ReviewRound({ round, max, final, events }: { round: Round; max: number; final: boolean; events: RunEvent[] }) {
@@ -29,6 +32,20 @@ function ReviewRound({ round, max, final, events }: { round: Round; max: number;
     </p>)}
     <RoundInstructions round={round} events={events} />
   </li>;
+}
+
+function RoundCount({ count }: { count: number }) {
+  const name = `${count} review ${count === 1 ? "round" : "rounds"}`;
+  return <Tooltip delay={300}>
+    <TooltipTrigger
+      render={({ type: _button, ...trigger }) => <span {...trigger} role="img" aria-label={name} className={`ml-2.5 inline-flex items-center gap-1 align-[-3px] ${COUNT}`}>
+        <LoopIcon />{count}
+      </span>}
+    />
+    <TooltipContent side="top" sideOffset={6} className="z-50 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card">
+      {name}
+    </TooltipContent>
+  </Tooltip>;
 }
 
 function Turns({ project, run, turns }: { project: string; run: number; turns: RunTurn[] }) {
@@ -51,13 +68,13 @@ export function RunDetails({ project, base, detail, live }: { project: string; b
       ? "git did not answer in time."
       : "Could not load files.";
   return <details onToggle={(event) => setOpen(event.currentTarget.open)} className="mt-2 border-t border-rule text-ink-2">
-    <summary className="min-h-11 cursor-pointer py-3 font-mono text-[11px] font-medium tracking-[.14em]">
-      <span className="uppercase">Details</span>{" "}
-      <span className="tracking-[.04em] text-ink-3">files · review rounds · turns</span>
+    <summary className="min-h-11 cursor-pointer py-3 text-[13px] font-semibold text-ink">
+      <span>Details</span>
+      {detail.rounds.length > 0 && <RoundCount count={detail.rounds.length} />}
     </summary>
     {open && <div className="flex flex-col gap-[18px] pb-2 pt-3">
       <section aria-label="Files changed">
-        <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Files changed{files.data && ` · ${files.data.files.length}${files.data.truncated ? " shown" : ""}`}</h3>
+        <h3 className={HEAD}>Files changed{files.data && <span className={COUNT}>{` · ${files.data.files.length}${files.data.truncated ? " shown" : ""}`}</span>}</h3>
         {files.isPending && <p role="status">Loading files…</p>}
         {files.isError ? <p role="alert">{fileError}</p> : files.data && <>
           {files.data.files.length === 0 && <p>No files changed yet.</p>}
@@ -70,13 +87,13 @@ export function RunDetails({ project, base, detail, live }: { project: string; b
         </>}
       </section>
       <section aria-label="Review rounds">
-        <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Review rounds</h3>
+        <h3 className={HEAD}>Review rounds</h3>
         <ol className="m-0 list-none p-0">
           {detail.rounds.map((round) => <ReviewRound key={round.round} round={round} max={detail.run.max_rounds} final={isFinalCheck(round, detail.events)} events={detail.events} />)}
         </ol>
       </section>
       <section aria-label="Transcript">
-        <h3 className={`${SECTION_LABEL} m-0 mb-2`}>Transcript{turns.data && ` · ${turns.data.turns.length} turns`}</h3>
+        <h3 className={HEAD}>Transcript{turns.data && <span className={COUNT}>{` · ${turns.data.turns.length} turns`}</span>}</h3>
         {turns.isPending && <p role="status">Loading turns…</p>}
         {turns.isError ? <p role="alert">Could not load turns.</p> : turns.data && <Turns project={project} run={detail.run.id} turns={turns.data.turns} />}
       </section>

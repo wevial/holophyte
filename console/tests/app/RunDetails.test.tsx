@@ -292,3 +292,36 @@ test("Details draws no note or PR comments block for a round with neither", asyn
   expect(region.queryByText(/^Note · /)).toBeNull();
   expect(region.queryByText(/^PR comments/)).toBeNull();
 });
+
+const summary = () => screen.getByText("Details", { exact: true }).closest("summary")!;
+const styledAsCaps = (element: Element) => [element, ...element.querySelectorAll("*")]
+  .some((node) => /(^|\s)(uppercase|tracking-\S+)/.test(node.getAttribute("class") ?? ""));
+
+test.each([
+  [detail.rounds, "2 review rounds"],
+  [detail.rounds.slice(0, 1), "1 review round"],
+])("the Details summary reads Details in sentence case with its round count as an image whose tooltip names it: %#", async (rounds, name) => {
+  await mount(files, { ...detail, rounds });
+  const count = within(summary()).getByRole("img", { name });
+  expect(summary().textContent).not.toContain("files · review rounds · turns");
+  expect(styledAsCaps(summary())).toBe(false);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  await act(async () => void fireEvent.pointerEnter(count, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+  expect(screen.getByRole("tooltip").textContent).toBe(name);
+});
+
+test("the Details summary of a run with no review rounds reads Details with no round count", async () => {
+  await mount(files, { ...detail, rounds: [] });
+  expect(summary().textContent).toBe("Details");
+  expect(within(summary()).queryByRole("img")).toBeNull();
+});
+
+test("the opened fold's heads keep their counts in sentence case without caps or tracking", async () => {
+  await mount();
+  await openDetails();
+  const heads = ["Files changed", "Review rounds", "Transcript"]
+    .map((region) => within(screen.getByRole("region", { name: region })).getAllByRole("heading")[0]!);
+  expect(heads.map((head) => head.textContent)).toEqual(["Files changed · 4", "Review rounds", "Transcript · 3 turns"]);
+  for (const head of heads) expect(styledAsCaps(head)).toBe(false);
+});
