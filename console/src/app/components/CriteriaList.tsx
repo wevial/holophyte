@@ -72,7 +72,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
         <>
           <ol className="m-0 mt-3 list-none border-t border-rule-2 p-0">
             {criteria.map((criterion) => {
-              const cells = grid?.rows.find((row) => row.id === criterion.id)?.cells ?? grid?.columns.map(() => null);
+              const cells = grid?.rows.find((row) => row.id === criterion.id)?.cells;
               const waiting = live && (criterion.run !== run.id || (criterion.status !== "met" && active != null && criterion.round < active.round));
               return (
                 <li key={criterion.id} className="flex flex-wrap items-center gap-3 border-b border-rule-2 py-3">
@@ -80,7 +80,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
                   <strong className="w-[34px] shrink-0 font-mono text-[11px] font-bold text-ink-3">{criterion.id}</strong>
                   <span className="min-w-0 flex-1 font-read text-[14px] text-ink-2">{criterion.text}</span>
                   {waiting && <span className="font-mono text-[11px] text-ink-3">waits on round {pending}</span>}
-                  {grid != null && cells != null && <RoundMarks columns={grid.columns} cells={cells} />}
+                  {grid != null && cells?.some((cell) => cell != null) && <RoundMarks columns={grid.columns} cells={cells} />}
                 </li>
               );
             })}
