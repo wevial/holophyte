@@ -125,7 +125,7 @@ function RunRow({ row }: { row: RunningRow }) {
         data-row
         {...runPage(row.project, run.id)}
         aria-label={`${run.ticket} ${plainTitle(run.title ?? "")}, ${stage.label}${spoken}`}
-        className="grid grid-cols-[16px_84px_minmax(0,1fr)_270px_70px] items-start gap-x-3 px-2.5 py-3 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline @max-[680px]:grid-cols-[16px_84px_minmax(0,1fr)_70px] @max-[420px]:grid-cols-[16px_minmax(0,1fr)_70px]"
+        className="grid grid-cols-[16px_84px_minmax(0,1fr)_270px_calc(2.5rem+0.5rem+6ch)] items-start gap-x-3 px-2.5 py-3 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline @max-[680px]:grid-cols-[16px_84px_minmax(0,1fr)_calc(2.5rem+0.5rem+6ch)] @max-[420px]:grid-cols-[16px_minmax(0,1fr)_calc(2.5rem+0.5rem+6ch)]"
       >
         <span className="pt-0.5"><StateDot state="running" hideWord /></span>
         <span className="truncate pt-0.5 text-ink-2 @max-[420px]:hidden">{run.ticket}</span>
@@ -148,7 +148,7 @@ function RunRow({ row }: { row: RunningRow }) {
               <i className={`absolute inset-y-0 left-0 rounded-full ${hot ? "bg-need" : "bg-act"}`} style={{ width: `${percent}%` }} />
             </span>
           )}
-          {used != null && <span className={hot ? "text-need" : "text-ink-3"}>{formatSettled(used)}</span>}
+          {used != null && <span data-time className={`inline-block w-[6ch] text-right tabular-nums ${hot ? "text-need" : "text-ink-3"}`}>{formatSettled(used)}</span>}
         </span>
       </Link>
     </li>
