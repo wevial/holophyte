@@ -279,11 +279,59 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
   );
 }
 
-export function Sidebar() {
+export type SidebarFold = { folded: boolean; foldable: boolean; fold: () => void };
+
+export function useSidebarFold(): SidebarFold {
+  const [storedFold, setFolded] = useState(readFolded);
+  const settingsMenu = useRouterState({ select: (state) => SETTINGS_PATH.test(state.location.pathname) });
+  const folded = storedFold && !settingsMenu;
+  const fold = () => {
+    if (settingsMenu) return;
+    setFolded(!folded);
+    writeFolded(!folded);
+  };
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "\\" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      event.preventDefault();
+      fold();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
+  return { folded, foldable: !settingsMenu, fold };
+}
+
+export function TitleBar({ folded, foldable, fold }: SidebarFold) {
+  const [macApp] = useState(inMacApp);
+  const toggleName = folded ? "Expand sidebar" : "Collapse sidebar";
+  return (
+    <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center bg-side ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
+      {foldable && (
+        <Tooltip delay={300} shortcut={"mod+\\"}>
+          <TooltipTrigger
+            aria-label={toggleName}
+            aria-expanded={!folded}
+            onClick={fold}
+            className={`flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+          >
+            <PanelLeftIcon />
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="start" sideOffset={6} className={TIP}>
+            {toggleName}
+            <TooltipShortcut className="font-mono text-ink-3" />
+          </TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
+export function Sidebar({ folded }: { folded: boolean }) {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
-  const [storedFold, setFolded] = useState(readFolded);
-  const [macApp] = useState(inMacApp);
   const deps = useContext(PollDepsContext);
   const readiness = useReadiness(hosts, deps);
   const { stories } = useBoardStories(scopedHosts(hosts, project), deps);
@@ -293,7 +341,6 @@ export function Sidebar() {
   const href = useRouterState({ select: (state) => state.location.href });
   const lastPage = useRef<string | null>(null);
   if (!settingsMenu) lastPage.current = href;
-  const folded = storedFold && !settingsMenu;
   const hostNeeds = hostsNeedingAttention(hosts);
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
@@ -349,71 +396,28 @@ export function Sidebar() {
     </FootTip>
   );
 
-  const fold = () => {
-    if (settingsMenu) return;
-    setFolded(!folded);
-    writeFolded(!folded);
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "\\" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
-      event.preventDefault();
-      fold();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  });
-
-  const toggleName = folded ? "Expand sidebar" : "Collapse sidebar";
-  const toggle = (
-    <Tooltip delay={300} shortcut={"mod+\\"}>
-      <TooltipTrigger
-        aria-label={toggleName}
-        aria-expanded={!folded}
-        onClick={fold}
-        className={`flex size-7 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
-      >
-        <PanelLeftIcon />
-      </TooltipTrigger>
-      <TooltipContent side="bottom" align="start" sideOffset={6} className={TIP}>
-        {toggleName}
-        <TooltipShortcut className="font-mono text-ink-3" />
-      </TooltipContent>
-    </Tooltip>
-  );
-
   const home = (
     <Link
       to="/"
       search={keepScope}
       aria-label="holophyte"
       title="holophyte"
-      className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : ""} ${macApp && settingsMenu ? APP_NO_DRAG : ""}`}
+      className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : ""}`}
     >
       <Mark />
       {!folded && <span aria-hidden="true">holophyte</span>}
     </Link>
   );
-  const homeInTitle = settingsMenu || (!macApp && !folded);
 
   return (
     <aside
       aria-label="Console"
       data-folded={folded}
-      className={`flex w-full shrink-0 flex-col border-r border-b border-rule-2 bg-side min-[720px]:h-screen min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
-        folded ? (macApp ? "min-[720px]:w-[112px]" : "min-[720px]:w-[56px]") : "min-[720px]:w-[232px]"
+      className={`flex w-full shrink-0 flex-col border-b border-rule-2 bg-side min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
+        folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
-      <div
-        className={`flex h-[52px] shrink-0 items-center gap-2 ${
-          macApp ? `pl-[76px] ${APP_DRAG}` : "pr-2 pl-[14px]"
-        }`}
-      >
-        {!settingsMenu && toggle}
-        {homeInTitle && home}
-      </div>
-      {!homeInTitle && <div className={`flex h-9 shrink-0 items-center ${folded ? "justify-center" : "pl-4"}`}>{home}</div>}
+      <div className={`flex h-9 shrink-0 items-center ${folded ? "justify-center" : "pl-4"}`}>{home}</div>
 
       {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
       <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />

@@ -16,11 +16,11 @@ const shared = {
 };
 
 describe("windowOptions", () => {
-  test("on macOS hides the title bar, centres the traffic lights on the 52px title row and paints the Night canvas first", () => {
+  test("on macOS hides the title bar, centres the traffic lights in the 30px title bar and paints the Night canvas first", () => {
     const options = windowOptions("darwin");
     expect(options).toMatchObject(shared);
     expect(options.titleBarStyle).toBe("hiddenInset");
-    expect(options.trafficLightPosition).toEqual({ x: 14, y: 19 });
+    expect(options.trafficLightPosition).toEqual({ x: 12, y: 8 });
     expect(options.backgroundColor).toBe(darkCanvas);
   });
 

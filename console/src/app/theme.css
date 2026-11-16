@@ -1029,10 +1029,6 @@ body {
   outline-offset: 2px;
 }
 
-[data-app-shell="macos"] main :is(a, button, input, select, textarea, summary) {
-  -webkit-app-region: no-drag;
-}
-
 .haze-band {
   pointer-events: none;
   mask-image: linear-gradient(to bottom, black 30%, transparent);

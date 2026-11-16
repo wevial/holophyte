@@ -9,11 +9,10 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { defaultPollDeps, type PollDeps } from "../lib/poll";
-import { APP_DRAG, inMacApp } from "../lib/view";
 import { applyTextSize, useHeaderEffect, useTextSize } from "./appearance";
 import { CommandPalette } from "./components/CommandPalette";
 import { Haze } from "./components/Haze";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, TitleBar, useSidebarFold } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { validateFindingsSearch } from "./findings";
@@ -42,7 +41,7 @@ import { validateTicketsSearch } from "./tickets";
 import { OriginContext, PeersContext, PollDepsContext, validateScope } from "./scope";
 
 function Shell() {
-  const [macApp] = useState(inMacApp);
+  const sidebar = useSidebarFold();
   const { effect } = useHeaderEffect();
   const { textSize } = useTextSize();
   useLayoutEffect(() => applyTextSize(textSize), [textSize]);
@@ -63,18 +62,16 @@ function Shell() {
   return (
     <ToastProvider>
       <SettingsMarksProvider>
-      <div data-app-shell={macApp ? "macos" : undefined} data-shell="" className="flex min-h-screen flex-col bg-canvas text-ink min-[720px]:h-screen min-[720px]:flex-row min-[720px]:overflow-hidden">
-        <Sidebar />
-        <main className="relative isolate min-w-0 flex-1 min-[720px]:overflow-y-auto">
-          {macApp && (
-            <div aria-hidden="true" className="sticky top-0 z-10 h-0">
-              <div className={`pointer-events-none absolute inset-x-0 top-0 h-[52px] ${APP_DRAG}`} />
-            </div>
-          )}
-          <TokenPrompt />
-          <Outlet />
-          {effect === "haze" && <Haze />}
-        </main>
+      <div data-shell="" className="flex min-h-screen flex-col bg-side text-ink min-[720px]:h-screen min-[720px]:overflow-hidden">
+        <TitleBar {...sidebar} />
+        <div className="flex flex-1 flex-col min-[720px]:min-h-0 min-[720px]:flex-row">
+          <Sidebar folded={sidebar.folded} />
+          <main className="relative isolate min-w-0 flex-1 rounded-tl-[10px] bg-canvas shadow-[0_0_0_1px_var(--rule-2)] min-[720px]:overflow-y-auto">
+            <TokenPrompt />
+            <Outlet />
+            {effect === "haze" && <Haze />}
+          </main>
+        </div>
       </div>
       {palette && <CommandPalette onClosed={() => setPalette(false)} returnTo={() => opener.current} />}
       </SettingsMarksProvider>
