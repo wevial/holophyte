@@ -5,7 +5,7 @@ import { inflateSync } from "node:zlib";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildConsole } from "../build";
-import { Mark } from "../src/app/components/icons";
+import { Mark, SystemIcon } from "../src/app/components/icons";
 
 const publicDir = new URL("../public/", import.meta.url);
 const bytes = async (name: string) => new Uint8Array(await Bun.file(new URL(name, publicDir)).arrayBuffer());
@@ -85,6 +85,22 @@ test("the mark is one current-colour disc whose leaf is an even-odd hole, with n
   for (const outline of outlines) expect(outline.trim().endsWith("Z")).toBe(true);
   expect(svg.querySelector("linearGradient, radialGradient, mask, pattern")).toBeNull();
   expect(svg.outerHTML).not.toContain("url(");
+});
+
+test("the System icon is a full ring with its left half filled in current colour, and no rectangle", () => {
+  const holder = document.createElement("div");
+  holder.innerHTML = renderToStaticMarkup(createElement(SystemIcon));
+  const svg = holder.querySelector("svg")!;
+  expect(svg.querySelector("rect")).toBeNull();
+  const rings = svg.querySelectorAll("circle");
+  expect(rings.length).toBe(1);
+  const [cx, cy, r] = ["cx", "cy", "r"].map((name) => Number(rings[0]!.getAttribute(name)));
+  expect(rings[0]!.hasAttribute("fill")).toBe(false);
+  const filled = [...svg.querySelectorAll("path")].filter((path) => path.getAttribute("fill") === "currentColor");
+  expect(filled.length).toBe(1);
+  const half = filled[0]!.getAttribute("d")!.match(/^M([\d.]+) ([\d.]+)a([\d.]+) ([\d.]+) 0 0 0 ([\d.]+) ([\d.]+)Z$/i)!.slice(1).map(Number);
+  // Starts at the ring's top, arcs anticlockwise on the ring's radius to its bottom: the left half disc.
+  expect(half).toEqual([cx!, cy! - r!, r!, r!, 0, 2 * r!]);
 });
 
 test("the docs site logo is a copy of assets/logo.svg", async () => {
