@@ -1,4 +1,4 @@
-import { useContext, type ReactNode } from "react";
+import { useContext, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import { projectColours } from "../dayLog";
 import { DayLog } from "../components/DayLog";
@@ -34,7 +34,18 @@ function GlyphCount({ count, words, tone, icon }: { count: number; words: string
   );
 }
 
-const BELOW_WEEK_BARS = "pt-[calc(152.5px+2rem)]";
+function useHeightVariable(source: RefObject<HTMLElement | null>, target: RefObject<HTMLElement | null>, variable: string) {
+  useLayoutEffect(() => {
+    const from = source.current;
+    const to = target.current;
+    if (from == null || to == null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) to.style.setProperty(variable, `${entry.borderBoxSize[0]!.blockSize}px`);
+    });
+    observer.observe(from);
+    return () => observer.disconnect();
+  }, [source, target, variable]);
+}
 
 const COLUMNS = [
   "grid grid-cols-[minmax(0,780px)]",
@@ -63,6 +74,9 @@ export function Overview() {
   const merged = view.mergedToday;
   const more = merged.length - SHOWN_MERGES;
   const shown = (count: number) => (loaded ? count : undefined);
+  const weekBars = useRef<HTMLDivElement>(null);
+  const logColumn = useRef<HTMLDivElement>(null);
+  useHeightVariable(weekBars, logColumn, "--week-bars-height");
   return (
     <div className="flex flex-col gap-10 pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:pl-[54px]">
       <div className="flex min-w-0 max-w-[780px] flex-col gap-6">
@@ -132,11 +146,11 @@ export function Overview() {
               <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
             </Section>
           </div>
-          <div className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-7 min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
+          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-7 min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
             <WeekBars rows={week} now={view.now} colours={colours} />
           </div>
         </div>
-        <div data-overview-column="log" className={`col-start-2 row-span-full hidden min-w-0 flex-col self-start ${BELOW_WEEK_BARS} min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0`}>
+        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
           <DayLog entries={log.entries} className="min-h-0 flex-1" />
         </div>
       </div>
