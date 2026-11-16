@@ -10,15 +10,13 @@ import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 
-const EXTENSIONS: Record<string, object> = { EXT_color_buffer_float: {}, WEBGL_lose_context: { loseContext: () => {} } };
-
 /** A WebGL2 context that grants float targets, compiles every shader and links every program. */
 const grantingGl = new Proxy({}, {
   get: (_, name) => {
     if (typeof name === "string" && /^[A-Z_0-9]+$/.test(name)) return name;
     if (name === "getProgramParameter") return (_program: unknown, pname: string) => (pname === "ACTIVE_UNIFORMS" ? 0 : true);
     if (name === "getShaderParameter") return () => true;
-    if (name === "getExtension") return (extension: string) => EXTENSIONS[extension] ?? null;
+    if (name === "getExtension") return (extension: string) => (extension === "EXT_color_buffer_float" ? {} : null);
     return () => ({});
   },
 });
