@@ -1467,7 +1467,7 @@ which `console/src/app/pages/EditTicket.tsx` loads over the current revision for
 `console/src/app/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
 composer cannot send; `console/src/app/components/ScoutThread.tsx` draws them as the Thread at the end of
 the scout's body, with its Ask and Steer composer, posting `POST /actions/scout-message`, and
-`console/src/app/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
+`console/src/app/components/ThreadMessage.tsx` is its message item.
 `console/src/app/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
 choice posts it as the card's answer, and Type an answer points the composer at the card.
 

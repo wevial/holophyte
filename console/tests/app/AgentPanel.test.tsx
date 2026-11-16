@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { RunAsks, RunDetail, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -64,52 +64,72 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("the reviewing run names its implementer and next round and orders read and waiting notes from the shared page queries", async () => {
+const rowOf = (text: string) => within(panel()).getByText(text).closest("li")!;
+const meta = (row: Element) => [...row.querySelector("[data-meta]")!.children].map((part) => part.getAttribute("aria-label") ?? part.textContent);
+const tooltip = () => screen.queryByRole("tooltip");
+async function hover(mark: HTMLElement) {
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    mark.focus();
+  });
+  const words = tooltip()?.textContent;
+  await act(async () => mark.blur());
+  return words;
+}
+
+test("the reviewing run's head is a glyph named for its next round, Implementer and the label, with no caps label", async () => {
   const requests = await mount();
-  const agent = within(panel());
-  expect(agent.getByText("implementer · claude opus")).toBeTruthy();
-  expect(agent.getByText("idle until review round 2 returns")).toBeTruthy();
-  const steer = agent.getByText("You · steer · 16:40");
-  const hint = agent.getByText("You · hint · 16:50");
-  expect(steer.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(agent.getByText("Keep the dry run read-only.")).toBeTruthy();
-  expect(agent.getByText("→ the agent read it at 16:41")).toBeTruthy();
-  expect(agent.getByText("The lease tests cover this boundary.")).toBeTruthy();
-  expect(agent.getByText("→ waiting until the agent reads it")).toBeTruthy();
+  const head = panel().querySelector("[data-agent-head]")!;
+  expect(head.textContent).toBe("Implementerclaude opus");
+  const glyph = within(head as HTMLElement).getByRole("img", { name: "idle until review round 2 returns" });
+  expect(glyph.className).toContain("text-live");
+  expect(await hover(glyph)).toBe("idle until review round 2 returns");
+  expect(within(panel()).queryByText("Agent")).toBeNull();
+  expect(panel().querySelector(".uppercase")).toBeNull();
   expect(requests.filter((url) => url === `${DEMO}/runs/12`)).toHaveLength(1);
   expect(requests.filter((url) => url === `${DEMO}/runs/12/asks`)).toHaveLength(1);
+});
+
+test("a read steer note and a waiting hint are plain rows in time order with a glyph meta and a read mark named on focus", async () => {
+  await mount();
+  const steer = rowOf("Keep the dry run read-only.");
+  const hint = rowOf("The lease tests cover this boundary.");
+  expect(steer.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  for (const row of [steer, hint]) expect(row.className).not.toMatch(/\bborder\b|\bbg-/);
+  expect(meta(steer)).toEqual(["You", "steer", "16:40", "the agent read it at 16:41", "16:41"]);
+  expect(meta(hint)).toEqual(["You", "hint", "16:50", "waiting until the agent reads it"]);
+  expect(await hover(within(steer).getByRole("img", { name: "the agent read it at 16:41" }))).toBe("the agent read it at 16:41");
+  expect(await hover(within(hint).getByRole("img", { name: "waiting until the agent reads it" }))).toBe("waiting until the agent reads it");
 });
 
 test("a note an earlier run of the chain read stays in the panel with its read time", async () => {
   await mount({ ...detail, steer_notes: [
     { ...note, id: 8, run: 11, kind: "amendment", note: "Keep the sweep idempotent.", at: at(0), consumed_by: 11, consumed_ms: at(5) },
   ] });
-  const agent = within(panel());
-  expect(agent.getByText("You · steer · 16:00")).toBeTruthy();
-  expect(agent.getByText("Keep the sweep idempotent.")).toBeTruthy();
-  expect(agent.getByText("→ the agent read it at 16:05")).toBeTruthy();
+  expect(meta(rowOf("Keep the sweep idempotent."))).toEqual(["You", "steer", "16:00", "the agent read it at 16:05", "16:05"]);
 });
 
-test("the thread merges named authors and asks in time order and shows an answer with a posted comment url without a GitHub link", async () => {
+test("a withdrawn note names its author and asks merge in time order with each answer in a reply row under its question", async () => {
   await mount({ ...detail, steer_notes: [
     { ...note, id: 3, kind: "amendment", author: "alex", note: "Use the existing lease fixture.", at: at(52), withdrawn: true, consumed_ms: at(53), consumed_by: 12 },
   ] }, { ...emptyAsks, asks: [
     { id: 4, author: "maintainer", question: "What does the dry run print?", asked_ms: at(53), answered_ms: at(55), answer: "One line per lease.", url: "https://github.com/example/project/pull/12#issuecomment-42" },
     { id: 5, author: "maintainer", question: "Can we reuse the fixture?", asked_ms: at(51), answered_ms: null, answer: null, url: null },
   ] });
-  const agent = within(panel());
-  const headers = ["You · ask · 16:51", "alex · steer · 16:52", "You · ask · 16:53", "Agent · 16:55"].map((text) => agent.getByText(text));
-  for (let index = 1; index < headers.length; index += 1) {
-    expect(headers[index - 1]!.compareDocumentPosition(headers[index]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  }
-  expect(agent.getByText("Use the existing lease fixture.")).toBeTruthy();
-  expect(agent.getByText("→ withdrawn")).toBeTruthy();
-  expect(agent.queryByText("→ the agent read it at 16:53")).toBeNull();
-  expect(agent.getByText("Can we reuse the fixture?")).toBeTruthy();
-  expect(agent.getByText("What does the dry run print?")).toBeTruthy();
-  expect(agent.getByText("One line per lease.")).toBeTruthy();
-  expect(agent.queryByRole("link", { name: /Open on GitHub/ })).toBeNull();
-  expect(agent.queryByText(/Open on GitHub/)).toBeNull();
+  const rows = within(panel()).getAllByRole("listitem");
+  expect(rows.map((row) => row.firstElementChild!.textContent)).toEqual([
+    "Can we reuse the fixture?", "Use the existing lease fixture.", "What does the dry run print?",
+  ]);
+  expect(meta(rows[1]!)).toEqual(["alex", "steer", "16:52", "withdrawn"]);
+  expect(within(rows[1]!).queryByText("16:53")).toBeNull();
+  expect(meta(rows[0]!)).toEqual(["You", "ask", "16:51"]);
+  const reply = rows[2]!.querySelector("[data-reply]")!;
+  expect(reply.textContent).toBe("One line per lease.");
+  expect(reply.querySelector("svg")).toBeTruthy();
+  expect(meta(rows[2]!)).toEqual(["You", "ask", "16:53", "answer", "16:55"]);
+  expect(rows[0]!.querySelector("[data-reply]")).toBeNull();
+  expect(within(panel()).queryByRole("link", { name: /Open on GitHub/ })).toBeNull();
+  expect(within(panel()).queryByText(/Open on GitHub/)).toBeNull();
 });
 
 const answered = (question: string, answer: string, url: string | null = null): RunAsks => ({ ...emptyAsks, asks: [
@@ -120,7 +140,7 @@ test("an answer renders its markdown as bold and code and links nowhere", async 
   const url = "https://github.com/example/project/pull/12#issuecomment-77";
   await mount({ ...detail, steer_notes: [] }, answered("When does the prompt show?",
     "**When the prompt shows.** In `components/x.tsx:104`, the modal opens once the lease is held.", url));
-  const answer = within(panel()).getByText("Agent · 16:54").closest("li")!;
+  const answer = panel().querySelector("[data-reply]")! as HTMLElement;
   expect(within(answer).getByText("When the prompt shows.").tagName).toBe("STRONG");
   expect(within(answer).getByText("components/x.tsx:104").tagName).toBe("CODE");
   expect(within(answer).queryAllByRole("link")).toHaveLength(0);
@@ -130,7 +150,7 @@ test("a maintainer ask written as a markdown list renders its items as a list", 
   await mount({ ...detail, steer_notes: [] }, { ...emptyAsks, asks: [
     { id: 7, author: "maintainer", question: "Check these:\n\n- the lease sweep\n- the dry run", asked_ms: at(51), answered_ms: null, answer: null, url: null },
   ] });
-  const ask = within(panel()).getByText("You · ask · 16:51").closest("li")!;
+  const ask = within(panel()).getAllByRole("listitem")[0]!.firstElementChild as HTMLElement;
   expect(within(ask).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["the lease sweep", "the dry run"]);
 });
 
@@ -145,7 +165,6 @@ test("an ended run with no messages has a labelled Agent aside and explains that
   await mount({ ...detail, run: { ...detail.run, phase: "done", outcome: "merged", ended_ms: at(56) }, steer_notes: [] });
   expect(panel().tagName).toBe("ASIDE");
   expect(panel().id).toBe("agent");
-  expect(document.getElementById(panel().getAttribute("aria-labelledby")!)?.textContent).toBe("Agent");
-  expect(within(panel()).getByText("stopped with the run")).toBeTruthy();
+  expect(within(panel()).getByRole("img", { name: "stopped with the run" })).toBeTruthy();
   expect(within(panel()).getByText("Nothing sent to this run yet.")).toBeTruthy();
 });
