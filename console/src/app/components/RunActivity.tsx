@@ -5,7 +5,7 @@ import { findingsHistory, RANK, severityOf, type Fate } from "../../lib/findings
 import { criteriaGrid, PASSED, type ActivityGroup, type RunActivity as Activity } from "../activity";
 import { ActivityFinding } from "./ActivityFinding";
 import { CriteriaGrid } from "./CriteriaGrid";
-import { CURRENT_TINT, EndFacts, endingOf } from "./EndFacts";
+import { EndFacts, endingOf, type Ending } from "./EndFacts";
 import { Badge, Connector, GroupHead, lineOf, Steps, type Line } from "./Timeline";
 
 const MARK: Record<Exclude<RoundCriterion["status"], "met">, { glyph: string; word: string; tone: string }> = {
@@ -24,11 +24,11 @@ function Mark({ criterion }: { criterion: RoundCriterion }) {
   );
 }
 
-function Heading({ group }: { group: ActivityGroup }) {
+function Heading({ group, current }: { group: ActivityGroup; current: boolean }) {
   return (
     <>
       <span data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
-        <b className="font-semibold text-ink">{group.title}</b>
+        <b className={`font-medium ${current ? "text-ink" : "text-ink-2"}`}>{group.title}</b>
         {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
         {group.kind === "round" && group.marks.map((criterion) => <Mark key={criterion.id} criterion={criterion} />)}
       </span>
@@ -54,7 +54,7 @@ function Findings({ findings, fates }: { findings: RoundFinding[]; fates: Map<Ro
   );
 }
 
-type Current = keyof typeof CURRENT_TINT | null;
+type Current = Ending["tone"] | "live" | null;
 
 interface GroupProps {
   group: ActivityGroup;
@@ -78,11 +78,11 @@ function Group({ group, open, onToggle, line, fates, current, tail }: GroupProps
       data-group={group.kind}
       data-running={group.running ? "" : undefined}
       data-current={current ?? undefined}
-      className={`relative scroll-mt-4 border-b border-rule-2 ${current == null ? "" : `-ml-3 pl-3 ${CURRENT_TINT[current]}`}`}
+      className="relative scroll-mt-4 border-b border-rule-2"
     >
-      <Connector line={line} shifted={current != null} />
+      <Connector line={line} />
       <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} onToggle={onToggle}>
-        <Heading group={group} />
+        <Heading group={group} current={current != null} />
       </GroupHead>
       {folds && open && (
         <div id={stepsId}>
@@ -124,7 +124,7 @@ function NowDetail({ text }: { text: string }) {
 
 /** The run's timeline beside its criteria by round, one row per group,
  *  each folding open to its steps and findings. The current group, the
- *  running one or an ended run's last, is tinted and ends on its newest
+ *  running one or an ended run's last, has its title in full ink and ends on its newest
  *  progress or on how the run ended; a group the reader has not toggled
  *  is open exactly while it is current. */
 export function RunActivity({ activity, detail, base, project }: RunActivityProps) {

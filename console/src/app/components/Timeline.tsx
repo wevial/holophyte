@@ -16,19 +16,19 @@ export function lineOf(index: number, count: number): Line {
 }
 
 /** The 1px line through the badges, from this row's badge to its neighbours'. */
-export function Connector({ line, shifted = false }: { line: Line; shifted?: boolean }) {
+export function Connector({ line }: { line: Line }) {
   if (line === "none") return null;
-  return <span aria-hidden="true" className={`absolute left-[76px] w-px bg-rule max-[720px]:left-[66px] ${shifted ? "ml-3" : ""}`} style={CONNECTOR[line]} />;
+  return <span aria-hidden="true" className="absolute left-[76px] w-px bg-rule max-[720px]:left-[66px]" style={CONNECTOR[line]} />;
 }
 
 const BADGE_TONE: Record<ActivityTone, string> = {
-  ok: "bg-live-wash text-live",
-  warn: "bg-warn-wash text-warn-ink",
-  bad: "bg-bad-wash text-bad",
-  wait: "bg-wait-wash text-wait",
-  act: "bg-act-wash text-act",
-  live: "bg-live-wash text-live",
-  neutral: "bg-paper-2 text-ink-3",
+  ok: "text-live",
+  warn: "text-warn-ink",
+  bad: "text-bad",
+  wait: "text-wait",
+  act: "text-act",
+  live: "text-live",
+  neutral: "text-ink-3",
 };
 
 const ICON_PATHS: Partial<Record<ActivityTone | "pickup", string>> = {
@@ -41,11 +41,11 @@ const ICON_PATHS: Partial<Record<ActivityTone | "pickup", string>> = {
   neutral: "M8 5.5a2.5 2.5 0 1 1 0 5a2.5 2.5 0 1 1 0-5z",
 };
 
-/** A group's tone badge: the live dot while it runs, else its tone's icon, or `icon`'s. */
+/** A group's bare tone glyph, ringed in its surface to cut the rail: the live dot while it runs, else its tone's icon, or `icon`'s. */
 export function Badge({ tone, running, icon }: { tone: ActivityTone; running: boolean; icon?: "pickup" }) {
   const path = ICON_PATHS[icon ?? tone];
   return (
-    <span data-badge={tone} className={`relative z-[1] flex size-[30px] items-center justify-center rounded-md ${BADGE_TONE[tone]}`}>
+    <span data-badge={tone} className={`relative z-[1] flex items-center justify-center justify-self-center rounded-full bg-paper shadow-[0_0_0_3px_var(--paper)] ${BADGE_TONE[tone]}`}>
       {running ? (
         <StateDot state="running" hideWord tone="live" />
       ) : (

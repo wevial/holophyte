@@ -265,8 +265,10 @@ test("a review thread reads Addressed with its fix's short sha or Declined with 
 });
 
 const lastGroup = () => Array.from(progress().querySelectorAll<HTMLElement>("[data-group]")).at(-1)!;
+const TINT = /(^|-)wash$|^bg-paper-2$|^shadow-\[inset/;
+const tints = (el: Element) => Array.from(el.classList).filter((name) => TINT.test(name));
 
-test("a run failed at its final check ends its last group on what the check left open, the steer cap and the next run, its reason folded", async () => {
+test("a run failed at its final check ends its untinted last group on what the check left open, the steer cap and the next run, its reason folded", async () => {
   await mount(failedFinal);
   expect(within(progress()).queryByRole("region", { name: "Now" })).toBeNull();
   expect(within(progress()).queryByRole("region", { name: "How the run ended" })).toBeNull();
@@ -274,6 +276,7 @@ test("a run failed at its final check ends its last group on what the check left
   expect(progress().querySelectorAll("[data-end-facts]")).toHaveLength(list.querySelectorAll("[data-end-facts]").length);
   const last = lastGroup();
   expect(last.getAttribute("data-current")).toBe("bad");
+  expect(tints(last)).toEqual([]);
   const facts = last.querySelector("[data-end-facts]")!;
   const text = facts.textContent!;
   for (const words of ["Failed at the final check", "3 of 3", "2 of 3 met", "steer cap", "run 13"]) expect(text).toContain(words);
@@ -282,14 +285,16 @@ test("a run failed at its final check ends its last group on what the check left
   expect(facts.textContent).toContain("terminal adjudication: FAIL");
 });
 
-test("a run sent back to the babysitter ends its last group on Handed to the babysitter in the wait tone, and a merged run on its short sha linked to the commit in the ok tone", async () => {
+test("a run sent back to the babysitter ends its last group on Handed to the babysitter in the wait tone, and a merged run on its short sha linked to the commit in the ok tone, neither group tinted", async () => {
   await mount(handedOver);
   expect(lastGroup().getAttribute("data-current")).toBe("wait");
+  expect(tints(lastGroup())).toEqual([]);
   expect(lastGroup().querySelector("[data-end-title]")!.textContent).toBe("Handed to the babysitter");
   cleanup();
   await mount(finished);
   const last = lastGroup();
   expect(last.getAttribute("data-current")).toBe("ok");
+  expect(tints(last)).toEqual([]);
   expect(last.querySelector("[data-end-title]")!.textContent).toMatch(/^Merged as abc1234 at /);
   expect(within(last).getByRole("link", { name: "abc1234" }).getAttribute("href")).toBe("https://github.test/demo/commit/abc1234def");
 });

@@ -215,6 +215,33 @@ test("a live run has no Now region; its running group alone is open and current,
   expect(rows()).toHaveLength(3);
 });
 
+const TINT = /(^|-)wash$|^bg-paper-2$|^shadow-\[inset/;
+const tints = (el: Element) => Array.from(el.classList).filter((name) => TINT.test(name));
+const badges = () => rows().map((li) => li.querySelector<HTMLElement>("[data-badge]")!);
+const titleInk = (li: Element) => Array.from(li.querySelector("[data-group-title] b")!.classList).filter((name) => name.startsWith("text-"));
+
+test("a reviewing run's badges are bare glyphs in their tone's text colour, the running one holding the running dot", async () => {
+  await mount(runFetch({ detail: reviewing }));
+  const ink = (badge: HTMLElement) => Array.from(badge.classList).filter((name) => name.startsWith("text-"));
+  expect(badges().map((badge) => [badge.dataset.badge, ink(badge)])).toEqual([
+    ["ok", ["text-live"]],
+    ["warn", ["text-warn-ink"]],
+    ["live", ["text-live"]],
+  ]);
+  for (const badge of badges()) {
+    expect(tints(badge)).toEqual([]);
+    expect(Array.from(badge.classList).filter((name) => name === "rounded-md" || name === "size-[30px]")).toEqual([]);
+  }
+  expect(badges().map((badge) => badge.querySelector("[data-state]")?.getAttribute("data-state") ?? null)).toEqual([null, null, "running"]);
+});
+
+test("a live run's running group alone is current, untinted, with its title in full ink and earlier titles in ink-2", async () => {
+  await mount(runFetch({ detail: reviewing }));
+  expect(rows().map((li) => li.getAttribute("data-current"))).toEqual([null, null, "live"]);
+  expect(rows().map(tints)).toEqual([[], [], []]);
+  expect(rows().map(titleInk)).toEqual([["text-ink-2"], ["text-ink-2"], ["text-ink"]]);
+});
+
 test("Raw log opens a dialog of every Progress line, heartbeats included, and Escape returns focus to its button", async () => {
   await mount(runFetch({ detail: ended }));
   const button = within(progress()).getByRole("button", { name: /^Raw log/ });
