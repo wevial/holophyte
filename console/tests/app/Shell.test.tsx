@@ -11,7 +11,6 @@ import type { Attention, Board, Flow, MergeQueue, Status } from "../../src/lib/c
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { needsDaemons } from "./needsFleet";
 import { setPlatform } from "@ui-sdk/core/testing";
-import { declarations } from "../cssTokens";
 
 const ORIGIN = "http://writer-host:7710";
 const PEER = "http://writer-host:7711";
@@ -149,13 +148,14 @@ test("an unknown route links back to Overview", async () => {
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);
 });
 
-test("the sidebar sits on its own ground with a hairline beside the main area, which keeps the page's ground", async () => {
+test("the sidebar sits on the side ground with no line of its own, and the page panel keeps the canvas behind a hairline", async () => {
   await mount("#/");
   const sidebar = screen.getByRole("complementary", { name: "Console" }).classList;
   expect(sidebar.contains("bg-side")).toBe(true);
-  expect(sidebar.contains("border-r")).toBe(true);
-  expect(sidebar.contains("border-rule-2")).toBe(true);
-  expect(screen.getByRole("main").classList.contains("bg-side")).toBe(false);
+  expect(sidebar.contains("border-r")).toBe(false);
+  const main = screen.getByRole("main").classList;
+  for (const name of ["bg-canvas", "min-[720px]:rounded-tl-[10px]", "min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]"]) expect(main.contains(name)).toBe(true);
+  expect(main.contains("bg-side")).toBe(false);
 });
 
 test("the sidebar footer, folded or not, holds Settings and the theme toggle and no Classic console link", async () => {
@@ -379,28 +379,37 @@ test("expanded, Ready, Needs spec and Backlog are 27px links indented 34px with 
 const DRAG = "[-webkit-app-region:drag]";
 const NO_DRAG = "[-webkit-app-region:no-drag]";
 const toggle = () => screen.getByRole("button", { name: /^(Collapse|Expand) sidebar$/ });
-const headerRow = () => toggle().parentElement!;
+const titleBar = () => document.querySelector<HTMLElement>("[data-title-bar]")!;
 const aside = () => screen.getByRole("complementary", { name: "Console" });
 
 const homeLink = () => screen.getByRole("link", { name: "holophyte" });
 const childNames = (row: Element) => Array.from(row.children).map((child) => child.getAttribute("aria-label"));
 
-test("in a browser the title row holds the panel-left toggle, then the mark and word linking home; folded, the toggle alone with the mark in the row under it", async () => {
+test("in a browser a 30px title bar spans the shell above the sidebar and the page panel, holding the fold toggle alone at its left", async () => {
   await mount("#/");
-  const header = headerRow();
-  expect(header.classList.contains("h-[52px]")).toBe(true);
-  expect(childNames(header)).toEqual(["Collapse sidebar", "holophyte"]);
+  const bar = titleBar();
+  const shell = bar.parentElement!;
+  expect(shell.firstElementChild).toBe(bar);
+  for (const name of ["h-[30px]", "bg-side", "pl-3"]) expect(bar.classList.contains(name)).toBe(true);
+  expect(childNames(bar)).toEqual(["Collapse sidebar"]);
+  expect(bar.textContent).toBe("");
+  const body = bar.nextElementSibling!;
+  expect(Array.from(body.children)).toEqual([aside(), screen.getByRole("main")]);
   expect(homeLink().textContent).toBe("holophyte");
-  expect(homeLink().querySelectorAll("svg").length).toBe(1);
-  const expandedRow = headerRow().className;
+  expect(aside().contains(homeLink())).toBe(true);
+});
 
+test("folded, the title bar still spans the shell with the toggle first in it, the rail narrows and the home mark stays in the sidebar", async () => {
+  await mount("#/");
+  const expandedBar = titleBar().className;
   fireEvent.click(toggle());
+  expect(titleBar().className).toBe(expandedBar);
+  expect(titleBar().parentElement!.firstElementChild).toBe(titleBar());
+  expect(childNames(titleBar())).toEqual(["Expand sidebar"]);
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
-  expect(headerRow().className).toBe(expandedRow);
-  expect(childNames(headerRow())).toEqual(["Expand sidebar"]);
-  expect(homeLink().parentElement === headerRow().nextElementSibling).toBe(true);
+  expect(titleBar().nextElementSibling!.lastElementChild).toBe(screen.getByRole("main"));
+  expect(aside().contains(homeLink())).toBe(true);
   expect(homeLink().textContent).toBe("");
-  expect(homeLink().querySelectorAll("svg").length).toBe(1);
 });
 
 test("folded or expanded, the one sidebar toggle sits before the Pages navigation, and folding from it keeps focus on it", async () => {
@@ -430,61 +439,47 @@ test("the sidebar toggle draws one icon in both states, unlike the story list's 
   expect(expanded).not.toBe(chevron);
 });
 
-test("in the macOS app the title row clears the traffic lights, drags the window and holds only the toggle, which does not drag; the home link sits under it outside any drag region", async () => {
+test("in the macOS app the title bar alone drags the window, clears the traffic lights and holds the toggle, which does not drag, folded or not", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
-  await mount("#/");
+  await mount("#/runs");
   for (const fold of [false, true]) {
     if (fold) fireEvent.click(toggle());
-    const header = headerRow();
-    for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(header.classList.contains(name)).toBe(true);
-    expect(childNames(header)).toEqual([fold ? "Expand sidebar" : "Collapse sidebar"]);
+    for (const name of ["h-[30px]", "pl-[76px]", DRAG]) expect(titleBar().classList.contains(name)).toBe(true);
+    expect(childNames(titleBar())).toEqual([fold ? "Expand sidebar" : "Collapse sidebar"]);
     expect(toggle().classList.contains(NO_DRAG)).toBe(true);
-    expect(homeLink().parentElement === header.nextElementSibling).toBe(true);
+    const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
+    expect(regions).toEqual([titleBar()]);
+    expect(screen.getByRole("main").querySelector('[aria-hidden="true"].h-0')).toBeNull();
     expect(homeLink().closest(".\\[-webkit-app-region\\:drag\\]")).toBeNull();
-    expect(homeLink().textContent).toBe(fold ? "" : "holophyte");
   }
-  expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
+  expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
 });
 
-test("in the macOS app the Settings menu keeps the home link in its drag title row, itself not a drag region", async () => {
+test("in the macOS app the Settings menu keeps the drag title bar with no toggle and the home link in the sidebar", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
   await mount("#/settings/general");
   expect(screen.queryByRole("button", { name: /^(Collapse|Expand) sidebar$/ })).toBeNull();
-  const row = homeLink().parentElement!;
-  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(row.classList.contains(name)).toBe(true);
-  expect(homeLink().classList.contains(NO_DRAG)).toBe(true);
+  expect(titleBar().classList.contains(DRAG)).toBe(true);
+  expect(titleBar().children.length).toBe(0);
+  expect(aside().contains(homeLink())).toBe(true);
 });
 
-test("in the macOS app a zero-height layer drags the main pane's top 52px and no band pushes the page down", async () => {
-  localStorage.setItem(APP_SHELL_KEY, "macos");
-  await mount("#/runs");
-  const main = screen.getByRole("main");
-  expect(main.closest("[data-app-shell]")!.getAttribute("data-app-shell")).toBe("macos");
-  const layer = main.firstElementChild as HTMLElement;
-  expect(layer.getAttribute("aria-hidden")).toBe("true");
-  expect(layer.classList.contains("h-0")).toBe(true);
-  expect(layer.children.length).toBe(1);
-  const area = layer.firstElementChild as HTMLElement;
-  for (const name of [DRAG, "absolute", "h-[52px]"]) expect(area.classList.contains(name)).toBe(true);
-  expect(main.querySelectorAll(".h-7").length).toBe(0);
-  const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
-  expect(regions).toEqual([headerRow(), area]);
-});
-
-test("in a browser nothing names a window drag region or the app shell", async () => {
+test("in a browser nothing names a window drag region", async () => {
   await mount("#/runs");
   const named = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.className.includes("-webkit-app-region"));
   expect(named).toEqual([]);
-  expect(document.querySelector("[data-app-shell]")).toBeNull();
   expect(screen.getByRole("main").firstElementChild!.getAttribute("aria-hidden")).not.toBe("true");
 });
 
-test("theme.css lets the app's controls inside the main pane cut through its drag area", async () => {
-  const css = await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text();
-  const rule = declarations(css).find((d) => d.name === "-webkit-app-region" && d.value === "no-drag");
-  const selector = rule?.path.at(-1) ?? "";
-  expect(selector.startsWith('[data-app-shell="macos"]')).toBe(true);
-  for (const name of ["main", "a", "button"]) expect(selector).toMatch(new RegExp(`\\b${name}\\b`));
+test("the haze band is drawn inside the page panel from its top edge, not in the title bar", async () => {
+  await mount("#/");
+  const main = screen.getByRole("main");
+  const band = document.querySelector<HTMLElement>("[data-haze]")!;
+  expect(band.parentElement).toBe(main);
+  for (const name of ["absolute", "top-0", "inset-x-0"]) expect(band.classList.contains(name)).toBe(true);
+  for (const name of ["relative", "isolate"]) expect(main.classList.contains(name)).toBe(true);
+  expect(titleBar().contains(band)).toBe(false);
+  expect(titleBar().compareDocumentPosition(main) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test("without WebGL2 the shell's haze band shows the fallback, hidden from assistive technology and taking no pointer events", async () => {

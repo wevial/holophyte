@@ -41,9 +41,9 @@ test("Tailwind exposes every raw colour through a declared raw token", () => {
 test("computed canvas and action colours honor explicit themes and otherwise follow system preference", () => {
   for (const [theme, preference, canvas, action] of [
     ["dark", "light", "#0d0a15", "#b9a3ff"],
-    ["light", "dark", "#f6f5fa", "#5a4ebf"],
+    ["light", "dark", "#fbfaff", "#5a4ebf"],
     [null, "dark", "#0d0a15", "#b9a3ff"],
-    [null, "light", "#f6f5fa", "#5a4ebf"],
+    [null, "light", "#fbfaff", "#5a4ebf"],
   ] as const) {
     expect([tokenUnder(theme, preference), tokenUnder(theme, preference, "--act")]).toEqual([canvas, action]);
   }
@@ -84,7 +84,7 @@ test("with nothing stored both picks are Lotus and the canvas follows the system
     expect([readPick("light"), readPick("dark")]).toEqual(["lotus", "lotus"]);
     applyPick("light", readPick("light"));
     applyPick("dark", readPick("dark"));
-    expect([tokenUnder(null, "light"), tokenUnder(null, "dark")]).toEqual(["#f6f5fa", "#0d0a15"]);
+    expect([tokenUnder(null, "light"), tokenUnder(null, "dark")]).toEqual(["#fbfaff", "#0d0a15"]);
   });
 });
 
@@ -127,7 +127,7 @@ const HAZE: Record<string, string> = {
   "tide dark": "#0b0e1d #2c3cb0 #8a6bff 0.38 rgba(44,60,176,.42) rgba(138,107,255,.22)",
   "mono dark": "#0a0a0b #4b3fc4 #d07ee8 0.32 rgba(75,63,196,.34) rgba(208,126,232,.2)",
   "forest dark": "#0e1411 #16594a #b4d368 0.28 rgba(22,89,74,.55) rgba(180,211,104,.18)",
-  "lotus light": "#f6f5fa #c8bff6 #f3bddb 0.62 rgba(200,191,246,.7) rgba(243,189,219,.55)",
+  "lotus light": "#fbfaff #c8bff6 #f3bddb 0.62 rgba(200,191,246,.7) rgba(243,189,219,.55)",
   "dune light": "#fcfaf7 #f6c4ad #f0b5c8 0.62 rgba(246,196,173,.75) rgba(240,181,200,.6)",
   "tide light": "#f5f7fb #bcd0f5 #cfc4f6 0.62 rgba(188,208,245,.75) rgba(207,196,246,.55)",
   "mono light": "#fafafa #d4ccf3 #f2c3dc 0.62 rgba(212,204,243,.7) rgba(242,195,220,.5)",

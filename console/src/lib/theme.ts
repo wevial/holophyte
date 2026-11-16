@@ -158,7 +158,7 @@ export const BUILTIN_NAMES: Record<BuiltinPick, string> = { lotus: "Lotus", dune
 
 const BUILTIN_COLOURS: Record<ThemeMode, Record<BuiltinPick, [ground: string, accent: string, back: string, front: string]>> = {
   light: {
-    lotus: ["#f6f5fa", "#5a4ebf", "#c8bff6", "#f3bddb"],
+    lotus: ["#fbfaff", "#5a4ebf", "#c8bff6", "#f3bddb"],
     dune: ["#fcfaf7", "#a4512e", "#f6c4ad", "#f0b5c8"],
     tide: ["#f5f7fb", "#3651c9", "#bcd0f5", "#cfc4f6"],
     mono: ["#fafafa", "#5a4ebf", "#d4ccf3", "#f2c3dc"],

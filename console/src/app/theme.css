@@ -129,8 +129,8 @@
   --slate-12: #2a3743;
   --slate-on: #1d182b;
 
-  --canvas: #f6f5fa;
-  --side: #ece8f5;
+  --canvas: #fbfaff;
+  --side: #ebe6f6;
   --raised: #ffffff;
   --hover: #e2dcf1;
   --selected: #c3bde6;
@@ -191,7 +191,7 @@
   --need-edge-mix: 12%;
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.03'/%3E%3C/svg%3E");
   --grain-side: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='.015'/%3E%3C/svg%3E");
-  --haze-ground: #f6f5fa;
+  --haze-ground: #fbfaff;
   --haze-back: #c8bff6;
   --haze-front: #f3bddb;
   --haze-strength: 0.62;
@@ -440,7 +440,7 @@
   --slate-on: #16121f;
 
   --canvas: #0d0a15;
-  --side: #120f1c;
+  --side: #151120;
   --raised: #15121f;
   --hover: #1d1930;
   --selected: #352952;
@@ -728,7 +728,7 @@
     --slate-on: #16121f;
 
     --canvas: #0d0a15;
-    --side: #120f1c;
+    --side: #151120;
     --raised: #15121f;
     --hover: #1d1930;
     --selected: #352952;
@@ -1029,10 +1029,6 @@ body {
   outline-offset: 2px;
 }
 
-[data-app-shell="macos"] main :is(a, button, input, select, textarea, summary) {
-  -webkit-app-region: no-drag;
-}
-
 .haze-band {
   pointer-events: none;
   mask-image: linear-gradient(to bottom, black 30%, transparent);
@@ -1046,9 +1042,13 @@ body {
   background: radial-gradient(30% 95% at 22% 0%, rgb(from var(--haze-fallback-back) r g b / calc(alpha * var(--haze-scale, 1))), transparent 70%), radial-gradient(24% 75% at 46% 0%, rgb(from var(--haze-fallback-front) r g b / calc(alpha * var(--haze-scale, 1))), transparent 70%);
 }
 
+[data-shell] {
+  --panel-height: calc(100vh - 30px);
+}
+
 @media (width >= 720px) {
-  [data-text-size] [data-shell],
-  [data-text-size] aside[aria-label="Console"] {
+  [data-text-size] [data-shell] {
+    --panel-height: calc(100vh / var(--text-scale) - 30px);
     height: calc(100vh / var(--text-scale));
     min-height: 0;
   }

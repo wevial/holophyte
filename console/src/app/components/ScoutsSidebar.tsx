@@ -185,7 +185,7 @@ export function ScoutsBeside({ search, current, newScout, children }: {
     <div data-scouts-beside className="flex min-h-full items-stretch">
       {wide && !hidden && (
         <aside id={LIST_ID} aria-label="Scout list" data-scout-list
-          className="sticky top-0 hidden h-screen w-[330px] shrink-0 flex-col border-r border-rule bg-canvas min-[1100px]:flex">
+          className="sticky top-0 hidden h-(--panel-height) w-[330px] shrink-0 flex-col border-r border-rule bg-canvas min-[1100px]:flex">
           <div className="flex flex-col gap-3 border-b border-rule-2 px-4 pt-4 pb-3">
             <div className="flex items-center gap-2">
               <button ref={hideButton} type="button" aria-label="Hide scout list" title="Hide scout list" aria-expanded={true} aria-controls={LIST_ID}
