@@ -131,7 +131,7 @@ export function ScoutView({ project, param }: { project: string; param: string }
       </div>
       {docked && (
         <section id={drawerId} data-scout-chat aria-labelledby={chatTitle}
-          className="sticky top-0 hidden h-screen min-w-0 flex-col border-l border-rule bg-paper min-[1440px]:flex">
+          className="sticky top-0 hidden h-(--panel-height) min-w-0 flex-col border-l border-rule bg-paper min-[1440px]:flex">
           <header className="flex min-h-14 items-center justify-between gap-2 border-b border-rule py-2.5 pr-3 pl-[18px]">
             <h2 id={chatTitle} className="m-0 font-sans text-[15px] font-semibold text-ink">Chat with the scout</h2>
             <button type="button" aria-label="Hide chat" title="Hide chat" aria-expanded={true} aria-controls={drawerId} onClick={foldChat}

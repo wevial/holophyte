@@ -1042,9 +1042,13 @@ body {
   background: radial-gradient(30% 95% at 22% 0%, rgb(from var(--haze-fallback-back) r g b / calc(alpha * var(--haze-scale, 1))), transparent 70%), radial-gradient(24% 75% at 46% 0%, rgb(from var(--haze-fallback-front) r g b / calc(alpha * var(--haze-scale, 1))), transparent 70%);
 }
 
+[data-shell] {
+  --panel-height: calc(100vh - 30px);
+}
+
 @media (width >= 720px) {
-  [data-text-size] [data-shell],
-  [data-text-size] aside[aria-label="Console"] {
+  [data-text-size] [data-shell] {
+    --panel-height: calc(100vh / var(--text-scale) - 30px);
     height: calc(100vh / var(--text-scale));
     min-height: 0;
   }
