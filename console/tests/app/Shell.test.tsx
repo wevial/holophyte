@@ -401,6 +401,7 @@ test("theme.css lets the app's controls inside the main pane cut through its dra
 test("without WebGL2 the shell's haze band shows the fallback, hidden from assistive technology and taking no pointer events", async () => {
   const getContext = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = (() => null) as typeof getContext;
+  localStorage.setItem(THEME_KEY, "dark");
   const style = document.createElement("style");
   style.textContent = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text()).replace(/@import[^;]*;/, "");
   document.head.appendChild(style);
@@ -427,6 +428,7 @@ test("a WebGL2 context whose shaders fail to compile leaves the shell up with th
       : name === "getShaderParameter" ? () => false : () => ({})),
   });
   HTMLCanvasElement.prototype.getContext = ((kind: string) => (kind === "webgl2" ? failingGl : null)) as typeof getContext;
+  localStorage.setItem(THEME_KEY, "dark");
   try {
     await mount("#/");
     expect(screen.getByRole("navigation", { name: "Pages" })).toBeTruthy();
@@ -441,6 +443,7 @@ test("a WebGL2 context whose shaders fail to compile leaves the shell up with th
 test("a canvas whose getContext throws leaves the shell up with the haze band on its fallback and no canvas left behind", async () => {
   const getContext = HTMLCanvasElement.prototype.getContext;
   HTMLCanvasElement.prototype.getContext = (() => { throw new Error("context creation blocked"); }) as typeof getContext;
+  localStorage.setItem(THEME_KEY, "dark");
   try {
     await mount("#/");
     expect(screen.getByRole("navigation", { name: "Pages" })).toBeTruthy();
