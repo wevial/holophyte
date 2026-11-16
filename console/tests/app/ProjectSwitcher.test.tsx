@@ -49,6 +49,11 @@ const accented = peersFetch(ORIGIN, {
   [PEER]: { status: statusOf("/srv/dev/cafe", 1, "enabled"), attention: attentionOf([], "/srv/dev/cafe") },
 });
 
+const coloured = peersFetch(ORIGIN, {
+  [ORIGIN]: { status: { ...statusOf("/srv/dev/demo", 1, "enabled"), colour: "violet" }, attention: attentionOf([], "/srv/dev/demo") },
+  [PEER]: { status: { ...statusOf("/srv/dev/writer", 1, "enabled"), colour: "teal" }, attention: attentionOf([], "/srv/dev/writer") },
+});
+
 async function mount(hash: string, fetchImpl: Fetch = daemons) {
   window.location.hash = hash;
   render(
@@ -65,6 +70,7 @@ const location = () => {
   return { path, project: new URLSearchParams(query).get("project") };
 };
 const switcher = () => screen.getByRole("button", { name: /Switch project$/ });
+const dots = () => Array.from(switcher().querySelectorAll<HTMLElement>("[data-dot]"), (dot) => dot.style.background);
 const find = () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
 const activeName = () => document.getElementById(find().getAttribute("aria-activedescendant")!)?.textContent;
 const badge = () => screen.getByRole("navigation", { name: "Pages" }).querySelector("[data-badge]");
@@ -267,4 +273,29 @@ test("the filter matches accents exactly, so typing cafe and Enter picks cafe ov
   expect(optionNames()).toEqual(["cafe1 open"]);
   await key(find(), "Enter");
   expect(location()).toEqual({ path: "/runs", project: "cafe" });
+});
+
+test("the button holds one dot per project in scope in its status colour and no project icon: every project's in order for All projects, the chosen one's alone", async () => {
+  await mount("#/runs", coloured);
+  expect(dots()).toEqual(["var(--p-violet)", "var(--p-teal)"]);
+  const drawn = switcher().querySelectorAll("svg");
+  expect(drawn).toHaveLength(1);
+  expect(switcher().lastElementChild!.contains(drawn[0]!)).toBe(true);
+  cleanup();
+
+  await mount("#/runs?project=writer", coloured);
+  expect(dots()).toEqual(["var(--p-teal)"]);
+});
+
+test("folded to the rail, the button keeps the scope's dots and its name", async () => {
+  await mount("#/runs", coloured);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(screen.getByRole("complementary", { name: "Console" }).getAttribute("data-folded")).toBe("true");
+    expect(dots()).toEqual(["var(--p-violet)", "var(--p-teal)"]);
+    expect(switcher().querySelector("svg")).toBeNull();
+    expect(switcher().getAttribute("aria-label")).toBe("Project: All projects. Switch project");
+  } finally {
+    localStorage.clear();
+  }
 });

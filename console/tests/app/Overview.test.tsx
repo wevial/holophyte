@@ -33,24 +33,38 @@ const heading = () => screen.queryByRole("heading", { level: 1 })?.textContent ?
 const sections = () => screen.getAllByRole("region").map((region) => region.getAttribute("aria-label"));
 const classes = (element: Element | null | undefined) => element?.getAttribute("class")?.split(/\s+/) ?? [];
 const threeRuns = [run(3, "DEMO-3"), run(7, "DEMO-7"), run(8, "DEMO-8")];
+const figureType = ["text-[64px]", "font-[220]", "font-stretch-125%", "tracking-[-0.03em]", "leading-[0.9]"];
 const needRows = () => [...screen.getByRole("region", { name: "Needs you" }).querySelectorAll<HTMLElement>("li[data-wait-row]")];
 
-test("with three runs going and nothing waiting on the maintainer, the heading reads 3 running over Nothing needs you and no Needs you section", async () => {
+test("with three runs going and nothing waiting on the maintainer, the heading reads 3 running in the light, wide figure over Nothing needs you and no Needs you section", async () => {
   await mount("#/", fleet({ items: [], runs: threeRuns }, { items: [] }));
   expect(heading()).toBe("3 running");
+  const h1 = screen.getByRole("heading", { level: 1 });
+  expect(classes(within(h1).getByText("3"))).toEqual(expect.arrayContaining(figureType));
+  expect(classes(within(h1).getByText("running"))).toEqual(expect.arrayContaining(["text-[22px]", "font-normal", "font-stretch-112%"]));
   expect(screen.getByText("Nothing needs you")).toBeTruthy();
   expect(screen.queryByRole("region", { name: "Needs you" })).toBeNull();
   expect(sections()).toEqual(["Running", "Waiting", "Merged today"]);
 });
 
-test("with two items waiting on the maintainer, the heading reads 2 need you in --need and Needs you comes before Running", async () => {
+test("with two items waiting on the maintainer, the heading reads 2 need you in the light, wide figure in --need and Needs you comes before Running", async () => {
   await mount("#/", fleet({ items: [blocked, ...failed], runs: threeRuns }, { items: [] }));
   expect(heading()).toBe("2 need you");
   const h1 = screen.getByRole("heading", { level: 1 });
-  expect(classes(within(h1).getByText("2"))).toContain("text-need");
+  expect(classes(within(h1).getByText("2"))).toEqual(expect.arrayContaining([...figureType, "text-need"]));
   expect(screen.queryByText("Nothing needs you")).toBeNull();
   expect(sections()).toEqual(["Needs you", "Running", "Waiting", "Merged today"]);
   expect(needRows()).toHaveLength(2);
+});
+
+test("the console's Archivo request covers weight 220 and width 125", async () => {
+  const html = await Bun.file(new URL("../../index.html", import.meta.url)).text();
+  const href = /href="(https:\/\/fonts\.googleapis\.com\/css2\?[^"]+)"/.exec(html)?.[1].replaceAll("&amp;", "&");
+  const family = new URL(href!).searchParams.getAll("family").find((spec) => spec.startsWith("Archivo:"));
+  const [axes, ranges] = family!.slice("Archivo:".length).split("@");
+  const range = Object.fromEntries(axes.split(",").map((axis, index) => [axis, ranges.split(",")[index].split("..").map(Number)]));
+  expect(range.wght[0]).toBeLessThanOrEqual(220);
+  expect(range.wdth[1]).toBeGreaterThanOrEqual(125);
 });
 
 test("the glyph counts are images labelled with the running, pull request, queued and merged today counts", async () => {
