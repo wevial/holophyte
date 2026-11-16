@@ -342,7 +342,7 @@ function MenuSection({ section, search, write }: { section: FilterSection; searc
     write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
   };
   return (
-    <fieldset aria-labelledby={id} className="m-0 mb-2 min-w-0 border-0 p-0">
+    <fieldset aria-labelledby={id} className="m-0 min-w-0 border-0 p-0">
       <legend id={id} className={`${MENU_HEAD} float-left w-full`}>{section.label}</legend>
       {section.options.map((option) => (
         <MenuCheck key={option.value} type="checkbox" name={option.label} checked={checked.includes(option.value)}
@@ -428,7 +428,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
             {sorting && <MenuSorting sorting={sorting} />}
             {extra}
           </div>
-          <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
+          <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
             {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
           </div>
           <div className="col-span-3 mt-1.5 flex justify-end border-t border-hair pt-1.5">
