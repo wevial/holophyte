@@ -99,7 +99,7 @@ export function RunPage() {
           <span>run {run.id}</span>
         </nav>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          <h1 className="m-0 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink"><TitleText>{run.title}</TitleText></h1>
+          <h1 className="m-0 font-sans text-[24px] font-semibold leading-[1.25] tracking-[-.015em] text-ink [text-wrap:balance]"><TitleText>{run.title}</TitleText></h1>
           <div className="flex flex-wrap items-start justify-end gap-2">
             <RunActions key={`${page.base}/${run.id}`} page={page} project={project} />
             {run.outcome === "failed" && (
@@ -140,7 +140,7 @@ export function RunPage() {
             <RawLog key={`raw ${page.base}/${run.id}`} run={run.id} lines={page.progress} />
           </section>
           <div>
-            <RunTicket base={page.base} ticket={run.ticket} />
+            <RunTicket key={`ticket ${page.base}/${run.id}`} base={page.base} ticket={run.ticket} />
             <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
           </div>
         </div>

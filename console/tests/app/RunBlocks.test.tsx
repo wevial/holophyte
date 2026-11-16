@@ -147,6 +147,24 @@ test("the Ticket fold opens from closed to the first paragraph of the claimed re
   expect(ticketFold()).toBeNull();
 });
 
+async function go(hash: string) {
+  await act(async () => {
+    window.location.hash = hash;
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  for (let round = 0; round < 6; round += 1) await act(settle);
+}
+
+test("a Ticket fold opened on one run is closed on returning to another run already loaded", async () => {
+  await mount("#/runs/demo/9", blocksFetch({ tickets: { "DEMO-8": demo8, "DEMO-9": { ...demo8, ticket: "DEMO-9" } } }));
+  await go("#/runs/demo/8");
+  await act(async () => void fireEvent.click(ticketFold()!.querySelector("summary")!));
+  expect(ticketFold()!.open).toBe(true);
+  await go("#/runs/demo/9");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-9 title");
+  expect(ticketFold()!.open).toBe(false);
+});
+
 test("a ticket claimed as an older snapshot shows its current body's first paragraph, prose directly under its title included", async () => {
   const snapshot: TicketDetail = {
     ...demo8,

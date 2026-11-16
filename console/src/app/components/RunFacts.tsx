@@ -8,7 +8,7 @@ import { zoneName } from "../pages/runShared";
 
 type Run = RunDetail["run"];
 
-const TIP = "z-50 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card";
+const TIP = "z-50 rounded-[6px] bg-ink px-2 py-1 font-sans text-[12px] font-medium leading-[1.2] whitespace-nowrap text-canvas";
 const FACT = "inline-flex items-center gap-1.5 rounded-[4px] font-mono text-[13px] text-ink-2 outline-offset-2";
 
 const ICONS = {
@@ -60,7 +60,7 @@ function Tip({ tip, href, children, className }: { tip: string; href?: string; c
           )
         }
       />
-      <TooltipContent side="bottom" sideOffset={6} className={TIP}>{tip}</TooltipContent>
+      <TooltipContent side="top" sideOffset={6} className={TIP}>{tip}</TooltipContent>
     </Tooltip>
   );
 }
@@ -139,7 +139,7 @@ export function TimeBox({ agentMs, boxMs }: { agentMs: number; boxMs: number | n
   return (
     <Tip tip={`${used} of a ${box} box`} className="inline-flex items-center gap-2.5 rounded-[4px] font-mono text-[13px] text-ink-3 outline-offset-2">
       <span aria-hidden="true" className="h-[3px] w-24 overflow-hidden rounded-[2px] bg-rule-2">
-        <span data-time-fill className="block h-full bg-focus" style={{ width: `${share}%` }} />
+        <span data-time-fill className="block h-full bg-linear-to-r from-accent to-need" style={{ width: `${share}%` }} />
       </span>
       {used} / {box}
     </Tip>
