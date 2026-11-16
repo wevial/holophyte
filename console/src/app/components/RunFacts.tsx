@@ -47,8 +47,6 @@ const ICONS = {
   ),
 };
 
-type FactName = keyof typeof ICONS;
-
 /** A trigger whose tooltip opens alike on hover and keyboard focus. */
 function Tip({ tip, href, children, className }: { tip: string; href?: string; children: ReactNode; className: string }) {
   return (
@@ -67,30 +65,24 @@ function Tip({ tip, href, children, className }: { tip: string; href?: string; c
   );
 }
 
-function FactIcon({ name, tone = "" }: { name: FactName; tone?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width={16}
-      height={16}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.4}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      role="img"
-      aria-label={name}
-      className={`size-4 shrink-0 ${tone}`}
-    >
-      {ICONS[name]}
-    </svg>
-  );
-}
-
-function Fact({ name, tip = name, href, tone, children }: { name: FactName; tip?: string; href?: string; tone?: string; children: ReactNode }) {
+function Fact({ name, tip = name, href, tone = "", children }: { name: keyof typeof ICONS; tip?: string; href?: string; tone?: string; children: ReactNode }) {
   return (
     <Tip tip={tip} href={href} className={FACT}>
-      <FactIcon name={name} tone={tone} />
+      <svg
+        viewBox="0 0 16 16"
+        width={16}
+        height={16}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        role="img"
+        aria-label={name}
+        className={`size-4 shrink-0 ${tone}`}
+      >
+        {ICONS[name]}
+      </svg>
       {children}
     </Tip>
   );
@@ -116,7 +108,6 @@ export function RunFacts({ run, labels, prFacts, ready, merged }: {
   ready: boolean;
   merged: boolean;
 }) {
-  const holds = run.pr_url == null ? "" : pullRequestHolds(prFacts, ready, merged ? run : null);
   return (
     <div data-run-facts-row className="mt-5 flex flex-wrap gap-x-6 gap-y-2">
       {labels != null && (
@@ -126,7 +117,7 @@ export function RunFacts({ run, labels, prFacts, ready, merged }: {
         </>
       )}
       {run.pr_url != null && (
-        <Fact name="Pull request" tip={holds || "Pull request"} href={run.pr_url} tone={ready ? "text-live" : ""}>
+        <Fact name="Pull request" tip={pullRequestHolds(prFacts, ready, merged ? run : null) || "Pull request"} href={run.pr_url} tone={ready ? "text-live" : ""}>
           {prLabel(run.pr_url)}
         </Fact>
       )}

@@ -24,8 +24,6 @@ import type { RunDetail } from "../../lib/contract.gen";
 import { commitLink, shortSha } from "../../lib/shipped";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
-const HEAD = "m-0 flex items-center gap-2.5 font-sans text-[13px] font-semibold leading-none text-ink";
-
 /** The summary the run was given: the claimed revision's body when the
  *  ticket answers one, else its current one; nothing on a 404. */
 function RunTicket({ base, ticket }: { base: string; ticket: string }) {
@@ -127,7 +125,7 @@ export function RunPage() {
         <div className="flex min-w-0 flex-col gap-[30px]">
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
           <section id="progress" aria-label="Progress" className="@container/progress scroll-mt-4">
-            <h2 className={HEAD}>
+            <h2 className="m-0 flex items-center gap-2.5 font-sans text-[13px] font-semibold leading-none text-ink">
               Progress
               {page.live && (
                 <span data-live className="inline-flex items-center gap-1.5 font-mono text-[12px] font-normal text-live">
