@@ -1410,8 +1410,8 @@ on the Now line's detail, or an ended run's last, ending on
 `console/src/app/components/EndFacts.tsx`. `console/src/app/components/RawLog.tsx`
 opens every Progress line, heartbeats included, in a modal side panel.
 Its `criteriaGrid` lays out the run's criteria by round for
-`console/src/app/components/CriteriaGrid.tsx`, in a sticky right rail when
-Progress is wide enough; an open group lists its findings as
+`console/src/app/components/CriteriaList.tsx`, a row of marks on each
+criterion; an open group in Progress lists its findings as
 `console/src/app/components/ActivityFinding.tsx` rows.
 
 The Run page’s `console/src/app/components/RunDetails.tsx` folds files,
@@ -1467,7 +1467,7 @@ which `console/src/app/pages/EditTicket.tsx` loads over the current revision for
 `console/src/app/scoutThread.ts` folds a scout's thread, answer turns and passes into rows and says why its
 composer cannot send; `console/src/app/components/ScoutThread.tsx` draws them as the Thread at the end of
 the scout's body, with its Ask and Steer composer, posting `POST /actions/scout-message`, and
-`console/src/app/components/ThreadMessage.tsx` is the message item it shares with `AgentPanel.tsx`.
+`console/src/app/components/ThreadMessage.tsx` is its message item.
 `console/src/app/components/ScoutCard.tsx` draws a scout's proposal card in the Thread: a button per
 choice posts it as the card's answer, and Type an answer points the composer at the card.
 

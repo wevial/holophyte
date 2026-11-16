@@ -144,7 +144,7 @@ export function RunPage() {
             <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
           </div>
         </div>
-        <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks}>
+        <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} live={page.live} notes={page.detail.steer_notes} asks={page.asks}>
           {!merged && <AgentCompose key={`${page.base}/${run.id}`} base={page.base} run={run.id} ticket={run.ticket} actions={page.actions} parked={page.phase === "awaiting_merge_approval"} live={page.stoppable} />}
         </AgentPanel>
       </div>

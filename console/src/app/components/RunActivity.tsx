@@ -2,9 +2,8 @@ import { useId, useMemo, useState, type ReactNode } from "react";
 import type { RoundCriterion, RoundFinding, RunDetail } from "../../lib/contract.gen";
 import { formatSpan } from "../../lib/format";
 import { findingsHistory, RANK, severityOf, type Fate } from "../../lib/findings";
-import { criteriaGrid, PASSED, type ActivityGroup, type RunActivity as Activity } from "../activity";
+import { PASSED, type ActivityGroup, type RunActivity as Activity } from "../activity";
 import { ActivityFinding } from "./ActivityFinding";
-import { CriteriaGrid } from "./CriteriaGrid";
 import { EndFacts, endingOf, type Ending } from "./EndFacts";
 import { Badge, Connector, GroupHead, lineOf, Steps, type Line } from "./Timeline";
 
@@ -122,7 +121,7 @@ function NowDetail({ text }: { text: string }) {
   );
 }
 
-/** The run's timeline beside its criteria by round, one row per group,
+/** The run's timeline, one row per group,
  *  each folding open to its steps and findings. The current group, the
  *  running one or an ended run's last, has its title in full ink and ends on its newest
  *  progress or on how the run ended; a group the reader has not toggled
@@ -130,7 +129,6 @@ function NowDetail({ text }: { text: string }) {
 export function RunActivity({ activity, detail, base, project }: RunActivityProps) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
   const { groups } = activity;
-  const grid = useMemo(() => criteriaGrid(detail), [detail]);
   const fates = useMemo(() => reviewFates(groups), [groups]);
   const ending = detail.run.outcome == null ? null : endingOf(detail, activity);
   const currentOf = (group: ActivityGroup, index: number): Current => (index !== groups.length - 1 ? null : group.running ? "live" : (ending?.tone ?? null));
@@ -143,13 +141,8 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
     return ending == null ? null : <EndFacts detail={detail} ending={ending} base={base} project={project} />;
   };
   return (
-    <div className={`mt-4 flex flex-col gap-3 ${grid == null ? "" : "@[640px]/progress:grid @[640px]/progress:grid-cols-[minmax(0,1fr)_248px] @[640px]/progress:items-start @[640px]/progress:gap-x-6"}`}>
-      {grid != null && (
-        <div className="@[640px]/progress:sticky @[640px]/progress:top-0 @[640px]/progress:col-start-2 @[640px]/progress:row-start-1">
-          <CriteriaGrid grid={grid} />
-        </div>
-      )}
-      <ol aria-label="Run activity" className="m-0 list-none border-t border-rule-2 p-0 @[640px]/progress:col-start-1 @[640px]/progress:row-start-1">
+    <div className="mt-4">
+      <ol aria-label="Run activity" className="m-0 list-none border-t border-rule-2 p-0">
         {groups.map((group, index) => {
           const key = groupKey(group);
           const current = currentOf(group, index);
