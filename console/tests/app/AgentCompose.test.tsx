@@ -50,7 +50,8 @@ async function mount({ body = live, actions = true, answer }: { body?: RunDetail
 
 const agent = () => within(screen.getByRole("complementary", { name: "Agent" }));
 const textbox = () => agent().getByRole("textbox") as HTMLTextAreaElement;
-const checkbox = (name: string) => agent().getByRole("checkbox", { name }) as HTMLInputElement;
+const toggle = (name: string) => agent().getByRole("button", { name });
+const pressed = (name: string) => toggle(name).getAttribute("aria-pressed");
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 async function click(element: HTMLElement) {
   await act(async () => void fireEvent.click(element));
@@ -68,13 +69,13 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("sending a live run's hint posts its ticket and flags, clears the draft and hint, toasts and refreshes both thread queries", async () => {
+test("sending a live run's hint posts its ticket and flags, clears the draft and unpresses both toggles, toasts and refreshes both thread queries", async () => {
   const action = fakeFetch({ ok: true, detail: "steered" });
   const requests = await mount({ answer: action.fetchImpl });
   expect(within(agent().getByRole("group", { name: "Message kind" })).getByRole("button", { name: "Steer" }).getAttribute("aria-pressed")).toBe("true");
   expect(agent().getByRole("textbox", { name: "Note to the agent" }).getAttribute("placeholder")).toBe("Tell the agent what to change…");
   await type("Don't add a flag");
-  await click(checkbox("Just a hint"));
+  await click(toggle("Just a hint"));
   const reads = (path: string) => requests.filter((url) => url === `${DEMO}${path}`).length;
   const before = [reads("/runs/12"), reads("/runs/12/asks")];
   await click(agent().getByRole("button", { name: "Send" }));
@@ -83,9 +84,26 @@ test("sending a live run's hint posts its ticket and flags, clears the draft and
   ]);
   expect(toast()).toBe("Steered DEMO-12.");
   expect(textbox().value).toBe("");
-  expect(checkbox("Just a hint").checked).toBe(false);
+  expect(pressed("Just a hint")).toBe("false");
+  expect(pressed("Stop it now")).toBe("false");
   expect(reads("/runs/12")).toBeGreaterThan(before[0]!);
   expect(reads("/runs/12/asks")).toBeGreaterThan(before[1]!);
+});
+
+test("a live run's Steer and Ask are a sentence-case switch and the hint and stop toggles press and unpress", async () => {
+  await mount();
+  const kinds = within(agent().getByRole("group", { name: "Message kind" })).getAllByRole("button");
+  expect(kinds.map((kind) => kind.textContent)).toEqual(["Steer", "Ask"]);
+  for (const kind of kinds) expect(kind.className).not.toMatch(/\buppercase\b|\bborder\b/);
+  expect(agent().getByRole("group", { name: "Message kind" }).className).not.toMatch(/\bborder\b/);
+  for (const name of ["Just a hint", "Stop it now"]) {
+    expect(pressed(name)).toBe("false");
+    await click(toggle(name));
+    expect(pressed(name)).toBe("true");
+    await click(toggle(name));
+    expect(pressed(name)).toBe("false");
+  }
+  expect(agent().queryByRole("checkbox")).toBeNull();
 });
 
 test("the composer explains next turn, hint and stop before sending, rejects blank notes and resets stop after success", async () => {
@@ -95,16 +113,16 @@ test("the composer explains next turn, hint and stop before sending, rejects bla
   expect(agent().getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
   await type("   ");
   expect(agent().getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
-  await click(checkbox("Just a hint"));
+  await click(toggle("Just a hint"));
   expect(agent().getByText("The agent may take it or leave it.")).toBeTruthy();
-  await click(checkbox("Just a hint"));
-  await click(checkbox("Stop it now"));
+  await click(toggle("Just a hint"));
+  await click(toggle("Stop it now"));
   expect(agent().getByText("Stops now and restarts with your note. Nothing is lost.")).toBeTruthy();
   expect(agent().getByRole("button", { name: "Stop and send" }).hasAttribute("disabled")).toBe(true);
   await type("Use the existing option");
   await click(agent().getByRole("button", { name: "Stop and send" }));
   expect(action.seen[0]?.body).toEqual({ ticket: "DEMO-12", note: "Use the existing option", hint: false, now: true });
-  expect(checkbox("Stop it now").checked).toBe(false);
+  expect(pressed("Stop it now")).toBe("false");
   expect(agent().getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
 });
 
@@ -112,10 +130,10 @@ test("Ask on a parked pull request sends the run and question and preserves a re
   const detail = "console ask event 812 … is not answered yet";
   const action = fakeFetch({ ok: false, detail });
   await mount({ body: parked, answer: action.fetchImpl });
-  expect(agent().queryByRole("checkbox", { name: "Stop it now" })).toBeNull();
+  expect(agent().queryByRole("button", { name: "Stop it now" })).toBeNull();
   await click(agent().getByRole("button", { name: "Ask" }));
   expect(agent().getByRole("textbox", { name: "Question for the agent" }).getAttribute("placeholder")).toBe("Ask about this run…");
-  expect(agent().queryByRole("checkbox", { name: "Just a hint" })).toBeNull();
+  expect(agent().queryByRole("button", { name: "Just a hint" })).toBeNull();
   expect(agent().getByText("The run keeps going.")).toBeTruthy();
   await type("Does it print?");
   await click(agent().getByRole("button", { name: "Send" }));
@@ -156,9 +174,15 @@ test("actions off disables both message modes and Send with the host explanation
   }
 });
 
-test("a merged run retains its Agent thread without a composer", async () => {
-  await mount({ body: { ...live, run: { ...live.run, phase: "done", outcome: "merged", ended_ms: NOW } } });
-  expect(agent().getByText("Nothing sent to this run yet.")).toBeTruthy();
+test("a merged run keeps its notes under a stopped head glyph and holds no composer", async () => {
+  const read = { id: 1, author: "maintainer", run: 12, kind: "amendment" as const, note: "Keep the dry run read-only.", at: NOW - 60_000, consumed_by: 12, consumed_ms: NOW - 30_000, interrupt: false, withdrawn: false };
+  await mount({ body: { ...live, run: { ...live.run, phase: "done", outcome: "merged", ended_ms: NOW }, steer_notes: [read] } });
+  expect(agent().getByText("Keep the dry run read-only.")).toBeTruthy();
+  const glyph = agent().getByRole("img", { name: "stopped with the run" });
+  expect(glyph.className).toContain("text-ink-3");
+  expect(glyph.className).not.toContain("text-live");
+  expect(glyph.querySelector("rect")).toBeTruthy();
+  expect(glyph.querySelector(".state-pulse")).toBeNull();
   expect(agent().queryByRole("group", { name: "Message kind" })).toBeNull();
   expect(agent().queryByRole("textbox")).toBeNull();
 });
