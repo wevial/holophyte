@@ -140,7 +140,6 @@ export function Runs() {
   const controls = useRef<HTMLDivElement>(null);
   const shift = useControlsShift(dock, controls);
   const hidden = shift != null;
-  const orderWords = SORT_WORDS[sort][order];
   const go = (next: RunsSearch & RunsFilters) =>
     void navigate({ to: ".", search: (previous: ScopeSearch & RunsSearch & RunsFilters) => ({ ...previous, page: undefined, ...next }) });
   const [fieldKey, setFieldKey] = useState(0);
@@ -190,7 +189,7 @@ export function Runs() {
       <RunTable
         rows={rows}
         now={now}
-        label={`Runs, ${orderWords}`}
+        label={`Runs, ${SORT_WORDS[sort][order]}`}
         grouped={sort === "started"}
         empty={chips.length > 0 || search.state != null ? "No runs match" : `No runs in ${project ?? "any project"} in the last 7 days.`}
         dock={
