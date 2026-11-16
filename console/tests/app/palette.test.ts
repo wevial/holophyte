@@ -10,12 +10,12 @@ const systemDark = ["@media (prefers-color-scheme: dark)", ':root:not([data-them
 
 const TOKENS = ["--canvas", "--side", "--raised", "--hover", "--selected", "--ink", "--ink-2", "--ink-3", "--accent", "--focus"];
 const TABLE: Record<string, string> = {
-  "Lotus dark": "#0d0a15 #120f1c #15121f #1d1930 #352952 #ece8fb #b3adcc #857fa2 #b9a3ff #c9b4ff",
+  "Lotus dark": "#0d0a15 #151120 #15121f #1d1930 #352952 #ece8fb #b3adcc #857fa2 #b9a3ff #c9b4ff",
   "Dune dark": "#1b1817 #221e1d #252120 #2d2827 #4e3b30 #f3ece8 #c6bab4 #9a8d87 #ffad7a #ffbe96",
   "Tide dark": "#0b0e1d #10142a #131830 #1a2140 #273159 #e8ecfb #b0b8d6 #808aac #9db1ff #aabdff",
   "Mono dark": "#0a0a0b #111113 #141416 #1c1c20 #342a4c #ededf0 #b4b4bb #86868f #b9a3ff #c9b4ff",
   "Forest dark": "#0e1411 #131a16 #16201b #1e2a24 #253f34 #e8f1ec #b0c2b8 #84968c #7fd6b8 #9be3c8",
-  "Lotus light": "#f6f5fa #ece8f5 #ffffff #e2dcf1 #c3bde6 #1d182b #4f4865 #655e7b #5a4ebf #5a4ebf",
+  "Lotus light": "#fbfaff #ebe6f6 #ffffff #e2dcf1 #c3bde6 #1d182b #4f4865 #655e7b #5a4ebf #5a4ebf",
   "Dune light": "#fcfaf7 #f4f0ea #ffffff #ede3df #dfc7b9 #1f1a1e #4e474b #655e62 #a4512e #a4512e",
   "Tide light": "#f5f7fb #eaeef6 #ffffff #dfe5f3 #bbc5ea #161b29 #444c62 #5a6278 #3651c9 #3651c9",
   "Mono light": "#fafafa #f0f0f1 #ffffff #e5e5e9 #ccc9e5 #18181b #45454c #5f5f68 #5a4ebf #5a4ebf",
