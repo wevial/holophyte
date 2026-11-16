@@ -218,8 +218,7 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
 
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const byKey = useMemo(() => new Map(rows.map((row) => [rowKey(row), row])), [rows]);
-  const inScope = current.name == null ? rows.flatMap((row) => (row.name == null ? [] : [row.name])) : [current.name];
-  const dots = inScope.flatMap((name) => colours.get(name) ?? []);
+  const dots = (current.name == null ? rows : [current]).flatMap((row) => (row.name == null ? [] : (colours.get(row.name) ?? [])));
   const items = useMemo(() => rows.map((row) => ({ value: rowKey(row), label: row.label })), [rows]);
 
   const handle = usePrimitive(switcher, {
