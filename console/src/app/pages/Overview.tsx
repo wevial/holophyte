@@ -60,9 +60,9 @@ export function Overview() {
         {view.answered && (
           <header data-overview-head className="flex flex-col gap-3 pt-4 pl-2.5">
             <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
-              <h1 className="flex items-baseline gap-3 font-sans text-ink">
-                <span data-numeral className={`text-[56px] font-light leading-none tracking-[-0.02em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : running.length}</span>{" "}
-                <span className="text-[22px] font-normal leading-none">{need > 0 ? "need you" : "running"}</span>
+              <h1 className="flex items-baseline gap-[14px] font-sans text-ink">
+                <span data-numeral className={`text-[64px] font-[220] font-stretch-125% leading-[0.9] tracking-[-0.03em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : running.length}</span>{" "}
+                <span className="text-[22px] font-normal font-stretch-112% leading-none tracking-[-0.01em]">{need > 0 ? "need you" : "running"}</span>
               </h1>
               <div data-glyph-counts className="flex flex-wrap items-center gap-x-4 gap-y-1">
                 <GlyphCount count={running.length} words="running" tone="live" icon={STATE_ICONS.running} />
