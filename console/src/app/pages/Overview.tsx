@@ -1,4 +1,4 @@
-import { useContext, type ReactNode } from "react";
+import { useContext, useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { Link } from "@tanstack/react-router";
 import { projectColours } from "../dayLog";
 import { DayLog } from "../components/DayLog";
@@ -34,6 +34,26 @@ function GlyphCount({ count, words, tone, icon }: { count: number; words: string
   );
 }
 
+function useHeightVariable(source: RefObject<HTMLElement | null>, target: RefObject<HTMLElement | null>, variable: string) {
+  useLayoutEffect(() => {
+    const from = source.current;
+    const to = target.current;
+    if (from == null || to == null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) to.style.setProperty(variable, `${entry.borderBoxSize[0]!.blockSize}px`);
+    });
+    observer.observe(from);
+    return () => observer.disconnect();
+  }, [source, target, variable]);
+}
+
+const COLUMNS = [
+  "grid grid-cols-[minmax(0,780px)]",
+  "min-[1200px]:grid-cols-[minmax(0,780px)_290px] min-[1200px]:grid-rows-[auto_auto_1fr] min-[1200px]:gap-x-[46px]",
+  "min-[1600px]:grid-cols-[minmax(0,780px)_330px]",
+  "min-[1680px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_380px] min-[1680px]:grid-rows-none min-[1680px]:gap-x-12",
+].join(" ");
+
 export function Overview() {
   const view = useOverview();
   const deps = useContext(PollDepsContext);
@@ -54,6 +74,9 @@ export function Overview() {
   const merged = view.mergedToday;
   const more = merged.length - SHOWN_MERGES;
   const shown = (count: number) => (loaded ? count : undefined);
+  const weekBars = useRef<HTMLDivElement>(null);
+  const logColumn = useRef<HTMLDivElement>(null);
+  useHeightVariable(weekBars, logColumn, "--week-bars-height");
   return (
     <div className="flex flex-col gap-10 pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:pl-[54px]">
       <div className="flex min-w-0 max-w-[780px] flex-col gap-6">
@@ -86,8 +109,8 @@ export function Overview() {
           lines={noticeLines(view.hosts, log.answers, view.now)}
         />
       </div>
-      <div className="flex flex-col gap-8 min-[1200px]:flex-row min-[1200px]:items-start min-[1200px]:gap-[46px]">
-        <div className="flex min-w-0 max-w-[780px] flex-1 flex-col gap-10">
+      <div className={COLUMNS}>
+        <div data-overview-column="now" className="col-start-1 row-start-1 flex min-w-0 flex-col gap-10">
           {loaded && need > 0 && (
             <Section label="Needs you" count={need} empty="">
               <FocusCard entries={view.needs} open={opened.open} toggle={opened.toggle} hosts={view.hosts} now={view.now} />
@@ -107,21 +130,27 @@ export function Overview() {
           <Section label="Waiting" count={shown(waiting.length)} empty="Nothing waits on a pull request.">
             <WaitingRows rows={waiting} readiness={view.readiness} />
           </Section>
-          <Section
-            label="Merged today"
-            count={shown(merged.length)}
-            empty="Nothing merged yet today."
-            aside={more > 0 ? (
-              <Link to="/runs" search={(previous: ScopeSearch) => ({ ...keepScope(previous), state: "merged", range: "today" })} className="inline-flex items-center gap-1.5 font-sans text-[13px] text-ink-2 hover:text-ink">
-                {more} more <span aria-hidden="true">→</span>
-              </Link>
-            ) : undefined}
-          >
-            <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
-          </Section>
         </div>
-        <div className="hidden min-w-0 flex-col gap-8 min-[1200px]:flex min-[1200px]:flex-[0_0_290px] min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1600px]:flex-[0_0_330px] min-[1600px]:self-start">
-          <WeekBars rows={week} now={view.now} colours={colours} />
+        <div data-overview-column="landed" className="contents min-[1680px]:col-start-2 min-[1680px]:row-start-1 min-[1680px]:flex min-[1680px]:min-w-0 min-[1680px]:flex-col min-[1680px]:gap-10">
+          <div className="col-start-1 row-start-2 mt-10 min-w-0 min-[1680px]:mt-0">
+            <Section
+              label="Merged today"
+              count={shown(merged.length)}
+              empty="Nothing merged yet today."
+              aside={more > 0 ? (
+                <Link to="/runs" search={(previous: ScopeSearch) => ({ ...keepScope(previous), state: "merged", range: "today" })} className="inline-flex items-center gap-1.5 font-sans text-[13px] text-ink-2 hover:text-ink">
+                  {more} more <span aria-hidden="true">→</span>
+                </Link>
+              ) : undefined}
+            >
+              <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
+            </Section>
+          </div>
+          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-7 min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
+            <WeekBars rows={week} now={view.now} colours={colours} />
+          </div>
+        </div>
+        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
           <DayLog entries={log.entries} className="min-h-0 flex-1" />
         </div>
       </div>
