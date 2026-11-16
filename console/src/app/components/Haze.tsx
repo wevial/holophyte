@@ -19,12 +19,14 @@ export function Haze() {
   const live = useRef<HazeHandle | null>(null);
   const [fallback, setFallback] = useState(false);
   const { resolvedTheme, lightPick, darkPick } = useTheme();
-  const palette = `${resolvedTheme === "dark" ? darkPick : lightPick}-${resolvedTheme}`;
+  const dark = resolvedTheme === "dark";
+  const palette = `${dark ? darkPick : lightPick}-${resolvedTheme}`;
   const { hazeStrength } = useHazeStrength();
   const { motion } = useMotion();
   const { customThemes } = useCustomThemes();
 
   useEffect(() => {
+    if (!dark) return;
     const container = band.current!;
     let haze: HazeHandle;
     try {
@@ -40,6 +42,7 @@ export function Haze() {
       return;
     }
     live.current = haze;
+    setFallback(false);
     const lost = () => {
       live.current = null;
       haze.destroy();
@@ -51,7 +54,7 @@ export function Haze() {
       live.current = null;
       haze.destroy();
     };
-  }, []);
+  }, [dark]);
 
   useEffect(() => {
     if (live.current) Object.assign(live.current.config, themePaint(palette), { motion });
@@ -62,7 +65,7 @@ export function Haze() {
       ref={band}
       aria-hidden="true"
       data-haze=""
-      className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${fallback ? " haze-fallback" : ""}`}
+      className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
     />
   );
 }
