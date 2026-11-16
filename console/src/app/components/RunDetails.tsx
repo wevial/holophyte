@@ -38,7 +38,7 @@ function RoundCount({ count }: { count: number }) {
   const name = `${count} review ${count === 1 ? "round" : "rounds"}`;
   return <Tooltip delay={300}>
     <TooltipTrigger
-      render={({ type: _button, ...trigger }) => <span {...trigger} role="img" aria-label={name} className={`ml-2.5 inline-flex items-center gap-1 align-[-3px] ${COUNT}`}>
+      render={({ type: _button, "aria-describedby": _described, ...trigger }) => <span {...trigger} role="img" aria-label={name} className={`ml-2.5 inline-flex items-center gap-1 align-[-3px] ${COUNT}`}>
         <LoopIcon />{count}
       </span>}
     />
