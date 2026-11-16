@@ -154,7 +154,7 @@ test("the sidebar sits on the side ground with no line of its own, and the page 
   expect(sidebar.contains("bg-side")).toBe(true);
   expect(sidebar.contains("border-r")).toBe(false);
   const main = screen.getByRole("main").classList;
-  for (const name of ["bg-canvas", "rounded-tl-[10px]", "shadow-[0_0_0_1px_var(--rule-2)]"]) expect(main.contains(name)).toBe(true);
+  for (const name of ["bg-canvas", "min-[720px]:rounded-tl-[10px]", "min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]"]) expect(main.contains(name)).toBe(true);
   expect(main.contains("bg-side")).toBe(false);
 });
 
