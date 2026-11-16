@@ -10,6 +10,7 @@ import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Board, Flow, MergeQueue, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { needsDaemons } from "./needsFleet";
+import { setPlatform } from "@ui-sdk/core/testing";
 import { declarations } from "../cssTokens";
 
 const ORIGIN = "http://writer-host:7710";
@@ -381,33 +382,38 @@ const toggle = () => screen.getByRole("button", { name: /^(Collapse|Expand) side
 const headerRow = () => toggle().parentElement!;
 const aside = () => screen.getByRole("complementary", { name: "Console" });
 
-test("in a browser the title row holds the mark and word linking home, then the panel-left toggle; folded, the mark alone, the toggle at the rail's foot with focus kept", async () => {
+const homeLink = () => screen.getByRole("link", { name: "holophyte" });
+const childNames = (row: Element) => Array.from(row.children).map((child) => child.getAttribute("aria-label"));
+
+test("in a browser the title row holds the panel-left toggle, then the mark and word linking home; folded, the toggle alone with the mark in the row under it", async () => {
   await mount("#/");
   const header = headerRow();
   expect(header.classList.contains("h-[52px]")).toBe(true);
-  const [first, second] = Array.from(header.children);
-  const home = screen.getByRole("link", { name: "holophyte" });
-  expect(first).toBe(home);
-  expect(home.textContent).toBe("holophyte");
-  expect(home.querySelectorAll("svg").length).toBe(1);
-  expect(second).toBe(screen.getByRole("button", { name: "Collapse sidebar" }));
-  expect(second!.getAttribute("aria-expanded")).toBe("true");
-  expect(second!.classList.contains("size-7")).toBe(true);
+  expect(childNames(header)).toEqual(["Collapse sidebar", "holophyte"]);
+  expect(homeLink().textContent).toBe("holophyte");
+  expect(homeLink().querySelectorAll("svg").length).toBe(1);
 
-  act(() => (second as HTMLElement).focus());
-  fireEvent.click(second!);
+  fireEvent.click(toggle());
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
-  const folded = home.parentElement!;
-  expect(folded.classList.contains("h-[52px]")).toBe(true);
-  const foldedHome = within(folded).getByRole("link", { name: "holophyte" });
-  expect(foldedHome.textContent).toBe("");
-  expect(foldedHome.querySelectorAll("svg").length).toBe(1);
-  expect(Array.from(folded.children)).toEqual([foldedHome]);
-  const expand = screen.getByRole("button", { name: "Expand sidebar" });
-  expect(document.activeElement).toBe(expand);
-  const footer = aside().querySelector("footer")!;
-  expect(expand.parentElement!.nextElementSibling).toBe(footer);
-  expect(screen.getByRole("navigation", { name: "Pages" }).compareDocumentPosition(expand) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(childNames(headerRow())).toEqual(["Expand sidebar"]);
+  expect(homeLink().parentElement === headerRow().nextElementSibling).toBe(true);
+  expect(homeLink().textContent).toBe("");
+  expect(homeLink().querySelectorAll("svg").length).toBe(1);
+});
+
+test("folded or expanded, the one sidebar toggle sits before the Pages navigation, and folding from it keeps focus on it", async () => {
+  await mount("#/");
+  const nav = () => screen.getByRole("navigation", { name: "Pages" });
+  for (const name of ["Collapse sidebar", "Expand sidebar"]) {
+    expect(screen.getAllByRole("button", { name: /^(Collapse|Expand) sidebar$/ }).length).toBe(1);
+    expect(nav().compareDocumentPosition(toggle()) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    const before = screen.getByRole("button", { name });
+    await keyboardFocus(before);
+    fireEvent.click(before);
+    expect(document.activeElement === before && toggle() === before).toBe(true);
+  }
+  expect(screen.getAllByRole("button", { name: /^(Collapse|Expand) sidebar$/ }).length).toBe(1);
+  expect(nav().compareDocumentPosition(toggle()) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 });
 
 test("the sidebar toggle draws one icon in both states, unlike the story list's chevron", async () => {
@@ -422,23 +428,20 @@ test("the sidebar toggle draws one icon in both states, unlike the story list's 
   expect(expanded).not.toBe(chevron);
 });
 
-test("in the macOS app the title row clears the traffic lights and drags the window, and its controls do not", async () => {
+test("in the macOS app the title row clears the traffic lights, drags the window and holds only the toggle, which does not drag; the home link sits under it outside any drag region", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
   await mount("#/");
-  const header = headerRow();
-  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(header.classList.contains(name)).toBe(true);
-  const button = screen.getByRole("button", { name: "Collapse sidebar" });
-  const home = screen.getByRole("link", { name: "holophyte" });
-  expect(home.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  for (const control of [button, home]) expect(control.classList.contains(NO_DRAG)).toBe(true);
-
-  fireEvent.click(button);
-  expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
-  const folded = screen.getByRole("link", { name: "holophyte" }).parentElement!;
-  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(folded.classList.contains(name)).toBe(true);
-  for (const control of [screen.getByRole("button", { name: "Expand sidebar" }), within(folded).getByRole("link", { name: "holophyte" })]) {
-    expect(control.classList.contains(NO_DRAG)).toBe(true);
+  for (const fold of [false, true]) {
+    if (fold) fireEvent.click(toggle());
+    const header = headerRow();
+    for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(header.classList.contains(name)).toBe(true);
+    expect(childNames(header)).toEqual([fold ? "Expand sidebar" : "Collapse sidebar"]);
+    expect(toggle().classList.contains(NO_DRAG)).toBe(true);
+    expect(homeLink().parentElement === header.nextElementSibling).toBe(true);
+    expect(homeLink().closest(".\\[-webkit-app-region\\:drag\\]")).toBeNull();
+    expect(homeLink().textContent).toBe(fold ? "" : "holophyte");
   }
+  expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
 });
 
 test("in the macOS app a zero-height layer drags the main pane's top 52px and no band pushes the page down", async () => {
@@ -553,6 +556,28 @@ test("Cmd or Ctrl with backslash folds and unfolds the sidebar, and other chords
   for (const chord of [{}, { metaKey: true, shiftKey: true }]) {
     fireEvent.keyDown(document, { key: "\\", ...chord });
     expect(screen.getByRole("button", { name: "Collapse sidebar" }).getAttribute("aria-expanded")).toBe("true");
+  }
+});
+
+test("the sidebar toggle's tooltip names its action and the platform's fold chord on hover or keyboard focus", async () => {
+  const native = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "apple" : "other";
+  try {
+    for (const [platform, chord] of [["apple", "⌘\\"], ["other", "Ctrl+\\"]] as const) {
+      setPlatform(platform);
+      await mount("#/");
+      expect(tooltip()).toBeNull();
+      await pointerOver(toggle());
+      expect(tooltip()!.textContent).toBe(`Collapse sidebar\u2066${chord}\u2069`);
+      await pointerAway(toggle());
+      fireEvent.click(toggle());
+      expect(tooltip()).toBeNull();
+      await keyboardFocus(toggle());
+      expect(tooltip()!.textContent).toBe(`Expand sidebar\u2066${chord}\u2069`);
+      cleanup();
+      localStorage.clear();
+    }
+  } finally {
+    setPlatform(native);
   }
 });
 

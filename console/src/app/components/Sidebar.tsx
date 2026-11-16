@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useRouterState, useSearch } from "@tanstack/react-router";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
 import { SWEEP_OK } from "../../lib/hosts";
@@ -349,20 +349,11 @@ export function Sidebar() {
     </FootTip>
   );
 
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  const refocusToggle = useRef(false);
   const fold = () => {
     if (settingsMenu) return;
-    refocusToggle.current = toggleRef.current != null && document.activeElement === toggleRef.current;
     setFolded(!folded);
     writeFolded(!folded);
   };
-
-  useEffect(() => {
-    if (!refocusToggle.current) return;
-    refocusToggle.current = false;
-    toggleRef.current?.focus();
-  }, [folded]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -374,18 +365,37 @@ export function Sidebar() {
     return () => document.removeEventListener("keydown", onKey);
   });
 
+  const toggleName = folded ? "Expand sidebar" : "Collapse sidebar";
   const toggle = (
-    <button
-      ref={toggleRef}
-      type="button"
-      aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
-      aria-expanded={!folded}
-      onClick={fold}
-      className={`flex items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${folded ? "h-9 w-10" : "size-7"} ${macApp ? APP_NO_DRAG : ""}`}
-    >
-      <PanelLeftIcon />
-    </button>
+    <Tooltip delay={300} shortcut={"mod+\\"}>
+      <TooltipTrigger
+        aria-label={toggleName}
+        aria-expanded={!folded}
+        onClick={fold}
+        className={`flex size-7 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+      >
+        <PanelLeftIcon />
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" sideOffset={6} className={TIP}>
+        {toggleName}
+        <TooltipShortcut className="font-mono text-ink-3" />
+      </TooltipContent>
+    </Tooltip>
   );
+
+  const home = (
+    <Link
+      to="/"
+      search={keepScope}
+      aria-label="holophyte"
+      title="holophyte"
+      className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : ""}`}
+    >
+      <Mark />
+      {!folded && <span aria-hidden="true">holophyte</span>}
+    </Link>
+  );
+  const homeInTitle = !macApp && !folded;
 
   return (
     <aside
@@ -396,22 +406,14 @@ export function Sidebar() {
       }`}
     >
       <div
-        className={`flex h-[52px] shrink-0 items-center gap-1 ${
-          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pl-4"
-        } ${folded ? "" : "pr-2"}`}
+        className={`flex h-[52px] shrink-0 items-center gap-2 ${
+          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pr-2 pl-4"
+        }`}
       >
-        <Link
-          to="/"
-          search={keepScope}
-          aria-label="holophyte"
-          title="holophyte"
-          className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : "mr-auto"} ${macApp ? APP_NO_DRAG : ""}`}
-        >
-          <Mark />
-          {!folded && <span aria-hidden="true">holophyte</span>}
-        </Link>
-        {!folded && !settingsMenu && toggle}
+        {!settingsMenu && toggle}
+        {homeInTitle && home}
       </div>
+      {!homeInTitle && <div className={`flex h-9 shrink-0 items-center ${folded ? (macApp ? "pl-[76px]" : "justify-center") : "pl-4"}`}>{home}</div>}
 
       {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
       <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />
@@ -431,9 +433,7 @@ export function Sidebar() {
       </nav>
       </>}
 
-      {folded && <div className="mt-auto flex justify-center pt-3">{toggle}</div>}
-
-      <footer className={`flex gap-0.5 py-3 ${folded ? "flex-col items-center px-1.5" : "mt-auto items-center px-3"}`}>
+      <footer className={`mt-auto flex gap-0.5 py-3 ${folded ? "flex-col items-center px-1.5" : "items-center px-3"}`}>
         {dot}
         <ThemeGroup folded={folded} />
         {settings}
