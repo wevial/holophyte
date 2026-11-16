@@ -37,7 +37,7 @@ export function AgentPanel({ label, state, notes, asks, children }: {
   }
   messages.sort((a, b) => a.at - b.at);
   return (
-    <aside id="agent" aria-labelledby="agent-heading" className="@container/agent min-w-0 flex-[1_1_440px] border-t border-rule px-[22px] pb-6 pt-[22px] @[1000px]:min-w-[380px] @[1000px]:border-t-0 max-[720px]:px-4">
+    <aside id="agent" aria-labelledby="agent-heading" className="@container/agent min-w-0 border-t border-rule px-[22px] pb-6 pt-[22px] min-[1180px]:border-t-0 max-[720px]:px-4">
       <div id="agent-heading" className={SECTION_LABEL}>Agent</div>
       <div className="mt-2 font-mono text-[12px] leading-[1.5] text-ink-2">
         <div className="font-semibold text-ink">implementer · {label}</div>

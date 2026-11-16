@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Attention, RunDetail, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -83,7 +83,17 @@ async function mount(hash: string, fetch: Fetch = blocksFetch()) {
 }
 
 const block = (name: string) => screen.queryByRole("region", { name });
-const prLine = () => block("Pull request")!.querySelector("p")!.textContent;
+const prFact = () => screen.getByRole("img", { name: "Pull request" }).closest("a")!;
+const ticketFold = () => document.querySelector<HTMLDetailsElement>("[data-run-ticket]");
+const ticketLead = () => ticketFold()!.querySelector("summary")!.nextElementSibling!.textContent;
+
+async function prTip(): Promise<string | null | undefined> {
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    prFact().focus();
+  });
+  return screen.queryByRole("tooltip")?.textContent;
+}
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -98,35 +108,61 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a parked run's pull request line links its number and gives its park's facts, adding ready for your merge once ready", async () => {
+test("a parked run's Pull request fact links its number and its tooltip gives its park's facts, adding ready for your merge once ready", async () => {
   await mount("#/runs/demo/8");
-  const pr = block("Pull request")!;
-  expect(within(pr).getByRole("link", { name: "PR #88" }).getAttribute("href")).toBe(PR_88);
-  expect(prLine()).toBe("PR #88 · checks green · approved · 1 thread open");
-  expect([...pr.querySelectorAll("[data-fact]")].map((fact) => fact.getAttribute("data-tone"))).toEqual(["ok", "ok", "warn"]);
+  expect(prFact().textContent).toBe("PR #88");
+  expect(prFact().getAttribute("href")).toBe(PR_88);
+  expect(await prTip()).toBe("checks green · approved · 1 thread open");
+  expect(block("Pull request")).toBeNull();
   cleanup();
   await mount("#/runs/demo/8", blocksFetch({ mergeReady: true }));
-  expect(prLine()).toBe("PR #88 · checks green · approved · 1 thread open · ready for your merge");
+  expect(await prTip()).toBe("checks green · approved · 1 thread open · ready for your merge");
+  expect(screen.getByRole("img", { name: "Pull request" }).getAttribute("class")).toContain("text-live");
 });
 
-test("a merged run's line gives its short sha linking to the commit and its time; a run with no pull request has no block", async () => {
+test("a merged run's Pull request fact names its sha and time, the verdict's short sha links to the commit; a run with no pull request has no fact", async () => {
   await mount("#/runs/demo/9");
-  expect(prLine()).toBe("PR #521 · merged as 7b1c0f2 at 16:52");
-  expect(within(block("Pull request")!).getByRole("link", { name: "7b1c0f2" }).getAttribute("href")).toBe(COMMIT);
+  expect(await prTip()).toBe("merged as 7b1c0f2 at 16:52");
+  const verdict = within(screen.getByRole("main")).getByRole("status");
+  expect(verdict.textContent).toBe("Merged to main as 7b1c0f2 at 16:52.");
+  expect(within(verdict).getByRole("link", { name: "7b1c0f2" }).getAttribute("href")).toBe(COMMIT);
   cleanup();
   await mount("#/runs/demo/12");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-12 title");
-  expect(block("Pull request")).toBeNull();
+  expect(screen.queryByRole("img", { name: "Pull request" })).toBeNull();
 });
 
-test("the ticket block shows the first paragraph of the claimed revision's summary, and nothing when the ticket answers 404", async () => {
+test("the Ticket fold opens from closed to the first paragraph of the claimed revision's summary, and is absent when the ticket answers 404", async () => {
   await mount("#/runs/demo/8");
-  const ticket = block("Ticket")!;
-  expect(ticket.textContent).toBe("TicketA lease past its threshold is freed.");
+  const fold = ticketFold()!;
+  expect(fold.open).toBe(false);
+  const summary = fold.querySelector("summary")!;
+  expect(summary.textContent).toBe("Ticket");
+  await act(async () => void fireEvent.click(summary));
+  expect(fold.open).toBe(true);
+  expect(ticketLead()).toBe("A lease past its threshold is freed.");
   cleanup();
   await mount("#/runs/demo/8", blocksFetch({ tickets: {} }));
-  expect(block("Pull request")).not.toBeNull();
-  expect(block("Ticket")).toBeNull();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-8 title");
+  expect(ticketFold()).toBeNull();
+});
+
+async function go(hash: string) {
+  await act(async () => {
+    window.location.hash = hash;
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  for (let round = 0; round < 6; round += 1) await act(settle);
+}
+
+test("a Ticket fold opened on one run is closed on returning to another run already loaded", async () => {
+  await mount("#/runs/demo/9", blocksFetch({ tickets: { "DEMO-8": demo8, "DEMO-9": { ...demo8, ticket: "DEMO-9" } } }));
+  await go("#/runs/demo/8");
+  await act(async () => void fireEvent.click(ticketFold()!.querySelector("summary")!));
+  expect(ticketFold()!.open).toBe(true);
+  await go("#/runs/demo/9");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-9 title");
+  expect(ticketFold()!.open).toBe(false);
 });
 
 test("a ticket claimed as an older snapshot shows its current body's first paragraph, prose directly under its title included", async () => {
@@ -136,7 +172,7 @@ test("a ticket claimed as an older snapshot shows its current body's first parag
     current: revision("# Free stale leases\nA lease past its threshold is freed.\n\nIts run is told before it goes.\n"),
   };
   await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": snapshot } }));
-  expect(block("Ticket")!.textContent).toBe("TicketA lease past its threshold is freed.");
+  expect(ticketLead()).toBe("A lease past its threshold is freed.");
 });
 
 test("a heading directly under the first paragraph ends it, so the next section's prose stays out of the ticket block", async () => {
@@ -145,7 +181,7 @@ test("a heading directly under the first paragraph ends it, so the next section'
     claimed: revision("# Free stale leases\nA lease past its threshold is freed.\n## Acceptance\nIts run is told before it goes.\n"),
   };
   await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": sections } }));
-  expect(block("Ticket")!.textContent).toBe("TicketA lease past its threshold is freed.");
+  expect(ticketLead()).toBe("A lease past its threshold is freed.");
 });
 
 test("an empty summary draws no ticket block rather than another section's prose", async () => {
@@ -154,6 +190,6 @@ test("an empty summary draws no ticket block rather than another section's prose
     claimed: revision("# Free stale leases\n\n## Summary\n\n## Acceptance criteria\n\nThe operator can retry.\n"),
   };
   await mount("#/runs/demo/8", blocksFetch({ tickets: { "DEMO-8": empty } }));
-  expect(block("Pull request")).not.toBeNull();
-  expect(block("Ticket")).toBeNull();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-8 title");
+  expect(ticketFold()).toBeNull();
 });

@@ -1,18 +1,17 @@
-import { useState, type Ref } from "react";
+import { useState } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { useAction } from "../actions";
 import { Btn } from "./Btn";
 
 const ASK_OFF = "Ask opens once the run parks on its pull request.";
 
-export function AgentCompose({ base, run, ticket, actions, parked, live, ref }: {
+export function AgentCompose({ base, run, ticket, actions, parked, live }: {
   base: string;
   run: number;
   ticket: string;
   actions: boolean;
   parked: boolean;
   live: boolean;
-  ref?: Ref<HTMLTextAreaElement>;
 }) {
   const [kind, setKind] = useState<"Steer" | "Ask">("Steer");
   const [text, setText] = useState("");
@@ -51,7 +50,7 @@ export function AgentCompose({ base, run, ticket, actions, parked, live, ref }: 
           </button>
         ))}
       </div>
-      <textarea ref={ref} aria-label={asking ? "Question for the agent" : "Note to the agent"}
+      <textarea aria-label={asking ? "Question for the agent" : "Note to the agent"}
         placeholder={asking ? "Ask about this run…" : "Tell the agent what to change…"}
         value={text} disabled={disabled} onChange={(event) => setText(event.target.value)}
         className="mt-2.5 block min-h-[88px] w-full resize-y border border-ink-3 bg-paper-2 p-2.5 font-read text-[14px] leading-[1.45] text-ink" />
