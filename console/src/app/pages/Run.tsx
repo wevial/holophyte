@@ -1,19 +1,18 @@
-import { useContext, useRef } from "react";
+import { useContext, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { Markdown } from "../components/Markdown";
 import { TicketLink } from "../components/TicketLink";
-import { formatClock, formatSettled } from "../../lib/format";
 import { RunActions } from "../components/RunActions";
 import { leadParagraph } from "../../lib/ticket";
 import { AgentCompose } from "../components/AgentCompose";
 import { AgentPanel } from "../components/AgentPanel";
 import { CriteriaList } from "../components/CriteriaList";
-import { SECTION_LABEL } from "../components/Criteria";
 import { RawLog } from "../components/RawLog";
 import { RunActivity } from "../components/RunActivity";
 import { RunDetails } from "../components/RunDetails";
 import { ACTIONS_OFF_LINE } from "../components/CardActions";
-import { RunPullRequest } from "../components/RunPullRequest";
+import { RunFacts, TimeBox } from "../components/RunFacts";
+import { FoldChevron } from "../components/icons";
 import { ScoutThis } from "../components/ScoutThis";
 import { RunStepper } from "../components/RunStepper";
 import { StateDot } from "../components/StateDot";
@@ -21,26 +20,32 @@ import { TitleText } from "../components/TitleText";
 import { useRunTurns, useTicket } from "../queries";
 import { stepperOf, useRunPage, type RunPage as RunPageFacts } from "../run";
 import { PollDepsContext } from "../scope";
-import { CRUMB_LINK, Loading, Notice, Page, zoneName } from "./runShared";
+import type { RunDetail } from "../../lib/contract.gen";
+import { commitLink, shortSha } from "../../lib/shipped";
+import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
-const STRONG = "font-medium text-ink-2";
+const HEAD = "m-0 flex items-center gap-2.5 font-sans text-[13px] font-semibold leading-none text-ink";
 
 /** The summary the run was given: the claimed revision's body when the
  *  ticket answers one, else its current one; nothing on a 404. */
 function RunTicket({ base, ticket }: { base: string; ticket: string }) {
   const deps = useContext(PollDepsContext);
   const { data } = useTicket(base, ticket, deps);
+  const [open, setOpen] = useState(false);
   if (data == null) return null;
   const claimed = data.claimed?.revision != null ? data.claimed.body : null;
   const lead = leadParagraph(claimed ?? data.current?.body ?? data.body);
   if (!lead) return null;
   return (
-    <section aria-label="Ticket" data-run-ticket>
-      <div className={SECTION_LABEL}>Ticket</div>
-      <div className="mt-2.5 max-w-[68ch] font-read text-[15px] leading-[1.55] text-ink-2 [&_p]:m-0">
+    <details data-run-ticket onToggle={(event) => setOpen(event.currentTarget.open)} className="border-t border-rule pt-1.5">
+      <summary className="flex min-h-[34px] cursor-pointer list-none items-center gap-2 font-sans text-[13px] font-semibold text-ink [&::-webkit-details-marker]:hidden">
+        <FoldChevron open={open} />
+        Ticket
+      </summary>
+      <div className="max-w-[68ch] pb-1.5 pl-[22px] pt-0.5 font-read text-[15px] leading-[1.55] text-ink-2 [&_p]:m-0">
         <Markdown>{lead}</Markdown>
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -56,12 +61,23 @@ function Stepper({ page }: { page: Extract<RunPageFacts, { kind: "run" }> }) {
   return <RunStepper stages={stages} />;
 }
 
-function Dot() {
-  return <>{" · "}</>;
+/** The header's sentence, a merged run's short sha in it linking to its
+ *  commit. */
+function Verdict({ sentence, run, merged }: { sentence: string; run: RunDetail["run"]; merged: boolean }) {
+  const sha = merged ? shortSha(run.merge_sha) : "";
+  const href = commitLink(run);
+  const at = sha && href != null ? sentence.indexOf(sha) : -1;
+  if (at < 0) return <>{sentence}</>;
+  return (
+    <>
+      {sentence.slice(0, at)}
+      <a href={href!} target="_blank" rel="noreferrer" className="font-mono text-[13px] text-inherit no-underline border-b border-rule-2 hover:border-ink-3">{sha}</a>
+      {sentence.slice(at + sha.length)}
+    </>
+  );
 }
 
 export function RunPage() {
-  const composeRef = useRef<HTMLTextAreaElement>(null);
   const { project, run: param } = useParams({ from: "/runs/$project/$run" });
   const id = /^\d+$/.test(param) ? Number(param) : null;
   const page = useRunPage(project, id);
@@ -71,15 +87,10 @@ export function RunPage() {
   if (page.kind === "not_found") return <Notice label={label} text={`${project} has no run ${shown}.`} />;
   if (page.kind === "loading") return <Page label={label}><Loading /></Page>;
   const { run } = page.detail;
-  const box = page.agentMs == null ? null : (
-    <>
-      <span className={STRONG}>{formatSettled(page.agentMs)}</span>
-      {page.boxMs != null && ` of a ${formatSettled(page.boxMs)} box`}
-    </>
-  );
+  const merged = page.state === "merged";
   return (
     <Page label={label}>
-      <header className="border-b border-rule pb-3">
+      <header>
         <nav aria-label="Breadcrumb" className="font-mono text-[12px] leading-none text-ink-3">
           <Link to="/runs" search={{}} className={CRUMB_LINK}>Runs</Link>
           {" / "}
@@ -92,11 +103,6 @@ export function RunPage() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 className="m-0 font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink"><TitleText>{run.title}</TitleText></h1>
           <div className="flex flex-wrap items-start justify-end gap-2">
-            {page.state !== "merged" && <a href="#agent" className="btn" data-variant="quiet" onClick={(event) => {
-              event.preventDefault();
-              composeRef.current?.focus();
-              composeRef.current?.scrollIntoView({ block: "nearest" });
-            }}>Steer or ask</a>}
             <RunActions key={`${page.base}/${run.id}`} page={page} project={project} />
             {run.outcome === "failed" && (
               <ScoutThis
@@ -105,56 +111,26 @@ export function RunPage() {
             )}
           </div>
         </div>
-        <p data-run-facts className="m-0 mt-3 font-mono text-[12px] leading-[1.7] text-ink-3 [overflow-wrap:anywhere]">
-          <span className={STRONG}>{run.ticket}</span>
-          <Dot />
-          run {run.id}
-          <Dot />
-          {run.host == null ? project : `${project} on ${run.host}`}
-          <Dot />
-          started {formatClock(run.started_ms)} {zoneName(run.started_ms)}
-          {box != null && (
-            <>
-              <Dot />
-              {box}
-            </>
-          )}
-          {page.labels != null && (
-            <>
-              <Dot />
-              implementer {page.labels.implementer}
-              <Dot />
-              reviewer {page.labels.reviewer}
-            </>
-          )}
-        </p>
-        <div className="mt-[18px] flex items-start gap-3.5">
-          <span className="mt-1">
+        <div data-run-verdict className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
+          <span className="flex">
             <StateDot state={page.state} hideWord />
           </span>
-          <p role="status" className="m-0 max-w-[64ch] font-sans text-[17px] leading-[1.45] text-ink">
-            {page.sentence}
+          <p role="status" className="m-0 max-w-[64ch] font-sans text-[15px] leading-[1.45] text-ink">
+            <Verdict sentence={page.sentence} run={run} merged={merged} />
           </p>
+          {page.agentMs != null && <TimeBox agentMs={page.agentMs} boxMs={page.boxMs} />}
         </div>
         <Stepper page={page} />
+        <RunFacts run={run} labels={page.labels} prFacts={page.prFacts} ready={page.state === "ready_to_merge"} merged={merged} />
       </header>
-      <div data-run-body className="@container mt-3.5 flex min-h-40 flex-wrap border border-rule bg-paper">
-        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-5 px-8 pb-8 pt-[22px] @[1000px]:border-r @[1000px]:border-rule max-[720px]:px-4">
-          {run.pr_url != null && (
-            <RunPullRequest
-              url={run.pr_url}
-              facts={page.prFacts}
-              ready={page.state === "ready_to_merge"}
-              merge={page.state === "merged" ? run : null}
-            />
-          )}
-          <RunTicket base={page.base} ticket={run.ticket} />
+      <div data-run-body className="@container mt-9 grid min-h-40 grid-cols-1 items-start gap-x-[52px] gap-y-8 min-[1180px]:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-w-0 flex-col gap-[30px]">
           <CriteriaList detail={page.detail} live={["running", "stale", "question"].includes(page.state)} />
           <section id="progress" aria-label="Progress" className="@container/progress scroll-mt-4">
-            <h2 className={`m-0 ${SECTION_LABEL}`}>
+            <h2 className={HEAD}>
               Progress
               {page.live && (
-                <span data-live className="inline-flex items-center gap-1.5 tracking-[.1em] text-live">
+                <span data-live className="inline-flex items-center gap-1.5 font-mono text-[12px] font-normal text-live">
                   <span aria-hidden="true">
                     <StateDot state="running" hideWord tone="live" />
                   </span>
@@ -165,10 +141,13 @@ export function RunPage() {
             <RunActivity key={`${page.base}/${run.id}`} activity={page.activity} detail={page.detail} base={page.base} project={project} />
             <RawLog key={`raw ${page.base}/${run.id}`} run={run.id} lines={page.progress} />
           </section>
-          <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
+          <div>
+            <RunTicket base={page.base} ticket={run.ticket} />
+            <RunDetails key={`${page.base}/${run.id}`} project={project} base={page.base} detail={page.detail} live={page.live} />
+          </div>
         </div>
         <AgentPanel label={page.labels?.implementer ?? "—"} state={page.agentState} notes={page.detail.steer_notes} asks={page.asks}>
-          {page.state !== "merged" && <AgentCompose key={`${page.base}/${run.id}`} base={page.base} run={run.id} ticket={run.ticket} actions={page.actions} parked={page.phase === "awaiting_merge_approval"} live={page.stoppable} ref={composeRef} />}
+          {!merged && <AgentCompose key={`${page.base}/${run.id}`} base={page.base} run={run.id} ticket={run.ticket} actions={page.actions} parked={page.phase === "awaiting_merge_approval"} live={page.stoppable} />}
         </AgentPanel>
       </div>
     </Page>
