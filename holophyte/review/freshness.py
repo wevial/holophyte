@@ -11,7 +11,7 @@ import store.read
 from holophyte.agents import t3_cleanup
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import record_turn, timed_turn
-from holophyte.agents.harness import critic_seat
+from holophyte.agents.harness import T3_TOKEN_KEY, critic_seat
 from holophyte.board.projection import (
     comment_body,
     lease_turn,
@@ -473,7 +473,8 @@ def _clean_t3(project, task, output, timed_out):
     secrets = known_secrets(project.config())
     try:
         CLEANUPS[task["id"]] = t3_cleanup.clean_thread(
-            seat.binary, str(output or ""), timed_out, secrets)
+            seat.binary, str(output or ""), timed_out, secrets,
+            seat.options.get(T3_TOKEN_KEY))
     except Exception as e:
         CLEANUPS[task["id"]] = [t3_cleanup.outcome(None, "thread", e, secrets)]
 

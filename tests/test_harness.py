@@ -932,6 +932,29 @@ class CriticTableTests(unittest.TestCase):
                                     r"for harness 't3'"):
                     holophyte.config.checks.check_document(self.target(config))
 
+    def test_a_t3_critic_token_file_is_checked_like_a_key_file(self):
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        token = Path(outside.name) / "t3-token"
+        holophyte.config.checks.check_document(
+            self.target(f'{self.T3}token_file = "{token}"\n'))
+        for config, message in (
+            (f'[agents.critic]\nharness = "codex"\ntoken_file = "{token}"\n',
+             r"\[agents\.critic\] token_file: harness 'codex' takes no "
+             r"token_file"),
+            (f'{self.T3}token_file = "keys/t3"\n',
+             r"\[agents\.critic\] token_file must be an absolute or ~ path"),
+            (f'{self.T3}token_file = "INSIDE/t3-token"\n',
+             r"\[agents\.critic\] token_file .* is inside the project "
+             r"checkout"),
+        ):
+            with self.subTest(config=config):
+                project = self.target(config)
+                project.config_path.write_text(
+                    config.replace("INSIDE", str(project.path)))
+                with self.assertRaisesRegex(SystemExit, message):
+                    holophyte.config.checks.check_document(project)
+
     def test_t3_on_a_seat_other_than_critic_is_refused(self):
         for role in ("reviewer", "implementer", "trimmer", "adjudicator"):
             with self.subTest(role=role):

@@ -22,6 +22,7 @@ READ_ONLY_ROLES = (SCOUT_LEAD, SCOUT_HELPER)
 TABLE_KEYS = ("harness", "model", "effort")
 CREDENTIAL_KEYS = ("api_key_file", "base_url")
 T3_KEYS = ("project", "worktree", "provider")
+T3_TOKEN_KEY = "token_file"
 IMPLEMENTER_KEYS = TABLE_KEYS + ("orchestration",)
 SHADOW_KEY = "implementer_shadow"
 PROFILES_KEY = "implementer_profiles"
@@ -332,7 +333,8 @@ def parse_role(where, key, table):
             f"{where}: [agents.{key}]: only {', '.join(TABLE_ROLES)} may be a "
             f"table; write [agents] {key} as a command string")
     accepted = (IMPLEMENTER_KEYS if key == "implementer" or profile
-                else TABLE_KEYS + CREDENTIAL_KEYS + T3_KEYS if key == "critic"
+                else TABLE_KEYS + CREDENTIAL_KEYS + T3_KEYS + (T3_TOKEN_KEY,)
+                if key == "critic"
                 else TABLE_KEYS)
     adapter = route_adapter(where, f"[agents.{key}]", table, role, accepted,
                             shown=key, listed=TABLE_ROLES)
@@ -533,16 +535,7 @@ def check_credentials(where, key, table, adapter, checkout):
     if key_file is None:
         raise SystemExit(
             f"{where}: {label} base_url: allowed only beside api_key_file")
-    if not isinstance(key_file, str) or not (
-            key_file.startswith("~") or os.path.isabs(key_file)):
-        raise SystemExit(
-            f"{where}: {label} api_key_file must be an absolute or ~ path, "
-            f"got {key_file!r}")
-    if Path(key_file).expanduser().resolve().is_relative_to(
-            Path(checkout).resolve()):
-        raise SystemExit(
-            f"{where}: {label} api_key_file {key_file!r} is inside the project "
-            f"checkout; keep the key outside it")
+    check_secret_path(where, label, "api_key_file", key_file, checkout)
     url = table.get("base_url")
     if url is not None and not (isinstance(url, str) and urlparse(
             url).scheme in ("http", "https") and urlparse(url).netloc):
@@ -550,9 +543,22 @@ def check_credentials(where, key, table, adapter, checkout):
             f"{where}: {label} base_url must be an http(s) URL, got {url!r}")
 
 
-def check_t3_options(where, key, table, adapter):
+def check_secret_path(where, label, option, value, checkout):
+    if not isinstance(value, str) or not (
+            value.startswith("~") or os.path.isabs(value)):
+        raise SystemExit(
+            f"{where}: {label} {option} must be an absolute or ~ path, "
+            f"got {value!r}")
+    if Path(value).expanduser().resolve().is_relative_to(
+            Path(checkout).resolve()):
+        raise SystemExit(
+            f"{where}: {label} {option} {value!r} is inside the project "
+            f"checkout; keep the file outside it")
+
+
+def check_t3_options(where, key, table, adapter, checkout):
     label = f"[agents.{key}]"
-    for option in T3_KEYS:
+    for option in (*T3_KEYS, T3_TOKEN_KEY):
         if option not in table:
             continue
         if adapter.name != T3.name:
@@ -564,12 +570,15 @@ def check_t3_options(where, key, table, adapter):
             raise SystemExit(
                 f"{where}: {label} {option} must be a non-empty string, "
                 f"got {value!r}")
+    if T3_TOKEN_KEY in table:
+        check_secret_path(where, label, T3_TOKEN_KEY, table[T3_TOKEN_KEY],
+                          checkout)
 
 
 def table_seat(target, where, key, table, role, *, launched):
     adapter = parse_role(where, key, table)
     check_credentials(where, key, table, adapter, target.path)
-    check_t3_options(where, key, table, adapter)
+    check_t3_options(where, key, table, adapter, target.path)
     from holophyte.isolation.launcher import route_for
     binary = adapter.binary
     # A container implementer's binary comes from the image, not `[harnesses]`.

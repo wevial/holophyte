@@ -55,14 +55,16 @@ sys.exit(2)
 
 
 class FakeMcp(BaseHTTPRequestHandler):
-    """Answers MCP over HTTP as the T3 server would; logs each tool call."""
+    """Answers MCP over HTTP as the T3 server would; logs each tool call and
+    each request's Authorization header."""
 
     def log_message(self, *args):
         pass
 
     def do_POST(self):
         message = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        if self.headers.get("Authorization") != "Bearer tok":
+        self.server.bearers.append(self.headers.get("Authorization"))
+        if self.headers.get("Authorization") != f"Bearer {self.server.token}":
             self.send_response(401)
             self.end_headers()
             return
@@ -101,9 +103,11 @@ class T3CleanupTests(LoopFixture):
         subprocess.run(["git", *identity, "-C", str(self.t3_project), "commit",
                         "-q", "--allow-empty", "-m", "root"], check=True)
 
-    def serve(self, settle_error=None, worktree=True, stream=False):
+    def serve(self, settle_error=None, worktree=True, stream=False,
+              token="tok"):
         server = ThreadingHTTPServer(("127.0.0.1", 0), FakeMcp)
         server.calls, server.stream = [], stream
+        server.bearers, server.token = [], token
         thread = {"id": "mcp:t1"}
         if worktree:
             thread.update(worktreePath=str(self.worktree),
@@ -129,14 +133,15 @@ class T3CleanupTests(LoopFixture):
         self.addCleanup(env.stop)
         return server
 
-    def claim(self, hang=False):
+    def claim(self, hang=False, token_file=None):
         stub = self.root / "t3"
         stub.write_text(FAKE_T3.format(python=sys.executable, log=str(self.log),
                                        hang=hang, worktree=str(self.worktree)))
         stub.chmod(0o755)
+        token = "" if token_file is None else f'token_file = "{token_file}"\n'
         self.configure(f'[agents.critic]\nharness = "t3"\n'
                        f'project = "{self.t3_project}"\nworktree = "main"\n'
-                       'provider = "codex"\nmodel = "gpt-6-luna"\n'
+                       f'provider = "codex"\nmodel = "gpt-6-luna"\n{token}'
                        f'[harnesses]\nt3 = "{stub}"\n'
                        '[loop]\ncritic_after_hours = 12\n')
         self.addCleanup(reset, self.project)
@@ -150,6 +155,10 @@ class T3CleanupTests(LoopFixture):
             "SELECT e.payload FROM runEvents e JOIN runs r ON r.id = e.runId"
             " JOIN tickets t ON t.id = r.ticketId WHERE e.kind = 't3_cleanup'"
             " AND t.linearIdentifier = 'KO-131' ORDER BY e.seq")]
+
+    def recorded(self):
+        return " ".join(summary + payload for summary, payload in self.read(
+            "SELECT summary, payload FROM runEvents WHERE kind = 't3_cleanup'"))
 
     def listed_worktrees(self):
         return subprocess.run(
@@ -202,6 +211,48 @@ class T3CleanupTests(LoopFixture):
                           "SELECT summary FROM runEvents WHERE kind = 'warning'"
                           " AND summary LIKE 'critic:%'")][0])
 
+    def test_a_token_file_is_the_bearer_and_no_session_is_issued(self):
+        token = self.root / "t3-token"
+        token.write_text("full-access-token-0123\n")
+        server = self.serve(token="full-access-token-0123")
+
+        steps = self.claim(token_file=token)
+
+        self.assertEqual([name for name, _ in server.calls],
+                         ["t3_thread_read", "t3_thread_organize"])
+        self.assertEqual(set(server.bearers),
+                         {"Bearer full-access-token-0123"})
+        self.assertNotIn("auth session", self.log.read_text())
+        self.assertEqual([(s["step"], s["ok"]) for s in steps],
+                         [("settle", True), ("worktree", True),
+                          ("branch", True)])
+
+    def test_a_missing_token_file_is_one_failed_step_naming_it(self):
+        server = self.serve()
+        token = self.root / "absent-token"
+
+        steps = self.claim(token_file=token)
+
+        self.assertEqual([(s["step"], s["ok"]) for s in steps],
+                         [("settle", False)])
+        self.assertIn(str(token), steps[0]["detail"])
+        self.assertNotIn("auth session", self.log.read_text())
+        self.assertEqual(server.calls, [])
+
+    def test_a_failed_step_does_not_record_the_token_file_token(self):
+        secret = "full-access-token-0123"
+        token = self.root / "t3-token"
+        token.write_text(secret)
+        self.serve(settle_error=f"runtime_mode_escalation_denied for {secret}",
+                   token=secret)
+
+        steps = self.claim(token_file=token)
+
+        self.assertEqual([(s["step"], s["ok"]) for s in steps],
+                         [("settle", False)])
+        self.assertIn("runtime_mode_escalation_denied", steps[0]["detail"])
+        self.assertNotIn(secret, self.recorded())
+        self.assertNotIn(secret[:10], self.recorded())
 
 
 class CleanupFailureTests(unittest.TestCase):
@@ -239,6 +290,19 @@ class CleanupFailureTests(unittest.TestCase):
         self.assertEqual([(s["step"], s["ok"]) for s in steps],
                          [("settle", False), ("revoke", False)])
         self.assertIn("database is locked", steps[1]["detail"])
+
+    def test_an_empty_token_file_is_one_failed_step_and_issues_no_session(self):
+        binary = self.t3("    print('{\"sessionId\": \"s1\", \"token\": \"tok\"}')\n"
+                         "    sys.exit(0)\n",
+                         "    sys.exit('revoked')\n")
+        token = Path(binary).parent / "token"
+        token.write_text("\n")
+
+        steps = clean_thread(binary, "Thread mcp:t1", False, token_file=token)
+
+        self.assertEqual([(s["step"], s["ok"]) for s in steps],
+                         [("settle", False)])
+        self.assertIn(f"token_file {token} is empty", steps[0]["detail"])
 
 if __name__ == "__main__":
     unittest.main()
