@@ -1410,8 +1410,8 @@ on the Now line's detail, or an ended run's last, ending on
 `console/src/app/components/EndFacts.tsx`. `console/src/app/components/RawLog.tsx`
 opens every Progress line, heartbeats included, in a modal side panel.
 Its `criteriaGrid` lays out the run's criteria by round for
-`console/src/app/components/CriteriaGrid.tsx`, in a sticky right rail when
-Progress is wide enough; an open group lists its findings as
+`console/src/app/components/CriteriaList.tsx`, a row of marks on each
+criterion; an open group in Progress lists its findings as
 `console/src/app/components/ActivityFinding.tsx` rows.
 
 The Run page’s `console/src/app/components/RunDetails.tsx` folds files,
