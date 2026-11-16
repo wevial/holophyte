@@ -39,7 +39,7 @@ test("one build emits the console at index.html alone, with its script, palette,
     const fonts = stylesheets.filter((href) => href.startsWith("https://fonts.googleapis.com/"));
     expect(fonts).toHaveLength(1);
     expect(new URL(fonts[0]!).searchParams.getAll("family")).toEqual([
-      "Archivo:wdth,wght@100..125,400..800",
+      "Archivo:wdth,wght@100..125,200..800",
       "IBM Plex Mono:wght@400;500;600",
       "IBM Plex Sans:wght@400;500;600",
       "IBM Plex Serif:wght@400;500;600",
