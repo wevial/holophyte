@@ -392,9 +392,11 @@ test("in a browser the title row holds the panel-left toggle, then the mark and 
   expect(childNames(header)).toEqual(["Collapse sidebar", "holophyte"]);
   expect(homeLink().textContent).toBe("holophyte");
   expect(homeLink().querySelectorAll("svg").length).toBe(1);
+  const expandedRow = headerRow().className;
 
   fireEvent.click(toggle());
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
+  expect(headerRow().className).toBe(expandedRow);
   expect(childNames(headerRow())).toEqual(["Expand sidebar"]);
   expect(homeLink().parentElement === headerRow().nextElementSibling).toBe(true);
   expect(homeLink().textContent).toBe("");
@@ -442,6 +444,15 @@ test("in the macOS app the title row clears the traffic lights, drags the window
     expect(homeLink().textContent).toBe(fold ? "" : "holophyte");
   }
   expect(aside().classList.contains("min-[720px]:w-[112px]")).toBe(true);
+});
+
+test("in the macOS app the Settings menu keeps the home link in its drag title row, itself not a drag region", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mount("#/settings/general");
+  expect(screen.queryByRole("button", { name: /^(Collapse|Expand) sidebar$/ })).toBeNull();
+  const row = homeLink().parentElement!;
+  for (const name of ["h-[52px]", "pl-[76px]", DRAG]) expect(row.classList.contains(name)).toBe(true);
+  expect(homeLink().classList.contains(NO_DRAG)).toBe(true);
 });
 
 test("in the macOS app a zero-height layer drags the main pane's top 52px and no band pushes the page down", async () => {

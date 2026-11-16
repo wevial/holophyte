@@ -389,13 +389,13 @@ export function Sidebar() {
       search={keepScope}
       aria-label="holophyte"
       title="holophyte"
-      className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : ""}`}
+      className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : ""} ${macApp && settingsMenu ? APP_NO_DRAG : ""}`}
     >
       <Mark />
       {!folded && <span aria-hidden="true">holophyte</span>}
     </Link>
   );
-  const homeInTitle = !macApp && !folded;
+  const homeInTitle = settingsMenu || (!macApp && !folded);
 
   return (
     <aside
@@ -407,13 +407,13 @@ export function Sidebar() {
     >
       <div
         className={`flex h-[52px] shrink-0 items-center gap-2 ${
-          macApp ? `pl-[76px] ${APP_DRAG}` : folded ? "justify-center" : "pr-2 pl-4"
+          macApp ? `pl-[76px] ${APP_DRAG}` : "pr-2 pl-[14px]"
         }`}
       >
         {!settingsMenu && toggle}
         {homeInTitle && home}
       </div>
-      {!homeInTitle && <div className={`flex h-9 shrink-0 items-center ${folded ? (macApp ? "pl-[76px]" : "justify-center") : "pl-4"}`}>{home}</div>}
+      {!homeInTitle && <div className={`flex h-9 shrink-0 items-center ${folded ? "justify-center" : "pl-4"}`}>{home}</div>}
 
       {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
       <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />
