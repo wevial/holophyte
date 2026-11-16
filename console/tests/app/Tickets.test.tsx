@@ -256,13 +256,11 @@ const viewsFleet = () =>
     board: boardOf({ backlog: ["DEMO-1"], needs_spec: ["DEMO-6", "DEMO-7"], ready: ["DEMO-2"], blocked_on_deps: ["DEMO-5"] }),
     items: [{ ...blocked, ticket: "DEMO-2", run: 2 }],
   }).fetch;
-const viewLinks = () => within(screen.getByRole("list", { name: "Views" })).getAllByRole("link");
+const viewLinks = () => within(screen.getByRole("list", { name: "Ticket views" })).getAllByRole("link");
 const shownKeys = () => screen.queryAllByRole("article").map((card) => card.firstElementChild?.firstElementChild?.textContent).sort();
 
 test("the sidebar's Views list Ready, Needs spec and Backlog with the project's ticket count in each, a Needs you ticket in none", async () => {
   await mount("#/?project=demo", viewsFleet());
-  const label = screen.getByText("Views");
-  for (const name of ["font-mono", "uppercase", "text-ink-3"]) expect(label.classList).toContain(name);
   const links = viewLinks();
   expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(["Ready", "Needs spec", "Backlog"]);
   const counts = links.map((link) => link.querySelector("[data-count]")!);

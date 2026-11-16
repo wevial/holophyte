@@ -7,6 +7,7 @@ import { APP_DRAG, APP_NO_DRAG, inMacApp } from "../../lib/view";
 import { useOpenCount } from "../findings";
 import { footerLine } from "../notices";
 import { hostsNeedingAttention, SETTINGS_TABS } from "../settings";
+import { projectColours } from "../dayLog";
 import { switcherRows } from "../projects";
 import { countScouts, useScouts } from "../scouts";
 import { useBoardStories, useMergeQueues, useReadiness, type ListedStory } from "../queries";
@@ -121,6 +122,8 @@ function LinkBadge({ badge, folded, tone = "text-need" }: { badge: number; folde
   );
 }
 
+const NAV_ON = "bg-(image:--nav-on) text-ink";
+
 function PageLink({
   to,
   label,
@@ -149,17 +152,22 @@ function PageLink({
             to={to}
             search={keepScope}
             activeOptions={{ exact: to === "/", includeSearch: false }}
+            activeProps={{ className: NAV_ON }}
             {...(active ? { "data-status": "active", "aria-current": "page" as const } : {})}
             aria-label={badge > 0 ? `${label}, ${badge} ${noun}` : label}
             aria-describedby={folded ? described : undefined}
-            className={`group relative flex items-center rounded-[6px] text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink ${folded ? "mx-auto h-9 w-10 justify-center" : "mx-2 h-row gap-2.5 px-2.5 text-[13px] font-medium"}`}
+            className={`group relative flex items-center rounded-[6px] text-ink-2 hover:bg-hover hover:text-ink ${active ? NAV_ON : ""} ${folded ? "mx-auto h-9 w-10 justify-center" : "mx-2 h-row gap-2.5 px-2.5 text-[13px] font-medium"}`}
           >
-            <span className="relative">
-              <span className="flex group-data-[status=active]:text-focus">{icon}</span>
-              {folded && <LinkBadge badge={badge} folded tone={tone} />}
-            </span>
-            {!folded && <span className="flex-1">{label}</span>}
-            {!folded && <LinkBadge badge={badge} folded={false} tone={tone ?? "text-ink-3"} />}
+            {({ isActive }) => (
+              <>
+                <span className="relative">
+                  <span className={`flex ${isActive || active ? "text-focus" : ""}`}>{icon}</span>
+                  {folded && <LinkBadge badge={badge} folded tone={tone} />}
+                </span>
+                {!folded && <span className="flex-1">{label}</span>}
+                {!folded && <LinkBadge badge={badge} folded={false} tone={tone ?? "text-ink-3"} />}
+              </>
+            )}
           </Link>
         )}
       />
@@ -182,27 +190,25 @@ const GROUP_LABEL = "pt-2.5 pr-4 pb-1 pl-9 font-mono text-[11px] leading-[1.3] f
 function ViewList() {
   const { cards } = useTicketBoard();
   return (
-    <>
-      <p className={GROUP_LABEL}>Views</p>
-      <ul aria-label="Views" className="ml-5 flex flex-col border-l border-rule-2">
-        {TICKET_FILTERS.map((filter) => (
-          <li key={filter}>
-            <Link
-              to="/tickets"
-              search={(previous: ScopeSearch) => ({ ...keepScope(previous), filter })}
-              activeOptions={{ exact: true, includeSearch: true }}
-              aria-label={FILTER_LABELS[filter]}
-              className="group mr-2 flex min-h-9 items-center justify-between gap-2 rounded-[6px] px-3 font-sans text-[13px] text-ink-2 hover:bg-hover hover:text-ink data-[status=active]:bg-selected data-[status=active]:text-ink"
-            >
-              <span>{FILTER_LABELS[filter]}</span>
-              <span data-count className="font-mono text-[11px] font-medium text-ink-3 group-data-[status=active]:text-ink-2">
-                {cards.filter((card) => ticketView(card) === filter).length}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </>
+    <ul aria-label="Ticket views" className="flex flex-col">
+      {TICKET_FILTERS.map((filter) => (
+        <li key={filter}>
+          <Link
+            to="/tickets"
+            search={(previous: ScopeSearch) => ({ ...keepScope(previous), filter })}
+            activeOptions={{ exact: true, includeSearch: true }}
+            activeProps={{ className: NAV_ON }}
+            aria-label={FILTER_LABELS[filter]}
+            className="group mx-2 flex h-[27px] items-center justify-between gap-2 rounded-[6px] pr-2.5 pl-[34px] font-sans text-[13px] font-normal text-ink-2 hover:bg-hover hover:text-ink"
+          >
+            <span>{FILTER_LABELS[filter]}</span>
+            <span data-count className="font-mono text-[12px] text-ink-3 group-data-[status=active]:text-ink-2">
+              {cards.filter((card) => ticketView(card) === filter).length}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -371,7 +377,7 @@ export function Sidebar() {
       </div>
 
       {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
-      <ProjectSwitcher rows={rows} folded={folded} />
+      <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
         {shown.map((page) =>

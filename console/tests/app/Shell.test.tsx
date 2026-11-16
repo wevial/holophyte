@@ -289,15 +289,31 @@ test("the footer names the host and how long ago it was polled, and reads pollin
   }
 });
 
-test("the six page icons differ from one another and from the All projects icon, unfolded and folded", async () => {
+test("the six page icons differ from one another, unfolded and folded", async () => {
   await mount("#/", peersFetch(ORIGIN, { [ORIGIN]: { status: statusOf("/srv/dev/demo"), attention: attentionOf([]) } }));
-  const drawn = () => {
-    const switcher = screen.getByRole("button", { name: /^Project: All projects/ });
-    return [...pages(), switcher].map((control) => control.querySelector("svg")!.outerHTML);
-  };
-  expect(new Set(drawn()).size).toBe(7);
+  const drawn = () => pages().map((link) => link.querySelector("svg")!.outerHTML);
+  expect(new Set(drawn()).size).toBe(6);
   fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-  expect(new Set(drawn()).size).toBe(7);
+  expect(new Set(drawn()).size).toBe(6);
+});
+
+test("on Runs the Runs link alone paints its ground with the nav-on gradient and its icon in focus, and no page link takes the flat selected tone", async () => {
+  await mount("#/runs");
+  const names = (links: HTMLElement[]) => links.map((link) => link.getAttribute("aria-label"));
+  expect(names(pages().filter((link) => link.classList.contains("bg-(image:--nav-on)")))).toEqual(["Runs"]);
+  expect(names(pages().filter((link) => link.querySelector(".text-focus")))).toEqual(["Runs"]);
+  expect(names(pages().filter((link) => [...link.classList].some((name) => name.endsWith("bg-selected"))))).toEqual([]);
+});
+
+test("expanded, Ready, Needs spec and Backlog are 27px links indented 34px with their counts, and nothing reads Views", async () => {
+  await mount("#/tickets");
+  expect(screen.queryByText("Views")).toBeNull();
+  for (const name of ["Ready", "Needs spec", "Backlog"]) {
+    const link = screen.getByRole("link", { name });
+    expect([...link.classList].filter((token) => /^(h|pl)-\[/.test(token))).toEqual(["h-[27px]", "pl-[34px]"]);
+    expect(link.firstElementChild!.textContent).toBe(name);
+    expect(link.querySelector("[data-count]")!.textContent).toMatch(/^\d+$/);
+  }
 });
 
 const DRAG = "[-webkit-app-region:drag]";
