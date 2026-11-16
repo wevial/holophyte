@@ -304,6 +304,10 @@
   --haze-fallback-front: rgba(232, 240, 162, 0.6);
 }
 
+:root[data-light="custom"] {
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.28), rgb(from var(--focus) r g b / 0.16));
+}
+
 :root[data-theme="dark"],
 [data-tile="dark-lotus"] {
   color-scheme: dark;
@@ -586,6 +590,10 @@
   --haze-fallback-front: rgba(180, 211, 104, 0.18);
 }
 
+:root[data-theme="dark"][data-dark="custom"] {
+  --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
@@ -862,6 +870,10 @@
     --haze-strength: 0.28;
     --haze-fallback-back: rgba(22, 89, 74, 0.55);
     --haze-fallback-front: rgba(180, 211, 104, 0.18);
+  }
+
+  :root:not([data-theme="light"])[data-dark="custom"] {
+    --nav-on: linear-gradient(90deg, rgb(from var(--focus) r g b / 0.24), rgb(from var(--focus) r g b / 0.05));
   }
 }
 

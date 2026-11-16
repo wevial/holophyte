@@ -188,7 +188,7 @@ test("haze from the accent puts the back band at the accent's hue and the front 
   expect([haze.back.h, haze.front.h]).toEqual([300, 345]);
 });
 
-test("the current page's nav-on gradient takes the board's values in Lotus and every other pick draws it from its own focus", () => {
+test("the current page's nav-on gradient takes the board's values in Lotus and every other built-in or custom pick draws it from its own focus", () => {
   const lotusDark = "linear-gradient(90deg, rgba(164, 123, 255, 0.24), rgba(164, 123, 255, 0.05))";
   expect([
     resolveToken(decls, [lotusLightSelector], "--nav-on"),
@@ -197,13 +197,13 @@ test("the current page's nav-on gradient takes the board's values in Lotus and e
   ]).toEqual(["linear-gradient(90deg, rgba(90, 78, 191, 0.28), rgba(90, 78, 191, 0.16))", lotusDark, lotusDark]);
   const fromFocus = (start: string, end: string) =>
     `linear-gradient(90deg, rgb(from var(--focus) r g b / ${start}), rgb(from var(--focus) r g b / ${end}))`;
-  for (const pick of ["dune", "tide", "mono", "forest"]) {
+  for (const pick of ["dune", "tide", "mono", "forest", "custom"]) {
     for (const [path, gradient] of [
       [[`:root[data-light="${pick}"]`], fromFocus("0.28", "0.16")],
       [[`:root[data-theme="dark"][data-dark="${pick}"]`], fromFocus("0.24", "0.05")],
       [[media, `:root:not([data-theme="light"])[data-dark="${pick}"]`], fromFocus("0.24", "0.05")],
     ] as const) {
-      expect(resolveToken(decls, [...path], "--focus")).toMatch(/^#[0-9a-f]{6}$/);
+      if (pick !== "custom") expect(resolveToken(decls, [...path], "--focus")).toMatch(/^#[0-9a-f]{6}$/);
       expect([pick, resolveToken(decls, [...path], "--nav-on")]).toEqual([pick, gradient]);
     }
   }
