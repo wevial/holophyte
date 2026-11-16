@@ -31,7 +31,7 @@ test("Tailwind exposes every raw colour through a declared raw token", () => {
   const theme = new Map(decls.filter((d) => d.path.length === 1 && d.path[0] === "@theme inline")
     .map((d) => [d.name, d.value]));
   const unexposed = /^--(?:neutral|pink|red|orange|gold|yellow|green|violet|slate)-(?:1[0-2]|[1-9])$/;
-  const notColours = ["--card-shadow", "--need-tint", "--need-tint-mix", "--accent-tint-mix", "--need-edge-mix", "--grain", "--grain-side"];
+  const notColours = ["--nav-on", "--card-shadow", "--need-tint", "--need-tint-mix", "--accent-tint-mix", "--need-edge-mix", "--grain", "--grain-side"];
   for (const name of raw.filter((name) => !notColours.includes(name) && !unexposed.test(name) && !name.startsWith("--haze-"))) {
     expect(theme.get(`--color-${name.slice(2)}`)).toBe(`var(${name})`);
   }
@@ -186,4 +186,25 @@ test("a ground under L 0.5 derives a dark theme with the sidebar a step lighter 
 test("haze from the accent puts the back band at the accent's hue and the front band 45 degrees on", () => {
   const { haze } = deriveTheme(spec({ l: 0.15, c: 0.03, h: 290 }, { source: "accent", back: 10, front: 20 }));
   expect([haze.back.h, haze.front.h]).toEqual([300, 345]);
+});
+
+test("the current page's nav-on gradient takes the board's values in Lotus and every other built-in or custom pick draws it from its own focus", () => {
+  const lotusDark = "linear-gradient(90deg, rgba(164, 123, 255, 0.24), rgba(164, 123, 255, 0.05))";
+  expect([
+    resolveToken(decls, [lotusLightSelector], "--nav-on"),
+    resolveToken(decls, [nightSelector], "--nav-on"),
+    resolveToken(decls, [media, systemSelector], "--nav-on"),
+  ]).toEqual(["linear-gradient(90deg, rgba(90, 78, 191, 0.28), rgba(90, 78, 191, 0.16))", lotusDark, lotusDark]);
+  const fromFocus = (start: string, end: string) =>
+    `linear-gradient(90deg, rgb(from var(--focus) r g b / ${start}), rgb(from var(--focus) r g b / ${end}))`;
+  for (const pick of ["dune", "tide", "mono", "forest", "custom"]) {
+    for (const [path, gradient] of [
+      [[`:root[data-light="${pick}"]`], fromFocus("0.28", "0.16")],
+      [[`:root[data-theme="dark"][data-dark="${pick}"]`], fromFocus("0.24", "0.05")],
+      [[media, `:root:not([data-theme="light"])[data-dark="${pick}"]`], fromFocus("0.24", "0.05")],
+    ] as const) {
+      if (pick !== "custom") expect(resolveToken(decls, [...path], "--focus")).toMatch(/^#[0-9a-f]{6}$/);
+      expect([pick, resolveToken(decls, [...path], "--nav-on")]).toEqual([pick, gradient]);
+    }
+  }
 });
