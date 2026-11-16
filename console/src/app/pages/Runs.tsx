@@ -164,7 +164,7 @@ export function Runs() {
   const sections: FilterSection[] = [
     { label: "Project", param: "projects", options: projects.map(({ name, count }) => ({ value: name, label: name, count, colour: colours.get(name) })) },
     { label: "Failure kind", param: "failure", options: FAILURE_KINDS.map((kind) => ({ value: kind, label: FAILURE_LABELS[kind], count: counts.failure[kind] ?? 0 })) },
-    { label: "Implementer", param: "implementer", options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
+    { label: "Implementer", param: "implementer", mono: true, options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
   ];
   const chips = chipsOf(search, sections);
   const first = (page - 1) * size;

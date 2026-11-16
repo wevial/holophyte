@@ -243,6 +243,7 @@ export interface FilterSection {
   label: string;
   param: string;
   options: readonly (FilterOption & { count: number; colour?: string })[];
+  mono?: boolean;
 }
 
 function Check({ name, checked, mixed = false, onChange, children, head = false, disabled = false }: {
@@ -321,14 +322,13 @@ function Sorting({ sorting }: { sorting: SortSection }) {
 const MENU_HEAD = "flex h-[26px] items-center gap-1.5 px-2 text-[12px] text-ink-3";
 const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
 
-function MenuCheck({ type, name, checked, mixed = false, disabled = false, onChange, children, className = MENU_ROW }: {
-  type: "checkbox" | "radio"; name: string; checked: boolean; mixed?: boolean; disabled?: boolean; onChange: () => void; children: ReactNode; className?: string;
+function MenuCheck({ type, name, checked, onChange, children, className = MENU_ROW }: {
+  type: "checkbox" | "radio"; name: string; checked: boolean; onChange: () => void; children: ReactNode; className?: string;
 }) {
   return (
     <label className={className}>
-      <input type={type} name={type === "radio" ? name : undefined} aria-label={type === "checkbox" ? name : undefined} checked={checked} disabled={disabled} onChange={onChange}
-        ref={(input) => { if (input) input.indeterminate = mixed; }} className="sr-only" />
-      <span className={`inline-flex w-3.5 shrink-0 items-center justify-center ${checked || mixed ? "" : "invisible"}`}>{mixed ? <span className="h-px w-2.5 bg-ink" /> : <CheckMark />}</span>
+      <input type={type} name={type === "radio" ? name : undefined} aria-label={type === "checkbox" ? name : undefined} checked={checked} onChange={onChange} className="sr-only" />
+      <span className={`inline-flex w-3.5 shrink-0 items-center justify-center ${checked ? "" : "invisible"}`}><CheckMark /></span>
       {children}
     </label>
   );
@@ -337,28 +337,19 @@ function MenuCheck({ type, name, checked, mixed = false, disabled = false, onCha
 function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
   const id = useId();
   const checked = checkedOf(search, section.param);
-  const on = section.options.filter((option) => checked.includes(option.value));
-  const all = section.options.length > 0 && on.length === section.options.length;
   const set = (values: string[]) => {
     const kept = section.options.map((option) => option.value).filter((value) => values.includes(value));
     write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
   };
   return (
     <fieldset aria-labelledby={id} className="m-0 mb-2 min-w-0 border-0 p-0">
-      <legend className="float-left w-full">
-        <MenuCheck type="checkbox" name={section.label} checked={all} mixed={on.length > 0 && !all} disabled={section.options.length === 0}
-          onChange={() => set(all ? [] : section.options.map((option) => option.value))}
-          className={`${MENU_HEAD} cursor-pointer rounded-button hover:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus`}>
-          <span id={id}>{section.label}</span>{" "}
-          {on.length > 0 && <span className="ml-auto font-mono text-[11px] tabular-nums">{on.length} of {section.options.length}</span>}
-        </MenuCheck>
-      </legend>
+      <legend id={id} className={`${MENU_HEAD} float-left w-full`}>{section.label}</legend>
       {section.options.map((option) => (
         <MenuCheck key={option.value} type="checkbox" name={option.label} checked={checked.includes(option.value)}
           onChange={() => set(checked.includes(option.value) ? checked.filter((value) => value !== option.value) : [...checked, option.value])}
           className={`${MENU_ROW} ${option.count === 0 ? "text-ink-3" : ""}`}>
           {option.colour && <i aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: option.colour }} />}
-          <span className="min-w-0 truncate">{option.label}</span>{" "}
+          <span className={`min-w-0 truncate ${section.mono ? "font-mono text-[12px]" : ""}`}>{option.label}</span>{" "}
           <span className="ml-auto font-mono text-[12px] font-normal tabular-nums text-ink-3">{option.count}</span>
         </MenuCheck>
       ))}
