@@ -232,7 +232,8 @@ test("a reviewing run's badges are bare glyphs in their tone's text colour, the 
     expect(tints(badge)).toEqual([]);
     expect(Array.from(badge.classList).filter((name) => name === "rounded-md" || name === "size-[30px]")).toEqual([]);
   }
-  expect(badges().map((badge) => badge.querySelector("[data-state]")?.getAttribute("data-state") ?? null)).toEqual([null, null, "running"]);
+  const holds = (badge: HTMLElement) => badge.querySelector("[data-state]")?.getAttribute("data-state") ?? (badge.querySelector(":scope > svg") == null ? null : "glyph");
+  expect(badges().map(holds)).toEqual(["glyph", "glyph", "running"]);
 });
 
 test("a live run's running group alone is current, untinted, with its title in full ink and earlier titles in ink-2", async () => {
