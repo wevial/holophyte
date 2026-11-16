@@ -119,21 +119,20 @@ export function AgentPanel({ label, state, live, notes, asks, children }: {
   asks: ConsoleAsk[];
   children?: ReactNode;
 }) {
-  const messages: Message[] = notes.map((note) => ({
-    key: `note-${note.id}`,
-    at: note.at,
-    author: noteAuthor(note.author, note.author),
-    kind: note.kind === "hint" ? "hint" : "steer",
-    text: note.note,
-    read: readOf(note),
-  }));
-  for (const ask of asks) {
-    messages.push({
+  const messages: Message[] = [
+    ...notes.map((note): Message => ({
+      key: `note-${note.id}`,
+      at: note.at,
+      author: noteAuthor(note.author, note.author),
+      kind: note.kind === "hint" ? "hint" : "steer",
+      text: note.note,
+      read: readOf(note),
+    })),
+    ...asks.map((ask): Message => ({
       key: `ask-${ask.id}`, at: ask.asked_ms, author: noteAuthor(ask.author, ask.author), kind: "ask", text: ask.question,
       reply: ask.answer != null && ask.answered_ms != null ? { at: ask.answered_ms, text: ask.answer } : undefined,
-    });
-  }
-  messages.sort((a, b) => a.at - b.at);
+    })),
+  ].sort((a, b) => a.at - b.at);
   return (
     <aside id="agent" aria-label="Agent" className="@container/agent flex min-w-0 flex-col gap-3.5 rounded-[10px] bg-raised p-4 min-[1180px]:sticky min-[1180px]:top-5">
       <div data-agent-head className="flex items-center gap-2 font-sans text-[13px] font-semibold text-ink">
