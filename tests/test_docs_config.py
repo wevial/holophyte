@@ -3,7 +3,7 @@ import re
 import unittest
 from pathlib import Path
 
-from holophyte.agents.harness import ADAPTERS, T3_KEYS
+from holophyte.agents.harness import ADAPTERS, T3_KEYS, T3_TOKEN_KEY
 from holophyte.config.config_tables import (
     AGENT_FALLBACK_KEYS,
     BOARD_KEYS,
@@ -99,8 +99,17 @@ class ConfigReferenceTests(unittest.TestCase):
         for name, adapter in ADAPTERS.items():
             if "critic" in adapter.roles:
                 self.assertIn(f'"{name}"', row)
-        for option in T3_KEYS:
+        for option in (*T3_KEYS, T3_TOKEN_KEY):
             self.assertIn(f"`{option}`", row)
+
+    def test_t3_cleanup_paragraph_says_a_token_file_replaces_the_issued_token(self):
+        agents = sections((DOCS / "config.md").read_text())["agents"]
+        cleanup = re.search(r"^After every turn on the `t3` seat.*?\n\n", agents,
+                            re.MULTILINE | re.DOTALL).group()
+        for term in ("`token_file`", "instead of issuing one", "`full-access`",
+                     "runtime_mode_escalation_denied"):
+            with self.subTest(term=term):
+                self.assertIn(term, cleanup)
 
     def test_removed_entry_names_missing_key_even_if_mentioned_elsewhere(self):
         document = (DOCS / "config.md").read_text()
