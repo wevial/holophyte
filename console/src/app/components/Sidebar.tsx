@@ -333,7 +333,7 @@ export function Sidebar() {
 
   const settings = (
     <FootTip tip="Settings" folded={folded}>
-      {(trigger) => (
+      {({ "aria-describedby": _same, ...trigger }) => (
         <Link
           {...trigger}
           to="/settings/$tab"
