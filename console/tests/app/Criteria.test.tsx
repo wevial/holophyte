@@ -23,10 +23,10 @@ const rounds: RunDetail["rounds"] = [
   { ...served.rounds[0]!, round: 2, ended_ms: null, verdict: "", findings: [], instructions: [], operator_notes: [] },
 ];
 
-async function mount(standing = criteria, judgedRounds = rounds) {
+async function mount(standing = criteria, judgedRounds = rounds, precheck = served.precheck) {
   const polls = fleet({ items: [], runs: [{ ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 }] }, { items: [] });
   const fetch: Fetch = async (url) => url === `${DEMO}/runs/12`
-    ? Response.json({ ...served, run: { ...served.run, id: 12, ticket: "DEMO-12", phase: "reviewing", max_rounds: 3 }, rounds: judgedRounds, criteria: standing })
+    ? Response.json({ ...served, run: { ...served.run, id: 12, ticket: "DEMO-12", phase: "reviewing", max_rounds: 3 }, rounds: judgedRounds, criteria: standing, precheck })
     : polls(url);
   window.location.hash = "#/runs/demo/12";
   const fake = fakeDeps(fetch);
@@ -115,7 +115,7 @@ test("an unwitnessed criterion has a clock mark and an unjudged run has an empty
   await mount([{ ...criteria[3]!, status: "unwitnessed" }]);
   expect(within(block()).getByRole("img", { name: "not yet witnessed" }).getAttribute("data-tone")).toBe("wait");
   cleanup();
-  await mount([], []);
+  await mount([], [], null);
   expect(within(block()).getByText("No review has judged the criteria yet.")).toBeTruthy();
   expect(within(block()).queryByRole("list")).toBeNull();
   expect(verdict()).toBe("Reviewing round 2 of 3.");
@@ -198,4 +198,11 @@ test("the criteria head reads Criteria with its met count beside it, in sentence
   const head = within(block()).getByText("3 of 4 met").parentElement!;
   expect(head.textContent).toBe("Criteria3 of 4 met");
   for (const el of [head, ...head.querySelectorAll("*")]) expect(Array.from(el.classList).filter((name) => name === "uppercase" || name.startsWith("tracking"))).toEqual([]);
+});
+
+test("before any review returns, the pre-check's verdicts show as marks on rows for the criteria it judged", async () => {
+  await mountRun({ ...merged, run: { ...merged.run, outcome: null, phase: "reviewing" }, rounds: [], criteria: [] });
+  const rows = within(block()).getAllByRole("listitem");
+  expect(rows.map((row) => row.querySelector("strong")?.textContent)).toEqual(["C1", "C3", "C4"]);
+  expect(markRows()).toEqual([["pre-check · met"], ["pre-check · unwitnessed"], ["pre-check · met"]]);
 });

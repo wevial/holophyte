@@ -28,7 +28,7 @@ function RoundMark({ name, status }: { name: string; status: GridCell["status"] 
           </span>
         )}
       />
-      <TooltipContent side="top" sideOffset={6} className="z-50 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card">
+      <TooltipContent side="top" sideOffset={6} className="z-50 rounded-[6px] bg-ink px-2 py-1 text-[12px] font-medium leading-[1.2] whitespace-nowrap text-canvas">
         {name}
       </TooltipContent>
     </Tooltip>
@@ -39,7 +39,7 @@ function RoundMark({ name, status }: { name: string; status: GridCell["status"] 
 function RoundMarks({ columns, cells }: { columns: GridColumn[]; cells: (GridCell | null)[] }) {
   const names = cells.map((cell, index) => (cell == null ? null : markName(columns[index]!, cell)));
   return (
-    <span role="group" aria-label={names.filter(Boolean).join(", ")} data-round-marks className="ml-auto inline-flex shrink-0 items-center">
+    <span role="group" aria-label={names.filter(Boolean).join(", ")} data-round-marks className="ml-auto inline-flex shrink-0 items-center self-start">
       {cells.map((cell, index) => (
         <span key={columns[index]!.label} className="inline-flex items-center">
           {index > 0 && <i aria-hidden="true" className={`h-px w-1.5 ${cell != null && cells[index - 1] != null ? "bg-rule" : ""}`} />}
@@ -49,6 +49,10 @@ function RoundMarks({ columns, cells }: { columns: GridColumn[]; cells: (GridCel
     </span>
   );
 }
+
+const ROW = "flex flex-wrap items-center gap-3 border-b border-rule-2 py-3";
+const CRITERION_ID = "w-[34px] shrink-0 font-mono text-[11px] font-bold text-ink-3";
+const CRITERION_TEXT = "min-w-0 flex-1 font-read text-[14px] text-ink-2";
 
 export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolean }) {
   const { criteria, rounds, run } = detail;
@@ -66,7 +70,18 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
         Criteria
         {criteria.length > 0 && <span className="font-mono font-normal text-ink-3">{met} of {criteria.length} met</span>}
       </div>
-      {criteria.length === 0 ? (
+      {criteria.length === 0 && grid != null ? (
+        <ol className="m-0 mt-3 list-none border-t border-rule-2 p-0">
+          {grid.rows.map((row) => (
+            <li key={row.id} className={ROW}>
+              <span aria-hidden="true" className="size-4 shrink-0" />
+              <strong className={CRITERION_ID}>{row.id}</strong>
+              <span className={CRITERION_TEXT}>{row.text}</span>
+              <RoundMarks columns={grid.columns} cells={row.cells} />
+            </li>
+          ))}
+        </ol>
+      ) : criteria.length === 0 ? (
         <p className="mb-0 mt-3 font-mono text-[12px] text-ink-3">No review has judged the criteria yet.</p>
       ) : (
         <>
@@ -75,10 +90,10 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
               const cells = grid?.rows.find((row) => row.id === criterion.id)?.cells;
               const waiting = live && (criterion.run !== run.id || (criterion.status !== "met" && active != null && criterion.round < active.round));
               return (
-                <li key={criterion.id} className="flex flex-wrap items-center gap-3 border-b border-rule-2 py-3">
+                <li key={criterion.id} className={ROW}>
                   <CriterionMark status={criterion.status} />
-                  <strong className="w-[34px] shrink-0 font-mono text-[11px] font-bold text-ink-3">{criterion.id}</strong>
-                  <span className="min-w-0 flex-1 font-read text-[14px] text-ink-2">{criterion.text}</span>
+                  <strong className={CRITERION_ID}>{criterion.id}</strong>
+                  <span className={CRITERION_TEXT}>{criterion.text}</span>
                   {waiting && <span className="font-mono text-[11px] text-ink-3">waits on round {pending}</span>}
                   {grid != null && cells?.some((cell) => cell != null) && <RoundMarks columns={grid.columns} cells={cells} />}
                 </li>
