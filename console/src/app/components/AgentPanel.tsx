@@ -6,7 +6,7 @@ import { noteAuthor } from "../progress";
 import { Markdown } from "./Markdown";
 import { STATE_ICONS } from "./StateDot";
 
-const TIP = "z-50 rounded-[6px] bg-ink px-2 py-1 font-sans text-[12px] font-medium leading-[1.2] whitespace-nowrap text-canvas";
+export const TIP = "z-50 rounded-[6px] bg-ink px-2 py-1 font-sans text-[12px] font-medium leading-[1.2] whitespace-nowrap text-canvas";
 
 const STOPPED = (
   <>
@@ -15,7 +15,7 @@ const STOPPED = (
   </>
 );
 
-const GLYPHS = {
+export const GLYPHS = {
   steer: <path d="M2.5 8h9M8.5 4.5 12 8l-3.5 3.5" />,
   hint: <path d="M6 12.5h4M6.5 14h3M8 2a4 4 0 0 0-2.4 7.2c.5.4.9 1 .9 1.6v.2h3v-.2c0-.6.4-1.2.9-1.6A4 4 0 0 0 8 2z" />,
   ask: (

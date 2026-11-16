@@ -2,12 +2,10 @@ import { useState, type ReactNode } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { useAction } from "../actions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
-import { Glyph } from "./AgentPanel";
+import { Glyph, GLYPHS, TIP } from "./AgentPanel";
 import { Btn } from "./Btn";
 
 const ASK_OFF = "Ask opens once the run parks on its pull request.";
-const TIP = "z-50 rounded-[6px] bg-ink px-2 py-1 font-sans text-[12px] font-medium leading-[1.2] whitespace-nowrap text-canvas";
-const HINT = <path d="M6 12.5h4M6.5 14h3M8 2a4 4 0 0 0-2.4 7.2c.5.4.9 1 .9 1.6v.2h3v-.2c0-.6.4-1.2.9-1.6A4 4 0 0 0 8 2z" />;
 const STOP = <path d="M8.5 2 4 9h4l-.5 5L12 7H8z" />;
 
 function Toggle({ name, pressed, disabled, onPress, children }: {
@@ -82,7 +80,7 @@ export function AgentCompose({ base, run, ticket, actions, parked, live }: {
         value={text} disabled={disabled} onChange={(event) => setText(event.target.value)}
         className="block min-h-[84px] w-full resize-y rounded-[8px] border border-rule-2 bg-canvas px-3 py-2.5 font-sans text-[14px] leading-[1.45] text-ink placeholder:text-ink-3 focus:border-wait focus:outline-none" />
       <div className="flex items-center gap-1 [&>.btn]:ml-auto [&>.btn]:shrink-0 [&>.btn]:whitespace-nowrap">
-        {!asking && <Toggle name="Just a hint" pressed={hint} disabled={disabled} onPress={() => setHint(!hint)}>{HINT}</Toggle>}
+        {!asking && <Toggle name="Just a hint" pressed={hint} disabled={disabled} onPress={() => setHint(!hint)}>{GLYPHS.hint}</Toggle>}
         {!asking && live && <Toggle name="Stop it now" pressed={now} disabled={disabled} onPress={() => setNow(!now)}>{STOP}</Toggle>}
         <Btn variant={stop ? "danger-fill" : "primary"} busy={action.isPending} disabled={disabled || unavailable || !text.trim()}
           title={!actions ? ACTIONS_OFF : unavailable ? ASK_OFF : undefined} onClick={() => { void send(); }}>
