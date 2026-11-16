@@ -3,7 +3,7 @@ import { useContext, useEffect, useRef, useState, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Btn } from "../components/Btn";
 import { ChevronIcon } from "../components/icons";
-import { dayRangeLabel, FilterChips, FilterPopover, RangeButtons, SearchField, type FilterChip, type FilterSection, type SortSection } from "../components/ListFilters";
+import { dayRangeLabel, FilterChips, FilterPopover, PressedGroup, RangePopover, SearchToggle, type FilterChip, type FilterSection, type RangePreset, type SortSection } from "../components/ListFilters";
 import { RunTable } from "../components/RunTable";
 import {
   DEFAULT_RANGE, DEFAULT_SIZE, FAILURE_KINDS, listOf, PAGE_SIZES, RUN_GROUPS, useRunPage,
@@ -25,12 +25,12 @@ const FAILURE_LABELS: Record<(typeof FAILURE_KINDS)[number], string> = {
   unclassified: "unclassified",
 };
 
-const RANGES: { value: RunRange; label: string; chip: string }[] = [
-  { value: "today", label: "Today", chip: "Today" },
-  { value: "2d", label: "2d", chip: "Last 2 days" },
-  { value: "7d", label: "7d", chip: "Last 7 days" },
-  { value: "30d", label: "30d", chip: "Last 30 days" },
-  { value: "any", label: "Any", chip: "Any time" },
+const RANGES: (RangePreset & { value: RunRange; chip: string })[] = [
+  { value: "today", label: "Today", name: "Today", chip: "Today" },
+  { value: "2d", label: "2d", name: "2 days", chip: "Last 2 days" },
+  { value: "7d", label: "7d", name: "7 days", chip: "Last 7 days" },
+  { value: "30d", label: "30d", name: "30 days", chip: "Last 30 days" },
+  { value: "any", label: "Any", name: "Any time", chip: "Any time" },
 ];
 
 const CHIP_WORDS = { projects: "Project", failure: "Failure", implementer: "Implementer" } as const;
@@ -51,10 +51,6 @@ const SORT_LABELS: Record<RunSort, string> = { started: "Started", ended: "Ended
 
 const HIDE_AFTER_PX = 24;
 const QUIET_MS = 150;
-
-function Slash() {
-  return <span className="text-ink-3"> / </span>;
-}
 
 /** How far the dock rises to hide the controls row, null while it shows:
  *  it hides after a run of scrolling down and shows after one up, once the
@@ -138,7 +134,7 @@ export function Runs() {
   const order: RunOrder = search.order ?? "desc";
   const page = search.page ?? 1;
   const size = search.size ?? DEFAULT_SIZE;
-  const { now, rows, total, active, counts, implementers, projects, picked, settled } = useRunPage({ ...search, state: search.state ?? "", sort, order, page, size });
+  const { now, rows, total, counts, implementers, projects, settled } = useRunPage({ ...search, state: search.state ?? "", sort, order, page, size });
   const navigate = useNavigate();
   const dock = useRef<HTMLDivElement>(null);
   const controls = useRef<HTMLDivElement>(null);
@@ -170,7 +166,6 @@ export function Runs() {
     { label: "Implementer", param: "implementer", options: implementers.map((name) => ({ value: name, label: name, count: counts.implementer[name] ?? 0 })) },
   ];
   const chips = chipsOf(search, sections);
-  const scope = picked.length === 1 ? picked[0] : picked.length > 1 ? `${picked.length} projects` : (project ?? "all projects");
   const first = (page - 1) * size;
   const backTo = Math.min(page - 1, Math.ceil(total / size));
   const pastEnd = settled && rows.length === 0 && page > 1;
@@ -180,15 +175,16 @@ export function Runs() {
   }, [pastEnd, backTo, navigate]);
   return (
     <section aria-labelledby="page-title" className="@container flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-2">
-      <header className="flex flex-col gap-1.5">
-        <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Runs</h1>
-        <p data-count-line className="font-mono text-[13px] leading-[1.6] [overflow-wrap:anywhere] text-ink-2">
-          {scope} · <b className="font-semibold text-ink">{total}</b> runs
-          <Slash />
-          <b className="font-semibold text-ink">{active}</b> active
-          <Slash />
-          {orderWords}
-        </p>
+      <header className="flex flex-col gap-[18px]">
+        <div className="flex min-h-[30px] items-center gap-x-5 gap-y-3">
+          <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] tracking-[-0.01em] text-ink">Runs</h1>
+          <div data-tools className="relative ml-auto flex min-w-0 items-center gap-1">
+            <SearchToggle key={fieldKey} label="Search runs" />
+            <RangePopover presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
+            <FilterPopover icon label="Filter and sort" sections={sections} hidden={hidden} sorting={sorting}
+              extra={<PressedGroup label="Per page" options={PAGE_SIZES} value={size} onPick={(picked) => go({ size: picked === DEFAULT_SIZE ? undefined : picked })} />} />
+          </div>
+        </div>
         <StateTabs state={search.state} counts={counts.state} onPick={(group) => go({ state: group })} />
       </header>
       <RunTable
@@ -209,29 +205,8 @@ export function Runs() {
               data-controls
               data-hidden={hidden ? "" : undefined}
               inert={hidden}
-              className="flex flex-col gap-2.5 pt-1 pb-3.5 transition-[opacity,visibility] duration-200 data-hidden:invisible data-hidden:opacity-0"
+              className="flex flex-col gap-2.5 pb-3.5 transition-[opacity,visibility] duration-200 empty:pb-0 data-hidden:invisible data-hidden:opacity-0"
             >
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2.5 min-[1100px]:flex-nowrap">
-              <SearchField key={fieldKey} label="Search runs" width="w-[220px] min-w-[112px] shrink" />
-              <RangeButtons label="Started" presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} />
-              <FilterPopover label="Filter runs" sections={sections} hidden={hidden} sorting={sorting} />
-              <span className="ml-auto shrink-0 font-mono text-[12.5px] whitespace-nowrap text-ink-3">{total} runs</span>
-              <select
-                aria-label="Rows a page"
-                value={size}
-                onChange={(event) => {
-                  const picked = Number(event.target.value);
-                  go({ size: picked === DEFAULT_SIZE ? undefined : picked });
-                }}
-                className="min-h-9 shrink-0 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[13px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
-              >
-                {PAGE_SIZES.map((each) => (
-                  <option key={each} value={each}>
-                    {each} a page
-                  </option>
-                ))}
-              </select>
-              </div>
               {chips.length > 0 && <FilterChips chips={chips} onClear={go} onClearAll={clearAll} />}
             </div>
           </div>

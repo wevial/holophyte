@@ -217,12 +217,12 @@ test("a click on a focusable control outside the open switcher closes it and lea
   await key(switcher(), "ArrowDown");
   expect(document.activeElement).toBe(find());
 
-  const field = screen.getByRole("searchbox", { name: "Search runs" });
-  await userEvent.click(field);
+  const tab = within(screen.getByRole("group", { name: "Run states" })).getAllByRole("button")[0]!;
+  await userEvent.click(tab);
   await act(settle);
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(switcher().getAttribute("aria-expanded")).toBe("false");
-  expect(document.activeElement).toBe(field);
+  expect(document.activeElement).toBe(tab);
 });
 
 test("typing filters the options, ArrowDown moves through the matches and Enter picks the active one", async () => {

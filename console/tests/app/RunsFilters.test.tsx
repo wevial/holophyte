@@ -98,13 +98,23 @@ const press = async (element: HTMLElement) => {
 };
 const hashSearch = () => new URLSearchParams(window.location.hash.split("?")[1]);
 const controls = () => document.querySelector<HTMLElement>("[data-controls]")!;
-const countLine = () => document.querySelector("[data-count-line]")!.textContent;
 const field = () => screen.getByRole("searchbox", { name: "Search runs" }) as HTMLInputElement;
-const filterButton = () => screen.getByRole("button", { name: /^Filter/ });
-const started = () => within(screen.getByRole("group", { name: "Started" }));
-const pressedRanges = () => started().getAllByRole("button").filter((each) => each.getAttribute("aria-pressed") === "true").map((each) => each.getAttribute("aria-label") ?? each.textContent);
+const searchButton = () => screen.queryByRole("button", { name: "Search runs" });
+const openSearch = async () => {
+  if (searchButton()) await press(searchButton()!);
+  return field();
+};
+const filterButton = () => screen.getByRole("button", { name: /^Filter and sort/ });
+const filterDot = () => filterButton().querySelector("[data-filter-dot]");
+const rangeButton = () => screen.getByRole("button", { name: /^Range: / });
+const rangeDialog = () => screen.queryByRole("dialog", { name: "Range" });
+const openRange = async () => {
+  if (!rangeDialog()) await press(rangeButton());
+  return within(rangeDialog()!);
+};
+const checkedRanges = async () => (await openRange()).getAllByRole("radio").filter((each) => each.getAttribute("aria-checked") === "true").map((each) => each.textContent);
 const chips = () => screen.queryAllByRole("button", { name: /^Remove / }).map((each) => each.getAttribute("aria-label")!.slice("Remove ".length));
-const dialog = () => screen.queryByRole("dialog", { name: "Filter runs" });
+const dialog = () => screen.queryByRole("dialog", { name: "Filter and sort" });
 const openFilter = async () => {
   if (!dialog()) await press(filterButton());
   return dialog()!;
@@ -120,7 +130,7 @@ const tabTexts = () => tabs().map((tab) => tab.textContent);
 const pressedTabs = () => tabs().filter((tab) => tab.getAttribute("aria-pressed") === "true").map((tab) => tab.textContent!.split(" ")[0]);
 const shownIds = () => Array.from(document.querySelectorAll("li[data-run]"), (row) => row.getAttribute("data-run"));
 const typeSearch = async (text: string) => {
-  fireEvent.change(field(), { target: { value: text } });
+  fireEvent.change(await openSearch(), { target: { value: text } });
   await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
   await settleAll();
 };
@@ -142,7 +152,7 @@ afterAll(() => {
   else process.env.TZ = zone;
 });
 
-test("Runs opens on the last 7 days in no state, its controls row Search, Started, Filter, the count and the page size, with no chip", async () => {
+test("Runs opens on the last 7 days in no state, its header the title then Search runs, Range: 7 days and Filter and sort, with no count line, run count, page size or chip", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: runs("WRITER", 200, 2) });
   await mount("#/runs", daemons.fetchImpl);
   for (const base of [DEMO, WRITER]) {
@@ -150,28 +160,32 @@ test("Runs opens on the last 7 days in no state, its controls row Search, Starte
     expect(asked.since).toBe(midnight(10, 9));
     expect(["state", "failure", "implementer"].filter((name) => name in asked)).toEqual([]);
   }
-  const row = controls();
-  const order = [
-    field(),
-    screen.getByRole("group", { name: "Started" }),
-    filterButton(),
-    within(row).getByText("5 runs"),
-    screen.getByRole("combobox", { name: "Rows a page" }),
-  ];
-  for (const element of order) expect(row.contains(element)).toBe(true);
-  for (const [at, element] of order.slice(1).entries()) expect(order[at]!.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(started().getAllByRole("button").map((each) => each.getAttribute("aria-label") ?? each.textContent)).toEqual(["Today", "2d", "7d", "30d", "Any", "Custom range"]);
-  expect(pressedRanges()).toEqual(["7d"]);
-  expect(filterButton().textContent).toBe("Filter");
+  const title = screen.getByRole("heading", { level: 1, name: "Runs" });
+  const header = title.closest("header")!;
+  const tools = within(header).getAllByRole("button").filter((each) => each.hasAttribute("aria-label"));
+  expect(tools.map((each) => each.getAttribute("aria-label"))).toEqual(["Search runs", "Range: 7 days", "Filter and sort"]);
+  for (const tool of tools) expect(title.compareDocumentPosition(tool) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(rangeButton().textContent).toBe("7d");
+  expect(filterDot()).toBeNull();
+  expect(document.querySelector("[data-count-line]")).toBeNull();
+  expect(screen.queryAllByText(/\b\d+ runs\b/)).toEqual([]);
+  expect(screen.queryByRole("combobox", { name: "Rows a page" })).toBeNull();
   expect(chips()).toEqual([]);
-  expect(Array.from(row.querySelectorAll("*"), (element) => element.textContent!.trim()).filter((text) => text.startsWith("All "))).toEqual([]);
-  expect(countLine()).toStartWith("all projects · 5 runs");
 });
 
-test("Search writes q after its debounce and asks the hosts with it, Escape clears it, and / focuses it", async () => {
+test("Search runs opens a focused field writing q after its debounce, Escape clears it, leaving it empty folds it back, and / opens it", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs", daemons.fetchImpl);
-  await typeSearch("lock");
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  await press(searchButton()!);
+  expect(searchButton()).toBeNull();
+  expect(document.activeElement).toBe(field());
+
+  fireEvent.change(field(), { target: { value: "lock" } });
+  await settleAll();
+  expect(hashSearch().has("q")).toBe(false);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
+  await settleAll();
   expect(hashSearch().get("q")).toBe("lock");
   expect(daemons.lastOf(DEMO).q).toBe("lock");
   expect(daemons.lastOf(WRITER).q).toBe("lock");
@@ -181,8 +195,12 @@ test("Search writes q after its debounce and asks the hosts with it, Escape clea
   await settleAll();
   expect(hashSearch().has("q")).toBe(false);
   expect(chips()).toEqual([]);
+  expect(document.activeElement).toBe(field());
 
-  (document.activeElement as HTMLElement | null)?.blur();
+  await act(async () => field().blur());
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  expect(searchButton()).not.toBeNull();
+
   await act(() => userEvent.keyboard("/"));
   expect(document.activeElement).toBe(field());
   expect(field().value).toBe("");
@@ -210,13 +228,13 @@ test("Escape and a press outside close the Filter popover and give focus back to
 
   await openFilter();
   (await section("Failure kind")).getByRole("checkbox", { name: "review" }).focus();
-  await act(async () => void fireEvent.pointerDown(document.querySelector("[data-count-line]")!));
+  await act(async () => void fireEvent.pointerDown(screen.getByRole("heading", { level: 1, name: "Runs" })));
   expect(dialog()).toBeNull();
   expect(document.activeElement).toBe(filterButton());
 
   await openFilter();
   let pressOnSearch: boolean | undefined;
-  await act(async () => void (pressOnSearch = fireEvent.pointerDown(field())));
+  await act(async () => void (pressOnSearch = fireEvent.pointerDown(searchButton()!)));
   expect(dialog()).toBeNull();
   expect(pressOnSearch).toBe(false);
   expect(document.activeElement).toBe(filterButton());
@@ -235,8 +253,23 @@ test("a run started before yesterday names its date with its clock, and yesterda
   expect(label(2)).toEndWith("started yest 21:05");
 });
 
-test("Escape with focus moved from the Filter popover to Search still closes it and gives focus back to its button", async () => {
+test("Escape and a press outside close the Range popover and give focus back to its button", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
+  (await openRange()).getByLabelText("From").focus();
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  expect(rangeDialog()).toBeNull();
+  expect(rangeButton().getAttribute("aria-expanded")).toBe("false");
+  expect(document.activeElement).toBe(rangeButton());
+
+  (await openRange()).getByRole("radio", { name: "Today" }).focus();
+  await act(async () => void fireEvent.pointerDown(screen.getByRole("heading", { level: 1, name: "Runs" })));
+  expect(rangeDialog()).toBeNull();
+  expect(document.activeElement).toBe(rangeButton());
+  expect(hashSearch().has("range")).toBe(false);
+});
+
+test("Escape with focus moved from the Filter popover to Search still closes it and gives focus back to its button", async () => {
+  await mount("#/runs?q=lock", countedFleet().fetchImpl);
   await openFilter();
   field().focus();
   await act(async () => void fireEvent.keyDown(field(), { key: "Escape" }));
@@ -247,34 +280,45 @@ test("Escape with focus moved from the Filter popover to Search still closes it 
 test("Clear filters empties Search and drops a search still waiting on its debounce", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs?failure=verify", daemons.fetchImpl);
-  fireEvent.change(field(), { target: { value: "lock" } });
+  fireEvent.change(await openSearch(), { target: { value: "lock" } });
   await press(screen.getByRole("button", { name: "Clear filters" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 300)));
   await settleAll();
   expect(hashSearch().has("q")).toBe(false);
-  expect(field().value).toBe("");
+  expect(screen.queryByRole("searchbox")).toBeNull();
   expect(daemons.lastOf(DEMO).q).toBeUndefined();
   expect(chips()).toEqual([]);
+  expect((await openSearch()).value).toBe("");
 });
 
-test("a Started button asks the hosts from its day and a custom range from its From day until the day after its To", async () => {
+test("the Range dialog lists its presets with 7 days checked, and 30 days writes range=30d, closes it, relabels the button and asks the hosts from 30 days back", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs", daemons.fetchImpl);
-  await press(started().getByRole("button", { name: "30d" }));
+  const box = await openRange();
+  expect(rangeButton().getAttribute("aria-expanded")).toBe("true");
+  expect(box.getAllByRole("radio").map((each) => each.textContent)).toEqual(["Today", "2 days", "7 days", "30 days", "Any time"]);
+  expect(await checkedRanges()).toEqual(["7 days"]);
+
+  await press(box.getByRole("radio", { name: "30 days" }));
   expect(hashSearch().get("range")).toBe("30d");
-  expect(daemons.lastOf(DEMO).since).toBe(midnight(9, 16));
-  expect(daemons.lastOf(WRITER).since).toBe(midnight(9, 16));
-  expect(pressedRanges()).toEqual(["30d"]);
+  expect(rangeDialog()).toBeNull();
+  expect(document.activeElement).toBe(rangeButton());
+  expect(rangeButton().getAttribute("aria-label")).toBe("Range: 30 days");
+  expect(rangeButton().textContent).toBe("30d");
+  for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).since).toBe(midnight(9, 16));
   expect(chips()).toEqual(["Started: Last 30 days"]);
 
-  await press(started().getByRole("button", { name: "Today" }));
+  await press((await openRange()).getByRole("radio", { name: "Today" }));
   expect(hashSearch().get("range")).toBe("today");
+  expect(rangeButton().textContent).toBe("Today");
   expect(daemons.lastOf(DEMO).since).toBe(midnight(10, 15));
+});
 
-  await press(started().getByRole("button", { name: "Custom range" }));
-  const custom = within(screen.getByRole("group", { name: "Started range" }));
+test("From and To picked in the Range dialog show on its button and ask the hosts from the From day until the day after the To day", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
+  await mount("#/runs?range=30d", daemons.fetchImpl);
   for (const [name, value] of [["From", "2026-10-01"], ["To", "2026-10-20"]] as const) {
-    await act(async () => void fireEvent.change(custom.getByLabelText(name), { target: { value } }));
+    await act(async () => void fireEvent.change((await openRange()).getByLabelText(name), { target: { value } }));
     await settleAll();
   }
   expect(hashSearch().get("from")).toBe("2026-10-01");
@@ -284,9 +328,9 @@ test("a Started button asks the hosts from its day and a custom range from its F
     expect(daemons.lastOf(base).since).toBe(midnight(10, 1));
     expect(daemons.lastOf(base).until).toBe(midnight(10, 21));
   }
-  const customButton = started().getByRole("button", { name: "Custom range" });
-  expect(pressedRanges()).toEqual(["Custom range"]);
-  expect(customButton.textContent).toBe("Oct 1 – Oct 20");
+  expect(await checkedRanges()).toEqual([]);
+  expect(rangeButton().textContent).toBe("Oct 1 – Oct 20");
+  expect(rangeButton().getAttribute("aria-label")).toBe("Range: Oct 1 – Oct 20");
   expect(chips()).toEqual(["Started: Oct 1 – Oct 20"]);
 });
 
@@ -307,7 +351,7 @@ test("the Filter popover holds Sort, Project, Failure kind and Implementer with 
   await mount("#/runs", countedFleet().fetchImpl);
   const box = await openFilter();
   expect(filterButton().getAttribute("aria-expanded")).toBe("true");
-  expect(within(box).getAllByRole("group")).toEqual(["Sort", "Project", "Failure kind", "Implementer"].map((name) => within(box).getByRole("group", { name })));
+  expect(within(box).getAllByRole("group")).toEqual(["Sort", "Per page", "Project", "Failure kind", "Implementer"].map((name) => within(box).getByRole("group", { name })));
   expect((within(box).getAllByRole("checkbox") as HTMLInputElement[]).filter((each) => each.checked || each.indeterminate)).toEqual([]);
   expect((await valueRows("Failure kind")).slice(0, 2)).toEqual(["verify 3", "review 1"]);
   expect((await section("Implementer")).getAllByRole("checkbox").slice(1).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
@@ -328,7 +372,7 @@ test("checking Failure kind boxes writes them as a comma list in the section's o
   expect(hashSearch().get("failure")).toBe("verify,review_route");
   expect(hashSearch().has("page")).toBe(false);
   for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).failure).toBe("verify,review_route");
-  expect(filterButton().textContent).toBe("Filter · 2");
+  expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort, 2 filters on");
   const failureHead = await head("Failure kind");
   expect([failureHead.checked, failureHead.indeterminate]).toEqual([false, true]);
   expect(failureHead.closest("label")!.textContent).toContain("2 of 9");
@@ -398,7 +442,6 @@ test("checking a Project draws only its rows and asks the other host for one row
   expect(await valueRows("Project")).toEqual(["demo 6", "writer 3"]);
   expect((await valueRows("Failure kind")).slice(0, 1)).toEqual(["verify 3"]);
   expect(await valueRows("Implementer")).toEqual(["claude opus 5", "codex gpt-6-astra 2"]);
-  expect(countLine()).toStartWith("demo · ");
   expect(chips()).toEqual(["Project: demo"]);
   expect(sessionStorage.getItem("holophyte.next.project")).toBeNull();
 
@@ -408,17 +451,22 @@ test("checking a Project draws only its rows and asks the other host for one row
   expect(chips()).toContain("Implementer: claude opus, codex gpt-6-astra");
 });
 
-test("with a Project checked, the count line counts the active runs of that project's hosts only", async () => {
+test("one Project checked names the Filter button 1 filter on and shows its dot, and none checked shows no dot", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
   await check("Project", "writer");
-  expect(countLine()).toStartWith("writer · 3 runs / 0 active");
+  expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort, 1 filter on");
+  expect(filterDot()).not.toBeNull();
+  await check("Project", "writer");
+  expect(hashSearch().has("projects")).toBe(false);
+  expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort");
+  expect(filterDot()).toBeNull();
 });
 
 test("a link's filters show in every control and chip and reach the hosts; a chip's Remove drops its filter and Clear filters keeps sort and size", async () => {
   const daemons = countedFleet();
   await mount("#/runs?q=lock&projects=demo&state=failed,abandoned&failure=verify&range=30d&sort=duration&order=desc&size=25", daemons.fetchImpl);
   expect(field().value).toBe("lock");
-  expect(pressedRanges()).toEqual(["30d"]);
+  expect(rangeButton().textContent).toBe("30d");
   expect(await checkedIn("Project")).toEqual(["demo"]);
   expect(await checkedIn("Failure kind")).toEqual(["verify"]);
   expect((await section("Sort")).getByRole("radio", { name: "Took" })).toHaveProperty("checked", true);
@@ -433,7 +481,7 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   await press(screen.getByRole("button", { name: "Clear filters" }));
   for (const name of ["q", "projects", "state", "failure", "implementer", "range", "from", "to"]) expect(hashSearch().has(name)).toBe(false);
   expect(Object.fromEntries(hashSearch())).toMatchObject({ sort: "duration", order: "desc", size: "25" });
-  expect(filterButton().textContent).toBe("Filter");
+  expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort");
   expect(chips()).toEqual([]);
 });
 
@@ -444,7 +492,7 @@ test("an Implementer the hosts do not list is dropped from the query, the boxes 
   expect((await section("Implementer")).getAllByRole("checkbox").slice(1).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
   expect(await checkedIn("Implementer")).toEqual(["claude opus"]);
   expect(chips()).toEqual(["Implementer: claude opus"]);
-  expect(filterButton().textContent).toBe("Filter · 1");
+  expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort, 1 filter on");
 });
 
 test("a filter no run matches reads No runs match once with no pager, and an empty scope with no filter names the project and the 7 days", async () => {

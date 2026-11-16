@@ -101,10 +101,12 @@ const press = async (element: HTMLElement) => {
 };
 const button = (name: string) => screen.getByRole("button", { name });
 const popover = async () => {
-  if (!screen.queryByRole("dialog", { name: "Filter runs" })) await press(screen.getByRole("button", { name: /^Filter/ }));
-  return within(screen.getByRole("dialog", { name: "Filter runs" }));
+  if (!screen.queryByRole("dialog", { name: "Filter and sort" })) await press(screen.getByRole("button", { name: /^Filter and sort/ }));
+  return within(screen.getByRole("dialog", { name: "Filter and sort" }));
 };
 const radio = async (name: string) => (await popover()).getByRole("radio", { name }) as HTMLInputElement;
+const pressedSizes = async () => within((await popover()).getByRole("group", { name: "Per page" })).getAllByRole("button")
+  .map((each) => `${each.textContent}${each.getAttribute("aria-pressed") === "true" ? " pressed" : ""}`);
 const checkedSort = async () => (await popover()).getAllByRole("radio").filter((each) => (each as HTMLInputElement).checked).map((each) => each.closest("label")!.textContent);
 const paged = (state: string | null, offset: number, limit: number, sort = "started", order = "desc") => ({
   since: String(SINCE), ...(state ? { state } : {}), sort, order, offset: String(offset), limit: String(limit),
@@ -137,7 +139,7 @@ test("Runs asks each host once for the first 50 runs of the last 7 days newest f
   expect(range()).toBe("1–5 of 5");
 });
 
-test("one host in scope serves each page itself, Next walks to the last page, and a new page size goes back to page 1", async () => {
+test("one host in scope serves each page itself and Next walks to the last page", async () => {
   const daemons = fleet({ rows: runs("DEMO", 120, 120) }, { rows: runs("WRITER", 200, 5) });
   await mount("#/runs?project=demo&state=all", daemons.fetchImpl);
   expect(daemons.askedOf(WRITER)).toEqual([]);
@@ -154,19 +156,24 @@ test("one host in scope serves each page itself, Next walks to the last page, an
   expect(range()).toBe("101–120 of 120");
   expect(button("Next").hasAttribute("disabled")).toBe(true);
 
-  const size = screen.getByRole("combobox", { name: "Rows a page" });
-  const controls = document.querySelector("[data-controls]")!;
-  expect(Array.from(controls.querySelectorAll("button, select")).at(-1)).toBe(size);
-  expect(pager()!.contains(size)).toBe(false);
-  await act(async () => {
-    fireEvent.change(size, { target: { value: "25" } });
-    await settle();
-  });
-  for (let round = 0; round < 3; round += 1) await act(settle);
+});
+
+test("the Filter popover's Per page group holds 25, 50 and 100 with 50 pressed, and 25 writes size=25, goes back to page 1 and asks the hosts for 25 runs", async () => {
+  const daemons = fleet({ rows: runs("DEMO", 120, 120) }, { rows: runs("WRITER", 200, 5) });
+  await mount("#/runs?project=demo&state=all&page=2", daemons.fetchImpl);
+  expect(range()).toBe("51–100 of 120");
+  expect(await pressedSizes()).toEqual(["25", "50 pressed", "100"]);
+
+  await press(within((await popover()).getByRole("group", { name: "Per page" })).getByRole("button", { name: "25" }));
   expect(hashSearch().get("size")).toBe("25");
   expect(hashSearch().has("page")).toBe(false);
   expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged(null, 0, 25));
   expect(range()).toBe("1–25 of 120");
+  expect(await pressedSizes()).toEqual(["25 pressed", "50", "100"]);
+
+  await press((await popover()).getByRole("button", { name: "50" }));
+  expect(hashSearch().has("size")).toBe(false);
+  expect(daemons.askedOf(DEMO).at(-1)).toEqual(paged(null, 0, 50));
 });
 
 function PageOfRuns({ search }: { search: Required<RunsSearch> }) {
@@ -262,11 +269,11 @@ test("sorted by took, two hosts' rows are drawn longest first, then shortest fir
 });
 
 test("the controls row hides after 24px of scrolling down once the dock is stuck and shows after 24px up, ignoring jitter and the 150ms after a toggle", async () => {
-  const clock = await mount("#/runs", fleet({ rows: runs("DEMO", 100, 30) }, { rows: runs("WRITER", 200, 30) }).fetchImpl);
+  const clock = await mount("#/runs?failure=verify", fleet({ rows: runs("DEMO", 100, 30) }, { rows: runs("WRITER", 200, 30) }).fetchImpl);
   expect(rows()).toHaveLength(50);
   const dock = document.querySelector<HTMLElement>("[data-runs-dock]")!;
   const controls = dock.querySelector<HTMLElement>("[data-controls]")!;
-  expect(within(dock).getByRole("button", { name: /^Filter/ })).toBeTruthy();
+  expect(within(dock).getByRole("button", { name: "Clear filters" })).toBeTruthy();
   expect(dock.contains(rows()[0]!)).toBe(false);
   Object.defineProperty(controls, "offsetHeight", { configurable: true, value: 52 });
   Object.defineProperty(dock, "offsetHeight", { configurable: true, value: 96 });
@@ -348,7 +355,7 @@ test("unknown sort, order, page and size open newest first on page 1 at 50 a pag
   expect(daemons.askedOf(DEMO)).toEqual([paged(null, 0, 50)]);
   expect(daemons.askedOf(WRITER)).toEqual([paged(null, 0, 50)]);
   expect(await checkedSort()).toEqual(["Started", "newest first"]);
-  expect((screen.getByRole("combobox", { name: "Rows a page" }) as HTMLSelectElement).value).toBe("50");
+  expect(await pressedSizes()).toEqual(["25", "50 pressed", "100"]);
   expect(range()).toBe("1–3 of 3");
 });
 

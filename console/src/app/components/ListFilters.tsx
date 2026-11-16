@@ -13,7 +13,9 @@ function typing(target: EventTarget | null): boolean {
 
 /** A list page's search: its debounced, trimmed text is the address's
  *  `q`, and `/` anywhere on the page focuses it. */
-export function SearchField({ label, width = "w-56" }: { label: string; width?: string }) {
+export function SearchField({ label, width = "w-56", className, autoFocus, onBlur }: {
+  label: string; width?: string; className?: string; autoFocus?: boolean; onBlur?: (text: string) => void;
+}) {
   const { q } = useSearch({ strict: false }) as { q?: string };
   const navigate = useNavigate();
   const [text, setText] = useState(q ?? "");
@@ -50,6 +52,8 @@ export function SearchField({ label, width = "w-56" }: { label: string; width?: 
       aria-label={label}
       placeholder="Search"
       value={text}
+      autoFocus={autoFocus}
+      onBlur={(event) => onBlur?.(event.currentTarget.value)}
       onChange={(event) => setText(event.target.value)}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -57,8 +61,43 @@ export function SearchField({ label, width = "w-56" }: { label: string; width?: 
         setText("");
         write(undefined);
       }}
-      className={`min-h-8 ${width} border border-rule bg-paper px-3 font-sans text-[12.5px] text-ink placeholder:text-ink-3 focus:outline-2 focus:-outline-offset-1 focus:outline-focus`}
+      className={className ?? `min-h-8 ${width} border border-rule bg-paper px-3 font-sans text-[12.5px] text-ink placeholder:text-ink-3 focus:outline-2 focus:-outline-offset-1 focus:outline-focus`}
     />
+  );
+}
+
+const TOOL = "relative inline-flex h-[28px] min-w-7 shrink-0 cursor-pointer items-center justify-center gap-[5px] rounded-button px-1.5 text-ink-2 transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-selected aria-expanded:text-ink";
+
+/** A Search button that becomes a `SearchField` with focus when pressed or
+ *  on `/`, shown already while the address holds `q`, and a button again
+ *  when it loses focus empty. */
+export function SearchToggle({ label }: { label: string }) {
+  const { q } = useSearch({ strict: false }) as { q?: string };
+  const [opened, setOpened] = useState(false);
+  const shown = opened || q != null;
+  useEffect(() => {
+    if (shown) return;
+    const open = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || typing(event.target)) return;
+      event.preventDefault();
+      setOpened(true);
+    };
+    document.addEventListener("keydown", open);
+    return () => document.removeEventListener("keydown", open);
+  }, [shown]);
+  if (!shown) {
+    return (
+      <button type="button" aria-label={label} title="Search" onClick={() => setOpened(true)} className={TOOL}>
+        <SearchIcon />
+      </button>
+    );
+  }
+  return (
+    <label className="flex h-[28px] w-60 min-w-28 shrink items-center gap-2 rounded-button bg-selected px-2.5 text-ink-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+      <SearchIcon />
+      <SearchField label={label} autoFocus={opened} onBlur={(text) => { if (text.trim() === "") setOpened(false); }}
+        className="h-full min-w-0 flex-1 border-0 bg-transparent font-sans text-[14px] text-ink outline-none! placeholder:text-ink-3 [&::-webkit-search-cancel-button]:hidden" />
+    </label>
   );
 }
 
@@ -144,6 +183,40 @@ function FilterIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 14 14" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round">
       <path d="M1.5 3h11M3.5 7h7M5.5 11h3" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="size-4 shrink-0">
+      <circle cx="7" cy="7" r="4" />
+      <path d="m10 10 3 3" />
+    </svg>
+  );
+}
+
+function ToolFilterIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="size-4 shrink-0">
+      <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
+    </svg>
+  );
+}
+
+function ToolCalendarIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="size-4 shrink-0">
+      <rect x="2.5" y="3.5" width="11" height="10" rx="2" />
+      <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
+    </svg>
+  );
+}
+
+function CheckMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="size-3.5 shrink-0 text-ink">
+      <path d="M3.5 8.5l3 3 6-7" />
     </svg>
   );
 }
@@ -238,32 +311,78 @@ function Sorting({ sorting }: { sorting: SortSection }) {
 
 /** A Filter button over a dialog of checkbox `sections`, each section's
  *  checked values written to its own search param as a comma list in the
- *  section's order, after an optional `sorting`; `hidden` closes it. */
-export function FilterPopover({ label, sections, hidden, sorting }: { label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection }) {
+ *  section's order, after an optional `sorting` and `extra`; `hidden`
+ *  closes it. An `icon` trigger is named `label` and the count of filters
+ *  on, with a dot while any is. */
+export function FilterPopover({ label, sections, hidden, sorting, extra, icon = false }: {
+  label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection; extra?: ReactNode; icon?: boolean;
+}) {
   const search = useSearch({ strict: false }) as PageSearch;
   const write = useWrite();
   const { open, setOpen, box, button } = usePopover(hidden);
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
+  const on = count === 1 ? "1 filter on" : `${count} filters on`;
+  const groups = sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />);
   return (
-    <div ref={box} className="relative shrink-0">
-      <button
-        ref={button}
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className={`inline-flex min-h-9 cursor-pointer items-center gap-2 whitespace-nowrap border px-2 font-sans text-[14px] hover:bg-paper-2 ${count > 0 ? "border-act text-act" : "border-transparent text-ink"}`}
-      >
-        <FilterIcon />
-        {count > 0 ? `Filter · ${count}` : "Filter"}
-      </button>
-      {open && (
+    <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
+      {icon ? (
+        <button ref={button} type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={count > 0 ? `${label}, ${on}` : label}
+          title={label} onClick={() => setOpen(!open)} className={TOOL}>
+          <ToolFilterIcon />
+          {count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}
+        </button>
+      ) : (
+        <button
+          ref={button}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className={`inline-flex min-h-9 cursor-pointer items-center gap-2 whitespace-nowrap border px-2 font-sans text-[14px] hover:bg-paper-2 ${count > 0 ? "border-act text-act" : "border-transparent text-ink"}`}
+        >
+          <FilterIcon />
+          {count > 0 ? `Filter · ${count}` : "Filter"}
+        </button>
+      )}
+      {open && icon && (
+        <div role="dialog" aria-label={label}
+          className="absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(660px,calc(100vw-2rem))] grid-cols-[minmax(0,1fr)_minmax(0,2fr)] overflow-y-auto rounded-[9px] border border-hair-2 bg-raised py-1 text-[13px] shadow-card">
+          <div>
+            {sorting && <Sorting sorting={sorting} />}
+            {extra}
+          </div>
+          <div className="grid grid-cols-2 grid-rows-[auto_1fr] items-start [&>fieldset]:border-t-0! [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">{groups}</div>
+        </div>
+      )}
+      {open && !icon && (
         <div role="dialog" aria-label={label}
           className="absolute top-full left-0 z-20 mt-1 max-h-[min(560px,calc(100vh-11rem))] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
           {sorting && <Sorting sorting={sorting} />}
-          {sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />)}
+          {extra}
+          {groups}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A labelled group of pressed buttons, one per `options` value, the
+ *  pressed one `value`. */
+export function PressedGroup<V extends string | number>({ label, options, value, onPick }: {
+  label: string; options: readonly V[]; value: V; onPick: (picked: V) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="px-4 py-2.5">
+      <div id={id} className="flex min-h-8 items-center font-semibold text-ink">{label}</div>
+      <div role="group" aria-labelledby={id} className="inline-flex gap-0.5 rounded-[7px] bg-canvas p-0.5">
+        {options.map((option) => (
+          <button key={option} type="button" aria-pressed={option === value} onClick={() => onPick(option)}
+            className="h-6 cursor-pointer rounded-[5px] px-2.5 font-mono text-[12px] font-medium text-ink-3 hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
+            {option}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -329,6 +448,61 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   );
 }
 
+export interface RangePreset extends FilterOption {
+  name: string;
+}
+
+/** A calendar button labelled with the picked range over a Range dialog of
+ *  `presets`, picking one writes `range` (`fallback` dropping it) and
+ *  closes it, and From and To dates write `from` and `to`, which win over
+ *  `range` while set; `hidden` closes it. */
+export function RangePopover({ presets, fallback, hidden }: { presets: readonly RangePreset[]; fallback: string; hidden: boolean }) {
+  const { range, from, to } = useSearch({ strict: false }) as { range?: string; from?: string; to?: string };
+  const write = useWrite();
+  const { open, setOpen, close, box, button } = usePopover(hidden);
+  const custom = from != null || to != null;
+  const picked = custom ? undefined : (presets.find((preset) => preset.value === (range ?? fallback)) ?? presets.find((preset) => preset.value === fallback));
+  const fromId = useId();
+  const toId = useId();
+  const field = "h-[28px] rounded-button border-0 bg-selected px-2 font-mono text-[12px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
+  return (
+    <div ref={box} className="shrink-0">
+      <button ref={button} type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={`Range: ${picked?.name ?? dayRangeLabel(from, to)}`}
+        title={picked?.name ?? "Custom range"} onClick={() => setOpen(!open)} className={TOOL}>
+        <ToolCalendarIcon />
+        <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{picked?.label ?? dayRangeLabel(from, to)}</span>
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Range"
+          className="absolute top-full right-0 z-20 mt-1.5 w-62 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
+          <div role="radiogroup" aria-label="Started">
+            {presets.map((preset) => (
+              <button key={preset.value} type="button" role="radio" aria-checked={preset === picked}
+                onClick={() => {
+                  write({ range: preset.value === fallback ? undefined : preset.value, from: undefined, to: undefined });
+                  close();
+                }}
+                className="flex h-[26px] w-full cursor-pointer items-center gap-2 rounded-button px-2 text-left text-ink-2 hover:bg-hover hover:text-ink aria-checked:font-medium aria-checked:text-ink">
+                <span className={`inline-flex ${preset === picked ? "" : "invisible"}`}><CheckMark /></span>
+                {preset.name}
+              </button>
+            ))}
+          </div>
+          <div className="my-1.5 h-px bg-hair" />
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5 pb-1">
+            <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
+            <input id={fromId} type="date" value={from ?? ""} max={to} className={field}
+              onChange={(event) => write({ range: undefined, from: event.target.value || undefined })} />
+            <label htmlFor={toId} className="text-[12px] text-ink-3">To</label>
+            <input id={toId} type="date" value={to ?? ""} min={from} className={field}
+              onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface FilterChip<C> {
   word: string;
   value: string;
@@ -339,7 +513,7 @@ export function FilterChips<C>({ chips, onClear, onClearAll }: { chips: FilterCh
   return (
     <div data-chips className="flex flex-wrap items-center gap-2">
       {chips.map((chip) => (
-        <span key={chip.word} className="inline-flex min-h-7 items-center gap-2 border border-rule bg-paper pr-1 pl-2.5 font-mono text-[12px] text-ink-2">
+        <span key={chip.word} className="inline-flex min-h-[28px] items-center gap-2 border border-rule bg-paper pr-1 pl-2.5 font-mono text-[12px] text-ink-2">
           <span>
             {chip.word}: <b className="font-semibold text-ink">{chip.value}</b>
           </span>
@@ -352,7 +526,7 @@ export function FilterChips<C>({ chips, onClear, onClearAll }: { chips: FilterCh
         </span>
       ))}
       <button type="button" onClick={onClearAll}
-        className="ml-1 min-h-7 cursor-pointer font-sans text-[13px] font-medium text-ink underline underline-offset-2 hover:text-act">
+        className="ml-1 min-h-[28px] cursor-pointer font-sans text-[13px] font-medium text-ink underline underline-offset-2 hover:text-act">
         Clear filters
       </button>
     </div>
