@@ -151,8 +151,6 @@ async function mount(detail: RunDetail) {
 }
 
 const progress = () => screen.getByRole("region", { name: "Progress" });
-const grid = () => within(progress()).queryByRole("table", { name: "Criteria by round" });
-const columnCells = (table: HTMLElement, column: number) => Array.from(table.querySelectorAll("tbody tr"), (row) => row.querySelectorAll("td")[column]!);
 
 function group(title: string): HTMLElement {
   const found = Array.from(progress().querySelectorAll<HTMLElement>("[data-group]")).find((li) => li.querySelector("[data-group-title] b")?.textContent === title);
@@ -178,29 +176,6 @@ afterAll(() => {
 afterEach(() => {
   cleanup();
   window.location.hash = "";
-});
-
-test("the criteria grid has a column for the pre-check, each review round and the final check, and names each cell by its status and note", async () => {
-  await mount(finished);
-  const table = grid()!;
-  expect(within(table).getAllByRole("columnheader").map((th) => th.getAttribute("aria-label"))).toEqual(["pre-check", "round 1", "round 2", "final check"]);
-  expect(Array.from(table.querySelectorAll("tbody th"), (th) => th.textContent)).toEqual(["C1", "C2", "C3"]);
-  expect(columnCells(table, 1)[0]!.getAttribute("aria-label")).toBe("not met: export is absent");
-  expect(columnCells(table, 0)[2]!.getAttribute("aria-label")).toBe("unwitnessed");
-  expect(within(table).getAllByRole("cell", { name: "not met: export is absent" })).toHaveLength(1);
-});
-
-test("a failed final check's column is headed final check and reads unwitnessed in every cell with no failed outline, and a run that judged no criteria has no grid", async () => {
-  await mount(failedFinal);
-  const table = grid()!;
-  expect(within(table).getAllByRole("columnheader", { name: "final check" })).toHaveLength(1);
-  expect(within(table).queryByRole("columnheader", { name: "final" })).toBeNull();
-  expect(columnCells(table, 1).map((cell) => cell.getAttribute("aria-label"))).toEqual(["unwitnessed", "unwitnessed", "unwitnessed"]);
-  expect(table.querySelectorAll("[data-failed]")).toHaveLength(0);
-  cleanup();
-  await mount({ ...handedOver, rounds: handedOver.rounds.map((each) => ({ ...each, criteria: [] })) });
-  expect(progress().querySelector("[data-group]")).not.toBeNull();
-  expect(grid()).toBeNull();
 });
 
 test("a review round's header marks each criterion it left not met or unwitnessed after its findings count", async () => {
@@ -299,35 +274,10 @@ test("a run sent back to the babysitter ends its last group on Handed to the bab
   expect(within(last).getByRole("link", { name: "abc1234" }).getAttribute("href")).toBe("https://github.test/demo/commit/abc1234def");
 });
 
-test("a criterion's label in the grid shows its full text in a tooltip on hover, focus and press, and hides it on leave and Escape", async () => {
-  const c1 = { id: "C1", n: 1, text: "The export writes a TOML file", status: "met" as const, note: "", run: 12, round: 3 };
-  await mount({ ...finished, criteria: [c1] });
-  const label = within(grid()!).getByRole("button", { name: "C1" });
-  const tip = () => screen.queryByRole("tooltip");
-  expect(tip()).toBeNull();
-  await act(async () => void fireEvent.pointerEnter(label, { pointerType: "mouse" }));
-  expect(tip()!.textContent).toBe("The export writes a TOML file");
-  expect(label.getAttribute("aria-describedby")).toBe(tip()!.id);
-  await act(async () => void fireEvent.pointerLeave(label, { pointerType: "mouse" }));
-  expect(tip()).toBeNull();
-  await act(async () => void fireEvent.focus(label));
-  expect(tip()!.textContent).toBe("The export writes a TOML file");
-  await act(async () => void fireEvent.keyDown(label, { key: "Escape" }));
-  expect(tip()).toBeNull();
-  await act(async () => void fireEvent.blur(label));
-  await act(async () => void fireEvent.click(label));
-  expect(tip()!.textContent).toBe("The export writes a TOML file");
-  expect(label.getAttribute("aria-describedby")).toBe(tip()!.id);
-});
-
-test("a press dragged off a criterion's label and released elsewhere still lets a later keyboard focus show its tooltip", async () => {
-  const c1 = { id: "C1", n: 1, text: "The export writes a TOML file", status: "met" as const, note: "", run: 12, round: 3 };
-  await mount({ ...finished, criteria: [c1] });
-  const label = within(grid()!).getByRole("button", { name: "C1" });
-  await act(async () => void fireEvent.pointerDown(label, { pointerType: "touch" }));
-  await act(async () => void fireEvent.focus(label));
-  await act(async () => void fireEvent.blur(label));
-  expect(screen.queryByRole("tooltip")).toBeNull();
-  await act(async () => void fireEvent.focus(label));
-  expect(screen.queryByRole("tooltip")!.textContent).toBe("The export writes a TOML file");
+test("a run whose rounds judged criteria has no Criteria by round table or legend, and Progress holds only the run activity list", async () => {
+  await mount(finished);
+  expect(screen.queryByRole("table", { name: "Criteria by round" })).toBeNull();
+  expect(document.querySelector("[data-legend]")).toBeNull();
+  const list = within(progress()).getByRole("list", { name: "Run activity" });
+  expect(Array.from(list.parentElement!.children)).toEqual([list]);
 });
