@@ -84,7 +84,7 @@ function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLin
 function FootTip({ tip, folded, children }: { tip: string; folded: boolean; children: (trigger: Record<string, unknown>) => ReactNode }) {
   return (
     <Tooltip delay={300}>
-      <TooltipTrigger render={({ type: _button, ...trigger }) => <>{children(trigger)}</>} />
+      <TooltipTrigger render={({ type: _button, "aria-describedby": _same, ...trigger }) => <>{children(trigger)}</>} />
       <TooltipContent side={folded ? "right" : "top"} sideOffset={folded ? 10 : 8} className={TIP}>
         {tip}
       </TooltipContent>
@@ -191,11 +191,7 @@ function PageLink({
         )}
       />
       {folded && (
-        <TooltipContent
-          side="right"
-          sideOffset={10}
-          className="z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card"
-        >
+        <TooltipContent side="right" sideOffset={10} className={TIP}>
           {label}
           {badge > 0 && <span className="font-mono text-ink-3"> {badge}</span>}
         </TooltipContent>
@@ -314,7 +310,7 @@ export function Sidebar() {
 
   const dot = (
     <FootTip tip={polled} folded={folded}>
-      {({ "aria-describedby": _same, ...trigger }) => (
+      {(trigger) => (
         <span
           {...trigger}
           tabIndex={0}
@@ -333,7 +329,7 @@ export function Sidebar() {
 
   const settings = (
     <FootTip tip="Settings" folded={folded}>
-      {({ "aria-describedby": _same, ...trigger }) => (
+      {(trigger) => (
         <Link
           {...trigger}
           to="/settings/$tab"
