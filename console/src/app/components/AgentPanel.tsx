@@ -134,7 +134,7 @@ export function AgentPanel({ label, state, live, notes, asks, children }: {
     })),
   ].sort((a, b) => a.at - b.at);
   return (
-    <aside id="agent" aria-label="Agent" className="@container/agent flex min-w-0 flex-col gap-3.5 rounded-[10px] bg-raised p-4 min-[1180px]:sticky min-[1180px]:top-5">
+    <aside id="agent" aria-label="Agent" className="@container/agent flex min-w-0 flex-col gap-3.5 rounded-[10px] bg-raised bg-[linear-gradient(180deg,color-mix(in_srgb,var(--accent)_10%,transparent),transparent_140px)] p-4 min-[1180px]:sticky min-[1180px]:top-5">
       <div data-agent-head className="flex items-center gap-2 font-sans text-[13px] font-semibold text-ink">
         <GlyphTip tip={state} className={live ? "text-live" : "text-ink-3"}>
           <Glyph>{live ? STATE_ICONS.running : STOPPED}</Glyph>

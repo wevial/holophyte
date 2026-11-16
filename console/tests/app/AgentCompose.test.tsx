@@ -106,18 +106,13 @@ test("a live run's Steer and Ask are a sentence-case switch and the hint and sto
   expect(agent().queryByRole("checkbox")).toBeNull();
 });
 
-test("the composer explains next turn, hint and stop before sending, rejects blank notes and resets stop after success", async () => {
+test("Stop it now turns Send into Stop and send, rejects blank notes, posts now and resets stop after success", async () => {
   const action = fakeFetch({ ok: true, detail: "stopped and steered" });
   await mount({ answer: action.fetchImpl });
-  expect(agent().getByText("Read on its next turn.")).toBeTruthy();
   expect(agent().getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
   await type("   ");
   expect(agent().getByRole("button", { name: "Send" }).hasAttribute("disabled")).toBe(true);
-  await click(toggle("Just a hint"));
-  expect(agent().getByText("The agent may take it or leave it.")).toBeTruthy();
-  await click(toggle("Just a hint"));
   await click(toggle("Stop it now"));
-  expect(agent().getByText("Stops now and restarts with your note. Nothing is lost.")).toBeTruthy();
   expect(agent().getByRole("button", { name: "Stop and send" }).hasAttribute("disabled")).toBe(true);
   await type("Use the existing option");
   await click(agent().getByRole("button", { name: "Stop and send" }));
@@ -134,7 +129,6 @@ test("Ask on a parked pull request sends the run and question and preserves a re
   await click(agent().getByRole("button", { name: "Ask" }));
   expect(agent().getByRole("textbox", { name: "Question for the agent" }).getAttribute("placeholder")).toBe("Ask about this run…");
   expect(agent().queryByRole("button", { name: "Just a hint" })).toBeNull();
-  expect(agent().getByText("The run keeps going.")).toBeTruthy();
   await type("Does it print?");
   await click(agent().getByRole("button", { name: "Send" }));
   expect(action.seen.map(({ url, body }) => ({ url, body }))).toEqual([

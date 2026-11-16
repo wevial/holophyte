@@ -6,6 +6,7 @@ import { Glyph, GLYPHS, TIP } from "./AgentPanel";
 import { Btn } from "./Btn";
 
 const ASK_OFF = "Ask opens once the run parks on its pull request.";
+const PLANE = <path d="M2.5 8 13.5 2.8 10.5 13.2 8 9zM8 9l5.5-6.2" />;
 const STOP = <path d="M8.5 2 4 9h4l-.5 5L12 7H8z" />;
 
 function Toggle({ name, pressed, disabled, onPress, children }: {
@@ -47,8 +48,6 @@ export function AgentCompose({ base, run, ticket, actions, parked, live }: {
   const stop = !asking && live && now;
   const disabled = !actions || action.isPending;
   const unavailable = asking && !parked;
-  const sentence = asking ? "The run keeps going." : stop ? "Stops now and restarts with your note. Nothing is lost."
-    : hint ? "The agent may take it or leave it." : "Read on its next turn.";
   const send = async () => {
     if (disabled || unavailable || !text.trim()) return;
     const result = await action.mutateAsync({
@@ -83,11 +82,12 @@ export function AgentCompose({ base, run, ticket, actions, parked, live }: {
         {!asking && <Toggle name="Just a hint" pressed={hint} disabled={disabled} onPress={() => setHint(!hint)}>{GLYPHS.hint}</Toggle>}
         {!asking && live && <Toggle name="Stop it now" pressed={now} disabled={disabled} onPress={() => setNow(!now)}>{STOP}</Toggle>}
         <Btn variant={stop ? "danger-fill" : "primary"} busy={action.isPending} disabled={disabled || unavailable || !text.trim()}
-          title={!actions ? ACTIONS_OFF : unavailable ? ASK_OFF : undefined} onClick={() => { void send(); }}>
+          title={!actions ? ACTIONS_OFF : unavailable ? ASK_OFF : undefined} onClick={() => { void send(); }}
+          className="!h-[30px] gap-1.5 !rounded-[6px] !px-3 !text-[13px] !font-medium">
+          <Glyph>{PLANE}</Glyph>
           {stop ? "Stop and send" : "Send"}
         </Btn>
       </div>
-      <span className={`font-mono text-[12px] leading-[1.4] ${stop ? "text-bad" : "text-ink-3"}`}>{sentence}</span>
       {action.data?.ok === false && <p role="alert" className="m-0 break-words font-mono text-[12px] leading-normal text-bad">{action.data.detail}</p>}
     </div>
   );
