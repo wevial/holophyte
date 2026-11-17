@@ -11,7 +11,8 @@ import { TONE_TEXT } from "./StateDot";
 import type { Tone } from "../state";
 
 const FOCUS_RING = "[&:is(input,textarea):focus-visible]:!shadow-[0_0_0_2px_var(--wait)] [&:is(input,textarea)[aria-invalid=true]:focus-visible]:!shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)]";
-export const INPUT = `field mt-1.5 w-full min-w-0 ${FOCUS_RING}`;
+export const INPUT = "field mt-2 w-full min-w-0";
+export const TICKET_INPUT = `field mt-1.5 w-full min-w-0 ${FOCUS_RING}`;
 const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
 const ICON_BUTTON = "grid size-7 shrink-0 cursor-pointer place-items-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent motion-reduce:transition-none";
 type Message = { text: string; error: boolean; field: string };
@@ -151,11 +152,11 @@ export function CriteriaField({ criteria, onChange, marks, changed = () => false
     <div className="mt-1.5">
       {criteria.map((criterion, index) => <div key={index} data-changed={changed(index) || undefined} className="flex flex-wrap items-center gap-2 border-b border-hair py-2.5">
         <span className="flex w-10 shrink-0 items-center gap-1.5"><ChangedDot changed={changed(index)} /><label htmlFor={`criterion-${index}`} className="font-mono text-[11.5px] text-ink-3">AC{index + 1}</label></span>
-        <input id={`criterion-${index}`} {...marks.marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => change(rows, criteria.map((value, at) => at === index ? event.target.value : value))} />
+        <input id={`criterion-${index}`} {...marks.marks([`AC${index + 1}`, "Acceptance criteria"], `${TICKET_INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => change(rows, criteria.map((value, at) => at === index ? event.target.value : value))} />
         <RowButtons name={`AC${index + 1}`} index={index} count={criteria.length} onMove={delta => move(index, delta)} onRemove={() => change(rows.filter((_, at) => at !== index))} />
         {details[index] != null && <div data-changed={detailChanged(index) || undefined} className="flex basis-full items-start gap-1.5 pl-[18px]">
           <span className="mt-3 flex w-4 shrink-0"><ChangedDot changed={detailChanged(index)} /></span>
-          <textarea aria-label={`AC${index + 1} detail`} rows={2} className={`${INPUT} !mt-0 flex-1 resize-y font-mono text-[13px]`} value={details[index]!} onChange={event => onDetail?.(index, event.target.value)} />
+          <textarea aria-label={`AC${index + 1} detail`} rows={2} className={`${TICKET_INPUT} !mt-0 flex-1 resize-y font-mono text-[13px]`} value={details[index]!} onChange={event => onDetail?.(index, event.target.value)} />
         </div>}
         <div className="basis-full empty:hidden"><Messages id={messagesId(`AC${index + 1}`)} messages={marks.messagesOf(`AC${index + 1}`)} /></div>
       </div>)}
@@ -218,10 +219,10 @@ export function EvidenceField({ evidence, onChange, marks, changed = () => false
         return <div key={index} data-changed={changed(index) || undefined} className="flex flex-wrap items-end gap-2 border-b border-hair py-2.5">
           <span className="flex h-8 w-10 shrink-0 items-center gap-1.5"><ChangedDot changed={changed(index)} /><span className="font-mono text-[11.5px] text-ink-3">{name}</span></span>
           <label className="min-w-0 flex-1 basis-[150px] font-sans text-[13px] font-semibold text-ink">File
-            <input id={`evidence-file-${index}`} aria-label={`${name} File`} placeholder={`${position(index)}-slug.png`} {...marks.marks([`${name} File`, name], `${INPUT} !mt-1 font-mono font-normal`)} value={row.file} onChange={event => edit(index, { file: event.target.value })} />
+            <input id={`evidence-file-${index}`} aria-label={`${name} File`} placeholder={`${position(index)}-slug.png`} {...marks.marks([`${name} File`, name], `${TICKET_INPUT} !mt-1 font-mono font-normal`)} value={row.file} onChange={event => edit(index, { file: event.target.value })} />
           </label>
           <label className="min-w-0 flex-[2] basis-[200px] font-sans text-[13px] font-semibold text-ink">State
-            <input id={`evidence-state-${index}`} aria-label={`${name} State`} placeholder="the page and state it shows" {...marks.marks([`${name} State`, name], `${INPUT} !mt-1 font-sans font-normal`)} value={row.state} onChange={event => edit(index, { state: event.target.value })} />
+            <input id={`evidence-state-${index}`} aria-label={`${name} State`} placeholder="the page and state it shows" {...marks.marks([`${name} State`, name], `${TICKET_INPUT} !mt-1 font-sans font-normal`)} value={row.state} onChange={event => edit(index, { state: event.target.value })} />
           </label>
           <span className="flex h-8 items-center"><RowButtons name={name} index={index} count={evidence.length} onMove={delta => move(index, delta)} onRemove={() => onChange(renumbered(evidence.filter((_, at) => at !== index)))} /></span>
           <div className="basis-full empty:hidden">
@@ -274,7 +275,7 @@ export function DependsField({ dependsOn, onChange, dependency, onDependency, ca
     onDependency("");
   };
   return <Field label="Depends on" optional messages={marks.messagesOf("Depends on")} changed={changed}>
-    <div className="mt-1.5 flex flex-wrap gap-2">
+    <div className="mt-1.5 flex flex-wrap gap-2 empty:hidden">
       {dependsOn.map(key => {
         const card = cards.find(card => card.key === key);
         return <span key={key} className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full bg-selected py-0.5 pr-0.5 pl-2.5 text-ink">
@@ -283,8 +284,8 @@ export function DependsField({ dependsOn, onChange, dependency, onDependency, ca
         </span>;
       })}
     </div>
-    <div className="mt-2 flex gap-2">
-      <input id="new-Depends on" {...marks.marks("Depends on", `${INPUT} !mt-0`)} value={dependency} onChange={event => onDependency(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); add(); } }} />
+    <div className="mt-1.5 flex gap-2">
+      <input id="new-Depends on" {...marks.marks("Depends on", `${TICKET_INPUT} !mt-0`)} value={dependency} onChange={event => onDependency(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); add(); } }} />
       <Btn className={`${SMALL} self-center`} onClick={add}>Add</Btn>
     </div>
   </Field>;
