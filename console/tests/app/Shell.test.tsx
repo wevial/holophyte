@@ -148,10 +148,9 @@ test("an unknown route links back to Overview", async () => {
   expect(screen.getByRole("link", { name: "Go to Overview" }).getAttribute("href")).toMatch(/#\/$/);
 });
 
-test("the sidebar sits on the side ground with no line of its own, and the page panel keeps the canvas behind a hairline", async () => {
+test("the sidebar draws no line of its own, and the page panel keeps the canvas behind a hairline", async () => {
   await mount("#/");
   const sidebar = screen.getByRole("complementary", { name: "Console" }).classList;
-  expect(sidebar.contains("bg-side")).toBe(true);
   expect(sidebar.contains("border-r")).toBe(false);
   const main = screen.getByRole("main").classList;
   for (const name of ["bg-canvas", "min-[720px]:rounded-tl-[10px]", "min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]"]) expect(main.contains(name)).toBe(true);
@@ -385,31 +384,78 @@ const aside = () => screen.getByRole("complementary", { name: "Console" });
 const homeLink = () => screen.getByRole("link", { name: "holophyte" });
 const childNames = (row: Element) => Array.from(row.children).map((child) => child.getAttribute("aria-label"));
 
-test("in a browser a 30px title bar spans the shell above the sidebar and the page panel, holding the fold toggle alone at its left", async () => {
+const expectBrand = (link: HTMLElement) => {
+  expect(link.querySelector("svg")).not.toBeNull();
+  expect(link.textContent).toBe("holophyte");
+  expect(link.getAttribute("href")).toMatch(/#\/$/);
+};
+
+test("in a browser a 30px title bar spans the shell above the sidebar and the page panel, holding the fold toggle then the holophyte home link", async () => {
   await mount("#/");
   const bar = titleBar();
   const shell = bar.parentElement!;
   expect(shell.firstElementChild).toBe(bar);
-  for (const name of ["h-[30px]", "bg-side", "pl-3"]) expect(bar.classList.contains(name)).toBe(true);
-  expect(childNames(bar)).toEqual(["Collapse sidebar"]);
-  expect(bar.textContent).toBe("");
+  for (const name of ["h-[30px]", "pl-3"]) expect(bar.classList.contains(name)).toBe(true);
+  expect(childNames(bar)).toEqual(["Collapse sidebar", "holophyte"]);
+  expectBrand(homeLink());
   const body = bar.nextElementSibling!;
   expect(Array.from(body.children)).toEqual([aside(), screen.getByRole("main")]);
-  expect(homeLink().textContent).toBe("holophyte");
-  expect(aside().contains(homeLink())).toBe(true);
+  expect(within(aside()).queryByRole("link", { name: "holophyte" })).toBeNull();
 });
 
-test("folded, the title bar still spans the shell with the toggle first in it, the rail narrows and the home mark stays in the sidebar", async () => {
+test("folded, the title bar keeps the toggle then the home link with its mark and name, and the rail narrows", async () => {
   await mount("#/");
   const expandedBar = titleBar().className;
   fireEvent.click(toggle());
   expect(titleBar().className).toBe(expandedBar);
   expect(titleBar().parentElement!.firstElementChild).toBe(titleBar());
-  expect(childNames(titleBar())).toEqual(["Expand sidebar"]);
+  expect(childNames(titleBar())).toEqual(["Expand sidebar", "holophyte"]);
+  expectBrand(homeLink());
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
   expect(titleBar().nextElementSibling!.lastElementChild).toBe(screen.getByRole("main"));
-  expect(aside().contains(homeLink())).toBe(true);
-  expect(homeLink().textContent).toBe("");
+  expect(within(aside()).queryByRole("link", { name: "holophyte" })).toBeNull();
+});
+
+/** The theme sheet as happy-dom can apply it: it drops every rule inside `@layer`, which only orders the cascade, so those blocks are lifted out
+ *  with other at-rules keeping their conditions; and it cannot parse the grain's quoted data URLs, so each grain token holds a plain URL named after it. */
+async function themeSheetForDom(): Promise<string> {
+  const source = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text())
+    .replace(/@import[^;]*;/, "")
+    .replace(/(--grain(?:-side)?):[^;]*;/g, (_, name: string) => `${name}: url("${name.slice(2)}.svg");`);
+  let out = "";
+  let at = 0;
+  for (const match of source.matchAll(/@layer [\w-]+\s*\{/g)) {
+    let depth = 1;
+    let end = match.index + match[0].length;
+    for (; depth > 0; end += 1) depth += source[end] === "{" ? 1 : source[end] === "}" ? -1 : 0;
+    out += source.slice(at, match.index) + source.slice(match.index + match[0].length, end - 1);
+    at = end;
+  }
+  return out + source.slice(at);
+}
+
+test("in every theme the shell surface draws the side colour with the sidebar grain, and neither the title bar nor the sidebar paints its own", async () => {
+  const style = document.createElement("style");
+  style.textContent = await themeSheetForDom();
+  document.head.appendChild(style);
+  try {
+    for (const theme of ["light", "dark"]) {
+      localStorage.setItem(THEME_KEY, theme);
+      await mount("#/");
+      const shell = titleBar().parentElement!;
+      expect(shell.classList.contains("bg-side")).toBe(true);
+      expect(getComputedStyle(shell).backgroundImage).toBe('url("grain-side.svg")');
+      for (const surface of [titleBar(), aside()]) {
+        expect(Array.from(surface.classList).filter((name) => name.startsWith("bg-"))).toEqual([]);
+        expect(getComputedStyle(surface).backgroundImage).toBe("");
+      }
+      expect(getComputedStyle(screen.getByRole("main")).backgroundImage).toBe('url("grain.svg")');
+      cleanup();
+      localStorage.clear();
+    }
+  } finally {
+    style.remove();
+  }
 });
 
 test("folded or expanded, the one sidebar toggle sits before the Pages navigation, and folding from it keeps focus on it", async () => {
@@ -445,23 +491,22 @@ test("in the macOS app the title bar alone drags the window, clears the traffic 
   for (const fold of [false, true]) {
     if (fold) fireEvent.click(toggle());
     for (const name of ["h-[30px]", "pl-[76px]", DRAG]) expect(titleBar().classList.contains(name)).toBe(true);
-    expect(childNames(titleBar())).toEqual([fold ? "Expand sidebar" : "Collapse sidebar"]);
+    expect(childNames(titleBar())).toEqual([fold ? "Expand sidebar" : "Collapse sidebar", "holophyte"]);
     expect(toggle().classList.contains(NO_DRAG)).toBe(true);
+    expect(homeLink().classList.contains(NO_DRAG)).toBe(true);
     const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
     expect(regions).toEqual([titleBar()]);
     expect(screen.getByRole("main").querySelector('[aria-hidden="true"].h-0')).toBeNull();
-    expect(homeLink().closest(".\\[-webkit-app-region\\:drag\\]")).toBeNull();
   }
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
 });
 
-test("in the macOS app the Settings menu keeps the drag title bar with no toggle and the home link in the sidebar", async () => {
+test("in the macOS app the Settings menu keeps the drag title bar with no toggle and the home link in it", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
   await mount("#/settings/general");
   expect(screen.queryByRole("button", { name: /^(Collapse|Expand) sidebar$/ })).toBeNull();
   expect(titleBar().classList.contains(DRAG)).toBe(true);
-  expect(titleBar().children.length).toBe(0);
-  expect(aside().contains(homeLink())).toBe(true);
+  expect(childNames(titleBar())).toEqual(["holophyte"]);
 });
 
 test("in a browser nothing names a window drag region", async () => {
