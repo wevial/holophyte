@@ -132,7 +132,7 @@ test.each([4, 2])("a completed save preserves the newer Workers value %s after B
   edit(); review(); await save();
   expect(source.writes).toHaveLength(1);
   await act(async () => { window.history.back(); await settle(); });
-  expect(window.location.hash).toBe("#/settings/general?project=other");
+  expect(screen.getByText("No host is available for other.")).toBeTruthy();
   await act(async () => { window.history.forward(); await settle(); });
   fireEvent.click(screen.getByRole("button", { name: value === 4 ? "One more worker" : "One fewer worker" }));
   expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe(String(value));
@@ -156,7 +156,7 @@ test.each([false, true])("a completed save does not restore discarded fields wit
   edit(); review(); await save();
   expect(source.writes).toHaveLength(1);
   await act(async () => { window.history.back(); await settle(); });
-  expect(window.location.hash).toBe("#/settings/general?project=other");
+  expect(screen.getByText("No host is available for other.")).toBeTruthy();
   await act(async () => { window.history.forward(); await settle(); });
   expect(screen.queryByRole("dialog") === null).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));

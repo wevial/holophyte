@@ -129,7 +129,7 @@ test("a completed raw save preserves a newer edit after Back and Forward project
   await act(settle);
   expect(source.writes).toHaveLength(1);
   await act(async () => { window.history.back(); await settle(); });
-  expect(window.location.hash).toBe("#/settings/toml?project=other");
+  expect(screen.getByText("No host is available for other.")).toBeTruthy();
   await act(async () => { window.history.forward(); await settle(); });
   expect(editor().readOnly).toBe(false);
   change("[loop]\nworkers = 4\n");
