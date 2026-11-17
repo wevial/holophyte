@@ -184,7 +184,7 @@ function FontRow() {
           <label key={item.value} className={`min-w-0 cursor-pointer rounded-[10px] px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--hair)] transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus ${font === item.value ? "bg-selected" : "bg-raised hover:bg-hover"}`}>
             <span className="flex items-center gap-2 font-sans text-[13px] font-semibold text-ink">
               <input type="radio" name="reading-font" aria-label={item.name} checked={font === item.value} onChange={() => setFont(item.value)}
-                className="grid size-4 shrink-0 cursor-pointer appearance-none place-items-center rounded-full shadow-[inset_0_0_0_1.5px_var(--hair-2)] before:size-2 before:rounded-full before:content-[''] checked:bg-accent checked:shadow-none checked:before:bg-raised" />
+                className="grid size-4 shrink-0 cursor-pointer appearance-none place-items-center rounded-full shadow-[inset_0_0_0_1.5px_var(--hair-2)] before:size-2 before:rounded-full before:content-[''] checked:bg-accent checked:shadow-none checked:before:bg-raised forced-colors:appearance-auto" />
               {item.name}
             </span>
             <p className="mt-2 text-[15px]" style={{ fontFamily: item.face }}>The sweep frees a silent lease.</p>

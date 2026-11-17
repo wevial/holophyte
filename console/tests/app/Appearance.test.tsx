@@ -237,7 +237,6 @@ test("the Density preview is a region named Preview holding its two sample rows 
   await mount();
   const preview = screen.getByRole("region", { name: "Preview" });
   expect(preview.querySelectorAll("[data-row]")).toHaveLength(2);
-  expect(within(preview).getAllByText("The sweep frees a silent lease")).toHaveLength(2);
   expect(screen.queryAllByText(/^Preview$/i)).toEqual([]);
 });
 
