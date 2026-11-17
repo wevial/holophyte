@@ -17,11 +17,11 @@ const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.jso
 const conflict = "config.toml changed on writer-host since this page read it. It has been read again: check the fields and save once more.";
 const refusal = "[holo2] /x/config.toml: [loop] workers must be an integer >= 1, got 0";
 
-async function mount(options: { status?: number; error?: string; configEdit?: boolean; modified?: number; actor?: ConfigBody["saved"]; pending?: Promise<void>; } = {}) {
+async function mount(options: { status?: number; error?: string; configEdit?: boolean; pending?: Promise<void>; } = {}) {
   let config: ConfigBody = {
     text: '[loop]\nworkers = 2\n', values: { loop: { workers: 2 } }, path: "/srv/demo/config.toml",
-    applies: "next loop start", revision: R1, saved: options.actor === undefined ? { at_ms: SAVED, actor: "maintainer" } : options.actor,
-    modified_ms: options.modified ?? SAVED + 1000,
+    applies: "next loop start", revision: R1, saved: { at_ms: SAVED, actor: "maintainer" },
+    modified_ms: SAVED + 1000,
   };
   const status: Status = { ...working, project: "/srv/demo", host: "writer-host", runs: [], config_edit: options.configEdit ?? true, actions: true };
   const poll = peersFetch(ORIGIN, { [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
