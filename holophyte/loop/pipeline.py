@@ -5,6 +5,7 @@ from time import monotonic
 import store
 import store.read
 from holophyte.agents.fix_session import steer_turn
+from holophyte.agents.review_workspace import cut_base
 from holophyte.babysit import maintainer_notes
 from holophyte.babysit.babysitter import _babysit
 from holophyte.board import projection
@@ -137,8 +138,8 @@ def _run_stages(run, task):
                     fresh, beat_s)
     mockup.fetch(project, conn, run_id, wt, body)
 
-    # Preserved commits were never approved, so the review base is main.
-    base_sha = sh(["git", "rev-parse", "main"], project.path)
+    # Preserved commits were never approved, so the base is where the branch left main.
+    base_sha = cut_base(wt)
     start_sha = sh(["git", "rev-parse", "HEAD"], cwd=wt)
 
     ticket = _ticket_text(project, conn, run_id, task, body)
