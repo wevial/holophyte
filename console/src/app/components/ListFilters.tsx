@@ -487,28 +487,30 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   const fromId = useId();
   const toId = useId();
   return (
-    <div ref={box} className="relative flex shrink-0 items-center gap-1.5">
+    <div ref={box} className="flex shrink-0 items-center gap-1.5">
       <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
         onPick={(picked) => write({ range: picked === fallback ? undefined : picked, from: undefined, to: undefined })} />
-      <button ref={button} type="button" aria-label="Custom range" title="Custom range" aria-pressed={custom} aria-haspopup="true" aria-expanded={open}
-        onClick={() => setOpen(!open)} className={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}>
-        <ToolCalendarIcon />
-        {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
-      </button>
-      {open && (
-        <div role="group" aria-label={`${label} range`}
-          className="absolute top-full left-0 z-20 mt-1.5 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
-            <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
-            <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}
-              onChange={(event) => write({ range: undefined, from: event.target.value || undefined })} />
-            <label htmlFor={toId} className="text-[12px] text-ink-3">To</label>
-            <input id={toId} type="date" value={to ?? ""} min={from} className={DATE_FIELD}
-              onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
+      <div className="relative shrink-0">
+        <button ref={button} type="button" aria-label="Custom range" title="Custom range" aria-pressed={custom} aria-haspopup="true" aria-expanded={open}
+          onClick={() => setOpen(!open)} className={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}>
+          <ToolCalendarIcon />
+          {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
+        </button>
+        {open && (
+          <div role="group" aria-label={`${label} range`}
+            className="absolute top-full left-0 z-20 mt-1.5 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
+              <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
+              <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}
+                onChange={(event) => write({ range: undefined, from: event.target.value || undefined })} />
+              <label htmlFor={toId} className="text-[12px] text-ink-3">To</label>
+              <input id={toId} type="date" value={to ?? ""} min={from} className={DATE_FIELD}
+                onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
+            </div>
+            <Btn onClick={close} className="self-end">Done</Btn>
           </div>
-          <Btn onClick={close} className="self-end">Done</Btn>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
