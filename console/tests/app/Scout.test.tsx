@@ -533,6 +533,7 @@ test("a done scout with items to file reads its title, meta line and lead, then 
 test("the Scout document tablist opens on Decide with its count in its own element, and ArrowRight selects Write-up and focuses it", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
   const list = screen.getByRole("tablist", { name: "Scout document" });
+  expect(within(list).getAllByRole("tab").map((tab) => tab.firstChild!.textContent).slice(0, 4)).toEqual(["Decide", "Write-up", "Findings", "Activity"]);
   const decide = within(list).getByRole("tab", { selected: true });
   expect([decide.firstChild!.textContent, decide.querySelector("[data-tab-count]")!.textContent]).toEqual(["Decide", "2"]);
   await act(async () => void fireEvent.keyDown(decide, { key: "ArrowRight" }));
@@ -681,6 +682,7 @@ test("the chat drawer docks from 1440px with the scout list shown or hidden, and
   expect(layout().classList.contains(DOCKED)).toBe(false);
   expect(within(topBar()).queryByRole("button", { name: "Chat" })).toBeNull();
   const tab = screen.getByRole("tab", { name: "Chat · 2" });
+  expect(tab.querySelector("[data-tab-count]")!.textContent).toBe("2");
   expect(tab.classList.contains("min-[1440px]:hidden")).toBe(true);
   expect(tabs().map(([label]) => label)).toEqual(["Decide 2", "Write-up", "Findings 4", "Activity", "Chat · 2"]);
   await click(tab);

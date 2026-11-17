@@ -176,7 +176,7 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
     }] : []),
     { id: "activity", label: "Activity", body: <Progress page={page} project={project} /> },
     ...(chat != null ? [{
-      id: "chat" as const, label: `Chat · ${chat.count}`, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
+      id: "chat" as const, label: "Chat ·", count: chat.count, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
   const opening = open > 0 ? tabs[0]! : tabs.find((tab) => tab.id !== "decide")!;

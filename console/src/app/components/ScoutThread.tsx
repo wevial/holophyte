@@ -76,7 +76,7 @@ function ScoutCompose({ base, detail, actions, sending, answering, onStopAnsweri
       <textarea ref={ref} aria-label={asking ? "Question for the scout" : "Note to the scout"}
         placeholder={asking ? "Ask about this report…" : "Tell the scout what to check next…"}
         value={text} disabled={disabled} title={blocked ?? undefined} onChange={(event) => setText(event.target.value)}
-        className="mt-2.5 block min-h-[88px] w-full resize-y rounded-[6px] border-0 bg-selected px-2.5 py-2 font-sans text-[14px] leading-[1.45] text-ink outline-none! placeholder:text-ink-3 focus:shadow-[0_0_0_2px_var(--wait)] disabled:cursor-not-allowed" />
+        className="mt-2.5 block min-h-[88px] w-full resize-y rounded-[6px] border-0 bg-selected px-2.5 py-2 font-sans text-[14px] leading-[1.45] text-ink outline-none! placeholder:text-ink-3 forced-colors:focus-visible:outline-2! forced-colors:focus-visible:outline-solid! forced-colors:focus-visible:outline-[Highlight]! focus:shadow-[0_0_0_2px_var(--wait)] disabled:cursor-not-allowed" />
       <div className="mt-2 flex justify-end [&>.btn]:shrink-0 [&>.btn]:whitespace-nowrap">
         <Btn variant="primary" busy={action.isPending} disabled={disabled || !text.trim()} title={blocked ?? undefined} onClick={() => { void send(); }}>
           Send
