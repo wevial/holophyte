@@ -66,7 +66,13 @@ test("Raw TOML opens the whole file with a numbered gutter and revision revert, 
   expect(screen.getByRole("button", { name: "Revert to revision 3f9a2c1" })).toBeTruthy();
   expect(saveButton().disabled).toBe(true);
   expect((screen.getByRole("button", { name: "Revert to revision 3f9a2c1" }) as HTMLButtonElement).disabled).toBe(true);
-  expect(saveButton().parentElement!.textContent).toContain("Saving shows the diff first.");
+  const hint = screen.getByText("Saving shows the diff first.");
+  const revert = screen.getByRole("button", { name: "Revert to revision 3f9a2c1" });
+  expect([revert.parentElement, saveButton().parentElement]).toEqual([hint.parentElement, hint.parentElement]);
+  for (let node: HTMLElement | null = hint; node; node = node.parentElement) {
+    expect(node.hidden || node.getAttribute("aria-hidden") === "true" || /(^|\s)(hidden|sr-only|invisible)(\s|$)/.test(node.className)).toBe(false);
+  }
+  expect(screen.getByRole("heading", { name: "Checker" }).compareDocumentPosition(revert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(source.writes).toHaveLength(0);
 });
 
@@ -227,6 +233,9 @@ test("a save refused at line 3 marks that gutter line and draws its band on the 
   const bands = [...overlay().querySelectorAll("[data-refused-band]")];
   expect(bands.map((band) => band.getAttribute("data-text-line"))).toEqual(["3"]);
   expect(bands[0]!.classList.contains("bg-bad-wash")).toBe(true);
+  const heights = (line: Element) => [...line.classList].filter((name) => /^(h|min-h|max-h|py|pt|pb|my|mt|mb|-my|-mt|-mb)-/.test(name));
+  expect(heights(bands[0]!)).toEqual(heights(marked[0]!));
+  expect(heights(bands[0]!)).toEqual(heights(overlay().querySelector('[data-text-line="2"]')!));
   const checker = screen.getByRole("heading", { name: "Checker" }).parentElement!.textContent!;
   expect(checker).toMatch(/^Checker1 error blocks saving.*line 3.*Invalid value \(at line 3, column 9\)$/);
 });
