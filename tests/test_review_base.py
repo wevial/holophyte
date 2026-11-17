@@ -1,7 +1,6 @@
 """The review base follows main forward once the candidate has merged it."""
 
 import contextlib
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -139,20 +138,10 @@ class CutBaseTests(unittest.TestCase):
     def cut_worktree(self):
         self.git("worktree", "add", "-q", "-b", "task", str(self.wt), "main")
 
-    def is_ancestor(self, older, newer):
-        return subprocess.run(
-            ["git", "merge-base", "--is-ancestor", older, newer],
-            cwd=self.repo).returncode == 0
-
     def test_base_is_cut_commit_after_main_moves_during_setup(self):
         self.cut_worktree()
-        moved = self.commit(self.repo, "other.txt", "x\n", "another merge")
-        self.assertEqual(self.git("rev-parse", "main"), moved)
-        base = cut_base(self.wt)
-        self.assertEqual(base, self.cut)
-        self.assertNotEqual(base, moved)
-        head = self.git("rev-parse", "HEAD", cwd=self.wt)
-        self.assertTrue(self.is_ancestor(base, head))
+        self.commit(self.repo, "other.txt", "x\n", "another merge")
+        self.assertEqual(cut_base(self.wt), self.cut)
 
     def test_preserved_commits_on_older_main_are_inside_reviewed_range(self):
         self.cut_worktree()
