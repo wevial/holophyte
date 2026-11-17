@@ -469,10 +469,13 @@ class IsolationReturnTests(IsolationCase):
         git(worktree, "merge", "-q", "--no-edit", "main")
         old = git(worktree, "rev-parse", "HEAD")
         before_merge = git(worktree, "rev-parse", "HEAD^1")
+        git(worktree, "config", "author.name", "Host Override")
+        git(worktree, "config", "author.email", "host@example.test")
 
-        returned, tree = self.rewrite_turn(
-            worktree, f"git reset -q --hard {before_merge}; echo work > work; "
-                      "git add work; git commit -qm work")
+        with patch.dict(os.environ, {"GIT_COMMITTER_NAME": "Inherited Committer"}):
+            returned, tree = self.rewrite_turn(
+                worktree, f"git reset -q --hard {before_merge}; echo work > work; "
+                          "git add work; git commit -qm work")
 
         tip = git(worktree, "rev-parse", "HEAD")
         self.assertEqual(git(worktree, "log", "-1", "--format=%P", tip), old)
@@ -480,8 +483,10 @@ class IsolationReturnTests(IsolationCase):
         message = git(worktree, "log", "-1", "--format=%B", tip)
         self.assertIn(returned, message)
         self.assertIn(before_merge, message)
-        self.assertEqual(git(worktree, "log", "-1", "--format=%an <%ae>", tip),
-                         "Configured Author <author@example.test>")
+        self.assertEqual(
+            git(worktree, "log", "-1", "--format=%an <%ae>|%cn <%ce>", tip),
+            "Configured Author <author@example.test>|"
+            "Configured Author <author@example.test>")
         self.assertEqual(git(worktree, "status", "--porcelain"), "")
         self.assertEqual((worktree / "work").read_text(), "work\n")
         self.assertFalse((worktree / "upstream").exists())
@@ -492,7 +497,8 @@ class IsolationReturnTests(IsolationCase):
         _, worktree = self.make_worktree()
 
         returned, _ = self.rewrite_turn(
-            worktree, "echo one > one; git add one; git commit -qm one")
+            worktree, "echo one > one; git add one; git commit -qm one; "
+                      "echo two > two; git add two; git commit -qm two")
 
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), returned)
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from holophyte.config.project import state_dir
 from holophyte.environment_git import protected, refuse_environment_history
 from holophyte.isolation.isolation_git import (
+    GitError,
     copy_merge_state,
     git,
     git_environment,
@@ -163,12 +164,26 @@ def carry_mounts(worktree, carry):
     return mounted
 
 
+def configured_identity(worktree):
+    return {key: git(worktree, "config", "--get", key)
+            for key in ("user.name", "user.email")}
+
+
 def commit_on_tip(worktree, old, returned):
     parents = git(worktree, "log", "-1", "--format=%P", returned) or "none"
     message = (f"Return rewritten container history on {old}\n\n"
                f"Returned commit: {returned}\nIts parents: {parents}\n")
-    return git(worktree, "commit-tree", f"{returned}^{{tree}}", "-p", old,
-               "-m", message)
+    identity = configured_identity(worktree)
+    argv = ["git", "-c", "core.hooksPath=/dev/null", "commit-tree",
+            f"{returned}^{{tree}}", "-p", old, "-m", message]
+    result = subprocess.run(
+        argv, cwd=worktree, capture_output=True, text=True,
+        env={**git_environment(),
+             **{f"GIT_{role}_{part.upper()}": identity[f"user.{part}"]
+                for role in ("AUTHOR", "COMMITTER") for part in ("name", "email")}})
+    if result.returncode:
+        raise GitError(result.returncode, argv, result.stdout, result.stderr)
+    return result.stdout.strip()
 
 
 def return_turn(worktree, clone, root, old, project, merge_state, carry):
@@ -232,8 +247,7 @@ def turn_clone(worktree, project=None, carry=()):
     state = state_dir(project.path if project is not None else common.parent)
     state.mkdir(parents=True, exist_ok=True)
     old = git(worktree, "rev-parse", "HEAD")
-    identity = {key: git(worktree, "config", "--get", key)
-                for key in ("user.name", "user.email")}
+    identity = configured_identity(worktree)
     env = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory",
            "GIT_CONFIG_VALUE_0": "/workspace"}
     with tempfile.TemporaryDirectory(prefix="implementer-", dir=state) as directory:
