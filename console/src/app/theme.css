@@ -1241,6 +1241,10 @@ body {
     font-size: 14px;
   }
 
+  .field[aria-invalid="true"] {
+    box-shadow: inset 0 0 0 1px var(--bad);
+  }
+
   .field::placeholder {
     color: var(--ink-3);
   }

@@ -52,7 +52,7 @@ export function checkMarks(check: CheckResult | null | undefined) {
     return {
       "aria-invalid": invalid || undefined,
       "aria-describedby": owners.length ? owners.map(messagesId).join(" ") : undefined,
-      className: invalid ? className.replace("border-rule", "border-bad") : className,
+      className,
     };
   };
   return { judged, messages, messagesOf, marks };
