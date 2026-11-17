@@ -491,6 +491,21 @@ class IsolationReturnTests(IsolationCase):
         self.assertEqual((worktree / "work").read_text(), "work\n")
         self.assertFalse((worktree / "upstream").exists())
 
+    def test_rewrite_that_git_cannot_commit_fails_as_infrastructure(self):
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
+
+        main, worktree = self.make_worktree()
+        old = git(worktree, "rev-parse", "HEAD")
+
+        with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null",
+                                     "GIT_CONFIG_NOSYSTEM": "1"}), \
+             self.assertRaisesRegex(InfraFailure, "could not be rewritten"):
+            self.rewrite_turn(
+                worktree, f"git -C {main} config --unset user.email; "
+                          "git commit -q --allow-empty --amend -m rewritten")
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
+
     def test_turn_on_top_of_the_old_tip_is_imported_unchanged(self):
         from holophyte.isolation.isolation_git import git
 

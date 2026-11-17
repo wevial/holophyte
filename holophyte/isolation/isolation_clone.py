@@ -213,7 +213,12 @@ def return_turn(worktree, clone, root, old, project, merge_state, carry):
             raise InfraFailure(
                 "container history is not a fast-forward; refusing fetch back"
             ) from error
-        sha = commit_on_tip(worktree, old, sha)
+        try:
+            sha = commit_on_tip(worktree, old, sha)
+        except GitError as failure:
+            raise InfraFailure(
+                "container history could not be rewritten onto the task branch"
+            ) from failure
     if project is not None:
         refuse_environment_history(
             project, sha, action="import container commits", commit=sha,
