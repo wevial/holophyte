@@ -4,14 +4,24 @@ import type { ScoutDetail } from "../../lib/contract.gen";
 import { useAction } from "../actions";
 import { composeBlock, threadRows, type CardRow, type LineTone } from "../scoutThread";
 import { Btn } from "./Btn";
-import { SECTION_LABEL } from "./Criteria";
 import { ScoutCard } from "./ScoutCard";
+import { Segmented } from "./Segmented";
 import { ThreadMessage } from "./ThreadMessage";
 
 const LINE_TONES: Record<LineTone, string> = { quiet: "text-ink-3", bad: "text-bad", wait: "text-wait" };
 
 type Mode = "ask" | "steer";
-const MODES: { mode: Mode; label: string }[] = [{ mode: "ask", label: "Ask" }, { mode: "steer", label: "Steer" }];
+const MODES: { value: Mode; label: string }[] = [{ value: "ask", label: "Ask" }, { value: "steer", label: "Steer" }];
+
+export const SCOUT_HEADING = "m-0 flex h-[30px] items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold text-ink";
+
+export function CloseGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+    </svg>
+  );
+}
 
 const MESSAGE_ROUTE = "/actions/scout-message";
 
@@ -52,34 +62,27 @@ function ScoutCompose({ base, detail, actions, sending, answering, onStopAnsweri
   };
   return (
     <div className="mt-4">
-      <div role="group" aria-label="Message kind" className="inline-flex border border-ink-3">
-        {MODES.map((each) => (
-          <button key={each.mode} type="button" aria-pressed={mode === each.mode} disabled={disabled} title={blocked ?? undefined}
-            className="min-h-9 px-3.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.1em] text-ink-2 aria-pressed:bg-ink aria-pressed:text-paper disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={() => { setMode(each.mode); action.reset(); }}>
-            {each.label}
-          </button>
-        ))}
-      </div>
+      <Segmented label="Message kind" options={MODES} value={mode} disabled={disabled} title={blocked ?? undefined}
+        onPick={(picked) => { setMode(picked); action.reset(); }} />
       {answering && (
-        <div data-answering className="mt-2.5 flex items-start justify-between gap-2 font-mono text-[12px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
-          <span>Answering: {answering.question}</span>
+        <div data-answering className="mt-2.5 flex items-start justify-between gap-2 font-sans text-[13px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
+          <span className="pt-1">Answering: {answering.question}</span>
           <button type="button" aria-label="Stop answering" title="Stop answering" onClick={onStopAnswering}
-            className="shrink-0 px-1 text-ink-3 hover:text-ink">
-            ✕
+            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
+            <CloseGlyph />
           </button>
         </div>
       )}
       <textarea ref={ref} aria-label={asking ? "Question for the scout" : "Note to the scout"}
         placeholder={asking ? "Ask about this report…" : "Tell the scout what to check next…"}
         value={text} disabled={disabled} title={blocked ?? undefined} onChange={(event) => setText(event.target.value)}
-        className="mt-2.5 block min-h-[88px] w-full resize-y border border-ink-3 bg-paper-2 p-2.5 font-read text-[14px] leading-[1.45] text-ink disabled:cursor-not-allowed" />
+        className="mt-2.5 block min-h-[88px] w-full resize-y rounded-[6px] border-0 bg-selected px-2.5 py-2 font-sans text-[14px] leading-[1.45] text-ink outline-none placeholder:text-ink-3 focus:shadow-[0_0_0_2px_var(--wait)] disabled:cursor-not-allowed" />
       <div className="mt-2 flex justify-end [&>.btn]:shrink-0 [&>.btn]:whitespace-nowrap">
         <Btn variant="primary" busy={action.isPending} disabled={disabled || !text.trim()} title={blocked ?? undefined} onClick={() => { void send(); }}>
           Send
         </Btn>
       </div>
-      {action.data?.ok === false && <p role="alert" className="mt-2 break-words font-mono text-[12px] leading-normal text-bad">{action.data.detail}</p>}
+      {action.data?.ok === false && <p role="alert" className="mt-2 break-words font-sans text-[13px] leading-normal text-bad">{action.data.detail}</p>}
     </div>
   );
 }
@@ -105,7 +108,7 @@ export function ScoutThread({ base, detail, actions, ref }: { base: string; deta
   };
   return (
     <section id="thread" aria-labelledby={headingId} className="@container/agent mt-10 min-w-0">
-      <h2 id={headingId} className={`m-0 ${SECTION_LABEL}`}>Thread</h2>
+      <h2 id={headingId} className={SCOUT_HEADING}>Thread</h2>
       {rows.length > 0 && (
         <ol aria-label="Thread" className="m-0 mt-2 flex list-none flex-col gap-3 p-0">
           {rows.map((row) => row.kind === "message"

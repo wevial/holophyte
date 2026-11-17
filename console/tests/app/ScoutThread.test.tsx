@@ -202,12 +202,14 @@ test("Send posts the trimmed ask, says so, clears the box and reads the scout ag
   expect(reads(daemon.seen)).toBeGreaterThan(before);
 });
 
-test("Steer renames the box and posts a steer", async () => {
+test("Ask and Steer form the Message kind group on Ask, and Steer presses, renames the box and posts a steer", async () => {
   const daemon = scoutFetch({ scout: done, post: () => Response.json({ ok: true, queued: false, detail: "steered scout 31" }) });
   await mount(daemon.fetch);
-  const steer = within(region()).getByRole("button", { name: "Steer" });
+  const kinds = within(within(region()).getByRole("group", { name: "Message kind" })).getAllByRole("button");
+  expect(kinds.map((kind) => [kind.textContent, kind.getAttribute("aria-pressed")])).toEqual([["Ask", "true"], ["Steer", "false"]]);
+  const steer = kinds[1]!;
   await click(steer);
-  expect(steer.getAttribute("aria-pressed")).toBe("true");
+  expect(kinds.map((kind) => kind.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
   const box = within(region()).getByRole("textbox", { name: "Note to the scout" });
   await type(box, "Go check the digest email as well");
   await click(send());
