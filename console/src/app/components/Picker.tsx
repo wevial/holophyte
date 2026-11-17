@@ -12,6 +12,7 @@ export interface PickerOption {
   value: string;
   label: string;
   disabled?: boolean;
+  note?: string;
 }
 
 type PickerOptions = {
@@ -23,9 +24,10 @@ type PickerOptions = {
 
 const LISTBOX_POPOVER = { ...popoverPreset, role: undefined };
 
-/** A label moves focus to its control on the click that ends a press, in
- *  the same task as the press's pointerup, so focus goes back to `button`
- *  in the task after it. Returns a cancel for a reopen that comes first. */
+/** A label wrapping its control moves focus to it on the click that ends a
+ *  press, in the same task as the press's pointerup, so focus goes back to
+ *  `button` in the task after it. Returns a cancel for a reopen that comes
+ *  first. A label naming another control by `for` keeps that control's focus. */
 function refocusAfterPress(button: HTMLElement | undefined) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const settle = () => {
@@ -67,7 +69,8 @@ const picker = definePrimitive({
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
-          if (event?.target instanceof Element && event.target.closest("label")) cancelRefocus = refocusAfterPress(core.triggerElement());
+          const label = event?.target instanceof Element ? event.target.closest("label") : null;
+          if (label && !label.htmlFor) cancelRefocus = refocusAfterPress(core.triggerElement());
         },
       }),
     });
@@ -185,7 +188,7 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
             aria-invalid={invalid}
             aria-describedby={describedBy}
             aria-haspopup="listbox"
-            aria-label={`${label}: ${current?.label ?? ""}`}
+            aria-label={`${label}: ${current?.label ?? ""}${current?.note ? ` ${current.note}` : ""}`}
             onKeyDown={(event) => {
               if (event.key !== "ArrowDown") return;
               event.preventDefault();
@@ -194,6 +197,7 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
             className="inline-flex h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
           >
             <span className="min-w-0 truncate">{current?.label}</span>
+            {current?.note && <span className="shrink-0 text-ink-3">{" "}{current.note}</span>}
             <span className="flex shrink-0 text-ink-3">
               <DropIcon />
             </span>
@@ -221,7 +225,9 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
                   aria-disabled={option.disabled || undefined}
                   className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 text-[13px] leading-none text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
                 >
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span className="min-w-0 truncate">{option.label}</span>
+                  {option.note && <span className="shrink-0 text-ink-3">{" "}{option.note}</span>}
+                  <span className="flex-1" />
                   <span className={`flex text-accent ${option.value === current?.value ? "" : "invisible"}`}>
                     <CheckIcon />
                   </span>

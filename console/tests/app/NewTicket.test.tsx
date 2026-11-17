@@ -361,7 +361,21 @@ test("with UI change open, the Checker's Summary message closes it and leaves fo
   });
   await act(settle);
   expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
-  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Summary" }));
+  expect(document.activeElement === screen.getByRole("textbox", { name: "Summary" })).toBe(true);
+});
+
+test("with UI change open, pressing the Blast radius label closes it and opens Blast radius with focus in its list", async () => {
+  await mount("#/tickets/demo/new");
+  await open("UI change");
+  const label = screen.getByText("Blast radius", { selector: "label" });
+  await act(async () => {
+    fireEvent.pointerDown(label);
+    fireEvent.pointerUp(label);
+    fireEvent.click(label);
+  });
+  await flush();
+  expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
+  expect(screen.getByRole("listbox", { name: "Blast radius" }).contains(document.activeElement)).toBe(true);
 });
 
 test("Blast radius offers Diff decides, Medium and High: Diff decides files no blast_radius and High files it after ui_change", async () => {
