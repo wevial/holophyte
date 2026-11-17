@@ -115,9 +115,7 @@ def _criterion_lines(reply, numbers):
 
 
 def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
-            paths, recorded):
-    if recorded is not None:
-        return recorded
+            paths):
     lines = _criterion_lines(reply, {finding["line"] for finding in refused})
     with heartbeat_while(conn, run_id, beat_s):
         recite = agent(project, "adjudicate",
@@ -154,8 +152,9 @@ def _recited(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
     if not paths:
         return None, "", refused
     try:
-        recite = _recite(project, conn, run_id, wt, beat_s, base_sha, sha,
-                         reply, refused, paths, recorded)
+        recite = recorded if recorded is not None else _recite(
+            project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
+            paths)
     except InfraFailure:
         if record:
             record(structured_findings=refused)
