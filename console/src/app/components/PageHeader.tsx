@@ -1,12 +1,7 @@
 import type { ReactNode } from "react";
 
-export interface PageCount {
-  text: string;
-  need?: string;
-}
-
-/** A page's title row: the title, its quiet count, then `tools` at the right, with `tabs` under it. */
-export function PageHeader({ title, count, tools, tabs }: { title: string; count?: PageCount; tools?: ReactNode; tabs?: ReactNode }) {
+/** A page's title row: the title, its quiet count, then `tools` at the right. */
+export function PageHeader({ title, count, tools }: { title: string; count?: { text: string; need?: string }; tools?: ReactNode }) {
   return (
     <header className="flex flex-col gap-3.5">
       <div className="flex min-h-[30px] flex-wrap items-center gap-x-3 gap-y-2">
@@ -24,7 +19,6 @@ export function PageHeader({ title, count, tools, tabs }: { title: string; count
         )}
         {tools != null && <div data-tools className="relative ml-auto flex min-w-0 items-center gap-1">{tools}</div>}
       </div>
-      {tabs}
     </header>
   );
 }
