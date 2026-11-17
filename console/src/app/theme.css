@@ -1117,7 +1117,6 @@ body {
 @theme static {
   --ease-console: cubic-bezier(.2, .7, .2, 1);
   --motion-colour: 150ms;
-  --motion-wipe: 200ms;
   --motion-march: 0.9s;
 }
 
@@ -1162,81 +1161,59 @@ body {
 }
 
 .btn {
+  --btn-face: transparent; --btn-edge: transparent; --btn-ink: var(--ink); --btn-hover: var(--hover);
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 44px;
-  padding: 0 18px;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
   font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
   color: var(--btn-ink);
-  background: transparent;
+  background-color: var(--btn-face);
   box-shadow: inset 0 0 0 1px var(--btn-edge);
-  border-radius: var(--radius-button);
-  isolation: isolate;
-  transition: color var(--motion-colour) var(--ease-console);
+  transition: background-color var(--motion-colour) var(--ease-console), color var(--motion-colour) var(--ease-console);
 }
 
-.btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(var(--btn-wipe), var(--btn-wipe)) no-repeat left / 0% 100%, var(--btn-face);
-  transition: background-size var(--motion-wipe) var(--ease-console);
-}
-
-.btn:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible) {
-  color: var(--btn-wipe-ink);
-}
-
-.btn:not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible)::before {
-  background-size: 100% 100%, auto;
-}
-
-.btn:is([data-variant="primary"], [data-variant="danger-fill"]):not(:disabled):not([aria-busy="true"]):is(:hover, :focus-visible) {
-  filter: brightness(1.08);
+.btn:not(:disabled):not([aria-busy="true"]):hover {
+  background-color: var(--btn-hover);
 }
 
 .btn[data-variant="primary"] {
-  --btn-edge: var(--act); --btn-face: var(--act); --btn-ink: var(--act-ink);
-  --btn-wipe: var(--act); --btn-wipe-ink: var(--act-ink);
-}
-
-.btn[data-variant="need"] {
-  --btn-edge: var(--need); --btn-face: transparent; --btn-ink: var(--need);
-  --btn-wipe: var(--need); --btn-wipe-ink: var(--act-ink);
+  --btn-face: var(--ink); --btn-ink: var(--canvas); --btn-hover: color-mix(in oklab, var(--ink) 86%, var(--canvas));
 }
 
 .btn[data-variant="quiet"] {
-  --btn-edge: var(--ink-3); --btn-face: transparent; --btn-ink: var(--ink);
-  --btn-wipe: var(--ink-3); --btn-wipe-ink: var(--paper);
+  --btn-face: var(--raised); --btn-edge: var(--hair-2);
 }
 
 .btn[data-variant="quiet"][aria-pressed="true"] {
-  --btn-edge: var(--ink); --btn-face: var(--ink); --btn-ink: var(--paper);
-  --btn-wipe: var(--ink); --btn-wipe-ink: var(--paper);
+  --btn-face: var(--selected); --btn-hover: var(--selected);
+}
+
+.btn[data-variant="need"] {
+  --btn-face: var(--raised); --btn-edge: var(--hair-2); --btn-ink: var(--need); --btn-hover: var(--need-wash);
 }
 
 .btn[data-variant="danger"] {
-  --btn-edge: var(--bad); --btn-face: transparent; --btn-ink: var(--bad);
-  --btn-wipe: var(--bad); --btn-wipe-ink: var(--bad-ink);
+  --btn-ink: var(--bad); --btn-hover: var(--bad-wash);
 }
 
 .btn[data-variant="danger-fill"] {
-  --btn-edge: var(--bad); --btn-face: var(--bad); --btn-ink: var(--bad-ink);
-  --btn-wipe: var(--bad); --btn-wipe-ink: var(--bad-ink);
+  --btn-face: var(--bad); --btn-ink: var(--bad-ink); --btn-hover: color-mix(in oklab, var(--bad) 86%, var(--bad-ink));
 }
 
 .btn[aria-busy="true"] {
-  color: var(--btn-edge);
   box-shadow: none;
   background-image:
-    linear-gradient(90deg, var(--btn-edge) 50%, transparent 0), linear-gradient(90deg, var(--btn-edge) 50%, transparent 0),
-    linear-gradient(0deg, var(--btn-edge) 50%, transparent 0), linear-gradient(0deg, var(--btn-edge) 50%, transparent 0);
+    linear-gradient(90deg, currentColor 50%, transparent 0), linear-gradient(90deg, currentColor 50%, transparent 0),
+    linear-gradient(0deg, currentColor 50%, transparent 0), linear-gradient(0deg, currentColor 50%, transparent 0);
   background-position: 0 0, 0 100%, 0 0, 100% 0;
   background-size: 2px 1px, 2px 1px, 1px 2px, 1px 2px;
   background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
@@ -1249,12 +1226,98 @@ body {
   cursor: not-allowed;
 }
 
-.btn[data-variant="primary"]:disabled {
-  color: var(--btn-edge);
+.field:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus);
 }
 
-.btn:is([aria-busy="true"], :disabled)::before {
-  display: none;
+@layer components {
+  .field {
+    border: 0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: var(--selected);
+    color: var(--ink);
+    font-size: 14px;
+  }
+
+  .field::placeholder {
+    color: var(--ink-3);
+  }
+
+  :is(input, select).field {
+    height: 32px;
+    padding-block: 0;
+  }
+
+  .switch {
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 34px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: var(--hair-2);
+    transition: background-color var(--motion-colour) var(--ease-console);
+  }
+
+  .switch > * {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform var(--motion-colour) var(--ease-console);
+  }
+
+  .switch:is([aria-checked="true"], [data-checked]) {
+    background: var(--accent);
+  }
+
+  .switch:is([aria-checked="true"], [data-checked]) > * {
+    transform: translateX(14px);
+  }
+
+  .switch:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@layer base {
+  input[type="checkbox"] {
+    appearance: none;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1.5px var(--hair-2);
+    vertical-align: middle;
+  }
+
+  /* The mark is cut out of the fill, and the mask must not clip the focus outline. */
+  input[type="checkbox"]:is(:checked, :indeterminate) {
+    background: var(--accent);
+    box-shadow: none;
+    mask: var(--box-mark) center / 16px 16px no-repeat no-clip exclude, linear-gradient(#000 0 0) no-clip;
+  }
+
+  input[type="checkbox"]:checked {
+    --box-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.6 8.3l2.3 2.3 4.6-4.9'/%3E%3C/svg%3E");
+  }
+
+  input[type="checkbox"]:indeterminate {
+    --box-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M4.8 8h6.4'/%3E%3C/svg%3E");
+  }
+
+  input[type="checkbox"]:disabled {
+    opacity: 0.5;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
