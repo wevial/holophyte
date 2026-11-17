@@ -6,7 +6,7 @@ import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import type { Attention, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
-import { fakeDeps, peersFetch, settle } from "../harness";
+import { fakeDeps, peersFetch, settle, type StubDaemon } from "../harness";
 import { blocked, needsDaemons } from "./needsFleet";
 
 const ORIGIN = "http://writer-host:7710";
@@ -56,13 +56,15 @@ const coloured = peersFetch(ORIGIN, {
 
 async function mount(hash: string, fetchImpl: Fetch = daemons) {
   window.location.hash = hash;
+  const queries = consoleQueryClient();
   render(
-    <QueryClientProvider client={consoleQueryClient()}>
+    <QueryClientProvider client={queries}>
       <ConsoleApp base={ORIGIN} pollDeps={fakeDeps(fetchImpl).deps} />
     </QueryClientProvider>,
   );
   await act(settle);
   await act(settle);
+  return queries;
 }
 
 const location = () => {
@@ -74,7 +76,10 @@ const dots = () => Array.from(switcher().querySelectorAll<HTMLElement>("[data-do
 const find = () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
 const activeName = () => document.getElementById(find().getAttribute("aria-activedescendant")!)?.textContent;
 const badge = () => screen.getByRole("navigation", { name: "Pages" }).querySelector("[data-badge]");
-const optionNames = () => within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option").map((option) => option.textContent);
+const options = () => within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option");
+const optionNames = () => options().map((option) => option.textContent);
+const optionDots = () => options().map((option) => Array.from(option.querySelectorAll<HTMLElement>("[data-dot]"), (dot) => dot.style.background));
+const checked = () => options().filter((option) => option.querySelector("[data-check]")).map((option) => option.textContent);
 
 async function key(target: HTMLElement, name: string) {
   fireEvent.keyDown(target, { key: name });
@@ -137,34 +142,43 @@ test("arrows wrap, Esc closes without moving, and Enter with no match does nothi
   expect(location()).toEqual({ path: "/runs", project: null });
 });
 
-test("a held scope shows its tag and need count, and picking All projects drops the scope but keeps the route", async () => {
+test("a held scope with items waiting shows its tag but no count on the button, while the button's name still says how many wait", async () => {
   await mount("#/tickets?project=demo");
   const button = switcher();
   expect(button.getAttribute("aria-label")).toBe("Project: demo, held, 2 waiting on you. Switch project");
-  expect(button.textContent).toBe("demoheld2");
+  expect(button.textContent).toBe("demoheld");
+  expect(button.querySelector("[data-need]")).toBeNull();
 
-  fireEvent.click(button);
+  fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+  try {
+    expect(switcher().textContent).toBe("");
+    expect(switcher().getAttribute("aria-label")).toBe("Project: demo, held, 2 waiting on you. Switch project");
+  } finally {
+    localStorage.clear();
+  }
+});
+
+test("the current scope's option alone carries the check, and picking All projects drops the scope but keeps the route", async () => {
+  await mount("#/tickets?project=demo");
+  fireEvent.click(switcher());
   await act(settle);
-  const options = screen.getAllByRole("option");
-  expect(options.filter((option) => option.getAttribute("aria-selected") === "true").map((o) => o.textContent)).toEqual([
-    "demoheld21 open",
-  ]);
-  expect(optionNames()).toEqual(["All projects23 open", "demoheld21 open", "writer2 open"]);
-  fireEvent.click(options[0]!);
+  expect(options().filter((option) => option.getAttribute("aria-selected") === "true").map((o) => o.textContent)).toEqual(["demoheld"]);
+  expect(checked()).toEqual(["demoheld"]);
+  fireEvent.click(options()[0]!);
   await act(settle);
   expect(location()).toEqual({ path: "/tickets", project: null });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
+  fireEvent.click(switcher());
+  await act(settle);
+  expect(checked()).toEqual(["All projects"]);
 });
 
-test("each row counts its project's Waiting on you entries, so a pull request counts nowhere", async () => {
+test("the button's name counts the scope's Waiting on you entries whether or not a pull request is ready", async () => {
   for (const writerReady of [true, false]) {
     await mount("#/runs", needsDaemons(writerReady));
     expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
     expect(badge()!.textContent).toBe("2");
-    fireEvent.click(switcher());
-    await act(settle);
-    expect(optionNames()).toEqual(["All projects20 open", "demo20 open", "writer0 open"]);
     cleanup();
   }
 });
@@ -236,7 +250,7 @@ test("typing filters the options, ArrowDown moves through the matches and Enter 
   fireEvent.click(switcher());
   await act(settle);
   await type("lo");
-  expect(optionNames()).toEqual(["halo1 open", "Lotuspod1 open"]);
+  expect(optionNames()).toEqual(["halo", "Lotuspod"]);
   expect(activeName()).toContain("halo");
 
   await key(find(), "ArrowDown");
@@ -270,7 +284,7 @@ test("the filter matches accents exactly, so typing cafe and Enter picks cafe ov
   fireEvent.click(switcher());
   await act(settle);
   await type("cafe");
-  expect(optionNames()).toEqual(["cafe1 open"]);
+  expect(optionNames()).toEqual(["cafe"]);
   await key(find(), "Enter");
   expect(location()).toEqual({ path: "/runs", project: "cafe" });
 });
@@ -298,4 +312,39 @@ test("folded to the rail, the button keeps the scope's dots and its name", async
   } finally {
     localStorage.clear();
   }
+});
+
+test("each option shows its project's colour dot and name with no icon or count, and All projects one dot per project", async () => {
+  await mount("#/runs", coloured);
+  fireEvent.click(switcher());
+  await act(settle);
+  expect(optionNames()).toEqual(["All projects", "demo", "writer"]);
+  expect(optionDots()).toEqual([["var(--p-violet)", "var(--p-teal)"], ["var(--p-violet)"], ["var(--p-teal)"]]);
+  expect(options().map((option) => option.querySelectorAll("svg:not([data-check])").length)).toEqual([0, 0, 0]);
+});
+
+test("a held project shows held and a project whose host stopped answering draws its dot hollow and is named not answering, neither with a count", async () => {
+  const hosts: Record<string, StubDaemon> = {
+    [ORIGIN]: { status: { ...statusOf("/srv/dev/demo", 1, "held"), colour: "violet" }, attention: attentionOf([one], "/srv/dev/demo") },
+    [PEER]: { status: { ...statusOf("/srv/dev/writer", 2, "enabled"), colour: "teal" }, attention: attentionOf([], "/srv/dev/writer") },
+  };
+  const queries = await mount("#/runs", peersFetch(ORIGIN, hosts));
+  hosts[PEER] = { down: new Error("connection refused") };
+  await act(async () => {
+    await queries.refetchQueries();
+    await settle();
+  });
+  await act(settle);
+
+  fireEvent.click(switcher());
+  await act(settle);
+  expect(optionNames()).toEqual(["All projects", "demoheld", "writer not answering"]);
+  expect(within(screen.getByRole("listbox", { name: "Projects" })).getByRole("option", { name: "writer not answering" })).toBe(options()[2]!);
+  const drawn = (option: HTMLElement) => Array.from(option.querySelectorAll<HTMLElement>("[data-dot]"), (dot) => [dot.style.background, dot.style.boxShadow]);
+  const [hollow] = drawn(options()[2]!);
+  expect(hollow![0]).toBe("transparent");
+  expect(hollow![1]).toContain("inset 0 0 0 1.5px var(--bad)");
+  const [filled] = drawn(options()[1]!);
+  expect(filled![0]).toBe("var(--p-violet)");
+  expect(filled![1]).not.toContain("var(--bad)");
 });
