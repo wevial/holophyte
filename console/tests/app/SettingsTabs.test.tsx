@@ -39,7 +39,7 @@ async function mount(tab: string, values: ConfigValues, options: { status?: Part
 }
 
 const row = (name: string) => within(screen.getByRole("group", { name }));
-const reviewButton = () => screen.getByRole("button", { name: "Review and save" }) as HTMLButtonElement;
+const reviewButton = () => within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }) as HTMLButtonElement;
 async function save() {
   fireEvent.click(reviewButton());
   fireEvent.click(within(screen.getByRole("dialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
@@ -193,7 +193,7 @@ test("picking the other project from the switcher keeps General for that project
   await act(settle);
   expect(window.location.hash).toBe("#/settings/general?project=other");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
-  expect(screen.getByText(/^other · config.toml on writer-host/)).toBeTruthy();
+  expect(screen.getByRole("group", { name: "Workers" })).toBeTruthy();
   expect(switcher().getAttribute("aria-label")).toBe("Project: other. Switch project");
   expect(within(sections()).getByRole("link", { name: "General" }).getAttribute("aria-current")).toBe("page");
 });

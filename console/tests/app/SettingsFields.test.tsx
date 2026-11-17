@@ -47,6 +47,8 @@ async function mount(values: ConfigValues | null = VALUES, hash = "#/settings/ge
 const row = (name: string) => screen.getByRole("group", { name });
 const workers = () => within(row("Workers")).getByRole("status").textContent;
 const unsaved = () => screen.queryByRole("region", { name: "Unsaved changes" });
+const count = () => unsaved()?.querySelector("p")?.textContent;
+const changeLine = (label: string) => within(row(label)).queryByText(/ → .* · applies at the /)?.textContent;
 const tab = (name: RegExp) => within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name });
 async function pickTab(name: RegExp) {
   fireEvent.click(tab(name));
@@ -93,19 +95,18 @@ test("unparsable configuration shows an explanation without editable defaults", 
   expect(unsaved()).toBeNull();
 });
 
-test("changing and restoring workers adds and removes its old value, timing, tab count and unsaved change", async () => {
+test("changing and restoring workers adds and removes its from → to line, tab count and unsaved change", async () => {
   await mount();
   fireEvent.click(screen.getByRole("button", { name: "One more worker" }));
   expect(workers()).toBe("3");
-  expect(within(row("Workers")).getByText("was 2")).toBeTruthy();
-  expect(within(row("Workers")).getByText("applies at the next loop start")).toBeTruthy();
+  expect(changeLine("Workers")).toBe("2 → 3 · applies at the next loop start");
   expect(tab(/^General/).textContent).toBe("General1");
-  expect(unsaved()?.textContent).toContain("1 unsaved change · workers 2 → 3");
+  expect(count()).toBe("1 change");
   fireEvent.click(screen.getByRole("button", { name: "One fewer worker" }));
   expect(workers()).toBe("2");
   expect(unsaved()).toBeNull();
   expect(tab(/^General/).textContent).toBe("General");
-  expect(within(row("Workers")).queryByText("was 2")).toBeNull();
+  expect(changeLine("Workers")).toBeUndefined();
 });
 
 test("ordered edits survive tab navigation and Discard restores the file values", async () => {
@@ -114,7 +115,7 @@ test("ordered edits survive tab navigation and Discard restores the file values"
   fireEvent.click(screen.getByRole("button", { name: "Direct to main" }));
   await pickTab(/^Review$/);
   expect(window.location.hash).toBe("#/settings/review?project=demo");
-  expect(unsaved()?.textContent).toContain("2 unsaved changes · workers 2 → 3 · mode pr → local");
+  expect(count()).toBe("2 changes");
   expect(tab(/^General/).textContent).toBe("General2");
   await pickTab(/^General/);
   expect(workers()).toBe("3");
@@ -145,24 +146,25 @@ test("each project keeps its own edits and discarding one leaves the other's dra
   expect(unsaved()).toBeNull();
   expect(tab(/^General/).textContent).toBe("General");
   fireEvent.click(screen.getByRole("button", { name: "One more worker" }));
-  expect(unsaved()?.textContent).toContain("1 unsaved change · workers 4 → 5");
+  expect(changeLine("Workers")).toBe("4 → 5 · applies at the next loop start");
   await pickProject("demo");
   expect(workers()).toBe("3");
-  expect(unsaved()?.textContent).toContain("1 unsaved change · workers 2 → 3");
+  expect(changeLine("Workers")).toBe("2 → 3 · applies at the next loop start");
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   await pickProject("other");
   expect(workers()).toBe("5");
-  expect(unsaved()?.textContent).toContain("1 unsaved change · workers 4 → 5");
+  expect(count()).toBe("1 change");
+  expect(changeLine("Workers")).toBe("4 → 5 · applies at the next loop start");
 });
 
 
 test("edits made on the Settings alias survive navigation to an explicit tab", async () => {
   await mount(VALUES, "#/settings");
   fireEvent.click(screen.getByRole("button", { name: "One more worker" }));
-  expect(unsaved()?.textContent).toContain("1 unsaved change · workers 2 → 3");
+  expect(count()).toBe("1 change");
   await pickTab(/^Review$/);
   expect(window.location.hash).toBe("#/settings/review");
-  expect(unsaved()?.textContent).toContain("1 unsaved change · workers 2 → 3");
+  expect(count()).toBe("1 change");
   await pickTab(/^General/);
   expect(workers()).toBe("3");
 });
@@ -179,28 +181,60 @@ test("workers outside the positive integer shape are read-only with Raw TOML nav
   }
 });
 
-test("General's Colour row offers Automatic and four swatched colours, and picking Teal is an edit that saves console.colour", async () => {
+test("General's Colour row offers Automatic and four colours as round swatch buttons named by label, and picking Teal is an edit that saves console.colour", async () => {
   const writes = await mount();
   const colour = row("Colour");
   const buttons = within(colour).getAllByRole("button");
-  expect(buttons.map((button) => button.textContent)).toEqual(["Automatic", "Violet", "Teal", "Green", "Blue"]);
-  expect(buttons.filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent)).toEqual(["Automatic"]);
-  expect(buttons.map((button) => button.querySelector("[data-swatch]")?.getAttribute("style") ?? null)).toEqual([
-    null,
-    expect.stringContaining("var(--p-violet)"),
-    expect.stringContaining("var(--p-teal)"),
-    expect.stringContaining("var(--p-green)"),
-    expect.stringContaining("var(--p-blue)"),
+  expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["Automatic", "Violet", "Teal", "Green", "Blue"]);
+  expect(buttons.filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("aria-label"))).toEqual(["Automatic"]);
+  expect(buttons.map((button) => button.style.background)).toEqual([
+    expect.stringMatching(/^conic-gradient\(var\(--p-violet\).*var\(--p-teal\).*var\(--p-green\).*var\(--p-blue\)/),
+    "var(--p-violet)",
+    "var(--p-teal)",
+    "var(--p-green)",
+    "var(--p-blue)",
   ]);
-  expect(Array.from(colour.querySelectorAll("p"), (paragraph) => paragraph.textContent)).toEqual(["console.colour"]);
+  expect(buttons.every((button) => button.classList.contains("rounded-full"))).toBe(true);
 
   fireEvent.click(within(colour).getByRole("button", { name: "Teal" }));
-  expect(within(row("Colour")).getByText("was auto")).toBeTruthy();
-  expect(row("Colour").className).toContain("border-l-act");
-  expect(unsaved()?.textContent).toContain("1 unsaved change · colour auto → teal");
-  fireEvent.click(screen.getByRole("button", { name: "Review and save" }));
+  expect(within(row("Colour")).getByRole("button", { name: "Teal" }).getAttribute("aria-pressed")).toBe("true");
+  expect(changeLine("Colour")).toBe("Automatic → Teal · applies at the next loop start");
+  fireEvent.click(within(unsaved()!).getByRole("button", { name: "Save" }));
   fireEvent.click(within(screen.getByRole("dialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
   await act(settle);
   await act(settle);
   expect(writes).toEqual([{ patch: { "console.colour": "teal" } }]);
+});
+
+test("Merge mode's choices are one group of segment buttons with only the current one pressed", async () => {
+  await mount();
+  const segments = within(row("Merge mode")).getAllByRole("button");
+  expect(segments.map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Direct to main", "false"], ["Pull request", "true"]]);
+  expect(new Set(segments.map((button) => button.parentElement)).size).toBe(1);
+  fireEvent.click(segments[0]!);
+  expect(segments.map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false"]);
+});
+
+test("switching Approve from Auto to Human reads Auto → Human and when it applies, with no was note", async () => {
+  await mount();
+  fireEvent.click(within(row("Approve")).getByRole("button", { name: "Human" }));
+  expect(changeLine("Approve")).toBe("Auto → Human · applies at the next loop start");
+  expect(row("Approve").textContent).not.toContain("was ");
+});
+
+test("a row's config key is in the row but shows only while the row is hovered or holds focus", async () => {
+  await mount();
+  const key = within(row("Approve")).getByText("merge.approve");
+  const opacity = () => getComputedStyle(key).opacity;
+  expect(opacity()).toBe("0");
+  fireEvent.mouseEnter(row("Approve"));
+  expect(opacity()).toBe("1");
+  fireEvent.mouseLeave(row("Approve"));
+  expect(opacity()).toBe("0");
+  const human = within(row("Approve")).getByRole("button", { name: "Human" });
+  act(() => human.focus());
+  expect(opacity()).toBe("1");
+  act(() => human.blur());
+  expect(opacity()).toBe("0");
+  expect(getComputedStyle(within(row("Merge mode")).getByText("merge.mode")).opacity).toBe("0");
 });

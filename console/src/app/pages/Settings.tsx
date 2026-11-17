@@ -1,10 +1,9 @@
 import { useContext, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { CONFIG_EDIT_OFF, bind, namedKey, type ConfigProbe, type ConfigAnswer, type ConfigBody } from "../../lib/config";
+import { CONFIG_EDIT_OFF, bind, namedKey, type ConfigProbe, type ConfigAnswer } from "../../lib/config";
 import { hostName, underHost } from "../../lib/hosts";
 import { RESTART_LABEL, ROUTES, ACTIONS_OFF } from "../../lib/actions";
 import { RUN_SWEEP } from "../../lib/attention";
-import { formatStamp } from "../../lib/format";
 import { useAction, useConfigSave } from "../actions";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Btn } from "../components/Btn";
@@ -24,22 +23,6 @@ import { NotFound } from "./Placeholder";
 
 type Tab = (typeof SETTINGS_TABS)[number];
 
-const APPEARANCE_SUBTITLE = "yours, in this browser · applies at once, nothing to save";
-
-function subtitle(tab: Tab["id"], file: string, project: string): string {
-  return {
-    general: `[merge] and [loop] in ${file}`,
-    review: `[loop], [review] and [agents] in ${file}`,
-    agents: `[agents] in ${file}`,
-    capture: `[merge] in ${file}`,
-    hold: `admission for ${project} · applies now, no restart`,
-    toml: file,
-    hosts: "the factory's hosts",
-    appearance: APPEARANCE_SUBTITLE,
-    log: APPEARANCE_SUBTITLE,
-  }[tab];
-}
-
 function panelLine(tab: Tab, answer: ConfigAnswer | undefined, file: string, project: string, host: string | null): string {
   if (tab.group !== "Project") return "This tab comes here.";
   if (host === null) return project ? `No host is available for ${project}.` : "No project host is available.";
@@ -49,15 +32,6 @@ function panelLine(tab: Tab, answer: ConfigAnswer | undefined, file: string, pro
   if (answer.state === "needs_token") return `${host} needs its serve token to read /config.`;
   if (answer.config.values === null) return "The file does not parse as TOML. Settings cannot be edited until the file is fixed.";
   return "This tab comes here.";
-}
-
-function configStamp(config: ConfigBody): string {
-  const revision = config.revision ? ` · revision ${config.revision.slice(0, 7)}` : "";
-  const { saved, modified_ms: modified } = config;
-  if (modified != null && (!saved || modified > saved.at_ms + 5000)) return `${revision} · changed on the host ${formatStamp(modified)}`;
-  if (!saved) return revision;
-  const actor = saved.actor === "maintainer" ? "you" : saved.actor === "operator" ? "the operator seat" : saved.actor === "supervisor" ? "the supervisor" : null;
-  return `${revision} · saved ${formatStamp(saved.at_ms)}${actor ? ` by ${actor}` : ""}`;
 }
 
 function SettingsPage({ tab }: { tab: Tab }) {
@@ -142,15 +116,11 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
     setMarks({ counts: JSON.parse(countsKey) as Record<string, number>, checkRefused });
   }, [setMarks, countsKey, checkRefused]);
   useEffect(() => () => setMarks(null), [setMarks]);
-  const heading = <>
-    <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">{tab.label}</h1>
-    <p className="break-words font-mono text-[13px] text-ink-3">{subtitle(tab.id, file, project)}</p>
-    {tab.group === "Project" && <p className="w-full break-words font-mono text-[13px] text-ink-2">{project} · {file} on {hostLabel}{answer?.state === "ok" ? configStamp(answer.config) : ""}</p>}
-  </>;
+  const heading = <h1 id="page-title" className="font-sans text-[24px] font-semibold leading-[1.25] tracking-[-0.015em] text-ink">{tab.label}</h1>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   return (
-    <section aria-labelledby="page-title" className={`${tab.id === "toml" ? "" : "max-w-[1180px] "}px-5 pt-3.5 pb-7 min-[720px]:px-8`}>
-      <div className="min-w-0 pb-6">
+    <section aria-labelledby="page-title" className="flex min-h-full flex-col px-5 pt-3.5 pb-[22px] min-[720px]:px-10">
+      <div className={`${tab.id === "toml" ? "" : "max-w-[1180px] "}flex min-w-0 flex-1 flex-col pt-4`}>
         {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 pb-5">{heading}{tab.id === "appearance" && <AppearanceHeader />}</header>}
         {banner && <div role="status" className="mt-6 border border-live bg-paper p-5">
           <p className="font-mono text-[13px] text-live">Saved config.toml at revision {banner.revision.slice(0, 7)}.</p>
@@ -164,7 +134,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
         </div>}
         <section>
           {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
-            <div className="mt-6">
+            <div className="mt-0.5 max-w-[740px] pb-12">
               {rawChanged && <p className="mb-4 font-mono text-[13px] text-ink-3">Save or revert the raw edit first.</p>}
               <fieldset disabled={rawChanged || save.isPending}>
               {SETTINGS_FIELDS.filter((field) => field.tab === tab.id).map((field) => {
@@ -188,7 +158,6 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
             onCheck={(state) => { setCheck(state); if (!state.pending) setCheckRefused(state.error !== null); }} onSave={() => { setRefusal(null); setConfirm("raw"); }}
           /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "log" ? <DayLogTab heading={heading} /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
-        <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
         {confirm && <ConfirmDialog label="Save · holophyte" heading={rawMode ? `Save ${file}?` : "Save these changes?"} confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(null); }} onConfirm={() => void write()}
           refusal={refusal && <p role="alert" className="mt-4 font-mono text-[13px] text-bad">{refusal}</p>}>
           <p className="mt-4 font-read text-[15px] text-ink-2">These lines change in config.toml on {hostLabel}.</p>
@@ -200,9 +169,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
           <p className="mt-2 font-read text-[14px] text-ink-3">Runs in flight keep the settings they started with.</p>
         </ConfirmDialog>}
       </div>
-      {(tab.id === "appearance" || tab.group === "Project") && <footer className="border-t border-rule pt-4 font-mono text-[12px] text-ink-3">
-        <p>{tab.id === "appearance" ? "appearance stays in this browser" : `project settings live in ${file} on its host; each save keeps the previous text as a backup`}</p>
-      </footer>}
+      <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
     </section>
   );
 }
