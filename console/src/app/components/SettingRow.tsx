@@ -25,7 +25,7 @@ function PathMatches({ base, settingKey, label, entries }: { base: string; setti
 }
 
 const AUTOMATIC_SWATCH = "conic-gradient(var(--p-violet) 0 25%, var(--p-teal) 0 50%, var(--p-green) 0 75%, var(--p-blue) 0)";
-const FIELD_CLASS = "w-full rounded-[7px] bg-raised px-3 py-2 font-mono text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--hair-2)]";
+const FIELD_CLASS = "field w-full font-mono";
 
 function shown(field: SettingsField, value: PatchValue): string {
   if (field.kind === "select") return field.options.find((option) => option.value === value)?.label ?? String(value);
@@ -108,7 +108,7 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
             <output aria-label={field.label} className="min-w-[30px] text-center font-mono text-[13px] tabular-nums">{String(value)}</output>
             <button type="button" aria-label={field.key === "workers" ? "One more worker" : `Increase ${field.label.toLowerCase()}`} onClick={() => onChange(Number(value) + 1, original)} className={stepClass}><StepIcon d="M8 4v8M4 8h8" /></button>
           </div> : field.kind === "boolean" ? <button type="button" role="switch" aria-label={field.label} aria-checked={value === true} disabled={disabled} onClick={() => onChange(!value, original)}
-            className={`inline-flex h-8 cursor-pointer items-center rounded-[7px] px-3 font-sans text-[12.5px] font-medium shadow-[inset_0_0_0_1px_var(--hair)] disabled:cursor-default disabled:opacity-40 ${value === true ? "bg-[color:light-dark(var(--raised),var(--selected))] text-ink" : "bg-raised text-ink-3 hover:text-ink"}`}>{value === true ? "On" : "Off"}</button>
+            className="switch"><span aria-hidden="true" /></button>
             : showTree ? <PathTree tree={tree} value={value} label={field.label} onChange={(next) => onChange(next, original)} />
             : field.kind === "lines" ? <textarea aria-label={field.label} rows={3} value={lines ?? (Array.isArray(value) ? value.join("\n") : "")} onBlur={() => setLines(null)} onChange={(event) => {
               setLines(event.target.value);
