@@ -436,26 +436,87 @@ class IsolationReturnTests(IsolationCase):
         self.assertIn(str(kept[0]), str(raised.exception))
         self.assertEqual((kept[0] / "deps" / "installed").read_text(), "package")
 
-    def test_clone_rewritten_history_is_infrastructure_failure(self):
+    def rewrite_turn(self, worktree, script, project=None):
         from holophyte.isolation import launcher
         from holophyte.isolation.isolation_git import git
-        from holophyte.loop.gates import InfraFailure
 
-        _, worktree = self.make_worktree()
-        before = git(worktree, "rev-parse", "HEAD")
+        returned = []
 
         def run(argv, cwd, timeout, *, env):
-            mount = Path(argv[argv.index("--volume") + 1].split(":")[0])
-            subprocess.run(["git", "commit", "--amend", "--allow-empty", "-qm",
-                            "rewritten"], cwd=mount, env=env, check=True)
+            subprocess.run(["sh", "-ec", script], cwd=cwd, env=env, check=True,
+                           capture_output=True)
+            returned.append(git(cwd, "rev-parse", "HEAD"))
+            returned.append(git(cwd, "rev-parse", "HEAD^{tree}"))
             return 0, "done"
 
         with patch.object(launcher, "image_ready"), \
              patch.object(launcher.review_runner, "_remove_container"), \
              patch.object(launcher, "run_capped", side_effect=run):
-            with self.assertRaisesRegex(InfraFailure, "fast-forward"):
-                launcher.launch(launcher.Route("container"), worktree, {}, ["agent"])
-        self.assertEqual(git(worktree, "rev-parse", "HEAD"), before)
+            launcher.launch(launcher.Route("container"), worktree, {}, ["agent"],
+                             project=project)
+        return returned
+
+    def test_rewritten_history_returns_as_one_commit_on_the_old_tip(self):
+        from holophyte.isolation.isolation_git import git
+
+        main, worktree = self.make_worktree()
+        git(main, "branch", "-M", "main")
+        (main / "upstream").write_text("main\n")
+        git(main, "add", "upstream")
+        git(main, "commit", "-qm", "upstream")
+        (worktree / "task").write_text("task\n")
+        git(worktree, "add", "task")
+        git(worktree, "commit", "-qm", "task")
+        git(worktree, "merge", "-q", "--no-edit", "main")
+        old = git(worktree, "rev-parse", "HEAD")
+        before_merge = git(worktree, "rev-parse", "HEAD^1")
+
+        returned, tree = self.rewrite_turn(
+            worktree, f"git reset -q --hard {before_merge}; echo work > work; "
+                      "git add work; git commit -qm work")
+
+        tip = git(worktree, "rev-parse", "HEAD")
+        self.assertNotEqual(tip, returned)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%P", tip), old)
+        self.assertEqual(git(worktree, "rev-parse", "HEAD^{tree}"), tree)
+        git(worktree, "merge-base", "--is-ancestor", old, tip)
+        message = git(worktree, "log", "-1", "--format=%B", tip)
+        self.assertIn(returned, message)
+        self.assertIn(before_merge, message)
+        self.assertEqual(git(worktree, "status", "--porcelain"), "")
+        self.assertEqual((worktree / "work").read_text(), "work\n")
+        self.assertFalse((worktree / "upstream").exists())
+
+    def test_turn_on_top_of_the_old_tip_is_imported_unchanged(self):
+        from holophyte.isolation.isolation_git import git
+
+        _, worktree = self.make_worktree()
+        old = git(worktree, "rev-parse", "HEAD")
+
+        returned, _ = self.rewrite_turn(
+            worktree, "echo one > one; git add one; git commit -qm one; "
+                      "echo two > two; git add two; git commit -qm two")
+
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), returned)
+        self.assertEqual(git(worktree, "rev-parse", "HEAD~2"), old)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%s"), "two")
+
+    def test_rewritten_turn_bringing_in_environment_is_still_refused(self):
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
+
+        main, worktree = self.make_worktree()
+        git(main, "branch", "-M", "main")
+        self.target.path = main
+        self.table["worktree"] = {"env_source": "local.env"}
+        old = git(worktree, "rev-parse", "HEAD")
+
+        with self.assertRaisesRegex(InfraFailure, "contains .env"):
+            self.rewrite_turn(
+                worktree, "echo secret > .env; git add -f .env; "
+                          "git commit -q --amend -m rewritten", project=self.target)
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
+        self.assertFalse((worktree / ".env").exists())
 
     def test_clone_refuses_environment_history_and_excludes_dirty_environment(self):
         from holophyte.isolation import launcher

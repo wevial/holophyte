@@ -163,6 +163,14 @@ def carry_mounts(worktree, carry):
     return mounted
 
 
+def commit_on_tip(worktree, old, returned):
+    parents = git(worktree, "log", "-1", "--format=%P", returned) or "none"
+    message = (f"Return rewritten container history on {old}\n\n"
+               f"Returned commit: {returned}\nIts parents: {parents}\n")
+    return git(worktree, "commit-tree", f"{returned}^{{tree}}", "-p", old,
+               "-m", message)
+
+
 def return_turn(worktree, clone, root, old, project, merge_state, carry):
     # Never run Git against the untrusted clone: upload-pack also reads config.
     transport = root / "return.git"
@@ -185,10 +193,8 @@ def return_turn(worktree, clone, root, old, project, merge_state, carry):
     )
     try:
         git(worktree, "merge-base", "--is-ancestor", old, sha)
-    except subprocess.CalledProcessError as error:
-        raise InfraFailure(
-            "container history is not a fast-forward; refusing fetch back"
-        ) from error
+    except subprocess.CalledProcessError:
+        sha = commit_on_tip(worktree, old, sha)
     if project is not None:
         refuse_environment_history(
             project, sha, action="import container commits", commit=sha,
