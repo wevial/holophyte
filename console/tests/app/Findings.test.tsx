@@ -113,6 +113,7 @@ afterEach(() => {
 test("every project's week sorts into the four groups, each headed by its label and a plain count", async () => {
   await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
   expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(GROUPS);
+  expect(GROUPS.map((label) => within(group(label)).getByRole("heading", { level: 2 }).textContent)).toEqual(GROUPS);
   expect(counts()).toEqual(["2", "1", "1", "2"]);
   expect(document.querySelector("[data-scope-line]")).toBeNull();
 });
