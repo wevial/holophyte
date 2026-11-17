@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Board, BoardColumn, BoardTicket, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -82,7 +82,15 @@ const cardKeys = () => screen.queryAllByRole("article").map((card) => card.first
 const rowKeys = () => Array.from(document.querySelectorAll("[data-row] [data-cell=key]"), (cell) => cell.textContent);
 const heads = () => document.querySelector("[data-column-heads]");
 const headCounts = () => Array.from(heads()!.querySelectorAll("[data-count]"), (count) => count.textContent);
-const stateSelect = () => screen.getByRole<HTMLSelectElement>("combobox", { name: "State" });
+const statePicker = () => screen.getByRole("button", { name: /^State: / });
+
+/** Open State and press its option labelled `label`. */
+async function pickState(label: string) {
+  fireEvent.click(statePicker());
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  fireEvent.click(within(screen.getByRole("listbox", { name: "State" })).getByRole("option", { name: label }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+}
 const query = () => new URLSearchParams(window.location.hash.split("?")[1] ?? "");
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -162,14 +170,19 @@ test("slash focuses Search from the page, and Escape in it empties it and drops 
 
 test("a picked state lists its tickets as Table rows with no lanes, heads or view switch", async () => {
   await mount("#/tickets?project=demo", fleet(demoBoard).fetch);
-  const options = Array.from(stateSelect().options);
+  expect(statePicker().textContent).toBe("All states");
+  expect(screen.queryByRole("combobox", { name: "State" })).toBeNull();
+  fireEvent.click(statePicker());
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  const options = within(screen.getByRole("listbox", { name: "State" })).getAllByRole("option");
   expect(options.map((option) => option.textContent)).toEqual(["All states", "Ready", "In flight", "Needs you", "Backlog", "Needs spec", "Done"]);
-  expect(options.map((option) => option.selected)).toEqual([true, false, false, false, false, false, false]);
+  expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual(["true", "false", "false", "false", "false", "false", "false"]);
 
-  fireEvent.change(stateSelect(), { target: { value: "ready" } });
+  fireEvent.click(options[1]!);
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(window.location.hash).toBe("#/tickets?project=demo&filter=ready");
-  expect(stateSelect().selectedOptions[0]?.textContent).toBe("Ready");
+  expect(screen.queryByRole("listbox", { name: "State" })).toBeNull();
+  expect(statePicker().textContent).toBe("Ready");
   expect(rowKeys().sort()).toEqual(["DEMO-2", "DEMO-5"]);
   expect(heads()).toBeNull();
   expect(screen.queryAllByRole("article")).toEqual([]);
@@ -197,8 +210,7 @@ test("a search or a state that leaves no ticket reads No tickets match in place 
   cleanup();
 
   await mount("#/tickets", fleet(boardOf({ backlog: ["DEMO-1"], ready: ["DEMO-2"] })).fetch);
-  fireEvent.change(stateSelect(), { target: { value: "in_flight" } });
-  for (let round = 0; round < 2; round += 1) await act(settle);
+  await pickState("In flight");
   expect(screen.getAllByText("No tickets match")).toHaveLength(1);
   expect(rowKeys()).toEqual([]);
 });

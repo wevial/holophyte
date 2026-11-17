@@ -60,9 +60,23 @@ const click = async (element: Element) => {
   await act(async () => void fireEvent.click(element));
   await settleAll();
 };
-const choose = async (name: string, value: string) => {
-  await act(async () => void fireEvent.change(select(name), { target: { value } }));
+const key = async (element: Element, name: string) => {
+  await act(async () => void fireEvent.keyDown(element, { key: name }));
   await settleAll();
+};
+/** Open the `name` picker and press its option labelled `label`. */
+const choose = async (name: string, label: string) => {
+  await click(picker(name));
+  await click(within(screen.getByRole("listbox", { name })).getByRole("option", { name: label }));
+};
+/** The `name` picker's options and which of them is selected, read open and
+ *  closed again with Escape. */
+const listed = async (name: string) => {
+  await click(picker(name));
+  const options = within(screen.getByRole("listbox", { name })).getAllByRole("option");
+  const read = { texts: options.map((option) => option.textContent), selected: options.filter((option) => option.getAttribute("aria-selected") === "true").map((option) => option.textContent) };
+  await key(document.activeElement!, "Escape");
+  return read;
 };
 
 /** Type `text` into Search and wait out its debounce. */
@@ -82,8 +96,7 @@ function wideScreen() {
 }
 
 const field = () => screen.getByRole("searchbox", { name: "Search scouts" }) as HTMLInputElement;
-const select = (name: string) => screen.getByRole("combobox", { name }) as HTMLSelectElement;
-const optionTexts = (name: string) => Array.from(select(name).options, (option) => option.textContent);
+const picker = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}: `) });
 const groups = () => [...document.querySelectorAll("li[data-scout-group]")] as HTMLElement[];
 const groupNames = () => groups().map((group) => group.querySelector("[data-lane-head]")!.firstElementChild!.textContent);
 const rowsOf = (element: ParentNode) => [...element.querySelectorAll("[data-scout]")].map((row) => row.getAttribute("data-scout"));
@@ -160,25 +173,47 @@ test("/ on the page focuses Search without typing a slash", async () => {
   expect(field().value).toBe("");
 });
 
-test("the State and Kind selects narrow the list as filter and type, and a group left empty is not drawn", async () => {
+test("the State and Kind pickers narrow the list as filter and type, and a group left empty is not drawn", async () => {
   const kinds = demo.map((row) => (row.id === 29 ? { ...row, kind: "bug" as const } : row));
   await mount("#/scouts", scoutFetch(kinds, [...writer, scout(26, "done", 5, { kind: "bug" })]));
-  expect(optionTexts("State")).toEqual(["All states", "Running", "Queued", "Done", "Stopped", "Failed"]);
-  expect(optionTexts("Kind")).toEqual(["All kinds", "Bug", "Research", "Recon", "Guardrails"]);
-  expect([select("State").selectedIndex, select("Kind").selectedIndex]).toEqual([0, 0]);
-  await choose("State", "running");
+  expect(await listed("State")).toEqual({ texts: ["All states", "Running", "Queued", "Done", "Stopped", "Failed"], selected: ["All states"] });
+  expect(await listed("Kind")).toEqual({ texts: ["All kinds", "Bug", "Research", "Recon", "Guardrails"], selected: ["All kinds"] });
+  await choose("State", "Running");
   expect(searchParam("filter")).toBe("running");
   expect(searchParam("project")).toBeNull();
   expect(ids()).toEqual(["31", "30"]);
-  await choose("State", "all");
-  await choose("Kind", "bug");
+  await choose("State", "All states");
+  await choose("Kind", "Bug");
   expect(searchParam("type")).toBe("bug");
   expect(searchParam("filter")).toBeNull();
   expect(groups().map(rowsOf)).toEqual([["29"], ["26"]]);
   expect(groupNames()).toEqual(["demo", "writer"]);
-  await choose("State", "queued");
+  await choose("State", "Queued");
   expect(ids()).toEqual(["29"]);
   expect(groupNames()).toEqual(["demo"]);
+  expect([picker("State").textContent, picker("Kind").textContent]).toEqual(["Queued", "Bug"]);
+});
+
+test("the Kind picker opens on ArrowDown, picks with Enter and closes on Escape unchanged, focus back on its button each time", async () => {
+  await mount("#/scouts", scoutFetch(demo, writer));
+  picker("Kind").focus();
+  await key(picker("Kind"), "ArrowDown");
+  expect(screen.getByRole("listbox", { name: "Kind" })).toBeTruthy();
+  expect(document.activeElement!.textContent).toBe("All kinds");
+  await key(document.activeElement!, "ArrowDown");
+  expect(document.activeElement!.textContent).toBe("Bug");
+  await key(document.activeElement!, "Enter");
+  expect(searchParam("type")).toBe("bug");
+  expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
+  expect(document.activeElement).toBe(picker("Kind"));
+
+  await key(picker("Kind"), "ArrowDown");
+  await key(document.activeElement!, "ArrowDown");
+  await key(document.activeElement!, "Escape");
+  expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
+  expect(searchParam("type")).toBe("bug");
+  expect(picker("Kind").textContent).toBe("Bug");
+  expect(document.activeElement).toBe(picker("Kind"));
 });
 
 test("a search matching no scout reads No scouts match alone, and an empty scope still names its project", async () => {
@@ -202,7 +237,7 @@ test("choosing another row under a search and a Kind keeps both on the scout's p
     expect(window.location.hash.split("?")[0]).toBe("#/scouts/demo/29");
     expect([searchParam("q"), searchParam("type")]).toEqual(["lock", "bug"]);
     expect(field().value).toBe("lock");
-    expect(select("Kind").selectedOptions[0]!.textContent).toBe("Bug");
+    expect(picker("Kind").textContent).toBe("Bug");
     expect(ids()).toEqual(["31", "29"]);
     expect(document.querySelector("[data-scout-list] li[aria-current]")!.getAttribute("data-scout")).toBe("29");
     await click(within(document.querySelector('[data-scout="31"]') as HTMLElement).getByRole("link"));
@@ -214,7 +249,7 @@ test("choosing another row under a search and a Kind keeps both on the scout's p
   }
 });
 
-test("closing New scout keeps q and filter, and a Scout button's kind leaves the Kind select alone", async () => {
+test("closing New scout keeps q and filter, and a Scout button's kind leaves the Kind picker alone", async () => {
   const media = wideScreen();
   try {
     await mount("#/scouts?q=lock&filter=running", scoutFetch(locks));
@@ -226,7 +261,7 @@ test("closing New scout keeps q and filter, and a Scout button's kind leaves the
     const form = screen.getByRole("form", { name: "New scout" });
     const pressed = within(within(form).getByRole("group", { name: "Kind" })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true");
     expect(pressed.map((button) => button.textContent)).toEqual(["Bug"]);
-    expect(select("Kind").selectedOptions[0]!.textContent).toBe("All kinds");
+    expect(picker("Kind").textContent).toBe("All kinds");
     expect(ids()).toEqual(["31", "29", "27"]);
   } finally {
     media.mockRestore();

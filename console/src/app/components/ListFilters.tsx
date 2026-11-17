@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { dayStart } from "../history";
+import { Picker } from "./Picker";
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -45,7 +46,7 @@ export function SearchField({ label, width = "w-56", className, autoFocus, onBlu
     document.addEventListener("keydown", focus);
     return () => document.removeEventListener("keydown", focus);
   }, []);
-  return (
+  const input = (
     <input
       ref={field}
       type="search"
@@ -61,10 +62,19 @@ export function SearchField({ label, width = "w-56", className, autoFocus, onBlu
         setText("");
         write(undefined);
       }}
-      className={className ?? `min-h-8 ${width} border border-rule bg-paper px-3 font-sans text-[12.5px] text-ink placeholder:text-ink-3 focus:outline-2 focus:-outline-offset-1 focus:outline-focus`}
+      className={className ?? FILLED_INPUT}
     />
   );
+  if (className != null) return input;
+  return (
+    <label className={`flex h-[30px] ${width} shrink-0 items-center gap-2 rounded-button bg-selected px-2.5 text-ink-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus`}>
+      <SearchIcon />
+      {input}
+    </label>
+  );
 }
+
+const FILLED_INPUT = "h-full min-w-0 flex-1 border-0 bg-transparent font-sans text-[14px] text-ink outline-none! placeholder:text-ink-3 [&::-webkit-search-cancel-button]:hidden";
 
 const TOOL = "relative inline-flex h-[28px] min-w-7 shrink-0 cursor-pointer items-center justify-center gap-[5px] rounded-button px-1.5 text-ink-2 transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-selected aria-expanded:text-ink";
 
@@ -105,7 +115,7 @@ export function SearchToggle({ label }: { label: string }) {
         held.current = false;
         if (text.trim() === "") setOpened(false);
       }}
-        className="h-full min-w-0 flex-1 border-0 bg-transparent font-sans text-[14px] text-ink outline-none! placeholder:text-ink-3 [&::-webkit-search-cancel-button]:hidden" />
+        className={FILLED_INPUT} />
     </label>
   );
 }
@@ -122,22 +132,15 @@ export function FilterSelect({ label, param, allLabel, options }: { label: strin
   const navigate = useNavigate();
   const value = search[param];
   return (
-    <select
-      aria-label={label}
+    <Picker
+      label={label}
+      options={[{ value: "all", label: allLabel }, ...options]}
       value={typeof value === "string" ? value : "all"}
-      onChange={(event) => {
-        const picked = options.find((each) => each.value === event.target.value)?.value;
+      onPick={(next) => {
+        const picked = options.find((each) => each.value === next)?.value;
         void navigate({ to: ".", search: (previous: PageSearch) => ({ ...previous, [param]: picked }) });
       }}
-      className="min-h-8 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus"
-    >
-      <option value="all">{allLabel}</option>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    />
   );
 }
 
