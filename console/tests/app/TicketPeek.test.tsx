@@ -87,15 +87,22 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a card's click opens its peek with key, Expand, column chip and facts, and another card's click swaps it in place", async () => {
+test("a card's click opens its peek with key, icon-only Expand and Close, title heading, column word and facts, and another card's click swaps it in place", async () => {
   await mount("#/tickets");
   expect(cardLink("DEMO-3").getAttribute("aria-haspopup")).toBe("dialog");
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
 
   const dialog = screen.getByRole("dialog", { name: "DEMO-3 title" });
   expect(dialog.querySelector("[data-peek-key]")!.textContent).toBe("DEMO-3");
-  expect(within(dialog).getByRole("link", { name: /^Expand/ }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-3");
-  expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close preview" }));
+  const expand = within(dialog).getByRole("link", { name: "Expand to the full ticket page" });
+  const close = within(dialog).getByRole("button", { name: "Close preview" });
+  expect(expand.getAttribute("href")).toEndWith("#/tickets/demo/DEMO-3");
+  for (const control of [expand, close]) {
+    expect(control.textContent).toBe("");
+    expect(control.querySelector("svg")).not.toBeNull();
+  }
+  expect(document.activeElement).toBe(close);
+  expect(within(dialog).getByRole("heading", { name: "DEMO-3 title" })).toBeTruthy();
   expect(dialog.querySelector("[data-peek-column]")!.textContent).toBe("In flight");
   expect(fact("Project").textContent).toBe("demo");
   expect(fact("Time box").textContent).toBe("25m");
@@ -138,13 +145,14 @@ test("a run with no recorded standings marks every criterion not yet witnessed",
   expect(marks().map((mark) => mark.getAttribute("aria-label"))).toEqual(["not yet witnessed", "not yet witnessed"]);
 });
 
-test("a ticket the daemon has not mirrored says so and shows no criteria", async () => {
+test("a ticket the daemon has not mirrored says so in one sans line and shows no criteria", async () => {
   await mount("#/tickets", boardFetch(null));
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
   for (let round = 0; round < 3; round += 1) await act(settle);
 
   const notice = within(peek()!).getByText("This host has not mirrored DEMO-3.");
-  expect(notice.classList.contains("font-mono")).toBe(true);
+  expect(notice.tagName).toBe("P");
+  expect(notice.className).not.toContain("font-mono");
   expect(within(peek()!).queryByText("Acceptance criteria", { exact: false })).toBeNull();
   expect(marks()).toHaveLength(0);
 });
@@ -225,10 +233,10 @@ async function peekAt(key: string, answer: Fetch) {
   await press(cardLink(key));
 }
 
-test("a failed ticket's peek asks first with one Requeue button, no More and no Open run", async () => {
+test("a failed ticket's peek asks first under a Needs you heading with one Requeue button, no More and no Open run", async () => {
   await peekAt("DEMO-11", fakeFetch({ ok: true, detail: "requeued" }).fetchImpl);
   const box = askBox()!;
-  expect(within(box).getByText("Needs you")).toBeTruthy();
+  expect(within(box).getByRole("heading", { name: "Needs you" })).toBeTruthy();
   expect(within(box).getByText("Verify command failed")).toBeTruthy();
   expect(within(box).getAllByRole("button").map((button) => button.textContent)).toEqual(["Requeue"]);
   expect(within(box).queryByRole("link", { name: "Open run" })).toBeNull();
