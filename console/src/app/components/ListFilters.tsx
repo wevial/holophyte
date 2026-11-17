@@ -519,7 +519,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
     };
   }, [open]);
   return (
-    <div ref={box} className="flex shrink-0 items-center gap-1.5">
+    <div ref={box} className="flex max-w-full flex-wrap items-center gap-1.5">
       <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
         onPick={(picked) => write({ range: picked === fallback ? undefined : picked, from: undefined, to: undefined })} />
       <div ref={anchor} className="relative shrink-0">
