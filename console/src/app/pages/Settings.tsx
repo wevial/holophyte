@@ -119,8 +119,8 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
   const heading = <h1 id="page-title" className="font-sans text-[24px] font-semibold leading-[1.25] tracking-[-0.015em] text-ink">{tab.label}</h1>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   return (
-    <section aria-labelledby="page-title" className={`${tab.id === "toml" ? "" : "max-w-[1180px] "}flex min-h-full flex-col px-5 pt-3.5 pb-[22px] min-[720px]:px-8`}>
-      <div className="flex min-w-0 flex-1 flex-col">
+    <section aria-labelledby="page-title" className="flex min-h-full flex-col px-5 pt-3.5 pb-[22px] min-[720px]:px-10">
+      <div className={`${tab.id === "toml" ? "" : "max-w-[1180px] "}flex min-w-0 flex-1 flex-col pt-4`}>
         {tab.id !== "log" && <header className="flex flex-wrap items-baseline gap-x-4 gap-y-2 pb-5">{heading}{tab.id === "appearance" && <AppearanceHeader />}</header>}
         {banner && <div role="status" className="mt-6 border border-live bg-paper p-5">
           <p className="font-mono text-[13px] text-live">Saved config.toml at revision {banner.revision.slice(0, 7)}.</p>
@@ -158,7 +158,6 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
             onCheck={(state) => { setCheck(state); if (!state.pending) setCheckRefused(state.error !== null); }} onSave={() => { setRefusal(null); setConfirm("raw"); }}
           /> : tab.id === "appearance" ? <AppearanceTab /> : tab.id === "log" ? <DayLogTab heading={heading} /> : tab.id === "hosts" ? <HostsTab /> : <p className="mt-6 break-words font-mono text-[13px] text-ink-3">{panelLine(tab, answer, file, project, host ? hostLabel : null)}</p>}
         </section>
-        <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
         {confirm && <ConfirmDialog label="Save · holophyte" heading={rawMode ? `Save ${file}?` : "Save these changes?"} confirm="Save" busyLabel="Saving…" busy={save.isPending} confirmDisabled={!canSave} cancelLabel="Keep editing" onCancel={() => { if (!save.isPending) setConfirm(null); }} onConfirm={() => void write()}
           refusal={refusal && <p role="alert" className="mt-4 font-mono text-[13px] text-bad">{refusal}</p>}>
           <p className="mt-4 font-read text-[15px] text-ink-2">These lines change in config.toml on {hostLabel}.</p>
@@ -170,6 +169,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
           <p className="mt-2 font-read text-[14px] text-ink-3">Runs in flight keep the settings they started with.</p>
         </ConfirmDialog>}
       </div>
+      <UnsavedBar invalid={Object.keys(errors).length > 0} project={project} onDiscard={() => setErrors({})} disabled={host?.status?.config_edit !== true || answer?.state !== "ok" || answer.config.values === null || rawChanged || Object.keys(errors).length > 0 || save.isPending} onSave={() => { setRefusal(null); setConfirm("fields"); }} />
     </section>
   );
 }
