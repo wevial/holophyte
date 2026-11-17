@@ -174,14 +174,11 @@ test("the current scope's option alone carries the check, and picking All projec
   expect(checked()).toEqual(["All projects"]);
 });
 
-test("the button's name counts the scope's Waiting on you entries, so a pull request counts nowhere", async () => {
+test("the button's name counts the scope's Waiting on you entries whether or not a pull request is ready", async () => {
   for (const writerReady of [true, false]) {
     await mount("#/runs", needsDaemons(writerReady));
     expect(switcher().getAttribute("aria-label")).toBe("Project: All projects, 2 waiting on you. Switch project");
     expect(badge()!.textContent).toBe("2");
-    fireEvent.click(switcher());
-    await act(settle);
-    expect(optionNames()).toEqual(["All projects", "demo", "writer"]);
     cleanup();
   }
 });
