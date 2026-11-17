@@ -174,7 +174,90 @@ export function StoryIcon({ className }: { className?: string }) {
 export function BackIcon() {
   return (
     <Stroke>
-      <path d="M13 8H3m4-4L3 8l4 4" />
+      <path d="M9.5 3.5 5 8l4.5 4.5" />
+    </Stroke>
+  );
+}
+
+export function AppearanceIcon() {
+  return (
+    <Stroke>
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor" />
+    </Stroke>
+  );
+}
+
+export function LogIcon() {
+  return (
+    <Stroke>
+      <path d="M5.5 4.5h7M5.5 8h7M5.5 11.5h7" />
+      <circle cx="3" cy="4.5" r=".6" fill="currentColor" />
+      <circle cx="3" cy="8" r=".6" fill="currentColor" />
+      <circle cx="3" cy="11.5" r=".6" fill="currentColor" />
+    </Stroke>
+  );
+}
+
+export function HostsIcon() {
+  return (
+    <Stroke>
+      <rect x="2.5" y="3" width="11" height="4" rx="1.2" />
+      <rect x="2.5" y="9" width="11" height="4" rx="1.2" />
+      <path d="M5 5h.01M5 11h.01" />
+    </Stroke>
+  );
+}
+
+export function GeneralIcon() {
+  return (
+    <Stroke>
+      <path d="M3 5h6M11 5h2M3 11h2M7 11h6" />
+      <circle cx="10" cy="5" r="1.3" />
+      <circle cx="6" cy="11" r="1.3" />
+    </Stroke>
+  );
+}
+
+export function ReviewIcon() {
+  return (
+    <Stroke>
+      <path d="M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8z" />
+      <circle cx="8" cy="8" r="2" />
+    </Stroke>
+  );
+}
+
+export function AgentsIcon() {
+  return (
+    <Stroke>
+      <circle cx="8" cy="5.5" r="2.5" />
+      <path d="M3 13.5c.6-2.6 2.6-4 5-4s4.4 1.4 5 4" />
+    </Stroke>
+  );
+}
+
+export function CaptureIcon() {
+  return (
+    <Stroke>
+      <path d="M2.5 5.5h2l1-1.5h5l1 1.5h2v7h-11z" />
+      <circle cx="8" cy="8.8" r="2.2" />
+    </Stroke>
+  );
+}
+
+export function HoldIcon() {
+  return (
+    <Stroke>
+      <path d="M6 4v8M10 4v8" />
+    </Stroke>
+  );
+}
+
+export function TomlIcon() {
+  return (
+    <Stroke>
+      <path d="M5.5 3C4 3 4 4 4 5v1.2C4 7.2 3.4 8 2.5 8c.9 0 1.5.8 1.5 1.8V11c0 1 0 2 1.5 2M10.5 3c1.5 0 1.5 1 1.5 2v1.2c0 1 .6 1.8 1.5 1.8-.9 0-1.5.8-1.5 1.8V11c0 1 0 2-1.5 2" />
     </Stroke>
   );
 }

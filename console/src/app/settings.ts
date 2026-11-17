@@ -40,7 +40,7 @@ export const SETTINGS_TABS = [
   { id: "review", label: "Review", group: "Project" },
   { id: "agents", label: "Agents", group: "Project" },
   { id: "capture", label: "Capture", group: "Project" },
-  { id: "hold", label: "Hold / release", group: "Project" },
+  { id: "hold", label: "Hold", group: "Project" },
   { id: "toml", label: "Raw TOML", group: "Project" },
 ] as const;
 
