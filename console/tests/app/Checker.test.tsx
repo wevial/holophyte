@@ -245,14 +245,16 @@ test("header problems land on the control of the key they name, an Evidence one 
   ];
   await mount(fakeFetch({ problems, advisories: [], blocks: true }).fetchImpl);
   await type("Title", "Steer notes show on the run detail card");
-  const ui = screen.getByRole("combobox", { name: "UI change" });
-  await act(async () => void fireEvent.change(ui, { target: { value: "major" } }));
+  await act(async () => void fireEvent.click(screen.getByLabelText("UI change", { selector: "button" })));
+  await flush();
+  await act(async () => void fireEvent.click(within(screen.getByRole("listbox", { name: "UI change" })).getByRole("option", { name: "Major" })));
+  await flush();
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: "+ Add a state" })));
   await type("E2 File", "shot.png");
   await advance(600);
 
-  expect(under(screen.getByRole("combobox", { name: "Blast radius" }))).toBe(`×${problems[0]}`);
+  expect(under(screen.getByLabelText("Blast radius", { selector: "button" }))).toBe(`×${problems[0]}`);
   const file = screen.getByRole("textbox", { name: "E2 File" });
   expect(file.getAttribute("aria-invalid")).toBe("true");
   expect(under(file)).toContain(problems[1]!);

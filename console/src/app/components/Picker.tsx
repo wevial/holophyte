@@ -158,7 +158,9 @@ function CheckIcon() {
 
 /** A button reading the current option that opens a listbox of `options`;
  *  picking one calls `onPick` with its value. */
-export function Picker({ label, options, value, onPick }: { label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void }) {
+export function Picker({ id, label, options, value, onPick, "aria-invalid": invalid, "aria-describedby": describedBy }: {
+  id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; "aria-invalid"?: boolean; "aria-describedby"?: string;
+}) {
   const current = options.find((option) => option.value === value) ?? options[0];
   const labelId = useId();
   const handle = usePrimitive(picker, {
@@ -178,6 +180,9 @@ export function Picker({ label, options, value, onPick }: { label: string; optio
             {label}
           </span>
           <Trigger
+            id={id}
+            aria-invalid={invalid}
+            aria-describedby={describedBy}
             aria-haspopup="listbox"
             aria-label={`${label}: ${current?.label ?? ""}`}
             onKeyDown={(event) => {
@@ -185,7 +190,7 @@ export function Picker({ label, options, value, onPick }: { label: string; optio
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className="inline-flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            className="inline-flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
           >
             {current?.label}
             <span className="flex text-ink-3">
