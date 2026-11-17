@@ -425,7 +425,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
           <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
             {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
           </div>
-          <div className={`${side ? "col-span-3" : "col-span-2"} mt-1.5 flex justify-end border-t border-hair pt-1.5`}>
+          <div className="col-span-full mt-1.5 flex justify-end border-t border-hair pt-1.5">
             <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
               className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
               Clear
