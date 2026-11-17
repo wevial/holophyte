@@ -215,7 +215,9 @@ test("a ticket no host of the project mirrors says so in one sans line linking b
   const line = screen.getByText("No host of demo has mirrored DEMO-99.").closest("p")!;
   expect(line.textContent).toBe("No host of demo has mirrored DEMO-99. Back to Tickets");
   expect([line, ...line.querySelectorAll("*")].some((element) => element.classList.contains("font-mono"))).toBe(false);
-  expect(within(line).getByRole("link", { name: "Back to Tickets" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
+  const back = within(line).getByRole("link", { name: "Back to Tickets" });
+  expect(back.getAttribute("href")).toEndWith("#/tickets?project=demo");
+  expect([line, back].flatMap((element) => [...element.classList].filter((name) => /^(block|flex|grid|table|flex-col|w-full|basis-full)$/.test(name)))).toEqual([]);
   cleanup();
   await mount("#/tickets/nope/X-1");
   expect(screen.getByText("There is no page here.")).toBeTruthy();

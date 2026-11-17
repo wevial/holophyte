@@ -23,9 +23,7 @@ export function SteerNotes({ steers, now }: { steers: TicketSteer[]; now: number
   return (
     <section aria-labelledby="ticket-steers" className="mt-[26px]">
       <div id="ticket-steers" className={SECTION_LABEL}>
-        <span>
-          Steer notes and amendments <span className="font-mono text-[12px] font-normal text-ink-3">{steers.length}</span>
-        </span>
+        Steer notes and amendments <span className="font-mono text-[12px] font-normal text-ink-3">{steers.length}</span>
       </div>
       {newest.length > 0 && (
         <ul className="m-0 mt-2 list-none p-0">
