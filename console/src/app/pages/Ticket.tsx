@@ -6,7 +6,7 @@ import { formatAge, formatClock } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
 import { Btn } from "../components/Btn";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
-import { StateDot } from "../components/StateDot";
+import { StateDot, TONE_TEXT } from "../components/StateDot";
 import { ScoutThis } from "../components/ScoutThis";
 import { SteerBox } from "../components/SteerBox";
 import { SteerNotes } from "../components/SteerNotes";
@@ -17,6 +17,7 @@ import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
 import { TitleText } from "../components/TitleText";
 import { runPage } from "../run";
+import { STATES } from "../state";
 import { useTicketPage, type BoardChip } from "../ticket";
 import { NotFound } from "./Placeholder";
 import { CRUMB_LINK } from "./runShared";
@@ -39,12 +40,13 @@ function Page({ project, ticketKey, children }: { project: string; ticketKey: st
 }
 
 function BoardLine({ chip, liveRun, project }: { chip: BoardChip; liveRun: number | null; project: string }) {
+  const tone = chip.need ? "need" : STATES[chip.state].tone;
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
-      <span role="status" aria-label="Board" className="inline-flex items-center gap-1.5 font-sans text-[13px] font-medium leading-[1.3] text-ink">
-        <StateDot state={chip.state} hideWord tone={chip.need ? "need" : undefined} />
+      <span role="status" aria-label="Board" className="inline-flex items-center gap-1.5 font-sans text-[13px] font-medium leading-[1.3]">
+        <StateDot state={chip.state} hideWord tone={tone} />
         <span>
-          {chip.label}
+          <span className={TONE_TEXT[tone]}>{chip.label}</span>
           {chip.sub != null && <span className="font-normal text-ink-3"> · {chip.sub}</span>}
         </span>
       </span>
@@ -143,7 +145,7 @@ export function TicketPage() {
               />
             </div>
             <details className="mt-2.5">
-              <summary className="flex min-h-11 cursor-pointer items-center gap-2.5 font-sans text-[13px] font-semibold leading-none text-ink">
+              <summary className="mb-3 flex h-[30px] cursor-pointer items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold leading-none text-ink">
                 Verify
                 <span className="font-mono text-[12px] font-normal text-ink-3">
                   {commands.length} {commands.length === 1 ? "command" : "commands"}

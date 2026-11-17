@@ -57,7 +57,7 @@ function MarkdownView({ text }: { text: string }) {
         <table aria-label="Ticket header" className="mb-6 w-full border-collapse font-sans text-[13px]">
           <tbody>
             {facts.map(([key, value]) => (
-              <tr key={key} className="border-b border-hair">
+              <tr key={key} className="border-b border-hair hover:bg-hover">
                 <th scope="row" className="h-[34px] w-[1%] whitespace-nowrap py-1.5 pr-6 text-left align-middle font-mono text-[12px] font-normal text-ink-3">{key}</th>
                 <td className="h-[34px] py-1.5 align-middle text-ink-2 [overflow-wrap:anywhere]">{value}</td>
               </tr>
@@ -114,7 +114,7 @@ function RawEditor({ ticketKey, base, revision, served, onClose }: { ticketKey: 
         readOnly={busy}
         spellCheck={false}
         rows={16}
-        className="mt-2 block w-full resize-y [field-sizing:content] min-h-[16lh] rounded-[6px] border-0 bg-selected px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink outline-none focus:shadow-[0_0_0_2px_var(--wait)]"
+        className="mt-2 block w-full resize-y [field-sizing:content] min-h-[16lh] rounded-[6px] border-0 bg-selected px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink outline-none! focus:shadow-[0_0_0_2px_var(--wait)]"
       />
       {refusal.length > 0 && (
         <div role="alert" className="mt-3">
