@@ -221,7 +221,7 @@ export function Picker({ id, label, options, value, onPick, passPress, "aria-inv
               maxHeight: "var(--available-height)",
               width: `min(${MENU_WIDTH}px, calc(100vw - ${2 * EDGE}px))`,
             }}
-            className="fixed z-50 flex flex-col overflow-y-auto rounded-[9px] bg-raised p-1 shadow-[0_0_0_1px_var(--hair-2),var(--card-shadow)] outline-none"
+            className="fixed z-50 flex flex-col overflow-y-auto rounded-[9px] bg-raised p-1 shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] outline-none"
           >
             <List aria-labelledby={labelId} className="flex flex-col">
               {options.map((option) => (

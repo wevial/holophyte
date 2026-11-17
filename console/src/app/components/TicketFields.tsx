@@ -219,10 +219,10 @@ export function EvidenceField({ evidence, onChange, marks, changed = () => false
         return <div key={index} data-changed={changed(index) || undefined} className="flex flex-wrap items-end gap-2 border-b border-hair py-2.5">
           <span className="flex h-8 w-10 shrink-0 items-center gap-1.5"><ChangedDot changed={changed(index)} /><span className="font-mono text-[11.5px] text-ink-3">{name}</span></span>
           <label className="min-w-0 flex-1 basis-[150px] font-sans text-[13px] font-semibold text-ink">File
-            <input id={`evidence-file-${index}`} aria-label={`${name} File`} placeholder={`${position(index)}-slug.png`} {...marks.marks([`${name} File`, name], `${TICKET_INPUT} !mt-1 font-mono font-normal`)} value={row.file} onChange={event => edit(index, { file: event.target.value })} />
+            <input id={`evidence-file-${index}`} aria-label={`${name} File`} placeholder={`${position(index)}-slug.png`} {...marks.marks([`${name} File`, name], `${TICKET_INPUT} font-mono font-normal`)} value={row.file} onChange={event => edit(index, { file: event.target.value })} />
           </label>
           <label className="min-w-0 flex-[2] basis-[200px] font-sans text-[13px] font-semibold text-ink">State
-            <input id={`evidence-state-${index}`} aria-label={`${name} State`} placeholder="the page and state it shows" {...marks.marks([`${name} State`, name], `${TICKET_INPUT} !mt-1 font-sans font-normal`)} value={row.state} onChange={event => edit(index, { state: event.target.value })} />
+            <input id={`evidence-state-${index}`} aria-label={`${name} State`} placeholder="the page and state it shows" {...marks.marks([`${name} State`, name], `${TICKET_INPUT} font-sans font-normal`)} value={row.state} onChange={event => edit(index, { state: event.target.value })} />
           </label>
           <span className="flex h-8 items-center"><RowButtons name={name} index={index} count={evidence.length} onMove={delta => move(index, delta)} onRemove={() => onChange(renumbered(evidence.filter((_, at) => at !== index)))} /></span>
           <div className="basis-full empty:hidden">
