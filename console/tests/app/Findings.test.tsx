@@ -180,7 +180,8 @@ test("a clean week reads as no open findings, and a daemon without the route lea
   expect(counts()).toEqual(["02", null, "01", "02"]);
 });
 
-const pressed = () => within(screen.getByRole("group", { name: "Range" })).getAllByRole("button", { pressed: true }).map((button) => button.textContent);
+const rangeGroup = () => screen.getByRole("group", { name: "Range" });
+const pressed = () => within(rangeGroup()).getAllByRole("button", { pressed: true }).map((button) => button.textContent);
 const findingsAsked = (asked: string[]) => asked.filter((url) => url.includes("/findings?"));
 
 async function choose(...names: string[]) {
@@ -244,6 +245,42 @@ test("a custom range from 1 to 15 October asks since midnight 1 October until mi
   const until = new Date(2026, 9, 16).getTime();
   expect(asked).toContain(`${DEMO}/findings?since=${since}&limit=500&until=${until}`);
   expect(countLine()).toStartWith(`${dayRangeLabel("2026-10-01", "2026-10-15")} / `);
+});
+
+const customRange = () => screen.getByRole("button", { name: "Custom range" });
+const addressParams = () => new URLSearchParams(window.location.hash.split("?")[1]);
+
+async function pressRange(label: string) {
+  fireEvent.click(within(rangeGroup()).getByRole("button", { name: label }));
+  for (let step = 0; step < 2; step += 1) await act(settle);
+}
+
+test("with no filter, the Range group holds 7d, 30d and 90d with 7d pressed, and Custom range sits outside it unpressed", async () => {
+  await mount("#/findings", fleet({}, {}).fetch);
+  expect(within(rangeGroup()).getAllByRole("button").map((button) => button.textContent)).toEqual(["7d", "30d", "90d"]);
+  expect(pressed()).toEqual(["7d"]);
+  expect(rangeGroup().contains(customRange())).toBe(false);
+  expect(customRange().getAttribute("aria-pressed")).toBe("false");
+});
+
+test("pressing 30d writes range=30d and presses 30d alone, and pressing 7d again drops range", async () => {
+  await mount("#/findings", fleet({}, {}).fetch);
+  await pressRange("30d");
+  expect(addressParams().get("range")).toBe("30d");
+  expect(pressed()).toEqual(["30d"]);
+  await pressRange("7d");
+  expect(addressParams().has("range")).toBe(false);
+  expect(pressed()).toEqual(["7d"]);
+});
+
+test("a custom range presses no preset and presses Custom range reading its days, and pressing 30d drops from and to", async () => {
+  await mount("#/findings?from=2026-10-01&to=2026-10-15", fleet({}, {}).fetch);
+  expect(within(rangeGroup()).queryAllByRole("button", { pressed: true })).toEqual([]);
+  expect(customRange().getAttribute("aria-pressed")).toBe("true");
+  expect(customRange().textContent).toBe(dayRangeLabel("2026-10-01", "2026-10-15"));
+  await pressRange("30d");
+  const params = addressParams();
+  expect([params.get("range"), params.has("from"), params.has("to")]).toEqual(["30d", false, false]);
 });
 
 const openTitles = () => [...group("Open").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);

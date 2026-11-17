@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { dayStart } from "../history";
+import { Btn } from "./Btn";
 import { Picker, type PickerOption as FilterOption } from "./Picker";
+import { Segmented } from "./Segmented";
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -139,7 +141,7 @@ export function FilterSelect({ label, param, allLabel, options }: { label: strin
   );
 }
 
-const SEGMENT = "min-h-8 cursor-pointer px-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] whitespace-nowrap text-ink-2 not-first:border-l not-first:border-ink-3 hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper";
+const DATE_FIELD = "h-[28px] rounded-button border-0 bg-selected px-2 font-mono text-[12px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
 
 /** A popover's open state, closed by `hidden`, Escape or a press outside
  *  `box`, which gives focus back to `button` and focuses nothing else. */
@@ -224,15 +226,6 @@ function CheckMark() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="size-3.5 shrink-0 text-ink">
       <path d="M3.5 8.5l3 3 6-7" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 14 14" width={13} height={13} fill="none" stroke="currentColor" strokeWidth={1.3}>
-      <rect x="1.5" y="2.5" width="11" height="10" />
-      <path d="M1.5 5.5h11M4.5 1v3M9.5 1v3" />
     </svg>
   );
 }
@@ -491,39 +484,29 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   const write = useWrite();
   const { open, setOpen, close, box, button } = usePopover(hidden);
   const custom = from != null || to != null;
-  const field = "min-h-8 border border-rule bg-paper px-2 font-mono text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
+  const fromId = useId();
+  const toId = useId();
   return (
-    <div ref={box} className="relative shrink-0">
-      <div role="group" aria-label={label} className="inline-flex border border-ink-3">
-        {presets.map((preset) => (
-          <button key={preset.value} type="button" aria-pressed={!custom && (range ?? fallback) === preset.value}
-            onClick={() => write({ range: preset.value === fallback ? undefined : preset.value, from: undefined, to: undefined })} className={SEGMENT}>
-            {preset.label}
-          </button>
-        ))}
-        <button ref={button} type="button" aria-label="Custom range" aria-pressed={custom} aria-haspopup="true" aria-expanded={open}
-          onClick={() => setOpen(!open)} className={`${SEGMENT} inline-flex items-center gap-2 normal-case tracking-normal`}>
-          <CalendarIcon />
-          {custom && dayRangeLabel(from, to)}
-        </button>
-      </div>
+    <div ref={box} className="relative flex shrink-0 items-center gap-1.5">
+      <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
+        onPick={(picked) => write({ range: picked === fallback ? undefined : picked, from: undefined, to: undefined })} />
+      <button ref={button} type="button" aria-label="Custom range" title="Custom range" aria-pressed={custom} aria-haspopup="true" aria-expanded={open}
+        onClick={() => setOpen(!open)} className={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}>
+        <ToolCalendarIcon />
+        {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
+      </button>
       {open && (
         <div role="group" aria-label={`${label} range`}
-          className="absolute top-full right-0 z-20 mt-1 flex flex-col gap-3 border border-rule bg-paper p-4 font-sans text-[13px] text-ink-2 shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
-          <label className="flex items-center justify-between gap-3">
-            From
-            <input type="date" value={from ?? ""} max={to} className={field}
+          className="absolute top-full left-0 z-20 mt-1.5 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
+            <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
+            <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}
               onChange={(event) => write({ range: undefined, from: event.target.value || undefined })} />
-          </label>
-          <label className="flex items-center justify-between gap-3">
-            To
-            <input type="date" value={to ?? ""} min={from} className={field}
+            <label htmlFor={toId} className="text-[12px] text-ink-3">To</label>
+            <input id={toId} type="date" value={to ?? ""} min={from} className={DATE_FIELD}
               onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
-          </label>
-          <button type="button" onClick={close}
-            className="min-h-8 cursor-pointer self-end border border-ink-3 px-3 font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-ink hover:bg-paper-2">
-            Done
-          </button>
+          </div>
+          <Btn onClick={close} className="self-end">Done</Btn>
         </div>
       )}
     </div>
@@ -556,7 +539,6 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
   const shownTo = custom ? to : dayBefore(now, 0);
   const fromId = useId();
   const toId = useId();
-  const field = "h-[28px] rounded-button border-0 bg-selected px-2 font-mono text-[12px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
   return (
     <div ref={box} className="shrink-0">
       <button ref={button} type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={`Range: ${picked?.name ?? dayRangeLabel(from, to)}`}
@@ -583,10 +565,10 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
           <div className="my-1.5 h-px bg-hair" />
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5 pb-1">
             <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
-            <input id={fromId} type="date" value={shownFrom ?? ""} max={shownTo} className={field}
+            <input id={fromId} type="date" value={shownFrom ?? ""} max={shownTo} className={DATE_FIELD}
               onChange={(event) => write({ range: undefined, from: event.target.value || undefined, to: shownTo })} />
             <label htmlFor={toId} className="text-[12px] text-ink-3">To</label>
-            <input id={toId} type="date" value={shownTo ?? ""} min={shownFrom} className={field}
+            <input id={toId} type="date" value={shownTo ?? ""} min={shownFrom} className={DATE_FIELD}
               onChange={(event) => write({ range: undefined, from: shownFrom, to: event.target.value || undefined })} />
           </div>
         </div>
