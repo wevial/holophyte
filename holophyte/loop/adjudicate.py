@@ -126,10 +126,12 @@ def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
             + _refusal(refused)
             + "The files they name define exactly these tests:\n"
             + test_name_listing(wt, paths) + "\n"
-            "Restate only those CRITERION lines, one line each in the same "
-            "form, naming every test it cites copied verbatim from this "
-            "list, the ones the loop found included. Do not "
-            "modify anything and write nothing else.", wt,
+            "First run one read-only command that shows each test you will "
+            "cite in its file, such as `grep -n NAME PATH`. Then restate only "
+            "those CRITERION lines, one line each in the same form, naming "
+            "every test it cites copied verbatim from this list, the ones the "
+            "loop found included. Do not modify anything and write nothing "
+            "else.", wt,
             base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
     failed = failure_line(recite)
     if failed:
@@ -137,27 +139,35 @@ def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
     return recite
 
 
+def _cites_as_many(line, n, cited):
+    status, note = criteria_block(line)[n]
+    return status != "met" or len(test_references(note)) >= cited
+
+
 def _recited_lines(reply, recite, refused):
     numbers = {finding["line"] for finding in refused}
     first = _criterion_lines(reply, numbers)
-    restated = {n: line for n, line in _criterion_lines(recite, numbers).items()
-                if test_references(criteria_block(line)[n][1])}
+    answered = _criterion_lines(recite, numbers)
+    restated = [line for n, line in answered.items() if _cites_as_many(
+        line, n, len(test_references(criteria_block(first[n])[n][1])))]
     return "Re-cited after a refused test name:\n" + "".join(
         f"Cited: {first.get(n, '(no line)')}\n"
-        f"Restated: {restated.get(n, '(no line)')}\n"
-        for n in sorted(numbers)) + "\n", "\n".join(restated.values())
+        f"Restated: {answered.get(n, '(no line)')}\n"
+        for n in sorted(numbers)) + "\n", "\n".join(restated)
 
 
 def _recited(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
-             criteria, left_open, recorded, record):
+             criteria, left_open, recorded, record, checkpoint):
     paths = _mistyped(refused, reply, wt)
     if not paths:
         return None, "", refused
     try:
+        if recorded is None:
+            checkpoint(reply=str(reply))
         recite = recorded if recorded is not None else _recite(
             project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
             paths)
-    except InfraFailure:
+    except (InfraFailure, store.RunEnded):
         if record:
             record(structured_findings=refused)
         raise
@@ -255,23 +265,20 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     record = None if recorded else partial(
         record_round, project, conn, run_id, cap + 1, "adjudicate", reply,
         verify_cmd, ok, out, started_at=round_started)
+    checkpoint = partial(boundary, conn, run_id, "reviewing", terminal=True,
+                         rnd=cap + 1, ok=ok, out=str(out), left_open=left_open,
+                         review_round=review_round, verify_cmd=verify_cmd)
     recite, recited, refused = _recited(
         project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
-        criteria, left_open, pending.get("recite"), record)
+        criteria, left_open, pending.get("recite"), record, checkpoint)
     if record:
         record(structured_findings=refused or None)
     if recite is not None and not pending.get("recite"):
-        boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-                 ok=ok, out=str(out), reply=str(reply), recite=recite,
-                 left_open=left_open, review_round=review_round,
-                 verify_cmd=verify_cmd)
+        checkpoint(reply=str(reply), recite=recite)
     if refused:
         decision = "FAIL"
     if decision != "PASS":
-        boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-                 ok=ok, out=str(out), reply=str(reply), recite=recite,
-                 left_open=left_open, review_round=review_round,
-                 verify_cmd=verify_cmd)
+        checkpoint(reply=str(reply), recite=recite)
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",

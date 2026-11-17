@@ -177,7 +177,7 @@ def _python_tests(text):
         return []
     names = []
     for node in tree.body:
-        if isinstance(node, _TESTS) and node.name.startswith("test"):
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test"):
             names.append(node.name)
         elif isinstance(node, ast.ClassDef):
             names += [f"{node.name}::{child.name}" for child in node.body
@@ -193,21 +193,28 @@ _EACH = re.compile(r"(?<![.\w$])(?:it|test)(?:\.(?:only|skip|concurrent))?"
 _EACH_TITLE = re.compile(r"\s*\(\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
 
 
-def _each_titles(text):
-    from holophyte.review.reply_parsing import _JS_QUOTED
+_BACKTICKED = re.compile(r"`(?:[^`\\]|\\.)*`")
 
-    titles = []
-    for match in _EACH.finditer(text):
-        i, depth = match.end(), 1
-        while i < len(text) and depth:
-            quoted = _JS_QUOTED.match(text, i)
-            if quoted:
-                i = quoted.end()
-                continue
-            depth += {"(": 1, ")": -1}.get(text[i], 0)
-            i += 1
-        if title := _EACH_TITLE.match(text, i):
-            titles.append(title[2])
+
+def _each_titles(text):
+    from holophyte.review.reply_parsing import _JS_SKIPPED
+
+    titles, closes, depth, i = [], [], 0, 0
+    while i < len(text):
+        skipped = _JS_SKIPPED.match(text, i) or _BACKTICKED.match(text, i)
+        each = not skipped and _EACH.match(text, i)
+        if skipped or each:
+            if each:
+                closes.append(depth)
+                depth += 1
+            i = (skipped or each).end()
+            continue
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        if text[i] == ")" and closes and closes[-1] == depth:
+            closes.pop()
+            if title := _EACH_TITLE.match(text, i + 1):
+                titles.append(title[2])
+        i += 1
     return titles
 
 
@@ -221,10 +228,13 @@ def _test_names(text, suffix):
     return test_names(text, suffix) + _each_titles(text)
 
 
-def _cited(path, name):
+def _cited(file, path, name):
+    from holophyte.review.reply_parsing import _scan_witness
+
     if path.endswith((".py", ".go")):
         return f"{path}::{name}"
-    title = re.sub(r"\\([\\\"'`])", r"\1", name)
+    unescaped = re.sub(r"\\([\\\"'`])", r"\1", name)
+    title = unescaped if _scan_witness(file, None, unescaped) is None else name
     quoted = title.replace("\\", "\\\\").replace('"', '\\"')
     return f'{path}::"{quoted}"'
 
@@ -239,15 +249,14 @@ def _witness_clause(text):
 
 def test_name_listing(wt, paths):
     from holophyte.review.reply_parsing import _inside
-    from holophyte.review.witness_precheck import GLOB
 
     listed = []
     for path in dict.fromkeys(paths):
-        file = None if GLOB.search(path) else _inside(wt, path)
+        file = _inside(wt, path)
         if file is None or not file.is_file():
             continue
         names = _test_names(file.read_text(errors="replace"), file.suffix)
-        cited = "".join(f"- {_cited(path, name)}\n"
+        cited = "".join(f"- {_cited(file, path, name)}\n"
                         for name in sorted(set(names))) or "- (no tests)\n"
         listed.append(f"`{path}`:\n{cited}")
     return "\n".join(listed)

@@ -17,6 +17,7 @@ from holophyte.review.reply_parsing import (  # noqa: E402
 
 PYTHON = "tests/test_alpha.py"
 SPEC = "console/tests/app/Form.test.tsx"
+ROUTE = "console/app/(admin)/[documentId]/Route.test.tsx"
 CRITERIA = [
     f"Given a ticket, then it files. (`{PYTHON}` witnesses it.)",
     f"Given a form, then it saves. (`{SPEC}` witnesses it.)",
@@ -25,6 +26,7 @@ CRITERIA = [
     "(A test module matching `tests/test_alpha*.py` witnesses it.)",
     "Given `tests/test_legacy.py` is gone, then it stays gone. "
     f"(`{PYTHON}` witnesses it.)",
+    f"Given a route, then it renders. (`{ROUTE}` witnesses it.)",
 ]
 
 
@@ -40,7 +42,8 @@ class CriteriaBriefNamesTests(unittest.TestCase):
             "    def helper(self):\n        pass\n\n\n"
             "class BetaTests(unittest.TestCase):\n"
             "    def test_files_its_link_and_boards(self):\n        pass\n\n\n"
-            "def test_removal_clears_the_dependency():\n    pass\n")
+            "def test_removal_clears_the_dependency():\n    pass\n\n\n"
+            "async def test_saves():\n    pass\n")
         (self.root / "tests" / "test_legacy.py").write_text(
             "def test_old_path():\n    pass\n")
         (self.root / SPEC).parent.mkdir(parents=True)
@@ -49,9 +52,13 @@ class CriteriaBriefNamesTests(unittest.TestCase):
             '  it("saves the \\"draft\\" title", () => {});\n'
             "  test('keeps the board', () => {});\n"
             '  it("saves \\u2603", () => {});\n'
+            '  it("renders \\u2603 in a \\"draft\\"", () => {});\n'
             "});\n"
-            'test.each([[true, "a"], [false, ")"]] as const)'
+            '// test.each([1])("retired title", () => {});\n'
+            'test.each([[true, "a"], [false, `)`]] as const)'
             '("merges with readiness %s", async (ready) => {});\n')
+        (self.root / ROUTE).parent.mkdir(parents=True)
+        (self.root / ROUTE).write_text('it("routes the document", () => {});\n')
         self.brief = criteria_brief(CRITERIA, wt=self.root)
 
     def test_each_present_file_lists_its_exact_names_under_its_path(self):
@@ -65,10 +72,15 @@ class CriteriaBriefNamesTests(unittest.TestCase):
             f"`{SPEC}`:\n"
             f'- {SPEC}::"keeps the board"\n'
             f'- {SPEC}::"merges with readiness %s"\n'
+            rf'- {SPEC}::"renders \\u2603 in a \\\"draft\\\""' "\n"
             f'- {SPEC}::"saves \\\\u2603"\n'
             f'- {SPEC}::"saves the \\"draft\\" title"\n', self.brief)
         self.assertIn("copy a test name from this list verbatim", self.brief)
+        self.assertIn(f'`{ROUTE}`:\n- {ROUTE}::"routes the document"\n',
+                      self.brief)
         self.assertNotIn("helper", self.brief)
+        self.assertNotIn("retired title", self.brief)
+        self.assertNotIn("::test_saves", self.brief)
 
     def test_a_missing_file_or_a_pattern_lists_no_names(self):
         self.assertNotIn("test_absent.py`:", self.brief)
@@ -80,7 +92,7 @@ class CriteriaBriefNamesTests(unittest.TestCase):
     def test_every_listed_name_passes_the_witness_check(self):
         listed = [line[2:] for line in self.brief.splitlines()
                   if line.startswith("- ")]
-        self.assertEqual(len(listed), 8)
+        self.assertEqual(len(listed), 10)
         for name in listed:
             with self.subTest(name=name):
                 self.assertEqual(len(test_references(name)), 1)
