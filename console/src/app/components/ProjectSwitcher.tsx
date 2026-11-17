@@ -210,8 +210,9 @@ function unknownRow(name: string): SwitcherRow {
 
 const rowKey = (row: SwitcherRow) => (row.name == null ? "all-projects-scope" : `project:${row.name}`);
 
-export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]; colours: Map<string, string>; folded: boolean }) {
-  const { project } = useSearch({ from: "__root__" });
+export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: SwitcherRow[]; colours: Map<string, string>; folded: boolean; selected?: string }) {
+  const { project: scoped } = useSearch({ from: "__root__" });
+  const project = selected ?? scoped;
   const navigate = useNavigate();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const findId = `${useId()}-find`;

@@ -9,12 +9,17 @@ import type { Fetch } from "../../src/lib/poll";
 import { fakeDeps, NO_ATTENTION, peersFetch, settle } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
+const OTHER = "http://writer-host:7711";
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 const reviewValues = { loop: { review_rounds: 2, review_rounds_max: 4 }, review: { adversary: true } };
 
-async function mount(tab: string, values: ConfigValues, options: { status?: Partial<Status>; probe?: { ok: boolean; output: string[] } } = {}) {
+async function mount(tab: string, values: ConfigValues, options: { status?: Partial<Status>; probe?: { ok: boolean; output: string[] }; other?: boolean } = {}) {
   const status: Status = { ...working, project: "/srv/demo", host: "writer-host", runs: [], config_edit: true, ...options.status };
-  const poll = peersFetch(ORIGIN, { [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
+  const other: Status = { ...status, project: "/srv/other" };
+  const poll = peersFetch(ORIGIN, {
+    [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } },
+    ...(options.other ? { [OTHER]: { status: other, attention: { ...NO_ATTENTION, project: other.project } } } : {}),
+  });
   const writes: unknown[] = [];
   const fetch: Fetch = async (url, init) => {
     if (!url.endsWith("/config")) return poll(url, init);
@@ -137,7 +142,7 @@ test("the sidebar's sections carry the unsaved-edit count, the refused-check mar
   const link = (name: RegExp) => within(sidebar().getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name });
   fireEvent.click(screen.getByRole("button", { name: "One more worker" }));
   expect(link(/^General/).textContent).toBe("General1");
-  expect(link(/^Hold \/ release/).textContent).toBe("Hold / releaseheld");
+  expect(link(/^Hold/).textContent).toBe("Holdheld");
   expect(link(/^Hosts/).textContent).toBe("Hosts1");
   expect(link(/^Raw TOML/).textContent).toBe("Raw TOML");
 
@@ -148,4 +153,47 @@ test("the sidebar's sections carry the unsaved-edit count, the refused-check mar
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 550)); await settle(); });
   expect(link(/^Raw TOML/).textContent).toBe("Raw TOML1");
   expect(link(/^General/).textContent).toBe("General");
+});
+
+const sidebar = () => within(screen.getByRole("complementary", { name: "Console" }));
+const sections = () => screen.getByRole("navigation", { name: "Settings sections" });
+const switcher = () => sidebar().getByRole("button", { name: /Switch project$/ });
+const before = (first: Node, second: Node) => (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+
+test("the Settings sidebar leads with a back link named Settings, then the nine tabs in order with an icon each and the current one marked, under no group headings", async () => {
+  await mount("general", {});
+  const back = sidebar().getAllByRole("link", { name: "Settings" })[0]!;
+  expect(before(back, sections())).toBe(true);
+  const links = within(sections()).getAllByRole("link");
+  expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts", "General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]);
+  expect(links.every((link) => link.querySelector("svg") != null)).toBe(true);
+  expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["General"]);
+  for (const heading of ["You", "Factory", "Project"]) expect(sidebar().queryByText(heading)).toBeNull();
+});
+
+test("hairlines split Today's log from Hosts and Hosts from the project switcher", async () => {
+  await mount("general", {});
+  const link = (name: string) => within(sections()).getByRole("link", { name });
+  const [first, second] = within(sections()).getAllByRole("separator");
+  expect(within(sections()).getAllByRole("separator")).toHaveLength(2);
+  const order = [link("Today's log"), first!, link("Hosts"), second!, switcher(), link("General")];
+  expect(order.slice(1).every((node, at) => before(order[at]!, node))).toBe(true);
+});
+
+test("picking the other project from the switcher keeps General for that project and the switcher offers projects only", async () => {
+  await mount("general", {}, { other: true });
+  expect(document.querySelector("select")).toBeNull();
+  fireEvent.click(switcher());
+  await act(settle);
+  const options = within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option");
+  expect(options).toHaveLength(2);
+  expect([options[0]!.textContent?.startsWith("demo"), options[1]!.textContent?.startsWith("other")]).toEqual([true, true]);
+  fireEvent.click(options[1]!);
+  await act(settle);
+  await act(settle);
+  expect(window.location.hash).toBe("#/settings/general?project=other");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
+  expect(screen.getByText(/^other · config.toml on writer-host/)).toBeTruthy();
+  expect(switcher().getAttribute("aria-label")).toBe("Project: other. Switch project");
+  expect(within(sections()).getByRole("link", { name: "General" }).getAttribute("aria-current")).toBe("page");
 });
