@@ -99,10 +99,8 @@ const toggle = (row: HTMLElement) => row.querySelector<HTMLButtonElement>("butto
 const titles = (label: string) => rowsOf(label).map((row) => row.querySelector("[data-title]")!.textContent);
 const fateOf = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-fate]")!;
 const iconOf = (row: HTMLElement) => toggle(row).querySelector<HTMLElement>("[data-state]")!;
-const fateWord = (row: HTMLElement) => {
-  const word = toggle(row).querySelector<HTMLElement>("[data-fate-word]")!;
-  return isInaccessible(word) ? null : word.textContent;
-};
+const shown = (element: HTMLElement) => (isInaccessible(element) ? null : element.textContent);
+const fateWord = (row: HTMLElement) => shown(toggle(row).querySelector<HTMLElement>("[data-fate-word]")!);
 
 function unfoldAll(label: string): HTMLElement[] {
   const rows = rowsOf(label);
@@ -151,19 +149,19 @@ test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each 
   ];
   await mount("#/findings", fleet({ runs }));
   const rows = unfoldAll("Open");
-  expect(rows.map((row) => row.querySelector("[data-severity]")!.textContent)).toEqual(["P1", "P2", "P3"]);
+  expect(rows.map((row) => shown(row.querySelector<HTMLElement>("[data-severity]")!))).toEqual(["P1", "P2", "P3"]);
   const bodies = rows.map((row) => document.getElementById(toggle(row).getAttribute("aria-controls")!)!);
-  expect(bodies.map((body) => body.querySelector("[data-text]")!.textContent)).toEqual([
+  expect(bodies.map((body) => shown(body.querySelector<HTMLElement>("[data-text]")!))).toEqual([
     "The retry has no ceiling.",
     "The flag never reaches the parser.",
     "The log line ends in a space.",
   ]);
-  expect(bodies.map((body) => body.querySelector("[data-place]")!.textContent)).toEqual([
+  expect(bodies.map((body) => shown(body.querySelector<HTMLElement>("[data-place]")!))).toEqual([
     "holophyte/retry_loops_forever.py:3 · DEMO-21 · round 1",
     "holophyte/flag_is_ignored.py:3 · DEMO-22 · round 1",
     "holophyte/trailing_space_in_the_log.py:3 · DEMO-23 · round 1",
   ]);
-  expect(rows.map((row) => fateOf(row).textContent)).toEqual([
+  expect(rows.map((row) => shown(fateOf(row)))).toEqual([
     "open · the ticket has no run, so nobody is fixing it",
     "open · the run failed, so nobody is fixing it",
     "open · the ticket has no run, so nobody is fixing it",
@@ -220,7 +218,10 @@ test("settled rows say what became of each finding, the glyph and word in the fa
     "declined · the store column is lease_age_ms",
     "merged with this finding open",
   ]);
-  for (const row of rows) expect(iconOf(row).classList.contains("text-ink-2")).toBe(true);
+  for (const row of rows) {
+    expect(iconOf(row).classList.contains("text-ink-2")).toBe(true);
+    expect(iconOf(row).querySelector("[class*='text-']")).toBeNull();
+  }
 });
 
 test("follow-ups read their state's fate, the pending ones first", async () => {
