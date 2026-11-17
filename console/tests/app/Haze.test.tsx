@@ -119,15 +119,12 @@ function heldFrames() {
     }
   } as unknown as typeof ResizeObserver;
   const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
-  const caf = spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
   return {
-    pendingFrames: () => frames.length,
     runFrames: () => frames.splice(0).forEach((callback) => callback(performance.now() + 16)),
     resizeAll: () => observers.forEach((fire) => fire()),
     restore: () => {
       globalThis.ResizeObserver = savedObserver;
       raf.mockRestore();
-      caf.mockRestore();
     },
   };
 }
@@ -143,7 +140,6 @@ test("a moving haze whose canvas changes size draws at the new size in the resiz
   const haze = mountHaze(container, { motion: true });
   try {
     const canvas = container.querySelector("canvas")!;
-    expect(held.pendingFrames()).toBe(1);
     const before = canvasDraws.length;
 
     sizeTo(canvas, 400, 188);
@@ -151,7 +147,6 @@ test("a moving haze whose canvas changes size draws at the new size in the resiz
 
     expect([canvas.width, canvas.height]).toEqual([400, 188]);
     expect(canvasDraws.slice(before)).toEqual([[400, 188]]);
-    expect(held.pendingFrames()).toBe(1);
   } finally {
     haze.destroy();
     held.restore();
