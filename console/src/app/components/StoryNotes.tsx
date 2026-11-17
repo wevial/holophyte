@@ -56,7 +56,7 @@ export function StoryNotes({ story, now }: { story: StoryDetail; now: number }) 
   return (
     <section aria-labelledby="story-notes" className="mt-5 w-full max-w-[1320px]">
       <h2 id="story-notes" className="flex h-[30px] items-center gap-2.5 border-b border-rule-2 font-sans text-[13px] font-semibold text-ink">
-        Decisions and witnesses <span data-note-count className="font-mono font-normal text-ink-3">{notes.length}</span>
+        Decisions and witnesses <span data-note-count className="font-mono text-[12px] font-normal text-ink-3">{notes.length}</span>
       </h2>
       {notes.length === 0 ? (
         <p className="mt-2.5 flex items-center gap-2 font-sans text-[13px] text-ink-3">
@@ -69,7 +69,7 @@ export function StoryNotes({ story, now }: { story: StoryDetail; now: number }) 
             <li
               key={note.id}
               data-note={note.id}
-              className="grid min-h-[34px] grid-cols-[96px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-rule-2 py-2 max-[720px]:grid-cols-1"
+              className="grid min-h-[34px] content-center grid-cols-[96px_minmax(0,1fr)_auto] items-baseline gap-x-3.5 gap-y-1 border-b border-rule-2 py-1 max-[720px]:grid-cols-1"
             >
               <span data-note-kind className={`inline-flex items-center gap-1.5 font-sans text-[12.5px] ${note.tone}`}>
                 <Glyph>{STATE_ICONS[note.glyph]}</Glyph>
