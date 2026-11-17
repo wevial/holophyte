@@ -176,7 +176,7 @@ export function NewTicket() {
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues(previous => ({ ...previous, [field]: event.target.value })),
     };
     return <Field label={label} hint={hint} optional={optional} messages={messagesOf(label)} extra={field === "verify" ? " · one a line, run as written" : undefined}>
-      {field === "title" ? <input {...props} {...marks(label, `${INPUT} font-sans text-[18px] font-semibold`)} /> :
+      {field === "title" ? <input {...props} {...marks(label, `${INPUT} font-sans`)} /> :
         <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };

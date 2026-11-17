@@ -364,6 +364,17 @@ test("with UI change open, the Checker's Summary message closes it and leaves fo
   expect(document.activeElement === screen.getByRole("textbox", { name: "Summary" })).toBe(true);
 });
 
+test("with UI change open, clicking into Summary closes it and Summary takes the typing", async () => {
+  await mount("#/tickets/demo/new");
+  await open("UI change");
+  const summary = screen.getByRole("textbox", { name: "Summary" });
+  await userEvent.click(summary);
+  await userEvent.keyboard("Notes show");
+  await flush();
+  expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
+  expect((summary as HTMLTextAreaElement).value).toBe("Notes show");
+});
+
 test("with UI change open, pressing the Blast radius label closes it and opens Blast radius with focus in its list", async () => {
   await mount("#/tickets/demo/new");
   await open("UI change");

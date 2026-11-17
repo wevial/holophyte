@@ -122,7 +122,7 @@ export function Field({ label, optional = false, hint, extra, messages = [], cha
   const aside = `${optional ? "Optional" : ""}${extra ?? ""}`.replace(/^ · /, "").trim();
   return (
     <div data-changed={changed || undefined} className="min-w-0">
-      {label === PROJECT ? <ProjectHead /> : <FieldHead label={label} htmlFor={`new-${label}`} aside={aside} changed={changed} />}
+      {label === PROJECT && !optional ? <ProjectHead /> : <FieldHead label={label} htmlFor={`new-${label}`} aside={aside} changed={changed} />}
       {hint && <p className="mt-1 font-sans text-[13px] text-ink-3">{hint}</p>}
       {children}
       <Messages id={messagesId(label)} messages={messages} />
@@ -179,7 +179,7 @@ function Choice<T extends string | null>({ label, options, value, onChange, mark
   const { className: _, ...aria } = marks.marks(label, "");
   return <Field label={label} optional={optional} hint={hint} messages={marks.messagesOf(label)} changed={changed}>
     <div className="mt-2">
-      <Picker id={`new-${label}`} label={label} {...aria} value={outside.length ? OUTSIDE : value ?? ""}
+      <Picker id={`new-${label}`} label={label} passPress {...aria} value={outside.length ? OUTSIDE : value ?? ""}
         options={[...options.map(([option, name]) => ({ value: option ?? "", label: name })), ...outside]}
         onPick={picked => {
           const chosen = options.find(([option]) => (option ?? "") === picked);

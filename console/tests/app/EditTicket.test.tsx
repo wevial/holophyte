@@ -315,6 +315,16 @@ test("How holds every paragraph up to the next label, and section text under no 
   expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(served, "Read the steers once.")]);
 });
 
+test("a changed custom Project section under Other sections draws the shared field head, not the Project control's", async () => {
+  const body = BODY.replace("## Open questions", "## Project\n\nThe orders team owns it.\n\n## Open questions");
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }) });
+  const section = document.querySelector<HTMLTextAreaElement>("details textarea[id='new-Project']")!;
+  await act(async () => void fireEvent.change(section, { target: { value: "The exports team owns it." } }));
+  const field = section.closest<HTMLElement>("[data-changed]")!;
+  expect(field.textContent).toStartWith("ProjectOptional");
+  expect(within(field).queryByText("Required")).toBeNull();
+});
+
 test("a section its fields cannot hold whole is edited as its own text, comments and all", async () => {
   const commented = "<!--\n**What:** guidance\n-->\n\n**What:** List the notes under the run.";
   const scope = "These stay in scope:\n\n- Alpha\n  with its detail";

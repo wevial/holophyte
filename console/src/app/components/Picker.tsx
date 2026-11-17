@@ -20,6 +20,7 @@ type PickerOptions = {
   items?: PickerOption[];
   current?: string;
   onChoose?: (key: string) => void;
+  passPress?: boolean;
 };
 
 const LISTBOX_POPOVER = { ...popoverPreset, role: undefined };
@@ -53,6 +54,7 @@ const picker = definePrimitive({
     items: "value",
     current: "string",
     onChoose: "callback",
+    passPress: "boolean",
   },
   state: (options: PickerOptions) => ({
     ...popupState(options),
@@ -67,6 +69,7 @@ const picker = definePrimitive({
       rules: (core) => ({
         dismiss(reason, { event, focus }) {
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
+          if (context.options().passPress) return void core.control.hide({ reason, event, focus: false });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
           const label = event?.target instanceof Element ? event.target.closest("label") : null;
@@ -162,8 +165,10 @@ function CheckIcon() {
 
 /** A button reading the current option that opens a listbox of `options`;
  *  picking one calls `onPick` with its value. */
-export function Picker({ id, label, options, value, onPick, "aria-invalid": invalid, "aria-describedby": describedBy }: {
-  id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; "aria-invalid"?: boolean; "aria-describedby"?: string;
+/** `passPress` lets a press outside the open list close it and keep its
+ *  own effect, so a press in another field focuses that field. */
+export function Picker({ id, label, options, value, onPick, passPress, "aria-invalid": invalid, "aria-describedby": describedBy }: {
+  id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; passPress?: boolean; "aria-invalid"?: boolean; "aria-describedby"?: string;
 }) {
   const current = options.find((option) => option.value === value) ?? options[0];
   const labelId = useId();
@@ -171,6 +176,7 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
     items: options as PickerOption[],
     current: current?.value,
     onChoose: onPick,
+    passPress,
   });
   return usePart(
     handle,
@@ -194,10 +200,10 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className="inline-flex h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
+            className="inline-flex min-h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected py-1.5 pr-2 pl-2.5 text-left text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
           >
-            <span className="min-w-0 truncate">{current?.label}</span>
-            {current?.note && <span className="shrink-0 text-ink-3">{" "}{current.note}</span>}
+            <span className="min-w-0 [overflow-wrap:anywhere]">{current?.label}</span>
+            {current?.note && <span className="shrink-0 whitespace-nowrap text-ink-3">{" "}{current.note}</span>}
             <span className="flex shrink-0 text-ink-3">
               <DropIcon />
             </span>
@@ -223,10 +229,10 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
                   key={option.value}
                   value={option.value}
                   aria-disabled={option.disabled || undefined}
-                  className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 text-[13px] leading-none text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
+                  className="flex min-h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 py-1.5 text-[13px] leading-[1.25] text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
                 >
-                  <span className="min-w-0 truncate">{option.label}</span>
-                  {option.note && <span className="shrink-0 text-ink-3">{" "}{option.note}</span>}
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>
+                  {option.note && <span className="shrink-0 whitespace-nowrap text-ink-3">{" "}{option.note}</span>}
                   <span className="flex-1" />
                   <span className={`flex text-accent ${option.value === current?.value ? "" : "invisible"}`}>
                     <CheckIcon />
