@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { dayStart } from "../history";
-import { Picker } from "./Picker";
+import { Picker, type PickerOption as FilterOption } from "./Picker";
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -118,11 +118,6 @@ export function SearchToggle({ label }: { label: string }) {
         className={FILLED_INPUT} />
     </label>
   );
-}
-
-interface FilterOption {
-  value: string;
-  label: string;
 }
 
 /** `all` under `allLabel`, then each of `options`, as the address's `param`;
