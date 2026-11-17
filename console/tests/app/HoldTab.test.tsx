@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { Holds, Status } from "../../src/lib/contract.gen";
@@ -44,16 +44,25 @@ afterAll(() => happyDOM.setURL("about:blank"));
 beforeEach(() => { localStorage.clear(); sessionStorage.clear(); });
 afterEach(() => { cleanup(); window.location.hash = ""; localStorage.clear(); sessionStorage.clear(); });
 
-test("the Hold settings route shows admission, worker capacity and newest-first history with actor names", async () => {
+const historyCount = () => screen.getByRole("heading", { name: /^History/ }).querySelector("[data-count]")?.textContent;
+
+test("the Hold settings route shows admission, worker capacity and a counted newest-first history with actor names", async () => {
   const view = await mount();
-  expect(screen.getAllByText("Taking work").length).toBeGreaterThan(0);
-  const taking = screen.getByRole("button", { name: "Taking work" });
-  expect(taking.classList.contains("bg-live-wash")).toBe(true);
-  expect(taking.classList.contains("text-ok-ink")).toBe(true);
+  const admission = within(screen.getByRole("group", { name: "Admission" }));
+  expect(admission.getAllByRole("button").map((button) => [button.textContent, button.getAttribute("aria-pressed")])).toEqual([["Taking work", "true"], ["Held", "false"]]);
   expect(screen.getByText("Claims Ready tickets as its 2 workers free up.")).toBeTruthy();
-  expect(screen.getByRole("group", { name: "Admission" })).toBeTruthy();
+  expect(historyCount()).toBe("2");
   expect(view.container.textContent).toMatch(/History.*Oct 9 18:02.*released.*Schema bump is out; back to normal\..*· you.*Oct 9 13:40.*held.*Holding for the schema bump\..*· the supervisor/);
   expect(screen.queryByRole("button", { name: "Release" })).toBeNull();
+});
+
+test("picking Held opens the reason field while Taking work stays pressed until the daemon reports the hold", async () => {
+  await mount();
+  expect(screen.queryByPlaceholderText("Why it should stop taking work")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Held" }));
+  expect(screen.getByPlaceholderText("Why it should stop taking work")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Taking work" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "Held" }).getAttribute("aria-pressed")).toBe("false");
 });
 
 for (const mode of ["Hold", "Release"] as const) {
@@ -109,6 +118,7 @@ test("empty or unavailable history stays usable and actions-off disables hold an
     for (const admission of ["enabled", "held"] as const) {
       await mount({ rows: [], missing, status: { admission, actions: false } });
       expect(screen.getByText("Never held. It has taken work since it was added.")).toBeTruthy();
+      expect(historyCount()).toBe("0");
       const button = screen.getByRole("button", { name: admission === "enabled" ? "Held" : "Release" }) as HTMLButtonElement;
       expect(button.disabled).toBe(true);
       expect(button.title).toBe(ACTIONS_OFF);

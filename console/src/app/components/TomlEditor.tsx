@@ -73,10 +73,10 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
   const gutterWidth = `max(3rem, calc(${String(lines.length).length}ch + 36px))`;
   const error = current.error?.replace(/^\[holo2\]\s+.*?:\s*/, "");
   return <div className="mt-6 min-w-0">
-    {fieldChanges > 0 && <p className="mb-4 font-mono text-[12px] text-ink-3">Save or discard the {fieldChanges} field {fieldChanges === 1 ? "change" : "changes"} before editing the raw file.</p>}
-    <div data-toml-scroller="" style={{ scrollPadding: `12px 0 12px calc(${gutterWidth} + 12px)` }} className="h-[max(360px,calc(100dvh-360px))] min-w-0 overflow-auto border border-rule bg-paper-2 font-mono text-[13px] focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-focus">
+    {fieldChanges > 0 && <p className="mb-4 font-sans text-[13px] text-ink-3">Save or discard the {fieldChanges} field {fieldChanges === 1 ? "change" : "changes"} before editing the raw file.</p>}
+    <div data-toml-scroller="" style={{ scrollPadding: `12px 0 12px calc(${gutterWidth} + 12px)` }} className="h-[max(360px,calc(100dvh-360px))] min-w-0 overflow-auto rounded-[10px] border border-hair bg-raised font-mono text-[13px] focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-focus">
       <div className="flex min-h-full w-max min-w-full">
-        <div aria-hidden="true" style={{ width: gutterWidth }} className="sticky left-0 z-10 shrink-0 border-r border-rule bg-paper-2 py-3 text-right font-mono text-[13px] leading-5 text-ink-3">
+        <div aria-hidden="true" style={{ width: gutterWidth }} className="sticky left-0 z-10 shrink-0 border-r border-hair bg-raised py-3 text-right font-mono text-[13px] leading-5 text-ink-3">
           {lines.map((_, index) => <div key={index} data-line={index + 1} data-refused={current.line === index + 1 ? "true" : undefined} className={`h-5 px-3 ${current.line === index + 1 ? "bg-bad-wash text-bad-text" : ""}`}>
             <span className="mr-1 inline-block w-1.5">{current.line === index + 1 ? "▪" : ""}</span>{index + 1}
           </div>)}
@@ -108,18 +108,18 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
       </div>
     </div>
     <div aria-live="polite" className="mt-5">
-      <h3 className="font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Checker</h3>
-      <p className={`mt-2 font-mono text-[12px] ${current.pending ? "text-ink-3" : current.error ? "text-bad" : "text-live"}`}>{current.pending ? "checking…" : current.error ? "1 error blocks saving" : "no errors · ready to save"}</p>
-      {error && <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border border-bad bg-bad-wash px-3 py-3 font-mono text-[12px]">
+      <h3 className="flex h-[30px] items-center border-b border-hair font-sans text-[13px] font-semibold text-ink">Checker</h3>
+      <p className={`mt-2.5 font-sans text-[13px] ${current.pending ? "text-ink-3" : current.error ? "text-bad" : "text-live"}`}>{current.pending ? "checking…" : current.error ? "1 error blocks saving" : "no errors · ready to save"}</p>
+      {error && <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-[8px] bg-bad-wash px-3 py-2.5 font-mono text-[12px]">
         <span aria-hidden="true" className="text-bad">×</span>
         {current.line != null && <span className="text-ink-3">line {current.line}</span>}
         <span className="text-bad">error</span><span className="min-w-0 break-words text-ink">{error}</span>
       </div>}
     </div>
-    <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-rule pt-4">
+    <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-hair pt-4">
       <Btn disabled={!changed || busy} onClick={onRevert}>Revert to revision {revision.slice(0, 7)}</Btn>
       <Btn variant="primary" disabled={readOnly || !changed || current.pending || current.error != null} busy={busy} busyLabel="Saving…" onClick={onSave}>Save</Btn>
-      <p className="font-mono text-[12px] text-ink-3">{current.error ? "Fix the error to save." : "Saving shows the diff first."}</p>
+      <p className="font-sans text-[13px] text-ink-3">{current.error ? "Fix the error to save." : "Saving shows the diff first."}</p>
     </div>
   </div>;
 }

@@ -65,6 +65,8 @@ test("Raw TOML opens the whole file with a numbered gutter and revision revert, 
   expect(gutter.textContent?.replace(/\s/g, "")).toBe("123");
   expect(screen.getByRole("button", { name: "Revert to revision 3f9a2c1" })).toBeTruthy();
   expect(saveButton().disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Revert to revision 3f9a2c1" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(saveButton().parentElement!.textContent).toContain("Saving shows the diff first.");
   expect(source.writes).toHaveLength(0);
 });
 
@@ -225,6 +227,8 @@ test("a save refused at line 3 marks that gutter line and draws its band on the 
   const band = scroller().querySelector("[data-refused-band]") as HTMLElement;
   expect(band.style.top).toBe("52px");
   expect(band.parentElement!.contains(editor())).toBe(true);
+  const checker = screen.getByRole("heading", { name: "Checker" }).parentElement!.textContent!;
+  expect(checker).toMatch(/^Checker1 error blocks saving.*line 3.*Invalid value \(at line 3, column 9\)$/);
 });
 
 test("PageDown and PageUp move the caret a page of lines in its column and Shift extends the selection", async () => {
