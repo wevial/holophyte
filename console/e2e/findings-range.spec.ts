@@ -27,3 +27,23 @@ test("at 320px and 120% text with a custom range picked, the range presets and C
     expect(box.x + box.width).toBeLessThanOrEqual(320);
   }
 });
+
+test("at 720x425 and 125% text, expanding the folded sidebar by shortcut with Custom range open keeps the dates menu and Done inside the viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 425 });
+  await page.addInitScript(() => {
+    localStorage.setItem("holophyte.textSize", "125");
+    localStorage.setItem("holophyte.next.rail", "folded");
+  });
+  await page.goto("/#/findings");
+  await page.getByRole("button", { name: "Custom range" }).click();
+  const menu = page.getByRole("group", { name: "Range range" });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Control+Backslash");
+  await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
+  await expect(async () => {
+    for (const part of [menu, menu.getByRole("button", { name: "Done" })]) {
+      const box = (await part.boundingBox())!;
+      expect([box.x >= 0, box.y >= 0, box.x + box.width <= 720, box.y + box.height <= 425]).toEqual([true, true, true, true]);
+    }
+  }).toPass({ timeout: 2000 });
+});

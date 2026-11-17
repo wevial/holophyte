@@ -336,6 +336,29 @@ test("with Custom range open, the scrolling main resizing as its button moves ri
   }
 });
 
+test("with Custom range open, the range row growing as the button wraps to its own line places the dates menu again at its new left edge", async () => {
+  const held = heldResizes();
+  const viewport = document.documentElement.getBoundingClientRect;
+  try {
+    await mount("#/findings", fleet({}, {}).fetch);
+    const main = scrollingMain();
+    fireEvent.click(customRange());
+    const menu = screen.getByRole("group", { name: "Range range" });
+    const anchor = customRange().parentElement!;
+    document.documentElement.getBoundingClientRect = rectAt(0, 720);
+    Object.defineProperty(menu, "offsetWidth", { configurable: true, value: 248 });
+    menu.getBoundingClientRect = rectAt(0, 248);
+    anchor.getBoundingClientRect = rectAt(600, 32);
+    held.resize(main);
+    anchor.getBoundingClientRect = rectAt(330, 32);
+    held.resize(anchor.parentElement!);
+    expect(330 + parseFloat(menu.style.left)).toBe(330);
+  } finally {
+    document.documentElement.getBoundingClientRect = viewport;
+    held.restore();
+  }
+});
+
 test("closing the Custom range menu with Done leaves no observer on its button or the scrolling main", async () => {
   const held = heldResizes();
   try {
