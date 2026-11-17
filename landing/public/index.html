@@ -8,54 +8,63 @@
 <link rel="icon" href="https://media.holophyte.ai/demo/mark.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,200..700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
   color-scheme: light;
-  --canvas: #eceaf3; --paper: #fbfafd; --paper-2: #f3f1f8;
-  --ink: #171a2c; --ink-2: #454b66; --ink-3: #5f6580;
-  --rule: #d3d0e0; --rule-2: #e5e3ee;
-  --act: #b02f6b; --act-ink: #ffffff; --act-wash: rgba(176, 47, 107, 0.08);
-  --live: #1f7a35; --wait: #5653a6; --bad: #c0321f; --ask: #8a6500;
-  --shadow: 0 8px 24px rgba(23, 26, 44, 0.12);
+  --canvas: #f6f5fa; --raised: #ffffff; --hover: #e2dcf1; --sel: #ebe7f7;
+  --hair: rgba(29, 24, 43, 0.08); --hair-2: rgba(29, 24, 43, 0.16);
+  --ink: #1d182b; --ink-2: #4f4865; --ink-3: #655e7b;
+  --live: #00794a; --wait: #5a4ebf; --bad: #c13234; --accent: #5a4ebf;
+  --pri-bg: #1d182b; --pri-ink: #f6f5fa;
+  --shadow: 0 30px 80px rgba(29, 24, 43, 0.16), 0 4px 14px rgba(29, 24, 43, 0.08);
+  --haze: radial-gradient(36% 90% at 24% 0%, rgba(200, 191, 246, 0.75), transparent 70%),
+    radial-gradient(28% 70% at 58% 0%, rgba(243, 189, 219, 0.6), transparent 70%);
   --sans: "Archivo", "Helvetica Neue", Arial, sans-serif;
-  --read: "IBM Plex Sans", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #05070f; --paper: #0b1020; --paper-2: #11182c;
-  --ink: #e9ecf6; --ink-2: #b7bdd3; --ink-3: #8a92ad;
-  --rule: #273050; --rule-2: #1a2140;
-  --act: #f5a3c7; --act-ink: #1b0d16; --act-wash: rgba(245, 163, 199, 0.10);
-  --live: #86d993; --wait: #aaa7ec; --bad: #ff7b72; --ask: #f0cf62;
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --canvas: #0d0a15; --raised: #191527; --hover: #1d1930; --sel: #2a2540;
+  --hair: rgba(225, 219, 248, 0.075); --hair-2: rgba(225, 219, 248, 0.14);
+  --ink: #ece8fb; --ink-2: #b3adcc; --ink-3: #857fa2;
+  --live: #7fd6a0; --wait: #aaa7ff; --bad: #ff8a82; --accent: #b9a3ff;
+  --pri-bg: #ece8fb; --pri-ink: #0d0a15;
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.35);
+  --haze: radial-gradient(36% 90% at 24% 0%, rgba(91, 74, 230, 0.36), transparent 70%),
+    radial-gradient(28% 70% at 58% 0%, rgba(199, 126, 232, 0.22), transparent 70%);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --canvas: #05070f; --paper: #0b1020; --paper-2: #11182c;
-    --ink: #e9ecf6; --ink-2: #b7bdd3; --ink-3: #8a92ad;
-    --rule: #273050; --rule-2: #1a2140;
-    --act: #f5a3c7; --act-ink: #1b0d16; --act-wash: rgba(245, 163, 199, 0.10);
-    --live: #86d993; --wait: #aaa7ec; --bad: #ff7b72; --ask: #f0cf62;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    --canvas: #0d0a15; --raised: #191527; --hover: #1d1930; --sel: #2a2540;
+    --hair: rgba(225, 219, 248, 0.075); --hair-2: rgba(225, 219, 248, 0.14);
+    --ink: #ece8fb; --ink-2: #b3adcc; --ink-3: #857fa2;
+    --live: #7fd6a0; --wait: #aaa7ff; --bad: #ff8a82; --accent: #b9a3ff;
+    --pri-bg: #ece8fb; --pri-ink: #0d0a15;
+    --shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.35);
+    --haze: radial-gradient(36% 90% at 24% 0%, rgba(91, 74, 230, 0.36), transparent 70%),
+      radial-gradient(28% 70% at 58% 0%, rgba(199, 126, 232, 0.22), transparent 70%);
   }
 }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--canvas); color: var(--ink);
-  font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  position: relative; margin: 0; background: var(--canvas); color: var(--ink);
+  font-family: var(--sans); font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; }
-:focus-visible { outline: 2px solid var(--act); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 img, video { display: block; max-width: 100%; height: auto; }
-code { font-family: var(--mono); font-size: 0.88em; }
+code { font-family: var(--mono); font-size: 0.88em; padding: 1px 5px; border-radius: 5px; background: var(--sel); color: var(--ink); }
 
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
-@media (min-width: 720px) { .wrap { padding: 0 32px; } }
+.haze {
+  position: absolute; left: 0; right: 0; top: 0; height: 520px; background: var(--haze); pointer-events: none;
+  -webkit-mask-image: linear-gradient(#000 35%, transparent); mask-image: linear-gradient(#000 35%, transparent);
+}
+.wrap { position: relative; max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+@media (min-width: 720px) { .wrap { padding: 0 40px; } }
 
 /* Shots follow the theme: the dawn capture in light, the night one in dark. */
 .night { display: none; }
@@ -66,74 +75,74 @@ code { font-family: var(--mono); font-size: 0.88em; }
   :root:not([data-theme="light"]) .night { display: block; }
 }
 
-.top { border-bottom: 1px solid var(--rule); background: var(--paper); }
-.top .wrap { display: flex; align-items: center; gap: 16px; min-height: 60px; }
-.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 650; font-size: 18px; letter-spacing: -0.01em; }
-.brand svg { width: 24px; height: 24px; }
-.top nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
-.top nav a, .theme {
-  font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
-  text-decoration: none; color: var(--ink-2); padding: 10px 10px; border: 0; background: none; cursor: pointer;
-}
-.top nav a:hover, .theme:hover { color: var(--act); }
-.theme { border: 1px solid var(--rule); margin-left: 6px; }
+.top { display: flex; align-items: center; gap: 8px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 9px; margin-right: auto; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
+.brand svg { width: 22px; height: 22px; }
+.nl { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 7px; color: var(--ink-2); font-size: 14px; font-weight: 500; text-decoration: none; }
+.ib { width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 7px; background: none; color: var(--ink-2); cursor: pointer; }
+.nl:hover, .ib:hover { background: var(--hover); color: var(--ink); }
+.ib svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-.hero.wrap { margin-top: 52px; margin-bottom: 0; }
+.hero { padding: 64px 0 48px; }
+@media (min-width: 720px) { .hero { padding: 88px 0 56px; } }
 .hero h1 {
-  font-size: clamp(32px, 4.6vw, 50px); line-height: 1.04; letter-spacing: -0.025em; font-weight: 700;
-  font-variation-settings: "wdth" 104; margin: 0 0 18px; text-wrap: balance;
+  margin: 0; max-width: 16ch; font-size: clamp(40px, 6.4vw, 68px); line-height: 1.02; font-weight: 300;
+  font-stretch: 112%; letter-spacing: -0.03em; text-wrap: balance;
 }
-.hero h1 em { font-style: normal; color: var(--act); }
-.lead { font-family: var(--read); font-size: 18px; line-height: 1.55; color: var(--ink-2); max-width: 62ch; margin: 0; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.lead { margin: 24px 0 0; max-width: 58ch; font-size: 18px; line-height: 1.55; color: var(--ink-2); }
+.cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px; }
+.btn {
+  display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border-radius: 9px;
+  font-size: 14.5px; font-weight: 500; text-decoration: none; color: var(--ink);
+  background: var(--raised); box-shadow: inset 0 0 0 1px var(--hair-2);
+}
+.btn:hover { background: var(--hover); }
+.btn.pri { background: var(--pri-bg); color: var(--pri-ink); box-shadow: none; }
+.btn.pri:hover { opacity: 0.9; }
 
-.frame { display: block; border: 1px solid var(--rule); background: var(--paper); box-shadow: var(--shadow); overflow: hidden; }
+.shot { position: relative; max-height: 560px; border-radius: 14px 14px 0 0; overflow: hidden; background: var(--canvas); box-shadow: 0 0 0 1px var(--hair-2), var(--shadow); }
+.shot::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 120px; background: linear-gradient(transparent, var(--canvas)); pointer-events: none; }
 
-/* Each section opens on a rule, its heading below. */
-section.wrap { margin-top: 64px; }
-section.wrap::before { content: ""; display: block; height: 1px; background: var(--rule); margin-bottom: 28px; }
-h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 700; margin: 0 0 24px; }
+.frame { display: block; overflow: hidden; border-radius: 12px; background: var(--raised); box-shadow: 0 0 0 1px var(--hair-2), var(--shadow); }
+
+.sec { position: relative; padding: 72px 0 80px; border-top: 1px solid var(--hair); }
+@media (min-width: 720px) { .sec { padding: 96px 0 104px; } }
+h2 { margin: 0 0 32px; font-size: 30px; line-height: 1.15; font-weight: 400; font-stretch: 112%; letter-spacing: -0.02em; text-wrap: balance; }
+
+.g { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.t-live { color: var(--live); } .t-bad { color: var(--bad); } .t-wait { color: var(--wait); } .t-acc { color: var(--accent); }
 
 /* The loop */
-.loop { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-.loop li { position: relative; background: var(--paper); border: 1px solid var(--rule); padding: 16px 16px 18px; }
-.loop .n { font-family: var(--mono); font-size: 11px; font-weight: 400; color: var(--ink-3); letter-spacing: 0.08em; }
-.loop h3 { margin: 0 0 6px; font-size: 17px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
-.loop h3 i { width: 8px; height: 8px; display: inline-block; background: var(--live); }
-.loop li:nth-child(4) h3 i { background: var(--wait); }
-.loop li:nth-child(5) h3 i { background: var(--act); }
-.loop p { margin: 0; font-family: var(--read); font-size: 14px; line-height: 1.45; color: var(--ink-2); }
-.loop li:not(:last-child)::after {
-  content: "↓"; position: absolute; left: 50%; transform: translateX(-50%); bottom: -14px; z-index: 1;
-  font-family: var(--mono); font-size: 13px; color: var(--ink-3); background: var(--canvas); padding: 0 4px; line-height: 16px;
-}
-.back { margin-top: 14px; display: flex; gap: 10px; align-items: baseline; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
-.back span { color: var(--wait); font-weight: 600; }
-.outs { display: grid; gap: 12px; margin-top: 18px; }
-.out { margin: 0; border-left: 3px solid var(--live); padding: 4px 0 4px 12px; font-family: var(--read); font-size: 14px; color: var(--ink-2); }
-.out.no { border-color: var(--bad); }
-.out b { font-family: var(--sans); color: var(--ink); }
+.steps { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.step { display: flex; flex-direction: column; gap: 10px; padding: 18px 18px 20px; border-radius: 12px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--hair); }
+.step .hd { display: flex; align-items: center; gap: 8px; }
+.step .n { font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+.step .g { margin-left: auto; }
+.step h3 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.step p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.back { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; font-size: 13.5px; color: var(--ink-3); }
+.back .line { display: none; height: 18px; border: 1.5px solid var(--hair-2); border-top: 0; border-radius: 0 0 10px 10px; }
+.back b { font-weight: 500; color: var(--wait); }
+.outs { display: grid; gap: 12px; margin-top: 28px; }
+.out { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 16px 18px; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--hair); font-size: 14.5px; color: var(--ink-2); }
+.out b { color: var(--ink); font-weight: 600; }
+.out .g { width: 18px; height: 18px; margin-top: 1px; }
 @media (min-width: 900px) {
-  .loop { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
-  .loop li:not(:last-child)::after { content: "→"; left: auto; right: -16px; bottom: auto; top: 50%; transform: translateY(-50%); padding: 0 1px; }
-  .back { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); column-gap: 18px; margin-top: 0; }
-  .back .bracket {
-    grid-column: 2 / 5; height: 22px; border: 1px dashed var(--wait); border-top: 0;
-    position: relative; margin: 0 40px;
-  }
-  .back .bracket::before { content: "▲"; position: absolute; left: -6px; top: -9px; font-size: 9px; color: var(--wait); }
-  .back .text { grid-column: 2 / 5; text-align: center; margin-top: 6px; }
-  .outs { grid-template-columns: 1fr 1fr; }
+  .steps { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .back { padding-left: calc(20% + 6px); }
+  .back .line { display: block; flex: 0 0 calc(40% - 12px); }
+  .outs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 899px) { .back .bracket { display: none; } }
 
 /* Video */
-.video video { width: 100%; aspect-ratio: 1440 / 900; background: var(--paper-2); }
+.video video { width: 100%; aspect-ratio: 1440 / 900; background: var(--raised); }
 
 /* Screens: one row per screen, image side alternating on desktop. */
 .feats { display: grid; gap: 48px; }
 .feat { display: grid; gap: 16px; margin: 0; }
-.feat h3 { margin: 0 0 6px; font-size: 18px; font-weight: 650; }
-.feat p { margin: 0; font-family: var(--read); font-size: 15px; color: var(--ink-2); max-width: 46ch; }
+.feat h3 { margin: 0 0 6px; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.feat p { margin: 0; font-size: 15px; color: var(--ink-2); max-width: 46ch; }
 .feat .tall img { width: 100%; aspect-ratio: 1440 / 1000; object-fit: cover; object-position: top; }
 @media (min-width: 900px) {
   .feats { gap: 64px; }
@@ -143,59 +152,69 @@ h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 
 }
 
 /* Differences */
-.diff { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
-.diff li { display: grid; gap: 6px 28px; padding: 18px 0; border-bottom: 1px solid var(--rule); }
-.diff h3 { margin: 0; font-size: 16px; font-weight: 650; }
-.diff p { margin: 0; font-family: var(--read); font-size: 15px; color: var(--ink-2); max-width: 70ch; }
-@media (min-width: 720px) { .diff li { grid-template-columns: 220px 1fr; } }
+.diff { list-style: none; margin: 0; padding: 0 20px; border-radius: 12px; background: var(--raised); box-shadow: inset 0 0 0 1px var(--hair); }
+.diff li { display: grid; gap: 6px 28px; padding: 18px 0; }
+.diff li + li { border-top: 1px solid var(--hair); }
+.diff h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.diff p { margin: 0; font-size: 15px; color: var(--ink-2); max-width: 70ch; }
+@media (min-width: 720px) { .diff { padding: 0 24px; } .diff li { grid-template-columns: 220px 1fr; } }
 
-.foot { border-top: 1px solid var(--rule); background: var(--paper); padding: 24px 0 32px; margin-top: 72px; }
-.foot .wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; }
-.foot p { margin: 0; font-family: var(--read); font-size: 14px; color: var(--ink-2); max-width: 80ch; }
-.foot .links { margin-left: auto; display: flex; gap: 16px; font-family: var(--mono); font-size: 12px; }
+.foot { border-top: 1px solid var(--hair); padding: 24px 0 32px; }
+.foot .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
+.foot p { margin: 0; font-size: 14px; color: var(--ink-3); max-width: 80ch; }
+.foot .links { margin-left: auto; display: flex; gap: 4px; }
 </style>
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
-    <a class="brand" href="#">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><g fill="var(--act)" stroke="var(--canvas)" stroke-width="1.1" stroke-linejoin="round"><path d="M12 17C7.4 17.6 3.6 15.6 2 12.2 5.6 11.8 9.4 13.6 12 17Z"/><path d="M12 17C16.6 17.6 20.4 15.6 22 12.2 18.4 11.8 14.6 13.6 12 17Z"/><path d="M12 17C8.2 16.6 5.6 13 6 8 9 9.2 11.2 12.6 12 17Z"/><path d="M12 17C15.8 16.6 18.4 13 18 8 15 9.2 12.8 12.6 12 17Z"/><path d="M12 4C15.2 7.2 15.2 13 12 17 8.8 13 8.8 7.2 12 4Z"/></g><path d="M6 20.2H18" fill="none" stroke="var(--ink-3)" stroke-width="1.3" stroke-linecap="round"/></svg>
-      holophyte
-    </a>
-    <nav aria-label="Site">
-      <a href="https://docs.holophyte.ai/">Docs</a>
-      <a href="https://github.com/wevial/holophyte">GitHub</a>
-      <button class="theme" type="button" id="theme" aria-label="Colour theme">Theme</button>
-    </nav>
-  </div>
+<div class="haze" aria-hidden="true"></div>
+<header class="wrap top">
+  <a class="brand" href="#">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="var(--ink)" fill-rule="evenodd" d="M8 .5A7.5 7.5 0 1 1 8 15.5A7.5 7.5 0 1 1 8 .5ZM7.5 13.5V10.05L3 6C4 4 5.5 3 7 3V4.5L8 5.5L9 4.5V3C10.5 3 12 4 13 6L8.5 10.05V13.5Z"/></svg>
+    holophyte
+  </a>
+  <nav aria-label="Site">
+    <a class="nl" href="https://docs.holophyte.ai/">Docs</a>
+    <a class="nl" href="https://github.com/wevial/holophyte">GitHub</a>
+  </nav>
+  <button class="ib" type="button" id="theme" aria-label="Colour theme"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5a5.5 5.5 0 0 0 0 11z" fill="currentColor"/></svg></button>
 </header>
 
 <main>
-  <div class="hero wrap">
-    <h1>Tickets in. <em>Reviewed</em> commits on main out.</h1>
-    <p class="lead">Holophyte claims a ticket from your board, has an agent implement it in an isolated git worktree, holds it to the ticket's verify commands and an independent review, and lands it on <code>main</code>.</p>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Tickets in. <em>Reviewed</em> commits on main out.</h1>
+      <p class="lead">Holophyte claims a ticket from your board, has an agent implement it in an isolated git worktree, holds it to the ticket's verify commands and an independent review, and lands it on <code>main</code>.</p>
+      <div class="cta">
+        <a class="btn pri" href="https://docs.holophyte.ai/">Read the docs</a>
+        <a class="btn" href="https://github.com/wevial/holophyte">GitHub</a>
+      </div>
+    </div>
+    <div class="shot">
+      <img class="dawn" src="https://media.holophyte.ai/demo/overview-dawn.png" width="1440" height="1620" alt="" loading="lazy">
+      <img class="night" src="https://media.holophyte.ai/demo/overview-night.png" width="1440" height="1620" alt="" loading="lazy">
+    </div>
   </div>
 
-  <section class="wrap" aria-labelledby="loop">
-    <h2 id="loop">One ticket, five steps</h2>
-    <ol class="loop">
-      <li><h3><span class="n">01</span><i></i>Claim</h3><p>The next Ready ticket whose dependencies have merged. Its body becomes the contract.</p></li>
-      <li><h3><span class="n">02</span><i></i>Implement</h3><p>An agent works and commits in its own git worktree, optionally in a container.</p></li>
-      <li><h3><span class="n">03</span><i></i>Verify</h3><p>The ticket's own verify commands run on the candidate.</p></li>
-      <li><h3><span class="n">04</span><i></i>Review</h3><p>An independent reviewer judges the diff and witnesses each criterion.</p></li>
-      <li><h3><span class="n">05</span><i></i>Land</h3><p>A merge to <code>main</code>, or a pull request watched through its checks.</p></li>
-    </ol>
-    <div class="back" aria-label="Fix rounds">
-      <div class="bracket" aria-hidden="true"></div>
-      <div class="text"><span>↺ changes requested</span> back to implement with the findings</div>
-    </div>
-    <div class="outs">
-      <p class="out"><b>Merged.</b> The store records the commit, the rounds and any follow-ups.</p>
-      <p class="out no"><b>Not merged.</b> The branch is kept and the run ends with its reason.</p>
+  <section class="sec" aria-labelledby="loop">
+    <div class="wrap">
+      <h2 id="loop">One ticket, five steps</h2>
+      <ol class="steps">
+        <li class="step"><span class="hd"><span class="n">01</span><svg class="g t-acc" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h5.5L12 5v8.5H4z"/><path d="M9.5 2.5V5H12"/></svg></span><h3>Claim</h3><p>The next Ready ticket whose dependencies have merged. Its body becomes the contract.</p></li>
+        <li class="step"><span class="hd"><span class="n">02</span><svg class="g t-live" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><circle cx="8" cy="8" r="2.6" fill="currentColor" stroke="none"/></svg></span><h3>Implement</h3><p>An agent works and commits in its own git worktree, optionally in a container.</p></li>
+        <li class="step"><span class="hd"><span class="n">03</span><svg class="g t-wait" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1.5" width="13" height="13" rx="2" stroke-dasharray="2 2"/><path d="M8 4.8V8l2.3 1.6"/></svg></span><h3>Verify</h3><p>The ticket's own verify commands run on the candidate.</p></li>
+        <li class="step"><span class="hd"><span class="n">04</span><svg class="g t-wait" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.8 8S4 3.8 8 3.8 14.2 8 14.2 8 12 12.2 8 12.2 1.8 8 1.8 8z"/><circle cx="8" cy="8" r="2"/></svg></span><h3>Review</h3><p>An independent reviewer judges the diff and witnesses each criterion.</p></li>
+        <li class="step"><span class="hd"><span class="n">05</span><svg class="g t-live" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M5 8.3 7.1 10.4 11 6.2"/></svg></span><h3>Land</h3><p>A merge to <code>main</code>, or a pull request watched through its checks.</p></li>
+      </ol>
+      <p class="back"><span class="line" aria-hidden="true"></span><span><b>↺ changes requested</b> back to implement with the findings</span></p>
+      <div class="outs">
+        <p class="out"><svg class="g t-live" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M5 8.3 7.1 10.4 11 6.2"/></svg><span><b>Merged.</b> The store records the commit, the rounds and any follow-ups.</span></p>
+        <p class="out"><svg class="g t-bad" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/></svg><span><b>Not merged.</b> The branch is kept and the run ends with its reason.</span></p>
+      </div>
     </div>
   </section>
 
-  <section class="wrap video" aria-labelledby="watch">
+  <section class="sec video" aria-labelledby="watch">
+    <div class="wrap">
     <h2 id="watch">Open a pull request, look at its screenshots, steer a run</h2>
     <div class="frame">
       <video controls muted loop playsinline preload="metadata" poster="https://media.holophyte.ai/demo/console-flow-poster.png" width="1440" height="900">
@@ -203,9 +222,11 @@ h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 
         <source src="https://media.holophyte.ai/demo/console-flow.mp4" type="video/mp4">
       </video>
     </div>
+    </div>
   </section>
 
-  <section class="wrap" aria-labelledby="console">
+  <section class="sec" aria-labelledby="console">
+    <div class="wrap">
     <h2 id="console">The console</h2>
     <div class="feats">
       <article class="feat">
@@ -244,9 +265,11 @@ h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 
         </a>
       </article>
     </div>
+    </div>
   </section>
 
-  <section class="wrap" aria-labelledby="different">
+  <section class="sec" aria-labelledby="different">
+    <div class="wrap">
     <h2 id="different">Built to be trusted unattended</h2>
     <ul class="diff">
       <li><h3>Witnessed criteria</h3><p>The reviewer marks each acceptance criterion met, not met or unwitnessed, and anything short of met blocks approval.</p></li>
@@ -255,13 +278,14 @@ h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 
       <li><h3>Steer a live run</h3><p>Send a note from the run page or <code>holo steer</code> and the agent reads it at its next turn.</p></li>
       <li><h3>The store is the record</h3><p>Every claim, round, finding, steer and merge is a row in one SQLite store per project, and the console renders from it.</p></li>
     </ul>
+    </div>
   </section>
 </main>
 
 <footer class="foot">
   <div class="wrap">
     <p>The screens are the real console over a seeded demo store; the tickets, runs and pull requests are fixture data.</p>
-    <div class="links"><a href="https://docs.holophyte.ai/">Docs</a><a href="https://github.com/wevial/holophyte">GitHub</a></div>
+    <div class="links"><a class="nl" href="https://docs.holophyte.ai/">Docs</a><a class="nl" href="https://github.com/wevial/holophyte">GitHub</a></div>
   </div>
 </footer>
 
@@ -273,9 +297,7 @@ h2 { font-size: 26px; line-height: 1.15; letter-spacing: -0.015em; font-weight: 
   function system() { return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; }
   function current() { return root.getAttribute("data-theme") || system(); }
   function label() {
-    var dark = current() === "dark";
-    button.textContent = dark ? "Night" : "Dawn";
-    button.setAttribute("aria-label", "Colour theme: " + (dark ? "night. Switch to dawn" : "dawn. Switch to night"));
+    button.title = current() === "dark" ? "Switch to dawn" : "Switch to night";
   }
   try { var saved = localStorage.getItem(KEY); if (saved === "dark" || saved === "light") root.setAttribute("data-theme", saved); } catch (e) {}
   label();
