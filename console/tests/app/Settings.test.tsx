@@ -117,38 +117,30 @@ test("the footer counts failing hosts once across projects and keeps Settings ou
   expect(screen.getByRole("link", { name: "Settings, 2 hosts need attention" }).textContent).toBe("2");
 });
 
-test("Review presents the project file and ordered grouped sections with matching host badge and current links", async () => {
+test("Review presents ordered grouped sections with matching host badge and current links", async () => {
   const view = await mount("#/settings/review?project=demo");
   view.failRunner();
   await view.poll();
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Review");
-  expect(screen.getByText("demo · config.toml on writer-host")).toBeTruthy();
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   const links = within(nav).getAllByRole("link");
   expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts1", "General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]);
   expect(nav.textContent).not.toContain("You · this browser");
   expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Review"]);
-  expect(screen.getByText("[loop], [review] and [agents] in config.toml")).toBeTruthy();
   const footer = screen.getByRole("link", { name: "Settings, 1 host needs attention" });
   expect(footer.getAttribute("aria-current")).toBe("page");
   expect(footer.getAttribute("href")).toMatch(/#\/settings\/general\?project=demo$/);
-  expect(screen.getByText("project settings live in config.toml on its host; each save keeps the previous text as a backup")).toBeTruthy();
-  expect(screen.queryByText("appearance stays in this browser")).toBeNull();
 });
 
-test("the footer names the browser only on Appearance", async () => {
-  await mount("#/settings/appearance");
-  const footer = screen.getByText("appearance stays in this browser").closest("footer")!;
-  expect(footer.textContent).toBe("appearance stays in this browser");
-});
-
-test("the footer leaves the project settings line off the Hosts and Today's log tabs", async () => {
-  for (const hash of ["#/settings/hosts", "#/settings/log"]) {
-    await mount(hash);
-    expect(screen.queryByText(/project settings live in/)).toBeNull();
-    expect(screen.queryByText("appearance stays in this browser")).toBeNull();
-    cleanup();
-  }
+test("General's header holds its title alone, with no subtitle, file, revision or footer line", async () => {
+  const saved = async () => Response.json({ text: "", values: {}, path: "/srv/demo/config.toml", applies: "next loop start", revision: "3f9a2c1" + "a".repeat(57), saved: { at_ms: 1791969120000, actor: "maintainer" }, modified_ms: 1791969120000 });
+  await mount("#/settings/general?project=demo", fleet(saved));
+  const title = screen.getByRole("heading", { level: 1, name: "General" });
+  expect(title.closest("header")!.textContent).toBe("General");
+  const page = screen.getByRole("region", { name: "General" });
+  expect(within(page).getByRole("group", { name: "Merge mode" })).toBeTruthy();
+  expect(page.querySelector("footer")).toBeNull();
+  for (const gone of ["config.toml", "3f9a2c1", "[merge]", "saved "]) expect(page.textContent).not.toContain(gone);
 });
 
 const AGENTS = { agents: { implementer: { command: "claude --model opus -p", profile: "opus", fallback: "codex exec" }, adjudicator: "claude -p" } };
@@ -158,9 +150,9 @@ const valueSide = (name: string) => screen.getByRole("group", { name }).children
 test("Agents rows share one fixed-width value column with each route line directly under its field", async () => {
   await mount("#/settings/agents?project=demo", fleet(agentsConfig));
   const routes = { Implementer: "runs claude opus", Reviewer: "runs codex gpt-6-astra", Adjudicator: "runs codex gpt-6-astra" };
-  const widths = Object.keys(routes).map((name) => valueSide(name).className.split(" ").filter((name) => name.startsWith("min-[860px]:w-")));
-  expect(widths[0]).toEqual(["min-[860px]:w-80"]);
-  expect(widths.slice(1)).toEqual([widths[0]!, widths[0]!]);
+  const columns = Object.keys(routes).map((name) => screen.getByRole("group", { name }).className.split(" ").filter((name) => name.startsWith("min-[860px]:grid-cols-")));
+  expect(columns[0]).toEqual(["min-[860px]:grid-cols-[minmax(0,1fr)_300px]"]);
+  expect(columns.slice(1)).toEqual([columns[0]!, columns[0]!]);
   for (const [name, route] of Object.entries(routes)) {
     const [field, status, ...rest] = Array.from(valueSide(name).children);
     expect(rest).toHaveLength(0);
@@ -382,7 +374,7 @@ test("the sidebar's project switcher remembers the choice and names held project
   await view.poll();
   await pickProject("writer");
   expect(readStoredScope()).toBe("writer");
-  expect(screen.getByText("writer · config.toml on writer-host")).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
   expect(switcher().getAttribute("aria-label")).toBe("Project: writer. Switch project");
   fireEvent.click(switcher());
   await act(settle);
@@ -428,15 +420,12 @@ test("an unknown project's panels report no matching host and selecting a known 
   expect(screen.queryByText("No host is available for unknown.")).toBeNull();
 });
 
-test("the head and project subtitles use the filename returned by config and factory and browser tabs have their own panels", async () => {
+test("factory and browser tabs have their own panels", async () => {
   await mount("#/settings/general?project=demo", fleet(async () => config("/srv/demo/custom.toml")));
-  expect(screen.getByText("demo · custom.toml on writer-host")).toBeTruthy();
-  expect(screen.getByText("[merge] and [loop] in custom.toml")).toBeTruthy();
-  for (const [label, subtitle] of [["Hosts", "the factory's hosts"], ["Appearance", "yours, in this browser · applies at once, nothing to save"]] as const) {
+  for (const label of ["Hosts", "Appearance"]) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
     expect(screen.getByRole("heading", { level: 1, name: label })).toBeTruthy();
-    expect(screen.getByText(subtitle)).toBeTruthy();
     if (label === "Hosts") expect(screen.getAllByRole("article")).toHaveLength(3);
     else expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeTruthy();
   }
@@ -446,13 +435,13 @@ test("Raw TOML drops the page's width cap and sizes its editor to the viewport w
   const toml = async () => Response.json({ text: "[loop]\nworkers = 2\n", values: {}, path: "/srv/demo/config.toml", applies: "next loop start", revision: "3f9a2c1b" + "a".repeat(56), saved: null, modified_ms: null });
   await mount("#/settings/toml?project=demo", fleet(toml));
   const classes = (element: Element) => element.className.split(/\s+/);
-  expect(classes(screen.getByRole("region", { name: "Raw TOML" }))).not.toContain("max-w-[1180px]");
+  expect(classes(screen.getByRole("region", { name: "Raw TOML" }).firstElementChild!)).not.toContain("max-w-[1180px]");
   const scroller = classes(screen.getByRole("textbox", { name: "config.toml for demo" }).closest("[data-toml-scroller]")!);
   expect(scroller).not.toContain("h-[360px]");
   expect(scroller.filter((name) => /^h-\[max\(360px,calc\(100dvh-\d+px\)\)\]$/.test(name))).toHaveLength(1);
   fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "General" }));
   await act(settle);
-  expect(classes(screen.getByRole("region", { name: "General" }))).toContain("max-w-[1180px]");
+  expect(classes(screen.getByRole("region", { name: "General" }).firstElementChild!)).toContain("max-w-[1180px]");
 });
 
 test("on Appearance the sidebar holds the Settings sections in place of the Pages nav, and the page holds only that section", async () => {
@@ -543,7 +532,6 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   expect(within(nav).getByRole("link", { name: "Today's log" }).getAttribute("href")).toMatch(/#\/settings\/log$/);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today's log");
-  expect(screen.getByText("yours, in this browser · applies at once, nothing to save")).toBeTruthy();
   expect(within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Highlights", "Everything", "Manual"]);
   expect(pressed()).toEqual(["Highlights"]);
   const header = screen.getByRole("group", { name: "Preset" }).closest("header")!;
