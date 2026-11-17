@@ -293,7 +293,7 @@ test("font attributes select the promised reading stacks, and each font card's s
   for (const value of ["sans", "serif", "hyperlegible"]) expect(font(`[data-font-sample="${value}"]`)).toBe(readerStack(value)!);
   await mount();
   const samples = within(screen.getByRole("radiogroup", { name: "Reading font" })).getAllByText("The sweep frees a silent lease.");
-  expect(samples.map((sample) => [sample.getAttribute("data-font-sample"), sample.classList.contains("font-read")])).toEqual([["sans", true], ["serif", true], ["hyperlegible", true]]);
+  expect(samples.map((sample) => [sample.getAttribute("data-font-sample"), sample.classList.contains("font-read"), sample.getAttribute("style")])).toEqual([["sans", true, null], ["serif", true, null], ["hyperlegible", true, null]]);
 });
 
 const editor = () => within(screen.getByRole("region", { name: "Theme editor" }));
