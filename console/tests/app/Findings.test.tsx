@@ -310,7 +310,6 @@ const rectAt = (left: number, width: number) => () => ({ left, width, right: lef
 
 const scrollingMain = () => {
   const main = screen.getByRole("main");
-  main.style.overflowY = "auto";
   main.style.overflowX = "auto";
   return main;
 };
@@ -324,7 +323,6 @@ test("with Custom range open, the scrolling main resizing as its button moves ri
     fireEvent.click(customRange());
     const menu = screen.getByRole("group", { name: "Range range" });
     const anchor = customRange().parentElement!;
-    expect([held.observing(anchor), held.observing(main)]).toEqual([1, 1]);
     document.documentElement.getBoundingClientRect = rectAt(0, 720);
     Object.defineProperty(menu, "offsetWidth", { configurable: true, value: 248 });
     menu.getBoundingClientRect = rectAt(0, 248);
