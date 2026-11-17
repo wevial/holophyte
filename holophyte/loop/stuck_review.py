@@ -26,10 +26,15 @@ from holophyte.loop.stop import stop_if_requested
 from holophyte.redact import safe_print as print
 from holophyte.review.adversary import _payloads
 from holophyte.review.findings import decode_findings, finding_line
-from holophyte.review.reply_parsing import finding_blocks, parse_findings
+from holophyte.review.reply_parsing import (
+    CRITERION_LINE_RE,
+    SCOPE_LINE_RE,
+    finding_blocks,
+    parse_findings,
+)
 
 RULINGS = ("FIX", "DROP", "HUMAN")
-RULING_LINE_RE = thread_word_re(RULINGS, r"\s")
+RULING_LINE_RE = thread_word_re(RULINGS, r"[ \t]")
 VERDICT_WORD_RE = re.compile(r"\b(?:ADDRESS|FOLLOW_UP|DECLINE)\b")
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.MULTILINE)
 FACTORY = "factory"
@@ -178,6 +183,14 @@ def _dropped(block, keys):
     return any(_key(finding) in keys for finding in parse_findings(block))
 
 
+def _kept(block, dropped):
+    if not _dropped(block, dropped):
+        return block
+    return "\n".join(line for line in block.splitlines()
+                     if CRITERION_LINE_RE.match(line)
+                     or SCOPE_LINE_RE.match(line))
+
+
 def fix_findings(verdict, findings, ruled):
     """The reviewer's findings less the DROP ones, with the FIX reasons."""
     dropped = {_key(finding) for finding, (word, _) in ruled if word == "DROP"}
@@ -185,8 +198,8 @@ def fix_findings(verdict, findings, ruled):
            if isinstance(finding, dict)
            and finding.get("evidence_only") is not True):
         return None
-    kept = "\n\n".join(block for block in finding_blocks(verdict)
-                        if not _dropped(block, dropped))
+    kept = "\n\n".join(_kept(block, dropped)
+                        for block in finding_blocks(verdict))
     fixes = "".join(f"- {_where(finding)}: FIX -- {reason}\n"
                     for finding, (word, reason) in ruled if word == "FIX")
     return kept + (

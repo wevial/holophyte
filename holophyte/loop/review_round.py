@@ -400,6 +400,10 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             numbered(conn, run_id, criteria),
             without_follow_ups(without_refuted(verdict)))
         if to_fix is None:
+            ledger(conn, run_id, task_id, "round",
+                   f"Round {rnd}: REQUEST_CHANGES, every repeated finding"
+                   f" settled -> review again\nReviewer findings:\n{verdict}",
+                   provider)
             boundary(conn, run_id, "verifying", rnd=rnd + 1)
             continue
         fixes, timed_out = fix_turn(

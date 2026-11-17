@@ -36,6 +36,7 @@ TICKET = body().replace(
 ALPHA = "- orders/export.py:1 [p1] [correctness] alpha drops the last order"
 BETA = "- orders/legacy.py:2 [p1] [correctness] beta breaks the legacy path"
 GAMMA = "- orders/export.py:3 [p1] [correctness] gamma skips a header"
+ACCOUNT = "CRITERION 1: not met \u2014 the export drops the last order"
 DELTA = "- orders/export.py:4 [p1] [correctness] delta misnames a column"
 
 
@@ -156,8 +157,8 @@ class StuckReviewTests(unittest.TestCase):
         self.assertEqual(self.trips, [None, None, None])
 
     def test_fix_turn_gets_fix_and_new_findings_and_the_drop_becomes_a_note(self):
-        self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA),
-                    review(DELTA)],
+        self.drive([review(ALPHA, BETA),
+                    review(ALPHA, f"{BETA}\n{ACCOUNT}", GAMMA), review(DELTA)],
                    "THREAD 1: FIX -- alpha blocks the criterion\n"
                    "THREAD 2: DROP -- beta is out of scope", cap=3)
         handed = self.fixes[1]
@@ -165,6 +166,7 @@ class StuckReviewTests(unittest.TestCase):
         self.assertIn("- orders/export.py:1: FIX -- alpha blocks the criterion",
                       handed)
         self.assertIn(GAMMA, handed)
+        self.assertIn(ACCOUNT, handed)
         self.assertNotIn("orders/legacy.py:2", handed)
         (note,) = store.steer_notes.chain_notes(self.conn, self.ticket, 0)
         self.assertEqual(note.author, "factory")
@@ -231,7 +233,7 @@ class StuckReviewTests(unittest.TestCase):
         reason = self.stuck([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
                             "THREAD 1: HUMAN -- the ticket does not say\n"
                             "THREAD 1: FIX -- alpha blocks the criterion\n"
-                            "THREAD 2: DROP --", fixes=1)
+                            "THREAD 2: DROP\nThanks.", fixes=1)
         self.assertIn("orders/export.py:1 HUMAN -- the adjudicator gave"
                       " conflicting rulings", reason)
         self.assertIn("orders/legacy.py:2 no ruling", reason)
