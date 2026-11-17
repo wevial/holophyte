@@ -101,6 +101,7 @@ const saveButton = () => screen.getByRole("button", { name: "Save revision 4" })
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const ticketReads = () => gets.filter((url) => url === `${DEMO}/tickets/DEMO-2`).length;
 const pressed = () => within(viewGroup()).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
+const presses = () => within(viewGroup()).getAllByRole("button").map((button) => `${button.textContent} ${button.getAttribute("aria-pressed")}`);
 const headings = () => within(leftCard()).getAllByRole("heading").map((heading) => heading.textContent);
 
 async function click(element: HTMLElement) {
@@ -132,13 +133,13 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("Markdown draws the header as a facts table above every section, without the fence, the title or the Fields block", async () => {
+test("the Ticket view group presses Fields and leaves Markdown unpressed until picked; Markdown draws the header as a facts table above every section, without the fence, the title or the Fields block", async () => {
   await mount();
-  expect(pressed()).toEqual(["Fields"]);
+  expect(presses()).toEqual(["Fields true", "Markdown false"]);
   expect(within(leftCard()).getByText("Summary")).toBeTruthy();
   expect(within(leftCard()).getByRole("region", { name: "Acceptance criteria" })).toBeTruthy();
   await click(within(viewGroup()).getByRole("button", { name: "Markdown" }));
-  expect(pressed()).toEqual(["Markdown"]);
+  expect(presses()).toEqual(["Fields false", "Markdown true"]);
   const facts = within(leftCard()).getByRole("table", { name: "Ticket header" });
   expect(within(facts).getAllByRole("row").map((row) => [...row.children].map((cell) => cell.textContent))).toEqual([
     ["ui_change", "minor"],
@@ -161,7 +162,7 @@ test("a body without a header renders its sections with no facts table, and a bo
   expect(within(actions()).queryByRole("link", { name: "Edit" })).toBeNull();
 });
 
-test("Edit under Markdown opens the served body raw at its revision in place; under Fields it stays the Edit page link", async () => {
+test("Edit under Markdown opens the served body raw at its revision in place with the view group gone; under Fields it stays the Edit page link", async () => {
   await mount();
   await click(within(viewGroup()).getByRole("button", { name: "Markdown" }));
   await click(within(viewGroup()).getByRole("button", { name: "Fields" }));
@@ -170,7 +171,7 @@ test("Edit under Markdown opens the served body raw at its revision in place; un
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-2");
   expect(editor()!.value).toBe(HEADED);
   expect(saveButton().hasAttribute("disabled")).toBe(true);
-  expect(within(viewGroup()).getAllByRole("button").map((button) => button.hasAttribute("disabled"))).toEqual([true, true]);
+  expect(screen.queryByRole("group", { name: "Ticket view" })).toBeNull();
   expect(within(actions()).getByRole("button", { name: "Edit" }).hasAttribute("disabled")).toBe(true);
 });
 
@@ -212,13 +213,14 @@ test("a Save answered 409 keeps the text, holds Save and re-reads; one answered 
   expect(editor()!.value).toBe(edited);
 });
 
-test("Discard closes the editor without sending anything and shows the served text", async () => {
+test("Discard closes the editor without sending anything and shows the served text under the view group with Markdown pressed", async () => {
   const write = fakeFetch({ ticket: "DEMO-2", revision: 4 });
   await mount({ write: write.fetchImpl });
   await openEditor(HEADED.replace("## Out of scope", "## Dropped"));
   await click(within(leftCard()).getByRole("button", { name: "Discard" }));
   expect(write.seen).toEqual([]);
   expect(editor()).toBeNull();
+  expect(presses()).toEqual(["Fields false", "Markdown true"]);
   expect(headings()).toEqual(["Summary", "Out of scope", "Implementation notes", "Open questions"]);
 });
 

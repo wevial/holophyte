@@ -138,7 +138,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("an in-flight ticket's page has its breadcrumb, title, board chip with run and phase, and a link to its Run page", async () => {
+test("an in-flight ticket's page has its breadcrumb, title, board state with run and phase and no Board label, and a link to its Run page", async () => {
   await mount("#/tickets/demo/DEMO-3");
   const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
   expect(crumb.textContent).toBe("Tickets / demo tickets / DEMO-3");
@@ -146,7 +146,20 @@ test("an in-flight ticket's page has its breadcrumb, title, board chip with run 
   expect(within(crumb).getByRole("link", { name: "demo tickets" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-3 title");
   expect(chip()).toBe("In flight · run 9 · reviewing · round 2 of 3");
+  expect(screen.queryByText("Board")).toBeNull();
   expect(screen.getByRole("link", { name: "open run 9" }).getAttribute("href")).toEndWith("#/runs/demo/9");
+});
+
+const shouted = (element: Element) => [...element.classList].filter((name) => name === "uppercase" || name.startsWith("tracking-"));
+
+test("the Summary, Acceptance criteria and Ticket headings read in sentence case, the criteria heading keeping its met count", async () => {
+  await mount("#/tickets/demo/DEMO-3");
+  const body = document.querySelector<HTMLElement>("[data-ticket-body]")!;
+  const count = screen.getByRole("region", { name: "Acceptance criteria" }).querySelector("[data-met-count]")!;
+  expect(count.textContent).toBe("2 of 3 met in run 9");
+  const heads = [within(body).getByText("Summary"), count.parentElement!, within(facts()).getByText("Ticket")];
+  expect(heads.map((head) => head.textContent)).toEqual(["Summary", "Acceptance criteria2 of 3 met in run 9", "Ticket"]);
+  expect(heads.map(shouted)).toEqual([[], [], []]);
 });
 
 test("the panel shows the summary, keyed criteria counted in their run, the folded verify commands and the ticket's facts", async () => {
@@ -197,10 +210,16 @@ test("a merged ticket and a cancelled one, neither on the board, take their chip
   expect(chip()).toBe("Cancelled");
 });
 
-test("a ticket no host of the project mirrors says so with a link to Tickets, and an unknown project is not found", async () => {
+test("a ticket no host of the project mirrors says so in one sans line linking back to Tickets, and an unknown project is not found", async () => {
   await mount("#/tickets/demo/DEMO-99");
-  expect(screen.getByText("No host of demo has mirrored DEMO-99.").classList.contains("font-mono")).toBe(true);
-  expect(screen.getByRole("link", { name: "Back to Tickets" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
+  const line = screen.getByText("No host of demo has mirrored DEMO-99.").closest("p")!;
+  expect(line.textContent).toBe("No host of demo has mirrored DEMO-99. Back to Tickets");
+  expect([line, ...line.querySelectorAll("*")].some((element) => element.classList.contains("font-mono"))).toBe(false);
+  const back = within(line).getByRole("link", { name: "Back to Tickets" });
+  expect(back.getAttribute("href")).toEndWith("#/tickets?project=demo");
+  const utility = (name: string) => name.replace(/^(?:[\w-]*(?:\[[^\]]*\])?[\w-]*:)*/, "").replace(/^!|!$/g, "");
+  const breaking = (name: string) => /^(block|flex|grid|table|flex-col|w-full|basis-full|\[display:[^\]]*\])$/.test(utility(name));
+  expect([line, back].flatMap((element) => [...element.classList].filter(breaking))).toEqual([]);
   cleanup();
   await mount("#/tickets/nope/X-1");
   expect(screen.getByText("There is no page here.")).toBeTruthy();
@@ -254,14 +273,14 @@ test("a story's child shows its parent, the story's progress and every sibling's
   expect(within(rows[1]!).queryByRole("link")).toBeNull();
 });
 
-test("a story's own page heads its children, an empty story says it has none, and a ticket in no story draws no panel nor asks for one", async () => {
+test("a story's own page heads its children, an empty story says it has none in sans, and a ticket in no story draws no panel nor asks for one", async () => {
   await mount("#/tickets/demo/DEMO-20");
   expect(within(story()).getByText("Child tickets")).toBeTruthy();
   expect(within(story()).queryByText("Parent")).toBeNull();
   expect(within(story()).getAllByRole("listitem")).toHaveLength(3);
   cleanup();
   await mount("#/tickets/demo/DEMO-30");
-  expect(within(story()).getByText("No child tickets.")).toBeTruthy();
+  expect(within(story()).getByText("No child tickets.").classList.contains("font-mono")).toBe(false);
   cleanup();
   await mount("#/tickets/demo/DEMO-2");
   expect(within(facts()).queryByRole("region", { name: "Story" })).toBeNull();
