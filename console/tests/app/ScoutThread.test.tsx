@@ -202,12 +202,14 @@ test("Send posts the trimmed ask, says so, clears the box and reads the scout ag
   expect(reads(daemon.seen)).toBeGreaterThan(before);
 });
 
-test("Steer renames the box and posts a steer", async () => {
+test("Ask and Steer form the Message kind group on Ask, and Steer presses, renames the box and posts a steer", async () => {
   const daemon = scoutFetch({ scout: done, post: () => Response.json({ ok: true, queued: false, detail: "steered scout 31" }) });
   await mount(daemon.fetch);
-  const steer = within(region()).getByRole("button", { name: "Steer" });
+  const kinds = within(within(region()).getByRole("group", { name: "Message kind" })).getAllByRole("button");
+  expect(kinds.map((kind) => [kind.textContent, kind.getAttribute("aria-pressed")])).toEqual([["Ask", "true"], ["Steer", "false"]]);
+  const steer = kinds[1]!;
   await click(steer);
-  expect(steer.getAttribute("aria-pressed")).toBe("true");
+  expect(kinds.map((kind) => kind.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
   const box = within(region()).getByRole("textbox", { name: "Note to the scout" });
   await type(box, "Go check the digest email as well");
   await click(send());
@@ -232,9 +234,17 @@ test("a refused or rejected message reads under the composer and keeps its text"
   expect(box.value).toBe("Does this hit recurring tasks too?");
 });
 
-test("with actions off the composer is disabled, and a failed scout with no thread has no Thread", async () => {
-  await mount(scoutFetch({ scout: done, actions: false }).fetch);
+test("actions turning off under a typed note disable the composer, and a failed scout with no thread has no Thread", async () => {
+  const daemon: Daemon = { scout: done, actions: true };
+  const queries = await mount(scoutFetch(daemon).fetch);
   const panel = within(region());
+  await type(panel.getByRole("textbox", { name: "Question for the scout" }), "Does this hit recurring tasks too?");
+  expect(send().disabled).toBe(false);
+  daemon.actions = false;
+  await act(async () => {
+    await queries.refetchQueries();
+  });
+  await settled();
   for (const name of ["Send", "Ask", "Steer"]) expect((panel.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
   expect((panel.getByRole("textbox", { name: "Question for the scout" }) as HTMLTextAreaElement).disabled).toBe(true);
   expect(send().title).toBe(ACTIONS_OFF);
