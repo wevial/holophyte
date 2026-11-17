@@ -176,10 +176,11 @@ function ScopeDots({ dots }: { dots: Dot[] }) {
           key={at}
           data-dot
           data-down={down || undefined}
-          style={{ background: down ? "transparent" : colour }}
-          className={`-mr-0.5 size-2 rounded-full last:mr-0 ${
-            down ? "shadow-[inset_0_0_0_1.5px_var(--bad),0_0_0_2px_var(--dot-ring)]" : "shadow-[0_0_0_2px_var(--dot-ring)]"
-          }`}
+          style={{
+            background: down ? "transparent" : colour,
+            boxShadow: down ? "inset 0 0 0 1.5px var(--bad), 0 0 0 2px var(--dot-ring)" : "0 0 0 2px var(--dot-ring)",
+          }}
+          className="-mr-0.5 size-2 rounded-full last:mr-0"
         />
       ))}
     </span>
@@ -329,7 +330,7 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
                     >
                       <ScopeDots dots={dotsOf(row)} />
                       <span className="min-w-0 flex-1 truncate">{row.label}</span>
-                      {row.held && <HeldTag />}
+                      {row.held && <span className="text-[11.5px] text-ask-ink">held</span>}
                       {key === rowKey(current) ? <CheckIcon /> : <span className="size-3.5 shrink-0" />}
                     </Option>
                   );

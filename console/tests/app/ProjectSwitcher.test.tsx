@@ -339,7 +339,11 @@ test("a held project shows held and a project whose host stopped answering draws
   fireEvent.click(switcher());
   await act(settle);
   expect(optionNames()).toEqual(["All projects", "demoheld", "writer"]);
-  const hollow = Array.from(options()[2]!.querySelectorAll<HTMLElement>("[data-dot]"), (dot) => [dot.hasAttribute("data-down"), dot.style.background]);
-  expect(hollow).toEqual([[true, "transparent"]]);
-  expect(options()[1]!.querySelector("[data-down]")).toBeNull();
+  const drawn = (option: HTMLElement) => Array.from(option.querySelectorAll<HTMLElement>("[data-dot]"), (dot) => [dot.style.background, dot.style.boxShadow]);
+  const [hollow] = drawn(options()[2]!);
+  expect(hollow![0]).toBe("transparent");
+  expect(hollow![1]).toContain("inset 0 0 0 1.5px var(--bad)");
+  const [filled] = drawn(options()[1]!);
+  expect(filled![0]).toBe("var(--p-violet)");
+  expect(filled![1]).not.toContain("var(--bad)");
 });
