@@ -47,6 +47,10 @@ def check_review_refs(repo, run_id, base_sha, candidate_sha):
             raise InfraFailure(f"review ref changed during turn: {ref}; expected {sha}")
 
 
+def cut_base(wt):
+    return sh(["git", "merge-base", "HEAD", "main"], cwd=wt)
+
+
 def review_base(repo, frozen, candidate):
     try:
         merged = main_base(repo, candidate, f"no main base for {candidate}")
