@@ -148,8 +148,8 @@ test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each 
     own(21, "Retry loops forever", "p1", "The retry has no ceiling."),
   ];
   await mount("#/findings", fleet({ runs }));
+  expect(rowsOf("Open").map((row) => shown(row.querySelector<HTMLElement>("[data-severity]")!))).toEqual(["P1", "P2", "P3"]);
   const rows = unfoldAll("Open");
-  expect(rows.map((row) => shown(row.querySelector<HTMLElement>("[data-severity]")!))).toEqual(["P1", "P2", "P3"]);
   const bodies = rows.map((row) => document.getElementById(toggle(row).getAttribute("aria-controls")!)!);
   expect(bodies.map((body) => shown(body.querySelector<HTMLElement>("[data-text]")!))).toEqual([
     "The retry has no ceiling.",
