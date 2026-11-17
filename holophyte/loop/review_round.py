@@ -397,6 +397,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             review_base(wt, base_sha, sha), sha, reviewed,
             numbered(conn, run_id, criteria),
             without_follow_ups(without_refuted(verdict)))
+        if to_fix is None:
+            boundary(conn, run_id, "verifying", rnd=rnd + 1)
+            continue
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
             to_fix, sha, timed=_timed,

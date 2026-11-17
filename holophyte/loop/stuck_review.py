@@ -153,6 +153,8 @@ def fix_findings(findings, ruled):
             continue
         kept.append("- " + _listed(finding)
                     + (f"\n  Adjudicator ruling: FIX -- {reason}" if word else ""))
+    if not kept:
+        return None
     return ("The review repeated findings of the round before; the "
             "adjudicator ruled on them against the ticket and left out the "
             "ones it settled.\n\n" + "\n\n".join(kept)
@@ -176,7 +178,7 @@ def _stuck(conn, run_id, provider, task_id, branch, sha, evidence, detail):
 
 def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                 base_sha, sha, ticket, criteria, verdict):
-    """The findings the fix turn gets; a review stuck past a ruling fails."""
+    """The findings the fix turn gets, None if every one was settled."""
     if conn is None or run_id is None:
         return verdict
     threshold = sweep_config(project).review_overlap_threshold

@@ -71,7 +71,7 @@ class StuckReviewTests(unittest.TestCase):
         self.git("-c", "user.name=t", "-c", "user.email=t@example.test",
                  "commit", "-q", "--allow-empty", "-m", message)
 
-    def drive(self, reviews, ruling, cap):
+    def drive(self, reviews, ruling, cap, criteria=CRITERIA):
         reviews = list(reviews)
 
         def agent(project, role, goal, cwd, **kwargs):
@@ -90,7 +90,8 @@ class StuckReviewTests(unittest.TestCase):
             self.commit(f"fix round {len(self.fixes)}\n\n"
                         "ADDRESS: orders/export.py:1 keeps the last order\n"
                         "DECLINE: orders/legacy.py:2 the legacy path is out"
-                        " of scope")
+                        " of scope\n"
+                        "FOLLOW_UP(feature): page the legacy export")
             return "fixed", False
 
         with patch.object(review_round, "agent", side_effect=agent), \
@@ -100,7 +101,7 @@ class StuckReviewTests(unittest.TestCase):
             head = self.git("rev-parse", "HEAD")
             return review_round._review_rounds(
                 PROJECT, self.conn, self.run_id, None, "NAT-1", "task/nat-1",
-                self.root, 60, "main", head, TICKET, "true", [], CRITERIA, 10,
+                self.root, 60, "main", head, TICKET, "true", [], criteria, 10,
                 cap)
 
     def roles(self):
@@ -125,7 +126,8 @@ class StuckReviewTests(unittest.TestCase):
                      "- orders/legacy.py:2 beta breaks the legacy path",
                      "ADDRESS: orders/export.py:1 keeps the last order",
                      "DECLINE: orders/legacy.py:2 the legacy path is out of"
-                     " scope"):
+                     " scope",
+                     "FOLLOW_UP(feature): page the legacy export"):
             self.assertIn(held, brief)
         self.assertNotIn("THREAD 3", brief)
 
@@ -148,6 +150,14 @@ class StuckReviewTests(unittest.TestCase):
         third_review = self.goals("review")[2]
         self.assertIn(f"steer note {note.id} by factory", third_review)
         self.assertIn("beta is out of scope", third_review)
+
+    def test_dropping_every_repeated_finding_reviews_again_without_a_fix_turn(self):
+        self.drive([review(ALPHA), review(ALPHA), review(DELTA)],
+                   "THREAD 1: DROP -- alpha was answered", cap=3,
+                   criteria=[])
+        self.assertEqual(self.roles(), ["review", "fix", "review", "adjudicate",
+                                        "review", "fix"])
+        self.assertIn("alpha was answered", self.goals("review")[2])
 
     def assert_stuck(self, failed, fixes):
         reason = str(failed.exception)
