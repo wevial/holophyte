@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { dayStart } from "../history";
 import { Btn } from "./Btn";
@@ -462,6 +462,8 @@ export function PressedGroup<V extends string | number>({ label, options, value,
   );
 }
 
+const MENU_EDGE = 8;
+
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 export function dayLabel(day: string): string {
@@ -486,6 +488,20 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   const custom = from != null || to != null;
   const fromId = useId();
   const toId = useId();
+  const menu = useRef<HTMLDivElement>(null);
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const rect = menu.current!.getBoundingClientRect();
+      const left = rect.left - shift;
+      const over = left + rect.width - (document.documentElement.clientWidth - MENU_EDGE);
+      setShift(over > 0 ? -Math.min(over, Math.max(0, left - MENU_EDGE)) : 0);
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open, shift]);
   return (
     <div ref={box} className="flex shrink-0 items-center gap-1.5">
       <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
@@ -497,8 +513,8 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
           {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
         </button>
         {open && (
-          <div role="group" aria-label={`${label} range`}
-            className="absolute top-full left-0 z-20 mt-1.5 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
+          <div ref={menu} role="group" aria-label={`${label} range`} style={{ left: shift }}
+            className="absolute top-full z-20 mt-1.5 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
               <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
               <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}
