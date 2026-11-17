@@ -64,9 +64,17 @@ async function mount(projects: Status[] = [status("alpha")]) {
   };
 }
 
-function row(seat: string) {
+function rowOf(seat: string) {
   const table = screen.getByRole("table", { name: "Agent routes on writer" });
-  return within(within(table).getByRole("row", { name: new RegExp(`^${seat} `) }));
+  return within(table).getByRole("row", { name: new RegExp(`^${seat} `) });
+}
+
+function row(seat: string) {
+  return within(rowOf(seat));
+}
+
+function probe(seat: string) {
+  return within(rowOf(seat)).getAllByRole("cell")[1]!.textContent!.replace(/^[✓×◷] /, "");
 }
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -79,18 +87,22 @@ test("Hosts shows primary probes, recorded fallback use, route health and the fa
   await mount();
   const implementer = row("implementer");
   expect(implementer.getByText("claude opus")).toBeTruthy();
-  expect(implementer.getByText("ok · 41s ago · 1.8s")).toBeTruthy();
+  expect(probe("implementer")).toBe("ok · 41s ago · 1.8s");
   expect(implementer.getByText("claude sonnet")).toBeTruthy();
   const reviewer = row("reviewer");
   expect(reviewer.getByText("codex gpt-6-sol")).toBeTruthy();
-  expect(reviewer.getByText("down · failed 3m ago · exit 1")).toBeTruthy();
+  expect(probe("reviewer")).toBe("down · failed 3m ago · exit 1");
   expect(reviewer.getByText("claude opus")).toBeTruthy();
-  expect(reviewer.getByText("in use · recorded")).toBeTruthy();
+  expect(reviewer.getAllByRole("cell")[2]!.textContent).toBe("claude opusin use · recorded");
   expect(row("adjudicator").getByText("none")).toBeTruthy();
   expect(row("adjudicator").getByText("not probed yet")).toBeTruthy();
   expect(screen.getByText("1 route down · reviewer on its fallback")).toBeTruthy();
   expect(screen.getByText(/1 daemon · 1 answering · 1 route on a fallback/)).toBeTruthy();
-  expect(screen.getByText(/routes are probed when the loop starts/)).toBeTruthy();
+  const table = screen.getByRole("table", { name: "Agent routes on writer" });
+  expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Seat", "Route", "Probe", "Fallback"]);
+  expect(within(table).getAllByText("in use · recorded")).toHaveLength(1);
+  expect(table.closest("section")!.textContent).toContain("probed when the loop starts");
+  expect(document.body.textContent).not.toContain("the token stays in this browser");
 });
 
 test("different project routes split a seat while matching routes share one row", async () => {
@@ -108,9 +120,9 @@ test("an unreachable root preserves the last route report and marks its probes u
   const view = await mount();
   await view.fail();
   expect(screen.getByText("as of 16:39")).toBeTruthy();
-  expect(row("implementer").getByText("unknown · ok at 16:38 · not probed since")).toBeTruthy();
-  expect(row("reviewer").getByText("unknown · failed at 16:36")).toBeTruthy();
-  expect(row("implementer").queryByText("ok · 41s ago · 1.8s")).toBeNull();
+  expect(probe("implementer")).toBe("unknown · ok at 16:38 · not probed since");
+  expect(probe("reviewer")).toBe("unknown · failed at 16:36");
+  expect(screen.queryByText("probed when the loop starts")).toBeNull();
 });
 
 test("shared routes prefer a failed probe over a newer pass, otherwise the newest, and count fallback use per project", async () => {
@@ -122,8 +134,8 @@ test("shared routes prefer a failed probe over a newer pass, otherwise the newes
     primary: { ok: true, at_ms: NOW - 10_000, age_ms: 10_000, duration_ms: 1000, why: null }, fallback: null,
   };
   await mount([status("alpha"), beta]);
-  expect(row("implementer").getByText("ok · 5s ago · 2.4s")).toBeTruthy();
-  expect(row("reviewer").getByText("down · failed 3m ago · exit 1")).toBeTruthy();
+  expect(probe("implementer")).toBe("ok · 5s ago · 2.4s");
+  expect(probe("reviewer")).toBe("down · failed 3m ago · exit 1");
   expect(screen.getByText(/2 routes on a fallback/)).toBeTruthy();
 });
 

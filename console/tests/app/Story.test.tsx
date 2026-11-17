@@ -89,6 +89,7 @@ test("the story header names the story, links its project's tickets and counts i
   expect(text("[data-merged]")).toBe("2 of 6 merged");
   expect(segments()).toEqual(["done", "done", "flight", "need", "ready", "backlog"]);
   expect(text("[data-counts]")).toBe("1 in flight · 1 needs you");
+  expect(text("[data-counts] [data-need]")).toBe("1 needs you");
 });
 
 const demoHost: HostRecord<ContractBodies> = {
@@ -171,13 +172,13 @@ test("a project no host serves reads as missing and asks no host for the story",
   expect(asked.filter((url) => url.includes("/stories/"))).toEqual([]);
 });
 
-test("the story page spans the content width, keeps its notes at 1320 px and words the graph top to bottom", async () => {
+test("the story page spans the content width, keeps its notes at 1320 px and ends with them", async () => {
   await mount("#/stories/demo/DEMO-12", fleet(demo12).fetch);
   const page = document.getElementById("page-title")!.closest("section")!.parentElement!;
   expect(Array.from(page.classList).filter((name) => name.startsWith("max-w") || name === "mx-auto")).toEqual([]);
   expect(screen.getByRole("region", { name: /^Decisions and witnesses/ }).classList.contains("max-w-[1320px]")).toBe(true);
   expect(text("[data-graph-key]")).toContain("one row runs in parallel");
-  expect(page.lastElementChild!.textContent).toStartWith("Tickets with no dependency start the graph at the top.");
+  expect(page.lastElementChild).toBe(screen.getByRole("region", { name: /^Decisions and witnesses/ }));
 });
 
 test("DEMO-12's step list holds its steps in order, says what runs side by side and what each card waits on", async () => {
