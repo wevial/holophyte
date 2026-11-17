@@ -2,6 +2,7 @@
 import json
 import re
 import subprocess
+from collections import namedtuple
 from time import time
 
 import store
@@ -19,12 +20,12 @@ from holophyte.host.supervisor import (
     adjudicated_rounds,
     review_overlap,
 )
-from holophyte.loop.follow_ups import _commits
 from holophyte.loop.gates import InfraFailure, RunFailure
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.stop import stop_if_requested
 from holophyte.redact import safe_print as print
-from holophyte.review.adversary import _payloads
+from holophyte.review.blast_radius import continued_runs
+from holophyte.review.consolidate import said
 from holophyte.review.findings import decode_findings, finding_line
 from holophyte.review.reply_parsing import (
     CRITERION_LINE_RE,
@@ -40,11 +41,18 @@ VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.MULTILINE)
 FACTORY = "factory"
 RULINGS_EVENT = "review_rulings"
 SETTLED = "Settled by the adjudicator, not a blocker:"
+COMMITS_RE = re.compile(r"^BEGIN UNTRUSTED COMMIT MESSAGES\n(.*?)\n"
+                        r"END UNTRUSTED COMMIT MESSAGES$", re.M | re.S)
+Ruling = namedtuple("Ruling", ("dropped", "fixes", "settled_all"))
 
 
 def _key(finding):
     keyed = finding.get("fingerprint", finding)
     return keyed.get("path"), keyed.get("line"), keyed.get("severity")
+
+
+def _identity(finding):
+    return (*_key(finding), said(finding.get("message") or ""))
 
 
 def _code(finding):
@@ -75,15 +83,14 @@ def _listed(finding):
     return f"{_where(finding)} [{finding['severity']}]\n{message}"
 
 
-def verdict_lines(conn, run_id, wt):
-    candidates = [payload["sha"]
-                  for payload in _payloads(conn, run_id, "blast_radius", 1)]
-    if not candidates:
+def verdict_lines(earlier):
+    found = COMMITS_RE.search(earlier or "")
+    if found is None:
         return []
-    return [{"commit": commit,
-             "lines": [line.strip() for line in message.splitlines()
+    return [{"commit": each["commit"],
+             "lines": [line.strip() for line in each["message"].splitlines()
                        if VERDICT_WORD_RE.search(line)]}
-            for commit, message in _commits(wt, candidates[0])]
+            for each in json.loads(found.group(1))]
 
 
 def brief(run_id, sha, ticket, criteria, overlap, repeated, answers):
@@ -167,63 +174,97 @@ def _settle(conn, run_id, ruled):
 
 
 def settled(conn, run_id):
-    """The DROP rulings this run carries, as the review brief reads them."""
+    """The DROP rulings this run and the runs it continues carry."""
     if conn is None or run_id is None:
         return ""
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    runs = set(continued_runs(conn, run_id))
     return "".join(
-        f"\n\nAdjudicator's ruling:\nsteer note {note.id} by {note.author}:"
-        f"\n{note.note}"
+        f"Adjudicator's ruling:\nsteer note {note.id} by {note.author}:"
+        f"\n{note.note}\n\n"
         for note in store.steer_notes.chain_notes(conn, ticket_id, 0)
-        if note.author == FACTORY and note.consumed_by == run_id
+        if note.author == FACTORY and note.consumed_by in runs
         and note.note.startswith(SETTLED))
 
 
-def _dropped(block, keys):
-    return any(_key(finding) in keys for finding in parse_findings(block))
+def kept_findings(findings, ruling):
+    if ruling is None:
+        return findings
+    return [finding for finding in findings
+            if not isinstance(finding, dict)
+            or _identity(finding) not in ruling.dropped]
 
 
 def _kept(block, dropped):
-    if not _dropped(block, dropped):
+    if not any(_identity(finding) in dropped
+               for finding in parse_findings(block)):
         return block
     return "\n".join(line for line in block.splitlines()
                      if CRITERION_LINE_RE.match(line)
                      or SCOPE_LINE_RE.match(line))
 
 
-def fix_findings(verdict, findings, ruled):
-    """The reviewer's findings less the DROP ones, with the FIX reasons."""
-    dropped = {_key(finding) for finding, (word, _) in ruled if word == "DROP"}
-    if all(_key(finding) in dropped for finding in findings
-           if isinstance(finding, dict)
-           and finding.get("evidence_only") is not True):
-        return None
-    kept = "\n\n".join(_kept(block, dropped)
+def without_dropped(verdict, ruling):
+    """The reviewer's text less the DROP findings' blocks."""
+    if ruling is None or not ruling.dropped:
+        return verdict
+    return "\n\n".join(_kept(block, ruling.dropped)
                         for block in finding_blocks(verdict))
+
+
+def _ruled(findings, ruled):
+    dropped = {_identity(finding) for finding, (word, _) in ruled
+               if word == "DROP"}
     fixes = "".join(f"- {_where(finding)}: FIX -- {reason}\n"
                     for finding, (word, reason) in ruled if word == "FIX")
-    return kept + (
+    left = [finding for finding in findings if isinstance(finding, dict)
+            and finding.get("evidence_only") is not True
+            and _identity(finding) not in dropped]
+    return Ruling(dropped, fixes and (
         "\n\nThe review repeated these findings from the round before, and "
         "the adjudicator ruled them blockers against the ticket. Answer each "
         "ADDRESS and fix it; a FOLLOW_UP or DECLINE on them does not stand:\n"
-        + fixes if fixes else "")
+        + fixes), not left)
 
 
-def adjudication_started(conn, run_id, rnd, count):
+def _adjudications(conn, run_id):
+    """This run's claimed rounds, and the rounds earlier runs saw ruled."""
+    return [(run, json.loads(payload)) for run in continued_runs(conn, run_id)
+            for (payload,) in conn.execute(
+                "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
+                " ORDER BY seq",
+                (run, REVIEW_ADJUDICATION if run == run_id else RULINGS_EVENT))]
+
+
+def _prior_rulings(conn, run_id):
+    rows = [summary for run in continued_runs(conn, run_id)
+            for (summary,) in conn.execute(
+                "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?"
+                " ORDER BY seq", (run, RULINGS_EVENT))]
+    return rows[-1] if rows else "no rulings recorded"
+
+
+def adjudication_started(conn, run_id, rnd, count, again=None):
+    summary = (f"round {rnd}: the adjudicator rules on {count} repeated"
+               " finding(s)" if again is None else
+               f"round {rnd} repeats findings after the adjudication of round"
+               f" {again}; the run ends review_stuck")
     store.record_event(
-        conn, run_id, REVIEW_ADJUDICATION,
-        f"round {rnd}: the adjudicator rules on {count} repeated finding(s)",
-        level="detail", payload=json.dumps({"round": rnd, "findings": count}))
+        conn, run_id, REVIEW_ADJUDICATION, summary, level="detail",
+        payload=json.dumps({"round": rnd, "findings": count, "again": again}))
 
 
 def claim(project, conn, run_id, rnd):
-    """Mark a repeating round before the supervisor can sweep it as stuck."""
-    if conn is None or run_id is None or adjudicated_rounds(conn, run_id):
+    """Mark a repeating round in the transaction that records it."""
+    if conn is None or run_id is None:
         return
     found = repeats(conn, run_id,
                     sweep_config(project).review_overlap_threshold)
-    if found is not None and found[0][1] == rnd:
-        adjudication_started(conn, run_id, rnd, len(found[2]))
+    if found is None or found[0][1] != rnd:
+        return
+    prior = [payload["round"] for _, payload in _adjudications(conn, run_id)]
+    adjudication_started(conn, run_id, rnd, len(found[2]),
+                         prior[0] if prior else None)
 
 
 def _stuck(conn, run_id, provider, task_id, branch, sha, evidence, detail):
@@ -238,42 +279,53 @@ def _stuck(conn, run_id, provider, task_id, branch, sha, evidence, detail):
     raise RunFailure(reason, "swept")
 
 
+def _text(value):
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return value or ""
+
+
 def _ask(project, conn, run_id, beat_s, wt, base_sha, sha, prompt):
     from holophyte.loop.review_round import agent
     try:
         with heartbeat_while(conn, run_id, beat_s):
             reply = agent(project, "adjudicate", prompt, wt, conn=conn,
                           base_sha=base_sha, candidate_sha=sha, run_id=run_id)
-    except (InfraFailure, subprocess.TimeoutExpired) as error:
-        return "", getattr(error, "reason", None) or str(error)
-    return reply, failure_line(reply)
+    except (InfraFailure, subprocess.TimeoutExpired, OSError) as error:
+        printed = (getattr(error, "tail", None) or _text(
+            getattr(error, "output", None) or getattr(error, "stdout", None)))
+        return _text(printed), (getattr(error, "reason", None) or str(error)
+                                or type(error).__name__)
+    return str(reply), failure_line(reply)
 
 
 def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,
-                base_sha, sha, ticket, criteria, verdict):
-    """The findings the fix turn gets, None if every one was settled."""
+                base_sha, sha, ticket, criteria, earlier):
+    """The rulings on a repeating round, None when the round repeats nothing."""
     if conn is None or run_id is None:
-        return verdict
+        return None
     threshold = sweep_config(project).review_overlap_threshold
     found = repeats(conn, run_id, threshold)
     if found is None:
-        return verdict
+        return None
     overlap, findings, repeated = found
-    earlier, later, shared = overlap
-    evidence = (f"rounds {earlier} and {later} share {shared:.2f} of their"
-                f" findings ({threshold} threshold)")
-    done = adjudicated_rounds(conn, run_id)
-    if any(rnd != later for rnd in done):
-        prior = store.read.latest_event_summary(conn, run_id, RULINGS_EVENT)
+    earlier_round, later, shared = overlap
+    evidence = (f"rounds {earlier_round} and {later} share {shared:.2f} of"
+                f" their findings ({threshold} threshold)")
+    events = _adjudications(conn, run_id)
+    prior = [payload["round"] for run, payload in events
+             if run != run_id or payload["round"] != later]
+    if prior:
         _stuck(conn, run_id, provider, task_id, branch, sha, evidence,
-               f"the adjudicator already ruled on round {done[0]}: {prior}")
-    if later not in done:
+               f"the adjudicator already ruled on round {prior[0]}:"
+               f" {_prior_rulings(conn, run_id)}")
+    if later not in adjudicated_rounds(conn, run_id):
         adjudication_started(conn, run_id, later, len(repeated))
     prompt = brief(run_id, sha, ticket, criteria, overlap, repeated,
-                   verdict_lines(conn, run_id, wt))
+                   verdict_lines(earlier))
     reply, failed = _ask(project, conn, run_id, beat_s, wt, base_sha, sha,
                          prompt)
-    stop_if_requested(conn, run_id, "addressing")
+    stop_if_requested(conn, run_id, "reviewing")
     ruled = list(zip(repeated, rulings(reply, len(repeated))))
     spoken = f"adjudicator rulings: {_spoken(ruled)}"
     store.record_event(conn, run_id, RULINGS_EVENT, spoken, level="detail",
@@ -287,4 +339,4 @@ def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     ledger(conn, run_id, task_id, "adjudication", f"Round {later}: {spoken}",
            provider)
     _settle(conn, run_id, ruled)
-    return fix_findings(verdict, findings, ruled)
+    return _ruled(findings, ruled)

@@ -1,5 +1,6 @@
 """The review rounds: verify, review and one fix turn per round, up to the cap."""
 import json
+from contextlib import nullcontext
 from functools import partial
 from time import time
 
@@ -172,7 +173,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
-            leaks=(), witness=""):
+            leaks=(), witness="", branch=None):
     base_sha = review_base(wt, base_sha, sha)
     criteria = numbered(conn, run_id, criteria)
     round_started = int(time() * 1000)
@@ -180,11 +181,11 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     _record_mode(conn, run_id, mode, rnd)
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
+    earlier = earlier_rounds_brief(conn, run_id, wt, rnd, criteria)
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
                           witness=witness,
-                          earlier=earlier_rounds_brief(conn, run_id, wt, rnd,
-                                                       criteria))
+                          earlier=earlier + stuck_review.settled(conn, run_id))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,
@@ -198,12 +199,13 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     red = _verify_findings(verify_cmd, ok, out)
     leak_guard.record(conn, run_id, leaks)
     private = leak_guard.review_findings(leaks)
-    record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
-                 ok, out,
-                 started_at=round_started, criteria=criteria, root=wt,
-                 prior_reply=first_reply, approved_range=approved, scope=scope,
-                 adversary=blocking + red + private)
-    stuck_review.claim(project, conn, run_id, rnd)
+    with store.transaction(conn) if conn is not None else nullcontext():
+        record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
+                     ok, out,
+                     started_at=round_started, criteria=criteria, root=wt,
+                     prior_reply=first_reply, approved_range=approved, scope=scope,
+                     adversary=blocking + red + private)
+        stuck_review.claim(project, conn, run_id, rnd)
     if decision == "REQUEST_CHANGES" and conn is not None:
         capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
@@ -212,6 +214,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         raise InfraFailure(f"{reason}; candidate preserved at {sha}",
                            "review_route")
     adversary.require_done(plan, attacked)
+    ruling = stuck_review.adjudicated(
+        project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
+        sha, ticket, criteria, earlier)
 
     unwitnessed = criteria_findings(verdict, criteria, wt,
                                     approved_range=approved, scope=scope)
@@ -222,13 +227,17 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     adversarial = consolidate.adversary_findings(conn, run_id, rnd) if plan else None
     handed = adversarial is not None and consolidate.handed_on(
         project, conn, run_id, provider, task_id, rnd,
-        consolidate.primary_findings(verdict, decision,
-                                     unwitnessed + red + private),
+        stuck_review.kept_findings(consolidate.primary_findings(
+            verdict, decision, unwitnessed + red + private), ruling),
         adversarial, consolidate.fixing(decision, findings, ok, out),
         partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
                 candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
                 run_id=run_id))
-    verdict = _with_report(handed or verdict, red, out)
+    if ruling is not None and ruling.settled_all:
+        return None, decision, findings
+    verdict = _with_report(
+        handed or stuck_review.without_dropped(verdict, ruling), red, out)
+    verdict += ruling.fixes if ruling is not None else ""
     return leak_guard.with_findings(verdict, private), decision, findings
 
 
@@ -264,8 +273,7 @@ def _steer_approved(project, conn, run_id, provider, task_id, wt, beat_s, sha,
 def _round_contract(conn, run_id, ticket, claimed, pending):
     verify_cmd = adopted_verify(conn, run_id, claimed)
     kept = pending if pending.get("verify_cmd", claimed) == verify_cmd else {}
-    return (reviewed_ticket(conn, run_id, ticket)
-            + stuck_review.settled(conn, run_id), verify_cmd, kept)
+    return reviewed_ticket(conn, run_id, ticket), verify_cmd, kept
 
 
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
@@ -353,7 +361,13 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             verdict, decision, unwitnessed = _review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 reviewed, verify_cmd, criteria, mode, rnd, ok, out,
-                pending.get("stale", ()), leaks, witness)
+                pending.get("stale", ()), leaks, witness, branch)
+            if verdict is None:
+                ledger(conn, run_id, task_id, "round",
+                       f"Round {rnd}: REQUEST_CHANGES, every finding settled by"
+                       " the adjudicator -> review again", provider)
+                boundary(conn, run_id, "verifying", rnd=rnd + 1)
+                continue
             if ok and not unwitnessed and decision == "APPROVE":
                 if steer_pending(conn, run_id):
                     sha, pending = _steer_approved(
@@ -394,21 +408,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         from holophyte.agents.fix_session import fix_turn
         states = ticket_template.parse(ticket).evidence_states
         spec = capture_spec_digest(project, wt, task_id, states)
-        to_fix = stuck_review.adjudicated(
-            project, conn, run_id, provider, task_id, branch, wt, beat_s,
-            review_base(wt, base_sha, sha), sha, reviewed,
-            numbered(conn, run_id, criteria),
-            without_follow_ups(without_refuted(verdict)))
-        if to_fix is None:
-            ledger(conn, run_id, task_id, "round",
-                   f"Round {rnd}: REQUEST_CHANGES, every repeated finding"
-                   f" settled -> review again\nReviewer findings:\n{verdict}",
-                   provider)
-            boundary(conn, run_id, "verifying", rnd=rnd + 1)
-            continue
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
-            to_fix, sha, timed=_timed,
+            without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
             check_cap=_check_run_cap,
             criteria=numbered(conn, run_id, criteria))
         ledger(conn, run_id, task_id, "round",
