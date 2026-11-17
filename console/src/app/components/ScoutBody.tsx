@@ -139,7 +139,7 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
 
 export type TabId = "decide" | "writeup" | "findings" | "activity" | "chat";
 
-const TAB = "inline-flex h-7 cursor-pointer items-center gap-[7px] rounded-[6px] border-0 px-2.5 font-sans text-[13px] font-medium leading-none";
+const TAB = "group inline-flex h-7 cursor-pointer items-center gap-[7px] rounded-[6px] border-0 px-2.5 font-sans text-[13px] font-medium leading-none";
 const TAB_ON = "bg-selected text-ink";
 const TAB_OFF = "bg-transparent text-ink-2 hover:text-ink";
 
@@ -200,7 +200,7 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
               type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
               tabIndex={tab === current ? 0 : -1} onClick={() => onChoose(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF} ${tab.className ?? ""}`}>
               {tab.label}
-              {tab.count != null && <> <span data-tab-count className="font-mono text-[12px] font-normal text-ink-3">{tab.count}</span></>}
+              {tab.count != null && <> <span data-tab-count className="font-mono text-[12px] font-normal text-ink-3 group-aria-selected:text-ink-2">{tab.count}</span></>}
             </button>
           ))}
         </div>
