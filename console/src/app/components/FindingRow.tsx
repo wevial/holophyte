@@ -27,8 +27,8 @@ export function SeverityPill({ severity }: { severity: Severity }) {
 const TAG = "inline-flex h-5 items-center rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none";
 
 const TINT: Record<Severity, string> = {
-  must: "bg-bad-wash text-[color:light-dark(var(--bad-text),var(--bad))]",
-  should: "bg-ask-wash text-[color:light-dark(var(--gold-12),var(--ask))]",
+  must: "bg-bad-wash text-bad-text",
+  should: "bg-ask-wash text-ask-text",
   nit: "bg-selected text-ink-2",
 };
 
