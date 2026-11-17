@@ -16,7 +16,7 @@ import { useId, useMemo, useRef } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { storeScope, type SwitcherRow } from "../projects";
 import type { ScopeSearch } from "../scope";
-import { AllProjectsIcon, DropIcon, FolderIcon } from "./icons";
+import { DropIcon } from "./icons";
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
@@ -166,29 +166,40 @@ const { Trigger, Content, Title, Input, List, Empty, Option } = createParts(swit
   option: "li",
 });
 
-function iconColour(row: SwitcherRow): string {
-  if (row.name == null) return "text-ink-2";
-  if (row.down) return "text-bad";
-  if (row.held) return "text-wait";
-  return "text-live";
-}
+type Dot = { colour: string; down: boolean };
 
-function RowIcon({ row }: { row: SwitcherRow }) {
-  return <span className={`flex ${iconColour(row)}`}>{row.name == null ? <AllProjectsIcon /> : <FolderIcon />}</span>;
-}
-
-function ScopeDots({ colours }: { colours: string[] }) {
+function ScopeDots({ dots }: { dots: Dot[] }) {
   return (
     <span data-dots aria-hidden="true" className="flex shrink-0">
-      {colours.map((colour, at) => (
+      {dots.map(({ colour, down }, at) => (
         <i
           key={at}
           data-dot
-          style={{ background: colour }}
-          className="-mr-0.5 size-2 rounded-full shadow-[0_0_0_2px_var(--side)] last:mr-0 group-hover:shadow-[0_0_0_2px_var(--hover)]"
+          data-down={down || undefined}
+          style={{ background: down ? "transparent" : colour }}
+          className={`-mr-0.5 size-2 rounded-full last:mr-0 ${
+            down ? "shadow-[inset_0_0_0_1.5px_var(--bad),0_0_0_2px_var(--dot-ring)]" : "shadow-[0_0_0_2px_var(--dot-ring)]"
+          }`}
         />
       ))}
     </span>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg data-check viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0 text-accent">
+      <path d="m3.5 8.5 3 3 6-7" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true" className="size-4 shrink-0 text-ink-3">
+      <circle cx="7" cy="7" r="4.5" />
+      <path d="m10.5 10.5 3 3" />
+    </svg>
   );
 }
 
@@ -218,7 +229,11 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
 
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const byKey = useMemo(() => new Map(rows.map((row) => [rowKey(row), row])), [rows]);
-  const dots = (current.name == null ? rows : [current]).flatMap((row) => (row.name == null ? [] : (colours.get(row.name) ?? [])));
+  const dotsOf = (row: SwitcherRow): Dot[] =>
+    (row.name == null ? rows : [row]).flatMap((each) => {
+      const colour = each.name == null ? undefined : colours.get(each.name);
+      return colour == null ? [] : [{ colour, down: row.name != null && each.down }];
+    });
   const items = useMemo(() => rows.map((row) => ({ value: rowKey(row), label: row.label })), [rows]);
 
   const handle = usePrimitive(switcher, {
@@ -257,26 +272,15 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className={`group relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink hover:bg-hover ${
+            className={`relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink [--dot-ring:var(--side)] hover:bg-hover hover:[--dot-ring:var(--hover)] aria-expanded:bg-hover aria-expanded:[--dot-ring:var(--hover)] ${
               folded ? "size-11 justify-center" : "h-row w-full px-2.5"
             }`}
           >
-            <ScopeDots colours={dots} />
-            {folded ? (
-              current.need > 0 && (
-                <span data-need aria-hidden="true" className="absolute top-0.5 right-1 font-mono text-[9px] leading-none font-semibold text-need">
-                  {current.need}
-                </span>
-              )
-            ) : (
+            <ScopeDots dots={dotsOf(current)} />
+            {!folded && (
               <>
                 <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
                 {current.held && <HeldTag />}
-                {current.need > 0 && (
-                  <span data-need aria-hidden="true" className="font-mono text-[12px] font-semibold text-need">
-                    {current.need}
-                  </span>
-                )}
                 <span className="text-ink-3">
                   <DropIcon />
                 </span>
@@ -294,7 +298,7 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
               if (event.target === event.currentTarget) document.getElementById(findId)?.focus();
             }}
             style={{ maxHeight: "var(--available-height)", width: `min(${DIALOG_WIDTH}px, calc(100vw - ${2 * EDGE}px))` }}
-            className="fixed z-50 flex flex-col border border-rule bg-paper p-2 shadow-card"
+            className="fixed z-50 flex flex-col rounded-[10px] bg-raised p-1 shadow-[0_0_0_1px_var(--hair-2),var(--card-shadow)]"
             onMouseDown={(event) => {
               if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
             }}
@@ -303,14 +307,17 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
             <label htmlFor={findId} className="sr-only">
               Find a project
             </label>
-            <Input
-              id={findId}
-              placeholder="Find a project"
-              autoComplete="off"
-              className="min-h-9 border border-ink-3 bg-paper-2 px-2.5 text-[13px] text-ink placeholder:text-ink-2 focus:outline-2 focus:outline-focus focus:-outline-offset-1!"
-            />
-            <Empty className="mt-2 px-2 py-2.5 text-[13px] text-ink-3">No project matches.</Empty>
-            <List aria-label="Projects" className="mt-2 flex max-h-[320px] min-h-0 flex-col overflow-y-auto">
+            <div className="mb-1 flex h-[34px] shrink-0 items-center gap-2 border-b border-hair px-2">
+              <SearchIcon />
+              <Input
+                id={findId}
+                placeholder="Find a project"
+                autoComplete="off"
+                className="h-full min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none! placeholder:text-ink-3"
+              />
+            </div>
+            <Empty className="px-2 py-2.5 text-[13px] text-ink-3">No project matches.</Empty>
+            <List aria-label="Projects" className="flex max-h-[320px] min-h-0 flex-col gap-px overflow-y-auto">
               {({ shown }) =>
                 shown.map((key) => {
                   const row = byKey.get(key)!;
@@ -318,13 +325,12 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
                     <Option
                       key={key}
                       value={key}
-                      className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-[13px] text-ink aria-selected:text-act data-[active=true]:bg-paper-2"
+                      className="flex h-8 shrink-0 cursor-pointer items-center gap-[9px] rounded-[6px] px-2 text-[13px] font-medium text-ink-2 [--dot-ring:var(--raised)] aria-selected:text-ink data-[active=true]:bg-hover data-[active=true]:text-ink data-[active=true]:[--dot-ring:var(--hover)]"
                     >
-                      <RowIcon row={row} />
+                      <ScopeDots dots={dotsOf(row)} />
                       <span className="min-w-0 flex-1 truncate">{row.label}</span>
                       {row.held && <HeldTag />}
-                      {row.need > 0 && <span className="font-mono text-[12px] font-semibold text-need">{row.need}</span>}
-                      <span className="font-mono text-[11px] text-ink-3">{row.down ? "not answering" : `${row.open} open`}</span>
+                      {key === rowKey(current) ? <CheckIcon /> : <span className="size-3.5 shrink-0" />}
                     </Option>
                   );
                 })
