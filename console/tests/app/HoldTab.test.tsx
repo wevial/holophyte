@@ -63,6 +63,8 @@ test("picking Held opens the reason field while Taking work stays pressed throug
   expect(screen.queryByPlaceholderText("Why it should stop taking work")).toBeNull();
   expect(screen.getByRole("button", { name: "Held" }).getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Held" }));
+  expect(screen.getByPlaceholderText("Why it should stop taking work")).toBeTruthy();
+  expect(pressed()).toEqual(["true", "false"]);
   expect(screen.getByRole("button", { name: "Held" }).getAttribute("aria-expanded")).toBe("true");
   fireEvent.change(screen.getByPlaceholderText("Why it should stop taking work"), { target: { value: "Schema bump" } });
   fireEvent.click(screen.getByRole("button", { name: "Hold demo" }));

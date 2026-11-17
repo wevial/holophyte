@@ -224,8 +224,9 @@ test("a save refused at line 3 marks that gutter line and draws its band on the 
   const marked = scroller().querySelectorAll('[data-refused="true"]');
   expect([...marked].map(line => line.getAttribute("data-line"))).toEqual(["3"]);
   expect(marked[0]!.textContent).toContain("▪");
-  const bands = overlay().querySelectorAll("[data-refused-band]");
-  expect([...bands].map((band) => band.closest("[data-text-line]")!.getAttribute("data-text-line"))).toEqual(["3"]);
+  const bands = [...overlay().querySelectorAll("[data-refused-band]")];
+  expect(bands.map((band) => band.getAttribute("data-text-line"))).toEqual(["3"]);
+  expect(bands[0]!.classList.contains("bg-bad-wash")).toBe(true);
   const checker = screen.getByRole("heading", { name: "Checker" }).parentElement!.textContent!;
   expect(checker).toMatch(/^Checker1 error blocks saving.*line 3.*Invalid value \(at line 3, column 9\)$/);
 });

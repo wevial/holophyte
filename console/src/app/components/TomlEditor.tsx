@@ -83,9 +83,8 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
         </div>
         <div className="relative flex-1">
           <pre aria-hidden="true" className="relative m-0 py-3 pl-3 pr-8 font-mono text-[13px] leading-5 whitespace-pre">
-            {lines.map((spans, index) => <span key={index} data-text-line={index + 1} className="relative block h-5">
-              {current.line === index + 1 && <span data-refused-band="" className="absolute inset-y-0 -right-8 -left-3 bg-bad-wash" />}
-              <span className="relative">{spans.map((span, at) => <span key={at} data-kind={span.kind} className={KIND_CLASS[span.kind]}>{span.text}</span>)}</span>
+            {lines.map((spans, index) => <span key={index} data-text-line={index + 1} data-refused-band={current.line === index + 1 ? "" : undefined} className={`block h-5 ${current.line === index + 1 ? "-mr-8 -ml-3 bg-bad-wash pr-8 pl-3" : ""}`}>
+              {spans.map((span, at) => <span key={at} data-kind={span.kind} className={KIND_CLASS[span.kind]}>{span.text}</span>)}
             </span>)}
           </pre>
           <textarea
