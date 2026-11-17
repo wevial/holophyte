@@ -17,7 +17,7 @@ export function PageHeader({ title, count, tools, tabs }: { title: string; count
             )}
           </p>
         )}
-        {tools != null && <div data-tools className="relative ml-auto flex max-w-full flex-wrap items-center gap-1">{tools}</div>}
+        {tools != null && <div data-tools className="relative ml-auto flex max-w-full flex-wrap items-center gap-1 *:max-w-full *:flex-wrap">{tools}</div>}
       </div>
       {tabs}
     </header>
