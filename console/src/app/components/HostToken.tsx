@@ -63,7 +63,7 @@ export function HostToken({ host }: { host: HostCard }) {
             onChange={(event) => setValue(event.currentTarget.value)}
             className="field w-72 min-w-0 max-w-full"
           />
-          <Btn disabled={!value.trim()} onClick={() => form.current?.requestSubmit()}>Save token</Btn>
+          <Btn className="!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]" disabled={!value.trim()} onClick={() => form.current?.requestSubmit()}>Save token</Btn>
         </div>
         {reason != null && <p id={`${id}-reason`} className="mt-2 font-sans text-[13px] text-bad">{reason}</p>}
       </form>}
