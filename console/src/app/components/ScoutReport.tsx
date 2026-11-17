@@ -188,7 +188,7 @@ export function ScoutReport({ reports, baseSha }: { reports: ScoutReportPass[]; 
     <section aria-label="Findings" className="mt-10">
       <h2 className={`m-0 ${SECTION_LABEL}`}>
         Findings
-        <span data-report-count className="text-ink">{findings.length}</span>
+        <span data-report-count className="font-mono text-[12px] font-normal text-ink-3">{findings.length}</span>
       </h2>
       {findings.length > 0 && (
         <ol aria-label="Findings" className="m-0 mt-2 list-none border border-rule bg-findings-bg p-0">
