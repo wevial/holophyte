@@ -10,7 +10,7 @@ const MARKS: Record<Standing, { icon: State; tone: Tone; name: string }> = {
 };
 
 export const SECTION_LABEL =
-  "flex h-[30px] items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold leading-none text-ink";
+  "flex min-h-[30px] items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold leading-none text-ink";
 
 function Mark({ standing }: { standing: Standing }) {
   const { icon, tone, name } = MARKS[standing];
