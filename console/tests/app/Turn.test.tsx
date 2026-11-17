@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { runTurnsSchema, type RunDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -93,7 +93,12 @@ test("turn tabs and neighbouring links preserve run identity and mark the last t
     "/runs/demo/12/turns/40", "/runs/demo/12/turns/41", "/runs/demo/12/turns/42",
   ]);
   expect(screen.getByRole("link", { name: "Previous turn" }).getAttribute("href")).toEndWith("#/runs/demo/12/turns/41");
-  expect(screen.getByLabelText("Next turn").getAttribute("aria-disabled")).toBe("true");
+  const next = screen.getByRole("link", { name: "Next turn" });
+  expect(next.getAttribute("aria-disabled")).toBe("true");
+  expect(next.hasAttribute("href")).toBe(false);
+  await act(async () => { fireEvent.click(next); });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/runs/demo/12/turns/42");
   expect(screen.getByRole("link", { name: "Back to the run" }).getAttribute("href")).toEndWith("#/runs/demo/12");
 });
 

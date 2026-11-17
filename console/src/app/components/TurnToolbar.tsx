@@ -18,7 +18,7 @@ export function TurnToolbar({ query, onQuery, filter, onFilter, counts, matches,
         className="h-full min-w-0 flex-1 border-0 bg-transparent font-sans text-[14px] text-ink outline-none! placeholder:text-ink-3" />
     </label>
     <span aria-live="polite" className="font-sans text-[13px] text-ink-3">{query.trim() ? `${matches} ${matches === 1 ? "match" : "matches"} in ${entries(matchingEntries)}` : `${entries(counts.All)} · ${counts.Errors} ${counts.Errors === 1 ? "error" : "errors"}`}</span>
-    <div className="-m-1 max-w-[calc(100%+0.5rem)] overflow-x-auto p-1">
+    <div className="min-w-0 max-w-full [&>[role=group]]:max-w-full [&>[role=group]]:flex-wrap">
       <Segmented label="Show" options={FILTERS.map(kind => ({ value: kind, label: `${kind} ${counts[kind]}` }))} value={filter} onPick={onFilter} />
     </div>
     <Btn disabled={counts.Errors === 0} onClick={onJump}><span className="text-bad"><TranscriptIcon kind="error" /></span>Jump to first error</Btn>
