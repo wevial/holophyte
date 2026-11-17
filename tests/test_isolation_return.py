@@ -499,11 +499,9 @@ class IsolationReturnTests(IsolationCase):
         main, worktree = self.make_worktree()
         old = git(worktree, "rev-parse", "HEAD")
 
-        with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null",
-                                     "GIT_CONFIG_NOSYSTEM": "1"}), \
-             self.assertRaisesRegex(InfraFailure, "could not be rewritten"):
+        with self.assertRaisesRegex(InfraFailure, "could not be rewritten"):
             self.rewrite_turn(
-                worktree, f"git -C {shlex.quote(str(main))} config --unset user.email; "
+                worktree, f"git -C {shlex.quote(str(main))} config user.name ''; "
                           "git commit -q --allow-empty --amend -m rewritten")
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
 
@@ -518,7 +516,7 @@ class IsolationReturnTests(IsolationCase):
 
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), returned)
 
-    def test_container_head_naming_a_tree_is_refused(self):
+    def assert_head_refused_as_non_commit(self, point):
         from holophyte.isolation.isolation_git import git
         from holophyte.loop.gates import InfraFailure
 
@@ -526,13 +524,21 @@ class IsolationReturnTests(IsolationCase):
         (worktree / "kept").write_text("host\n")
         old = git(worktree, "rev-parse", "HEAD")
 
-        with self.assertRaisesRegex(InfraFailure, "not a fast-forward"):
+        with self.assertRaisesRegex(InfraFailure, "HEAD is not a commit"):
             self.rewrite_turn(
-                worktree, "echo work > work; git add work; "
-                          "git write-tree > .git/refs/heads/task")
+                worktree, f"echo work > work; git add work; {point} > head; "
+                          "mv head .git/refs/heads/task")
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
         self.assertFalse((worktree / "work").exists())
         self.assertEqual((worktree / "kept").read_text(), "host\n")
+
+    def test_container_head_naming_a_tree_is_refused(self):
+        self.assert_head_refused_as_non_commit("git write-tree")
+
+    def test_container_head_naming_a_divergent_annotated_tag_is_refused(self):
+        self.assert_head_refused_as_non_commit(
+            "git commit -q --amend -m rewritten; git tag -a -m tag tag; "
+            "git rev-parse tag")
 
     def test_rewritten_turn_bringing_in_environment_is_still_refused(self):
         from holophyte.isolation.isolation_git import git

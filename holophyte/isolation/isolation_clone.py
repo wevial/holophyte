@@ -206,6 +206,8 @@ def return_turn(worktree, clone, root, old, project, merge_state, carry):
         str(transport),
         "HEAD",
     )
+    if git(worktree, "cat-file", "-t", sha) != "commit":
+        raise InfraFailure("container HEAD is not a commit; refusing fetch back")
     try:
         git(worktree, "merge-base", "--is-ancestor", old, sha)
     except subprocess.CalledProcessError as error:
