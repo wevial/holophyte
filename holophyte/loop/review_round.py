@@ -12,7 +12,12 @@ from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
-from holophyte.loop import contradiction, fix_self_check, witness_turns
+from holophyte.loop import (
+    contradiction,
+    fix_self_check,
+    stuck_review,
+    witness_turns,
+)
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
@@ -387,9 +392,14 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         from holophyte.agents.fix_session import fix_turn
         states = ticket_template.parse(ticket).evidence_states
         spec = capture_spec_digest(project, wt, task_id, states)
+        to_fix = stuck_review.adjudicated(
+            project, conn, run_id, provider, task_id, branch, wt, beat_s,
+            review_base(wt, base_sha, sha), sha, reviewed,
+            numbered(conn, run_id, criteria),
+            without_follow_ups(without_refuted(verdict)))
         fixes, timed_out = fix_turn(
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
-            without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
+            to_fix, sha, timed=_timed,
             check_cap=_check_run_cap,
             criteria=numbered(conn, run_id, criteria))
         ledger(conn, run_id, task_id, "round",
