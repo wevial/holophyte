@@ -230,10 +230,10 @@ function ContrastFlags({ derived }: { derived: DerivedTheme }) {
         const tip = `${check.name} ${ratioText(check.ratio)}:1${fails ? ` · under ${check.bar}` : ""}`;
         return (
           <li key={check.name} aria-label={tip} title={tip} data-fails={fails || undefined}
-            className={`flex items-center gap-1.5 rounded-chip border px-2 py-1 font-mono text-[12px] ${fails ? "border-bad text-bad" : "border-rule-2 bg-paper-2 text-ink-3"}`}>
-            <span aria-hidden="true" className="size-3 rounded-[3px] border border-rule" style={{ background: check.colour }} />
+            className={`inline-flex h-5 items-center gap-[5px] rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none ${fails ? "bg-bad-wash text-bad" : "bg-selected text-ink-2"}`}>
+            <span aria-hidden="true" className="size-2.5 rounded-[3px] shadow-[inset_0_0_0_1px_var(--hair-2)]" style={{ background: check.colour }} />
             <span aria-hidden="true" className={fails ? "text-bad" : "text-live"}>{fails ? "!" : "✓"}</span>
-            {ratioText(check.ratio)}
+            <span className="font-mono font-normal">{ratioText(check.ratio)}</span>
           </li>
         );
       })}
@@ -259,7 +259,7 @@ function Editor({ initial, saved, readOnly, onSubject }: { initial: CustomTheme 
     <section aria-label="Theme editor" className="mt-2 grid gap-8 border-t border-rule-2 pt-6 min-[1100px]:grid-cols-[330px_minmax(0,1fr)]">
       <div className="flex flex-col gap-6">
         <input type="text" aria-label="Theme name" value={theme.name} disabled={readOnly} onChange={(event) => edit({ name: event.currentTarget.value })}
-          className="min-h-10 rounded-button border border-rule bg-paper px-3 text-[15px] text-ink disabled:cursor-not-allowed disabled:text-ink-2" />
+          className="field font-sans disabled:cursor-not-allowed disabled:text-ink-2" />
         <OklchPicker name="Ground" value={theme.ground} maxChroma={GROUND_CHROMA} disabled={readOnly} onChange={(ground) => edit({ ground })} />
         <OklchPicker name="Accent" value={theme.accent} maxChroma={ACCENT_CHROMA} disabled={readOnly} onChange={(accent) => edit({ accent })}
           reset={accentMoved && <ResetIcon label="Reset accent" onReset={() => edit({ accent: origin })} />} />

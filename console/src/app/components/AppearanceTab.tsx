@@ -8,6 +8,7 @@ import {
 import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
+import { Segmented } from "./Segmented";
 import { copyOf, ThemeEditor, type EditorSubject } from "./ThemeEditor";
 
 const SCHEMES: { value: Theme; name: string; icon: ReactNode }[] = [
@@ -23,10 +24,17 @@ const EFFECTS: { value: HeaderEffect | "caustics"; name: string; preview: string
   { value: "none", name: "None", preview: "bg-canvas" },
 ];
 
-const FONTS: { value: ReadingFont; name: string; line: string; face: string }[] = [
-  { value: "sans", name: "Plex Sans", line: "default", face: '"IBM Plex Sans", Arial, sans-serif' },
-  { value: "serif", name: "Plex Serif", line: "for long reads", face: '"IBM Plex Serif", Georgia, serif' },
-  { value: "hyperlegible", name: "Hyperlegible", line: "clearest letterforms", face: '"Atkinson Hyperlegible Next", Arial, sans-serif' },
+const DENSITIES = [
+  { value: "comfortable", label: "Comfortable" },
+  { value: "compact", label: "Compact" },
+] as const;
+
+const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
+
+const FONTS: { value: ReadingFont; name: string; line: string }[] = [
+  { value: "sans", name: "Plex Sans", line: "default" },
+  { value: "serif", name: "Plex Serif", line: "for long reads" },
+  { value: "hyperlegible", name: "Hyperlegible", line: "clearest letterforms" },
 ];
 
 function Glyph({ children }: { children: ReactNode }) {
@@ -81,12 +89,12 @@ function ThemeTile({ name, pressed, onPick, tile, style, custom = false }: {
   return (
     <button type="button" aria-pressed={pressed} onClick={onPick} className="group flex w-[122px] flex-col gap-1.5 text-left">
       <span aria-hidden="true" data-tile={tile} style={style}
-        className={`theme-tile relative block h-[58px] w-full rounded-card border ${pressed ? "border-focus outline-2 outline-offset-2 outline-focus" : "border-rule group-hover:border-ink-3"}`}>
+        className={`theme-tile relative block h-[58px] w-full rounded-card shadow-[inset_0_0_0_1px_var(--hair)] ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}>
         <span className="theme-tile-dot absolute right-2 bottom-2 size-2.5 rounded-full" />
       </span>
       <span className="flex min-w-0 items-baseline gap-2">
         <span className={`truncate text-[13px] ${pressed ? "text-ink" : "text-ink-2"}`}>{name}</span>
-        {custom && <span className="font-mono text-[11px] text-ink-3"> custom</span>}
+        {custom && <span className="font-sans text-[12px] text-ink-3"> custom</span>}
       </span>
     </button>
   );
@@ -130,21 +138,20 @@ function EffectRow() {
             return (
               <button key={item.value} type="button" aria-pressed={pressed} disabled={soon} onClick={() => { if (item.value !== "caustics") setEffect(item.value); }}
                 className="group flex w-[96px] flex-col gap-1.5 text-left disabled:cursor-not-allowed">
-                <span aria-hidden="true" className={`${item.preview} block h-[40px] w-full rounded-card border ${pressed ? "border-focus outline-2 outline-offset-2 outline-focus" : "border-rule"} ${soon ? "opacity-50" : "group-hover:border-ink-3"}`} />
+                <span aria-hidden="true" className={`${item.preview} block h-[40px] w-full rounded-card shadow-[inset_0_0_0_1px_var(--hair)] ${pressed ? "outline-2 outline-offset-2 outline-focus" : ""} ${soon ? "opacity-50" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`} />
                 <span className={`flex items-baseline gap-2 text-[13px] ${pressed ? "text-ink" : soon ? "text-ink-3" : "text-ink-2"}`}>
-                  {item.name}{soon && <span className="font-mono text-[11px] text-ink-3">soon</span>}
+                  {item.name}{soon && <span className="font-sans text-[12px] text-ink-3">soon</span>}
                 </span>
               </button>
             );
           })}
         </div>
         <label className="flex min-h-11 items-center gap-2.5 pl-3 text-[13px] text-ink-2">
-          <Switch aria-label="Motion" checked={motion && !reduced} disabled={reduced} onCheckedChange={setMotion}
-            className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-rule bg-hover data-checked:border-act data-checked:bg-act disabled:opacity-50">
-            <SwitchThumb className="absolute left-0.5 size-3.5 rounded-full bg-ink-3 transition-transform data-checked:translate-x-4 data-checked:bg-act-ink" />
+          <Switch aria-label="Motion" checked={motion && !reduced} disabled={reduced} onCheckedChange={setMotion} className="switch">
+            <SwitchThumb />
           </Switch>
           <span aria-hidden="true">Motion</span>
-          {reduced && <span className="font-mono text-[11px] text-ink-3">off under reduced motion</span>}
+          {reduced && <span className="font-sans text-[12px] text-ink-3">off under reduced motion</span>}
         </label>
       </div>
     </Row>
@@ -173,13 +180,14 @@ function FontRow() {
       <p id="appearance-font-help" className="mb-3 font-sans text-[13px] text-ink-3">For titles, summaries and agent text. Keys, times and counts stay in Plex Mono.</p>
       <div role="radiogroup" aria-labelledby="appearance-font" aria-describedby="appearance-font-help" className="grid gap-3 min-[1100px]:grid-cols-3">
         {FONTS.map((item) => (
-          <label key={item.value} className={`min-w-0 cursor-pointer rounded-card border p-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus ${font === item.value ? "border-act bg-act-wash" : "border-rule bg-paper-2 hover:border-ink-3"}`}>
-            <span className="flex items-center gap-2 font-mono text-[12px] font-medium uppercase tracking-[0.06em]">
-              <input type="radio" name="reading-font" aria-label={item.name} checked={font === item.value} onChange={() => setFont(item.value)} className="size-3 shrink-0 accent-act" />
+          <label key={item.value} className={`min-w-0 cursor-pointer rounded-[10px] px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--hair)] transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus ${font === item.value ? "bg-selected" : "bg-raised hover:bg-hover"}`}>
+            <span className="flex items-center gap-2 font-sans text-[13px] font-semibold text-ink">
+              <input type="radio" name="reading-font" aria-label={item.name} checked={font === item.value} onChange={() => setFont(item.value)}
+                className="grid size-4 shrink-0 cursor-pointer appearance-none place-items-center rounded-full shadow-[inset_0_0_0_1.5px_var(--hair-2)] before:size-2 before:rounded-full before:content-[''] checked:bg-accent checked:shadow-none checked:before:bg-raised forced-colors:appearance-auto" />
               {item.name}
             </span>
-            <p className="mt-2 text-[15px]" style={{ fontFamily: item.face }}>The sweep frees a silent lease.</p>
-            <p className="mt-3 font-mono text-[12px] text-ink-3">{item.line}</p>
+            <p data-font-sample={item.value} className="mt-2 font-read text-[15px]">The sweep frees a silent lease.</p>
+            <p className="mt-3 font-sans text-[12.5px] text-ink-3">{item.line}</p>
           </label>
         ))}
       </div>
@@ -192,26 +200,22 @@ function DensityRow() {
   return (
     <Row id="appearance-density" icon={<DensityGlyph />} title="Density" reset={density !== "comfortable" && <RowReset label="Reset density" onReset={() => setDensity("comfortable")} />}>
       <p id="appearance-density-help" className="mb-3 font-sans text-[13px] text-ink-3">Compact tightens rows on Overview, Runs and Tickets. Buttons keep their 44px.</p>
-      <div role="group" aria-labelledby="appearance-density" aria-describedby="appearance-density-help" className="inline-flex border border-rule">
-        {(["comfortable", "compact"] as const).map((value) => (
-          <button key={value} type="button" aria-pressed={density === value} onClick={() => setDensity(value)}
-            className={`min-h-11 px-4 font-mono text-[12px] ${density === value ? "bg-act text-act-ink" : "bg-paper text-ink-2 hover:bg-paper-2"}`}>
-            {value === "comfortable" ? "Comfortable" : "Compact"}
-          </button>
+      <Segmented label="Density" options={DENSITIES} value={density} onPick={setDensity} describedBy="appearance-density-help" />
+      <div role="region" aria-label="Preview" className={`mt-4 ${CARD}`}>
+        {[0, 1].map((row) => (
+          <div key={row} data-row className="flex min-h-[66px] flex-wrap items-center gap-x-3 gap-y-1 border-hair px-3.5 py-3.5 not-first:border-t">
+            <span className="inline-flex items-center gap-1.5 text-live">
+              <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0">
+                <circle cx="8" cy="8" r="6.5" />
+                <path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z" fill="currentColor" stroke="none" />
+              </svg>
+              <span className="font-sans text-[13px] font-medium">reviewing</span>
+            </span>
+            <span className="font-mono text-[12px] text-ink-2">HOLO-231</span>
+            <span className="font-read text-[14.5px] text-ink">The sweep frees a silent lease</span>
+            <span className="ml-auto font-mono text-[12px] text-ink-3">16m / 25m</span>
+          </div>
         ))}
-      </div>
-      <div role="region" aria-label="Preview" className="mt-4">
-        <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Preview</p>
-        <div className="border border-rule bg-paper">
-          {[0, 1].map((row) => (
-            <div key={row} data-row className="flex min-h-[66px] flex-wrap items-center gap-x-3 gap-y-1 border-rule-2 px-3 py-3.5 not-first:border-t">
-              <span className="font-mono text-[12px] text-live">reviewing</span>
-              <span className="font-mono text-[12px] text-ink-2">HOLO-231</span>
-              <span className="font-read text-[14.5px] text-ink">The sweep frees a silent lease</span>
-              <span className="ml-auto font-mono text-[12px] text-ink-3">16m / 25m</span>
-            </div>
-          ))}
-        </div>
       </div>
     </Row>
   );
