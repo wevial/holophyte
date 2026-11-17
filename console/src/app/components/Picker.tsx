@@ -229,7 +229,7 @@ export function Picker({ id, label, options, value, onPick, passPress, "aria-inv
                   key={option.value}
                   value={option.value}
                   aria-disabled={option.disabled || undefined}
-                  className="flex min-h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 py-1.5 text-[13px] leading-[1.25] text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
+                  className="flex min-h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 py-1.5 text-[13px] leading-[1.25] text-ink-2 aria-selected:bg-hover aria-selected:text-ink data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
                 >
                   <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>
                   {option.note && <span className="shrink-0 whitespace-nowrap text-ink-3">{" "}{option.note}</span>}

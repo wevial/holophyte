@@ -11,7 +11,7 @@ import { TONE_TEXT } from "./StateDot";
 import type { Tone } from "../state";
 
 const FOCUS_RING = "[&:is(input,textarea):focus-visible]:!shadow-[0_0_0_2px_var(--wait)] [&:is(input,textarea)[aria-invalid=true]:focus-visible]:!shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)]";
-export const INPUT = `field mt-2 w-full min-w-0 ${FOCUS_RING}`;
+export const INPUT = `field mt-1.5 w-full min-w-0 ${FOCUS_RING}`;
 const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
 const ICON_BUTTON = "grid size-7 shrink-0 cursor-pointer place-items-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent motion-reduce:transition-none";
 type Message = { text: string; error: boolean; field: string };
@@ -148,7 +148,7 @@ export function CriteriaField({ criteria, onChange, marks, changed = () => false
     change(next);
   };
   return <Field label="Acceptance criteria" extra=" · each one a reviewer can witness" hint="Screenshots and clips go under Evidence on the run, not here." messages={marks.messagesOf("Acceptance criteria")}>
-    <div className="mt-2">
+    <div className="mt-1.5">
       {criteria.map((criterion, index) => <div key={index} data-changed={changed(index) || undefined} className="flex flex-wrap items-center gap-2 border-b border-hair py-2.5">
         <span className="flex w-10 shrink-0 items-center gap-1.5"><ChangedDot changed={changed(index)} /><label htmlFor={`criterion-${index}`} className="font-mono text-[11.5px] text-ink-3">AC{index + 1}</label></span>
         <input id={`criterion-${index}`} {...marks.marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => change(rows, criteria.map((value, at) => at === index ? event.target.value : value))} />
@@ -178,7 +178,7 @@ function Choice<T extends string | null>({ label, options, value, onChange, mark
   const outside = options.some(([option]) => option === value) ? [] : [{ value: OUTSIDE, label: String(value), note: "· not a choice", disabled: true }];
   const { className: _, ...aria } = marks.marks(label, "");
   return <Field label={label} optional={optional} hint={hint} messages={marks.messagesOf(label)} changed={changed}>
-    <div className="mt-2">
+    <div className="mt-1.5">
       <Picker id={`new-${label}`} label={label} passPress {...aria} value={outside.length ? OUTSIDE : value ?? ""}
         options={[...options.map(([option, name]) => ({ value: option ?? "", label: name })), ...outside]}
         onPick={picked => {
@@ -212,7 +212,7 @@ export function EvidenceField({ evidence, onChange, marks, changed = () => false
   };
   const edit = (index: number, part: Partial<Evidence>) => onChange(evidence.map((row, at) => at === index ? { ...row, ...part } : row));
   return <Field label="Evidence" optional extra=" · the states the run captures" hint="Each a file named NN-slug.png, or NN-slug.webm for a flow, and the state it shows." messages={marks.messagesOf("Evidence")}>
-    <div className="mt-2 empty:hidden">
+    <div className="mt-1.5 empty:hidden">
       {evidence.map((row, index) => {
         const name = `E${index + 1}`;
         return <div key={index} data-changed={changed(index) || undefined} className="flex flex-wrap items-end gap-2 border-b border-hair py-2.5">
@@ -243,7 +243,7 @@ export function EstimateField({ draft, onDraft, estimate, marks, changed = false
   };
   return <div data-changed={changed || undefined}>
     <FieldHead label="Estimate" htmlFor="estimate" aside="Minutes" changed={changed} />
-    <div className="mt-2 inline-flex items-center rounded-full bg-selected p-0.5 has-[[aria-invalid=true]]:shadow-[inset_0_0_0_1px_var(--bad)] has-[input:focus-visible]:shadow-[0_0_0_2px_var(--wait)] has-[[aria-invalid=true]:focus-visible]:shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)] forced-colors:has-[input:focus-visible]:outline-2 forced-colors:has-[input:focus-visible]:outline-offset-2 forced-colors:has-[input:focus-visible]:outline-[Highlight]">
+    <div className="mt-1.5 inline-flex items-center rounded-full bg-selected p-0.5 has-[[aria-invalid=true]]:shadow-[inset_0_0_0_1px_var(--bad)] has-[input:focus-visible]:shadow-[0_0_0_2px_var(--wait)] has-[[aria-invalid=true]:focus-visible]:shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)] forced-colors:has-[input:focus-visible]:outline-2 forced-colors:has-[input:focus-visible]:outline-offset-2 forced-colors:has-[input:focus-visible]:outline-[Highlight]">
       <button type="button" className={`${ICON_BUTTON} rounded-full`} aria-label="Decrease estimate" disabled={estimate <= 5} onClick={() => change(estimate - 5)}><RowIcon d={MINUS} /></button>
       <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={draft} onChange={event => onDraft(event.target.value)} onBlur={() => change(estimate)} {...marks.marks("Estimate", "h-7 w-12 border-0 bg-transparent text-center font-mono text-[13px] tabular-nums text-ink outline-none! [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none")} />
       <button type="button" className={`${ICON_BUTTON} rounded-full`} aria-label="Increase estimate" disabled={estimate >= 120} onClick={() => change(estimate + 5)}><RowIcon d={PLUS} /></button>
@@ -258,7 +258,7 @@ const PRIORITIES = [0, 1, 2, 3, 4].map(value => ({ value: String(value), label: 
 export function PriorityField({ priority, onChange, changed = false }: { priority: number | null; onChange: (priority: number) => void; changed?: boolean }) {
   return <div data-changed={changed || undefined}>
     <FieldHead label="Priority" changed={changed} />
-    <div className="mt-2">
+    <div className="mt-1.5">
       <Segmented label="Priority" options={PRIORITIES} value={priority == null ? undefined : String(priority)} onPick={picked => onChange(Number(picked))} />
     </div>
     <p className="mt-2 font-sans text-[13px] text-ink-3">P1 is the highest</p>
@@ -274,7 +274,7 @@ export function DependsField({ dependsOn, onChange, dependency, onDependency, ca
     onDependency("");
   };
   return <Field label="Depends on" optional messages={marks.messagesOf("Depends on")} changed={changed}>
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-1.5 flex flex-wrap gap-2">
       {dependsOn.map(key => {
         const card = cards.find(card => card.key === key);
         return <span key={key} className="inline-flex min-h-7 max-w-full items-center gap-1 rounded-full bg-selected py-0.5 pr-0.5 pl-2.5 text-ink">
