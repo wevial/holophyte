@@ -8,8 +8,6 @@ import { OriginContext } from "../scope";
 import { Btn } from "./Btn";
 import { useToast } from "./Toast";
 
-const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
-
 export function HostToken({ host }: { host: HostCard }) {
   const origin = useContext(OriginContext);
   const client = useQueryClient();
@@ -34,7 +32,7 @@ export function HostToken({ host }: { host: HostCard }) {
       <h3 className="mb-2 font-sans text-[13px] font-semibold text-ink">Serve token</h3>
       {stored != null ? <div className="flex flex-wrap items-center gap-3">
         <p className="grow font-sans text-[13px] text-ink-3"><span className="mr-3 font-mono text-ink">••••</span>saved in this browser · {checked}</p>
-        <Btn className={SMALL} onClick={() => {
+        <Btn onClick={() => {
           forgetToken(address);
           refresh();
           say(`Forgot the token for ${host.name} in this browser.`, { label: "Undo", run: () => {
@@ -65,7 +63,7 @@ export function HostToken({ host }: { host: HostCard }) {
             onChange={(event) => setValue(event.currentTarget.value)}
             className="field w-72 min-w-0 max-w-full"
           />
-          <Btn className={SMALL} disabled={!value.trim()} onClick={() => form.current?.requestSubmit()}>Save token</Btn>
+          <Btn disabled={!value.trim()} onClick={() => form.current?.requestSubmit()}>Save token</Btn>
         </div>
         {reason != null && <p id={`${id}-reason`} className="mt-2 font-sans text-[13px] text-bad">{reason}</p>}
       </form>}

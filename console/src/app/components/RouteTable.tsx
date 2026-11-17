@@ -34,7 +34,7 @@ export function RouteTable({ host }: { host: HostCard }) {
             const [tone, glyph] = deferred ? ["text-ink-3", ""] : host.down || (!route.probe && !route.down) ? ["text-ink-3", "◷"] : failed || route.down ? ["text-bad", "×"] : ["text-live", "✓"];
             const cell = "block min-w-0 px-2.5 py-1 [overflow-wrap:anywhere] min-[700px]:table-cell min-[700px]:h-[34px] min-[700px]:border-b min-[700px]:border-hair min-[700px]:py-1.5 min-[700px]:align-middle";
             return (
-              <tr key={`${route.seat}:${route.label}`} className={`block border-b border-hair py-1.5 last:border-b-0 transition-colors duration-(--motion-colour) hover:bg-hover min-[700px]:table-row min-[700px]:border-b-0 min-[700px]:py-0 ${failed ? "bg-bad-wash" : ""}`}>
+              <tr key={`${route.seat}:${route.label}`} className={`block border-b border-hair py-1.5 last:border-b-0 transition-colors duration-(--motion-colour) min-[700px]:table-row min-[700px]:border-b-0 min-[700px]:py-0 ${failed ? "bg-bad-wash" : "hover:bg-hover"}`}>
                 <th scope="row" className={`${cell} text-left font-medium text-ink`}>{route.seat}{route.projects.length < host.projects.length ? ` · ${route.projects.join(", ")}` : ""}</th>
                 <td className={`${cell} font-mono text-[12.5px] text-ink-2`}>{route.label}</td>
                 <td className={`${cell} ${deferred ? "text-ink-3" : "text-ink-2"}`}>{glyph && <span aria-hidden="true" className={tone}>{glyph} </span>}<span>{probeText(route, host.down)}</span></td>
