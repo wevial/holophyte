@@ -82,10 +82,10 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
           </div>)}
         </div>
         <div className="relative flex-1">
-          {current.line != null && <div data-refused-band="" className="absolute inset-x-0 h-5 bg-bad-wash" style={{ top: 12 + (current.line - 1) * 20 }} />}
           <pre aria-hidden="true" className="relative m-0 py-3 pl-3 pr-8 font-mono text-[13px] leading-5 whitespace-pre">
-            {lines.map((spans, index) => <span key={index} data-text-line={index + 1} className="block h-5">
-              {spans.map((span, at) => <span key={at} data-kind={span.kind} className={KIND_CLASS[span.kind]}>{span.text}</span>)}
+            {lines.map((spans, index) => <span key={index} data-text-line={index + 1} className="relative block h-5">
+              {current.line === index + 1 && <span data-refused-band="" className="absolute inset-y-0 -right-8 -left-3 bg-bad-wash" />}
+              <span className="relative">{spans.map((span, at) => <span key={at} data-kind={span.kind} className={KIND_CLASS[span.kind]}>{span.text}</span>)}</span>
             </span>)}
           </pre>
           <textarea
@@ -116,7 +116,7 @@ export function TomlEditor({ base, file, project, revision, original, text, onCh
         <span className="text-bad">error</span><span className="min-w-0 break-words text-ink">{error}</span>
       </div>}
     </div>
-    <div className="mt-6 flex flex-wrap items-center gap-3 border-t border-hair pt-4">
+    <div className="mt-6 flex flex-wrap items-center gap-3 border-b border-hair pb-4">
       <Btn disabled={!changed || busy} onClick={onRevert}>Revert to revision {revision.slice(0, 7)}</Btn>
       <Btn variant="primary" disabled={readOnly || !changed || current.pending || current.error != null} busy={busy} busyLabel="Saving…" onClick={onSave}>Save</Btn>
       <p className="font-sans text-[13px] text-ink-3">{current.error ? "Fix the error to save." : "Saving shows the diff first."}</p>

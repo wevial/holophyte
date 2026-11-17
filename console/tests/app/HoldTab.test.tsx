@@ -56,13 +56,21 @@ test("the Hold settings route shows admission, worker capacity and a counted new
   expect(screen.queryByRole("button", { name: "Release" })).toBeNull();
 });
 
-test("picking Held opens the reason field while Taking work stays pressed until the daemon reports the hold", async () => {
-  await mount();
+test("picking Held opens the reason field while Taking work stays pressed through the pending hold", async () => {
+  let finish!: (response: Response) => void;
+  await mount({ post: () => new Promise((resolve) => { finish = resolve; }) });
+  const pressed = () => ["Taking work", "Held"].map((name) => screen.getByRole("button", { name }).getAttribute("aria-pressed"));
   expect(screen.queryByPlaceholderText("Why it should stop taking work")).toBeNull();
+  expect(screen.getByRole("button", { name: "Held" }).getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Held" }));
-  expect(screen.getByPlaceholderText("Why it should stop taking work")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Taking work" }).getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByRole("button", { name: "Held" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("button", { name: "Held" }).getAttribute("aria-expanded")).toBe("true");
+  fireEvent.change(screen.getByPlaceholderText("Why it should stop taking work"), { target: { value: "Schema bump" } });
+  fireEvent.click(screen.getByRole("button", { name: "Hold demo" }));
+  await act(settle);
+  expect(screen.getByRole("button", { name: "Holding…" })).toBeTruthy();
+  expect(pressed()).toEqual(["true", "false"]);
+  await act(async () => { finish(Response.json({ ok: true, detail: "done" })); await settle(); });
+  expect(pressed()).toEqual(["true", "false"]);
 });
 
 for (const mode of ["Hold", "Release"] as const) {
@@ -152,7 +160,7 @@ test("history draws as the day log's timeline, a release after a hold naming how
   const [release, hold] = items.map((item) => item.querySelector("[data-tone]")!);
   expect(release.classList.contains("bg-live")).toBe(true);
   expect(hold.classList.contains("bg-wait")).toBe(true);
-  expect(screen.getByText("released · held 6m")).toBeTruthy();
+  expect(screen.getByText("6m").parentElement!.textContent).toBe("released · held 6m");
 });
 
 test("a release with no hold before it in the history names no duration", async () => {
