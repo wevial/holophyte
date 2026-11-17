@@ -217,7 +217,9 @@ test("a ticket no host of the project mirrors says so in one sans line linking b
   expect([line, ...line.querySelectorAll("*")].some((element) => element.classList.contains("font-mono"))).toBe(false);
   const back = within(line).getByRole("link", { name: "Back to Tickets" });
   expect(back.getAttribute("href")).toEndWith("#/tickets?project=demo");
-  expect([line, back].flatMap((element) => [...element.classList].filter((name) => /^(block|flex|grid|table|flex-col|w-full|basis-full)$/.test(name)))).toEqual([]);
+  const utility = (name: string) => name.replace(/^(?:[\w-]*(?:\[[^\]]*\])?[\w-]*:)*/, "").replace(/^!|!$/g, "");
+  const breaking = (name: string) => /^(block|flex|grid|table|flex-col|w-full|basis-full|\[display:[^\]]*\])$/.test(utility(name));
+  expect([line, back].flatMap((element) => [...element.classList].filter(breaking))).toEqual([]);
   cleanup();
   await mount("#/tickets/nope/X-1");
   expect(screen.getByText("There is no page here.")).toBeTruthy();

@@ -114,7 +114,7 @@ function RawEditor({ ticketKey, base, revision, served, onClose }: { ticketKey: 
         readOnly={busy}
         spellCheck={false}
         rows={16}
-        className="mt-2 block w-full resize-y [field-sizing:content] min-h-[16lh] rounded-[6px] border-0 bg-selected px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink focus-visible:outline-2! focus-visible:outline-offset-0! focus-visible:outline-wait!"
+        className="mt-2 block w-full resize-y [field-sizing:content] min-h-[16lh] rounded-[6px] border-0 forced-colors:border bg-selected px-3 py-2.5 font-mono text-[12.5px] leading-[1.6] text-ink focus-visible:outline-2! focus-visible:outline-offset-0! focus-visible:outline-wait!"
       />
       {refusal.length > 0 && (
         <div role="alert" className="mt-3">
