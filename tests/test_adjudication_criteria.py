@@ -12,7 +12,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from fake_agent import IMPLEMENT, PASS, REQUEST_CHANGES, Commit, Reply  # noqa: E402
+from fake_agent import (  # noqa: E402
+    IMPLEMENT,
+    PASS,
+    REQUEST_CHANGES,
+    Commit,
+    Idle,
+    Reply,
+)
 from loop_fixture import BRANCH, LoopFixture  # noqa: E402
 from pause_fixture import PauseReply  # noqa: E402
 
@@ -138,11 +145,14 @@ class AdjudicationCriteriaTests(LoopFixture):
     def recite(self, restated):
         """The adjudicator's PASS cites a test by a name its file lacks;
         the re-cite turn replies `restated`."""
+        return self.recite_after(LEFT_UNWITNESSED, Commit("fix round 2"),
+                                 MISTYPED, restated)
+
+    def recite_after(self, review, fix, cited, restated, *after):
         fake, _ = self.loop(Commit("first cut"), REQUEST_CHANGES,
-                            Commit("fix round 1"), LEFT_UNWITNESSED,
-                            Commit("fix round 2"),
-                            Reply(f"Mergeable.\n{MISTYPED}\nVERDICT: PASS"),
-                            restated)
+                            Commit("fix round 1"), review, fix,
+                            Reply(f"Mergeable.\n{cited}\nVERDICT: PASS"),
+                            restated, *after)
         return fake
 
     def test_a_mistyped_test_name_restated_exactly_passes(self):
@@ -169,6 +179,30 @@ class AdjudicationCriteriaTests(LoopFixture):
             "SELECT findings FROM reviewRounds WHERE round = 3")
         self.assertIn("named test not found: tests/test_thing.py::test_works",
                       json.loads(findings)[0]["message"])
+
+    def test_a_restated_name_with_no_test_path_fails(self):
+        witnessed = Reply(f"Blocker: tidy up.\n{EXACT}\nVERDICT: REQUEST_CHANGES")
+        fake = self.recite_after(witnessed, Commit("fix round 2"), MISTYPED,
+                                 Reply("CRITERION 1: met \u2014 test_it_work"))
+
+        self.assertEqual(fake.roles.count("adjudicate"), 2)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
+
+    def test_the_re_cite_prompt_lists_every_file_the_refused_line_cites(self):
+        cited = ("CRITERION 1: met \u2014 tests/test_other.py::test_other_works"
+                 " and tests/test_thing.py::test_it_work")
+        fake = self.recite_after(
+            LEFT_UNWITNESSED,
+            Commit("fix round 2", path="tests/test_other.py",
+                   body="def test_other_works():\n    pass\n"),
+            cited, Reply(f"{EXACT} and tests/test_other.py::test_other_works"),
+            Idle())
+
+        recite = fake.turns[fake.roles.index("adjudicate") + 1].goal
+        self.assertIn("- tests/test_other.py::test_other_works\n", recite)
+        self.assertIn("- tests/test_thing.py::test_it_works\n", recite)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_re_cite_paused_on_resumes_without_asking_again(self):
         self.recite(PauseReply(self.db, Reply(EXACT)))

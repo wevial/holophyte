@@ -99,12 +99,12 @@ def _mistyped(refused, reply, wt):
         prefix = f"CRITERION C{n}: unwitnessed \u2014 {MISSING_WITNESS_NOTE}"
         if status != "met" or not finding["message"].startswith(prefix):
             return []
-        missing = [ref for ref in test_references(note)
-                   if missing_witnesses([ref], wt)]
+        references = test_references(note)
+        missing = [ref for ref in references if missing_witnesses([ref], wt)]
         if not missing or any((file := _inside(wt, ref[0])) is None
                               or not file.is_file() for ref in missing):
             return []
-        paths += [ref[0] for ref in missing]
+        paths += [ref[0] for ref in references]
     return paths
 
 
@@ -127,7 +127,8 @@ def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
             + "The files they name define exactly these tests:\n"
             + test_name_listing(wt, paths) + "\n"
             "Restate only those CRITERION lines, one line each in the same "
-            "form, naming each test copied verbatim from this list. Do not "
+            "form, naming every test it cites copied verbatim from this "
+            "list, the ones the loop found included. Do not "
             "modify anything and write nothing else.", wt,
             base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
     failed = failure_line(recite)
@@ -138,8 +139,9 @@ def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
 
 def _recited_lines(reply, recite, refused):
     numbers = {finding["line"] for finding in refused}
-    first, restated = (_criterion_lines(reply, numbers),
-                       _criterion_lines(recite, numbers))
+    first = _criterion_lines(reply, numbers)
+    restated = {n: line for n, line in _criterion_lines(recite, numbers).items()
+                if test_references(criteria_block(line)[n][1])}
     return "Re-cited after a refused test name:\n" + "".join(
         f"Cited: {first.get(n, '(no line)')}\n"
         f"Restated: {restated.get(n, '(no line)')}\n"

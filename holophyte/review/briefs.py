@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import re
@@ -166,16 +167,78 @@ def trim_brief(root, base_sha, sha):
             "missing at the range's final state.\n\n")
 
 
+_TESTS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _python_tests(text):
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    names = []
+    for node in tree.body:
+        if isinstance(node, _TESTS) and node.name.startswith("test"):
+            names.append(node.name)
+        elif isinstance(node, ast.ClassDef):
+            names += [f"{node.name}::{child.name}" for child in node.body
+                      if isinstance(child, _TESTS)
+                      and child.name.startswith("test")]
+    return names
+
+
+_EACH = re.compile(r"(?<![.\w$])(?:it|test)(?:\.(?:only|skip|concurrent))?"
+                   r"\.each\s*\(")
+
+
+_EACH_TITLE = re.compile(r"\s*\(\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
+
+
+def _each_titles(text):
+    from holophyte.review.reply_parsing import _JS_QUOTED
+
+    titles = []
+    for match in _EACH.finditer(text):
+        i, depth = match.end(), 1
+        while i < len(text) and depth:
+            quoted = _JS_QUOTED.match(text, i)
+            if quoted:
+                i = quoted.end()
+                continue
+            depth += {"(": 1, ")": -1}.get(text[i], 0)
+            i += 1
+        if title := _EACH_TITLE.match(text, i):
+            titles.append(title[2])
+    return titles
+
+
+def _test_names(text, suffix):
+    from holophyte.review.reply_parsing import test_names
+
+    if suffix == ".py":
+        return _python_tests(text)
+    if suffix == ".go":
+        return test_names(text, suffix)
+    return test_names(text, suffix) + _each_titles(text)
+
+
 def _cited(path, name):
     if path.endswith((".py", ".go")):
         return f"{path}::{name}"
-    title = re.sub(r"\\(.)", r"\1", name)
+    title = re.sub(r"\\([\\\"'`])", r"\1", name)
     quoted = title.replace("\\", "\\\\").replace('"', '\\"')
     return f'{path}::"{quoted}"'
 
 
+_WITNESS_CLAUSE = re.compile(r"\(((?:[^()]|\([^()]*\))*)\)[\s.]*$")
+
+
+def _witness_clause(text):
+    clause = _WITNESS_CLAUSE.search(text.strip())
+    return clause[1] if clause else ""
+
+
 def test_name_listing(wt, paths):
-    from holophyte.review.reply_parsing import _inside, test_names
+    from holophyte.review.reply_parsing import _inside
     from holophyte.review.witness_precheck import GLOB
 
     listed = []
@@ -183,7 +246,7 @@ def test_name_listing(wt, paths):
         file = None if GLOB.search(path) else _inside(wt, path)
         if file is None or not file.is_file():
             continue
-        names = test_names(file.read_text(errors="replace"), file.suffix)
+        names = _test_names(file.read_text(errors="replace"), file.suffix)
         cited = "".join(f"- {_cited(path, name)}\n"
                         for name in sorted(set(names))) or "- (no tests)\n"
         listed.append(f"`{path}`:\n{cited}")
@@ -196,7 +259,7 @@ def _named_tests_brief(wt, criteria):
     if wt is None:
         return ""
     listing = test_name_listing(wt, [path for files in named_files(
-        [text for _, text in criteria]) for path in files])
+        [_witness_clause(text) for _, text in criteria]) for path in files])
     if not listing:
         return ""
     return ("The test files these criteria name define exactly these tests; "
