@@ -464,6 +464,13 @@ export function PressedGroup<V extends string | number>({ label, options, value,
 
 const MENU_EDGE = 8;
 
+function scrollParent(node: HTMLElement): HTMLElement {
+  for (let at = node.parentElement; at != null; at = at.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(at).overflowX)) return at;
+  }
+  return document.documentElement;
+}
+
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 export function dayLabel(day: string): string {
@@ -503,7 +510,13 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
     };
     fit();
     window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    moves?.observe(anchor.current!);
+    moves?.observe(scrollParent(anchor.current!));
+    return () => {
+      window.removeEventListener("resize", fit);
+      moves?.disconnect();
+    };
   }, [open]);
   return (
     <div ref={box} className="flex shrink-0 items-center gap-1.5">

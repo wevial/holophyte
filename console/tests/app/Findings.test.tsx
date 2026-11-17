@@ -283,6 +283,68 @@ test("a custom range presses no preset and presses Custom range reading its days
   expect([params.get("range"), params.has("from"), params.has("to")]).toEqual(["30d", false, false]);
 });
 
+/** A ResizeObserver whose callbacks run only when `resizeAll` is, keeping each live observer's targets. */
+function heldResizes() {
+  const live = new Map<object, { targets: Element[]; fire: () => void }>();
+  const saved = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      live.set(this, { targets: [], fire: () => callback([], this as unknown as ResizeObserver) });
+    }
+    observe(target: Element) {
+      live.get(this)?.targets.push(target);
+    }
+    unobserve() {}
+    disconnect() {
+      live.delete(this);
+    }
+  } as unknown as typeof ResizeObserver;
+  return {
+    observing: (target: Element) => [...live.values()].filter((observer) => observer.targets.includes(target)).length,
+    resizeAll: () => act(() => [...live.values()].forEach((observer) => observer.fire())),
+    restore: () => (globalThis.ResizeObserver = saved),
+  };
+}
+
+const rectAt = (left: number, width: number) => () => ({ left, width, right: left + width, top: 0, bottom: 0, height: 0, x: left, y: 0, toJSON: () => ({}) });
+
+test("with Custom range open, its button moving right without a window resize places the dates menu again inside the window", async () => {
+  const held = heldResizes();
+  const viewport = document.documentElement.getBoundingClientRect;
+  try {
+    await mount("#/findings", fleet({}, {}).fetch);
+    fireEvent.click(customRange());
+    const menu = screen.getByRole("group", { name: "Range range" });
+    const anchor = customRange().parentElement!;
+    expect(held.observing(anchor)).toBe(1);
+    document.documentElement.getBoundingClientRect = rectAt(0, 720);
+    Object.defineProperty(menu, "offsetWidth", { configurable: true, value: 248 });
+    menu.getBoundingClientRect = rectAt(0, 248);
+    anchor.getBoundingClientRect = rectAt(600, 32);
+    held.resizeAll();
+    const left = 600 + parseFloat(menu.style.left);
+    expect([left >= 0, left + 248 <= 720]).toEqual([true, true]);
+  } finally {
+    document.documentElement.getBoundingClientRect = viewport;
+    held.restore();
+  }
+});
+
+test("closing the Custom range menu with Done leaves no observer on its button", async () => {
+  const held = heldResizes();
+  try {
+    await mount("#/findings", fleet({}, {}).fetch);
+    fireEvent.click(customRange());
+    const anchor = customRange().parentElement!;
+    expect(held.observing(anchor)).toBe(1);
+    fireEvent.click(within(screen.getByRole("group", { name: "Range range" })).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("group", { name: "Range range" })).toBeNull();
+    expect(held.observing(anchor)).toBe(0);
+  } finally {
+    held.restore();
+  }
+});
+
 const openTitles = () => [...group("Open").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);
 
 test("choosing severities must and should leaves only those open rows, counted 02", async () => {
