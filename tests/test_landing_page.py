@@ -76,11 +76,6 @@ class Tree(HTMLParser):
         if tag not in VOID:
             self.stack.append(node)
 
-    def handle_startendtag(self, tag, attrs):
-        node = Node(tag, attrs)
-        self.stack[-1].children.append(node)
-        self.stack[-1].parts.append(node)
-
     def handle_endtag(self, tag):
         for depth in range(len(self.stack) - 1, 0, -1):
             if self.stack[depth].tag == tag:
