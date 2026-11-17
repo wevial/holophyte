@@ -1,6 +1,7 @@
 """Work an isolated implementer turn made, returned to the host worktree."""
 
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -502,7 +503,7 @@ class IsolationReturnTests(IsolationCase):
                                      "GIT_CONFIG_NOSYSTEM": "1"}), \
              self.assertRaisesRegex(InfraFailure, "could not be rewritten"):
             self.rewrite_turn(
-                worktree, f"git -C {main} config --unset user.email; "
+                worktree, f"git -C {shlex.quote(str(main))} config --unset user.email; "
                           "git commit -q --allow-empty --amend -m rewritten")
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
 
