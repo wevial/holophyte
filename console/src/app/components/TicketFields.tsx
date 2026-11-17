@@ -8,7 +8,7 @@ import { Btn } from "./Btn";
 import { TONE_TEXT } from "./StateDot";
 import type { Tone } from "../state";
 
-export const INPUT = "mt-2 w-full min-w-0 rounded border border-rule bg-canvas px-3 py-2 text-[14px] text-ink placeholder:text-ink-3 focus:outline-focus";
+export const INPUT = "field mt-2 w-full min-w-0";
 /** The 2 px bar and wash of a field whose text differs from the revision the page loaded. */
 export const CHANGED = "border-l-2 border-l-act bg-act-wash";
 type Message = { text: string; error: boolean; field: string };
@@ -52,7 +52,7 @@ export function checkMarks(check: CheckResult | null | undefined) {
     return {
       "aria-invalid": invalid || undefined,
       "aria-describedby": owners.length ? owners.map(messagesId).join(" ") : undefined,
-      className: invalid ? className.replace("border-rule", "border-bad") : className,
+      className,
     };
   };
   return { judged, messages, messagesOf, marks };
@@ -204,7 +204,7 @@ export function EstimateField({ draft, onDraft, estimate, marks, changed = false
     <label htmlFor="estimate" className="text-[14px] font-semibold">Estimate <span className="ml-2 font-mono text-[10.5px] font-normal uppercase text-ink-3">Minutes</span></label>
     <div className="mt-2 flex items-center">
       <Btn aria-label="Decrease estimate" disabled={estimate <= 5} onClick={() => change(estimate - 5)}>–</Btn>
-      <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={draft} onChange={event => onDraft(event.target.value)} onBlur={() => change(estimate)} {...marks.marks("Estimate", "h-11 w-16 border border-rule bg-canvas text-center font-mono text-ink")} />
+      <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={draft} onChange={event => onDraft(event.target.value)} onBlur={() => change(estimate)} {...marks.marks("Estimate", "h-11 w-16 border border-rule bg-canvas text-center font-mono text-ink aria-[invalid=true]:border-bad")} />
       <Btn aria-label="Increase estimate" disabled={estimate >= 120} onClick={() => change(estimate + 5)}>+</Btn>
     </div>
     <p className="mt-2 font-mono text-[12px] text-ink-3">sets the run's time box · cap 90</p>

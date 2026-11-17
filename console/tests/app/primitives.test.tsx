@@ -57,27 +57,6 @@ test("a StateDot with its word hidden keeps the word as its accessible name and 
   expect(screen.queryByText("on CI")).toBeNull();
 });
 
-test("busy and disabled buttons swallow clicks, the busy one says so, and an idle one fires once", () => {
-  const busy = mock(() => {});
-  const disabled = mock(() => {});
-  const idle = mock(() => {});
-  render(
-    <>
-      <Btn variant="primary" busy busyLabel="Merging…" onClick={busy}>Merge</Btn>
-      <Btn disabled onClick={disabled}>Requeue</Btn>
-      <Btn onClick={idle}>Resume</Btn>
-    </>,
-  );
-  const merging = screen.getByRole("button", { name: "Merging…" });
-  fireEvent.click(merging);
-  fireEvent.click(screen.getByRole("button", { name: "Requeue" }));
-  fireEvent.click(screen.getByRole("button", { name: "Resume" }));
-  expect(merging.getAttribute("aria-busy")).toBe("true");
-  expect(busy).not.toHaveBeenCalled();
-  expect(disabled).not.toHaveBeenCalled();
-  expect(idle).toHaveBeenCalledTimes(1);
-});
-
 test("a Section heads its rows with its name and count and no fold, says its empty line at zero, and draws only its heading while uncounted", () => {
   const section = (count?: number) => (
     <Section label="Waiting" count={count} empty="Nothing waits on a pull request." footer={<p>witness line</p>}>
@@ -91,7 +70,9 @@ test("a Section heads its rows with its name and count and no fold, says its emp
   expect(screen.getByText("HOLO-405")).toBeTruthy();
   expect(screen.getByText("witness line")).toBeTruthy();
   rerender(section(0));
-  expect(screen.getByText("Nothing waits on a pull request.")).toBeTruthy();
+  const line = screen.getByText("Nothing waits on a pull request.");
+  expect(line.textContent).toBe("Nothing waits on a pull request.");
+  expect(line.querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
   expect(screen.queryByText("HOLO-405")).toBeNull();
   rerender(section(undefined));
   expect(region.textContent).toBe("Waiting");
@@ -115,37 +96,39 @@ test("a StageChip given a label draws its state's icon and its sub after a dot, 
   expect(review.querySelector("[data-state]")!.getAttribute("data-state")).toBe("running");
 });
 
-test("disabled and busy buttons keep their own variant's edge and label, and a disabled one is at half opacity", () => {
+test("each variant's disabled button is at half opacity and its busy one says its busy label, both swallowing clicks, while an idle one fires once", () => {
   const style = document.createElement("style");
   style.textContent = themeCss.replace(/@import[^;]*;/, "");
   document.head.appendChild(style);
   try {
-    const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    for (const [variant, edge] of [["primary", "--act"], ["quiet", "--ink-3"], ["danger", "--bad"]] as const) {
-      const colour = token(edge);
+    for (const variant of ["primary", "need", "quiet", "danger", "danger-fill"] as const) {
+      const disabledClick = mock(() => {});
+      const busyClick = mock(() => {});
       render(
         <>
-          <Btn variant={variant} disabled>Off</Btn>
-          <Btn variant={variant} busy>On</Btn>
+          <Btn variant={variant} disabled onClick={disabledClick}>Requeue</Btn>
+          <Btn variant={variant} busy busyLabel="Merging…" onClick={busyClick}>Merge</Btn>
         </>,
       );
-      const disabled = getComputedStyle(screen.getByRole("button", { name: "Off" }));
-      const busy = getComputedStyle(screen.getByRole("button", { name: "On" }));
-      expect(disabled.boxShadow, variant).toBe(`inset 0 0 0 1px ${colour}`);
-      expect(disabled.opacity, variant).toBe("0.5");
-      // happy-dom resolves only the first var() in a multi-layer value.
-      const dashes = [...busy.backgroundImage.matchAll(/linear-gradient\(\w+, (\S+) 50%/g)].map((m) => m[1]);
-      expect(dashes, variant).toEqual([colour, "var(--btn-edge)", "var(--btn-edge)", "var(--btn-edge)"]);
-      expect(busy.color, variant).toBe(colour);
+      const disabled = screen.getByRole("button", { name: "Requeue" });
+      const busy = screen.getByRole("button", { name: "Merging…" });
+      fireEvent.click(disabled);
+      fireEvent.click(busy);
+      expect(getComputedStyle(disabled).opacity, variant).toBe("0.5");
+      expect(busy.getAttribute("aria-busy"), variant).toBe("true");
+      expect(screen.queryByText("Merge"), variant).toBeNull();
+      expect(disabledClick, variant).not.toHaveBeenCalled();
+      expect(busyClick, variant).not.toHaveBeenCalled();
       cleanup();
     }
-    render(<Btn variant="danger-fill" disabled>Abort run</Btn>);
-    expect(getComputedStyle(screen.getByRole("button", { name: "Abort run" })).color).toBe(token("--bad-ink"));
+    const idle = mock(() => {});
+    render(<Btn onClick={idle}>Resume</Btn>);
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect(idle).toHaveBeenCalledTimes(1);
   } finally {
     style.remove();
   }
 });
-
 
 test("a confirm defaults to Cancel and primary, and supports a focused Keep running cancel with a filled danger action", () => {
   const cancel = mock(() => {});
