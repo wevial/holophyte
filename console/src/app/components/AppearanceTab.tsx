@@ -9,7 +9,6 @@ import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type 
 import { Btn } from "./Btn";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
 import { Segmented } from "./Segmented";
-import { STATE_ICONS } from "./StateDot";
 import { copyOf, ThemeEditor, type EditorSubject } from "./ThemeEditor";
 
 const SCHEMES: { value: Theme; name: string; icon: ReactNode }[] = [
@@ -33,9 +32,9 @@ const DENSITIES = [
 const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 
 const FONTS: { value: ReadingFont; name: string; line: string; face: string }[] = [
-  { value: "sans", name: "Plex Sans", line: "default", face: '"IBM Plex Sans", Arial, sans-serif' },
+  { value: "sans", name: "Plex Sans", line: "default", face: '"IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif' },
   { value: "serif", name: "Plex Serif", line: "for long reads", face: '"IBM Plex Serif", Georgia, serif' },
-  { value: "hyperlegible", name: "Hyperlegible", line: "clearest letterforms", face: '"Atkinson Hyperlegible Next", Arial, sans-serif' },
+  { value: "hyperlegible", name: "Hyperlegible", line: "clearest letterforms", face: '"Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif' },
 ];
 
 function Glyph({ children }: { children: ReactNode }) {
@@ -200,14 +199,15 @@ function DensityRow() {
   const { density, setDensity } = useDensity();
   return (
     <Row id="appearance-density" icon={<DensityGlyph />} title="Density" reset={density !== "comfortable" && <RowReset label="Reset density" onReset={() => setDensity("comfortable")} />}>
-      <p className="mb-3 font-sans text-[13px] text-ink-3">Compact tightens rows on Overview, Runs and Tickets. Buttons keep their 44px.</p>
-      <Segmented label="Density" options={DENSITIES} value={density} onPick={setDensity} />
+      <p id="appearance-density-help" className="mb-3 font-sans text-[13px] text-ink-3">Compact tightens rows on Overview, Runs and Tickets. Buttons keep their 44px.</p>
+      <Segmented label="Density" options={DENSITIES} value={density} onPick={setDensity} describedBy="appearance-density-help" />
       <div role="region" aria-label="Preview" className={`mt-4 ${CARD}`}>
         {[0, 1].map((row) => (
           <div key={row} data-row className="flex min-h-[66px] flex-wrap items-center gap-x-3 gap-y-1 border-hair px-3.5 py-3.5 not-first:border-t">
             <span className="inline-flex items-center gap-1.5 text-live">
               <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0">
-                {STATE_ICONS.running}
+                <circle cx="8" cy="8" r="6.5" />
+                <path d="M8 5.4a2.6 2.6 0 1 0 0 5.2a2.6 2.6 0 1 0 0-5.2z" fill="currentColor" stroke="none" />
               </svg>
               <span className="font-sans text-[13px] font-medium">reviewing</span>
             </span>

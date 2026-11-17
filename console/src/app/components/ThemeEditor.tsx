@@ -230,10 +230,10 @@ function ContrastFlags({ derived }: { derived: DerivedTheme }) {
         const tip = `${check.name} ${ratioText(check.ratio)}:1${fails ? ` · under ${check.bar}` : ""}`;
         return (
           <li key={check.name} aria-label={tip} title={tip} data-fails={fails || undefined}
-            className={`inline-flex h-5 items-center gap-[5px] rounded-[5px] px-[7px] font-mono text-[11.5px] leading-none ${fails ? "bg-bad-wash text-bad" : "bg-selected text-ink-2"}`}>
+            className={`inline-flex h-5 items-center gap-[5px] rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none ${fails ? "bg-bad-wash text-bad" : "bg-selected text-ink-2"}`}>
             <span aria-hidden="true" className="size-2.5 rounded-[3px] shadow-[inset_0_0_0_1px_var(--hair-2)]" style={{ background: check.colour }} />
             <span aria-hidden="true" className={fails ? "text-bad" : "text-live"}>{fails ? "!" : "✓"}</span>
-            {ratioText(check.ratio)}
+            <span className="font-mono font-normal">{ratioText(check.ratio)}</span>
           </li>
         );
       })}

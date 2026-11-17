@@ -226,6 +226,8 @@ test("Density is a group of Comfortable and Compact; Compact presses and Reset d
   const density = screen.getByRole("group", { name: "Density" });
   expect(within(density).getAllByRole("button").map((button) => button.textContent)).toEqual(["Comfortable", "Compact"]);
   expect(pressed("Density")).toEqual(["Comfortable"]);
+  expect(density.getAttribute("aria-describedby")).toBe("appearance-density-help");
+  expect(document.getElementById("appearance-density-help")!.textContent).toMatch(/^Compact tightens rows/);
   fireEvent.click(within(density).getByRole("button", { name: "Compact" }));
   expect(pressed("Density")).toEqual(["Compact"]);
   fireEvent.click(screen.getByRole("button", { name: "Reset density" }));
@@ -236,7 +238,7 @@ test("Density is a group of Comfortable and Compact; Compact presses and Reset d
 test("the Density preview is a region named Preview holding its two sample rows with no visible Preview caption", async () => {
   await mount();
   const preview = screen.getByRole("region", { name: "Preview" });
-  expect(preview.querySelectorAll("[data-row]")).toHaveLength(2);
+  expect(Array.from(preview.querySelectorAll("[data-row]"), (row) => row.textContent)).toEqual(Array(2).fill("reviewingHOLO-231The sweep frees a silent lease16m / 25m"));
   expect(screen.queryAllByText(/^Preview$/i)).toEqual([]);
 });
 
