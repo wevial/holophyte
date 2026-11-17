@@ -19,7 +19,7 @@ const HEAD_BUTTON =
 
 export function Chip({ tone, children }: { tone?: Tone; children: ReactNode }) {
   return (
-    <span className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap font-sans text-[13px] font-medium leading-[1.3] ${tone == null ? "text-ink-2" : TONE_TEXT[tone]}`}>
+    <span className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap font-sans text-[13px] font-medium leading-[1.3] ${tone == null ? "text-ink" : TONE_TEXT[tone]}`}>
       {children}
     </span>
   );
