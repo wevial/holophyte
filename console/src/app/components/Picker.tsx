@@ -1,0 +1,230 @@
+import { createListbox, createPopup, definePrimitive, popupContent, popupState, popupTrigger, selects } from "@ui-sdk/core";
+import { popoverPreset } from "@ui-sdk/core/popover";
+import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import { useId } from "react";
+import { DropIcon } from "./icons";
+
+const EDGE = 8;
+const GAP = 4;
+const MENU_WIDTH = 220;
+
+export interface PickerOption {
+  value: string;
+  label: string;
+}
+
+type PickerOptions = {
+  defaultOpen?: boolean;
+  items?: PickerOption[];
+  current?: string;
+  onChoose?: (key: string) => void;
+};
+
+const LISTBOX_POPOVER = { ...popoverPreset, role: undefined };
+
+/** A label moves focus to its control on the click that ends a press, in
+ *  the same task as the press's pointerup, so focus goes back to `button`
+ *  in the task after it. Returns a cancel for a reopen that comes first. */
+function refocusAfterPress(button: HTMLElement | undefined) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settle = () => {
+    stop();
+    timer = setTimeout(() => button?.focus({ preventScroll: true }));
+  };
+  const stop = () => {
+    document.removeEventListener("pointerup", settle, true);
+    document.removeEventListener("pointercancel", settle, true);
+  };
+  document.addEventListener("pointerup", settle, true);
+  document.addEventListener("pointercancel", settle, true);
+  return () => {
+    stop();
+    clearTimeout(timer);
+  };
+}
+
+const picker = definePrimitive({
+  name: "picker",
+  options: {
+    defaultOpen: "boolean",
+    items: "value",
+    current: "string",
+    onChoose: "callback",
+  },
+  state: (options: PickerOptions) => ({
+    ...popupState(options),
+    highlighted: null as string | null,
+    current: options.current ?? null,
+  }),
+  sync: (options) => ({ current: options.current ?? null }),
+  api: (context) => {
+    let cancelRefocus = () => {};
+    const popup = createPopup(context, {
+      preset: LISTBOX_POPOVER,
+      rules: (core) => ({
+        dismiss(reason, { event, focus }) {
+          if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
+          event?.preventDefault();
+          core.control.hide({ reason, event, focus: true });
+          cancelRefocus = refocusAfterPress(core.triggerElement());
+        },
+      }),
+    });
+    const listbox = createListbox(context, {
+      key: "highlighted",
+      items: () => context.options().items ?? [],
+    });
+    let wasOpen = context.store.get().open;
+    context.onDestroy(() => cancelRefocus());
+    context.onDestroy(
+      context.store.subscribe(() => {
+        const { open, current } = context.store.get();
+        if (open === wasOpen) return;
+        wasOpen = open;
+        if (!open) return;
+        cancelRefocus();
+        if (context.options().items?.some((item) => item.value === current)) listbox.highlight(current);
+        else listbox.move("first");
+      }),
+    );
+    const choose = (key: string | null, event?: Event) => {
+      if (key == null) return;
+      popup.close({ reason: "item-press", event });
+      context.options().onChoose?.(key);
+    };
+    return {
+      ...popup,
+      listbox,
+      choose,
+      keydown(event: KeyboardEvent) {
+        if (event.key !== "Enter" && event.key !== " ") return listbox.keydown(event);
+        event.preventDefault();
+        choose(context.store.get().highlighted, event);
+      },
+    };
+  },
+  slots: (slot) => ({
+    root: slot({}),
+    trigger: popupTrigger(slot),
+    content: popupContent(slot),
+    list: slot({
+      role: "listbox",
+      keys: { none: "The content's keydown moves the highlight." },
+    }),
+    option: slot<{ value: string }>({
+      role: "option",
+      focus: "roving",
+      props: { value: "string" },
+      selects: selects({ highlighted: ({ key }) => [key, null] }),
+      attrs: (state, part) => ({
+        ...part.api.listbox.attrs(state, part),
+        "aria-selected": String(part.key === state.current),
+        "data-active": String(part.key === state.highlighted),
+      }),
+      press: ({ key, api }, event) => api.choose(key, event),
+      on: {
+        pointermove: (event, { key, api }) => api.listbox.highlight(key, { event }),
+      },
+      bind: (el, part) => part.api.listbox.bind(el, part),
+    }),
+  }),
+});
+
+const { Trigger, Content, List, Option } = createParts(picker, {
+  trigger: "button",
+  content: "div",
+  list: "div",
+  option: "div",
+});
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-3.5 shrink-0"
+    >
+      <path d="m3.5 8.5 3 3 6-7" />
+    </svg>
+  );
+}
+
+/** A button reading the current option that opens a listbox of `options`;
+ *  picking one calls `onPick` with its value. */
+export function Picker({ label, options, value, onPick }: { label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void }) {
+  const current = options.find((option) => option.value === value) ?? options[0];
+  const labelId = useId();
+  const handle = usePrimitive(picker, {
+    items: options as PickerOption[],
+    current: current?.value,
+    onChoose: onPick,
+  });
+  return usePart(
+    handle,
+    "root",
+    {},
+    {
+      className: "inline-flex",
+      children: (
+        <>
+          <span id={labelId} hidden>
+            {label}
+          </span>
+          <Trigger
+            aria-haspopup="listbox"
+            aria-label={`${label}: ${current?.label ?? ""}`}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowDown") return;
+              event.preventDefault();
+              handle.api.setOpen(true, { event: event.nativeEvent });
+            }}
+            className="inline-flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          >
+            {current?.label}
+            <span className="flex text-ink-3">
+              <DropIcon />
+            </span>
+          </Trigger>
+          <Content
+            side="bottom"
+            align="start"
+            sideOffset={GAP}
+            collisionPadding={EDGE}
+            onFocus={(event) => {
+              if (event.target === event.currentTarget) event.currentTarget.querySelector<HTMLElement>("[data-highlighted]")?.focus();
+            }}
+            onKeyDown={(event) => handle.api.keydown(event.nativeEvent)}
+            style={{
+              maxHeight: "var(--available-height)",
+              width: `min(${MENU_WIDTH}px, calc(100vw - ${2 * EDGE}px))`,
+            }}
+            className="fixed z-50 flex flex-col overflow-y-auto rounded-[9px] bg-raised p-1 shadow-[0_0_0_1px_var(--hair-2),var(--card-shadow)] outline-none"
+          >
+            <List aria-labelledby={labelId} className="flex flex-col">
+              {options.map((option) => (
+                <Option
+                  key={option.value}
+                  value={option.value}
+                  className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 text-[13px] leading-none text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink"
+                >
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span className={`flex text-accent ${option.value === current?.value ? "" : "invisible"}`}>
+                    <CheckIcon />
+                  </span>
+                </Option>
+              ))}
+            </List>
+          </Content>
+        </>
+      ),
+    },
+    "div",
+  );
+}
