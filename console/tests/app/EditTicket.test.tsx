@@ -258,7 +258,6 @@ test("a blocking check holds Save, a draft's problems do not, and a 409 keeps th
 });
 
 const picker = (name: string) => screen.getByLabelText(name, { selector: "button" });
-const pickerOrNull = (name: string) => screen.queryByLabelText(name, { selector: "button" });
 async function choose(name: string, label: string) {
   await act(async () => void fireEvent.click(picker(name)));
   await flush();
@@ -399,7 +398,7 @@ test("a magic-line ticket draws no Blast radius picker and no Evidence list", as
   await mount("#/tickets/demo/DEMO-2/edit");
   expect(box("Title").value).toBe(SERVED.Title);
   expect(picker("UI change")).toBeTruthy();
-  expect(pickerOrNull("Blast radius")).toBeNull();
+  expect(screen.queryByLabelText("Blast radius", { selector: "button" })).toBeNull();
   expect(screen.queryByRole("button", { name: "+ Add a state" })).toBeNull();
 });
 
