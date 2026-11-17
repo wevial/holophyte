@@ -1278,6 +1278,9 @@ which writes the console's Tickets board at `/#/tickets` as
 `01-board.png`. `console/e2e/console-routes.spec.ts` checks that each
 address opens the console, run as
 `python3 -m tests.console_fixture --build 'bun --cwd=console run build' bun --cwd=console run capture console-routes`.
+`console/e2e/findings-range.spec.ts` checks that the Findings Custom range
+dates menu opens inside a 375px viewport at 110% and 120% Text size, run
+the same way with `findings-range`.
 Neither `bun test` nor the
 typecheck reaches `console/e2e/`, and Playwright's `console/test-results/`
 is git-ignored. The verify's capture command, from the repo root:

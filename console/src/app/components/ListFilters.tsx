@@ -488,25 +488,28 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   const custom = from != null || to != null;
   const fromId = useId();
   const toId = useId();
+  const anchor = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [shift, setShift] = useState(0);
   useLayoutEffect(() => {
     if (!open) return;
     const fit = () => {
-      const rect = menu.current!.getBoundingClientRect();
-      const left = rect.left - shift;
-      const over = left + rect.width - (document.documentElement.clientWidth - MENU_EDGE);
-      setShift(over > 0 ? -Math.min(over, Math.max(0, left - MENU_EDGE)) : 0);
+      // Bounding rectangles are in zoomed viewport pixels, while `left` is in the menu's own CSS pixels.
+      const width = menu.current!.getBoundingClientRect().width;
+      const scale = width / menu.current!.offsetWidth;
+      const left = anchor.current!.getBoundingClientRect().left;
+      const over = left + width - (document.documentElement.getBoundingClientRect().right - MENU_EDGE);
+      setShift(over > 0 ? -Math.min(over, Math.max(0, left - MENU_EDGE)) / scale : 0);
     };
     fit();
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
-  }, [open, shift]);
+  }, [open]);
   return (
     <div ref={box} className="flex shrink-0 items-center gap-1.5">
       <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
         onPick={(picked) => write({ range: picked === fallback ? undefined : picked, from: undefined, to: undefined })} />
-      <div className="relative shrink-0">
+      <div ref={anchor} className="relative shrink-0">
         <button ref={button} type="button" aria-label="Custom range" title="Custom range" aria-pressed={custom} aria-haspopup="true" aria-expanded={open}
           onClick={() => setOpen(!open)} className={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}>
           <ToolCalendarIcon />

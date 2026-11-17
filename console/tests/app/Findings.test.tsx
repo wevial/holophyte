@@ -277,7 +277,7 @@ test("a custom range presses no preset and presses Custom range reading its days
   await mount("#/findings?from=2026-10-01&to=2026-10-15", fleet({}, {}).fetch);
   expect(within(rangeGroup()).queryAllByRole("button", { pressed: true })).toEqual([]);
   expect(customRange().getAttribute("aria-pressed")).toBe("true");
-  expect(customRange().textContent).toBe(dayRangeLabel("2026-10-01", "2026-10-15"));
+  expect(customRange().textContent).toBe("Oct 1 – Oct 15");
   await pressRange("30d");
   const params = addressParams();
   expect([params.get("range"), params.has("from"), params.has("to")]).toEqual(["30d", false, false]);
