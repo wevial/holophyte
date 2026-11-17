@@ -19,9 +19,9 @@ import {
   TomlIcon,
 } from "./icons";
 
-type TabId = (typeof SETTINGS_TABS)[number]["id"];
+type Tab = (typeof SETTINGS_TABS)[number];
 
-const TAB_ICONS: Record<TabId, () => ReactNode> = {
+const TAB_ICONS: Record<Tab["id"], () => ReactNode> = {
   appearance: AppearanceIcon,
   log: LogIcon,
   hosts: HostsIcon,
@@ -70,7 +70,7 @@ export function SettingsNav({ back }: { back: string | null }) {
   const held = settingsHost(hosts, project)?.status?.admission === "held";
   const attention = hostsNeedingAttention(hosts);
   const count = (tab: string) => marks?.counts[tab] ?? 0;
-  const link = (item: (typeof SETTINGS_TABS)[number]) => {
+  const link = (item: Tab) => {
     const Icon = TAB_ICONS[item.id];
     const on = current === item.id;
     return (
@@ -91,7 +91,7 @@ export function SettingsNav({ back }: { back: string | null }) {
       </Link>
     );
   };
-  const group = (name: (typeof SETTINGS_TABS)[number]["group"]) => SETTINGS_TABS.filter((item) => item.group === name).map(link);
+  const group = (name: Tab["group"]) => SETTINGS_TABS.filter((item) => item.group === name).map(link);
   return (
     <div className="flex flex-col pt-1 pb-3">
       <BackRow back={back} />
