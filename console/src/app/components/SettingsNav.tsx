@@ -33,8 +33,6 @@ const TAB_ICONS: Record<Tab["id"], () => ReactNode> = {
   toml: TomlIcon,
 };
 
-const NAV_ON = "bg-(image:--nav-on) text-ink";
-
 function BackRow({ back }: { back: string | null }) {
   const router = useRouter();
   const className = "group mx-2 mb-2.5 flex h-[30px] items-center gap-2 rounded-[6px] px-2 text-[14px] font-semibold tracking-[-0.01em] text-ink hover:bg-hover";
@@ -80,7 +78,7 @@ export function SettingsNav({ back }: { back: string | null }) {
         params={{ tab: item.id }}
         search={keepScope}
         aria-current={on ? "page" : undefined}
-        className={`mx-2 flex h-row items-center gap-2.5 rounded-[6px] px-2 text-[13px] font-medium ${on ? NAV_ON : "text-ink-2 hover:bg-hover hover:text-ink"}`}
+        className={`mx-2 flex h-row items-center gap-2.5 rounded-[6px] px-2 text-[13px] font-medium ${on ? "bg-(image:--nav-on) text-ink" : "text-ink-2 hover:bg-hover hover:text-ink"}`}
       >
         <span className={`flex ${on ? "text-focus" : "text-ink-3"}`}><Icon /></span>
         <span className="flex-1">{item.label}</span>
