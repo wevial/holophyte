@@ -20,7 +20,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 function TextBox({ label, text, cut, query, failed = false }: { label: string; text: string; cut: boolean; query: string; failed?: boolean }) {
   return <div className="mt-3">
     <div className="mb-1 font-sans text-[12px] text-ink-3">{label}</div>
-    <pre className={`m-0 whitespace-pre-wrap rounded-button px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-ink-2 [overflow-wrap:anywhere] ${failed ? "bg-bad-wash shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--bad)_35%,transparent)]" : "bg-selected"}`}>
+    <pre className={`m-0 whitespace-pre-wrap rounded-button px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-ink-2 [overflow-wrap:anywhere] ${failed ? "bg-[color-mix(in_srgb,var(--bad)_12%,var(--bad-wash))]" : "bg-selected"}`}>
       <Marked text={text} query={query} />{cut && <span className="text-ink-3">{"\n"}cut at 20,000 characters</span>}
     </pre>
   </div>;
