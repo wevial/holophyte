@@ -1430,9 +1430,10 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/app/components/TurnToolbar.tsx` searches and filters the Turn transcript, jumps to its first error and controls its folds.
 `console/src/app/scouts.ts` reads every scoped host's scouts and a project's scout routes;
 `console/src/app/pages/Scouts.tsx` lists the scouts newest first in one group per project, searchable by title or
-ask and filtered by state and kind; `console/src/app/components/ListFilters.tsx` is the Search field and select the
-Tickets and Scouts pages share, and the Search field, `FilterPopover` and `RangeButtons` of the Runs page, its third
-user, and
+ask and filtered by state and kind; `console/src/app/components/ListFilters.tsx` is the filled Search field and the
+State and Kind pickers the Tickets and Scouts pages share, and the Search toggle, `FilterPopover` and `RangeButtons` of
+the Runs page, its third user; `console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
+a filled button reading the current option that opens a listbox with arrow keys, Enter and Escape; and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
 beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `scout` search selects with the

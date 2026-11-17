@@ -59,8 +59,11 @@ test("Review binds the four file keys and shows the absent review mode as Single
   }
   expect(row("Review rounds").getByRole("status").textContent).toBe("2");
   expect(row("Round cap").getByRole("status").textContent).toBe("4");
-  expect(row("Adversary").getByRole("switch").textContent).toBe("On");
-  expect(row("Adversary").getByRole("switch").getAttribute("aria-checked")).toBe("true");
+  const adversary = row("Adversary").getByRole("switch", { name: "Adversary" });
+  expect(adversary.getAttribute("aria-checked")).toBe("true");
+  expect(adversary.textContent).toBe("");
+  fireEvent.click(adversary);
+  expect(adversary.getAttribute("aria-checked")).toBe("false");
   expect(row("Review mode").getByRole("button", { name: "Single" }).getAttribute("aria-pressed")).toBe("true");
   expect(row("Review mode").getByText("default")).toBeTruthy();
 });
