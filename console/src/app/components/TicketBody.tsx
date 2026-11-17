@@ -24,7 +24,7 @@ const RENDERED = [
   "[&_h2]:mt-[1.4em] [&_h2:first-child]:mt-0 [&_h3]:mt-[1.1em]",
   "[&_ul]:list-disc [&_ul]:pl-[1.4em] [&_ol]:list-decimal [&_ol]:pl-[1.4em] [&_li+li]:mt-[0.25em]",
   "[&_li.task-list-item]:-ml-[1.4em] [&_li.task-list-item]:list-none",
-  "[&_code]:rounded-[4px] [&_code]:bg-selected [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12.5px]",
+  "[&_code]:rounded-[6px] [&_code]:bg-selected [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12.5px]",
   "[&_pre]:overflow-x-auto [&_pre]:rounded-[6px] [&_pre]:bg-selected [&_pre]:px-3.5 [&_pre]:py-3 [&_pre_code]:rounded-none [&_pre_code]:bg-transparent [&_pre_code]:p-0",
   "[&_a]:text-act [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-rule [&_blockquote]:pl-3 [&_blockquote]:text-ink-2",
 ].join(" ");
