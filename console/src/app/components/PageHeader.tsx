@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-/** A page's title row: the title, its quiet count, then `tools` at the right, with `tabs` under it. */
-export function PageHeader({ title, count, tools, tabs }: { title: string; count?: { text: string; need?: string }; tools?: ReactNode; tabs?: ReactNode }) {
+/** A page's title row: the title, its quiet count, then `tools` at the right. */
+export function PageHeader({ title, count, tools }: { title: string; count?: { text: string; need?: string }; tools: ReactNode }) {
   return (
     <header className="flex flex-col gap-3.5">
       <div className="flex min-h-[30px] flex-wrap items-center gap-x-3 gap-y-2">
@@ -17,9 +17,8 @@ export function PageHeader({ title, count, tools, tabs }: { title: string; count
             )}
           </p>
         )}
-        {tools != null && <div data-tools className="relative ml-auto flex max-w-full flex-wrap items-center gap-1">{tools}</div>}
+        <div data-tools className="relative ml-auto flex max-w-full flex-wrap items-center gap-1">{tools}</div>
       </div>
-      {tabs}
     </header>
   );
 }
