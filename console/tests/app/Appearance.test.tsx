@@ -470,3 +470,71 @@ test("re-saving the picked custom theme with new haze colours hands the header r
     renderer.mockRestore();
   }
 });
+
+/** A WebGL2 context limited to `maxTexture` texels a side that records each texture's size and each draw to the canvas itself. */
+function recordingGl(canvas: HTMLCanvasElement, maxTexture: number, record: { textures: [number, number][]; canvasDraws: number }) {
+  let framebuffer: unknown = null;
+  return new Proxy({}, {
+    get: (_, name) => {
+      if (typeof name === "string" && /^[A-Z_0-9]+$/.test(name)) return name;
+      if (name === "drawingBufferWidth") return canvas.width;
+      if (name === "drawingBufferHeight") return canvas.height;
+      if (name === "getParameter") return (pname: string) => (pname === "MAX_TEXTURE_SIZE" ? maxTexture : null);
+      if (name === "getProgramParameter") return (_program: unknown, pname: string) => (pname === "ACTIVE_UNIFORMS" ? 0 : true);
+      if (name === "getShaderParameter") return () => true;
+      if (name === "getExtension") return (extension: string) => (extension === "EXT_color_buffer_float" ? {} : null);
+      if (name === "texImage2D") return (_target: unknown, _level: unknown, _format: unknown, width: number, height: number) => { record.textures.push([width, height]); };
+      if (name === "bindFramebuffer") return (_target: unknown, bound: unknown) => { framebuffer = bound; };
+      if (name === "drawArrays") return () => { if (framebuffer === null) record.canvasDraws += 1; };
+      return () => ({});
+    },
+  });
+}
+
+/** Mounts the vendored Plume in a header band of the given CSS size on the recording context, with animation frames run only by `runFrames`. */
+function plumeBand(width: number, height: number, maxTexture: number, motion: boolean) {
+  const record = { textures: [] as [number, number][], canvasDraws: 0 };
+  const frames: FrameRequestCallback[] = [];
+  const context = spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((function (this: HTMLCanvasElement, kind: string) {
+    return kind === "webgl2" ? recordingGl(this, maxTexture, record) : null;
+  }) as typeof HTMLCanvasElement.prototype.getContext);
+  const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
+  for (const [side, value] of [["clientWidth", width], ["clientHeight", height]] as const) {
+    Object.defineProperty(HTMLCanvasElement.prototype, side, { configurable: true, get: () => value });
+  }
+  const plumeHandle = plume.mount(document.createElement("div"), { motion });
+  return {
+    record,
+    runFrames: (count: number) => {
+      for (let frame = 0; frame < count; frame += 1) frames.splice(0).forEach((callback) => callback(performance.now() + 16));
+    },
+    restore: () => {
+      plumeHandle.destroy();
+      context.mockRestore();
+      raf.mockRestore();
+      for (const side of ["clientWidth", "clientHeight"]) delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>)[side];
+    },
+  };
+}
+
+test("Plume in a 3840px header band asks for no texture wider or taller than the GPU allows", () => {
+  const band = plumeBand(3840, 188, 8192, true);
+  try {
+    expect(band.record.textures.length).toBeGreaterThan(0);
+    expect(band.record.textures.filter(([width, height]) => width > 8192 || height > 8192)).toEqual([]);
+  } finally {
+    band.restore();
+  }
+});
+
+test("Plume with Motion off draws the canvas once and then holds that frame across later animation frames", () => {
+  const band = plumeBand(1440, 188, 16384, false);
+  try {
+    band.runFrames(1);
+    expect(band.record.canvasDraws).toBe(1);
+    band.runFrames(8);
+    expect(band.record.canvasDraws).toBe(1);
+  } finally {
+    band.restore();
+  }
+});

@@ -22,5 +22,8 @@ copy:
   the sibling folders.
 - Haze, Caustics, Ribbons, Lava and Nebula (so Plume) take a `motion` option:
   `false` draws one still frame, as the system's reduced-motion setting does.
+- Nebula's still frame draws once and holds until its cloud, config or
+  drawing buffer changes, and its textures are capped to the GPU's limit and
+  the drawing buffer's long side, which a wide header band would exceed.
 - Haze is trimmed to the `ember` palette the console overrides, and falls back
   when its shaders fail to compile.

@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/fluid.js (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/fluid.js (MIT, see ../LICENSE), given a motion option and a texture size capped to the GPU and the drawing buffer.
 // GPU fluid + displacement-field nebula. The velocity sim carries cursor
 // momentum; the offset field accumulates it as a local bend of the cloud and
 // decays back to zero. The cloud itself is recomputed from the procedural
@@ -63,7 +63,10 @@ export class FluidSim {
       w = shortEdge;
       h = Math.round(shortEdge / aspect);
     }
-    return { w: Math.max(w, 8), h: Math.max(h, 8) };
+    // A side past the GPU's limit fails to allocate, and detail past the drawing buffer's is never shown.
+    const limit = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), Math.max(gl.drawingBufferWidth, gl.drawingBufferHeight, shortEdge));
+    const fit = Math.min(1, limit / Math.max(w, h));
+    return { w: Math.max(Math.round(w * fit), 8), h: Math.max(Math.round(h * fit), 8) };
   }
 
   resize() {

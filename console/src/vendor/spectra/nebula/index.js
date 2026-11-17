@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.js (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.js (MIT, see ../LICENSE), given a motion option that also holds one frame.
 // Nebula cursor — a WebGL2 nebula you can part with the mouse.
 // The pointer bends a displacement field (a local radial shove plus a soft
 // drag wake through a fluid sim); the cloud always heals back to its untouched
@@ -82,12 +82,14 @@ export function mount(container, opts = {}) {
   const WANDERERS = 3;
   /** @type {({ x: number, y: number } | undefined)[]} */
   const wanderers = [];
+  let drawn = '';
 
   stage.start((dt, rawDt) => {
     if (!governor.frame(rawDt)) return; // bailed to static fallback
 
     const frozen = reducedMotion.matches || !fluid.config.motion;
     if (!frozen) {
+      drawn = '';
       time += dt;
       // Cursor push, "blend" style: a local radial shove (three jittered
       // sub-splats written straight into the displacement field — the parting)
@@ -122,9 +124,13 @@ export function mount(container, opts = {}) {
         }
       }
       fluid.step(dt);
-    } else if (fluid.cloudDirty) {
+    } else {
+      // One still frame: redraw only when the cloud, the config or the drawing buffer changes.
+      const key = `${JSON.stringify(fluid.config)}${gl.drawingBufferWidth}x${gl.drawingBufferHeight}`;
+      if (key === drawn && !fluid.cloudDirty) return;
+      drawn = key;
       // Reduced motion: no sim, no drift — but the cloud still has to exist.
-      fluid.renderCloud();
+      if (fluid.cloudDirty) fluid.renderCloud();
     }
 
     composite.use();
