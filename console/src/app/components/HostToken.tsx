@@ -1,4 +1,4 @@
-import { useContext, useId, useState } from "react";
+import { useContext, useId, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { age } from "../../lib/format";
 import { addressOf } from "../../lib/hosts";
@@ -16,6 +16,7 @@ export function HostToken({ host }: { host: HostCard }) {
   const [value, setValue] = useState("");
   const [reason, setReason] = useState<string | null>(null);
   const [, rerender] = useState(0);
+  const form = useRef<HTMLFormElement>(null);
   const address = addressOf(host.record.base);
   const stored = tokenFor(address);
   const seen = host.record.root_seen_ms ?? host.record.seen_ms;
@@ -27,10 +28,10 @@ export function HostToken({ host }: { host: HostCard }) {
     void client.invalidateQueries({ queryKey: ["fleet", origin] });
   };
   return (
-    <section aria-label={`${host.name} token storage`} className="border-t border-rule p-4 min-[1100px]:p-5">
-      <h3 className="mb-3 font-mono text-[11px] uppercase tracking-[0.1em] text-ink-3">Serve token</h3>
+    <section aria-label={`${host.name} token storage`} className="border-t border-hair p-4 min-[1100px]:p-5">
+      <h3 className="mb-2 font-sans text-[13px] font-semibold text-ink">Serve token</h3>
       {stored != null ? <div className="flex flex-wrap items-center gap-3">
-        <p className="grow font-mono text-[12px] text-ink-3"><span className="mr-3 text-ink">••••</span>saved in this browser · {checked}</p>
+        <p className="grow font-sans text-[13px] text-ink-3"><span className="mr-3 font-mono text-ink">••••</span>saved in this browser · {checked}</p>
         <Btn onClick={() => {
           forgetToken(address);
           refresh();
@@ -48,9 +49,9 @@ export function HostToken({ host }: { host: HostCard }) {
         setValue("");
         say(`Saved the token for ${host.name} in this browser.`);
         refresh();
-      }}>
-        {host.record.token_rejected && <p className="mb-3 font-mono text-[12px] text-ink-3">{checked}</p>}
-        <p className="mb-3 font-mono text-[12px] text-ink-3">No token in this browser. Actions on {host.name} ask for one.</p>
+      }} ref={form}>
+        {host.record.token_rejected && <p className="mb-2 font-sans text-[13px] text-ink-3">{checked}</p>}
+        <p className="mb-3 font-sans text-[13px] text-ink-3">No token in this browser. Actions on {host.name} ask for one.</p>
         <div className="flex flex-wrap items-center gap-2">
           <input
             aria-label={`Serve token for ${host.name}`}
@@ -60,11 +61,11 @@ export function HostToken({ host }: { host: HostCard }) {
             placeholder="Paste the serve token"
             value={value}
             onChange={(event) => setValue(event.currentTarget.value)}
-            className="min-h-9 min-w-0 border border-ink-3 bg-paper px-2.5 font-mono text-[13px] text-ink focus:outline-2 focus:outline-focus focus:-outline-offset-1"
+            className="field w-72 min-w-0 max-w-full"
           />
-          <button type="submit" className="btn" data-variant="quiet" disabled={!value.trim()}>Save token</button>
+          <Btn className="!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]" disabled={!value.trim()} onClick={() => form.current?.requestSubmit()}>Save token</Btn>
         </div>
-        {reason != null && <p id={`${id}-reason`} className="mt-2 font-mono text-[12px] text-bad">{reason}</p>}
+        {reason != null && <p id={`${id}-reason`} className="mt-2 font-sans text-[13px] text-bad">{reason}</p>}
       </form>}
     </section>
   );

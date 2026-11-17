@@ -118,7 +118,12 @@ test("Retry now polls once and remains busy until a failing daemon answers, then
   const view = await mount();
   view.fail(SPARE);
   await view.poll();
+  const opening = card("spare").firstElementChild!;
+  expect(opening.getAttribute("role")).toBe("status");
+  expect(opening.textContent).toContain("spare has not answered since");
+  expect(within(card("spare")).getByRole("button", { name: "Retry now" })).toBeTruthy();
   expect(within(card("spare")).getByRole("button", { name: "Run sweep" }).hasAttribute("disabled")).toBe(true);
+  expect(within(card("spare")).getByRole("button", { name: "Restart daemon" }).hasAttribute("disabled")).toBe(true);
   const release = view.hold(SPARE);
   const before = view.statuses.filter((url) => url === `${SPARE}/status`).length;
   await press("Retry now", card("spare"));
@@ -147,6 +152,7 @@ test("a saved token is masked and accepted, Forget removes it and Undo restores 
   expect(card().textContent).toContain("saved in this browser");
   expect(card().textContent).toContain("accepted");
   expect(card().textContent).toContain("••••");
+  expect(within(card()).getByRole("button", { name: "Forget" })).toBeTruthy();
   expect(document.body.innerHTML).not.toContain(secret);
   expect(document.body.innerHTML).not.toContain("3f9a");
   const before = view.statuses.length;
@@ -201,6 +207,7 @@ test("Save token refuses header-unsafe input and saves a valid token with an emp
   expect(field.placeholder).toBe("Paste the serve token");
   expect(within(card()).getByRole("button", { name: "Save token" }).hasAttribute("disabled")).toBe(true);
   await act(async () => void fireEvent.change(field, { target: { value: "abc 123" } }));
+  expect(within(card()).getByRole("button", { name: "Save token" }).hasAttribute("disabled")).toBe(false);
   await press("Save token");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
   expect(within(card()).getByText("Token has a character the header cannot carry")).toBeTruthy();

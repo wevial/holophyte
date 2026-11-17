@@ -83,8 +83,8 @@ test("host cards summarize the root projects and preserve a spare daemon's last 
   expect(writer.getByText("1 of 3 workers busy · beat 21s ago")).toBeTruthy();
   expect(writer.getByText("OK")).toBeTruthy();
   expect(writer.getByText("last 16:50")).toBeTruthy();
-  expect(writer.getByText(/build 9f3a1c2/)).toBeTruthy();
-  expect(writer.getByText(/up 3d 4h/)).toBeTruthy();
+  expect(writer.getByText(/build/).textContent).toContain("build 9f3a1c2");
+  expect(writer.getByText(/build/).textContent).toContain("up 3d 4h");
   expect(writer.queryByText(/checkout at/)).toBeNull();
   const spare = within(screen.getByRole("article", { name: "spare" }));
   expect(spare.getByText("Not answering · last seen 14m ago")).toBeTruthy();
@@ -93,7 +93,21 @@ test("host cards summarize the root projects and preserve a spare daemon's last 
   expect(spare.getByText("None. A spare host: it answers sweeps but claims nothing.")).toBeTruthy();
   expect(spare.getAllByText("Unknown")).toHaveLength(2);
   expect(spare.getByText(/last report 16:36: ok/)).toBeTruthy();
-  expect(spare.getByText(/up unknown/)).toBeTruthy();
+  expect(spare.getByText(/build/).textContent).toContain("up unknown");
+});
+
+test("two answering daemons each draw a named card with their sections in order under the summary", async () => {
+  const view = await mount();
+  await view.poll();
+  const summary = screen.getByText("2 daemons · 2 answering · polled 0s ago");
+  const cards = screen.getAllByRole("article");
+  expect(cards.map((card) => within(card).getByRole("heading", { level: 2 }).textContent)).toEqual(["writer", "spare"]);
+  for (const name of ["writer", "spare"]) {
+    const card = screen.getByRole("article", { name });
+    expect(summary.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(card).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent))
+      .toEqual(["Projects", "Supervisor", "Sweep", "Agent routes", "Serve token"]);
+  }
 });
 
 test("project read errors outrank a killed sweep in health while both and a different checkout remain visible", async () => {
@@ -109,7 +123,7 @@ test("project read errors outrank a killed sweep in health while both and a diff
   expect(writer.getByText("Partly running")).toBeTruthy();
   expect(writer.getByText("Killed")).toBeTruthy();
   expect(writer.getByText(/last 16:50 · exit 1/)).toBeTruthy();
-  expect(writer.getByText(/checkout at 0a1b2c3/)).toBeTruthy();
+  expect(writer.getByText(/checkout at/).textContent).toBe(" · checkout at 0a1b2c3");
 });
 
 test("all failed roots retain both daemon cards and last-answer times even with a project search scope", async () => {
