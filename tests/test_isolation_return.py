@@ -502,6 +502,22 @@ class IsolationReturnTests(IsolationCase):
 
         self.assertEqual(git(worktree, "rev-parse", "HEAD"), returned)
 
+    def test_container_head_naming_a_tree_is_refused(self):
+        from holophyte.isolation.isolation_git import git
+        from holophyte.loop.gates import InfraFailure
+
+        _, worktree = self.make_worktree()
+        (worktree / "kept").write_text("host\n")
+        old = git(worktree, "rev-parse", "HEAD")
+
+        with self.assertRaisesRegex(InfraFailure, "not a fast-forward"):
+            self.rewrite_turn(
+                worktree, "echo work > work; git add work; "
+                          "git write-tree > .git/refs/heads/task")
+        self.assertEqual(git(worktree, "rev-parse", "HEAD"), old)
+        self.assertFalse((worktree / "work").exists())
+        self.assertEqual((worktree / "kept").read_text(), "host\n")
+
     def test_rewritten_turn_bringing_in_environment_is_still_refused(self):
         from holophyte.isolation.isolation_git import git
         from holophyte.loop.gates import InfraFailure

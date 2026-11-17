@@ -208,7 +208,11 @@ def return_turn(worktree, clone, root, old, project, merge_state, carry):
     )
     try:
         git(worktree, "merge-base", "--is-ancestor", old, sha)
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1:
+            raise InfraFailure(
+                "container history is not a fast-forward; refusing fetch back"
+            ) from error
         sha = commit_on_tip(worktree, old, sha)
     if project is not None:
         refuse_environment_history(
