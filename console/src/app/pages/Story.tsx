@@ -74,7 +74,7 @@ function Missing({ project, storyKey }: { project: string; storyKey: string }) {
       <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] [overflow-wrap:anywhere] text-ink">
         No story {storyKey} in {project}.
       </h1>
-      <p className="mt-2.5 max-w-[60ch] text-[14px] text-ink-2">{STORY_HINT}</p>
+      <p className="mt-2.5 max-w-[60ch] text-[13px] text-ink-3">{STORY_HINT}</p>
     </section>
   );
 }
@@ -109,7 +109,7 @@ function NoStories({ project }: { project: string | undefined }) {
       <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] [overflow-wrap:anywhere] text-ink">
         No stories in {project ?? "all projects"}
       </h1>
-      <p className="mt-2.5 max-w-[60ch] text-[14px] text-ink-2">{STORY_HINT}</p>
+      <p className="mt-2.5 max-w-[60ch] text-[13px] text-ink-3">{STORY_HINT}</p>
       {project != null && (
         <Link
           to="/stories"

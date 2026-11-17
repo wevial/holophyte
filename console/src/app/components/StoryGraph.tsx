@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
 import { runPage } from "../run";
@@ -29,10 +29,19 @@ const LEGEND: { look: CardLook; mark?: CardMark; icon?: State; words: string }[]
   { look: "todo", mark: "fail", words: "failed" },
 ];
 
+const OUTLINED: Partial<Record<State, ReactNode>> = {
+  merged: (
+    <>
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="M5 8.3 7.1 10.4 11 6.2" />
+    </>
+  ),
+};
+
 function Icon({ state }: { state: State }) {
   return (
     <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`size-3.5 shrink-0 ${TONE_TEXT[STATES[state].tone]}`}>
-      {STATE_ICONS[state]}
+      {OUTLINED[state] ?? STATE_ICONS[state]}
     </svg>
   );
 }
