@@ -97,10 +97,12 @@ function RowButtons({ name, index, count, onMove, onRemove }: { name: string; in
   </div>;
 }
 
+const HEAD = "font-sans text-[13px] font-semibold text-ink";
+
 function FieldHead({ label, htmlFor, aside, changed }: { label: string; htmlFor?: string; aside?: string; changed: boolean }) {
   return <div className="flex flex-wrap items-baseline gap-x-2">
     <ChangedDot changed={changed} />
-    <label htmlFor={htmlFor} className="font-sans text-[13px] font-semibold text-ink">{label}</label>
+    {htmlFor ? <label htmlFor={htmlFor} className={HEAD}>{label}</label> : <span className={HEAD}>{label}</span>}
     {aside && <span className="font-sans text-[13px] text-ink-3">{aside}</span>}
   </div>;
 }
