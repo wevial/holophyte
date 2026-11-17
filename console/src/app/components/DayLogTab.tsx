@@ -5,6 +5,7 @@ import { categoryOf, EVERYTHING, HIGHLIGHTS, itemsOf, LOG_GROUPS, projectColours
 import { useDayLedger } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { DayLog } from "./DayLog";
+import { Segmented } from "./Segmented";
 
 const PRESETS: { value: Preset; label: string }[] = [
   { value: "highlights", label: "Highlights" },
@@ -18,10 +19,10 @@ function Box({ name, checked, mixed = false, onChange, children, count, head = f
   name: string; checked: boolean; mixed?: boolean; onChange: (next: boolean) => void; children: ReactNode; count: number; head?: boolean;
 }) {
   return (
-    <label className={`flex min-h-8 cursor-pointer items-center gap-3 ${head ? "font-semibold text-ink" : "pl-7 text-ink-2"}`}>
+    <label className={`flex min-h-8 cursor-pointer items-center gap-2.5 ${head ? "font-semibold text-ink" : "pl-[26px] text-ink-2"}`}>
       <input type="checkbox" aria-label={name} checked={checked} onChange={() => onChange(mixed || !checked)}
         ref={(input) => { if (input) input.indeterminate = mixed; }}
-        className="size-3.5 shrink-0 cursor-pointer accent-act" />
+        className="cursor-pointer" />
       {children}
       <span className={COUNT}>{count}</span>
     </label>
@@ -73,25 +74,17 @@ export function DayLogTab({ heading }: { heading: ReactNode }) {
     <header className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-rule pb-5">
       <div className="flex min-w-0 flex-[1_1_280px] flex-wrap items-baseline gap-x-4 gap-y-1">{heading}</div>
       <div className="ml-auto flex shrink-0 flex-wrap items-center gap-3">
-        <span id="day-log-preset" className="font-sans text-[14px] text-ink">Preset</span>
-        <div role="group" aria-labelledby="day-log-preset" className="inline-flex border border-rule">
-          {PRESETS.map((preset) => (
-            <button key={preset.value} type="button" aria-pressed={filter.preset === preset.value} onClick={() => pick(preset.value)}
-              className={`min-h-10 px-3.5 font-mono text-[11.5px] uppercase tracking-[0.08em] not-first:border-l not-first:border-rule ${filter.preset === preset.value ? "bg-ink text-paper" : "bg-paper text-ink-2 hover:bg-paper-2"}`}>
-              {preset.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Preset" options={PRESETS} value={filter.preset} onPick={pick} />
       </div>
     </header>
     <div className="mt-5 grid gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_280px]">
     <div className="min-w-0">
-      <div className="border border-rule bg-paper text-[14px]">
+      <div className="rounded-[10px] bg-raised text-[13.5px] shadow-[inset_0_0_0_1px_var(--hair)]">
         {LOG_GROUPS.map((group) => {
           const on = group.items.filter((each) => items[each.id]).length;
           const total = group.items.reduce((sum, each) => sum + (counts.items.get(each.id) ?? 0), 0);
           return (
-            <section key={group.id} aria-label={group.label} className="border-rule px-4 py-2.5 not-first:border-t">
+            <section key={group.id} aria-label={group.label} className="border-hair px-4 py-2.5 not-first:border-t">
               <Box head name={group.label} checked={on === group.items.length} mixed={on > 0 && on < group.items.length} count={total}
                 onChange={(next) => manual({ items: Object.fromEntries(group.items.map((each) => [each.id, next])) })}>
                 {group.label}
@@ -105,13 +98,13 @@ export function DayLogTab({ heading }: { heading: ReactNode }) {
             </section>
           );
         })}
-        <section aria-label="Projects" className="border-t border-rule px-4 py-2.5">
-          <h3 className="flex min-h-8 items-center pl-7 font-semibold text-ink">Projects</h3>
+        <section aria-label="Projects" className="border-t border-hair px-4 py-2.5">
+          <h3 className="flex min-h-8 items-center pl-[26px] font-semibold text-ink">Projects</h3>
           {[...colours].map(([name, colour]) => (
             <Box key={name} name={name} checked={projectOn(filter, name)} count={counts.projects.get(name) ?? 0}
               onChange={(next) => manual({ projects: { [name]: next } })}>
-              <span aria-hidden="true" className="size-2 shrink-0" style={{ backgroundColor: colour }} />
-              <span className="font-mono text-[13px]">{name}</span>
+              <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: colour }} />
+              <span>{name}</span>
             </Box>
           ))}
         </section>
