@@ -10,7 +10,6 @@ import { TICK_MS, type Fetch } from "../../src/lib/poll";
 import type { Attention, Board, Flow, MergeQueue, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 import { needsDaemons } from "./needsFleet";
-import { declarations } from "../cssTokens";
 import { setPlatform } from "@ui-sdk/core/testing";
 
 const ORIGIN = "http://writer-host:7710";
@@ -417,38 +416,45 @@ test("folded, the title bar keeps the toggle then the home link with its mark an
   expect(within(aside()).queryByRole("link", { name: "holophyte" })).toBeNull();
 });
 
-const paints = async () => {
-  const css = declarations(await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text());
-  const rules = css.filter((entry) => ["background", "background-color", "background-image"].includes(entry.name));
-  return (element: Element) =>
-    rules
-      .filter((entry) => {
-        const selector = entry.path.filter((part) => !part.startsWith("@")).join(" ");
-        try {
-          return selector !== "" && element.matches(selector);
-        } catch {
-          return false;
-        }
-      })
-      .map((entry) => entry.value);
-};
+/** The theme sheet as happy-dom can apply it: it drops every rule inside `@layer`, which only orders the cascade, so those blocks are lifted out
+ *  with other at-rules keeping their conditions; and it cannot parse the grain's quoted data URLs, so each grain token holds a plain URL named after it. */
+async function themeSheetForDom(): Promise<string> {
+  const source = (await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text())
+    .replace(/@import[^;]*;/, "")
+    .replace(/(--grain(?:-side)?):[^;]*;/g, (_, name: string) => `${name}: url("${name.slice(2)}.svg");`);
+  let out = "";
+  let at = 0;
+  for (const match of source.matchAll(/@layer [\w-]+\s*\{/g)) {
+    let depth = 1;
+    let end = match.index + match[0].length;
+    for (; depth > 0; end += 1) depth += source[end] === "{" ? 1 : source[end] === "}" ? -1 : 0;
+    out += source.slice(at, match.index) + source.slice(match.index + match[0].length, end - 1);
+    at = end;
+  }
+  return out + source.slice(at);
+}
 
 test("in every theme the shell surface draws the side colour with the sidebar grain, and neither the title bar nor the sidebar paints its own", async () => {
-  const painted = await paints();
-  for (const theme of ["light", "dark"]) {
-    localStorage.setItem(THEME_KEY, theme);
-    await mount("#/");
-    const shell = titleBar().parentElement!;
-    expect(shell.classList.contains("bg-side")).toBe(true);
-    const shellPaint = painted(shell);
-    expect(shellPaint.length).toBeGreaterThan(0);
-    for (const value of shellPaint) expect(value).toContain("var(--grain-side)");
-    for (const surface of [titleBar(), aside()]) {
-      expect(Array.from(surface.classList).filter((name) => name.startsWith("bg-"))).toEqual([]);
-      expect(painted(surface)).toEqual([]);
+  const style = document.createElement("style");
+  style.textContent = await themeSheetForDom();
+  document.head.appendChild(style);
+  try {
+    for (const theme of ["light", "dark"]) {
+      localStorage.setItem(THEME_KEY, theme);
+      await mount("#/");
+      const shell = titleBar().parentElement!;
+      expect(shell.classList.contains("bg-side")).toBe(true);
+      expect(getComputedStyle(shell).backgroundImage).toBe('url("grain-side.svg")');
+      for (const surface of [titleBar(), aside()]) {
+        expect(Array.from(surface.classList).filter((name) => name.startsWith("bg-"))).toEqual([]);
+        expect(getComputedStyle(surface).backgroundImage).toBe("");
+      }
+      expect(getComputedStyle(screen.getByRole("main")).backgroundImage).toBe('url("grain.svg")');
+      cleanup();
+      localStorage.clear();
     }
-    cleanup();
-    localStorage.clear();
+  } finally {
+    style.remove();
   }
 });
 
