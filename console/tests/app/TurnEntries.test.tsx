@@ -99,6 +99,13 @@ test("the transcript pairs calls in chronological speaker rows, opens failures a
   expect(urls.filter(url => url.endsWith("/transcript"))).toHaveLength(1);
 });
 
+test("the transcript list is the last thing in its section, with no footer note after it", async () => {
+  await mount();
+  const list = screen.getByRole("list", { name: "Turn transcript" });
+  expect(list.nextElementSibling).toBeNull();
+  expect(screen.queryByText(/Times are from the start of the turn/)).toBeNull();
+});
+
 test("a command without a result has unknown status when the turn times out", async () => {
   await mount(transcriptSchema.parse({ entries: [
     { ...baseEntry, speaker: "command", tool: "Bash", call: "interrupted", text: "sleep 300", summary: "Wait for completion", at_ms: Date.parse("2026-10-16T23:46:32Z") },
@@ -130,10 +137,11 @@ test("an unmatched result keeps its output and truncation notice without inventi
   expect(fold.querySelector("pre")!.textContent).toEndWith("cut at 20,000 characters");
 });
 
-test("a missing transcript preserves run figures and links to the run", async () => {
+test("a missing transcript says so in one line, preserves run figures and links to the run", async () => {
   await mount(404);
-  expect(screen.getByText("writer-host has no transcript for this turn.")).toBeTruthy();
-  expect(screen.getByText("The run's Progress log still has what this turn did; the figures above come from the run record.")).toBeTruthy();
+  const line = screen.getByText("writer-host has no transcript for this turn.");
+  expect(line.nextElementSibling).toBe(screen.getByRole("link", { name: "Open the run" }));
+  expect(screen.queryByText(/Progress log/)).toBeNull();
   expect(screen.getByRole("link", { name: "Open the run" }).getAttribute("href")).toEndWith("#/runs/demo/12");
   const duration = screen.getByText("Duration", { selector: "dt" }).parentElement!;
   expect(within(duration).getByText("3m 05s")).toBeTruthy();
