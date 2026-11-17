@@ -221,8 +221,29 @@ test("the Appearance scheme switch and the sidebar share one theme store", async
   expect(localStorage.getItem("holophyte.theme")).toBeNull();
 });
 
+test("Density is a group of Comfortable and Compact; Compact presses and Reset density returns Comfortable", async () => {
+  await mount();
+  const density = screen.getByRole("group", { name: "Density" });
+  expect(within(density).getAllByRole("button").map((button) => button.textContent)).toEqual(["Comfortable", "Compact"]);
+  expect(pressed("Density")).toEqual(["Comfortable"]);
+  fireEvent.click(within(density).getByRole("button", { name: "Compact" }));
+  expect(pressed("Density")).toEqual(["Compact"]);
+  fireEvent.click(screen.getByRole("button", { name: "Reset density" }));
+  expect(pressed("Density")).toEqual(["Comfortable"]);
+  expect(screen.queryByRole("button", { name: "Reset density" })).toBeNull();
+});
+
+test("the Density preview is a region named Preview holding its two sample rows with no visible Preview caption", async () => {
+  await mount();
+  const preview = screen.getByRole("region", { name: "Preview" });
+  expect(preview.querySelectorAll("[data-row]")).toHaveLength(2);
+  expect(within(preview).getAllByText("The sweep frees a silent lease")).toHaveLength(2);
+  expect(screen.queryAllByText(/^Preview$/i)).toEqual([]);
+});
+
 test("reading font choices persist in this browser and Plex Sans removes the override", async () => {
   await mount();
+  expect(within(screen.getByRole("radiogroup", { name: "Reading font" })).getAllByRole("radio").map((input) => input.getAttribute("aria-label"))).toEqual(FONT_NAMES);
   expect(radio("Reading font", "Plex Sans").checked).toBe(true);
   fireEvent.click(radio("Reading font", "Plex Serif"));
   expect(root.getAttribute("data-font")).toBe("serif");
