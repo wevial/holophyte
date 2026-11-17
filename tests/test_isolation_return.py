@@ -460,7 +460,6 @@ class IsolationReturnTests(IsolationCase):
         from holophyte.isolation.isolation_git import git
 
         main, worktree = self.make_worktree()
-        git(main, "branch", "-M", "main")
         (main / "upstream").write_text("main\n")
         git(main, "add", "upstream")
         git(main, "commit", "-qm", "upstream")
@@ -483,6 +482,8 @@ class IsolationReturnTests(IsolationCase):
         message = git(worktree, "log", "-1", "--format=%B", tip)
         self.assertIn(returned, message)
         self.assertIn(before_merge, message)
+        self.assertEqual(git(worktree, "log", "-1", "--format=%an <%ae>", tip),
+                         "Configured Author <author@example.test>")
         self.assertEqual(git(worktree, "status", "--porcelain"), "")
         self.assertEqual((worktree / "work").read_text(), "work\n")
         self.assertFalse((worktree / "upstream").exists())
@@ -506,7 +507,6 @@ class IsolationReturnTests(IsolationCase):
         from holophyte.loop.gates import InfraFailure
 
         main, worktree = self.make_worktree()
-        git(main, "branch", "-M", "main")
         self.target.path = main
         self.table["worktree"] = {"env_source": "local.env"}
         old = git(worktree, "rev-parse", "HEAD")
