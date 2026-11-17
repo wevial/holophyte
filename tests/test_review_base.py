@@ -136,8 +136,8 @@ class CutBaseTests(unittest.TestCase):
         self.git("commit", "-qm", message, cwd=checkout)
         return self.git("rev-parse", "HEAD", cwd=checkout)
 
-    def cut_worktree(self, start="main"):
-        self.git("worktree", "add", "-q", "-b", "task", str(self.wt), start)
+    def cut_worktree(self):
+        self.git("worktree", "add", "-q", "-b", "task", str(self.wt), "main")
 
     def is_ancestor(self, older, newer):
         return subprocess.run(
