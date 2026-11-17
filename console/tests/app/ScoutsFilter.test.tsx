@@ -208,6 +208,7 @@ test("the Kind picker opens on ArrowDown, picks with Enter and closes on Escape 
   expect(document.activeElement).toBe(picker("Kind"));
 
   await key(picker("Kind"), "ArrowDown");
+  expect(document.activeElement!.textContent).toBe("Bug");
   await key(document.activeElement!, "ArrowDown");
   await key(document.activeElement!, "Escape");
   expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
