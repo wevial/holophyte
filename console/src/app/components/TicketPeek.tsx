@@ -135,9 +135,9 @@ export function TicketPeek({
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
-      className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink shadow-[0_0_0_1px_var(--hair-2),var(--card-shadow)] max-[720px]:w-full max-[720px]:rounded-none"
+      className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:w-full max-[720px]:rounded-none"
     >
-      <div className="flex items-center gap-1 pl-[18px] pr-3 pt-4">
+      <div className="flex items-center gap-1 pl-[18px] pr-[18px] pt-4">
         <span data-peek-key className="mr-auto font-mono text-[12px] leading-none tabular-nums text-ink-3">{card.key}</span>
         <span className="flex gap-1">
           <Link
@@ -147,12 +147,12 @@ export function TicketPeek({
             aria-label="Expand to the full ticket page"
             className={HEAD_BUTTON}
           >
-            <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" />
             </svg>
           </Link>
           <button ref={close} type="button" aria-label="Close preview" onClick={onClose} className={HEAD_BUTTON}>
-            <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
               <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
             </svg>
           </button>
