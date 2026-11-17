@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.gates  # noqa: E402 - after the sys.path insert above
-from tests.fake_agent import APPROVE, Commit  # noqa: E402
+from tests.fake_agent import APPROVE, RULED_FIX, Commit  # noqa: E402
 from tests.loop_fixture import LoopFixture  # noqa: E402
 
 
@@ -500,7 +500,8 @@ class BaselineTests(LoopFixture):
         self.configure('[verify]\nalways = ["echo baseline-broke; exit 7"]\n')
         output = self.main_output(Commit("candidate"), APPROVE, Commit("fix"),
                                   Commit("self-check fix"), APPROVE,
-                                  Commit("last fix"), Commit("last self-check fix"))
+                                  RULED_FIX, Commit("last fix"),
+                                  Commit("last self-check fix"))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertIn("baseline-broke", output)
         rows = json.loads(self.read(

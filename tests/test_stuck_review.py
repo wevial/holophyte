@@ -15,13 +15,17 @@ from unittest.mock import patch
 
 import store
 import store.board
+import store.read
 import store.steer_notes
 import store.tickets
-from holophyte.loop import review_round, runs
-from holophyte.loop.gates import RunFailure
+from holophyte.host import supervisor
+from holophyte.loop import dispatch, review_round, runs, steering
+from holophyte.loop.gates import InfraFailure, RunFailure
+from holophyte.serve.serve_findings import stop_kind
 from tests.test_store_board import body
 
 PROJECT = SimpleNamespace(config=lambda: {}, config_path="holophyte.toml")
+EDITED = "echo edited"
 CRITERIA = ["the export lists every order"]
 TICKET = body().replace(
     "- CSV serialization of the orders list", "- `orders/export.py`").replace(
@@ -54,14 +58,17 @@ class StuckReviewTests(unittest.TestCase):
         self.addCleanup(self.conn.close)
         project = store.tickets.ensure_project(
             self.conn, "native-team", directory.name)
+        self.project = SimpleNamespace(path=self.root, config=lambda: {},
+                                       config_path="holophyte.toml")
         key = store.board.file_ticket(self.conn, project, "NAT", TICKET)
+        self.project_id, self.key = project, key
         self.ticket = self.conn.execute(
             "SELECT id FROM tickets WHERE linearIdentifier = ?", (key,)
         ).fetchone()[0]
         store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run_id = store.claim(self.conn, project, self.ticket)
         store.set_phase(self.conn, self.run_id, "working")
-        self.calls, self.fixes = [], []
+        self.calls, self.fixes, self.trips = [], [], []
 
     def git(self, *args):
         return subprocess.run(["git", *args], cwd=self.root, check=True,
@@ -77,8 +84,16 @@ class StuckReviewTests(unittest.TestCase):
         def agent(project, role, goal, cwd, **kwargs):
             self.calls.append((role, goal))
             if role == "adjudicate":
+                if isinstance(ruling, Exception):
+                    raise ruling
                 return ruling
             return reviews.pop(0) if role == "review" else ""
+
+        def captured(conn, run_id, sha, lines):
+            self.trips.append(supervisor.review_trip(conn, run_id, 0.5))
+            return capture_review(conn, run_id, sha, lines)
+
+        capture_review = review_round.capture_review
 
         def fix_turn(project, conn, run_id, beat_s, wt, budget_min, ticket,
                      findings, sha, **kwargs):
@@ -96,6 +111,8 @@ class StuckReviewTests(unittest.TestCase):
 
         with patch.object(review_round, "agent", side_effect=agent), \
                 patch.object(runs, "agent_route", return_value="route"), \
+                patch.object(review_round, "capture_review",
+                             side_effect=captured), \
                 patch("holophyte.agents.fix_session.fix_turn",
                       side_effect=fix_turn):
             head = self.git("rev-parse", "HEAD")
@@ -131,25 +148,44 @@ class StuckReviewTests(unittest.TestCase):
             self.assertIn(held, brief)
         self.assertNotIn("THREAD 3", brief)
 
+    def test_a_sweep_once_the_repeating_round_is_recorded_does_not_trip(self):
+        self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA),
+                    review(DELTA)],
+                   "THREAD 1: FIX -- alpha blocks the criterion\n"
+                   "THREAD 2: FIX -- beta blocks it too", cap=3, criteria=[])
+        self.assertEqual(self.trips, [None, None, None])
+
     def test_fix_turn_gets_fix_and_new_findings_and_the_drop_becomes_a_note(self):
         self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA),
                     review(DELTA)],
                    "THREAD 1: FIX -- alpha blocks the criterion\n"
                    "THREAD 2: DROP -- beta is out of scope", cap=3)
         handed = self.fixes[1]
-        self.assertIn("alpha drops the last order\n"
-                      "  Adjudicator ruling: FIX -- alpha blocks the criterion",
+        self.assertIn(ALPHA, handed)
+        self.assertIn("- orders/export.py:1: FIX -- alpha blocks the criterion",
                       handed)
-        self.assertIn("orders/export.py:3 gamma skips a header", handed)
-        self.assertIn("CRITERION C1: unwitnessed", handed)
+        self.assertIn(GAMMA, handed)
         self.assertNotIn("orders/legacy.py:2", handed)
-        (note,) = store.steer_notes.amendments(self.conn, self.ticket)
+        (note,) = store.steer_notes.chain_notes(self.conn, self.ticket, 0)
         self.assertEqual(note.author, "factory")
         self.assertIn("beta is out of scope", note.note)
         self.assertEqual(store.steer_notes.pending(self.conn, self.ticket), [])
         third_review = self.goals("review")[2]
         self.assertIn(f"steer note {note.id} by factory", third_review)
         self.assertIn("beta is out of scope", third_review)
+
+    def test_a_drop_note_keeps_the_claimed_contract_and_the_strike_count(self):
+        store.board.edit_ticket(self.conn, self.project_id, self.key,
+                                TICKET.replace("\ntrue\n", f"\n{EDITED}\n"),
+                                expected_revision=1)
+        self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA),
+                    review(DELTA)],
+                   "THREAD 1: FIX -- alpha blocks the criterion\n"
+                   "THREAD 2: DROP -- beta is out of scope", cap=3)
+        self.assertEqual(steering.adopted_verify(self.conn, self.run_id, "true"),
+                         "true")
+        self.assertEqual(store.read.latest_human_intervention_at(
+            self.conn, self.ticket), 0)
 
     def test_dropping_every_repeated_finding_reviews_again_without_a_fix_turn(self):
         self.drive([review(ALPHA), review(ALPHA), review(DELTA)],
@@ -159,43 +195,63 @@ class StuckReviewTests(unittest.TestCase):
                                         "review", "fix"])
         self.assertIn("alpha was answered", self.goals("review")[2])
 
-    def assert_stuck(self, failed, fixes):
-        reason = str(failed.exception)
+    def stuck(self, reviews, ruling, fixes, cap=3):
+        with self.assertRaises(RunFailure) as failed:
+            self.drive(reviews, ruling, cap=cap)
+        error = failed.exception
+        self.assertEqual(len(self.fixes), fixes)
+        dispatch.fail_run(self.project, self.conn, self.run_id, self.ticket,
+                          None, error.reason, "work", error.failure_kind,
+                          refresh=False)
+        outcome, kind, reason = self.conn.execute(
+            "SELECT outcome, failureKind, outcomeReason FROM runs WHERE id = ?",
+            (self.run_id,)).fetchone()
+        self.assertEqual((outcome, kind), ("failed", "swept"))
         self.assertTrue(reason.startswith("review_stuck (rounds "), reason)
         self.assertIn("worktree preserved", reason)
-        self.assertEqual(len(self.fixes), fixes)
+        (event,) = self.conn.execute(
+            "SELECT kind, summary FROM runEvents WHERE runId = ? AND kind = ?",
+            (self.run_id, supervisor.SWEEP_EVENT)).fetchall()
+        self.assertEqual(stop_kind(*event), "review_stuck")
         self.assertEqual(self.git("branch", "--show-current"), "task/nat-1")
-        self.assertTrue((self.root / "orders/export.py").is_file())
+        self.assertEqual(self.git("status", "--porcelain", "orders"), "")
+        self.assertEqual(store.steer_notes.chain_notes(
+            self.conn, self.ticket, 0), [])
         return reason
 
     def test_a_human_ruling_ends_the_run_stuck_with_the_rulings(self):
-        with self.assertRaises(RunFailure) as failed:
-            self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
-                       "THREAD 1: FIX -- alpha blocks the criterion\n"
-                       "THREAD 2: HUMAN -- the ticket does not say", cap=3)
-        reason = self.assert_stuck(failed, fixes=1)
+        reason = self.stuck([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
+                            "THREAD 1: FIX -- alpha blocks the criterion\n"
+                            "THREAD 2: HUMAN -- the ticket does not say",
+                            fixes=1)
         self.assertIn("FIX -- alpha blocks the criterion", reason)
         self.assertIn("HUMAN -- the ticket does not say", reason)
-        self.assertEqual(store.steer_notes.amendments(self.conn, self.ticket),
-                         [])
 
-    def test_a_repeated_finding_left_without_a_ruling_ends_the_run_stuck(self):
-        with self.assertRaises(RunFailure) as failed:
-            self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
-                       "THREAD 1: DROP -- alpha was answered", cap=3)
-        reason = self.assert_stuck(failed, fixes=1)
+    def test_a_missing_or_conflicting_ruling_ends_the_run_stuck(self):
+        reason = self.stuck([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
+                            "THREAD 1: HUMAN -- the ticket does not say\n"
+                            "THREAD 1: FIX -- alpha blocks the criterion\n"
+                            "THREAD 2: DROP --", fixes=1)
+        self.assertIn("orders/export.py:1 HUMAN -- the adjudicator gave"
+                      " conflicting rulings", reason)
         self.assertIn("orders/legacy.py:2 no ruling", reason)
-        self.assertEqual(store.steer_notes.amendments(self.conn, self.ticket),
-                         [])
+
+    def test_a_failed_adjudicator_turn_ends_the_run_stuck(self):
+        reason = self.stuck([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
+                            InfraFailure("the container did not start",
+                                         "review_route"), fixes=1)
+        self.assertIn("the adjudicator turn failed: the container did not"
+                      " start", reason)
 
     def test_a_second_repeat_after_an_adjudication_ends_the_run_stuck(self):
-        with self.assertRaises(RunFailure) as failed:
-            self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA),
-                        review(ALPHA, GAMMA)],
-                       "THREAD 1: FIX -- alpha blocks the criterion\n"
-                       "THREAD 2: FIX -- beta blocks it too", cap=4)
-        reason = self.assert_stuck(failed, fixes=2)
+        reason = self.stuck([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA),
+                             review(ALPHA, GAMMA)],
+                            "THREAD 1: FIX -- alpha blocks the criterion\n"
+                            "THREAD 2: FIX -- beta blocks it too", fixes=2,
+                            cap=4)
         self.assertIn("already ruled on round 2", reason)
+        self.assertIn("FIX -- alpha blocks the criterion", reason)
+        self.assertIn("FIX -- beta blocks it too", reason)
         self.assertEqual(self.roles().count("adjudicate"), 1)
 
 

@@ -203,6 +203,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
                  adversary=blocking + red + private)
+    stuck_review.claim(project, conn, run_id, rnd)
     if decision == "REQUEST_CHANGES" and conn is not None:
         capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
@@ -263,7 +264,8 @@ def _steer_approved(project, conn, run_id, provider, task_id, wt, beat_s, sha,
 def _round_contract(conn, run_id, ticket, claimed, pending):
     verify_cmd = adopted_verify(conn, run_id, claimed)
     kept = pending if pending.get("verify_cmd", claimed) == verify_cmd else {}
-    return reviewed_ticket(conn, run_id, ticket), verify_cmd, kept
+    return (reviewed_ticket(conn, run_id, ticket)
+            + stuck_review.settled(conn, run_id), verify_cmd, kept)
 
 
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,

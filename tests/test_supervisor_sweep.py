@@ -346,16 +346,17 @@ class ReviewStuckTests(SweepTestCase):
         adjudicated = self.a_run(phase="addressing")
         plain = self.a_run(phase="addressing", project=self.another_project())
         for run_id in (adjudicated, plain):
-            self.round(run_id, 1, [finding("a.py"), finding("b.py")])
-            self.round(run_id, 2, [finding("a.py"), finding("b.py")],
-                       at=T0 + 3 * MINUTE)
+            self.round(run_id, 1, [finding("a.py"), finding("b.py"),
+                                   finding("c.py")])
+            self.round(run_id, 2, [finding("a.py"), finding("b.py"),
+                                   finding("d.py")], at=T0 + 3 * MINUTE)
         holophyte.loop.stuck_review.adjudication_started(
             self.conn, adjudicated, 2, 2)
         self.heartbeat_at(adjudicated, T0 + 10 * MINUTE)
 
-        self.assertEqual([(t.run_id, t.condition)
-                          for t in self.sweep(plain).trips],
-                         [(plain, "review_stuck")])
+        trip, = self.sweep(plain).trips
+        self.assertEqual((trip.run_id, trip.condition), (plain, "review_stuck"))
+        self.assertIn("share 0.50", trip.evidence)
 
     def test_a_newer_round_repeating_an_adjudicated_one_trips(self):
         run_id = self.a_run(phase="addressing")

@@ -1,6 +1,8 @@
 """A review that repeats its findings, put to the adjudicator before the fix turn."""
 import json
 import re
+import subprocess
+from time import time
 
 import store
 import store.read
@@ -13,21 +15,26 @@ from holophyte.config.config_tables import sweep_config
 from holophyte.host.supervisor import (
     REVIEW_ADJUDICATION,
     REVIEW_STUCK,
+    SWEEP_EVENT,
     adjudicated_rounds,
     review_overlap,
 )
 from holophyte.loop.follow_ups import _commits
-from holophyte.loop.gates import RunFailure
+from holophyte.loop.gates import InfraFailure, RunFailure
 from holophyte.loop.runs import heartbeat_while
+from holophyte.loop.stop import stop_if_requested
 from holophyte.redact import safe_print as print
 from holophyte.review.adversary import _payloads
 from holophyte.review.findings import decode_findings, finding_line
+from holophyte.review.reply_parsing import finding_blocks, parse_findings
 
 RULINGS = ("FIX", "DROP", "HUMAN")
 RULING_LINE_RE = thread_word_re(RULINGS, r"\s")
 VERDICT_WORD_RE = re.compile(r"\b(?:ADDRESS|FOLLOW_UP|DECLINE)\b")
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.MULTILINE)
 FACTORY = "factory"
+RULINGS_EVENT = "review_rulings"
+SETTLED = "Settled by the adjudicator, not a blocker:"
 
 
 def _key(finding):
@@ -116,9 +123,14 @@ def brief(run_id, sha, ticket, criteria, overlap, repeated, answers):
 def rulings(reply, count):
     found = {}
     for match in RULING_LINE_RE.finditer(str(reply or "")):
-        number = int(match.group(1))
-        if 1 <= number <= count:
-            found[number] = (match.group(2).upper(), match.group(3).strip())
+        number, word = int(match.group(1)), match.group(2).upper()
+        reason = match.group(3).strip(" -–—:,")
+        if not 1 <= number <= count or not reason:
+            continue
+        if found.get(number, (word,))[0] != word:
+            found[number] = ("HUMAN", "the adjudicator gave conflicting rulings")
+        else:
+            found.setdefault(number, (word, reason))
     return [found.get(n) for n in range(1, count + 1)]
 
 
@@ -129,36 +141,59 @@ def _spoken(ruled):
         for n, (finding, ruling) in enumerate(ruled, 1))
 
 
-def _settled(conn, run_id, ruled):
-    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
-    for finding, (word, reason) in ruled:
-        if word != "DROP":
-            continue
-        note = store.steer_notes.steer(
-            conn, ticket_id,
-            "Settled by the adjudicator, not a blocker: the finding "
-            f"{finding_line(finding)} -- the fix turn's answer stands: {reason}"
-            " Do not raise it again as a blocker.", FACTORY, source=FACTORY)
+def _note(conn, run_id, ticket_id, text):
+    with store.transaction(conn):
+        intervention = store.record_intervention(
+            conn, run_id, "steer", f"factory note: {text}", source=FACTORY)
+        note = store.steer_notes._insert(
+            conn, ticket_id, run_id, store.steer_notes.HINT, text, FACTORY,
+            int(time() * 1000), intervention, None)
         store.steer_notes.consume(conn, [note.id], run_id)
 
 
-def fix_findings(findings, ruled):
-    rulings_of = {id(finding): ruling for finding, ruling in ruled}
-    kept = []
-    for finding in findings:
-        if not isinstance(finding, dict) or finding.get("evidence_only") is True:
-            continue
-        word, reason = rulings_of.get(id(finding), (None, ""))
+def _settle(conn, run_id, ruled):
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    for finding, (word, reason) in ruled:
         if word == "DROP":
-            continue
-        kept.append("- " + _listed(finding)
-                    + (f"\n  Adjudicator ruling: FIX -- {reason}" if word else ""))
-    if not kept:
+            _note(conn, run_id, ticket_id,
+                  f"{SETTLED} the finding {finding_line(finding)} -- the fix"
+                  f" turn's answer stands: {reason} Do not raise it again as a"
+                  " blocker.")
+
+
+def settled(conn, run_id):
+    """The DROP rulings this run carries, as the review brief reads them."""
+    if conn is None or run_id is None:
+        return ""
+    ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    return "".join(
+        f"\n\nAdjudicator's ruling:\nsteer note {note.id} by {note.author}:"
+        f"\n{note.note}"
+        for note in store.steer_notes.chain_notes(conn, ticket_id, 0)
+        if note.author == FACTORY and note.consumed_by == run_id
+        and note.note.startswith(SETTLED))
+
+
+def _dropped(block, keys):
+    return any(_key(finding) in keys for finding in parse_findings(block))
+
+
+def fix_findings(verdict, findings, ruled):
+    """The reviewer's findings less the DROP ones, with the FIX reasons."""
+    dropped = {_key(finding) for finding, (word, _) in ruled if word == "DROP"}
+    if all(_key(finding) in dropped for finding in findings
+           if isinstance(finding, dict)
+           and finding.get("evidence_only") is not True):
         return None
-    return ("The review repeated findings of the round before; the "
-            "adjudicator ruled on them against the ticket and left out the "
-            "ones it settled.\n\n" + "\n\n".join(kept)
-            + "\n\nVERDICT: REQUEST_CHANGES")
+    kept = "\n\n".join(block for block in finding_blocks(verdict)
+                        if not _dropped(block, dropped))
+    fixes = "".join(f"- {_where(finding)}: FIX -- {reason}\n"
+                    for finding, (word, reason) in ruled if word == "FIX")
+    return kept + (
+        "\n\nThe review repeated these findings from the round before, and "
+        "the adjudicator ruled them blockers against the ticket. Answer each "
+        "ADDRESS and fix it; a FOLLOW_UP or DECLINE on them does not stand:\n"
+        + fixes if fixes else "")
 
 
 def adjudication_started(conn, run_id, rnd, count):
@@ -168,12 +203,37 @@ def adjudication_started(conn, run_id, rnd, count):
         level="detail", payload=json.dumps({"round": rnd, "findings": count}))
 
 
+def claim(project, conn, run_id, rnd):
+    """Mark a repeating round before the supervisor can sweep it as stuck."""
+    if conn is None or run_id is None or adjudicated_rounds(conn, run_id):
+        return
+    found = repeats(conn, run_id,
+                    sweep_config(project).review_overlap_threshold)
+    if found is not None and found[0][1] == rnd:
+        adjudication_started(conn, run_id, rnd, len(found[2]))
+
+
 def _stuck(conn, run_id, provider, task_id, branch, sha, evidence, detail):
-    reason = (f"{REVIEW_STUCK} ({evidence}); {detail}; branch {branch} and its"
-              f" worktree preserved at {sha[:12]} for a human")
+    stuck = f"{REVIEW_STUCK} ({evidence}; {detail})"
+    reason = (f"{stuck}; branch {branch} and its worktree preserved at"
+              f" {sha[:12]} for a human")
     print(f"[holo2] {reason}")
+    store.record_event(conn, run_id, SWEEP_EVENT,
+                       f"supervisor sweep: {stuck}; failing the run and"
+                       " releasing its leases")
     ledger(conn, run_id, task_id, "adjudication", reason, provider)
-    raise RunFailure(reason)
+    raise RunFailure(reason, "swept")
+
+
+def _ask(project, conn, run_id, beat_s, wt, base_sha, sha, prompt):
+    from holophyte.loop.review_round import agent
+    try:
+        with heartbeat_while(conn, run_id, beat_s):
+            reply = agent(project, "adjudicate", prompt, wt, conn=conn,
+                          base_sha=base_sha, candidate_sha=sha, run_id=run_id)
+    except (InfraFailure, subprocess.TimeoutExpired) as error:
+        return "", getattr(error, "reason", None) or str(error)
+    return reply, failure_line(reply)
 
 
 def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,
@@ -190,25 +250,28 @@ def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     evidence = (f"rounds {earlier} and {later} share {shared:.2f} of their"
                 f" findings ({threshold} threshold)")
     done = adjudicated_rounds(conn, run_id)
-    if done:
+    if any(rnd != later for rnd in done):
+        prior = store.read.latest_event_summary(conn, run_id, RULINGS_EVENT)
         _stuck(conn, run_id, provider, task_id, branch, sha, evidence,
-               f"the adjudicator already ruled on round {done[0]}")
-    adjudication_started(conn, run_id, later, len(repeated))
+               f"the adjudicator already ruled on round {done[0]}: {prior}")
+    if later not in done:
+        adjudication_started(conn, run_id, later, len(repeated))
     prompt = brief(run_id, sha, ticket, criteria, overlap, repeated,
                    verdict_lines(conn, run_id, wt))
-    from holophyte.loop.review_round import agent
-    with heartbeat_while(conn, run_id, beat_s):
-        reply = agent(project, "adjudicate", prompt, wt, conn=conn,
-                      base_sha=base_sha, candidate_sha=sha, run_id=run_id)
+    reply, failed = _ask(project, conn, run_id, beat_s, wt, base_sha, sha,
+                         prompt)
+    stop_if_requested(conn, run_id, "addressing")
     ruled = list(zip(repeated, rulings(reply, len(repeated))))
-    failed = failure_line(reply)
+    spoken = f"adjudicator rulings: {_spoken(ruled)}"
+    store.record_event(conn, run_id, RULINGS_EVENT, spoken, level="detail",
+                       payload=json.dumps({"round": later, "rulings": [
+                           ruling and list(ruling) for _, ruling in ruled]}))
     if failed:
         _stuck(conn, run_id, provider, task_id, branch, sha, evidence,
-               f"the adjudicator turn failed: {failed}")
+               f"the adjudicator turn failed: {failed}; {spoken}")
     if any(ruling is None or ruling[0] == "HUMAN" for _, ruling in ruled):
-        _stuck(conn, run_id, provider, task_id, branch, sha, evidence,
-               f"adjudicator rulings: {_spoken(ruled)}")
-    ledger(conn, run_id, task_id, "adjudication",
-           f"Round {later}: adjudicator rulings: {_spoken(ruled)}", provider)
-    _settled(conn, run_id, ruled)
-    return fix_findings(findings, ruled)
+        _stuck(conn, run_id, provider, task_id, branch, sha, evidence, spoken)
+    ledger(conn, run_id, task_id, "adjudication", f"Round {later}: {spoken}",
+           provider)
+    _settle(conn, run_id, ruled)
+    return fix_findings(verdict, findings, ruled)
