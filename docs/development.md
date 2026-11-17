@@ -1278,6 +1278,9 @@ which writes the console's Tickets board at `/#/tickets` as
 `01-board.png`. `console/e2e/console-routes.spec.ts` checks that each
 address opens the console, run as
 `python3 -m tests.console_fixture --build 'bun --cwd=console run build' bun --cwd=console run capture console-routes`.
+`console/e2e/findings-range.spec.ts` checks that the Findings Custom range
+dates menu opens inside a 375px viewport at 110% and 120% Text size, run
+the same way with `findings-range`.
 Neither `bun test` nor the
 typecheck reaches `console/e2e/`, and Playwright's `console/test-results/`
 is git-ignored. The verify's capture command, from the repo root:
@@ -1432,7 +1435,9 @@ entries with folded prompts and tool calls, opening failed calls automatically.
 `console/src/app/pages/Scouts.tsx` lists the scouts newest first in one group per project, searchable by title or
 ask and filtered by state and kind; `console/src/app/components/ListFilters.tsx` is the filled Search field and the
 State and Kind pickers the Tickets and Scouts pages share, and the Search toggle, `FilterPopover` and `RangeButtons` of
-the Runs page, its third user; `console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
+the Runs page, its third user; the Findings page's `RangeButtons` draws its range presets on the shared Segmented
+control of `console/src/app/components/Segmented.tsx`, a group of pressed buttons for a few fixed choices, beside a
+Custom range calendar button; `console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
 a filled button reading the current option that opens a listbox with arrow keys, Enter and Escape; and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
