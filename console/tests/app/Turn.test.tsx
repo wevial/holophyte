@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { runTurnsSchema, type RunDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -67,16 +67,18 @@ test("a second implementer turn names its review return and displays recorded us
   expect(within(crumb).getByRole("link", { name: "run 12" }).getAttribute("href")).toEndWith("#/runs/demo/12");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Implementer · turn 2");
   expect(screen.getByText("The sweep frees a silent lease · back from review round 1")).toBeTruthy();
-  expect(figure("Seat").getByText("implementer")).toBeTruthy();
-  expect(figure("Seat").getByText("writer-host")).toBeTruthy();
-  expect(figure("Model").getByText("claude opus")).toBeTruthy();
-  expect(figure("Model").getByText("primary route")).toBeTruthy();
-  expect(figure("Duration").getByText("3m 05s")).toBeTruthy();
-  expect(figure("Duration").getByText(/^16:45:12 – 16:48:17 /)).toBeTruthy();
-  expect(figure("Tokens").getByText("61.4k")).toBeTruthy();
-  expect(figure("Tokens").getByText("52.1k in · 9.3k out")).toBeTruthy();
-  expect(figure("Cost").getByText("$0.92")).toBeTruthy();
-  expect(figure("Cost").getByText("run so far $3.10")).toBeTruthy();
+  const terms = [...screen.getByText("Seat", { selector: "dt" }).closest("dl")!.querySelectorAll("dt")];
+  expect(terms.map(term => {
+    const value = term.nextElementSibling!;
+    const line = value.nextElementSibling!;
+    return [term.textContent, value.tagName, value.textContent, line.tagName, line.textContent];
+  })).toEqual([
+    ["Seat", "DD", "implementer", "DD", "writer-host"],
+    ["Model", "DD", "claude opus", "DD", "primary route"],
+    ["Duration", "DD", "3m 05s", "DD", expect.stringMatching(/^16:45:12 – 16:48:17 /)],
+    ["Tokens", "DD", "61.4k", "DD", "52.1k in · 9.3k out"],
+    ["Cost", "DD", "$0.92", "DD", "run so far $3.10"],
+  ]);
 });
 
 test("turn tabs and neighbouring links preserve run identity and mark the last turn current with next disabled", async () => {
@@ -91,7 +93,12 @@ test("turn tabs and neighbouring links preserve run identity and mark the last t
     "/runs/demo/12/turns/40", "/runs/demo/12/turns/41", "/runs/demo/12/turns/42",
   ]);
   expect(screen.getByRole("link", { name: "Previous turn" }).getAttribute("href")).toEndWith("#/runs/demo/12/turns/41");
-  expect(screen.getByLabelText("Next turn").getAttribute("aria-disabled")).toBe("true");
+  const next = screen.getByRole("link", { name: "Next turn" });
+  expect(next.getAttribute("aria-disabled")).toBe("true");
+  expect(next.hasAttribute("href")).toBe(false);
+  await act(async () => { fireEvent.click(next); });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/runs/demo/12/turns/42");
   expect(screen.getByRole("link", { name: "Back to the run" }).getAttribute("href")).toEndWith("#/runs/demo/12");
 });
 
