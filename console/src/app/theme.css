@@ -1103,7 +1103,7 @@ body {
     background-image: linear-gradient(rgb(from var(--canvas) r g b / calc(1 - var(--grain-scale, 1) / 2)), rgb(from var(--canvas) r g b / calc(1 - var(--grain-scale, 1) / 2))), var(--grain), var(--grain);
   }
 
-  aside[aria-label="Console"] {
+  [data-shell] {
     background-image: var(--grain-side);
     background-image: linear-gradient(rgb(from var(--side) r g b / calc(1 - var(--grain-scale, 1) / 2)), rgb(from var(--side) r g b / calc(1 - var(--grain-scale, 1) / 2))), var(--grain-side), var(--grain-side);
   }

@@ -308,7 +308,7 @@ export function TitleBar({ folded, foldable, fold }: SidebarFold) {
   const [macApp] = useState(inMacApp);
   const toggleName = folded ? "Expand sidebar" : "Collapse sidebar";
   return (
-    <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center bg-side ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
+    <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
       {foldable && (
         <Tooltip delay={300} shortcut={"mod+\\"}>
           <TooltipTrigger
@@ -325,6 +325,16 @@ export function TitleBar({ folded, foldable, fold }: SidebarFold) {
           </TooltipContent>
         </Tooltip>
       )}
+      <Link
+        to="/"
+        search={keepScope}
+        aria-label="holophyte"
+        title="holophyte"
+        className={`flex h-6 items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-ink [&_svg]:size-4 ${macApp ? APP_NO_DRAG : ""}`}
+      >
+        <Mark />
+        <span aria-hidden="true">holophyte</span>
+      </Link>
     </div>
   );
 }
@@ -396,29 +406,14 @@ export function Sidebar({ folded }: { folded: boolean }) {
     </FootTip>
   );
 
-  const home = (
-    <Link
-      to="/"
-      search={keepScope}
-      aria-label="holophyte"
-      title="holophyte"
-      className={`flex min-h-7 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em] text-ink ${folded ? "min-w-7 justify-center" : ""}`}
-    >
-      <Mark />
-      {!folded && <span aria-hidden="true">holophyte</span>}
-    </Link>
-  );
-
   return (
     <aside
       aria-label="Console"
       data-folded={folded}
-      className={`flex w-full shrink-0 flex-col border-b border-rule-2 bg-side min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
+      className={`flex w-full shrink-0 flex-col border-b border-rule-2 min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
         folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
-      <div className={`flex h-9 shrink-0 items-center ${folded ? "justify-center" : "pl-4"}`}>{home}</div>
-
       {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
       <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />
 
