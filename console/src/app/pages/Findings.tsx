@@ -146,8 +146,8 @@ export function Findings() {
     project == null
       ? byProject(items, projectOf).map((part) => ({ project: part.project, rows: part.items.map(draw) }))
       : [{ project: null, rows: items.map(draw) }];
-  const findingRows = (list: { row: FindingRowView }[], quiet = false) =>
-    split(list, ({ row }) => row.project, ({ row }) => <FindingRow key={row.key} row={row} showProject={false} quiet={quiet} />);
+  const findingRows = (list: { row: FindingRowView }[]) =>
+    split(list, ({ row }) => row.project, ({ row }) => <FindingRow key={row.key} row={row} showProject={false} />);
   const groups = [
     { label: "Open", empty: `Nothing open${where}.`, parts: findingRows(page.open) },
     { label: "Follow-ups", empty: `No follow-ups${where}.`, parts: findingRows(page.followUps) },
@@ -160,7 +160,7 @@ export function Findings() {
             parts: split(page.defects, (defect) => defect.project, (defect) => <TicketDefectRow key={`${defect.base} ${defect.run} ${defect.at}`} defect={defect} />),
           },
         ]),
-    { label: `Settled ${span}`, empty: `Nothing settled${where} ${span}.`, parts: findingRows(page.settled, true) },
+    { label: `Settled ${span}`, empty: `Nothing settled${where} ${span}.`, parts: findingRows(page.settled) },
     {
       label: "Clean reviews",
       empty: `No clean reviews${where} ${span}.`,

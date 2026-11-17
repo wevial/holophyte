@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, isInaccessible, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -99,7 +99,10 @@ const toggle = (row: HTMLElement) => row.querySelector<HTMLButtonElement>("butto
 const titles = (label: string) => rowsOf(label).map((row) => row.querySelector("[data-title]")!.textContent);
 const fateOf = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-fate]")!;
 const iconOf = (row: HTMLElement) => toggle(row).querySelector<HTMLElement>("[data-state]")!;
-const fateWord = (row: HTMLElement) => toggle(row).querySelector("[data-fate-word]")!.textContent;
+const fateWord = (row: HTMLElement) => {
+  const word = toggle(row).querySelector<HTMLElement>("[data-fate-word]")!;
+  return isInaccessible(word) ? null : word.textContent;
+};
 
 function unfoldAll(label: string): HTMLElement[] {
   const rows = rowsOf(label);
@@ -202,7 +205,7 @@ test("an open row's fate says who is fixing it, or why nobody is", async () => {
   expect(fateOf(idle!).classList.contains("text-ask-ink")).toBe(true);
 });
 
-test("settled rows say what became of each finding, under a quiet icon", async () => {
+test("settled rows say what became of each finding, the glyph and word in the fate's ink-2 tone", async () => {
   const declineLedger = [{
     ...pinnedLedger,
     text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nDECLINE holophyte/serve/views.py:20 — the store column is lease_age_ms",
@@ -217,7 +220,7 @@ test("settled rows say what became of each finding, under a quiet icon", async (
     "declined · the store column is lease_age_ms",
     "merged with this finding open",
   ]);
-  for (const row of rows) expect(iconOf(row).classList.contains("text-ink-3")).toBe(true);
+  for (const row of rows) expect(iconOf(row).classList.contains("text-ink-2")).toBe(true);
 });
 
 test("follow-ups read their state's fate, the pending ones first", async () => {

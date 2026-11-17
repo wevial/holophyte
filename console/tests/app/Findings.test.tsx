@@ -121,6 +121,8 @@ test("the single title reads Findings beside its open count and how many of thos
   await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
   expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Findings"]);
   expect(pageCount()).toBe("2 open · 1 needs you");
+  await choose("must");
+  expect([pageCount(), group("Open").querySelector("[data-count]")!.textContent]).toEqual(["1 open", "1"]);
   cleanup();
 
   await mount("#/findings", fleet(demoDaemon([demo7, demo5, demo10]), writerDaemon).fetch);

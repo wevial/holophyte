@@ -37,9 +37,9 @@ function RowTag({ tag }: { tag: NonNullable<FindingRowView["tag"]> }) {
   return <span data-tag className={`${TAG} ${TINT.nit}`}>{tag.text}</span>;
 }
 
-function FateWord({ fate, quiet }: { fate: RowFate; quiet: boolean }) {
+function FateWord({ fate }: { fate: RowFate }) {
   return (
-    <span data-state={fate.state} className={`inline-flex shrink-0 items-center gap-[5px] font-sans text-[12.5px] ${TONE_TEXT[quiet ? "ink-3" : fate.tone]}`}>
+    <span data-state={fate.state} className={`inline-flex shrink-0 items-center gap-[5px] font-sans text-[12.5px] ${TONE_TEXT[fate.tone]}`}>
       <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0">
         {STATE_ICONS[fate.state]}
       </svg>
@@ -111,7 +111,7 @@ function RowActionButton({ action, busy, press }: { action: RowAction; busy: boo
 /** One finding, follow-up or advisory thread on a line that folds open to
  *  its text, place and fate, and its one action. A taken action's fate
  *  stands while the page is mounted. */
-export function FindingRow({ row, showProject, quiet = false }: { row: FindingRowView; showProject: boolean; quiet?: boolean }) {
+export function FindingRow({ row, showProject }: { row: FindingRowView; showProject: boolean }) {
   const [open, setOpen] = useState(false);
   const { busy, done, press } = useRowAction(row.action, row.fate.line);
   const body = useId();
@@ -138,7 +138,7 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
           </span>
         )}
         {row.path != null && <span data-path className="min-w-0 font-mono text-[12px] [overflow-wrap:anywhere] text-ink-3">{lastTwo(row.path)}</span>}
-        <FateWord fate={fate} quiet={quiet} />
+        <FateWord fate={fate} />
       </button>
       <div id={body} hidden={!open} className="pb-3.5 pl-[152px] pr-2.5 pt-0.5 max-[720px]:pl-2.5">
         {open && (
