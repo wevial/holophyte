@@ -22,17 +22,25 @@ type PickerOptions = {
 
 const LISTBOX_POPOVER = { ...popoverPreset, role: undefined };
 
-/** A label activates its control on the click after the press, so focus
- *  goes back to `button` once that click's default action has run; the
- *  next press, armed after this one finishes dispatching, drops the wait. */
-function refocusAfterClick(button: HTMLElement | undefined) {
-  const refocus = () => {
-    document.removeEventListener("pointerdown", drop, true);
-    setTimeout(() => button?.focus({ preventScroll: true }));
+/** A label moves focus to its control on the click that ends a press, in
+ *  the same task as the press's pointerup, so focus goes back to `button`
+ *  in the task after it. Returns a cancel for a reopen that comes first. */
+function refocusAfterPress(button: HTMLElement | undefined) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settle = () => {
+    stop();
+    timer = setTimeout(() => button?.focus({ preventScroll: true }));
   };
-  const drop = () => document.removeEventListener("click", refocus, true);
-  document.addEventListener("click", refocus, { capture: true, once: true });
-  setTimeout(() => document.addEventListener("pointerdown", drop, { capture: true, once: true }));
+  const stop = () => {
+    document.removeEventListener("pointerup", settle, true);
+    document.removeEventListener("pointercancel", settle, true);
+  };
+  document.addEventListener("pointerup", settle, true);
+  document.addEventListener("pointercancel", settle, true);
+  return () => {
+    stop();
+    clearTimeout(timer);
+  };
 }
 
 const picker = definePrimitive({
@@ -50,6 +58,7 @@ const picker = definePrimitive({
   }),
   sync: (options) => ({ current: options.current ?? null }),
   api: (context) => {
+    let cancelRefocus = () => {};
     const popup = createPopup(context, {
       preset: LISTBOX_POPOVER,
       rules: (core) => ({
@@ -57,7 +66,7 @@ const picker = definePrimitive({
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
-          refocusAfterClick(core.triggerElement());
+          cancelRefocus = refocusAfterPress(core.triggerElement());
         },
       }),
     });
@@ -66,12 +75,14 @@ const picker = definePrimitive({
       items: () => context.options().items ?? [],
     });
     let wasOpen = context.store.get().open;
+    context.onDestroy(() => cancelRefocus());
     context.onDestroy(
       context.store.subscribe(() => {
         const { open, current } = context.store.get();
         if (open === wasOpen) return;
         wasOpen = open;
         if (!open) return;
+        cancelRefocus();
         if (context.options().items?.some((item) => item.value === current)) listbox.highlight(current);
         else listbox.move("first");
       }),

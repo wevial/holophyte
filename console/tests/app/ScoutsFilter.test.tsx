@@ -283,3 +283,17 @@ test("a press on Search's input or its glyph while Kind is open closes it unchan
     expect(document.activeElement).toBe(picker("Kind"));
   }
 });
+
+test("after a right-click on Search closes Kind, Enter reopens it with the arrows still moving through its options", async () => {
+  await mount("#/scouts", scoutFetch(demo, writer));
+  await click(picker("Kind"));
+  await userEvent.pointer({ keys: "[MouseRight]", target: field() });
+  await settleAll();
+  expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
+  expect(document.activeElement).toBe(picker("Kind"));
+  await userEvent.keyboard("{Enter}");
+  await settleAll();
+  expect(screen.getByRole("listbox", { name: "Kind" })).toBeTruthy();
+  await key(document.activeElement!, "ArrowDown");
+  expect(document.activeElement!.textContent).toBe("Bug");
+});
