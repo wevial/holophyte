@@ -234,9 +234,17 @@ test("a refused or rejected message reads under the composer and keeps its text"
   expect(box.value).toBe("Does this hit recurring tasks too?");
 });
 
-test("with actions off the composer is disabled, and a failed scout with no thread has no Thread", async () => {
-  await mount(scoutFetch({ scout: done, actions: false }).fetch);
+test("actions turning off under a typed note disable the composer, and a failed scout with no thread has no Thread", async () => {
+  const daemon: Daemon = { scout: done, actions: true };
+  const queries = await mount(scoutFetch(daemon).fetch);
   const panel = within(region());
+  await type(panel.getByRole("textbox", { name: "Question for the scout" }), "Does this hit recurring tasks too?");
+  expect(send().disabled).toBe(false);
+  daemon.actions = false;
+  await act(async () => {
+    await queries.refetchQueries();
+  });
+  await settled();
   for (const name of ["Send", "Ask", "Steer"]) expect((panel.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
   expect((panel.getByRole("textbox", { name: "Question for the scout" }) as HTMLTextAreaElement).disabled).toBe(true);
   expect(send().title).toBe(ACTIONS_OFF);

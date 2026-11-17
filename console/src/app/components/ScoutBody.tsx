@@ -40,7 +40,7 @@ function Sentence({ text }: { text: string }) {
       </p>
       {(clipped || open) && (
         <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
-          className="mt-2 cursor-pointer border-0 bg-transparent p-0 font-sans text-[13px] font-medium text-ink-3 hover:text-ink">
+          className="mt-2 -ml-2.5 inline-flex h-7 cursor-pointer items-center rounded-[7px] border-0 bg-transparent px-2.5 font-sans text-[12.5px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
           {open ? "Less" : "More"}
         </button>
       )}
@@ -84,7 +84,7 @@ function AskFold({ ask }: { ask: string }) {
   return (
     <div className="mt-6">
       <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
-        className="group inline-flex items-center gap-1 leading-[1.7] cursor-pointer border-0 bg-transparent p-0 font-sans text-[13px] font-medium text-ink-3 hover:text-ink">
+        className="group -ml-2.5 inline-flex h-7 gap-1 cursor-pointer items-center rounded-[7px] border-0 bg-transparent px-2.5 font-sans text-[12.5px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
         <FoldChevron open={open} />
         Ask
       </button>

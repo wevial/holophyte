@@ -64,7 +64,7 @@ function StopBranch({ task, stop }: { task: ScoutTask; stop: RowStop }) {
   return (
     <button type="button" aria-label={STOP_BRANCH} title={stop.actions ? STOP_BRANCH : ACTIONS_OFF} disabled={!stop.actions || action.isPending}
       onClick={() => void press()}
-      className="inline-flex size-7 cursor-pointer items-center justify-center rounded-[6px] text-ink-3 transition-colors duration-150 hover:bg-bad-wash hover:text-bad disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-3 motion-reduce:transition-none">
+      className="inline-flex size-7 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-bad-wash hover:text-bad disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-2 motion-reduce:transition-none">
       <CloseGlyph />
     </button>
   );
@@ -202,7 +202,7 @@ export function ScoutActivity({ groups, now, stop }: { groups: ScoutGroup[]; now
   const rowStop = stop == null ? null : { ...stop, sent, onSent: (task: number) => setSent((was) => new Set(was).add(task)) };
   if (groups.length === 0) return null;
   return (
-    <ol aria-label="Scout activity" className="m-0 mt-3 list-none overflow-hidden rounded-[10px] bg-raised p-0 shadow-[inset_0_0_0_1px_var(--hair)]">
+    <ol aria-label="Scout activity" className="m-0 mt-3 list-none rounded-[10px] bg-raised p-0 shadow-[inset_0_0_0_1px_var(--hair)]">
       {groups.map((group) => {
         const open = chosen[group.key] ?? group.running;
         return (
