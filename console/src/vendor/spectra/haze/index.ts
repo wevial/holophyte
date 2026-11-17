@@ -69,11 +69,10 @@ export function mount(container: HTMLElement, opts: Partial<HazeConfig> = {}): H
   const config: HazeConfig = { ...DEFAULTS, ...opts };
 
   let resizeGlow = () => {};
-  let redraw = () => {};
   let drawn = '';
   const stage = createStage(container, {
     floatTargets: true,
-    onResize: () => { resizeGlow(); drawn = ''; redraw(); },
+    onResize: () => { resizeGlow(); drawn = ''; },
   });
   if (!stage) {
     container.classList.add('haze-fallback');
@@ -154,8 +153,6 @@ export function mount(container: HTMLElement, opts: Partial<HazeConfig> = {}): H
 
   // Draw the base right away so the canvas never flashes black before the first frame.
   frame(0, 0);
-  // A resized canvas is cleared and paints before the next animation frame, so it redraws now.
-  redraw = () => frame(0, 0);
   stage.start(frame);
 
   return {
