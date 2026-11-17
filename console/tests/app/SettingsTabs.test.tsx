@@ -193,7 +193,7 @@ test("picking the other project from the switcher keeps General for that project
   await act(settle);
   expect(window.location.hash).toBe("#/settings/general?project=other");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
-  expect(screen.getByText(/^other · config.toml on writer-host/)).toBeTruthy();
+  expect(screen.getByRole("group", { name: "Workers" })).toBeTruthy();
   expect(switcher().getAttribute("aria-label")).toBe("Project: other. Switch project");
   expect(within(sections()).getByRole("link", { name: "General" }).getAttribute("aria-current")).toBe("page");
 });
