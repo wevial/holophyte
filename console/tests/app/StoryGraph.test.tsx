@@ -57,6 +57,11 @@ const graphOf = (nodes: StoryNode[]) => (
     <StoryGraph nodes={nodes} project="demo" />
   </RouterContextProvider>
 );
+const ancestorsTo = (element: Element, top: Element): Element[] => {
+  const chain: Element[] = [];
+  for (let at = element.parentElement; at != null && at !== top.parentElement; at = at.parentElement) chain.push(at);
+  return chain;
+};
 const cardOf = (ticket: string) => document.querySelector(`${GRAPH} [data-node="${ticket}"]`)!;
 
 afterEach(() => {
@@ -89,20 +94,19 @@ test("a story that starts with one ticket says so beside Step 1", () => {
   expect(notes).toEqual(["starts the story", null]);
 });
 
-test("graph and narrow cards show whole reading titles while Step labels keep Archivo", () => {
+test("graph and narrow cards show a long title whole, unclamped and untruncated", () => {
   const title = "Requeue a run whose lease went silent, page the operator once, and keep the run's worktree, branch and review rounds intact for the retry";
   expect(title.length).toBeGreaterThan(120);
   render(graphOf([node("A", [], { title })]));
   const cards = Array.from(document.querySelectorAll('[data-node="A"]'));
   expect(cards.map((card) => (card.closest("[data-graph]") != null ? "graph" : card.closest("[data-step]") != null ? "steps" : "other"))).toEqual(["graph", "steps"]);
-  const narrowStep = document.querySelector('[data-step="1"]')!;
-  expect(narrowStep.querySelector("h3")!.classList).toContain("font-sans");
   for (const card of cards) {
     const shown = Array.from(card.querySelectorAll("span")).find((span) => span.textContent === title)!;
     expect(shown).toBeDefined();
-    expect(Array.from(shown.classList)).toEqual(expect.arrayContaining(["font-read", "text-[15px]", "leading-[1.35]"]));
-    expect(Array.from(shown.classList).filter((name) => name.startsWith("line-clamp") || name === "truncate")).toEqual([]);
-    expect(card.classList.contains("overflow-hidden")).toBe(false);
+    const clipping = [shown, ...ancestorsTo(shown, card)].flatMap((element) =>
+      Array.from(element.classList).filter((name) => name.startsWith("line-clamp") || name === "truncate" || name.startsWith("overflow-hidden") || name.startsWith("max-h") || name.startsWith("h-[")),
+    );
+    expect(clipping).toEqual([]);
   }
 });
 
@@ -159,7 +163,7 @@ test("the story page holds the graph's legend, its cards and its key line", asyn
   );
   for (let round = 0; round < 4; round += 1) await act(settle);
   const legend = screen.getByRole("list", { name: "Card states" });
-  expect(legend.querySelectorAll('[role="listitem"]').length).toBe(7);
+  expect(Array.from(legend.querySelectorAll('[role="listitem"]'), (item) => item.textContent)).toEqual(["merged", "in progress", "to do", "backlog", "waiting", "needs you", "failed"]);
   expect(Array.from(document.querySelectorAll(`${GRAPH} [data-node]`), (card) => card.getAttribute("data-node"))).toEqual(["KO-12", "KO-13"]);
   expect(document.querySelector("[data-graph-key]")?.textContent).toContain("the ticket at the arrow waits on the one it comes from");
 });

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
 import { runPage } from "../run";
@@ -16,33 +16,42 @@ function markOf(node: StoryNode): CardMark | undefined {
   return WAIT_STATES.has(node.state) ? "wait" : undefined;
 }
 
-const TITLE: Record<CardLook, string> = { merged: "font-medium text-ink-2", live: "font-semibold text-ink", todo: "font-semibold text-ink", backlog: "font-medium text-ink-3" };
+const TITLE: Record<CardLook, string> = { merged: "text-ink-2", live: "text-ink", todo: "text-ink", backlog: "text-ink-3" };
 const QUIET_WORD: Partial<Record<CardLook, string>> = { merged: "text-ink-3", backlog: "text-ink-3" };
 
 const LEGEND: { look: CardLook; mark?: CardMark; icon?: State; words: string }[] = [
-  { look: "merged", icon: "merged", words: "merged · green-tinted card, solid dot" },
-  { look: "live", icon: "running", words: "in progress · ringed green dot and its stage" },
-  { look: "todo", icon: "todo", words: "to do or waiting · full card, hollow ring" },
-  { look: "backlog", icon: "backlog", words: "backlog · no surface, dashed, faded" },
-  { look: "todo", mark: "wait", words: "queued, on CI, held or parked" },
+  { look: "merged", icon: "merged", words: "merged" },
+  { look: "live", icon: "running", words: "in progress" },
+  { look: "todo", icon: "todo", words: "to do" },
+  { look: "backlog", icon: "backlog", words: "backlog" },
+  { look: "todo", mark: "wait", words: "waiting" },
   { look: "todo", mark: "need", words: "needs you" },
   { look: "todo", mark: "fail", words: "failed" },
 ];
 
+const OUTLINED: Partial<Record<State, ReactNode>> = {
+  merged: (
+    <>
+      <circle cx="8" cy="8" r="6.5" />
+      <path d="M5 8.3 7.1 10.4 11 6.2" />
+    </>
+  ),
+};
+
 function Icon({ state }: { state: State }) {
   return (
     <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`size-3.5 shrink-0 ${TONE_TEXT[STATES[state].tone]}`}>
-      {STATE_ICONS[state]}
+      {OUTLINED[state] ?? STATE_ICONS[state]}
     </svg>
   );
 }
 
 function Legend() {
   return (
-    <div role="list" aria-label="Card states" className="mb-3.5 flex flex-wrap gap-x-[18px] gap-y-2 font-mono text-[12px] leading-[1.4] text-ink-2">
+    <div role="list" aria-label="Card states" className="mb-4 flex flex-wrap gap-x-[18px] gap-y-2 font-sans text-[12.5px] leading-[1.4] text-ink-2">
       {LEGEND.map((item) => (
-        <span role="listitem" key={item.words} className="inline-flex items-center gap-2">
-          <i aria-hidden="true" className={`box-border inline-block h-3.5 w-[22px] ${cardSurface(item.look, item.mark)}`} />
+        <span role="listitem" key={item.words} className="inline-flex items-center gap-1.5">
+          <i aria-hidden="true" className={`mr-0.5 box-border inline-block h-3.5 w-[22px] rounded-[4px] ${cardSurface(item.look, item.mark)}`} />
           {item.icon != null && <Icon state={item.icon} />}
           {item.words}
         </span>
@@ -57,20 +66,20 @@ function NodeCard({ node, project, className, after }: { node: StoryNode; projec
   const label = `${node.ticket} ${plainTitle(node.title)}, ${node.word}. ${waits}`;
   const body = (
     <Card look={look} mark={markOf(node)}>
-      <span className="flex items-center gap-2 font-mono text-[11px] font-medium leading-none text-ink-3 tabular-nums">
+      <span className="flex items-center gap-2 font-mono text-[12px] leading-none text-ink-3 tabular-nums">
         <span>{node.ticket}</span>
         {node.time_box_ms != null && (
-          <span data-time-box className="ml-auto inline-grid h-5 min-w-5 place-items-center px-1 text-ink-2 shadow-[inset_0_0_0_1px_var(--rule)]">
+          <span data-time-box className="ml-auto inline-flex h-5 items-center rounded-[5px] bg-selected px-[7px] text-[11.5px] text-ink-2">
             {formatAge(node.time_box_ms)}
           </span>
         )}
       </span>
-      <span className={`font-read text-[15px] leading-[1.35] [overflow-wrap:anywhere] ${TITLE[look]}`}><TitleText>{node.title}</TitleText></span>
-      <span data-state-line className="flex min-w-0 items-center gap-[7px] font-mono text-[11.5px] font-medium leading-[1.3]">
+      <span className={`font-sans text-[13.5px] font-medium leading-[1.35] [overflow-wrap:anywhere] ${TITLE[look]}`}><TitleText>{node.title}</TitleText></span>
+      <span data-state-line className="flex min-w-0 items-center gap-[5px] font-sans text-[12.5px] leading-[1.3]">
         <Icon state={node.state} />
         <span className={`truncate ${QUIET_WORD[look] ?? TONE_TEXT[STATES[node.state].tone]}`}>{node.word}</span>
       </span>
-      {after != null && <span data-after className="font-mono text-[11.5px] leading-[1.3] text-ink-3">{after}</span>}
+      {after != null && <span data-after className="font-sans text-[12px] leading-[1.3] text-ink-3">{after}</span>}
     </Card>
   );
   if (node.run == null) {
@@ -85,7 +94,7 @@ function NodeCard({ node, project, className, after }: { node: StoryNode; projec
       {...runPage(project, node.run)}
       aria-label={label}
       data-node={node.ticket}
-      className={`${className} no-underline transition-colors duration-(--motion-colour) hover:[&>article]:border-ink-3`}
+      className={`${className} no-underline hover:[&>article]:bg-hover`}
     >
       {body}
     </Link>
@@ -97,9 +106,9 @@ function Steps({ steps, project }: { steps: StoryNode[][]; project: string }) {
     <div className="story-steps flex flex-col gap-4">
       {steps.map((column, index) => (
         <section key={column[0]!.ticket} aria-label={`Step ${index + 1}`} data-step={index + 1}>
-          <h3 className="flex items-baseline gap-2.5 font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">
+          <h3 className="flex items-baseline gap-2.5 font-sans text-[13px] font-semibold leading-none text-ink">
             {`Step ${index + 1}`}
-            {column.length > 1 && <span className="font-normal normal-case tracking-normal">{column.length} can run side by side</span>}
+            {column.length > 1 && <span className="text-[12px] font-normal text-ink-3">{column.length} can run side by side</span>}
           </h3>
           <ul className="mt-2 flex flex-wrap gap-2.5">
             {column.map((node) => (
@@ -151,7 +160,7 @@ export function StoryGraph({ nodes, project }: { nodes: StoryNode[]; project: st
   }, []);
   const path = (edge: { from: string; to: string }) => arrowPath(boxes[edge.from] ?? NO_BOX, boxes[edge.to] ?? NO_BOX);
   return (
-    <section aria-label="Dependency graph" className="story-graph mt-5 border border-rule bg-paper px-[18px] pb-5 pt-[18px]">
+    <section aria-label="Dependency graph" className="story-graph mt-5">
       <div className="story-wide">
         <Legend />
       </div>
@@ -178,8 +187,8 @@ export function StoryGraph({ nodes, project }: { nodes: StoryNode[]; project: st
               {index > 0 && <div aria-hidden="true" data-band className="relative h-[52px] before:absolute before:inset-x-0 before:top-1/2 before:border-t before:border-dashed before:border-rule-2" />}
               <div role="group" aria-label={`Step ${index + 1}`} data-graph-step={index + 1} className="flex">
                 <div className="flex w-[128px] shrink-0 flex-col gap-1.5 pr-2 pt-2.5">
-                  <span className="font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em] text-ink-3">{`Step ${index + 1}`}</span>
-                  {note != null && <span data-step-note className="font-mono text-[11.5px] leading-[1.35] text-ink-3">{note}</span>}
+                  <span className="font-sans text-[13px] font-semibold leading-none text-ink">{`Step ${index + 1}`}</span>
+                  {note != null && <span data-step-note className="font-sans text-[12px] leading-[1.35] text-ink-3">{note}</span>}
                 </div>
                 <div data-step-cards className="flex min-w-0 flex-1 flex-wrap gap-x-14 gap-y-4">
                   {step.map((node) => (
@@ -192,7 +201,7 @@ export function StoryGraph({ nodes, project }: { nodes: StoryNode[]; project: st
         })}
       </div>
       <Steps steps={graph.steps} project={project} />
-      <p data-graph-key className="story-wide mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-2 font-mono text-[12px] leading-[1.4] text-ink-3">
+      <p data-graph-key className="story-wide mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-2 font-sans text-[12px] leading-[1.4] text-ink-3">
         <span className="inline-flex items-center gap-2">
           <svg width={34} height={10} viewBox="0 0 34 10" aria-hidden="true" fill="none" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="stroke-edge">
             <path d="M1 5h31M26 1l6 4-6 4" />
