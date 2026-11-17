@@ -5,7 +5,6 @@ import type { Findings, FindingsRun, FollowUpRow, Round, Status, TicketDefect } 
 import { formatStamp } from "../../src/lib/format";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
-import { dayRangeLabel } from "../../src/app/components/ListFilters";
 import { weekSince } from "../../src/app/queries";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -259,7 +258,7 @@ test("a custom range from 1 to 15 October asks since midnight 1 October until mi
   const since = new Date(2026, 9, 1).getTime();
   const until = new Date(2026, 9, 16).getTime();
   expect(asked).toContain(`${DEMO}/findings?since=${since}&limit=500&until=${until}`);
-  expect(screen.getByRole("button", { name: `Remove Range: ${dayRangeLabel("2026-10-01", "2026-10-15")}` })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Remove Range: Oct 1 – Oct 15" })).toBeTruthy();
 });
 
 const customRange = () => screen.getByRole("button", { name: "Custom range" });

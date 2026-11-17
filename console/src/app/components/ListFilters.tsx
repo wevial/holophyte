@@ -391,6 +391,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
   const { open, setOpen, box, button } = usePopover(hidden);
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
+  const side = sorting != null || extra != null;
   return (
     <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
       {icon ? (
@@ -414,15 +415,17 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       )}
       {open && icon && (
         <div role="dialog" aria-label={label}
-          className="absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] grid-cols-3 gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
-          <div>
-            {sorting && <MenuSorting sorting={sorting} />}
-            {extra}
-          </div>
+          className={`absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] ${side ? "w-[min(600px,calc(100vw-2rem))] grid-cols-3" : "w-[min(420px,calc(100vw-2rem))] grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card`}>
+          {side && (
+            <div>
+              {sorting && <MenuSorting sorting={sorting} />}
+              {extra}
+            </div>
+          )}
           <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
             {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
           </div>
-          <div className="col-span-3 mt-1.5 flex justify-end border-t border-hair pt-1.5">
+          <div className={`${side ? "col-span-3" : "col-span-2"} mt-1.5 flex justify-end border-t border-hair pt-1.5`}>
             <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
               className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
               Clear

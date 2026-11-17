@@ -138,27 +138,39 @@ test("open rows read worst first, then the higher round first even when it ended
   expect(group("Open").querySelector("[data-project]")).toBeNull();
 });
 
-test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each unfolds to its text, place, fate, run link and one action", async () => {
-  const nit = runOf(12, "DEMO-12", [round(1, [finding("Trailing space in the log", "p3")])]);
-  await mount("#/findings", fleet({ runs: [nit, demo11, writer3] }));
+test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each unfolds to its own text, place, fate, run link and one action", async () => {
+  const own = (id: number, title: string, severity: string, detail: string, facts: Partial<FindingsRun> = {}) =>
+    runOf(id, `DEMO-${id}`, [round(1, [finding(title, severity, { message: `**${title}** ${detail}` })])], facts);
+  const runs = [
+    own(23, "Trailing space in the log", "p3", "The log line ends in a space."),
+    own(22, "Flag is ignored", "p2", "The flag never reaches the parser.", { phase: "failed", outcome: "failed" }),
+    own(21, "Retry loops forever", "p1", "The retry has no ceiling."),
+  ];
+  await mount("#/findings", fleet({ runs }));
   const rows = unfoldAll("Open");
   expect(rows.map((row) => row.querySelector("[data-severity]")!.textContent)).toEqual(["P1", "P2", "P3"]);
   const bodies = rows.map((row) => document.getElementById(toggle(row).getAttribute("aria-controls")!)!);
+  expect(bodies.map((body) => body.querySelector("[data-text]")!.textContent)).toEqual([
+    "The retry has no ceiling.",
+    "The flag never reaches the parser.",
+    "The log line ends in a space.",
+  ]);
   expect(bodies.map((body) => body.querySelector("[data-place]")!.textContent)).toEqual([
-    "holophyte/retry_loops_forever.py:3 · WRITER-3 · round 2",
-    "holophyte/flag_is_ignored.py:3 · DEMO-11 · round 1",
-    "holophyte/trailing_space_in_the_log.py:3 · DEMO-12 · round 1",
+    "holophyte/retry_loops_forever.py:3 · DEMO-21 · round 1",
+    "holophyte/flag_is_ignored.py:3 · DEMO-22 · round 1",
+    "holophyte/trailing_space_in_the_log.py:3 · DEMO-23 · round 1",
   ]);
   expect(rows.map((row) => fateOf(row).textContent)).toEqual([
     "open · the ticket has no run, so nobody is fixing it",
     "open · the run failed, so nobody is fixing it",
     "open · the ticket has no run, so nobody is fixing it",
   ]);
-  for (const body of bodies) {
-    expect(body.querySelector("[data-text]")!.textContent).toBe("The detail of it.");
-    expect(within(body).getByRole("link", { name: "Open run" })).toBeTruthy();
-    expect(within(body).getAllByRole("button", { name: /^(Steer into next run|File ticket)$/ })).toHaveLength(1);
-  }
+  expect(bodies.map((body) => within(body).getByRole("link", { name: "Open run" }).getAttribute("href")!.split("#")[1])).toEqual([
+    "/runs/demo/21",
+    "/runs/demo/22",
+    "/runs/demo/23",
+  ]);
+  for (const body of bodies) expect(within(body).getAllByRole("button", { name: /^(Steer into next run|File ticket)$/ })).toHaveLength(1);
 });
 
 test("a row folds open from its tag, title and path to its place", async () => {
