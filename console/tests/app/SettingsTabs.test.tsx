@@ -34,7 +34,7 @@ async function mount(tab: string, values: ConfigValues, options: { status?: Part
 }
 
 const row = (name: string) => within(screen.getByRole("group", { name }));
-const reviewButton = () => screen.getByRole("button", { name: "Review and save" }) as HTMLButtonElement;
+const reviewButton = () => within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }) as HTMLButtonElement;
 async function save() {
   fireEvent.click(reviewButton());
   fireEvent.click(within(screen.getByRole("dialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));

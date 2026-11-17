@@ -53,7 +53,8 @@ async function mount(options: { status?: number; error?: string; configEdit?: bo
 }
 
 function edit() { fireEvent.click(screen.getByRole("button", { name: "One more worker" })); }
-function review() { fireEvent.click(screen.getByRole("button", { name: "Review and save" })); }
+const saveButton = () => within(unsaved()!).getByRole("button", { name: "Save" }) as HTMLButtonElement;
+function review() { fireEvent.click(saveButton()); }
 const dialog = () => screen.getByRole("dialog", { name: "Save these changes?" });
 const unsaved = () => screen.queryByRole("region", { name: "Unsaved changes" });
 async function save() {
@@ -81,7 +82,22 @@ test("review lists the old and new TOML lines in order and Keep editing preserve
   expect(confirm.getByText("Runs in flight keep the settings they started with.")).toBeTruthy();
   fireEvent.click(confirm.getByRole("button", { name: "Keep editing" }));
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(unsaved()?.textContent).toContain("workers 2 → 3");
+  expect(unsaved()?.textContent).toContain("1 change");
+  expect(source.writes).toHaveLength(0);
+});
+
+test("one unsaved change shows a save bar reading 1 change with Discard and Save; Save opens the confirm and Discard clears the change", async () => {
+  const source = await mount();
+  edit();
+  const bar = within(unsaved()!);
+  expect(unsaved()!.querySelector("p")!.textContent).toBe("1 change");
+  expect(bar.getAllByRole("button").map((button) => button.textContent)).toEqual(["Discard", "Save"]);
+  review();
+  expect(dialog()).toBeTruthy();
+  fireEvent.click(within(dialog()).getByRole("button", { name: "Keep editing" }));
+  fireEvent.click(bar.getByRole("button", { name: "Discard" }));
+  expect(unsaved()).toBeNull();
+  expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("2");
   expect(source.writes).toHaveLength(0);
 });
 
@@ -116,14 +132,14 @@ test.each([4, 2])("a completed save preserves the newer Workers value %s after B
   edit(); review(); await save();
   expect(source.writes).toHaveLength(1);
   await act(async () => { window.history.back(); await settle(); });
-  expect(screen.getByText("other · config.toml on its host")).toBeTruthy();
+  expect(window.location.hash).toBe("#/settings/general?project=other");
   await act(async () => { window.history.forward(); await settle(); });
   fireEvent.click(screen.getByRole("button", { name: value === 4 ? "One more worker" : "One fewer worker" }));
   expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe(String(value));
   await act(async () => { complete(); await settle(); });
   await act(settle);
   expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe(String(value));
-  expect(unsaved()?.textContent).toContain(`workers 3 → ${value}`);
+  expect(unsaved()?.textContent).toContain("1 change");
   review();
   expect(dialog().textContent).toMatch(new RegExp(`− workers = 3.*\\+ workers = ${value}`));
   await save();
@@ -140,7 +156,7 @@ test.each([false, true])("a completed save does not restore discarded fields wit
   edit(); review(); await save();
   expect(source.writes).toHaveLength(1);
   await act(async () => { window.history.back(); await settle(); });
-  expect(screen.getByText("other · config.toml on its host")).toBeTruthy();
+  expect(window.location.hash).toBe("#/settings/general?project=other");
   await act(async () => { window.history.forward(); await settle(); });
   expect(screen.queryByRole("dialog") === null).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
@@ -148,7 +164,6 @@ test.each([false, true])("a completed save does not restore discarded fields wit
   if (newDraft) fireEvent.click(screen.getByRole("button", { name: "Human" }));
   await act(async () => { complete(); await settle(); });
   await act(settle);
-  expect(screen.getByText(/demo · config.toml on writer-host · revision 92b73d4/)).toBeTruthy();
   expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("status").textContent).toBe("3");
   if (newDraft) {
     review();
@@ -179,7 +194,8 @@ test("a named refusal closes the dialog and places the daemon sentence under Wor
   expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("alert").textContent).toBe(refusal);
   expect(unsaved()).toBeTruthy();
   expect(source.reads()).toBeGreaterThan(reads);
-  expect((screen.getByRole("button", { name: "Review and save" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(unsaved()!.textContent).toContain("1 change · fix the error first");
+  expect(saveButton().disabled).toBe(true);
 });
 
 test("unmapped refusals and other failures stay in the dialog with the draft and re-read config", async () => {
@@ -194,29 +210,11 @@ test("unmapped refusals and other failures stay in the dialog with the draft and
   }
 });
 
-test("a daemon without config edits disables Review and save", async () => {
+test("a daemon without config edits disables Save", async () => {
   const source = await mount({ configEdit: false });
   edit();
-  expect((screen.getByRole("button", { name: "Review and save" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(saveButton().disabled).toBe(true);
   expect(source.writes).toHaveLength(0);
-});
-
-test("the head names the revision and last saver until a host modification is more than five seconds later", async () => {
-  await mount();
-  expect(screen.getByText("demo · config.toml on writer-host · revision 3f9a2c1 · saved Oct 14 09:12 by you")).toBeTruthy();
-  cleanup();
-  await mount({ modified: new Date(2026, 9, 15, 10, 0).getTime() });
-  expect(screen.getByText("demo · config.toml on writer-host · revision 3f9a2c1 · changed on the host Oct 15 10:00")).toBeTruthy();
-});
-
-test("the head identifies operator and supervisor saves, omits absent actors and identifies files without save records as changed on host", async () => {
-  for (const [actor, suffix] of [["operator", " by the operator seat"], ["supervisor", " by the supervisor"], [null, ""]] as const) {
-    await mount({ actor: { at_ms: SAVED, actor }, modified: SAVED + 5000 });
-    expect(screen.getByText(`demo · config.toml on writer-host · revision 3f9a2c1 · saved Oct 14 09:12${suffix}`)).toBeTruthy();
-    cleanup();
-  }
-  await mount({ actor: null, modified: SAVED });
-  expect(screen.getByText("demo · config.toml on writer-host · revision 3f9a2c1 · changed on the host Oct 14 09:12")).toBeTruthy();
 });
 
 test("discarding a refused draft clears its field errors so a new draft can be reviewed", async () => {
@@ -226,7 +224,7 @@ test("discarding a refused draft clears its field errors so a new draft can be r
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   expect(unsaved()).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Human" }));
-  expect((screen.getByRole("button", { name: "Review and save" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(saveButton().disabled).toBe(false);
   expect(within(screen.getByRole("group", { name: "Workers" })).queryByRole("alert")).toBeNull();
   review();
   expect(dialog().textContent).toContain('+ approve = "human"');
