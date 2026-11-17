@@ -345,6 +345,25 @@ test("the Checker's UI change message focuses the UI change picker button, which
   expect(document.activeElement).toBe(button);
 });
 
+test("with UI change open, the Checker's Summary message closes it and leaves focus on Summary", async () => {
+  const base = fleet();
+  const fake = await mount("#/tickets/demo/new", async (url, init) =>
+    url === `${DEMO}/tickets/check` ? Response.json({ problems: ["'Summary' is empty"], advisories: [], blocks: true }) : base(url, init));
+  await type("Title", "Steer notes show on the run detail card");
+  for (const entry of fake.scheduled.filter(each => each.ms === 600)) await act(async () => entry.fn());
+  await flush();
+  await open("UI change");
+  const jump = within(screen.getByRole("region", { name: "Checker" })).getByRole("button", { name: /Summary/ });
+  await act(async () => {
+    fireEvent.pointerDown(jump);
+    fireEvent.pointerUp(jump);
+    fireEvent.click(jump);
+  });
+  await act(settle);
+  expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Summary" }));
+});
+
 test("Blast radius offers Diff decides, Medium and High: Diff decides files no blast_radius and High files it after ui_change", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));

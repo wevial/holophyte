@@ -425,7 +425,15 @@ test("a header UI change outside the choices shows as itself and None replaces i
   const body = HEADER_BODY.replace('ui_change = "minor"', 'ui_change = "big"');
   const saved = await saveHeaderEdit(async () => {
     expect(picker("UI change").textContent).toBe("big · not a choice");
-    await choose("UI change", "None");
+    await act(async () => void fireEvent.click(picker("UI change")));
+    await flush();
+    const outside = within(screen.getByRole("listbox", { name: "UI change" })).getByRole("option", { name: "big · not a choice" });
+    expect(outside.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => void fireEvent.click(outside));
+    await flush();
+    expect(screen.getByRole("listbox", { name: "UI change" })).toBeTruthy();
+    await act(async () => void fireEvent.click(within(screen.getByRole("listbox", { name: "UI change" })).getByRole("option", { name: "None" })));
+    await flush();
     expect(picker("UI change").textContent).toBe("None");
   }, body);
   expect(saved).toBe(body.replace('ui_change = "big"', 'ui_change = "none"'));

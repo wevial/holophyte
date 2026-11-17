@@ -10,7 +10,8 @@ import { Segmented } from "./Segmented";
 import { TONE_TEXT } from "./StateDot";
 import type { Tone } from "../state";
 
-export const INPUT = "field mt-2 w-full min-w-0";
+const FOCUS_RING = "focus-visible:!shadow-[0_0_0_2px_var(--wait)] aria-[invalid=true]:focus-visible:!shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)]";
+export const INPUT = `field mt-2 w-full min-w-0 ${FOCUS_RING}`;
 const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
 const ICON_BUTTON = "grid size-7 shrink-0 cursor-pointer place-items-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent motion-reduce:transition-none";
 type Message = { text: string; error: boolean; field: string };
@@ -143,7 +144,7 @@ export function CriteriaField({ criteria, onChange, marks, changed = () => false
         <input id={`criterion-${index}`} {...marks.marks([`AC${index + 1}`, "Acceptance criteria"], `${INPUT} !mt-0 flex-1 basis-[160px]`)} value={criterion} onChange={event => change(rows, criteria.map((value, at) => at === index ? event.target.value : value))} />
         <RowButtons name={`AC${index + 1}`} index={index} count={criteria.length} onMove={delta => move(index, delta)} onRemove={() => change(rows.filter((_, at) => at !== index))} />
         {details[index] != null && <div data-changed={detailChanged(index) || undefined} className="flex basis-full items-start gap-1.5 pl-[18px]">
-          <span className="mt-3 w-4 shrink-0"><ChangedDot changed={detailChanged(index)} /></span>
+          <span className="mt-3 flex w-4 shrink-0"><ChangedDot changed={detailChanged(index)} /></span>
           <textarea aria-label={`AC${index + 1} detail`} rows={2} className={`${INPUT} !mt-0 flex-1 resize-y font-mono text-[13px]`} value={details[index]!} onChange={event => onDetail?.(index, event.target.value)} />
         </div>}
         <div className="basis-full empty:hidden"><Messages id={messagesId(`AC${index + 1}`)} messages={marks.messagesOf(`AC${index + 1}`)} /></div>
@@ -164,7 +165,7 @@ const OUTSIDE = "\u0000outside";
 function Choice<T extends string | null>({ label, options, value, onChange, marks, changed, hint, optional }: {
   label: string; options: [T, string][]; value: T; onChange: (value: T) => void; marks: Marks; changed: boolean; hint?: string; optional?: boolean;
 }) {
-  const outside = options.some(([option]) => option === value) ? [] : [{ value: OUTSIDE, label: `${value} · not a choice` }];
+  const outside = options.some(([option]) => option === value) ? [] : [{ value: OUTSIDE, label: `${value} · not a choice`, disabled: true }];
   const { className: _, ...aria } = marks.marks(label, "");
   return <Field label={label} optional={optional} hint={hint} messages={marks.messagesOf(label)} changed={changed}>
     <div className="mt-2">
@@ -206,10 +207,10 @@ export function EvidenceField({ evidence, onChange, marks, changed = () => false
         const name = `E${index + 1}`;
         return <div key={index} data-changed={changed(index) || undefined} className="flex flex-wrap items-end gap-2 border-b border-hair py-2.5">
           <span className="flex h-8 w-10 shrink-0 items-center gap-1.5"><ChangedDot changed={changed(index)} /><span className="font-mono text-[11.5px] text-ink-3">{name}</span></span>
-          <label className="min-w-0 flex-1 basis-[150px] font-sans text-[12.5px] text-ink-3">File
+          <label className="min-w-0 flex-1 basis-[150px] font-sans text-[13px] font-semibold text-ink">File
             <input id={`evidence-file-${index}`} aria-label={`${name} File`} placeholder={`${position(index)}-slug.png`} {...marks.marks([`${name} File`, name], `${INPUT} !mt-1 font-mono`)} value={row.file} onChange={event => edit(index, { file: event.target.value })} />
           </label>
-          <label className="min-w-0 flex-[2] basis-[200px] font-sans text-[12.5px] text-ink-3">State
+          <label className="min-w-0 flex-[2] basis-[200px] font-sans text-[13px] font-semibold text-ink">State
             <input id={`evidence-state-${index}`} aria-label={`${name} State`} placeholder="the page and state it shows" {...marks.marks([`${name} State`, name], `${INPUT} !mt-1 font-sans`)} value={row.state} onChange={event => edit(index, { state: event.target.value })} />
           </label>
           <span className="flex h-8 items-center"><RowButtons name={name} index={index} count={evidence.length} onMove={delta => move(index, delta)} onRemove={() => onChange(renumbered(evidence.filter((_, at) => at !== index)))} /></span>
@@ -232,7 +233,7 @@ export function EstimateField({ draft, onDraft, estimate, marks, changed = false
   };
   return <div data-changed={changed || undefined}>
     <FieldHead label="Estimate" htmlFor="estimate" aside="Minutes" changed={changed} />
-    <div className="mt-2 inline-flex items-center rounded-full bg-selected p-0.5 has-[[aria-invalid=true]]:shadow-[inset_0_0_0_1px_var(--bad)] has-[input:focus-visible]:shadow-[0_0_0_2px_var(--focus)]">
+    <div className="mt-2 inline-flex items-center rounded-full bg-selected p-0.5 has-[[aria-invalid=true]]:shadow-[inset_0_0_0_1px_var(--bad)] has-[input:focus-visible]:shadow-[0_0_0_2px_var(--wait)] has-[[aria-invalid=true]:focus-visible]:shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)] forced-colors:has-[input:focus-visible]:outline-2 forced-colors:has-[input:focus-visible]:outline-offset-2 forced-colors:has-[input:focus-visible]:outline-[Highlight]">
       <button type="button" className={`${ICON_BUTTON} rounded-full`} aria-label="Decrease estimate" disabled={estimate <= 5} onClick={() => change(estimate - 5)}><RowIcon d={MINUS} /></button>
       <input id="estimate" aria-label="Estimate" type="number" min={5} max={120} step={5} value={draft} onChange={event => onDraft(event.target.value)} onBlur={() => change(estimate)} {...marks.marks("Estimate", "h-7 w-12 border-0 bg-transparent text-center font-mono text-[13px] tabular-nums text-ink outline-none! [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none")} />
       <button type="button" className={`${ICON_BUTTON} rounded-full`} aria-label="Increase estimate" disabled={estimate >= 120} onClick={() => change(estimate + 5)}><RowIcon d={PLUS} /></button>

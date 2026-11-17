@@ -11,6 +11,7 @@ const MENU_WIDTH = 220;
 export interface PickerOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 type PickerOptions = {
@@ -66,7 +67,7 @@ const picker = definePrimitive({
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
-          cancelRefocus = refocusAfterPress(core.triggerElement());
+          if (event?.target instanceof Element && event.target.closest("label")) cancelRefocus = refocusAfterPress(core.triggerElement());
         },
       }),
     });
@@ -88,7 +89,7 @@ const picker = definePrimitive({
       }),
     );
     const choose = (key: string | null, event?: Event) => {
-      if (key == null) return;
+      if (key == null || context.options().items?.find((item) => item.value === key)?.disabled) return;
       popup.close({ reason: "item-press", event });
       context.options().onChoose?.(key);
     };
@@ -173,7 +174,7 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
     "root",
     {},
     {
-      className: "inline-flex",
+      className: "inline-flex max-w-full min-w-0",
       children: (
         <>
           <span id={labelId} hidden>
@@ -190,10 +191,10 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className="inline-flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
+            className="inline-flex h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
           >
-            {current?.label}
-            <span className="flex text-ink-3">
+            <span className="min-w-0 truncate">{current?.label}</span>
+            <span className="flex shrink-0 text-ink-3">
               <DropIcon />
             </span>
           </Trigger>
@@ -217,7 +218,8 @@ export function Picker({ id, label, options, value, onPick, "aria-invalid": inva
                 <Option
                   key={option.value}
                   value={option.value}
-                  className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 text-[13px] leading-none text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink"
+                  aria-disabled={option.disabled || undefined}
+                  className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 text-[13px] leading-none text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
                 >
                   <span className="min-w-0 flex-1 truncate">{option.label}</span>
                   <span className={`flex text-accent ${option.value === current?.value ? "" : "invisible"}`}>
