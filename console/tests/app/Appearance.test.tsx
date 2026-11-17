@@ -226,8 +226,7 @@ test("Density is a group of Comfortable and Compact; Compact presses and Reset d
   const density = screen.getByRole("group", { name: "Density" });
   expect(within(density).getAllByRole("button").map((button) => button.textContent)).toEqual(["Comfortable", "Compact"]);
   expect(pressed("Density")).toEqual(["Comfortable"]);
-  expect(density.getAttribute("aria-describedby")).toBe("appearance-density-help");
-  expect(document.getElementById("appearance-density-help")!.textContent).toMatch(/^Compact tightens rows/);
+  expect(screen.getByRole("group", { name: "Density", description: /^Compact tightens rows on Overview, Runs and Tickets/ })).toBe(density);
   fireEvent.click(within(density).getByRole("button", { name: "Compact" }));
   expect(pressed("Density")).toEqual(["Compact"]);
   fireEvent.click(screen.getByRole("button", { name: "Reset density" }));
@@ -285,11 +284,16 @@ test("blocked browser storage still applies reading font and shared theme choice
   }
 });
 
-test("font attributes select the promised reading stacks", async () => {
+test("font attributes select the promised reading stacks, and each font card's sample takes its font's stack", async () => {
   const css = declarations(await Bun.file(new URL("../../src/app/theme.css", import.meta.url)).text());
   const font = (selector: string) => css.find((entry) => entry.path.length === 1 && entry.path[0] === selector && entry.name === "--font-read")?.value;
   expect(font(':root[data-font="serif"]')).toBe('"IBM Plex Serif", Georgia, serif');
   expect(font(':root[data-font="hyperlegible"]')).toBe('"Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif');
+  const readerStack = (value: string) => font(value === "sans" ? "@theme" : `:root[data-font="${value}"]`);
+  for (const value of ["sans", "serif", "hyperlegible"]) expect(font(`[data-font-sample="${value}"]`)).toBe(readerStack(value)!);
+  await mount();
+  const samples = within(screen.getByRole("radiogroup", { name: "Reading font" })).getAllByText("The sweep frees a silent lease.");
+  expect(samples.map((sample) => [sample.getAttribute("data-font-sample"), sample.classList.contains("font-read")])).toEqual([["sans", true], ["serif", true], ["hyperlegible", true]]);
 });
 
 const editor = () => within(screen.getByRole("region", { name: "Theme editor" }));

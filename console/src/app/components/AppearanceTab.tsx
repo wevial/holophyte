@@ -31,10 +31,10 @@ const DENSITIES = [
 
 const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 
-const FONTS: { value: ReadingFont; name: string; line: string; face: string }[] = [
-  { value: "sans", name: "Plex Sans", line: "default", face: '"IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif' },
-  { value: "serif", name: "Plex Serif", line: "for long reads", face: '"IBM Plex Serif", Georgia, serif' },
-  { value: "hyperlegible", name: "Hyperlegible", line: "clearest letterforms", face: '"Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif' },
+const FONTS: { value: ReadingFont; name: string; line: string }[] = [
+  { value: "sans", name: "Plex Sans", line: "default" },
+  { value: "serif", name: "Plex Serif", line: "for long reads" },
+  { value: "hyperlegible", name: "Hyperlegible", line: "clearest letterforms" },
 ];
 
 function Glyph({ children }: { children: ReactNode }) {
@@ -186,7 +186,7 @@ function FontRow() {
                 className="grid size-4 shrink-0 cursor-pointer appearance-none place-items-center rounded-full shadow-[inset_0_0_0_1.5px_var(--hair-2)] before:size-2 before:rounded-full before:content-[''] checked:bg-accent checked:shadow-none checked:before:bg-raised forced-colors:appearance-auto" />
               {item.name}
             </span>
-            <p className="mt-2 text-[15px]" style={{ fontFamily: item.face }}>The sweep frees a silent lease.</p>
+            <p data-font-sample={item.value} className="mt-2 font-read text-[15px]">The sweep frees a silent lease.</p>
             <p className="mt-3 font-sans text-[12.5px] text-ink-3">{item.line}</p>
           </label>
         ))}
