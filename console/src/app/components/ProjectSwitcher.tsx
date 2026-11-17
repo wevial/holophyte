@@ -329,7 +329,10 @@ export function ProjectSwitcher({ rows, colours, folded }: { rows: SwitcherRow[]
                       className="flex h-8 shrink-0 cursor-pointer items-center gap-[9px] rounded-[6px] px-2 text-[13px] font-medium text-ink-2 [--dot-ring:var(--raised)] aria-selected:text-ink data-[active=true]:bg-hover data-[active=true]:text-ink data-[active=true]:[--dot-ring:var(--hover)]"
                     >
                       <ScopeDots dots={dotsOf(row)} />
-                      <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {row.label}
+                        {row.down && <span className="sr-only"> not answering</span>}
+                      </span>
                       {row.held && <span className="text-[11.5px] text-ask-ink">held</span>}
                       {key === rowKey(current) ? <CheckIcon /> : <span className="size-3.5 shrink-0" />}
                     </Option>

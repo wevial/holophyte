@@ -323,7 +323,7 @@ test("each option shows its project's colour dot and name with no icon or count,
   expect(options().map((option) => option.querySelectorAll("svg:not([data-check])").length)).toEqual([0, 0, 0]);
 });
 
-test("a held project shows held and a project whose host stopped answering draws its dot hollow, neither with a count", async () => {
+test("a held project shows held and a project whose host stopped answering draws its dot hollow and is named not answering, neither with a count", async () => {
   const hosts: Record<string, StubDaemon> = {
     [ORIGIN]: { status: { ...statusOf("/srv/dev/demo", 1, "held"), colour: "violet" }, attention: attentionOf([one], "/srv/dev/demo") },
     [PEER]: { status: { ...statusOf("/srv/dev/writer", 2, "enabled"), colour: "teal" }, attention: attentionOf([], "/srv/dev/writer") },
@@ -338,7 +338,8 @@ test("a held project shows held and a project whose host stopped answering draws
 
   fireEvent.click(switcher());
   await act(settle);
-  expect(optionNames()).toEqual(["All projects", "demoheld", "writer"]);
+  expect(optionNames()).toEqual(["All projects", "demoheld", "writer not answering"]);
+  expect(within(screen.getByRole("listbox", { name: "Projects" })).getByRole("option", { name: "writer not answering" })).toBe(options()[2]!);
   const drawn = (option: HTMLElement) => Array.from(option.querySelectorAll<HTMLElement>("[data-dot]"), (dot) => [dot.style.background, dot.style.boxShadow]);
   const [hollow] = drawn(options()[2]!);
   expect(hollow![0]).toBe("transparent");
