@@ -9,7 +9,7 @@ import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { ScoutThis } from "./ScoutThis";
 import { FactIcon, FoldChevron, FolderIcon } from "./icons";
-import { StateDot, TONE_TEXT } from "./StateDot";
+import { STATE_ICONS, TONE_TEXT } from "./StateDot";
 import { useToast } from "./Toast";
 import { TitleText } from "./TitleText";
 
@@ -22,6 +22,30 @@ const PILL: Record<Severity, { text: string; className: string }> = {
 export function SeverityPill({ severity }: { severity: Severity }) {
   const pill = PILL[severity];
   return <span data-pill className={`px-1.5 py-[3px] font-mono text-[11px] font-semibold leading-none ${pill.className}`}>{pill.text}</span>;
+}
+
+const TAG = "inline-flex h-5 items-center rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none";
+
+const TINT: Record<Severity, string> = {
+  must: "bg-bad-wash text-bad",
+  should: "bg-ask-wash text-ask-ink",
+  nit: "bg-selected text-ink-2",
+};
+
+function RowTag({ tag }: { tag: NonNullable<FindingRowView["tag"]> }) {
+  if (!tag.filled) return <span data-tag className="font-mono text-[12px] text-ink-3">{tag.text}</span>;
+  return <span data-tag className={`${TAG} ${TINT.nit}`}>{tag.text}</span>;
+}
+
+function FateWord({ fate, quiet }: { fate: RowFate; quiet: boolean }) {
+  return (
+    <span data-state={fate.state} className={`inline-flex shrink-0 items-center gap-[5px] font-sans text-[12.5px] ${TONE_TEXT[quiet ? "ink-3" : fate.tone]}`}>
+      <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0">
+        {STATE_ICONS[fate.state]}
+      </svg>
+      <span data-fate-word>{fate.word}</span>
+    </span>
+  );
 }
 
 const lastTwo = (path: string) => path.split("/").filter(Boolean).slice(-2).join("/");
@@ -93,27 +117,20 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
   const body = useId();
   const fate = done ?? row.fate;
   return (
-    <li data-finding-row className="border-b border-rule-2">
+    <li data-finding-row className="border-t border-hair first:border-t-0">
       <button
         type="button"
         aria-expanded={open}
         aria-controls={body}
         onClick={() => setOpen(!open)}
-        className="flex min-h-[52px] w-full flex-wrap items-center gap-x-3.5 gap-y-1.5 px-1 py-1.5 text-left transition-colors duration-(--motion-colour) hover:bg-paper-2"
+        className="my-0.5 flex min-h-10 w-full flex-wrap items-center gap-x-3 gap-y-1 rounded-[7px] px-2.5 py-1.5 text-left transition-colors duration-(--motion-colour) hover:bg-hover"
       >
         <span className="text-ink-3"><FoldChevron open={open} /></span>
-        <span className="flex w-24 shrink-0 gap-1">
-          {row.severity != null && <SeverityPill severity={row.severity} />}
-          {row.tag && (
-            <span
-              data-tag
-              className={`px-1.5 py-[3px] font-mono text-[11px] font-medium leading-none ${row.tag.filled ? "bg-tag text-tag-ink" : "text-ink-2 shadow-[inset_0_0_0_1px_var(--rule)]"}`}
-            >
-              {row.tag.text}
-            </span>
-          )}
+        <span className="flex w-24 shrink-0 items-center gap-1.5">
+          {row.severity != null && <span data-severity className={`${TAG} ${TINT[row.severity]}`}>{PILL[row.severity].text}</span>}
+          {row.tag && <RowTag tag={row.tag} />}
         </span>
-        <span data-title className="min-w-0 flex-[1_1_260px] font-read text-[15px] font-medium [overflow-wrap:anywhere] text-ink"><TitleText>{row.title}</TitleText></span>
+        <span data-title className="min-w-0 flex-[1_1_260px] font-sans text-[14px] font-medium [overflow-wrap:anywhere] text-ink"><TitleText>{row.title}</TitleText></span>
         {showProject && (
           <span data-project className="inline-flex items-center gap-1.5 font-mono text-[12px] text-ink-2">
             <FolderIcon />
@@ -121,21 +138,21 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
           </span>
         )}
         {row.path != null && <span data-path className="min-w-0 font-mono text-[12px] [overflow-wrap:anywhere] text-ink-3">{lastTwo(row.path)}</span>}
-        <StateDot state={fate.state} label={fate.word} hideWord tone={quiet ? "ink-3" : undefined} />
+        <FateWord fate={fate} quiet={quiet} />
       </button>
-      <div id={body} hidden={!open} className="pb-4 pl-[142px] pr-1 pt-0.5 max-[720px]:pl-1">
+      <div id={body} hidden={!open} className="pb-3.5 pl-[152px] pr-2.5 pt-0.5 max-[720px]:pl-2.5">
         {open && (
           <div className="flex flex-wrap items-end justify-between gap-x-5 gap-y-2.5">
-            <div className="min-w-0 font-read text-[14px] leading-[1.5] [overflow-wrap:anywhere]">
+            <div className="min-w-0 font-sans text-[13.5px] leading-[1.5] [overflow-wrap:anywhere]">
               {row.text !== "" && <p data-text className="whitespace-pre-line text-ink-2">{row.text}</p>}
               <p data-place className="mt-1 font-mono text-[12px] text-ink-3">{row.place}</p>
-              <p data-fate className={`mt-1 font-mono text-[12px] font-medium leading-[1.4] ${TONE_TEXT[fate.tone]}`}>
+              <p data-fate className={`mt-1 font-sans text-[12.5px] font-medium leading-[1.4] ${TONE_TEXT[fate.tone]}`}>
                 {done == null ? fate.line : <span className="stamp">{fate.line}</span>}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               {row.run != null && (
-                <Link {...runPage(row.project, row.run)} className="border-b border-rule pb-0.5 font-mono text-[12px] font-medium leading-[1.3] text-ink-2 no-underline hover:text-ink">
+                <Link {...runPage(row.project, row.run)} data-variant="quiet" className="btn h-7! rounded-[7px]! px-2.5! text-[12.5px]! no-underline">
                   Open run
                 </Link>
               )}
@@ -152,11 +169,11 @@ export function FindingRow({ row, showProject, quiet = false }: { row: FindingRo
 /** A review round that raised nothing, and who reviewed it. */
 export function CleanReviewLine({ ticket, round, reviewer }: { ticket: string; round: number; reviewer: string | null }) {
   return (
-    <li data-clean className="flex items-baseline gap-2 py-1.5">
+    <li data-clean className="flex items-baseline gap-2 px-2.5 py-1.5">
       <span className="self-center"><FactIcon ok /></span>
-      <p className="min-w-0 font-read text-[14px] text-ink-2 [overflow-wrap:anywhere]">
+      <p className="min-w-0 font-sans text-[13px] text-ink-2 [overflow-wrap:anywhere]">
         <span data-sentence>{`${ticket} passed round ${round} with no findings.`}</span>
-        {reviewer != null && <span data-reviewer className="ml-2 font-mono text-[12px] text-ink-3">reviewed by {reviewer}</span>}
+        {reviewer != null && <span data-reviewer className="ml-2 font-sans text-[12px] text-ink-3">reviewed by {reviewer}</span>}
       </p>
     </li>
   );

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -99,6 +99,7 @@ const toggle = (row: HTMLElement) => row.querySelector<HTMLButtonElement>("butto
 const titles = (label: string) => rowsOf(label).map((row) => row.querySelector("[data-title]")!.textContent);
 const fateOf = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-fate]")!;
 const iconOf = (row: HTMLElement) => toggle(row).querySelector<HTMLElement>("[data-state]")!;
+const fateWord = (row: HTMLElement) => toggle(row).querySelector("[data-fate-word]")!.textContent;
 
 function unfoldAll(label: string): HTMLElement[] {
   const rows = rowsOf(label);
@@ -125,13 +126,10 @@ const writer3 = runOf(3, "WRITER-3", [
 ]);
 const reviewing7 = [{ ...run(7, "DEMO-7"), phase: "reviewing", round: 1, max_rounds: 3, heartbeat_age_ms: 30_000 }];
 
-test("open rows read worst first, then the higher round first even when it ended earlier, each pill coloured by severity", async () => {
+test("open rows read worst first, then the higher round first even when it ended earlier", async () => {
   await mount("#/findings", fleet({ runs: [demo11, demo7, writer3], live: reviewing7 }));
   expect(titles("Open")).toEqual(["Retry loops forever", "Lease never expires", "Flag is ignored"]);
-  const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);
-  expect(pills.map((pill) => pill.textContent)).toEqual(["P1", "P1", "P2"]);
-  expect(pills[0]!.classList.contains("bg-p1")).toBe(true);
-  expect(pills[2]!.classList.contains("bg-p2")).toBe(true);
+  expect(rowsOf("Open").map((row) => row.querySelector("[data-severity]")!.textContent)).toEqual(["P1", "P1", "P2"]);
   cleanup();
 
   sessionStorage.setItem("holophyte.next.project", "demo");
@@ -140,20 +138,19 @@ test("open rows read worst first, then the higher round first even when it ended
   expect(group("Open").querySelector("[data-project]")).toBeNull();
 });
 
-test("each severity pill and a filled tag pair their fill with that fill's own ink", async () => {
+test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each unfolds to its text, place, fate, run link and one action", async () => {
   const nit = runOf(12, "DEMO-12", [round(1, [finding("Trailing space in the log", "p3")])]);
-  const tagged = followUp(1, "DEMO-7", "Guard the lease clock.", { run: 7, kind: "guardrail", state: "pending", created_ms: AT });
-  await mount("#/findings", fleet({ runs: [demo11, writer3, nit], live: reviewing7, followUps: [tagged] }));
-  const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);
-  expect(pills.map((pill) => [pill.textContent, [...pill.classList].filter((name) => /^(bg|text)-p\d/.test(name))])).toEqual([
-    ["P1", ["bg-p1", "text-p1-ink"]],
-    ["P2", ["bg-p2", "text-p2-ink"]],
-    ["P3", ["bg-p3", "text-p3-ink"]],
-  ]);
-  const tag = rowsOf("Follow-ups")[0]!.querySelector("[data-tag]")!;
-  expect(tag.textContent).toBe("guardrail");
-  expect(tag.classList.contains("bg-tag")).toBe(true);
-  expect(tag.classList.contains("text-tag-ink")).toBe(true);
+  await mount("#/findings", fleet({ runs: [nit, demo11, writer3] }));
+  const rows = unfoldAll("Open");
+  expect(rows.map((row) => row.querySelector("[data-severity]")!.textContent)).toEqual(["P1", "P2", "P3"]);
+  for (const row of rows) {
+    const body = document.getElementById(toggle(row).getAttribute("aria-controls")!)!;
+    expect(body.querySelector("[data-text]")!.textContent).toBe("The detail of it.");
+    expect(body.querySelector("[data-place]")!.textContent).not.toBe("");
+    expect(fateOf(row).textContent).not.toBe("");
+    expect(within(body).getByRole("link", { name: "Open run" })).toBeTruthy();
+    expect(within(body).getAllByRole("button", { name: /^(Steer into next run|File ticket)$/ })).toHaveLength(1);
+  }
 });
 
 test("a row folds open from its tag, title and path to its place", async () => {
@@ -175,7 +172,9 @@ test("a row folds open from its tag, title and path to its place", async () => {
 
 test("an open row's fate says who is fixing it, or why nobody is", async () => {
   await mount("#/findings", fleet({ runs: [demo7, demo11], live: reviewing7 }));
-  const [fixing, idle] = unfoldAll("Open");
+  const [fixing, idle] = rowsOf("Open");
+  expect([fateWord(fixing!), fateWord(idle!)]).toEqual(["being fixed", "open, nobody fixing it"]);
+  unfoldAll("Open");
   expect(fateOf(fixing!).textContent).toBe("being fixed · reviewing, round 2 of 3");
   expect(iconOf(fixing!).getAttribute("data-state")).toBe("running");
   expect(fateOf(idle!).textContent).toBe("open · the run failed, so nobody is fixing it");
