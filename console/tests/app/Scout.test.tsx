@@ -530,6 +530,39 @@ test("a done scout with items to file reads its title, meta line and lead, then 
   expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
 });
 
+test("the Scout document tablist opens on Decide with its count in its own element, and ArrowRight selects Write-up and focuses it", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
+  const list = screen.getByRole("tablist", { name: "Scout document" });
+  expect(within(list).getAllByRole("tab").map((tab) => tab.firstChild!.textContent).slice(0, 4)).toEqual(["Decide", "Write-up", "Findings", "Activity"]);
+  const decide = within(list).getByRole("tab", { selected: true });
+  expect([decide.firstChild!.textContent, decide.querySelector("[data-tab-count]")!.textContent]).toEqual(["Decide", "2"]);
+  await act(async () => void fireEvent.keyDown(decide, { key: "ArrowRight" }));
+  await settled();
+  const writeup = within(list).getByRole("tab", { name: "Write-up" });
+  expect([writeup.getAttribute("aria-selected"), document.activeElement === writeup]).toEqual(["true", true]);
+});
+
+test("the Progress heading reads live beside it while the scout runs, and the run's span once it is done", async () => {
+  const heading = () => within(screen.getByRole("region", { name: "Progress" })).getByRole("heading", { level: 2 });
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
+  expect(heading().textContent).toBe("Progresslive");
+  cleanup();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  await showActivity();
+  expect(heading().textContent).toBe("Progress33m 42s");
+});
+
+test("an open wave's helpers read their mode as a tag before route, time and tokens, and Stop this branch is an icon with no text", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live } }).fetch);
+  const rows = helpers(groupTitled("Wave"));
+  const order = (li: HTMLElement) => Array.from(li.querySelector("[data-task-meta]")!.querySelectorAll("[data-mode], [data-route], [data-took], [data-tokens]"),
+    (part) => part.getAttributeNames().find((name) => name.startsWith("data-")));
+  expect(rows.map(order)).toEqual(rows.map(() => ["data-mode", "data-route", "data-took", "data-tokens"]));
+  const stops = rows.map((li) => within(li).queryByRole("button", { name: "Stop this branch" }));
+  expect(stops.map((stop) => stop && [stop.textContent, stop.querySelector("svg") != null]))
+    .toEqual([null, null, null, null, null, ...Array.from({ length: 5 }, () => ["", true])]);
+});
+
 test("choosing Write-up, Findings then Activity shows the write-up, the findings then the activity groups below the same head and lead", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
   await click(screen.getByRole("tab", { name: "Write-up" }));
@@ -649,6 +682,7 @@ test("the chat drawer docks from 1440px with the scout list shown or hidden, and
   expect(layout().classList.contains(DOCKED)).toBe(false);
   expect(within(topBar()).queryByRole("button", { name: "Chat" })).toBeNull();
   const tab = screen.getByRole("tab", { name: "Chat · 2" });
+  expect(tab.querySelector("[data-tab-count]")!.textContent).toBe("2");
   expect(tab.classList.contains("min-[1440px]:hidden")).toBe(true);
   expect(tabs().map(([label]) => label)).toEqual(["Decide 2", "Write-up", "Findings 4", "Activity", "Chat · 2"]);
   await click(tab);

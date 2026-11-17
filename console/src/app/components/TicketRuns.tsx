@@ -60,9 +60,7 @@ export function TicketRuns({ project, ticketKey, runs, liveRuns, staleMs, now }:
   return (
     <section aria-labelledby="ticket-runs" className="mt-[26px]">
       <div id="ticket-runs" className={SECTION_LABEL}>
-        <span>
-          Runs <span className="text-ink">{runs.length}</span>
-        </span>
+        Runs <span className="font-mono text-[12px] font-normal text-ink-3">{runs.length}</span>
       </div>
       {newest.length === 0 ? (
         <p className="m-0 mt-3 font-mono text-[12.5px] leading-[1.4] text-ink-3">No run has claimed {ticketKey} yet.</p>

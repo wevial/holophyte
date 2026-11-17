@@ -534,6 +534,7 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today's log");
   expect(within(screen.getByRole("group", { name: "Preset" })).getAllByRole("button").map((button) => button.textContent)).toEqual(["Highlights", "Everything", "Manual"]);
   expect(pressed()).toEqual(["Highlights"]);
+  expect(screen.queryAllByText(/^Preset$/)).toEqual([]);
   const header = screen.getByRole("group", { name: "Preset" }).closest("header")!;
   expect(header.contains(screen.getByRole("heading", { level: 1, name: "Today's log" }))).toBe(true);
   expect(header.className).toEqual(expect.stringContaining("border-b border-rule"));
@@ -541,7 +542,6 @@ test("Today's log is the second You tab, with the Preset control, one section pe
   const sections = screen.getAllByRole("region").filter((region) => [...GROUPS, "Projects"].includes(region.getAttribute("aria-label") ?? ""));
   expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual([...GROUPS, "Projects"]);
   expect(new Set(sections.map((section) => section.parentElement)).size).toBe(1);
-  expect(sections[0]!.parentElement!.className).toEqual(expect.stringContaining("border border-rule bg-paper"));
   expect(within(sections[0]!).getAllByRole("checkbox").map((input) => input.getAttribute("aria-label"))).toEqual(["Outcomes", "Merged", "Failed", "PR opened"]);
   expect(within(sections.at(-1)!).getAllByRole("checkbox").map((input) => input.getAttribute("aria-label"))).toEqual(["demo", "writer", "relos"]);
   expect(box("PR opened").checked).toBe(false);

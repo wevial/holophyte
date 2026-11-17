@@ -3,12 +3,11 @@ import type { ScoutDetail } from "../../lib/contract.gen";
 import { formatSpan } from "../../lib/format";
 import { numberFindings, type ScoutPage } from "../scout";
 import { hasThread } from "../scoutThread";
-import { SECTION_LABEL } from "./Criteria";
 import { ScoutActions, toFile } from "./ScoutActions";
 import { ScoutActivity } from "./ScoutActivity";
 import { ScoutRunFacts } from "./ScoutFacts";
 import { ScoutReport } from "./ScoutReport";
-import { ScoutThread } from "./ScoutThread";
+import { SCOUT_HEADING, ScoutThread } from "./ScoutThread";
 import { ScoutWriteup } from "./ScoutWriteup";
 import { FoldChevron } from "./icons";
 import { StateDot } from "./StateDot";
@@ -36,12 +35,12 @@ function Sentence({ text }: { text: string }) {
   }, [text, open]);
   return (
     <div className="min-w-0">
-      <p ref={ref} role="status" className={`m-0 max-w-[70ch] font-read text-[17px] leading-[1.5] text-ink ${open ? "" : "line-clamp-3"}`}>
+      <p ref={ref} role="status" className={`m-0 max-w-[70ch] font-sans text-[16px] leading-[1.5] text-ink ${open ? "" : "line-clamp-3"}`}>
         {text}
       </p>
       {(clipped || open) && (
         <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
-          className="mt-2 cursor-pointer font-mono text-[12px] text-ink-2 underline underline-offset-2 hover:text-ink">
+          className="mt-2 -ml-2.5 inline-flex h-7 cursor-pointer items-center rounded-[7px] border-0 bg-transparent px-2.5 font-sans text-[12.5px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
           {open ? "Less" : "More"}
         </button>
       )}
@@ -58,11 +57,11 @@ export function Verdict({ page }: { page: Shown }) {
   if (report?.headline != null) {
     body = (
       <>
-        <p role="status" className="m-0 max-w-[66ch] font-read text-[18px] font-medium leading-[1.45] text-ink [overflow-wrap:anywhere]">{report.headline}</p>
+        <p role="status" className="m-0 max-w-[66ch] font-sans text-[17px] font-semibold leading-[1.45] text-ink [overflow-wrap:anywhere]">{report.headline}</p>
         {report.bullets != null && report.bullets.length > 0 && (
           <ul className="m-0 mt-2.5 flex max-w-[70ch] list-none flex-col gap-1.5 p-0">
             {report.bullets.map((bullet, index) => (
-              <li key={index} className="flex gap-4 font-read text-[15px] leading-[1.5] text-ink-2 [overflow-wrap:anywhere] before:mt-[0.6em] before:size-[5px] before:shrink-0 before:bg-ink-3 before:content-['']">
+              <li key={index} className="flex gap-4 font-sans text-[14px] leading-[1.5] text-ink-2 [overflow-wrap:anywhere] before:mt-[0.6em] before:size-[5px] before:shrink-0 before:rounded-full before:bg-ink-3 before:content-['']">
                 {bullet}
               </li>
             ))}
@@ -73,7 +72,7 @@ export function Verdict({ page }: { page: Shown }) {
   } else if (report != null) {
     body = <Sentence key={report.summary} text={report.summary} />;
   } else {
-    body = <p role="status" className="m-0 max-w-[70ch] font-read text-[17px] leading-[1.5] text-ink [overflow-wrap:anywhere]">{page.sentence}</p>;
+    body = <p role="status" className="m-0 max-w-[70ch] font-sans text-[16px] leading-[1.5] text-ink [overflow-wrap:anywhere]">{page.sentence}</p>;
   }
   return <section aria-label="Verdict">{body}</section>;
 }
@@ -85,11 +84,11 @@ function AskFold({ ask }: { ask: string }) {
   return (
     <div className="mt-6">
       <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}
-        className="group inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-mono text-[12px] leading-[1.7] text-ink-3 hover:text-ink">
+        className="group -ml-2.5 inline-flex h-7 gap-1 cursor-pointer items-center rounded-[7px] border-0 bg-transparent px-2.5 font-sans text-[12.5px] font-medium text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
         <FoldChevron open={open} />
         Ask
       </button>
-      {open && <p id={id} data-scout-ask className="m-0 mt-2 max-w-[70ch] whitespace-pre-wrap font-read text-[15px] leading-[1.55] text-ink-2 [overflow-wrap:anywhere]">{ask}</p>}
+      {open && <p id={id} data-scout-ask className="m-0 mt-2 max-w-[70ch] whitespace-pre-wrap font-sans text-[14px] leading-[1.55] text-ink-2 [overflow-wrap:anywhere]">{ask}</p>}
     </div>
   );
 }
@@ -100,16 +99,16 @@ function Progress({ page, project }: { page: Shown; project: string }) {
   return (
     <section aria-label="Progress" className="mt-10">
       <ScoutRunFacts detail={page.detail} project={project} pass={page.pass} />
-      <h2 className={`m-0 ${SECTION_LABEL}`}>
+      <h2 className={SCOUT_HEADING}>
         Progress
         {page.live ? (
-          <span data-live className="inline-flex items-center gap-1.5 tracking-[.1em] text-live">
+          <span data-live className="inline-flex items-center gap-1.5 text-[12px] font-medium text-live">
             <span aria-hidden="true">
               <StateDot state="running" hideWord tone="live" />
             </span>
             live
           </span>
-        ) : span != null && <span data-scout-span className="text-ink">{span}</span>}
+        ) : span != null && <span data-scout-span className="font-mono text-[12px] font-normal text-ink-3">{span}</span>}
       </h2>
       <ScoutActivity key={`${page.base}/${scout.id}`} groups={page.activity} now={page.live ? page.now : (scout.ended_ms ?? page.now)}
         stop={scout.phase === "swarming" ? { base: page.base, scout: scout.id, actions: page.actions } : null} />
@@ -140,9 +139,9 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
 
 export type TabId = "decide" | "writeup" | "findings" | "activity" | "chat";
 
-const TAB = "-mb-px inline-flex min-h-11 cursor-pointer items-center gap-2 border-0 border-b-2 bg-transparent px-4 font-sans text-[12px] font-medium uppercase tracking-[0.12em]";
-const TAB_ON = "border-act text-ink";
-const TAB_OFF = "border-transparent text-ink-2 hover:bg-side-hover hover:text-ink";
+const TAB = "group inline-flex h-7 cursor-pointer items-center gap-[7px] rounded-[6px] border-0 px-2.5 font-sans text-[13px] font-medium leading-none";
+const TAB_ON = "bg-selected text-ink";
+const TAB_OFF = "bg-transparent text-ink-2 hover:text-ink";
 
 /** Spaces the Thread as a chat: its own heading kept for readers only, under the slot's title. */
 export const CHAT_SLOT = "[&>div>section]:mt-0 [&>div>section>h2]:sr-only";
@@ -177,7 +176,7 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
     }] : []),
     { id: "activity", label: "Activity", body: <Progress page={page} project={project} /> },
     ...(chat != null ? [{
-      id: "chat" as const, label: `Chat · ${chat.count}`, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
+      id: "chat" as const, label: "Chat ·", count: chat.count, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
   const opening = open > 0 ? tabs[0]! : tabs.find((tab) => tab.id !== "decide")!;
@@ -194,14 +193,14 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
   };
   return (
     <>
-      <div data-scout-tabbar className="sticky top-0 z-[1] border-b border-rule bg-paper">
-        <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap">
+      <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2">
+        <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap gap-0.5">
           {tabs.map((tab) => (
             <button key={tab.id} ref={(node) => void (node ? tabRefs.current.set(tab.id, node) : tabRefs.current.delete(tab.id))}
               type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
               tabIndex={tab === current ? 0 : -1} onClick={() => onChoose(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF} ${tab.className ?? ""}`}>
               {tab.label}
-              {tab.count != null && <> <span data-tab-count className="font-mono text-[11px] tracking-normal">{tab.count}</span></>}
+              {tab.count != null && <> <span data-tab-count className="font-mono text-[12px] font-normal text-ink-3 group-aria-selected:text-ink-2">{tab.count}</span></>}
             </button>
           ))}
         </div>

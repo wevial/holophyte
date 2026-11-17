@@ -887,11 +887,15 @@
   --font-read: "IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
 }
 
-:root[data-font="serif"] {
+[data-font-sample="sans"] {
+  --font-read: "IBM Plex Sans", "Avenir Next", "Avenir", "Helvetica Neue", Arial, sans-serif;
+}
+
+:root[data-font="serif"], [data-font-sample="serif"] {
   --font-read: "IBM Plex Serif", Georgia, serif;
 }
 
-:root[data-font="hyperlegible"] {
+:root[data-font="hyperlegible"], [data-font-sample="hyperlegible"] {
   --font-read: "Atkinson Hyperlegible Next", "IBM Plex Sans", Arial, sans-serif;
 }
 

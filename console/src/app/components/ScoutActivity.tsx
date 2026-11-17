@@ -7,6 +7,7 @@ import { tokenWords, type ScoutGroup } from "../scout";
 import type { ActivityTone } from "../activity";
 import type { State } from "../state";
 import { FoldChevron } from "./icons";
+import { CloseGlyph } from "./ScoutThread";
 import { StateDot } from "./StateDot";
 import { TitleText } from "./TitleText";
 import { useToast } from "./Toast";
@@ -48,7 +49,7 @@ interface RowStop extends HelperStop {
 
 const STOP_BRANCH = "Stop this branch";
 
-/** ✕ for one queued or running helper: `POST /actions/scout-stop` with its task, no confirm; a refusal says its detail in the toast. */
+/** The close icon for one queued or running helper: `POST /actions/scout-stop` with its task, no confirm; a refusal says its detail in the toast. */
 function StopBranch({ task, stop }: { task: ScoutTask; stop: RowStop }) {
   const action = useAction();
   const toast = useToast();
@@ -63,8 +64,8 @@ function StopBranch({ task, stop }: { task: ScoutTask; stop: RowStop }) {
   return (
     <button type="button" aria-label={STOP_BRANCH} title={stop.actions ? STOP_BRANCH : ACTIONS_OFF} disabled={!stop.actions || action.isPending}
       onClick={() => void press()}
-      className="self-center px-1 font-mono text-[12px] leading-none text-ink-3 hover:text-bad disabled:cursor-not-allowed disabled:opacity-40 max-[719px]:ml-auto max-[719px]:pl-2 min-[720px]:justify-self-end">
-      ✕
+      className="inline-flex size-7 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-bad-wash hover:text-bad disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-2 motion-reduce:transition-none">
+      <CloseGlyph />
     </button>
   );
 }
@@ -79,34 +80,36 @@ function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: Ro
   const last = stopping ? "stopping" : spent(task);
   const reason = task.phase === "failed" ? task.reason : null;
   return (
-    <li data-helper={task.phase} className="border-b border-rule-2 last:border-b-0">
+    <li data-helper={task.phase}>
       <div className="flex items-start">
         <button type="button" aria-expanded={open} aria-controls={promptId} onClick={() => setOpen(!open)}
-          className="group grid min-w-0 flex-1 cursor-pointer grid-cols-[16px_minmax(0,1fr)_14px] items-center gap-x-2 border-0 bg-transparent px-4 py-2 text-left">
+          className="group grid min-w-0 flex-1 cursor-pointer grid-cols-[16px_minmax(0,1fr)_14px] items-center gap-x-2 rounded-[6px] border-0 bg-transparent px-2.5 py-2 text-left transition-colors duration-150 hover:bg-hover motion-reduce:transition-none">
           <span className="flex"><StateDot state={dot.state} label={dot.label} hideWord /></span>
           <span className="flex min-w-0 flex-col gap-1">
-            <span data-task-title className={`font-read text-[15px] font-medium leading-[1.4] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
+            <span data-task-title className={`font-sans text-[13.5px] font-medium leading-[1.4] [overflow-wrap:anywhere] ${stopped ? "text-ink-3 line-through" : "text-ink"}`}>
               {task.title}
             </span>
             {reason != null && <span data-task-reason className="font-mono text-[12px] leading-[1.4] text-bad-text [overflow-wrap:anywhere]">{reason}</span>}
-            <span data-task-meta className="font-mono text-[12px] leading-[1.4] text-ink-3">
-              <span data-mode={task.mode} className={`inline-block px-1 text-[11px] font-semibold leading-[15px] ${task.mode === "run" ? "border border-transparent bg-[color-mix(in_oklab,var(--wait)_22%,transparent)] text-wait" : "border border-rule text-ink-2"}`}>
+            <span data-task-meta className="flex flex-wrap items-center gap-x-1.5 font-mono text-[12px] leading-[1.4] text-ink-3">
+              <span data-mode={task.mode} className={`inline-flex h-5 items-center rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none ${task.mode === "run" ? "bg-wait-wash text-wait" : "bg-selected text-ink-2"}`}>
                 {task.mode}
               </span>
-              {" · "}
+              <span className="sr-only"> · </span>
+              <span>
               <span data-route>{task.route ?? DASH}</span>
               {" · "}
               <span data-took className="tabular-nums">{took(task, now)}</span>
               {last !== "" && " · "}
               <span data-tokens className={`tabular-nums ${stopped || stopping ? "text-wait" : ""}`}>{last}</span>
+              </span>
             </span>
           </span>
           <span className="self-start pt-1"><FoldChevron open={open} /></span>
         </button>
-        {stop && stoppable && !stopping && <span className="pr-4 pt-2"><StopBranch task={task} stop={stop} /></span>}
+        {stop && stoppable && !stopping && <span className="pl-1 pt-1.5"><StopBranch task={task} stop={stop} /></span>}
       </div>
       {open && (
-        <p id={promptId} data-question className="m-0 max-w-[70ch] px-4 pb-4 pl-10 font-read text-[14px] leading-[1.55] text-ink-2 [overflow-wrap:anywhere]">
+        <p id={promptId} data-question className="m-0 max-w-[70ch] px-2.5 pb-3 pl-[34px] font-sans text-[13px] leading-[1.55] text-ink-2 [overflow-wrap:anywhere]">
           <TitleText>{task.question}</TitleText>
         </p>
       )}
@@ -116,7 +119,7 @@ function HelperRow({ task, now, stop }: { task: ScoutTask; now: number; stop: Ro
 
 function Helpers({ tasks, now, stop }: { tasks: ScoutTask[]; now: number; stop: RowStop | null }) {
   return (
-    <ol aria-label="Helpers" className="m-0 mb-4 ml-[98px] mr-4 list-none border border-rule-2 bg-paper-2 p-0 max-[720px]:mx-4">
+    <ol aria-label="Helpers" className="m-0 mb-3 ml-[98px] mr-3 flex list-none flex-col gap-px rounded-[8px] bg-canvas p-1 shadow-[inset_0_0_0_1px_var(--hair)] max-[720px]:mx-2">
       {tasks.map((task, index) => <HelperRow key={`${task.id}:${index}`} task={task} now={now} stop={stop} />)}
     </ol>
   );
@@ -174,7 +177,7 @@ function Group({ group, open, onToggle, now, stop }: {
     </>
   );
   return (
-    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="border-b border-rule-2 last:border-b-0">
+    <li data-group={group.kind} data-running={group.running ? "" : undefined} className="border-b border-hair last:border-b-0">
       <div>
         {folds ? (
           <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={onToggle} className={`group cursor-pointer border-0 bg-transparent ${GROUP_ROW}`}>
@@ -199,7 +202,7 @@ export function ScoutActivity({ groups, now, stop }: { groups: ScoutGroup[]; now
   const rowStop = stop == null ? null : { ...stop, sent, onSent: (task: number) => setSent((was) => new Set(was).add(task)) };
   if (groups.length === 0) return null;
   return (
-    <ol aria-label="Scout activity" className="m-0 mt-2 list-none border border-rule bg-paper p-0">
+    <ol aria-label="Scout activity" className="m-0 mt-3 list-none rounded-[10px] bg-raised p-0 shadow-[inset_0_0_0_1px_var(--hair)]">
       {groups.map((group) => {
         const open = chosen[group.key] ?? group.running;
         return (

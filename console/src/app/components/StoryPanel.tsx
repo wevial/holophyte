@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { BoardStory, StoryChildRow, StoryDetail } from "../../lib/contract.gen";
 import { stateOf, type State } from "../state";
 import { SECTION_LABEL } from "./Criteria";
+import { FactIcon } from "./icons";
 import { StateDot } from "./StateDot";
 import { TitleText } from "./TitleText";
 
@@ -17,7 +18,7 @@ function childState(child: StoryChildRow): State {
 function ChildRow({ child, project, current }: { child: StoryChildRow; project: string; current: boolean }) {
   const word = child.column === "backlog" ? "backlog" : child.status.replaceAll("_", " ");
   return (
-    <li data-child={child.ticket} className="flex items-start gap-2 border-b border-dashed border-rule-2 py-[7px] text-ink">
+    <li data-child={child.ticket} className="flex items-start gap-2 border-b border-hair py-[7px] text-ink">
       <span className="mt-0.5 inline-flex">
         <StateDot state={childState(child)} hideWord />
       </span>
@@ -65,7 +66,10 @@ export function StoryPanel({ ticketKey, project, entry, detail }: { ticketKey: s
       )}
       {detail != null &&
         (detail.children.length === 0 ? (
-          <p className="m-0 mt-3.5 font-mono text-[12px] leading-[1.4] text-ink-3">No child tickets.</p>
+          <p className="m-0 mt-2.5 flex items-center gap-2 font-sans text-[13px] leading-[1.4] text-ink-3">
+            <FactIcon ok />
+            No child tickets.
+          </p>
         ) : (
           <ul aria-label={`${entry.ticket} tickets`} className="m-0 mt-3.5 list-none p-0 font-sans text-[13.5px] font-semibold leading-[1.4]">
             {detail.children.map((child) => (
