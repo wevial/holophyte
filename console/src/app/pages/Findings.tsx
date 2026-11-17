@@ -178,7 +178,7 @@ export function Findings() {
           tools={
             <>
               <RangeButtons label="Range" presets={RANGES} fallback={DEFAULT_FINDINGS_RANGE} hidden={false} />
-              <FilterPopover icon label="Filter findings" sections={sections} hidden={false} />
+              <FilterPopover icon headBoxes label="Filter findings" sections={sections} hidden={false} />
             </>
           }
         />

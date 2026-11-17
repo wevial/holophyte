@@ -325,16 +325,30 @@ function MenuCheck({ type, name, checked, onChange, children, className = MENU_R
   );
 }
 
-function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
+function MenuSection({ section, search, write, headBox }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void; headBox: boolean }) {
   const id = useId();
   const checked = checkedOf(search, section.param);
+  const on = section.options.filter((option) => checked.includes(option.value));
+  const all = section.options.length > 0 && on.length === section.options.length;
   const set = (values: string[]) => {
     const kept = section.options.map((option) => option.value).filter((value) => values.includes(value));
     write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
   };
   return (
     <fieldset aria-labelledby={id} className="m-0 min-w-0 border-0 p-0">
-      <legend id={id} className={`${MENU_HEAD} float-left w-full`}>{section.label}</legend>
+      {headBox ? (
+      <legend className="float-left w-full">
+        <label className={`${MENU_HEAD} cursor-pointer hover:text-ink`}>
+          <input type="checkbox" aria-label={section.label} checked={all} disabled={section.options.length === 0}
+            ref={(input) => { if (input) input.indeterminate = on.length > 0 && !all; }}
+            onChange={() => set(all ? [] : section.options.map((option) => option.value))}
+            className="size-3 shrink-0 cursor-pointer accent-act" />
+          <span id={id}>{section.label}</span>
+        </label>
+      </legend>
+      ) : (
+        <legend id={id} className={`${MENU_HEAD} float-left w-full`}>{section.label}</legend>
+      )}
       {section.options.map((option) => (
         <MenuCheck key={option.value} type="checkbox" name={option.label} checked={checked.includes(option.value)}
           onChange={() => set(checked.includes(option.value) ? checked.filter((value) => value !== option.value) : [...checked, option.value])}
@@ -382,9 +396,9 @@ function MenuSorting({ sorting }: { sorting: SortSection }) {
  *  checked values written to its own search param as a comma list in the
  *  section's order, after an optional `sorting` and `extra`; `hidden`
  *  closes it. An `icon` trigger is named `label` and the count of filters
- *  on, with a dot while any is. */
-export function FilterPopover({ label, sections, hidden, sorting, extra, icon = false }: {
-  label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection; extra?: ReactNode; icon?: boolean;
+ *  on, with a dot while any is; `headBoxes` boxes its section headings. */
+export function FilterPopover({ label, sections, hidden, sorting, extra, icon = false, headBoxes = false }: {
+  label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection; extra?: ReactNode; icon?: boolean; headBoxes?: boolean;
 }) {
   const search = useSearch({ strict: false }) as PageSearch;
   const write = useWrite();
@@ -423,7 +437,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
             </div>
           )}
           <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
-            {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
+            {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} headBox={headBoxes} />)}
           </div>
           <div className={`${side ? "col-span-3" : "col-span-2"} mt-1.5 flex justify-end border-t border-hair pt-1.5`}>
             <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
