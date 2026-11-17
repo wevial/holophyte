@@ -10,16 +10,17 @@ import { failedRow, matchParts, searchTranscript, transcriptRows, type Transcrip
 import { TurnToolbar } from "./TurnToolbar";
 import { TranscriptIcon } from "./icons";
 
-const PROSE = "m-0 max-w-[72ch] whitespace-pre-wrap font-read text-[15px] leading-[1.6] [overflow-wrap:anywhere]";
+const PROSE = "m-0 max-w-[72ch] whitespace-pre-wrap font-sans text-[14px] leading-[1.6] [overflow-wrap:anywhere]";
+const EMPTY = "m-0 flex items-center gap-2 font-sans text-[13px] text-ink-3";
 
 function Marked({ text, query }: { text: string; query: string }) {
-  return <>{matchParts(text, query).map((part, index) => part.match ? <mark key={index} className="bg-act-wash text-inherit ring-1 ring-ask">{part.text}</mark> : part.text)}</>;
+  return <>{matchParts(text, query).map((part, index) => part.match ? <mark key={index} className="rounded-[3px] bg-act-wash px-0.5 text-ink">{part.text}</mark> : part.text)}</>;
 }
 
 function TextBox({ label, text, cut, query, failed = false }: { label: string; text: string; cut: boolean; query: string; failed?: boolean }) {
   return <div className="mt-3">
-    <div className="mb-1 font-mono text-[11px] uppercase tracking-[.1em] text-ink-3">{label}</div>
-    <pre className={`m-0 whitespace-pre-wrap border bg-paper-2 p-3 font-mono text-[12px] leading-[1.6] text-ink-2 [overflow-wrap:anywhere] ${failed ? "border-bad" : "border-rule-2"}`}>
+    <div className="mb-1 font-sans text-[12px] text-ink-3">{label}</div>
+    <pre className={`m-0 whitespace-pre-wrap rounded-button px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-ink-2 [overflow-wrap:anywhere] ${failed ? "bg-bad-wash" : "bg-selected"}`}>
       <Marked text={text} query={query} />{cut && <span className="text-ink-3">{"\n"}cut at 20,000 characters</span>}
     </pre>
   </div>;
@@ -48,10 +49,10 @@ function Fold({ row, query, open, onOpen }: FoldState & { row: Extract<Transcrip
 function Entry({ row, query, open, onOpen, rowRef }: FoldState & { row: TranscriptRow; rowRef: (node: HTMLLIElement | null) => void }) {
   const label = { prompt: "Factory", note: "Factory", said: "Assistant", tool: "Tool call", error: "Error", end: "End" }[row.kind];
   const tone = row.kind === "error" ? "text-bad" : row.kind === "tool" ? "text-wait" : row.kind === "said" ? "text-ink-2" : "text-ink-3";
-  return <li ref={rowRef} tabIndex={-1} className={`grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-rule-2 px-5 py-4 [&+li]:border-t max-[720px]:grid-cols-1 max-[720px]:gap-2 max-[720px]:px-3 ${failedRow(row) ? "bg-bad-wash shadow-[inset_2px_0_0_var(--bad)]" : ""}`}>
+  return <li ref={rowRef} tabIndex={-1} className={`grid grid-cols-[64px_minmax(0,1fr)] gap-3 border-hair px-5 py-4 first:rounded-t-[10px] last:rounded-b-[10px] [&+li]:border-t max-[720px]:grid-cols-1 max-[720px]:gap-2 max-[720px]:px-3 ${failedRow(row) ? "bg-bad-wash shadow-[inset_2px_0_0_var(--bad)]" : ""}`}>
     <span className="font-mono text-[12px] leading-4 text-ink-3">{row.offset}</span>
     <div className="min-w-0">
-      <div className={`mb-2 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.1em] ${tone}`}><TranscriptIcon kind={row.kind} />{label}</div>
+      <div className={`mb-2 flex items-center gap-2 font-sans text-[12px] font-semibold ${tone}`}><TranscriptIcon kind={row.kind} />{label}</div>
       {row.kind === "tool" || row.kind === "prompt" ? <Fold row={row} query={query} open={open} onOpen={onOpen} /> :
         <p className={`${PROSE} ${row.kind === "error" ? "text-bad" : "text-ink-2"}`}><Marked text={row.text} query={query} />
           {"cut" in row && row.cut && <span className="block font-mono text-[12px] text-ink-3">cut at 20,000 characters</span>}
@@ -85,29 +86,24 @@ export function TurnEntries({ base, project, run, host, turn }: { base: string; 
     nodes.current.get(index)?.scrollIntoView({ block: "center", behavior: "smooth" });
   };
   if (answer.isPending) return <section className="mt-5">
-    <p role="status" className="font-mono text-[12px] text-ink-3">Fetching the transcript from {name}…</p>
-    <div aria-hidden="true" className="space-y-3 border border-rule bg-paper p-5">
-      {[100, 80, 90, 60, 75].map((width, index) => <div key={index} className="h-4 bg-rule-2 motion-safe:animate-pulse" style={{ width: `${width}%` }} />)}
-    </div>
+    <p role="status" className={EMPTY}><TranscriptIcon kind="note" />Fetching the transcript from {name}…</p>
   </section>;
   if (answer.isError) return <section className="mt-5">
     {answer.error instanceof AnswerError && answer.error.status === 404 ? <>
-      <p className={PROSE}>{name} has no transcript for this turn.</p>
-      <p className="font-mono text-[12px] text-ink-3">The run's Progress log still has what this turn did; the figures above come from the run record.</p>
-      <Link {...runPage(project, run)} className="btn" data-variant="quiet">Open the run</Link>
-    </> : <p role="alert" className={PROSE}>Could not read the transcript from {name}.</p>}
+      <p className={EMPTY}><TranscriptIcon kind="note" />{name} has no transcript for this turn.</p>
+      <Link {...runPage(project, run)} className="btn mt-2" data-variant="quiet">Open the run</Link>
+    </> : <p role="alert" className={EMPTY}><span className="text-bad"><TranscriptIcon kind="error" /></span>Could not read the transcript from {name}.</p>}
   </section>;
-  if (!answer.data.entries.length) return <p className={`mt-5 ${PROSE}`}>This turn has no entries.{turn.timed_out && " It timed out before the agent wrote anything."}</p>;
+  if (!answer.data.entries.length) return <p className={`mt-5 ${EMPTY}`}><TranscriptIcon kind="end" />This turn has no entries.{turn.timed_out && " It timed out before the agent wrote anything."}</p>;
   return <section className="mt-5">
     <TurnToolbar query={query} onQuery={value => { setQuery(value); setFolds({}); }} filter={filter} onFilter={setFilter}
       counts={search.counts} matches={search.matches} matchingEntries={search.matchingEntries} expanded={expanded}
       onExpand={() => setFolds(Object.fromEntries(foldEntries.map(({ index }) => [index, !expanded])))} onJump={jump} />
-    <ol aria-label="Turn transcript" className="m-0 list-none border border-rule bg-paper p-0">
+    <ol aria-label="Turn transcript" className="m-0 list-none rounded-[10px] bg-raised p-0 shadow-[inset_0_0_0_1px_var(--hair)]">
       {search.entries.filter(entry => entry.visible).map(({ row, index }) => <Entry key={index} row={row} query={query} open={isOpen(index)}
         onOpen={open => setFolds(previous => ({ ...previous, [index]: open }))}
         rowRef={node => { if (node) nodes.current.set(index, node); else nodes.current.delete(index); }} />)}
-      {!search.entries.some(entry => entry.visible) && <li className="p-5 font-mono text-[13px] text-ink-3">{query.trim() ? `Nothing in this turn matches “${query.trim()}”.` : "No entries of this kind in this turn."}</li>}
+      {!search.entries.some(entry => entry.visible) && <li className={`px-5 py-4 ${EMPTY}`}><TranscriptIcon kind="note" />{query.trim() ? `Nothing in this turn matches “${query.trim()}”.` : "No entries of this kind in this turn."}</li>}
     </ol>
-    <p className="mt-4 border-t border-rule pt-3 font-mono text-[12px] leading-[1.6] text-ink-3">Times are from the start of the turn. Tool input and output fold; failures open on their own.</p>
   </section>;
 }

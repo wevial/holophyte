@@ -67,6 +67,8 @@ test("a second implementer turn names its review return and displays recorded us
   expect(within(crumb).getByRole("link", { name: "run 12" }).getAttribute("href")).toEndWith("#/runs/demo/12");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Implementer · turn 2");
   expect(screen.getByText("The sweep frees a silent lease · back from review round 1")).toBeTruthy();
+  const terms = screen.getByText("Seat", { selector: "dt" }).closest("dl")!.querySelectorAll("dt");
+  expect([...terms].map(term => term.textContent)).toEqual(["Seat", "Model", "Duration", "Tokens", "Cost"]);
   expect(figure("Seat").getByText("implementer")).toBeTruthy();
   expect(figure("Seat").getByText("writer-host")).toBeTruthy();
   expect(figure("Model").getByText("claude opus")).toBeTruthy();
