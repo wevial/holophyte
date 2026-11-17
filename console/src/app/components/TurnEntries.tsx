@@ -20,7 +20,7 @@ function Marked({ text, query }: { text: string; query: string }) {
 function TextBox({ label, text, cut, query, failed = false }: { label: string; text: string; cut: boolean; query: string; failed?: boolean }) {
   return <div className="mt-3">
     <div className="mb-1 font-sans text-[12px] text-ink-3">{label}</div>
-    <pre className={`m-0 whitespace-pre-wrap rounded-button px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-ink-2 [overflow-wrap:anywhere] ${failed ? "bg-bad-wash" : "bg-selected"}`}>
+    <pre className={`m-0 whitespace-pre-wrap rounded-button px-3 py-2.5 font-mono text-[12px] leading-[1.6] text-ink-2 [overflow-wrap:anywhere] ${failed ? "bg-bad-wash shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--bad)_35%,transparent)]" : "bg-selected"}`}>
       <Marked text={text} query={query} />{cut && <span className="text-ink-3">{"\n"}cut at 20,000 characters</span>}
     </pre>
   </div>;
@@ -54,7 +54,7 @@ function Entry({ row, query, open, onOpen, rowRef }: FoldState & { row: Transcri
     <div className="min-w-0">
       <div className={`mb-2 flex items-center gap-2 font-sans text-[12px] font-semibold ${tone}`}><TranscriptIcon kind={row.kind} />{label}</div>
       {row.kind === "tool" || row.kind === "prompt" ? <Fold row={row} query={query} open={open} onOpen={onOpen} /> :
-        <p className={`${PROSE} ${row.kind === "error" ? "text-bad" : "text-ink-2"}`}><Marked text={row.text} query={query} />
+        <p className={`${PROSE} text-ink-2`}><Marked text={row.text} query={query} />
           {"cut" in row && row.cut && <span className="block font-mono text-[12px] text-ink-3">cut at 20,000 characters</span>}
         </p>}
     </div>
@@ -99,7 +99,7 @@ export function TurnEntries({ base, project, run, host, turn }: { base: string; 
     <TurnToolbar query={query} onQuery={value => { setQuery(value); setFolds({}); }} filter={filter} onFilter={setFilter}
       counts={search.counts} matches={search.matches} matchingEntries={search.matchingEntries} expanded={expanded}
       onExpand={() => setFolds(Object.fromEntries(foldEntries.map(({ index }) => [index, !expanded])))} onJump={jump} />
-    <ol aria-label="Turn transcript" className="m-0 list-none rounded-[10px] bg-raised p-0 shadow-[inset_0_0_0_1px_var(--hair)]">
+    <ol aria-label="Turn transcript" className="relative m-0 list-none rounded-[10px] bg-raised p-0 after:pointer-events-none after:absolute after:inset-0 after:rounded-[10px] after:shadow-[inset_0_0_0_1px_var(--hair)] after:content-['']">
       {search.entries.filter(entry => entry.visible).map(({ row, index }) => <Entry key={index} row={row} query={query} open={isOpen(index)}
         onOpen={open => setFolds(previous => ({ ...previous, [index]: open }))}
         rowRef={node => { if (node) nodes.current.set(index, node); else nodes.current.delete(index); }} />)}

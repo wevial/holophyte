@@ -13,12 +13,14 @@ export function TurnToolbar({ query, onQuery, filter, onFilter, counts, matches,
   const entries = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
   return <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
     <label className="flex h-[30px] min-w-0 basis-72 grow items-center gap-2 rounded-button bg-selected px-2.5 text-ink-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
-      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0"><circle cx="6.5" cy="6.5" r="4.5" /><path d="m10 10 4 4" /></svg>
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="size-4 shrink-0"><circle cx="6.5" cy="6.5" r="4.5" /><path d="m10 10 4 4" /></svg>
       <input type="search" aria-label="Search this turn" placeholder="Search text, commands and output" value={query} onChange={event => onQuery(event.target.value)}
         className="h-full min-w-0 flex-1 border-0 bg-transparent font-sans text-[14px] text-ink outline-none! placeholder:text-ink-3" />
     </label>
     <span aria-live="polite" className="font-sans text-[13px] text-ink-3">{query.trim() ? `${matches} ${matches === 1 ? "match" : "matches"} in ${entries(matchingEntries)}` : `${entries(counts.All)} · ${counts.Errors} ${counts.Errors === 1 ? "error" : "errors"}`}</span>
-    <Segmented label="Show" options={FILTERS.map(kind => ({ value: kind, label: `${kind} ${counts[kind]}` }))} value={filter} onPick={onFilter} />
+    <div className="-m-1 max-w-[calc(100%+0.5rem)] overflow-x-auto p-1">
+      <Segmented label="Show" options={FILTERS.map(kind => ({ value: kind, label: `${kind} ${counts[kind]}` }))} value={filter} onPick={onFilter} />
+    </div>
     <Btn disabled={counts.Errors === 0} onClick={onJump}><span className="text-bad"><TranscriptIcon kind="error" /></span>Jump to first error</Btn>
     <Btn onClick={onExpand}>{expanded ? "Collapse all" : "Expand all"}</Btn>
   </div>;
