@@ -143,11 +143,19 @@ test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each 
   await mount("#/findings", fleet({ runs: [nit, demo11, writer3] }));
   const rows = unfoldAll("Open");
   expect(rows.map((row) => row.querySelector("[data-severity]")!.textContent)).toEqual(["P1", "P2", "P3"]);
-  for (const row of rows) {
-    const body = document.getElementById(toggle(row).getAttribute("aria-controls")!)!;
+  const bodies = rows.map((row) => document.getElementById(toggle(row).getAttribute("aria-controls")!)!);
+  expect(bodies.map((body) => body.querySelector("[data-place]")!.textContent)).toEqual([
+    "holophyte/retry_loops_forever.py:3 · WRITER-3 · round 2",
+    "holophyte/flag_is_ignored.py:3 · DEMO-11 · round 1",
+    "holophyte/trailing_space_in_the_log.py:3 · DEMO-12 · round 1",
+  ]);
+  expect(rows.map((row) => fateOf(row).textContent)).toEqual([
+    "open · the ticket has no run, so nobody is fixing it",
+    "open · the run failed, so nobody is fixing it",
+    "open · the ticket has no run, so nobody is fixing it",
+  ]);
+  for (const body of bodies) {
     expect(body.querySelector("[data-text]")!.textContent).toBe("The detail of it.");
-    expect(body.querySelector("[data-place]")!.textContent).not.toBe("");
-    expect(fateOf(row).textContent).not.toBe("");
     expect(within(body).getByRole("link", { name: "Open run" })).toBeTruthy();
     expect(within(body).getAllByRole("button", { name: /^(Steer into next run|File ticket)$/ })).toHaveLength(1);
   }
