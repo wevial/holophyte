@@ -22,6 +22,19 @@ type PickerOptions = {
 
 const LISTBOX_POPOVER = { ...popoverPreset, role: undefined };
 
+/** A label activates its control on the click after the press, so focus
+ *  goes back to `button` once that click's default action has run; the
+ *  next press, armed after this one finishes dispatching, drops the wait. */
+function refocusAfterClick(button: HTMLElement | undefined) {
+  const refocus = () => {
+    document.removeEventListener("pointerdown", drop, true);
+    setTimeout(() => button?.focus({ preventScroll: true }));
+  };
+  const drop = () => document.removeEventListener("click", refocus, true);
+  document.addEventListener("click", refocus, { capture: true, once: true });
+  setTimeout(() => document.addEventListener("pointerdown", drop, { capture: true, once: true }));
+}
+
 const picker = definePrimitive({
   name: "picker",
   options: {
@@ -44,6 +57,7 @@ const picker = definePrimitive({
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
+          refocusAfterClick(core.triggerElement());
         },
       }),
     });

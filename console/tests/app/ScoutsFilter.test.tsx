@@ -270,14 +270,16 @@ test("closing New scout keeps q and filter, and a Scout button's kind leaves the
   }
 });
 
-test("a press on Search while Kind is open closes it unchanged and gives focus back to the Kind button", async () => {
+test("a press on Search's input or its glyph while Kind is open closes it unchanged and gives focus back to the Kind button", async () => {
   await mount("#/scouts?type=bug", scoutFetch(demo, writer));
-  await click(picker("Kind"));
-  expect(screen.getByRole("listbox", { name: "Kind" })).toBeTruthy();
-  await userEvent.click(field());
-  await settleAll();
-  expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
-  expect(searchParam("type")).toBe("bug");
-  expect(picker("Kind").textContent).toBe("Bug");
-  expect(document.activeElement).toBe(picker("Kind"));
+  for (const target of [field(), field().closest("label")!.querySelector("svg")!]) {
+    await click(picker("Kind"));
+    expect(screen.getByRole("listbox", { name: "Kind" })).toBeTruthy();
+    await userEvent.click(target);
+    await settleAll();
+    expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
+    expect(searchParam("type")).toBe("bug");
+    expect(picker("Kind").textContent).toBe("Bug");
+    expect(document.activeElement).toBe(picker("Kind"));
+  }
 });
