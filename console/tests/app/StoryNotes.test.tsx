@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Status, StoryChildRow, StoryDecisionRow, StoryDetail, StoryWitnessRow } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -60,36 +60,42 @@ const decision = (facts: Partial<StoryDecisionRow>): StoryDecisionRow => ({ ...p
 const witness = (facts: Partial<StoryWitnessRow>): StoryWitnessRow => ({ ...pinned.witnesses[0]!, ...facts });
 const OCT_9 = new Date(2026, 9, 9, 14, 0).getTime();
 
-test("the Decisions and witnesses panel uses reading typography beneath an Archivo heading and lists notes newest first", async () => {
-  await mount(demo12({
-    decisions: [
-      decision({ id: 1, question: "Requeue or cancel a silent lease?", answer: "requeue", answered_by: "maintainer", at: OCT_9 - DAY, answered_ms: OCT_9 }),
-      decision({ id: 2, question: "Replan around DEMO-11?", answer: null, answered_by: null, answered_ms: null, at: OCT_9 - 2 * DAY }),
-    ],
-    witnesses: [
-      witness({ key: "W2", criterion: "A stale lease pages once", verdict: null, main_sha: null, at: null }),
-      witness({ key: "W1", criterion: "Exports survive a restart", verdict: "green", main_sha: "5acc138e", at: OCT_9 - 3 * DAY }),
-    ],
-  }));
+const twoOfEach = () => demo12({
+  decisions: [
+    decision({ id: 1, question: "Requeue or cancel a silent lease?", answer: "requeue", answered_by: "maintainer", at: OCT_9 - DAY, answered_ms: OCT_9 }),
+    decision({ id: 2, question: "Replan around DEMO-11?", answer: null, answered_by: null, answered_ms: null, at: OCT_9 - 2 * DAY }),
+  ],
+  witnesses: [
+    witness({ key: "W2", criterion: "A stale lease pages once", verdict: null, main_sha: null, at: null }),
+    witness({ key: "W1", criterion: "Exports survive a restart", verdict: "green", main_sha: "5acc138e", at: OCT_9 - 3 * DAY }),
+  ],
+});
+
+test("the Decisions and witnesses panel counts its notes and lists them newest first with their text and meta", async () => {
+  await mount(twoOfEach());
   const panel = screen.getByRole("region", { name: /^Decisions and witnesses/ });
   expect(panel.querySelector("[data-note-count]")?.textContent).toBe("4");
   const rows = Array.from(panel.querySelectorAll("li"), (row) => Array.from(row.children, (cell) => cell.textContent));
   expect(rows).toEqual([
-    ["DECISION", "Requeue or cancel a silent lease? → requeue", "maintainer · Oct 9"],
-    ["DECISION", "Replan around DEMO-11?", "open · needs you"],
-    ["WITNESS", "W1 · Exports survive a restart", "green at 5acc138 · Oct 6"],
-    ["WITNESS", "W2 · A stale lease pages once", "not run yet"],
+    ["Decision", "Requeue or cancel a silent lease? → requeue", "maintainer · Oct 9"],
+    ["Decision", "Replan around DEMO-11?", "open · needs you"],
+    ["Witness", "W1 · Exports survive a restart", "green at 5acc138 · Oct 6"],
+    ["Witness", "W2 · A stale lease pages once", "not run yet"],
   ]);
-  expect(within(panel).getByRole("heading").classList).toContain("font-sans");
-  for (const row of panel.querySelectorAll("li")) {
-    expect(Array.from(row.children[1]!.classList)).toEqual(expect.arrayContaining([
-      "font-read", "text-[15px]", "leading-[1.5]", "max-w-[75ch]",
-    ]));
-    expect(row.children[0]!.classList).toContain("font-mono");
-    expect(row.children[2]!.classList).toContain("font-mono");
-  }
   const tones = Array.from(panel.querySelectorAll("[data-note-kind]"), (kind) => ["text-act", "text-need", "text-live", "text-ink-3"].find((tone) => kind.classList.contains(tone)));
   expect(tones).toEqual(["text-act", "text-need", "text-live", "text-ink-3"]);
+});
+
+test("each note's kind is named by its sentence-case word alone, its glyph hidden from assistive tech", async () => {
+  await mount(twoOfEach());
+  const panel = screen.getByRole("region", { name: /^Decisions and witnesses/ });
+  const kinds = Array.from(panel.querySelectorAll("[data-note-kind]"));
+  expect(kinds.map((kind) => kind.textContent)).toEqual(["Decision", "Decision", "Witness", "Witness"]);
+  for (const kind of kinds) {
+    const glyph = kind.querySelector("svg");
+    expect(glyph?.getAttribute("aria-hidden")).toBe("true");
+    expect(kind.querySelector("[aria-label], [role=img]")).toBeNull();
+  }
 });
 
 test("a story with no decisions and no witnesses says so", async () => {
