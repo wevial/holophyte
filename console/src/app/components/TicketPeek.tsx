@@ -5,21 +5,21 @@ import { formatAge } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
 import { useRun, useTicket } from "../queries";
 import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
-import { STATES } from "../state";
+import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type TicketCard } from "../tickets";
 import { CardActions } from "./CardActions";
 import { Criteria, SECTION_LABEL } from "./Criteria";
 import { describeOn } from "./FocusCard";
-import { StageChip } from "./StageChip";
-import { StateDot } from "./StateDot";
+import { stageWord } from "./StageChip";
+import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 const HEAD_BUTTON =
-  "inline-flex min-h-10 min-w-10 items-center justify-center gap-1.5 border border-rule px-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[.1em] text-ink-2 hover:border-ink-3 hover:text-ink";
+  "inline-flex size-7 items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none";
 
-export function Chip({ children }: { children: ReactNode }) {
+export function Chip({ tone, children }: { tone?: Tone; children: ReactNode }) {
   return (
-    <span className="inline-flex min-h-[30px] w-fit items-center gap-2 whitespace-nowrap border border-rule bg-paper-2 px-2.5 font-mono text-[12px] font-medium leading-none text-ink">
+    <span className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap font-sans text-[13px] font-medium leading-[1.3] ${tone == null ? "text-ink-2" : TONE_TEXT[tone]}`}>
       {children}
     </span>
   );
@@ -29,10 +29,15 @@ function RunChip({ card, now }: { card: TicketCard; now: number }) {
   const state = cardState(card);
   if (state === "running" && card.run != null) {
     const { phase, round, max_rounds } = card.run;
-    return <StageChip run={{ phase, round: round + 1, max_rounds }} />;
+    return (
+      <Chip tone={STATES.running.tone}>
+        <StateDot state="running" hideWord />
+        <span>{stageWord({ phase, round: round + 1, max_rounds })}</span>
+      </Chip>
+    );
   }
   return (
-    <Chip>
+    <Chip tone={STATES[state].tone}>
       <StateDot state={state} hideWord tone={STATES[state].tone} />
       <span>{cardWord(card, now)}</span>
     </Chip>
@@ -42,8 +47,8 @@ function RunChip({ card, now }: { card: TicketCard; now: number }) {
 export function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="font-sans text-[12px] leading-[1.4] tracking-[.01em] text-ink-3">{label}</dt>
-      <dd className="m-0 min-w-0 font-sans text-[14px] font-medium leading-[1.4] [overflow-wrap:anywhere] text-ink">{children}</dd>
+      <dt className="font-sans text-[13px] leading-[1.45] text-ink-3">{label}</dt>
+      <dd className="m-0 min-w-0 font-sans text-[13px] leading-[1.45] [overflow-wrap:anywhere] text-ink">{children}</dd>
     </>
   );
 }
@@ -58,12 +63,12 @@ function Contract({ card }: { card: TicketCard }) {
   const run = useRun(runId == null ? null : card.base, runId, deps);
   if (!isSuccess) return null;
   if (ticket == null) {
-    return <p className="mt-5 font-mono text-[13px] text-ink-3">This host has not mirrored {card.key}.</p>;
+    return <p className="m-0 mt-5 font-sans text-[13px] leading-[1.45] text-ink-3">This host has not mirrored {card.key}.</p>;
   }
   return (
     <>
       <div className={`${SECTION_LABEL} mt-5`}>Summary</div>
-      <p className="m-0 mt-2.5 max-w-[75ch] line-clamp-4 font-read text-[15px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
+      <p className="m-0 mt-2.5 max-w-[75ch] line-clamp-4 font-sans text-[14px] leading-[1.5] text-ink">{summaryOf(ticket.body)}</p>
       <div className="mt-[18px]">
         <Criteria rows={criteriaRows(ticket.criteria, run.data?.criteria ?? [], runId != null)} />
       </div>
@@ -91,9 +96,9 @@ function Ask({ card, now }: { card: TicketCard; now: number }) {
   const host = hosts.find((candidate) => candidate.base === card.base);
   const description = describeOn(card.need.item, host, now);
   return (
-    <div data-peek-ask className="mt-4 border border-rule-2 bg-need-wash px-3.5 pb-3.5 pt-3 shadow-[inset_2px_0_0_var(--need)]">
-      <div className="font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-need">Needs you</div>
-      <p className="m-0 mb-3 mt-1.5 max-w-[75ch] break-words font-read text-[15px] leading-[1.5] text-ink">{description.body}</p>
+    <div data-peek-ask className="mt-4 rounded-[10px] bg-raised px-3.5 py-3 shadow-[inset_0_0_0_1px_var(--need-edge)]">
+      <h3 className="m-0 font-sans text-[13px] font-semibold leading-[1.3] text-need">Needs you</h3>
+      <p className="m-0 mb-3 mt-1.5 max-w-[75ch] break-words font-sans text-[14px] leading-[1.5] text-ink">{description.body}</p>
       <CardActions
         key={`${card.id} ${ask}`}
         entry={card.need}
@@ -130,16 +135,21 @@ export function TicketPeek({
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleId}
-      className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col border-l border-rule bg-paper text-ink shadow-[-8px_0_24px_rgba(0,0,0,.28)] max-[720px]:w-full max-[720px]:border-l-0"
+      className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink shadow-[0_0_0_1px_var(--hair-2),var(--card-shadow)] max-[720px]:w-full max-[720px]:rounded-none"
     >
-      <div className="flex min-h-14 items-center gap-2 border-b border-rule-2 pl-5 pr-2.5">
-        <span data-peek-key className="font-mono text-[12px] font-medium leading-none tabular-nums text-ink-3">{card.key}</span>
-        <span className="ml-auto flex gap-1.5">
-          <Link to="/tickets/$project/$key" params={{ project: card.project, key: card.key }} search={keepScope} className={HEAD_BUTTON}>
+      <div className="flex items-center gap-1 pl-[18px] pr-3 pt-4">
+        <span data-peek-key className="mr-auto font-mono text-[12px] leading-none tabular-nums text-ink-3">{card.key}</span>
+        <span className="flex gap-1">
+          <Link
+            to="/tickets/$project/$key"
+            params={{ project: card.project, key: card.key }}
+            search={keepScope}
+            aria-label="Expand to the full ticket page"
+            className={HEAD_BUTTON}
+          >
             <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" />
             </svg>
-            Expand<span className="sr-only"> to the full ticket page</span>
           </Link>
           <button ref={close} type="button" aria-label="Close preview" onClick={onClose} className={HEAD_BUTTON}>
             <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
@@ -148,18 +158,18 @@ export function TicketPeek({
           </button>
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-7 pt-[18px]">
-        <h2 id={titleId} className="break-words font-sans text-[22px] font-extrabold leading-[1.15] tracking-[-0.01em] [font-stretch:108%]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-7 pt-3">
+        <h2 id={titleId} className="m-0 break-words font-sans text-[17px] font-semibold leading-[1.3] tracking-[-0.01em]">
           <TitleText>{card.title}</TitleText>
         </h2>
         <div data-peek-column className="mt-3">
-          <Chip>
+          <Chip tone={column === "needs_you" ? "need" : STATES[head.state].tone}>
             <StateDot state={head.state} hideWord tone={column === "needs_you" ? "need" : undefined} />
             <span>{head.label}</span>
           </Chip>
         </div>
         <Ask card={card} now={now} />
-        <dl className="mt-4 grid grid-cols-[96px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2.5">
+        <dl className="mt-4 grid grid-cols-[90px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5">
           <Fact label="Project">{card.project}</Fact>
           <Fact label="Time box">{card.timeBoxMs == null ? "none" : <span className={NUMBER}>{formatAge(card.timeBoxMs)}</span>}</Fact>
           <Fact label="Run">
