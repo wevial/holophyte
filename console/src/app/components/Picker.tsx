@@ -164,9 +164,9 @@ function CheckIcon() {
 }
 
 /** A button reading the current option that opens a listbox of `options`;
- *  picking one calls `onPick` with its value. */
-/** `passPress` lets a press outside the open list close it and keep its
- *  own effect, so a press in another field focuses that field. */
+ *  picking one calls `onPick` with its value. `passPress` lets a press
+ *  outside the open list close it and keep its own effect, so a press in
+ *  another field focuses that field. */
 export function Picker({ id, label, options, value, onPick, passPress, "aria-invalid": invalid, "aria-describedby": describedBy }: {
   id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; passPress?: boolean; "aria-invalid"?: boolean; "aria-describedby"?: string;
 }) {
