@@ -53,7 +53,9 @@ async function pickTab(name: RegExp) {
   await act(settle);
 }
 async function pickProject(name: string) {
-  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: name } });
+  fireEvent.click(screen.getByRole("button", { name: /Switch project$/ }));
+  await act(settle);
+  fireEvent.click(within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option").find((option) => option.textContent?.startsWith(name))!);
   await act(settle);
   await act(settle);
 }

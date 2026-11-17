@@ -261,7 +261,7 @@ test("a refused PUT /prefs says so in a toast with the reason and the choice sta
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Today's log filter not saved: day_log.items: more than 64 entries");
   expect(box("Verdicts").checked).toBe(true);
 
-  await act(async () => screen.getByRole("link", { name: "Back" }).click());
+  await act(async () => within(screen.getByRole("complementary", { name: "Console" })).getAllByRole("link", { name: "Settings" })[0]!.click());
   await act(settle);
   expect(logLines()).toContain("10:50 DEMO-10 review round 2: approve");
 });
@@ -275,7 +275,7 @@ test("a tick made while GET /prefs is still answering outlives that answer", asy
     answer(Response.json({ day_log: null, updated_ms: null }));
     await settle();
   });
-  await act(async () => screen.getByRole("link", { name: "Back" }).click());
+  await act(async () => within(screen.getByRole("complementary", { name: "Console" })).getAllByRole("link", { name: "Settings" })[0]!.click());
   await act(settle);
   expect(logLines()).toContain("10:50 DEMO-10 review round 2: approve");
 });
