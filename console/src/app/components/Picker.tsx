@@ -37,7 +37,16 @@ const picker = definePrimitive({
   }),
   sync: (options) => ({ current: options.current ?? null }),
   api: (context) => {
-    const popup = createPopup(context, { preset: LISTBOX_POPOVER });
+    const popup = createPopup(context, {
+      preset: LISTBOX_POPOVER,
+      rules: (core) => ({
+        dismiss(reason, { event, focus }) {
+          if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
+          event?.preventDefault();
+          core.control.hide({ reason, event, focus: true });
+        },
+      }),
+    });
     const listbox = createListbox(context, {
       key: "highlighted",
       items: () => context.options().items ?? [],

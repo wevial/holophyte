@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ScoutDetail, ScoutRow, Scouts } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -267,4 +268,16 @@ test("closing New scout keeps q and filter, and a Scout button's kind leaves the
   } finally {
     media.mockRestore();
   }
+});
+
+test("a press on Search while Kind is open closes it unchanged and gives focus back to the Kind button", async () => {
+  await mount("#/scouts?type=bug", scoutFetch(demo, writer));
+  await click(picker("Kind"));
+  expect(screen.getByRole("listbox", { name: "Kind" })).toBeTruthy();
+  await userEvent.click(field());
+  await settleAll();
+  expect(screen.queryByRole("listbox", { name: "Kind" })).toBeNull();
+  expect(searchParam("type")).toBe("bug");
+  expect(picker("Kind").textContent).toBe("Bug");
+  expect(document.activeElement).toBe(picker("Kind"));
 });
