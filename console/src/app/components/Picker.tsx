@@ -11,6 +11,8 @@ const MENU_WIDTH = 220;
 export interface PickerOption {
   value: string;
   label: string;
+  disabled?: boolean;
+  note?: string;
 }
 
 type PickerOptions = {
@@ -18,13 +20,15 @@ type PickerOptions = {
   items?: PickerOption[];
   current?: string;
   onChoose?: (key: string) => void;
+  passPress?: boolean;
 };
 
 const LISTBOX_POPOVER = { ...popoverPreset, role: undefined };
 
-/** A label moves focus to its control on the click that ends a press, in
- *  the same task as the press's pointerup, so focus goes back to `button`
- *  in the task after it. Returns a cancel for a reopen that comes first. */
+/** A label wrapping its control moves focus to it on the click that ends a
+ *  press, in the same task as the press's pointerup, so focus goes back to
+ *  `button` in the task after it. Returns a cancel for a reopen that comes
+ *  first. A label naming another control by `for` keeps that control's focus. */
 function refocusAfterPress(button: HTMLElement | undefined) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const settle = () => {
@@ -50,6 +54,7 @@ const picker = definePrimitive({
     items: "value",
     current: "string",
     onChoose: "callback",
+    passPress: "boolean",
   },
   state: (options: PickerOptions) => ({
     ...popupState(options),
@@ -64,9 +69,11 @@ const picker = definePrimitive({
       rules: (core) => ({
         dismiss(reason, { event, focus }) {
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
+          if (context.options().passPress) return void core.control.hide({ reason, event, focus: false });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
-          cancelRefocus = refocusAfterPress(core.triggerElement());
+          const label = event?.target instanceof Element ? event.target.closest("label") : null;
+          if (label && !label.htmlFor) cancelRefocus = refocusAfterPress(core.triggerElement());
         },
       }),
     });
@@ -88,7 +95,7 @@ const picker = definePrimitive({
       }),
     );
     const choose = (key: string | null, event?: Event) => {
-      if (key == null) return;
+      if (key == null || context.options().items?.find((item) => item.value === key)?.disabled) return;
       popup.close({ reason: "item-press", event });
       context.options().onChoose?.(key);
     };
@@ -157,38 +164,47 @@ function CheckIcon() {
 }
 
 /** A button reading the current option that opens a listbox of `options`;
- *  picking one calls `onPick` with its value. */
-export function Picker({ label, options, value, onPick }: { label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void }) {
+ *  picking one calls `onPick` with its value. `passPress` lets a press
+ *  outside the open list close it and keep its own effect, so a press in
+ *  another field focuses that field. */
+export function Picker({ id, label, options, value, onPick, passPress, "aria-invalid": invalid, "aria-describedby": describedBy }: {
+  id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; passPress?: boolean; "aria-invalid"?: boolean; "aria-describedby"?: string;
+}) {
   const current = options.find((option) => option.value === value) ?? options[0];
   const labelId = useId();
   const handle = usePrimitive(picker, {
     items: options as PickerOption[],
     current: current?.value,
     onChoose: onPick,
+    passPress,
   });
   return usePart(
     handle,
     "root",
     {},
     {
-      className: "inline-flex",
+      className: "inline-flex max-w-full min-w-0",
       children: (
         <>
           <span id={labelId} hidden>
             {label}
           </span>
           <Trigger
+            id={id}
+            aria-invalid={invalid}
+            aria-describedby={describedBy}
             aria-haspopup="listbox"
-            aria-label={`${label}: ${current?.label ?? ""}`}
+            aria-label={`${label}: ${current?.label ?? ""}${current?.note ? ` ${current.note}` : ""}`}
             onKeyDown={(event) => {
               if (event.key !== "ArrowDown") return;
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className="inline-flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected pr-2 pl-2.5 text-[13px] leading-none font-medium whitespace-nowrap text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            className="inline-flex min-h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected py-1.5 pr-2 pl-2.5 text-left text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
           >
-            {current?.label}
-            <span className="flex text-ink-3">
+            <span className="min-w-0 [overflow-wrap:anywhere]">{current?.label}</span>
+            {current?.note && <span className="shrink-0 whitespace-nowrap text-ink-3">{" "}{current.note}</span>}
+            <span className="flex shrink-0 text-ink-3">
               <DropIcon />
             </span>
           </Trigger>
@@ -205,16 +221,19 @@ export function Picker({ label, options, value, onPick }: { label: string; optio
               maxHeight: "var(--available-height)",
               width: `min(${MENU_WIDTH}px, calc(100vw - ${2 * EDGE}px))`,
             }}
-            className="fixed z-50 flex flex-col overflow-y-auto rounded-[9px] bg-raised p-1 shadow-[0_0_0_1px_var(--hair-2),var(--card-shadow)] outline-none"
+            className="fixed z-50 flex flex-col overflow-y-auto rounded-[9px] bg-raised p-1 shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] outline-none"
           >
             <List aria-labelledby={labelId} className="flex flex-col">
               {options.map((option) => (
                 <Option
                   key={option.value}
                   value={option.value}
-                  className="flex h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 text-[13px] leading-none text-ink-2 data-[active=true]:bg-hover data-[active=true]:text-ink"
+                  aria-disabled={option.disabled || undefined}
+                  className="flex min-h-[30px] shrink-0 cursor-pointer items-center gap-2 rounded-button px-2 py-1.5 text-[13px] leading-[1.25] text-ink-2 aria-selected:bg-hover aria-selected:text-ink data-[active=true]:bg-hover data-[active=true]:text-ink aria-disabled:cursor-default aria-disabled:text-ink-3"
                 >
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>
+                  {option.note && <span className="shrink-0 whitespace-nowrap text-ink-3">{" "}{option.note}</span>}
+                  <span className="flex-1" />
                   <span className={`flex text-accent ${option.value === current?.value ? "" : "invisible"}`}>
                     <CheckIcon />
                   </span>

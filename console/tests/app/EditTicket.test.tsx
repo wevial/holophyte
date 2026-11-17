@@ -257,6 +257,14 @@ test("a blocking check holds Save, a draft's problems do not, and a 409 keeps th
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-2/edit");
 });
 
+const picker = (name: string) => screen.getByLabelText(name, { selector: "button" });
+async function choose(name: string, label: string) {
+  await act(async () => void fireEvent.click(picker(name)));
+  await flush();
+  await act(async () => void fireEvent.click(within(screen.getByRole("listbox", { name })).getByRole("option", { name: label })));
+  await flush();
+}
+
 async function pressSave() {
   await act(async () => void fireEvent.click(saveButton()));
   await flush();
@@ -305,6 +313,16 @@ test("How holds every paragraph up to the next label, and section text under no 
   await pressSave();
   const served = "Read the stored steers.\n\n1. Fetch them with the run.\n2. Render each under its turn.";
   expect(puts.map(put => (put.body as { body: string }).body)).toEqual([BODY.replace(served, "Read the steers once.")]);
+});
+
+test("a changed custom Project section under Other sections draws the shared field head, not the Project control's", async () => {
+  const body = BODY.replace("## Open questions", "## Project\n\nThe orders team owns it.\n\n## Open questions");
+  await mount("#/tickets/demo/DEMO-2/edit", { ticket: demo2({ body, current: { ...demo2().current!, body } }) });
+  const section = document.querySelector<HTMLTextAreaElement>("details textarea[id='new-Project']")!;
+  await act(async () => void fireEvent.change(section, { target: { value: "The exports team owns it." } }));
+  const field = section.closest<HTMLElement>("[data-changed]")!;
+  expect(field.textContent).toStartWith("ProjectOptional");
+  expect(within(field).queryByText("Required")).toBeNull();
 });
 
 test("a section its fields cannot hold whole is edited as its own text, comments and all", async () => {
@@ -379,25 +397,24 @@ const EVIDENCE_BODY = HEADER_BODY
 
 test("a header ticket draws its blast radius and Evidence rows, and a state edit rewrites only that entry's state line", async () => {
   const saved = await saveHeaderEdit(async () => {
-    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
-    expect(radius.selectedOptions[0]!.textContent).toBe("Medium");
+    expect(picker("Blast radius").textContent).toBe("Medium");
     expect(["E1 File", "E1 State", "E2 File", "E2 State"].map(name => box(name).value)).toEqual(["01-notes.png", "the run page with two notes", "02-author.png", "a note's author beside it"]);
     await type("E2 State", "the author beside each note");
   }, EVIDENCE_BODY);
   expect(saved).toBe(EVIDENCE_BODY.replace('state = "a note\'s author beside it"', 'state = "the author beside each note"'));
 });
 
-test("a magic-line ticket draws no Blast radius select and no Evidence list", async () => {
+test("a magic-line ticket draws no Blast radius picker and no Evidence list", async () => {
   await mount("#/tickets/demo/DEMO-2/edit");
   expect(box("Title").value).toBe(SERVED.Title);
-  expect(screen.getByRole("combobox", { name: "UI change" })).toBeTruthy();
-  expect(screen.queryByRole("combobox", { name: "Blast radius" })).toBeNull();
+  expect(picker("UI change")).toBeTruthy();
+  expect(screen.queryByLabelText("Blast radius", { selector: "button" })).toBeNull();
   expect(screen.queryByRole("button", { name: "+ Add a state" })).toBeNull();
 });
 
-test("a magic-line ticket's UI change select writes its **UI change:** line", async () => {
+test("a magic-line ticket's UI change picker writes its **UI change:** line", async () => {
   await mount("#/tickets/demo/DEMO-2/edit", { save: fakeFetch({ ticket: "DEMO-2", revision: 4 }).fetchImpl });
-  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "UI change" }), { target: { value: "minor" } }));
+  await choose("UI change", "Minor");
   await pressSave();
   const saved = (puts[0]!.body as { body: string }).body;
   expect(saved.match(/^\*\*UI change:\*\*.*$/gm)).toEqual(["**UI change:** minor"]);
@@ -407,10 +424,9 @@ test("a magic-line ticket's UI change select writes its **UI change:** line", as
 test("a header blast radius outside the choices shows as itself and Diff decides removes its line", async () => {
   const body = EVIDENCE_BODY.replace('blast_radius = "medium"', 'blast_radius = "low"');
   const saved = await saveHeaderEdit(async () => {
-    const radius = screen.getByRole("combobox", { name: "Blast radius" }) as HTMLSelectElement;
-    expect(radius.selectedOptions[0]!.textContent).toBe("low · not a choice");
-    await act(async () => void fireEvent.change(radius, { target: { value: "" } }));
-    expect(radius.selectedOptions[0]!.textContent).toBe("Diff decides");
+    expect(picker("Blast radius").textContent).toBe("low · not a choice");
+    await choose("Blast radius", "Diff decides");
+    expect(picker("Blast radius").textContent).toBe("Diff decides");
   }, body);
   expect(saved).toBe(body.replace('blast_radius = "low"\n', ""));
 });
@@ -418,10 +434,17 @@ test("a header blast radius outside the choices shows as itself and Diff decides
 test("a header UI change outside the choices shows as itself and None replaces it", async () => {
   const body = HEADER_BODY.replace('ui_change = "minor"', 'ui_change = "big"');
   const saved = await saveHeaderEdit(async () => {
-    const change = screen.getByRole("combobox", { name: "UI change" }) as HTMLSelectElement;
-    expect(change.selectedOptions[0]!.textContent).toBe("big · not a choice");
-    await act(async () => void fireEvent.change(change, { target: { value: "" } }));
-    expect(change.selectedOptions[0]!.textContent).toBe("None");
+    expect(picker("UI change").textContent).toBe("big · not a choice");
+    await act(async () => void fireEvent.click(picker("UI change")));
+    await flush();
+    const outside = within(screen.getByRole("listbox", { name: "UI change" })).getByRole("option", { name: "big · not a choice" });
+    expect(outside.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => void fireEvent.click(outside));
+    await flush();
+    expect(screen.getByRole("listbox", { name: "UI change" })).toBeTruthy();
+    await act(async () => void fireEvent.click(within(screen.getByRole("listbox", { name: "UI change" })).getByRole("option", { name: "None" })));
+    await flush();
+    expect(picker("UI change").textContent).toBe("None");
   }, body);
   expect(saved).toBe(body.replace('ui_change = "big"', 'ui_change = "none"'));
 });

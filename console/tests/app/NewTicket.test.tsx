@@ -39,6 +39,7 @@ async function mount(hash: string, fetch: Fetch = fleet()) {
   fake.clock.now = NOW;
   render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={DEMO} pollDeps={fake.deps} /></QueryClientProvider>);
   await flush();
+  return fake;
 }
 
 async function press(name: string) {
@@ -206,9 +207,12 @@ test("estimate, priority and unique uppercase dependency chips serialize and rem
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
   await type("Title", "Steer notes show on the run detail card");
   expect((screen.getByRole("spinbutton", { name: "Estimate" }) as HTMLInputElement).value).toBe("25");
-  expect(screen.getByRole("button", { name: "P2" }).getAttribute("aria-pressed")).toBe("true");
+  const priority = screen.getByRole("group", { name: "Priority" });
+  expect(within(priority).getAllByRole("button").map(button => [button.textContent, button.getAttribute("aria-pressed")]))
+    .toEqual([["None", "false"], ["P1", "false"], ["P2", "true"], ["P3", "false"], ["P4", "false"]]);
   for (let index = 0; index < 4; index += 1) await press("Increase estimate");
   await press("P1");
+  expect(within(priority).getByRole("button", { name: "P1" }).getAttribute("aria-pressed")).toBe("true");
   await type("Depends on", "holo-238");
   await press("Add");
   await type("Depends on", "holo-238");
@@ -257,11 +261,23 @@ test.each([[true, "Needs you"], [false, "In flight"]] as const)("a pull-request 
   expect(screen.getByText(`DEMO-9 · ${label}`, { exact: true })).toBeTruthy();
 });
 
-const select = (name: string) => screen.getByRole("combobox", { name }) as HTMLSelectElement;
-const options = (name: string) => within(select(name)).getAllByRole("option").map(option => option.textContent);
+const picker = (name: string) => screen.getByLabelText(name, { selector: "button" });
+async function open(name: string) {
+  await act(async () => void fireEvent.click(picker(name)));
+  await flush();
+  return screen.getByRole("listbox", { name });
+}
+async function options(name: string) {
+  const list = await open(name);
+  const shown = within(list).getAllByRole("option").map(option => [option.textContent, option.getAttribute("aria-selected")]);
+  await act(async () => void fireEvent.keyDown(list.parentElement!, { key: "Escape" }));
+  await flush();
+  return shown;
+}
 async function choose(name: string, label: string) {
-  const option = within(select(name)).getAllByRole("option").find(each => each.textContent === label) as HTMLOptionElement;
-  await act(async () => void fireEvent.change(select(name), { target: { value: option.value } }));
+  const list = await open(name);
+  await act(async () => void fireEvent.click(within(list).getByRole("option", { name: label })));
+  await flush();
 }
 const header = (body: string) => body.slice(0, body.indexOf("\n+++\n") + 4).split("\n");
 
@@ -269,8 +285,8 @@ test("UI change chooses None, Minor or Major: Minor files no [mockup], Major fil
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
   await type("Title", "Steer notes show on the run detail card");
-  expect(options("UI change")).toEqual(["None", "Minor", "Major"]);
-  expect(select("UI change").selectedOptions[0]!.textContent).toBe("None");
+  expect(picker("UI change").textContent).toBe("None");
+  expect(await options("UI change")).toEqual([["None", "true"], ["Minor", "false"], ["Major", "false"]]);
   await act(async () => void fireEvent.change(screen.getByRole("spinbutton", { name: "Estimate" }), { target: { value: "45" } }));
   await type("Depends on", "HOLO-7");
   await press("Add");
@@ -287,6 +303,7 @@ test("UI change chooses None, Minor or Major: Minor files no [mockup], Major fil
   ]);
 
   await choose("UI change", "Major");
+  expect(picker("UI change").textContent).toBe("Major");
   await type("Mock-up link", "https://claude.ai/artifact/abc123");
   await act(async () => void fireEvent.change(screen.getByLabelText("Approved on"), { target: { value: "2026-10-19" } }));
   await type("What was approved", "the defaults");
@@ -312,12 +329,72 @@ test("UI change chooses None, Minor or Major: Minor files no [mockup], Major fil
   expect(body).not.toMatch(/^## (?:Mock-up|Estimate & dependencies)$/m);
 });
 
+test("the Checker's UI change message focuses the UI change picker button, which its label names", async () => {
+  const problem = 'header ui_change must be "none", "minor" or "major", not "big"';
+  const base = fleet();
+  const fake = await mount("#/tickets/demo/new", async (url, init) =>
+    url === `${DEMO}/tickets/check` ? Response.json({ problems: [problem], advisories: [], blocks: true }) : base(url, init));
+  await type("Title", "Steer notes show on the run detail card");
+  for (const entry of fake.scheduled.filter(each => each.ms === 600)) await act(async () => entry.fn());
+  await flush();
+  const button = picker("UI change");
+  expect(button.getAttribute("aria-haspopup")).toBe("listbox");
+  expect(button.getAttribute("aria-invalid")).toBe("true");
+  const panel = screen.getByRole("region", { name: "Checker" });
+  await act(async () => void fireEvent.click(within(panel).getByRole("button", { name: new RegExp(`UI change.*${problem}`) })));
+  expect(document.activeElement).toBe(button);
+});
+
+test("with UI change open, the Checker's Summary message closes it and leaves focus on Summary", async () => {
+  const base = fleet();
+  const fake = await mount("#/tickets/demo/new", async (url, init) =>
+    url === `${DEMO}/tickets/check` ? Response.json({ problems: ["'Summary' is empty"], advisories: [], blocks: true }) : base(url, init));
+  await type("Title", "Steer notes show on the run detail card");
+  for (const entry of fake.scheduled.filter(each => each.ms === 600)) await act(async () => entry.fn());
+  await flush();
+  await open("UI change");
+  const jump = within(screen.getByRole("region", { name: "Checker" })).getByRole("button", { name: /Summary/ });
+  await act(async () => {
+    fireEvent.pointerDown(jump);
+    fireEvent.pointerUp(jump);
+    fireEvent.click(jump);
+  });
+  await act(settle);
+  expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
+  expect(document.activeElement === screen.getByRole("textbox", { name: "Summary" })).toBe(true);
+});
+
+test("with UI change open, clicking into Summary closes it and Summary takes the typing", async () => {
+  await mount("#/tickets/demo/new");
+  await open("UI change");
+  const summary = screen.getByRole("textbox", { name: "Summary" });
+  await userEvent.click(summary);
+  await userEvent.keyboard("Notes show");
+  await flush();
+  expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
+  expect((summary as HTMLTextAreaElement).value).toBe("Notes show");
+});
+
+test("with UI change open, pressing the Blast radius label closes it and opens Blast radius with focus in its list", async () => {
+  await mount("#/tickets/demo/new");
+  await open("UI change");
+  const label = screen.getByText("Blast radius", { selector: "label" });
+  await act(async () => {
+    fireEvent.pointerDown(label);
+    fireEvent.pointerUp(label);
+    fireEvent.click(label);
+  });
+  await flush();
+  expect(screen.queryByRole("listbox", { name: "UI change" })).toBeNull();
+  expect(screen.getByRole("listbox", { name: "Blast radius" }).contains(document.activeElement)).toBe(true);
+});
+
 test("Blast radius offers Diff decides, Medium and High: Diff decides files no blast_radius and High files it after ui_change", async () => {
   const answer = rejectTicket();
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
   await type("Title", "Steer notes show on the run detail card");
-  expect(options("Blast radius")).toEqual(["Diff decides", "Medium", "High"]);
-  expect(select("Blast radius").selectedOptions[0]!.textContent).toBe("Diff decides");
+  expect(picker("Blast radius").textContent).toBe("Diff decides");
+  expect(await options("Blast radius")).toEqual([["Diff decides", "true"], ["Medium", "false"], ["High", "false"]]);
   await press("File ticket");
   expect(posted(answer).body).not.toMatch(/^blast_radius/m);
   await choose("Blast radius", "High");
