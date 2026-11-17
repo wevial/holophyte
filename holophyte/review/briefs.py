@@ -166,7 +166,45 @@ def trim_brief(root, base_sha, sha):
             "missing at the range's final state.\n\n")
 
 
-def criteria_brief(criteria, refused="REQUEST_CHANGES"):
+def _cited(path, name):
+    if path.endswith((".py", ".go")):
+        return f"{path}::{name}"
+    title = re.sub(r"\\(.)", r"\1", name)
+    quoted = title.replace("\\", "\\\\").replace('"', '\\"')
+    return f'{path}::"{quoted}"'
+
+
+def test_name_listing(wt, paths):
+    from holophyte.review.reply_parsing import _inside, test_names
+    from holophyte.review.witness_precheck import GLOB
+
+    listed = []
+    for path in dict.fromkeys(paths):
+        file = None if GLOB.search(path) else _inside(wt, path)
+        if file is None or not file.is_file():
+            continue
+        names = test_names(file.read_text(errors="replace"), file.suffix)
+        cited = "".join(f"- {_cited(path, name)}\n"
+                        for name in sorted(set(names))) or "- (no tests)\n"
+        listed.append(f"`{path}`:\n{cited}")
+    return "\n".join(listed)
+
+
+def _named_tests_brief(wt, criteria):
+    from holophyte.review.witness_precheck import named_files
+
+    if wt is None:
+        return ""
+    listing = test_name_listing(wt, [path for files in named_files(
+        [text for _, text in criteria]) for path in files])
+    if not listing:
+        return ""
+    return ("The test files these criteria name define exactly these tests; "
+            "copy a test name from this list verbatim into its CRITERION "
+            f"line, as the loop matches names exactly:\n{listing}\n")
+
+
+def criteria_brief(criteria, refused="REQUEST_CHANGES", wt=None):
     if not criteria:
         return ""
     pairs = numbered(None, None, criteria)
@@ -186,7 +224,7 @@ def criteria_brief(criteria, refused="REQUEST_CHANGES"):
             "quote inside a test name with a backslash, `\\\"`.\n"
             "A criterion marked not met or unwitnessed, or left out of this "
             f"list, is a blocker: the round is {refused} regardless of "
-            "the verdict line.\n\n")
+            "the verdict line.\n\n" + _named_tests_brief(wt, pairs))
 
 
 def witness_brief(gaps, unnamed, when):

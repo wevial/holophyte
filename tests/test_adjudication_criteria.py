@@ -28,6 +28,9 @@ LEFT_UNWITNESSED = Reply(
     "Blocker: the measurement is missing.\n"
     "CRITERION 1: unwitnessed — the measurement is not in the pull "
     "request description\nVERDICT: REQUEST_CHANGES")
+MISTYPED = ("CRITERION 1: met \u2014 "
+            "tests/test_thing.py::test_it_work")
+EXACT = "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works"
 LEFT_OPEN = ("The newest review round left these criteria unmet or "
              f"unwitnessed:\nC1. {CRITERION}\n")
 
@@ -132,9 +135,55 @@ class AdjudicationCriteriaTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertIn("fix round 2", self.subjects())
 
-    def test_a_pass_naming_a_missing_test_fails(self):
-        self.adjudicate("Mergeable.\nCRITERION 1: met — "
-                        "tests/test_thing.py::test_missing\nVERDICT: PASS")
+    def recite(self, restated):
+        """The adjudicator's PASS cites a test by a name its file lacks;
+        the re-cite turn replies `restated`."""
+        fake, _ = self.loop(Commit("first cut"), REQUEST_CHANGES,
+                            Commit("fix round 1"), LEFT_UNWITNESSED,
+                            Commit("fix round 2"),
+                            Reply(f"Mergeable.\n{MISTYPED}\nVERDICT: PASS"),
+                            restated)
+        return fake
+
+    def test_a_mistyped_test_name_restated_exactly_passes(self):
+        fake = self.recite(Reply(EXACT))
+
+        self.assertEqual(fake.roles[-2:], ["adjudicate", "adjudicate"])
+        self.assertIn("- tests/test_thing.py::test_it_works\n",
+                      fake.turns[-1].goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read(
+            "SELECT verdict FROM reviewRounds WHERE round = 3"), [("pass",)])
+        ((entry,),) = self.read(
+            "SELECT text FROM ledger WHERE kind = 'adjudication'")
+        self.assertIn(f"Cited: {MISTYPED}\n", entry)
+        self.assertIn(f"Restated: {EXACT}\n", entry)
+
+    def test_a_restated_name_still_missing_fails_after_two_asks(self):
+        fake = self.recite(Reply(
+            "CRITERION 1: met \u2014 tests/test_thing.py::test_works"))
+
+        self.assertEqual(fake.roles.count("adjudicate"), 2)
+        self.assert_failed_naming_criterion_1("unwitnessed")
+        ((findings,),) = self.read(
+            "SELECT findings FROM reviewRounds WHERE round = 3")
+        self.assertIn("named test not found: tests/test_thing.py::test_works",
+                      json.loads(findings)[0]["message"])
+
+    def test_a_re_cite_paused_on_resumes_without_asking_again(self):
+        self.recite(PauseReply(self.db, Reply(EXACT)))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+
+        command(self.project, "KO-131", None, resume=True)
+        fake, _ = self.loop()
+
+        self.assertEqual(fake.roles, [])
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+
+    def test_a_pass_citing_a_file_the_worktree_lacks_fails_unasked(self):
+        self.adjudicate("Mergeable.\nCRITERION 1: met \u2014 "
+                        "tests/test_absent.py::test_it_works\nVERDICT: PASS")
         self.assert_failed_naming_criterion_1("unwitnessed")
 
     def test_the_prompt_names_the_criterion_left_open_and_the_fail_verdict(self):
