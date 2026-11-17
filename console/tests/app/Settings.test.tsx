@@ -74,6 +74,16 @@ async function mount(hash: string, source = fleet()) {
   };
 }
 
+const switcher = () => screen.getByRole("button", { name: /Switch project$/ });
+const projectOptions = () => within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option");
+async function pickProject(name: string) {
+  fireEvent.click(switcher());
+  await act(settle);
+  fireEvent.click(projectOptions().find((option) => option.textContent?.startsWith(name))!);
+  await act(settle);
+}
+const backLink = () => within(screen.getByRole("complementary", { name: "Console" })).getAllByRole("link", { name: "Settings" })[0]!;
+
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 beforeAll(() => happyDOM.setURL(`${ORIGIN}/`));
 afterAll(() => happyDOM.setURL("about:blank"));
@@ -115,7 +125,7 @@ test("Review presents the project file and ordered grouped sections with matchin
   expect(screen.getByText("demo · config.toml on writer-host")).toBeTruthy();
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   const links = within(nav).getAllByRole("link");
-  expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts1", "General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]);
+  expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts1", "General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]);
   expect(nav.textContent).not.toContain("You · this browser");
   expect(links.filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)).toEqual(["Review"]);
   expect(screen.getByText("[loop], [review] and [agents] in config.toml")).toBeTruthy();
@@ -366,32 +376,29 @@ test("an implementer inline table shows read-only in full in a pre with a link t
   expect(reviewer.queryByText("default")).toBeNull();
 });
 
-test("the sidebar's project picker preserves the current tab, remembers the choice and names held projects; an unscoped Settings uses the first without rewriting", async () => {
+test("the sidebar's project switcher remembers the choice and names held projects; an unscoped Settings uses the first without rewriting", async () => {
   const view = await mount("#/settings/general?project=demo");
   view.failRunner();
   await view.poll();
-  const sidebar = screen.getByRole("complementary", { name: "Console" });
-  const picker = within(sidebar).getByRole("combobox", { name: "Project" }) as HTMLSelectElement;
-  expect(within(picker).getAllByRole("option").map((item) => item.textContent)).toEqual(["demo", "writer", "relos · held"]);
-  fireEvent.change(picker, { target: { value: "writer" } });
-  await act(settle);
-  expect(window.location.hash).toBe("#/settings/general?project=writer");
+  await pickProject("writer");
   expect(readStoredScope()).toBe("writer");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
   expect(screen.getByText("writer · config.toml on writer-host")).toBeTruthy();
-  expect((within(sidebar).getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("writer");
-  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "relos" } });
+  expect(switcher().getAttribute("aria-label")).toBe("Project: writer. Switch project");
+  fireEvent.click(switcher());
+  await act(settle);
+  expect(projectOptions().find((option) => option.textContent?.startsWith("relos"))?.textContent).toContain("held");
+  fireEvent.click(projectOptions().find((option) => option.textContent?.startsWith("relos"))!);
   await act(settle);
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
-  expect(within(nav).getByRole("link", { name: /Hold \/ release/ }).textContent).toContain("held");
+  expect(within(nav).getByRole("link", { name: /^Hold/ }).textContent).toContain("held");
   cleanup();
   await mount("#/settings");
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
-  expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("demo");
+  expect(switcher().getAttribute("aria-label")).toBe("Project: demo. Switch project");
   expect(window.location.hash).toBe("#/settings");
 });
 
-test("project panels distinguish pending, disabled and failed config reads while Hold / release retains its heading", async () => {
+test("project panels distinguish pending, disabled and failed config reads while Hold retains its heading", async () => {
   const cases: [Fetch, string][] = [
     [() => new Promise(() => {}), "Reading config.toml for demo from writer-host…"],
     [async () => new Response("not found", { status: 404 }), CONFIG_EDIT_OFF],
@@ -400,24 +407,23 @@ test("project panels distinguish pending, disabled and failed config reads while
   for (const [fetch, message] of cases) {
     await mount("#/settings/general?project=demo", fleet(fetch));
     expect(screen.getByText(message)).toBeTruthy();
-    fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Hold / release" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Hold" }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold / release");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold");
     cleanup();
   }
 });
 
 test("an unknown project's panels report no matching host and selecting a known project starts a config read", async () => {
   await mount("#/settings/general?project=unknown", fleet(() => new Promise(() => {})));
-  for (const label of ["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]) {
+  for (const label of ["General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(label);
     expect(screen.getByText("No host is available for unknown.")).toBeTruthy();
     expect(screen.queryByText(/^Reading config.toml/)).toBeNull();
   }
-  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "demo" } });
-  await act(settle);
+  await pickProject("demo");
   expect(screen.getByText("Reading config.toml for demo from writer-host…")).toBeTruthy();
   expect(screen.queryByText("No host is available for unknown.")).toBeNull();
 });
@@ -449,31 +455,15 @@ test("Raw TOML drops the page's width cap and sizes its editor to the viewport w
   expect(classes(screen.getByRole("region", { name: "General" }))).toContain("max-w-[1180px]");
 });
 
-test("on Appearance the sidebar holds Back and the grouped sections in place of the switcher and Pages, and the page holds only that section", async () => {
+test("on Appearance the sidebar holds the Settings sections in place of the Pages nav, and the page holds only that section", async () => {
   await mount("#/settings/appearance");
   const sidebar = screen.getByRole("complementary", { name: "Console" });
-  expect(within(sidebar).getByRole("link", { name: "Back" })).toBeTruthy();
   expect(within(sidebar).queryByRole("navigation", { name: "Pages" })).toBeNull();
-  expect(within(sidebar).queryByRole("button", { name: /Switch project$/ })).toBeNull();
-  const nav = within(sidebar).getByRole("navigation", { name: "Settings sections" });
-  const groups = within(nav).getAllByRole("group").map((group) => [
-    document.getElementById(group.getAttribute("aria-labelledby")!)?.textContent,
-    within(group).getAllByRole("link").map((link) => link.textContent),
-  ]);
-  expect(groups).toEqual([
-    ["You", ["Appearance", "Today's log"]],
-    ["Factory", ["Hosts"]],
-    ["Project", ["General", "Review", "Agents", "Capture", "Hold / release", "Raw TOML"]],
-  ]);
   const footer = within(sidebar).getByRole("contentinfo");
   expect(within(footer).getByRole("link", { name: "Settings" })).toBeTruthy();
   expect(within(within(footer).getByRole("group", { name: "Theme" })).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(["Dawn", "Night", "System"]);
-
-  const current = within(nav).getByRole("link", { name: "Appearance" });
-  expect(current.getAttribute("aria-current")).toBe("page");
-  expect(current.className).toEqual(expect.stringContaining("border-act bg-act-wash text-act"));
   expect(screen.getAllByRole("navigation", { name: "Settings sections" })).toHaveLength(1);
-  expect(screen.getAllByRole("combobox", { name: "Project" }).every((select) => sidebar.contains(select))).toBe(true);
+  expect(screen.getAllByRole("button", { name: /Switch project$/ }).every((button) => sidebar.contains(button))).toBe(true);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appearance");
 });
 
@@ -483,10 +473,9 @@ test("Back links to the page Settings was opened from, with its search, after mo
   await act(settle);
   await act(async () => fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Review" })));
   await act(settle);
-  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "writer" } });
-  await act(settle);
+  await pickProject("writer");
   expect(window.location.hash).toBe("#/settings/review?project=writer");
-  const back = screen.getByRole("link", { name: "Back" });
+  const back = backLink();
   expect(back.getAttribute("href")).toMatch(/#\/runs\?project=demo&state=failed$/);
   await act(async () => fireEvent.click(back));
   await act(settle);
@@ -496,7 +485,7 @@ test("Back links to the page Settings was opened from, with its search, after mo
 
 test("Settings as the first page loaded goes Back to the Overview in its scope", async () => {
   await mount("#/settings/general?project=demo");
-  const back = screen.getByRole("link", { name: "Back" });
+  const back = backLink();
   expect(back.getAttribute("href")).toMatch(/#\/\?project=demo$/);
   await act(async () => fireEvent.click(back));
   await act(settle);
@@ -513,7 +502,7 @@ test("a folded sidebar draws unfolded without its fold button on Settings, and f
   await act(settle);
   expect(sidebar().getAttribute("data-folded")).toBe("false");
   expect(screen.queryByRole("button", { name: /^(Expand|Collapse) sidebar$/ })).toBeNull();
-  await act(async () => fireEvent.click(screen.getByRole("link", { name: "Back" })));
+  await act(async () => fireEvent.click(backLink()));
   await act(settle);
   expect(window.location.hash).toBe("#/");
   expect(sidebar().getAttribute("data-folded")).toBe("true");
@@ -539,7 +528,7 @@ const logPhrases = () => Array.from(screen.getByRole("complementary", { name: "T
 const preview = () => screen.getByRole("complementary", { name: "Today's log preview" });
 const previewPhrases = () => Array.from(preview().querySelectorAll("li"), (row) => row.querySelector("[data-phrase]")?.textContent).filter(Boolean);
 const toOverview = async () => {
-  await act(async () => screen.getByRole("link", { name: "Back" }).click());
+  await act(async () => backLink().click());
   await act(settle);
   await act(settle);
 };

@@ -685,13 +685,12 @@ test("each page's heading section opens on the title row's padding", async () =>
   }
 });
 
-test("off Settings the sidebar keeps the project switcher and the Pages nav and holds no Back link", async () => {
+test("off Settings the sidebar keeps the project switcher and the Pages nav and holds no Settings sections", async () => {
   for (const hash of ["#/", "#/runs?project=demo", "#/tickets", "#/findings", "#/scouts", "#/stories"]) {
     await mount(hash);
     const sidebar = within(screen.getByRole("complementary", { name: "Console" }));
     expect(sidebar.getByRole("button", { name: /Switch project$/ })).toBeTruthy();
     expect(sidebar.getByRole("navigation", { name: "Pages" })).toBeTruthy();
-    expect(sidebar.queryByRole("link", { name: "Back" })).toBeNull();
     expect(sidebar.queryByRole("navigation", { name: "Settings sections" })).toBeNull();
     cleanup();
   }
