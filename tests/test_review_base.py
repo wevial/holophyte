@@ -1,11 +1,13 @@
 """The review base follows main forward once the candidate has merged it."""
 
 import contextlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from holophyte.agents.review_workspace import cut_base
 from holophyte.loop import adjudicate, review_round
 from tests.host_fixture import git
 
@@ -110,6 +112,60 @@ class ReviewBaseTests(unittest.TestCase):
             self.git("branch", "-f", "main", self.a)
             base, _ = self.review()
             self.assertEqual(base, self.b)
+
+
+class CutBaseTests(unittest.TestCase):
+    """The run's base is where its worktree left main, wherever main is now."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.repo = Path(tmp.name) / "project"
+        self.wt = Path(tmp.name) / "task-wt"
+        self.repo.mkdir()
+        self.git("init", "-q", "-b", "main")
+        self.commit(self.repo, "README.md", "a\n", "A")
+        self.cut = self.git("rev-parse", "main")
+
+    def git(self, *args, cwd=None):
+        return git(cwd or self.repo, *args)
+
+    def commit(self, checkout, name, text, message):
+        (checkout / name).write_text(text)
+        self.git("add", "-A", cwd=checkout)
+        self.git("commit", "-qm", message, cwd=checkout)
+        return self.git("rev-parse", "HEAD", cwd=checkout)
+
+    def cut_worktree(self, start="main"):
+        self.git("worktree", "add", "-q", "-b", "task", str(self.wt), start)
+
+    def is_ancestor(self, older, newer):
+        return subprocess.run(
+            ["git", "merge-base", "--is-ancestor", older, newer],
+            cwd=self.repo).returncode == 0
+
+    def test_base_is_cut_commit_after_main_moves_during_setup(self):
+        self.cut_worktree()
+        moved = self.commit(self.repo, "other.txt", "x\n", "another merge")
+        self.assertEqual(self.git("rev-parse", "main"), moved)
+        base = cut_base(self.wt)
+        self.assertEqual(base, self.cut)
+        self.assertNotEqual(base, moved)
+        head = self.git("rev-parse", "HEAD", cwd=self.wt)
+        self.assertTrue(self.is_ancestor(base, head))
+
+    def test_preserved_commits_on_older_main_are_inside_reviewed_range(self):
+        self.cut_worktree()
+        preserved = self.commit(self.wt, "app.py", "x = 1\n", "earlier run")
+        self.commit(self.repo, "other.txt", "x\n", "main moves on")
+        base = cut_base(self.wt)
+        self.assertEqual(base, self.cut)
+        self.assertEqual(
+            self.git("rev-list", f"{base}..HEAD", cwd=self.wt), preserved)
+
+    def test_base_is_main_when_main_has_not_moved(self):
+        self.cut_worktree()
+        self.assertEqual(cut_base(self.wt), self.git("rev-parse", "main"))
 
 
 if __name__ == "__main__":
