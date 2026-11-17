@@ -203,7 +203,7 @@ test("an open row's fate says who is fixing it, or why nobody is", async () => {
   expect(fateOf(idle!).classList.contains("text-ask-ink")).toBe(true);
 });
 
-test("settled rows say what became of each finding, the glyph and word in the fate's ink-2 tone", async () => {
+test("settled rows say what became of each finding, the glyph and word carrying the text-ink-2 class", async () => {
   const declineLedger = [{
     ...pinnedLedger,
     text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nDECLINE holophyte/serve/views.py:20 — the store column is lease_age_ms",
