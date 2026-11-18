@@ -205,7 +205,7 @@ export function ScoutsBeside({ search, current, newScout, children }: {
             <div className="flex items-center gap-2">
               <button ref={hideButton} type="button" aria-label="Hide scout list" title="Hide scout list" aria-expanded={true} aria-controls={LIST_ID}
                 onClick={() => toggle(true)}
-                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
+                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink aria-expanded:bg-selected aria-expanded:text-ink motion-reduce:transition-none">
                 <PanelLeftIcon />
               </button>
               <h2 className="m-0 flex-1 font-sans text-[20px] font-semibold leading-[1.25] text-ink">Scouts</h2>

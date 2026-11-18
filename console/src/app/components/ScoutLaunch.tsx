@@ -76,6 +76,18 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const routeOptions = (routes: ScoutRoute[]) => routes.map((route) => ({ value: route.name, label: route.name }));
+const listed = (routes: ScoutRoute[], name: string | null) => routes.some((route) => route.name === name);
+const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
+
+function RoutePicker({ id, label, routes, value, onPick }: { id: string; label: string; routes: ScoutRoute[]; value: string | null; onPick: (name: string) => void }) {
+  return (
+    <Field label={label}>
+      {routes.length === 0
+        ? <span className="font-sans text-[13px] leading-[30px] text-ink-3">none</span>
+        : <Picker id={id} label={label} passPress options={routeOptions(routes)} value={value ?? ""} onPick={onPick} />}
+    </Field>
+  );
+}
 
 function NumberField({ id, label, value, least, most, onChange }: {
   id: string;
@@ -93,8 +105,8 @@ function NumberField({ id, label, value, least, most, onChange }: {
   );
 }
 
-function Band({ column, children }: { column: boolean; children: ReactNode }) {
-  return <div className={`border-b border-rule-2 last:border-b-0 max-[720px]:p-4 ${column ? "px-6 py-5" : "p-5"}`}>{column ? <div className="max-w-[712px]">{children}</div> : children}</div>;
+function Band({ children }: { children: ReactNode }) {
+  return <div className="border-b border-rule-2 p-5 last:border-b-0 max-[720px]:p-4">{children}</div>;
 }
 
 /** The New scout form: the ask, its kind and project, and one disclosure
@@ -108,7 +120,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   onDraft: (draft: ScoutDraft) => void;
   onCancel: () => void;
   onLaunched: () => void;
-  /** Drawn alone in a pane: headed, unframed, its fields and buttons in one column. */
+  /** Drawn alone in a pane, under its own heading. */
   pane?: boolean;
 }) {
   const askRef = useRef<HTMLTextAreaElement>(null);
@@ -122,7 +134,11 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   const { data: routes } = useScoutRoutes(project.base);
   const leads = routes?.leads ?? [];
   const helperRoutes = routes?.helpers ?? [];
-  const picks: ScoutPicks | null = draft.picks?.base === project.base ? draft.picks : routes ? defaultPicks(routes) : null;
+  const kept = draft.picks?.base === project.base ? draft.picks : null;
+  const defaults = routes ? defaultPicks(routes) : null;
+  const picks: ScoutPicks | null = kept && defaults
+    ? { ...kept, lead: listed(leads, kept.lead) ? kept.lead : defaults.lead, helper: listed(helperRoutes, kept.helper) ? kept.helper : defaults.helper }
+    : kept ?? defaults;
   const turns = routes?.defaults.helper_turns ?? 1;
   const swarm = picks ? wholeIn(picks.swarm, 1, turns) : null;
   const minutes = picks ? wholeIn(picks.minutes, 1) : null;
@@ -140,24 +156,16 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
     );
   };
   const summary = picks ? `${picks.lead ?? "–"} · ${picks.helper ?? "–"} ×${picks.swarm} · ${picks.minutes} min` : "reading routes…";
-  return (
-    <form
-      aria-label="New scout"
-      onSubmit={(event) => {
-        event.preventDefault();
-        launch();
-      }}
-      className={pane ? "" : "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]"}
-    >
-      {pane && <h2 className="m-0 px-6 pt-6 font-sans text-[20px] font-semibold leading-[1.25] text-ink">New scout</h2>}
-      <Band column={pane}>
+  const bands = (
+    <>
+      <Band>
         {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
         <label htmlFor="scout-ask" className="flex flex-col">
           <span className={LABEL}>Ask</span>
           <textarea id="scout-ask" ref={askRef} rows={pane ? 3 : 2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans ${pane ? "min-h-[86px]" : ""}`} />
         </label>
       </Band>
-      <Band column={pane}>
+      <Band>
         <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
           <Field label="Kind">
             <Segmented label="Kind" options={KINDS} value={draft.kind} onPick={(kind) => set({ kind })} />
@@ -170,7 +178,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
           </Field>
         </div>
       </Band>
-      <Band column={pane}>
+      <Band>
         <button
           type="button"
           aria-expanded={draft.disclosed}
@@ -182,18 +190,14 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
         </button>
         {draft.disclosed && picks && (
           <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-start gap-x-6 gap-y-5">
-            <Field label="Lead">
-              <Picker id="scout-lead" label="Lead" passPress options={routeOptions(leads)} value={picks.lead ?? ""} onPick={(lead) => pick({ lead })} />
-            </Field>
-            <Field label="Helpers">
-              <Picker id="scout-helpers" label="Helpers" passPress options={routeOptions(helperRoutes)} value={picks.helper ?? ""} onPick={(helper) => pick({ helper })} />
-            </Field>
+            <RoutePicker id="scout-lead" label="Lead" routes={leads} value={picks.lead} onPick={(lead) => pick({ lead })} />
+            <RoutePicker id="scout-helpers" label="Helpers" routes={helperRoutes} value={picks.helper} onPick={(helper) => pick({ helper })} />
             <NumberField id="scout-swarm" label="At once" value={picks.swarm} least={1} most={turns} onChange={(value) => pick({ swarm: value })} />
             <NumberField id="scout-minutes" label="Minutes" value={picks.minutes} least={1} onChange={(value) => pick({ minutes: value })} />
           </div>
         )}
       </Band>
-      <Band column={pane}>
+      <Band>
         <div className="flex flex-wrap justify-end gap-3">
           <Btn onClick={onCancel}>Cancel</Btn>
           <Btn variant="primary" busy={action.isPending} busyLabel="Scouting…" disabled={!ready} onClick={launch}>Scout</Btn>
@@ -201,6 +205,19 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
         {missing && <p className={ERROR}>No {missing} route on {project.name} passed its probe.</p>}
         {refusal && <p role="alert" className={`${ERROR} [overflow-wrap:anywhere]`}>{refusal}</p>}
       </Band>
+    </>
+  );
+  return (
+    <form
+      aria-label="New scout"
+      onSubmit={(event) => {
+        event.preventDefault();
+        launch();
+      }}
+      className={pane ? "px-6 pt-6 pb-7 max-[720px]:px-4" : CARD}
+    >
+      {pane && <h2 className="m-0 mb-4 font-sans text-[20px] font-semibold leading-[1.25] text-ink">New scout</h2>}
+      {pane ? <div className={`${CARD} max-w-[760px]`}>{bands}</div> : bands}
     </form>
   );
 }

@@ -167,6 +167,7 @@ test("the list groups every scoped project's scouts newest first under a page he
   await mount("#/scouts?project=demo", scoutFetch(daemons).fetch);
   expect(ids()).toEqual(["31", "29", "27"]);
   expect(pageCount()).toStartWith("3 scouts");
+  expect(pageHeader().textContent).toBe("Scouts3 scouts · 1 runningNew scout");
 });
 
 test("a row reads its state, title not ask, kind, routes, helper progress and time taken, with no id or project", async () => {
@@ -269,7 +270,7 @@ test("Cancel closes the form and New scout opens it again as typed", async () =>
   expect(disclosure().textContent).toBe("sol · luna ×2 · 10 min");
 });
 
-test("defaults naming unlisted routes select the first listed, and a project with no lead cannot scout", async () => {
+test("defaults naming unlisted routes select the first listed, and a project with no lead offers no Lead picker and cannot scout", async () => {
   await openForm("#/scouts?project=demo", { demo: [], routes: { ...demoRoutes, defaults: { ...demoRoutes.defaults, lead: "glm", helper: "haiku" } } });
   await click(within(form()).getByRole("button", { name: "opus · luna ×4 · 30 min" }));
   expect((await listed("Lead")).selected).toEqual(["opus"]);
@@ -277,8 +278,25 @@ test("defaults naming unlisted routes select the first listed, and a project wit
   cleanup();
   await openForm("#/scouts?project=demo", { demo: [], routes: { ...demoRoutes, leads: [] } });
   await change(within(form()).getByLabelText("Ask"), ASK);
+  await click(disclosure());
+  expect(within(form()).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? "").filter((label) => label.startsWith("Lead"))).toEqual([]);
   expect(scoutButton().hasAttribute("disabled")).toBe(true);
   expect(within(form()).getByText("No lead route on demo passed its probe.")).toBeTruthy();
+});
+
+test("a picked route no longer listed when New scout opens again falls back to the default in the picker, the disclosure and the launch", async () => {
+  const daemons: Daemons = { demo: [], launch: () => Response.json({ ok: true, detail: "scout 32 queued" }) };
+  const { seen } = await openForm("#/scouts?project=demo", daemons);
+  await fillForm(ASK);
+  await click(within(form()).getByRole("button", { name: "Cancel" }));
+  daemons.routes = { ...demoRoutes, leads: demoRoutes.leads.filter((route) => route.name !== "sol") };
+  await click(screen.getByRole("button", { name: "New scout" }));
+  expect(seen.filter((request) => request.url === `${DEMO}/scouts/routes`).length).toBeGreaterThan(1);
+  expect(picker("Lead").textContent).toBe("opus");
+  expect(disclosure().textContent).toBe("opus · luna ×2 · 10 min");
+  await click(scoutButton());
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map((post) => post.body)).toEqual([{ ask: ASK, kind: "bug", lead: "opus", helper: "luna", swarm: 2, minutes: 10 }]);
 });
 
 test("the disclosure label follows the picks, and a blank ask or too large a swarm disables Scout", async () => {

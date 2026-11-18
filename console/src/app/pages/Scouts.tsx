@@ -55,7 +55,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
         </span>
         <span className={`col-start-2 flex flex-wrap ${FACTS} min-[720px]:contents`}>
           <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
-            <span className="min-[720px]:inline-flex min-[720px]:h-5 min-[720px]:items-center min-[720px]:rounded-[5px] min-[720px]:bg-selected min-[720px]:px-[7px] min-[720px]:text-[11.5px] min-[720px]:font-semibold min-[720px]:leading-none min-[720px]:text-ink-2">{row.kind}</span>
+            <span className="inline-flex h-5 items-center rounded-[5px] bg-selected px-[7px] align-middle text-[11.5px] font-semibold leading-none text-ink-2">{row.kind}</span>
           </span>
           <span data-cell="lead" className={`${FACT} min-[720px]:order-5`}>{row.lead ?? DASH}</span>
           <span data-cell="helpers" className={`${FACT} min-[720px]:order-6`}>{helpers(row)}</span>
@@ -143,8 +143,8 @@ export function Scouts() {
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-6 pt-3.5 pb-7 max-[720px]:px-4">
       <div className="flex flex-col gap-3">
         <PageHeader title="Scouts" count={{ text: `${rows.length} ${rows.length === 1 ? "scout" : "scouts"} · ${countScouts(rows, "running")} running` }} tools={newScout} />
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <ScoutFilters />
+        <div className="flex items-center gap-2 [&>div]:shrink-0">
+          <ScoutFilters searchWidth="w-56 min-w-0 shrink!" />
         </div>
       </div>
       {launching && form(false)}
