@@ -3,9 +3,9 @@ import { formatAge } from "../../lib/format";
 import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
 import { keepScope } from "../scope";
-import { cardElementId, modified } from "./BoardCard";
+import { cardElementId, modified, TicketGlyph } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
-import { StateDot, TONE_TEXT } from "./StateDot";
+import { TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "done"];
@@ -37,7 +37,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
       className={`${GRID} min-h-[34px]! px-4 py-1.5 font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
     >
       <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${open ? "text-ink" : TONE_TEXT[tone]}`}>
-        <StateDot state={COLUMN_HEADS[column].state} hideWord tone={tone} />
+        <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} />
         {COLUMN_HEADS[column].label}
       </span>
       <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>

@@ -117,6 +117,15 @@ test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog a
   expect(keysIn()).toHaveLength(8);
 });
 
+test("a Done today row draws the merged state as an outlined check circle", async () => {
+  await mount("#/tickets?project=demo", seeded);
+  await press("Table");
+  const glyph = rowOf("DEMO-10").querySelector("[data-cell=status] [role=img]")!;
+  expect([glyph.getAttribute("aria-label"), glyph.getAttribute("data-state")]).toEqual(["merged", "merged"]);
+  expect(glyph.querySelector("circle")!.getAttribute("fill")).toBeNull();
+  expect(glyph.querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
+});
+
 test("under 820 px the heading row hides and a row's title wraps onto its own line under status and key", async () => {
   await mount("#/tickets?project=demo", seeded);
   await press("Table");

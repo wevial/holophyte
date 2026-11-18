@@ -251,12 +251,15 @@ test("each card's line says what its ticket waits on, why it failed, how long it
   expect(glyphOf("DEMO-8").querySelector(".state-march")).not.toBeNull();
 });
 
-test("a held host's ready card says it is held, and a merge of today says when it merged and keeps its time box", async () => {
+test("a held host's ready card says it is held, and a merge of today says when it merged under an outlined check circle and keeps its time box", async () => {
   const board = boardOf({ ready: ["DEMO-2"] });
   await mount("#/tickets?project=demo", fleet({ board, admission: "held", shipped: [{ ...merged(10, "DEMO-10", NOW - 45 * MINUTE), estimate_min: 25 }] }).fetch);
   expect(lineOf("DEMO-2").textContent).toBe("held with demo");
   expect(glyphOf("DEMO-2").getAttribute("data-state")).toBe("held");
   expect(lineOf("DEMO-10").textContent).toBe("merged 11:15");
+  expect([glyphOf("DEMO-10").getAttribute("aria-label"), glyphOf("DEMO-10").getAttribute("data-state")]).toEqual(["merged", "merged"]);
+  expect(glyphOf("DEMO-10").querySelector("circle")!.getAttribute("fill")).toBeNull();
+  expect(glyphOf("DEMO-10").querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
   expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
 
@@ -273,7 +276,9 @@ test("cards keep their need, done, backlog and plain looks, and no card title us
   for (const card of [need!, done!, plain!]) expect(card.className).not.toContain("border-dashed");
   expect(plain!.className).not.toContain("var(--need-edge)");
   for (const card of [need!, done!, plain!]) expect(card.classList).toContain("bg-raised");
-  for (const card of [done!, plain!]) expect(card.classList).toContain("shadow-[inset_0_0_0_1px_var(--hair)]");
+  const fillAndEdge = (card: Element) => Array.from(card.classList).filter((name) => /(^|:|!)(bg|shadow)-|!$/.test(name));
+  const raised = ["bg-raised", "shadow-[inset_0_0_0_1px_var(--hair)]", "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"];
+  for (const card of [done!, plain!]) expect(fillAndEdge(card)).toEqual(raised);
   const inkOf = (card: Element) => Array.from(within(card as HTMLElement).getByRole("heading").classList).find((name) => name.startsWith("text-ink"));
   expect([done!, backlog!, plain!].map(inkOf)).toEqual(["text-ink-2", "text-ink-3", "text-ink"]);
 });

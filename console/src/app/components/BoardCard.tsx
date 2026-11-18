@@ -1,10 +1,10 @@
 import type { MouseEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
-import { STATES, type Tone } from "../state";
+import { STATES, type State, type Tone } from "../state";
 import { cardState, cardWord, type ColumnId, type TicketCard } from "../tickets";
 import { keepScope } from "../scope";
-import { StateDot, TONE_TEXT } from "./StateDot";
+import { STATE_ICONS, StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 type Look = "need" | "done" | "backlog" | "plain";
@@ -21,6 +21,17 @@ const LOOKS: Record<Look, { card: string; title: string }> = {
 const OPEN_RING = "shadow-[inset_0_0_0_1px_var(--accent),0_0_0_1px_var(--accent)]! forced-colors:outline-2 forced-colors:outline-solid forced-colors:outline-[Highlight]";
 
 export const cardElementId = (card: Pick<TicketCard, "project" | "key">) => `card-${card.project}-${card.key}`;
+
+export function TicketGlyph({ state, tone }: { state: State; tone: Tone }) {
+  if (state !== "merged") return <StateDot state={state} hideWord tone={tone} />;
+  return (
+    <span role="img" aria-label={STATES.merged.word} data-state="merged" className={`inline-flex items-center ${TONE_TEXT[tone]}`}>
+      <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0">
+        {STATE_ICONS.ready_to_merge}
+      </svg>
+    </span>
+  );
+}
 
 export const modified = (event: MouseEvent) => event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
 
@@ -65,7 +76,7 @@ export function BoardCard({
         <h3 className={`break-words font-sans text-[13.5px] font-medium leading-[1.35] ${LOOKS[look].title}`}><TitleText>{card.title}</TitleText></h3>
         <div className="flex min-w-0 items-center gap-2 text-[12px] leading-[1.45]">
           <p data-state-line className="flex min-w-0 items-center gap-[5px]">
-            <StateDot state={state} hideWord tone={tone} />
+            <TicketGlyph state={state} tone={tone} />
             <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[tone]}`}>{cardWord(card, now)}</span>
           </p>
           {card.timeBoxMs != null && (
