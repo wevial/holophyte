@@ -5,7 +5,7 @@ import { editTicket } from "../../lib/boardWrites";
 import { formatAge, formatClock } from "../../lib/format";
 import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
-import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
@@ -218,8 +218,8 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
   const input = (field: "title" | "summary" | "what" | "why" | "how" | "inScope" | "outOfScope" | "verify" | "notes", label: string, hint?: string, optional = false) => {
     const props = { id: `new-${label}`, value: fields[field], onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(field, event.target.value) };
     return <Field label={label} hint={hint} optional={optional} messages={messagesOf(label)} changed={changed(field)} extra={field === "verify" ? " · one a line, run as written" : undefined}>
-      {field === "title" ? <input {...props} {...marks(label, `${INPUT} font-sans text-[18px] font-semibold`)} /> :
-        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
+      {field === "title" ? <input {...props} {...marks(label, `${TICKET_INPUT} font-sans`)} /> :
+        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${TICKET_INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };
   const loadPicks = (parts: Part[]) => {
@@ -305,20 +305,20 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
             </div>
             {(fields.uiChange === "major" || read.mockup) && drawn("Mock-up") && <>
               <Field label="Mock-up link" extra=" for a UI change" messages={messagesOf("Mock-up link")} changed={changed("mockupLink")}>
-                <input id="new-Mock-up link" {...marks("Mock-up link", INPUT)} placeholder="https://…" value={fields.mockupLink} onChange={event => set("mockupLink", event.target.value)} />
+                <input id="new-Mock-up link" {...marks("Mock-up link", TICKET_INPUT)} placeholder="https://…" value={fields.mockupLink} onChange={event => set("mockupLink", event.target.value)} />
               </Field>
               {read.header ? <div className="grid gap-5 min-[720px]:grid-cols-[200px_minmax(0,1fr)]">
                 <Field label="Approved on" messages={messagesOf("Approved on")} changed={changed("mockupApproved")}>
-                  <input id="new-Approved on" type="date" {...marks("Approved on", `${INPUT} font-mono`)} value={fields.mockupApproved} onChange={event => set("mockupApproved", event.target.value)} />
+                  <input id="new-Approved on" type="date" {...marks("Approved on", `${TICKET_INPUT} font-mono`)} value={fields.mockupApproved} onChange={event => set("mockupApproved", event.target.value)} />
                 </Field>
                 <Field label="What was approved" messages={messagesOf("What was approved")} changed={changed("mockupNote")}>
-                  <input id="new-What was approved" {...marks("What was approved", `${INPUT} font-sans`)} value={fields.mockupNote} onChange={event => set("mockupNote", event.target.value)} />
+                  <input id="new-What was approved" {...marks("What was approved", `${TICKET_INPUT} font-sans`)} value={fields.mockupNote} onChange={event => set("mockupNote", event.target.value)} />
                 </Field>
               </div> : <Field label="Approval" changed={changed("mockupApproval")}>
-                <input id="new-Approval" className={`${INPUT} font-mono`} value={fields.mockupApproval} onChange={event => set("mockupApproval", event.target.value)} />
+                <input id="new-Approval" className={`${TICKET_INPUT} font-mono`} value={fields.mockupApproval} onChange={event => set("mockupApproval", event.target.value)} />
               </Field>}
               <Field label="Boards" optional hint="One image link a line." messages={messagesOf("Boards")} changed={changed("mockupImages")}>
-                <textarea id="new-Boards" rows={3} {...marks("Boards", `${INPUT} font-mono`)} value={fields.mockupImages} onChange={event => set("mockupImages", event.target.value)} />
+                <textarea id="new-Boards" rows={3} {...marks("Boards", `${TICKET_INPUT} font-mono`)} value={fields.mockupImages} onChange={event => set("mockupImages", event.target.value)} />
               </Field>
             </>}
           </div>}
@@ -332,7 +332,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
               </summary>
               <div className="mt-4 space-y-5">
                 {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(fields, at, origin.fields)}>
-                  <textarea id={`new-${other.name}`} rows={3} className={`${INPUT} resize-y font-sans`} value={other.text}
+                  <textarea id={`new-${other.name}`} rows={3} className={`${TICKET_INPUT} resize-y font-sans`} value={other.text}
                     onChange={event => set("others", fields.others.map((each, index) => index === at ? { ...each, text: event.target.value } : each))} />
                 </Field>)}
                 {removed.map(other => <Field key={other.index} label={other.name} optional changed extra=" · removed on save">
