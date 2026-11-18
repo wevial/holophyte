@@ -96,7 +96,8 @@ def is_gate_conflict(reason):
         and " conflicted on: " in reason
 
 
-def requeue(conn, ticket_id, note, now=None, source="human", force=False):
+def requeue(conn, ticket_id, note, now=None, source="human", force=False,
+            amend=None):
     """Walk a failed, rejected or aborted ticket back to ready; return its last run."""
     with _transaction(conn):
         row = conn.execute(
@@ -117,7 +118,7 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
                if last_run_id is not None else None)
         released = _requeue_admits(identifier, status, last_run_id, run,
                                    _aborted(conn, last_run_id))
-        relaunched = _relaunches(conn, ticket_id)
+        relaunched = [] if amend is not None else _relaunches(conn, ticket_id)
         if len(relaunched) >= RELAUNCH_LIMIT:
             if not force:
                 raise RequeueRefused(
@@ -134,8 +135,9 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
                     f" {len(relaunched)} relaunches carries the written"
                     " diagnosis as its note; the note is blank")
             note = f"forced past {len(relaunched)} relaunches: {note}"
-        record_intervention(conn, last_run_id, "requeue", note, source=source,
-                            now=now)
+        if amend is None:
+            record_intervention(conn, last_run_id, "requeue", note,
+                                source=source, now=now)
         if released:
             release(conn, last_run_id, "abandoned",
                     f"{RELEASED[released]}; requeued for another attempt",
@@ -145,6 +147,10 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False):
         conn.execute("UPDATE runs SET approvedAt = NULL, approvedBy = NULL"
                      " WHERE id = ?", (last_run_id,))
         walk_ticket(conn, ticket_id, "ready")
+        if amend is not None:
+            amend()
+            record_intervention(conn, last_run_id, "requeue", note,
+                                source=source, now=now)
     return last_run_id
 
 

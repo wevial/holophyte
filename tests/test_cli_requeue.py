@@ -546,8 +546,13 @@ class RelaunchLimitTests(RequeueTarget):
         self.assertEqual(self.interventions(), before)
         self.assertEqual(self.status(), "in_flight")
 
-    def test_an_amended_requeue_past_the_limit_needs_no_force_and_counts_as_one(self):
+    def park_the_failed_ticket(self):
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.commit()
+
+    def amended_past_the_limit_then_counted_as_one(self, park):
         self.relaunched_twice()
+        park()
 
         self.cli("--requeue", "KO-1", "--note", "contract fixed", "--amend",
                  "DROP C1")
@@ -557,9 +562,17 @@ class RelaunchLimitTests(RequeueTarget):
         self.claim_again()
         self.relaunch()
         self.fail_the_run()
+        park()
         with self.assertRaises(SystemExit) as raised:
             self.cli("--requeue", "KO-1", "--note", "once more")
         self.assertIn("--force", str(raised.exception))
+
+    def test_an_amended_requeue_past_the_limit_needs_no_force_and_counts_as_one(self):
+        self.amended_past_the_limit_then_counted_as_one(lambda: None)
+
+    def test_a_blocked_failed_ticket_amended_past_the_limit_counts_as_one(self):
+        self.amended_past_the_limit_then_counted_as_one(
+            self.park_the_failed_ticket)
 
     def test_force_without_approve_or_requeue_is_a_usage_error(self):
         with self.assertRaises(SystemExit) as raised:
