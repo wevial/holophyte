@@ -570,7 +570,21 @@ test("in the macOS app, after going Back, a reload of the same window keeps Next
   expect(page()).toEqual(TICKETS);
 });
 
-test("in the macOS app Back disables at the oldest entry the browser retains, once its cap has pruned earlier ones", async () => {
+test("in the macOS app a reload that resets the entry's history state leaves Next disabled", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  await openTickets();
+  fireEvent.click(historyButton("Back"));
+  await settleHistory();
+  cleanup();
+
+  window.history.replaceState(null, "");
+  await mount("#/");
+  expect(page()).toEqual(OVERVIEW);
+  expect(historyButton("Next").disabled).toBe(true);
+});
+
+test("in the macOS app Back disables when the window's history length leaves no entry behind the current one", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
   await mountAt("#/");
   await openTickets();

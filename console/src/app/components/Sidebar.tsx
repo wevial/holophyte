@@ -309,19 +309,22 @@ export function useSidebarFold(): SidebarFold {
   return { folded, foldable: !settingsMenu, fold };
 }
 
-const FURTHEST_KEY = "holophyte.history-furthest";
+const REACH_KEY = "holophyte.history-reach";
 
-function readFurthest(): number {
+type SavedReach = { entry: string; furthest: number };
+
+function readReach(): SavedReach | null {
   try {
-    return Number(sessionStorage.getItem(FURTHEST_KEY) ?? 0) || 0;
+    const saved = JSON.parse(sessionStorage.getItem(REACH_KEY) ?? "null") as SavedReach | null;
+    return typeof saved?.entry === "string" && typeof saved.furthest === "number" ? saved : null;
   } catch {
-    return 0;
+    return null;
   }
 }
 
-function writeFurthest(furthest: number): void {
+function writeReach(reach: SavedReach): void {
   try {
-    sessionStorage.setItem(FURTHEST_KEY, String(furthest));
+    sessionStorage.setItem(REACH_KEY, JSON.stringify(reach));
   } catch {
     // Storage may be disabled; Next still tracks this page's own navigation.
   }
@@ -330,17 +333,20 @@ function writeFurthest(furthest: number): void {
 function useHistoryNav(bound: boolean) {
   const { history } = useRouter();
   const [reach, setReach] = useState(() => {
-    const index = history.location.state.__TSR_index;
-    return { index, furthest: Math.max(index, readFurthest()) };
+    const { __TSR_index: index, __TSR_key: entry } = history.location.state;
+    const saved = readReach();
+    return { index, entry, furthest: saved && entry && saved.entry === entry ? Math.max(index, saved.furthest) : index };
   });
 
-  useEffect(() => writeFurthest(reach.furthest), [reach.furthest]);
+  useEffect(() => {
+    if (reach.entry) writeReach({ entry: reach.entry, furthest: reach.furthest });
+  }, [reach.entry, reach.furthest]);
 
   useEffect(
     () =>
       history.subscribe(({ location, action }) => {
-        const index = location.state.__TSR_index;
-        setReach((last) => ({ index, furthest: action.type === "PUSH" ? index : Math.max(last.furthest, index) }));
+        const { __TSR_index: index, __TSR_key: entry } = location.state;
+        setReach((last) => ({ index, entry, furthest: action.type === "PUSH" ? index : Math.max(last.furthest, index) }));
       }),
     [history],
   );
