@@ -6,6 +6,7 @@ import sys
 import traceback
 
 import store.read
+import store.steer_notes
 from holophyte.admission import project_of
 from holophyte.host.ci_wake import parked_approval
 from holophyte.loop.gates import InfraFailure
@@ -16,6 +17,7 @@ from holophyte.pr.pr_ready import READY_MUTATION
 from holophyte.pr.pr_status import parse_pr_url
 from holophyte.redact import known_secrets, outbound
 from holophyte.serve.serve_runs import no_store
+from store.operate import intervention_actor
 from store.operator_notes import send_back
 
 ACTIONS_PREFIX = "/actions/"
@@ -139,6 +141,9 @@ def requeue_action(project, body):
     force = body.get("force", False)
     if not isinstance(force, bool):
         return 400, {"error": "force must be true or false"}
+    amend = body.get("amend")
+    if amend is not None and not isinstance(amend, str):
+        return 400, {"error": "amend must be text"}
     if not isinstance(note, str) or not note.strip():
         if force:
             return 400, {"error": "force requires a note: the written"
@@ -166,16 +171,30 @@ def requeue_action(project, body):
                          "detail": f"run {requested} is not {identifier}'s latest"
                                    f" attempt; run {latest} is"}
         try:
-            run_id = store.requeue(conn, ticket.id, note, force=force)
+            run_id, steer_note = requeue_amended(conn, ticket.id, note, force,
+                                                 amend)
         except (store.RequeueRefused, ValueError) as refused:
             return 200, {"action": action, "ok": False, "ticket": identifier,
                          "detail": str(refused)}
         recorded = written_on(conn, action)
     finally:
         conn.close()
-    return 200, {"action": action, "ok": True, "ticket": identifier,
-                 "detail": f"{identifier} requeued after run {run_id}",
-                 "run": run_id, "recorded": recorded}
+    reply = {"action": action, "ok": True, "ticket": identifier,
+             "detail": f"{identifier} requeued after run {run_id}",
+             "run": run_id, "recorded": recorded}
+    if steer_note is not None:
+        reply["steer_note"] = steer_note
+    return 200, reply
+
+
+def requeue_amended(conn, ticket_id, note, force, amend):
+    if amend is None or not amend.strip():
+        return store.requeue(conn, ticket_id, note, force=force), None
+    with store.transaction(conn):
+        run_id = store.requeue(conn, ticket_id, note, force=force)
+        steered = store.steer_notes.steer(conn, ticket_id, amend,
+                                          intervention_actor("human"))
+    return run_id, steered.id
 
 
 def send_back_action(project, run_id, note, author):

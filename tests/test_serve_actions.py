@@ -24,6 +24,7 @@ import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.serve.server  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
+import store.steer_notes  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 
 
@@ -313,6 +314,61 @@ class ActionsTests(UnitActionCases, ServeTestCase):
                 "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
             ).fetchone()
         self.assertEqual(note, "requeued from the console")
+        with store.open(str(self.db)) as conn:
+            ticket = store.read.ticket_by_identifier(conn, "KO-2")
+            self.assertEqual(store.steer_notes.amendments(conn, ticket.id), [])
+        self.assertNotIn("steer_note", body)
+
+    def test_requeue_with_an_amend_records_it_as_an_amendment_beside_the_note(self):
+        self.seed_ended()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        code, _, body = self.request(
+            "POST", "/actions/requeue", self.BEARER,
+            body={"ticket": "KO-2", "note": "the verify was flaky",
+                  "amend": "C1 names the exported columns"})
+
+        self.assertEqual((code, body["ok"]), (200, True), body)
+        with store.open(str(self.db)) as conn:
+            ticket = store.read.ticket_by_identifier(conn, "KO-2")
+            amendments = store.steer_notes.amendments(conn, ticket.id)
+            (note,) = conn.execute(
+                "SELECT note FROM interventions WHERE \"action\" = 'requeue'"
+            ).fetchone()
+        self.assertEqual(ticket.status, "ready")
+        self.assertEqual([(a.id, a.note) for a in amendments],
+                         [(body["steer_note"], "C1 names the exported columns")])
+        self.assertEqual(note, "the verify was flaky")
+
+    def test_requeue_writes_nothing_when_its_amend_is_refused_or_not_text(self):
+        self.seed_ended()
+        with store.open(str(self.db)) as conn:
+            ticket = store.read.ticket_by_identifier(conn, "KO-2")
+            # A next run resuming at the merge gate takes no steer.
+            conn.execute("UPDATE runs SET resumePhase = 'merge_gate'"
+                         " WHERE id = ?",
+                         (store.read.ticket_by_id(conn, ticket.id).lastRunId,))
+            conn.commit()
+        self.start(self.token_config("actions = true\n"), host="0.0.0.0")
+
+        code, _, refused = self.request(
+            "POST", "/actions/requeue", self.BEARER,
+            body={"ticket": "KO-2", "amend": "C1 names the exported columns"})
+        bad, _, typed = self.request(
+            "POST", "/actions/requeue", self.BEARER,
+            body={"ticket": "KO-2", "amend": ["C1"]})
+
+        self.assertEqual((code, refused["ok"]), (200, False), refused)
+        self.assertIn("would read a steer", refused["detail"])
+        self.assertEqual(bad, 400)
+        self.assertIn("amend", typed["error"])
+        with store.open(str(self.db)) as conn:
+            status = store.read.ticket_by_identifier(conn, "KO-2").status
+            self.assertEqual(store.steer_notes.amendments(conn, ticket.id), [])
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM interventions WHERE \"action\" IN"
+                " ('requeue', 'steer')").fetchone(), (0,))
+        self.assertNotEqual(status, "ready")
 
     def test_requeue_after_two_relaunches_is_refused_unless_forced(self):
         self.seed_ended()
