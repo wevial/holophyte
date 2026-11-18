@@ -24,15 +24,12 @@ import {
 } from "../scouts";
 import { useScoutListWidth } from "../viewport";
 import { Btn } from "./Btn";
-import { PanelLeftIcon } from "./icons";
-import { LaneHead } from "./LaneHead";
+import { FactIcon, PanelLeftIcon } from "./icons";
 import { FilterSelect, SearchField } from "./ListFilters";
 import type { LaunchProject } from "./ScoutLaunch";
 import { StateDot } from "./StateDot";
 
-const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const DASH = "–";
-export const EMPTY_LINE = "m-0 border border-rule bg-paper px-3 py-[18px] font-mono text-[13px] leading-[1.4] text-ink-3";
 const LIST_ID = "scout-list";
 const HIDDEN_KEY = "holophyte.next.scout-list";
 
@@ -50,20 +47,43 @@ export function ScoutFilters({ searchWidth }: { searchWidth?: string }) {
   );
 }
 
-export function ScoutGroups({ groups, row, boxed = true }: { groups: ScoutGroup[]; row: (row: ScoutListRow) => ReactNode; boxed?: boolean }) {
+export function ScoutGroups({ groups, row }: { groups: ScoutGroup[]; row: (row: ScoutListRow) => ReactNode }) {
   return (
-    <ol aria-label="Scouts, newest first" className="m-0 flex list-none flex-col gap-[22px] p-0">
+    <ol aria-label="Scouts, newest first" className="m-0 flex list-none flex-col gap-5 p-0">
       {groups.map((group) => (
         <li key={`${group.base} ${group.project}`} data-scout-group>
-          <div className={boxed ? undefined : "px-4"}>
-            <LaneHead name={group.project} held={false} meta={`${group.rows.length} ${group.rows.length === 1 ? "scout" : "scouts"}`} attached={boxed} />
+          <div className="flex h-[30px] items-center gap-2.5 border-b border-hair px-2.5">
+            <h2 className="font-sans text-[13px] font-semibold text-ink">{group.project}</h2>
+            <span data-count className="font-mono text-[12px] text-ink-3">{group.rows.length}</span>
           </div>
-          <ol aria-label={`${group.project} scouts`} className={`m-0 list-none p-0 ${boxed ? "border border-rule bg-paper" : "mt-2 border-t border-rule-2"}`}>
+          <ol aria-label={`${group.project} scouts`} className="m-0 list-none p-0">
             {group.rows.map(row)}
           </ol>
         </li>
       ))}
     </ol>
+  );
+}
+
+/** The line a list with no scouts reads in place of its groups. */
+export function ScoutsEmpty({ project, narrowed }: { project: string | undefined; narrowed: boolean }) {
+  return (
+    <p className="m-0 flex items-center gap-2 px-2.5 py-2.5 font-sans text-[13px] leading-[1.4] text-ink-3">
+      <FactIcon ok />
+      {narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}
+    </p>
+  );
+}
+
+/** New scout as the small primary action, with its plus glyph. */
+export function NewScoutButton({ expanded, disabled, onClick }: { expanded: boolean; disabled: boolean; onClick: () => void }) {
+  return (
+    <Btn variant="primary" className="h-7! gap-1.5! rounded-[7px]! px-2.5! text-[12.5px]!" expanded={expanded} disabled={disabled} title={disabled ? ACTIONS_OFF : undefined} onClick={onClick}>
+      <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
+        <path d="M8 3.5v9M3.5 8h9" />
+      </svg>
+      New scout
+    </Btn>
   );
 }
 
@@ -98,17 +118,17 @@ function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }
   const outcome = scoutOutcome(row);
   const empty = outcome.kind === "counts" ? outcome.parts.length === 0 : outcome.text === "";
   return (
-    <li data-row data-scout={row.id} aria-current={current ? "page" : undefined} className={`border-b border-rule-2 ${current ? "bg-row-selected shadow-[inset_2px_0_0_var(--act)]" : ""}`}>
+    <li data-row data-scout={row.id} aria-current={current ? "page" : undefined} className="border-b border-rule-2 py-px last:border-b-0">
       <Link
         to="/scouts/$project/$scout"
         params={{ project: row.project, scout: String(row.id) }}
         search={(previous: ScoutsSearch & ScopeSearch) => keepList(previous)}
-        className={`grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 px-4 py-3.5 text-ink no-underline transition-colors duration-(--motion-colour) ${current ? "" : "hover:bg-paper-2"}`}
+        className={`grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 rounded-[8px] px-2.5 py-3 text-ink no-underline transition-colors duration-(--motion-colour) ${current ? "bg-row-selected" : "hover:bg-hover"}`}
       >
         <span className="mt-[2px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span className="flex min-w-0 flex-col gap-[5px]">
           <span data-cell="title" className="line-clamp-2 font-sans text-[14px] font-semibold leading-[1.3] text-ink">{row.title}</span>
-          <span data-scout-row-facts className={`${MONO} ${outcome.kind === "failed" ? "truncate" : "[overflow-wrap:anywhere]"}`}>
+          <span data-scout-row-facts className={`font-sans text-[12.5px] leading-[1.4] text-ink-3 ${outcome.kind === "failed" ? "truncate" : "[overflow-wrap:anywhere]"}`}>
             {row.kind}{" · "}{took}{" · "}{dayTime(row.started_ms ?? row.created_ms)}
             {!empty && <>{" · "}<Outcome outcome={outcome} /></>}
           </span>
@@ -154,12 +174,9 @@ function NewScout({ project, current }: { project: string | undefined; current: 
   const { projects } = useLaunchProjects(project);
   const navigate = useNavigate();
   const of = current == null ? undefined : current.slice(0, current.lastIndexOf("/"));
-  const canLaunch = projects.length > 0;
   return (
-    <Btn variant="primary" expanded={false} disabled={!canLaunch} title={canLaunch ? undefined : ACTIONS_OFF}
-      onClick={() => void navigate({ to: "/scouts", search: (previous: ScoutsSearch & ScopeSearch) => ({ ...keepList(previous), new: of }) })}>
-      New scout
-    </Btn>
+    <NewScoutButton expanded={false} disabled={projects.length === 0}
+      onClick={() => void navigate({ to: "/scouts", search: (previous: ScoutsSearch & ScopeSearch) => ({ ...keepList(previous), new: of }) })} />
   );
 }
 
@@ -189,7 +206,8 @@ export function ScoutsBeside({ search, current, newScout, children }: {
           <div className="flex flex-col gap-3 border-b border-rule-2 px-4 pt-4 pb-3">
             <div className="flex items-center gap-2">
               <button ref={hideButton} type="button" aria-label="Hide scout list" title="Hide scout list" aria-expanded={true} aria-controls={LIST_ID}
-                onClick={() => toggle(true)} className="btn w-9 shrink-0 px-0" data-variant="quiet">
+                onClick={() => toggle(true)}
+                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
                 <PanelLeftIcon />
               </button>
               <h2 className="m-0 flex-1 font-sans text-[20px] font-semibold leading-[1.25] text-ink">Scouts</h2>
@@ -199,11 +217,11 @@ export function ScoutsBeside({ search, current, newScout, children }: {
               <ScoutFilters searchWidth="w-full" />
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-0 py-3.5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3.5">
             {rows.length === 0 ? (
-              <p className={`${EMPTY_LINE} mx-4`}>{narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}</p>
+              <ScoutsEmpty project={project} narrowed={narrowed} />
             ) : (
-              <ScoutGroups boxed={false} groups={scoutGroups(rows)}
+              <ScoutGroups groups={scoutGroups(rows)}
                 row={(row) => <ScoutListItem key={`${row.base} ${row.id}`} row={row} current={scoutKey(row) === current} />} />
             )}
           </div>

@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { ACTIONS_OFF } from "../../lib/actions";
 import { useAction } from "../actions";
 import { formatSettled } from "../../lib/format";
-import { Btn } from "../components/Btn";
+import { PageHeader } from "../components/PageHeader";
 import { EMPTY_DRAFT, prefilledDraft, ScoutLaunch } from "../components/ScoutLaunch";
-import { EMPTY_LINE, ScoutFilters, ScoutGroups, ScoutsBeside, ShowScoutList, useLaunchProjects } from "../components/ScoutsSidebar";
+import { NewScoutButton, ScoutFilters, ScoutGroups, ScoutsBeside, ScoutsEmpty, ShowScoutList, useLaunchProjects } from "../components/ScoutsSidebar";
 import { StateDot } from "../components/StateDot";
 import { firstLine } from "../history";
 import type { ScopeSearch } from "../scope";
@@ -27,12 +26,8 @@ import { useScoutListWidth } from "../viewport";
 import { ScoutView } from "./Scout";
 
 const GRID = "min-[720px]:grid min-[720px]:grid-cols-[16px_minmax(0,1fr)_76px_52px_88px_56px] min-[720px]:items-start min-[720px]:gap-3";
-const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
+const FACTS = "font-sans text-[13px] leading-[1.4] text-ink-3";
 const DASH = "–";
-
-function Slash() {
-  return <span className="text-ink-3"> / </span>;
-}
 
 function helpers(row: ScoutListRow): string {
   const helper = row.helper ?? DASH;
@@ -48,23 +43,23 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
   const reason = state === "failed" ? firstLine(row.reason) : "";
   const took = state === "queued" || row.elapsed_ms == null ? DASH : formatSettled(row.elapsed_ms);
   return (
-    <li data-row data-scout={row.id} className="border-b border-rule-2 last:border-b-0">
+    <li data-row data-scout={row.id} className="border-b border-rule-2">
       <Link
         {...scoutPage(row.project, row.id)}
-        className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 px-3 py-3 text-[14px] no-underline transition-colors duration-(--motion-colour) hover:bg-paper-2 ${quiet ? "text-ink-2" : "text-ink"}`}
+        className={`${GRID} grid grid-cols-[20px_minmax(0,1fr)] gap-x-2.5 gap-y-1 px-2.5 py-2.5 text-[13px] no-underline transition-colors duration-(--motion-colour) hover:bg-hover ${quiet ? "text-ink-2" : "text-ink"}`}
       >
         <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
-        <span data-cell="title" className={`min-w-0 font-read text-[15px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
+        <span data-cell="title" className={`min-w-0 font-sans text-[14px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
           {row.title}
-          {reason && <span data-reason title={reason} className="ml-2 font-mono text-[12.5px] font-semibold text-bad">{cappedReason(reason)}</span>}
+          {reason && <span data-reason title={reason} className="ml-2 font-sans text-[13px] font-medium text-bad">{cappedReason(reason)}</span>}
         </span>
-        <span className={`col-start-2 flex flex-wrap ${MONO} min-[720px]:contents`}>
+        <span className={`col-start-2 flex flex-wrap ${FACTS} min-[720px]:contents`}>
           <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
-            <span className="min-[720px]:inline-block min-[720px]:align-top min-[720px]:leading-[15px] min-[720px]:border min-[720px]:border-rule min-[720px]:px-1 min-[720px]:text-[11px] min-[720px]:font-semibold min-[720px]:text-ink-2">{row.kind}</span>
+            <span className="min-[720px]:inline-flex min-[720px]:h-5 min-[720px]:items-center min-[720px]:rounded-[5px] min-[720px]:bg-selected min-[720px]:px-[7px] min-[720px]:text-[11.5px] min-[720px]:font-semibold min-[720px]:leading-none min-[720px]:text-ink-2">{row.kind}</span>
           </span>
           <span data-cell="lead" className={`${FACT} min-[720px]:order-5`}>{row.lead ?? DASH}</span>
           <span data-cell="helpers" className={`${FACT} min-[720px]:order-6`}>{helpers(row)}</span>
-          <span data-cell="took" className={`${FACT} whitespace-nowrap min-[720px]:order-7 min-[720px]:text-right`}>{took}</span>
+          <span data-cell="took" className={`${FACT} whitespace-nowrap font-mono text-[12px] min-[720px]:order-7 min-[720px]:text-right`}>{took}</span>
         </span>
       </Link>
     </li>
@@ -74,7 +69,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
 function ScoutTable({ groups }: { groups: ScoutGroup[] }) {
   return (
     <div data-scout-table className="flex flex-col">
-      <div aria-hidden="true" className={`${GRID} hidden px-[13px] pb-2.5 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.12em] text-ink-3`}>
+      <div aria-hidden="true" className={`${GRID} hidden px-2.5 pb-2 font-sans text-[12px] font-medium leading-none text-ink-3`}>
         <span />
         <span>Title</span>
         <span>Kind</span>
@@ -129,17 +124,7 @@ export function Scouts() {
       pane={pane}
     />
   );
-  const newScout = (
-    <Btn
-      variant="primary"
-      expanded={open}
-      disabled={!canLaunch}
-      title={canLaunch ? undefined : ACTIONS_OFF}
-      onClick={() => (open ? close() : setOpen(true))}
-    >
-      New scout
-    </Btn>
-  );
+  const newScout = <NewScoutButton expanded={open} disabled={!canLaunch} onClick={() => (open ? close() : setOpen(true))} />;
   const shown = launching ? undefined : rows[0];
   if (wide) {
     return (
@@ -156,25 +141,14 @@ export function Scouts() {
   const narrowed = search.q != null || search.filter != null || search.type != null;
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-6 pt-3.5 pb-7 max-[720px]:px-4">
-      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 border-b border-rule pb-[18px]">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Scouts</h1>
-          <p data-count-line className="font-mono text-[13px] leading-[1.6] [overflow-wrap:anywhere] text-ink-2">
-            {project ?? "all projects"} · {rows.length} {rows.length === 1 ? "scout" : "scouts"}
-            <Slash />
-            <b className="font-semibold text-ink">{countScouts(rows, "running")}</b> running
-            <Slash />
-            {countScouts(rows, "queued")} queued
-            <Slash />newest first
-          </p>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <ScoutFilters />
-          </div>
+      <div className="flex flex-col gap-3">
+        <PageHeader title="Scouts" count={{ text: `${rows.length} ${rows.length === 1 ? "scout" : "scouts"} · ${countScouts(rows, "running")} running` }} tools={newScout} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <ScoutFilters />
         </div>
-        {newScout}
-      </header>
+      </div>
       {launching && form(false)}
-      {rows.length > 0 ? <ScoutTable groups={scoutGroups(rows)} /> : <p className={EMPTY_LINE}>{narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}</p>}
+      {rows.length > 0 ? <ScoutTable groups={scoutGroups(rows)} /> : <ScoutsEmpty project={project} narrowed={narrowed} />}
     </section>
   );
 }
