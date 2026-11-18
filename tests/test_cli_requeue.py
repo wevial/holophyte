@@ -414,6 +414,7 @@ class RequeueAmendTests(RequeueTarget):
         self.assertEqual(list(self.conn.iterdump()), before)
         self.assertEqual(self.status(), "in_flight")
         self.assertEqual(self.amendments(), [])
+        self.assertEqual(StubBoard.instance.unlabelled, [])
 
     def test_a_refused_requeue_writes_no_amendment(self):
         with self.assertRaises(SystemExit) as raised:

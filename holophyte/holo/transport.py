@@ -474,6 +474,8 @@ def run_http(args, url, config):
         return unrouted(args, f"{label} --foreground")
     if getattr(args, "withdraw", False):
         return unrouted(args, f"{label} --withdraw")
+    if getattr(args, "amend", None):
+        return unrouted(args, f"{label} --amend")
     if route is None:
         return unrouted(args, label, command.mode not in HOST_ONLY
                         and command.words not in CLIENT_ONLY)

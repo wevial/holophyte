@@ -235,7 +235,7 @@ and by a fresh claim's implement stage, as `--scout` and
 | `holo file FILE --update KEY [--revision N] [--labels a,b] [NOTE [--author NAME]]` | `holo ticket file` | `--file-ticket FILE --update KEY [--revision N] [--labels a,b] [--note NOTE [--author NAME]] PROJECT`, the note posted on KEY after the update |
 | `holo move KEY ready\|backlog --revision N [NOTE]` | `holo ticket move` | `--move KEY ready\|backlog --revision N [--note NOTE] PROJECT` |
 | `holo cancel KEY --revision N NOTE` | `holo ticket cancel` | `--cancel KEY --revision N --note NOTE PROJECT` |
-| `holo requeue KEY NOTE [--force] [--amend TEXT]` | `holo ticket requeue` | `--requeue KEY --note NOTE [--force] [--amend TEXT] PROJECT`; with `--amend`, TEXT is recorded as the ticket's amendment and NOTE as the requeue's, both or neither |
+| `holo requeue KEY NOTE [--force] [--amend TEXT]` | `holo ticket requeue` | `--requeue KEY --note NOTE [--force] [--amend TEXT] PROJECT`; with `--amend`, TEXT is recorded as the ticket's amendment and NOTE as the requeue's, both or neither; over `transport = "http"`, `--amend` is refused, exiting 1 with nothing sent |
 | `holo approve KEY [NOTE] [--force]` | `holo ticket approve` | `--approve KEY [--note NOTE] [--force] PROJECT` |
 | `holo babysit KEY [NOTE [--author NAME]]` | `holo ticket babysit` | `--babysit KEY [--note NOTE [--author NAME]] PROJECT` |
 | `holo send-back RUN NOTE [--author NAME]` | | none: the console's send-back of run `RUN`, its note by `--author`, or else the caller's login (over http, the daemon's `maintainer`). A console note (send-back, steer, requeue or abort) never reaches GitHub: a commit cites it by its id, and the push withholds its text. |
