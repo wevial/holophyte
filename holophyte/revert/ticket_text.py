@@ -4,11 +4,6 @@ from holophyte.tickets.ticket_template import MAX_IN_SCOPE
 ESTIMATE_MIN = 30
 
 
-def revert_command(merge):
-    mainline = " -m 1" if merge.parents > 1 else ""
-    return f"git revert --no-edit{mainline} {merge.sha}"
-
-
 def scope_entries(files):
     quoted = [f"`{path}`" for path in files]
     if len(quoted) <= MAX_IN_SCOPE:
@@ -17,6 +12,7 @@ def scope_entries(files):
 
 
 def revert_ticket(merge, reason, found):
+    reason = " ".join(reason.split())
     dependents = "; ".join(dependent_lines(found))
     files = ", ".join(f"`{path}`" for path in merge.files)
     verify = "\n".join(merge.verify)
@@ -42,7 +38,7 @@ def revert_ticket(merge, reason, found):
         "",
         "## What / Why / How",
         "",
-        f"**What:** Run `{revert_command(merge)}` in the task worktree and"
+        f"**What:** Run `git revert --no-edit {merge.sha}` in the task worktree and"
         " commit nothing else. If it conflicts, stop without resolving it"
         " and say so as an unmet criterion.",
         "",

@@ -18,7 +18,6 @@ class Merge(NamedTuple):
     title: str
     run_id: int
     sha: str
-    parents: int
     files: tuple
     verify: tuple
 
@@ -44,7 +43,7 @@ def changed_files(repo, sha):
     else:
         _, names = git(repo, "diff-tree", "--root", "-r", "--no-renames",
                        "--no-commit-id", "--name-only", "-z", sha)
-    return len(parents), tuple(name for name in names.split("\0") if name)
+    return tuple(name for name in names.split("\0") if name)
 
 
 def merged_run(conn, repo, key):
@@ -69,8 +68,7 @@ def merged_run(conn, repo, key):
     if git(repo, "merge-base", "--is-ancestor", sha, MAIN)[0] != 0:
         raise Refused(f"{key}: its merge {sha} is not on {MAIN}; nothing to"
                       " revert")
-    parents, files = changed_files(repo, sha)
-    return Merge(key, ticket[1], run_id, sha, parents, files,
+    return Merge(key, ticket[1], run_id, sha, changed_files(repo, sha),
                  tuple(json.loads(ticket[2] or "[]")))
 
 
@@ -118,7 +116,7 @@ def dependents(conn, repo, merge):
     for sha in later:
         if sha not in by_sha:
             continue
-        shared = tuple(path for path in changed_files(repo, sha)[1]
+        shared = tuple(path for path in changed_files(repo, sha)
                        if path in touched)
         if shared:
             found.append(Dependent(by_sha[sha], sha, shared))

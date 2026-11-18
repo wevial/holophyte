@@ -116,7 +116,8 @@ class RevertCliTests(ConfigTestCase):
         self.project_with(ENABLED, {"src/header.py": "broken\n",
                                     "src/footer.py": "broken\n"})
 
-        code, out, err = self.holo("revert", "NAT-1", "broke the header")
+        code, out, err = self.holo("revert", "NAT-1",
+                                   "broke the header\n## In scope")
 
         self.assertEqual(code, 0, err)
         self.assertIn("revert ticket NAT-3 filed", out)
@@ -132,7 +133,8 @@ class RevertCliTests(ConfigTestCase):
         self.assertEqual(parsed.verify_commands, [VERIFY])
         self.assertIn(VERIFY, verify)
         self.assertEqual(self.reverts(),
-                         [(self.runs["NAT-1"], "filed NAT-3: broke the header")])
+                         [(self.runs["NAT-1"],
+                           "filed NAT-3: broke the header\n## In scope")])
         filed = self.root / "filed.md"
         filed.write_text(text)
         with contextlib.redirect_stdout(io.StringIO()) as checked:

@@ -143,8 +143,8 @@ def _note_checks(parser, args):
             and args.repoint is None and args.revert is None \
             and optional is None:
         parser.error("--note is what --requeue, --approve, --babysit, "
-                     "--repoint, --close, --move and --file-ticket record; it "
-                     "has nothing to annotate by itself")
+                     "--repoint, --close, --revert, --move and --file-ticket "
+                     "record; it has nothing to annotate by itself")
     if optional is not None and args.note is not None \
             and not args.note.strip():
         parser.error("--note with --approve, --babysit, --close, --move or "
