@@ -1,6 +1,13 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { createElement } from "react";
 import { categoryOf, phraseOf, projectColours } from "../../src/app/dayLog";
+import { consoleQueryClient } from "../../src/app/fleet";
+import { ConsoleApp } from "../../src/app/router";
 import type { LedgerEntry } from "../../src/lib/contract.gen";
+import type { Status } from "../../src/lib/types";
+import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
 
 const PR = "https://github.com/kovial/holophyte/pull/896";
 
@@ -71,4 +78,30 @@ test("a project's colour comes from a host that answered, not an earlier host wi
     { project: "/srv/demo", status: { colour: "teal" } },
   ]);
   expect(colours.get("demo")).toBe("var(--p-teal)");
+});
+
+afterEach(() => {
+  cleanup();
+  window.location.hash = "";
+});
+
+test("the Today header is filled and marked stuck only while its log is scrolled", async () => {
+  const status = (await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json()) as Status;
+  window.location.hash = "#/";
+  const { deps } = fakeDeps(stubFetch({ status, attention: NO_ATTENTION }));
+  render(createElement(QueryClientProvider, { client: consoleQueryClient() }, createElement(ConsoleApp, { base: "http://writer-host:7710", pollDeps: deps })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  const log = screen.getByRole("complementary", { name: "Today" });
+  const header = screen.getByRole("heading", { name: "Today", level: 2 }).parentElement!;
+  const scrollTo = (top: number) => act(() => {
+    log.scrollTop = top;
+    fireEvent.scroll(log);
+  });
+  const read = () => [header.className.split(/\s+/).filter((name) => name.startsWith("bg-")), header.hasAttribute("data-stuck")];
+
+  expect(read()).toEqual([[], false]);
+  await scrollTo(40);
+  expect(read()).toEqual([["bg-canvas"], true]);
+  await scrollTo(0);
+  expect(read()).toEqual([[], false]);
 });
