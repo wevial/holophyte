@@ -377,8 +377,6 @@ def _set_aside(repo, run_id, branch, sha, identifier):
     if not tip:
         raise SystemExit(f"[holo2] {identifier}: branch {branch} is gone;"
                          " nothing approved")
-    if tip == sha:
-        return []
     if _git(repo, "merge-base", "--is-ancestor", sha, tip).returncode != 0:
         raise SystemExit(
             f"[holo2] {identifier}: branch {branch} at {tip[:12]} does not"
@@ -389,6 +387,8 @@ def _set_aside(repo, run_id, branch, sha, identifier):
         raise SystemExit(
             f"[holo2] {identifier}: the worktree {worktree} holds uncommitted"
             f" changes on {branch}; nothing approved")
+    if tip == sha:
+        return []
     dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
                  cwd=repo).split()
     sh(["git", "update-ref", f"{DROPPED_REF}{run_id}", tip], cwd=repo)
