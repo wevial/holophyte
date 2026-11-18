@@ -2,8 +2,8 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { SegmentedControl, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
 import {
-  FULL, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
-  type HeaderEffect, type ReadingFont,
+  DEFAULT_FADE, FADES, FULL, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useFade, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
+  type BandEffect, type HeaderEffect, type ReadingFont,
 } from "../appearance";
 import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
@@ -54,6 +54,7 @@ const WavesGlyph = () => <Glyph><path d="M2 6.5c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10.5
 const TextGlyph = () => <Glyph><path d="M1.5 13 5 3.5 8.5 13M2.8 9.5h4.4M10 13l2.2-6 2.3 6M10.7 11h3" /></Glyph>;
 const GrainGlyph = () => <Glyph><path d="M3 3h.01M8 3h.01M13 3h.01M5.5 6h.01M10.5 6h.01M3 9h.01M8 9h.01M13 9h.01M5.5 12h.01M10.5 12h.01" /></Glyph>;
 const FontGlyph = () => <Glyph><path d="M3 13h4M5 13V3h6M5 8h4.5" /></Glyph>;
+const FadeGlyph = () => <Glyph><path d="M2.5 3h11M2.5 6h11M3.5 9h9M5 12h6" /></Glyph>;
 const DensityGlyph = () => <Glyph><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></Glyph>;
 
 function Row({ id, icon, title, children, reset, labelTop = "pt-2" }: {
@@ -161,19 +162,24 @@ function EffectRow() {
   );
 }
 
-function SliderRow({ id, icon, title, label, value, range, onChange, pillFirst = false }: {
-  id: string; icon: ReactNode; title: string; label: string; value: number; range: typeof STRENGTHS; onChange: (value: number) => void; pillFirst?: boolean;
+function SliderRow({ id, icon, title, label, value, range, onChange, pillFirst = false, initial = FULL }: {
+  id: string; icon: ReactNode; title: string; label: string; value: number; range: typeof STRENGTHS; onChange: (value: number) => void; pillFirst?: boolean; initial?: number;
 }) {
   const slider = <input type="range" aria-label={label} min={range.min} max={range.max} step={range.step} value={value}
     onChange={(event) => onChange(Number(event.currentTarget.value))} className={`h-11 min-w-0 accent-act ${pillFirst ? "w-[72px] shrink-0" : "flex-1"}`} />;
   const pill = <output aria-label={`${label} value`} className={`rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2 ${pillFirst ? "min-w-0 flex-1" : "min-w-[56px]"}`}>{value}%</output>;
   return (
-    <Row id={id} icon={icon} title={title} reset={value !== FULL && <RowReset label={`Reset ${label.toLowerCase()}`} onReset={() => onChange(FULL)} />}>
+    <Row id={id} icon={icon} title={title} reset={value !== initial && <RowReset label={`Reset ${label.toLowerCase()}`} onReset={() => onChange(initial)} />}>
       <div className={`flex items-center gap-4 ${pillFirst ? "max-w-[460px]" : "max-w-[520px]"}`}>
         {pillFirst ? <>{pill}{slider}</> : <>{slider}{pill}</>}
       </div>
     </Row>
   );
+}
+
+function FadeRow({ effect }: { effect: BandEffect }) {
+  const { fade, setFade } = useFade(effect);
+  return <SliderRow id="appearance-fade" icon={<FadeGlyph />} title="Fade" label="Fade" value={fade} range={FADES} onChange={setFade} initial={DEFAULT_FADE} />;
 }
 
 function FontRow() {
@@ -271,6 +277,7 @@ export function AppearanceTab() {
       <ThemeRow mode="light" onSubject={setSubject} />
       <ThemeRow mode="dark" onSubject={setSubject} />
       <EffectRow />
+      {effect !== "none" && <FadeRow effect={effect} />}
       <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} pillFirst />
       <SliderRow id="appearance-grain" icon={<GrainGlyph />} title="Grain" label="Grain" value={grain} range={STRENGTHS} onChange={setGrain} />
       {effect === "haze" && <SliderRow id="appearance-haze" icon={<WavesGlyph />} title="Haze" label="Haze strength" value={hazeStrength} range={STRENGTHS} onChange={setHazeStrength} />}

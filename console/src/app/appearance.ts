@@ -17,15 +17,22 @@ const MOTION_KEY = "holophyte.next.motion";
 const TEXT_SIZE_KEY = "holophyte.textSize";
 const GRAIN_KEY = "holophyte.grain";
 const HAZE_STRENGTH_KEY = "holophyte.hazeStrength";
+const EFFECTS_KEY = "holophyte.effects";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 const HEADER_EFFECTS = ["haze", "caustics", "plume", "ribbons", "lava", "hyphae", "none"] as const;
 
 export type HeaderEffect = (typeof HEADER_EFFECTS)[number];
 
+export type BandEffect = Exclude<HeaderEffect, "none">;
+
+type EffectSettings = Partial<Record<BandEffect, { fade: number }>>;
+
 export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
 export const FULL = 100;
+export const FADES = { min: 0, max: 100, step: 5 };
+export const DEFAULT_FADE = 70;
 
 function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
@@ -45,11 +52,14 @@ function writeStored(key: string, value: string | null): void {
   }
 }
 
+const inRange = (value: unknown, range: typeof STRENGTHS): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= range.min && value <= range.max && value % range.step === 0;
+
 function readPercent(key: string, range: typeof STRENGTHS) {
   return (fallback = FULL): number => {
     try {
       const stored = Number(localStorage.getItem(key) ?? FULL);
-      return Number.isInteger(stored) && stored >= range.min && stored <= range.max && stored % range.step === 0 ? stored : FULL;
+      return inRange(stored, range) ? stored : FULL;
     } catch {
       return fallback;
     }
@@ -82,6 +92,69 @@ export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
 export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
+
+function parseEffectSettings(raw: string | null): EffectSettings {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw ?? "{}");
+  } catch {
+    return {};
+  }
+  const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, { fade?: unknown } | null>;
+  const settings: EffectSettings = {};
+  for (const effect of HEADER_EFFECTS) {
+    const fade = stored[effect]?.fade;
+    if (effect !== "none" && inRange(fade, FADES)) settings[effect] = { fade };
+  }
+  return settings;
+}
+
+let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
+let unsavedFades = new Map<BandEffect, number | null>();
+let effectSettingsShown: [EffectSettings, Map<BandEffect, number | null>, EffectSettings] = [{}, unsavedFades, {}];
+
+function readStoredEffectSettings(): EffectSettings {
+  const raw = localStorage.getItem(EFFECTS_KEY);
+  if (raw !== effectSettingsRead[0]) effectSettingsRead = [raw, parseEffectSettings(raw)];
+  return effectSettingsRead[1];
+}
+
+function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
+  let stored: EffectSettings;
+  try {
+    stored = readStoredEffectSettings();
+  } catch {
+    return fallback;
+  }
+  if (!unsavedFades.size) return stored;
+  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedFades) {
+    const shown = { ...stored };
+    for (const [effect, fade] of unsavedFades) {
+      if (fade === null) delete shown[effect];
+      else shown[effect] = { fade };
+    }
+    effectSettingsShown = [stored, unsavedFades, shown];
+  }
+  return effectSettingsShown[2];
+}
+
+function writeEffectSettings(settings: EffectSettings): void {
+  const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
+  writeStored(EFFECTS_KEY, raw);
+  let stored: EffectSettings = {};
+  try {
+    stored = readStoredEffectSettings();
+  } catch {
+    stored = {};
+  }
+  const unsaved = new Map<BandEffect, number | null>();
+  for (const effect of HEADER_EFFECTS) {
+    if (effect === "none") continue;
+    const fade = settings[effect]?.fade ?? null;
+    if (fade !== (stored[effect]?.fade ?? null)) unsaved.set(effect, fade);
+  }
+  unsavedFades = unsaved;
+}
 
 function readMotion(fallback = true): boolean {
   try {
@@ -154,7 +227,11 @@ function appearanceStore<T>(read: (fallback?: T) => T, write: (value: T) => void
     apply(next);
     listeners.forEach((listener) => listener());
   };
-  return { getSnapshot, subscribe, set };
+  const reload = () => {
+    value = read(value);
+    listeners.forEach((listener) => listener());
+  };
+  return { getSnapshot, subscribe, set, reload };
 }
 
 const themeStore = appearanceStore(readTheme, writeTheme, (theme) => { applyTheme(theme); applyCustomPick(); });
@@ -190,6 +267,7 @@ const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
+const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, () => {});
 const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
@@ -221,6 +299,10 @@ export function applyCustomPick(): void {
 }
 
 systemDark.subscribe(applyCustomPick);
+
+window.addEventListener("storage", (event) => {
+  if (event.key === EFFECTS_KEY || event.key === null) effectSettingsStore.reload();
+});
 
 export function useTheme() {
   const theme: Theme = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot);
@@ -264,6 +346,17 @@ export function useHeaderEffect() {
   return { effect: useSyncExternalStore(effectStore.subscribe, effectStore.getSnapshot), setEffect: effectStore.set };
 }
 
+export function useFade(effect: BandEffect) {
+  const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
+  const setFade = (fade: number) => {
+    const next = { ...effectSettingsStore.getSnapshot() };
+    if (fade === DEFAULT_FADE) delete next[effect];
+    else next[effect] = { fade };
+    effectSettingsStore.set(next);
+  };
+  return { fade: settings[effect]?.fade ?? DEFAULT_FADE, setFade };
+}
+
 export function useMotion() {
   const reduced = useSyncExternalStore(reducedMotion.subscribe, reducedMotion.matches);
   return { motion: useSyncExternalStore(motionStore.subscribe, motionStore.getSnapshot), reduced, setMotion: motionStore.set };
@@ -286,6 +379,7 @@ export function resetAppearance(): void {
   lightPickStore.set("lotus");
   darkPickStore.set("lotus");
   effectStore.set("haze");
+  effectSettingsStore.set({});
   motionStore.set(true);
   textSizeStore.set(FULL);
   grainStore.set(FULL);
