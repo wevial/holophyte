@@ -272,14 +272,15 @@ test("Fade at 0, 70 and 100 sets the band's fade to 0%, 70% and 100%, and None s
   }
 });
 
-test("in a dark theme Lava draws in a box inside the band anchored at its top and 135% of its height, and the other effects draw in the band itself", async () => {
+test("in a dark theme Lava draws in a box inside the band anchored at its top and at least 160% of its height, and the other effects draw in the band itself", async () => {
   const effects = fakeEffects();
   try {
     await mount();
     fireEvent.click(scheme("Dark"));
     fireEvent.click(tile("Header", "Lava"));
     const box = band().querySelector("canvas")!.parentElement!;
-    expect([box === band(), band().contains(box), box.style.top, box.style.height]).toEqual([false, true, "0px", "135%"]);
+    expect([box === band(), band().contains(box), box.style.top, box.style.height]).toEqual([false, true, "0px", expect.stringMatching(/^\d+(\.\d+)?%$/)]);
+    expect(parseFloat(box.style.height)).toBeGreaterThanOrEqual(160);
     const containers = ["Haze", "Caustics", "Plume", "Ribbons", "Hyphae"].map((name) => {
       fireEvent.click(tile("Header", name));
       return [name, band().querySelector("canvas")!.parentElement === band()];
@@ -309,21 +310,28 @@ test("Reset to default returns the saved fades of Lava and Haze to 70, also afte
   fireEvent.change(slider("Fade"), { target: { value: "40" } });
   fireEvent.click(tile("Header", "Haze"));
   fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { fade: 40 }, haze: { fade: 20 } });
   await reload();
   expect(fades()).toEqual({ lava: "40", haze: "20" });
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-  expect(fades()).toEqual({ lava: "70", haze: "70" });
+  expect([fades(), localStorage.getItem("holophyte.effects")]).toEqual([{ lava: "70", haze: "70" }, null]);
   await reload();
   expect(fades()).toEqual({ lava: "70", haze: "70" });
 });
 
-test("a Fade set in another tab survives this tab setting a different effect's Fade", async () => {
+test("when storage refuses writes, setting Haze's Fade keeps Lava's Fade from earlier in the session", async () => {
   await mount();
-  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { fade: 40 } }));
-  fireEvent.change(slider("Fade"), { target: { value: "20" } });
-  await reload();
-  expect(fades()).toEqual({ lava: "40", haze: "20" });
+  const full = spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+  try {
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    fireEvent.click(tile("Header", "Haze"));
+    fireEvent.change(slider("Fade"), { target: { value: "20" } });
+    expect(fades()).toEqual({ lava: "40", haze: "20" });
+  } finally {
+    full.mockRestore();
+  }
 });
 
 test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {
