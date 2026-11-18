@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@9f2195d packages/core/src/resolution.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@d34e0f8 packages/core/src/resolution.ts (MIT, see ../LICENSE).
 // Adaptive resolution: picks a render scale (a multiple of the device pixel
 // ratio) that keeps each frame's GPU work within budget, so effects stay
 // smooth on weak GPUs and run at full resolution on strong ones.

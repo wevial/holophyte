@@ -7,7 +7,11 @@ import type { Status } from "../../src/lib/types";
 import { fakeDeps, NO_ATTENTION, settle, stubFetch } from "../harness";
 import { declarations } from "../cssTokens";
 import { oklchToHex } from "../../src/lib/oklch";
+import * as caustics from "../../src/vendor/spectra/caustics";
 import * as haze from "../../src/vendor/spectra/haze";
+import * as lava from "../../src/vendor/spectra/lava";
+import * as plume from "../../src/vendor/spectra/plume";
+import * as ribbons from "../../src/vendor/spectra/ribbons";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -40,7 +44,7 @@ const controls = () => ({
   scheme: within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio").filter((radio) => radio.getAttribute("aria-checked") === "true").map((radio) => radio.textContent),
   light: pressed("Light"), dark: pressed("Dark"), header: pressed("Header"),
   motion: motion().getAttribute("aria-checked"),
-  sliders: [slider("Text size").value, slider("Grain").value, slider("Haze strength").value],
+  sliders: [slider("Text size").value, slider("Grain").value, (screen.queryByRole("slider", { name: "Haze strength" }) as HTMLInputElement | null)?.value ?? null],
   font: FONT_NAMES.filter((name) => radio("Reading font", name).checked),
   density: screen.getAllByRole("button", { name: /^(Comfortable|Compact)$/ }).filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent),
 });
@@ -109,14 +113,100 @@ test("Tide in the Dark row and Dune in the Light row are pressed, stored and car
   }
 });
 
-test("Caustics is disabled, and picking None stores none and removes the shell's haze band", async () => {
+const EFFECT_NAMES = ["Haze", "Caustics", "Plume", "Ribbons", "Lava", "None"];
+
+test("the Header group offers the five effects and None in order, all enabled with no soon mark, and a picked Lava alone stays pressed across a reload", async () => {
   await mount();
-  expect((tile("Header", "Caustics") as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByRole("main").querySelectorAll("[data-haze]")).toHaveLength(1);
-  fireEvent.click(tile("Header", "None"));
-  expect(pressed("Header")).toEqual(["None"]);
-  expect(localStorage.getItem("holophyte.next.effect")).toBe("none");
-  expect(screen.getByRole("main").querySelector("[data-haze]")).toBeNull();
+  const tiles = within(screen.getByRole("group", { name: "Header" })).getAllByRole("button") as HTMLButtonElement[];
+  expect(tiles.map((button) => button.textContent)).toEqual(EFFECT_NAMES);
+  expect(tiles.filter((button) => button.disabled)).toEqual([]);
+  expect(within(screen.getByRole("group", { name: "Header" })).queryByText(/soon/i)).toBeNull();
+  fireEvent.click(tile("Header", "Lava"));
+  expect(pressed("Header")).toEqual(["Lava"]);
+  cleanup();
+  await mount();
+  expect(pressed("Header")).toEqual(["Lava"]);
+});
+
+/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs and destroys. */
+function fakeEffects() {
+  const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava };
+  const live: string[] = [];
+  const options: Record<string, { motion?: boolean }[]> = {};
+  const configs: Record<string, { motion?: boolean }[]> = {};
+  const spies = Object.entries(modules).map(([name, module]) => spyOn(module, "mount").mockImplementation(((container: HTMLElement, given: { motion?: boolean } = {}) => {
+    container.appendChild(document.createElement("canvas"));
+    live.push(name);
+    (options[name] ??= []).push({ ...given });
+    const config = { ...given };
+    (configs[name] ??= []).push(config);
+    return { config, destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); } };
+  }) as never));
+  return { live, options, configs, restore: () => spies.forEach((spy) => spy.mockRestore()) };
+}
+
+test("in a dark theme the band mounts only the picked effect: Caustics, then Ribbons in its place, and None leaves no band", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Caustics"));
+    expect(effects.live).toEqual(["Caustics"]);
+    fireEvent.click(tile("Header", "Ribbons"));
+    expect(effects.live).toEqual(["Ribbons"]);
+    expect(effects.options.Caustics).toHaveLength(1);
+    fireEvent.click(tile("Header", "None"));
+    expect(effects.live).toEqual([]);
+    expect(screen.getByRole("main").querySelector("[data-haze]")).toBeNull();
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("with Motion off each of the five effects is mounted asking for a still frame", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(motion());
+    for (const name of ["Caustics", "Plume", "Ribbons", "Lava", "Haze"]) {
+      fireEvent.click(tile("Header", name));
+      expect([name, effects.live]).toEqual([name, [name]]);
+      expect([name, effects.options[name]!.at(-1)!.motion]).toEqual([name, false]);
+    }
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("turning Motion off asks each of the five running effects for a still frame without remounting it", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    for (const name of ["Caustics", "Plume", "Ribbons", "Lava", "Haze"]) {
+      fireEvent.click(tile("Header", name));
+      const running = effects.configs[name]!.at(-1)!;
+      const mounts = effects.configs[name]!.length;
+      expect([name, running.motion]).toEqual([name, true]);
+      fireEvent.click(motion());
+      expect([name, effects.live, effects.configs[name]!.length, running.motion]).toEqual([name, [name], mounts, false]);
+      fireEvent.click(motion());
+    }
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("the Haze strength row shows only while Haze is picked", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  expect(screen.queryByRole("slider", { name: "Haze strength" })).toBeNull();
+  fireEvent.click(tile("Header", "Haze"));
+  expect(screen.getByRole("slider", { name: "Haze strength" })).toBeTruthy();
 });
 
 test("under prefers-reduced-motion the Motion switch is off and disabled", async () => {
@@ -161,11 +251,11 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   fireEvent.click(scheme("Dark"));
   fireEvent.click(tile("Dark", "Tide"));
   fireEvent.click(tile("Light", "Dune"));
+  fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
   fireEvent.click(tile("Header", "None"));
   fireEvent.click(motion());
   fireEvent.change(slider("Text size"), { target: { value: "110" } });
   fireEvent.change(slider("Grain"), { target: { value: "50" } });
-  fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
   fireEvent.click(radio("Reading font", "Hyperlegible"));
   fireEvent.click(screen.getByRole("button", { name: "Compact" }));
   expect(stored()).toEqual(KEYS);
@@ -179,7 +269,7 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   expect(screen.queryByText("Reset?")).toBeNull();
   expect(storedValues()).toEqual(values);
   expect(controls()).toEqual(before);
-  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50", "150"], font: ["Hyperlegible"], density: ["Compact"] });
+  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50", null], font: ["Hyperlegible"], density: ["Compact"] });
   expect([root.getAttribute("data-font"), root.getAttribute("data-density")]).toEqual(["hyperlegible", "compact"]);
   expect([root.style.getPropertyValue("zoom"), root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["1.1", "0.5", "1.5"]);
 
@@ -401,5 +491,189 @@ test("re-saving the picked custom theme with new haze colours hands the header r
   } finally {
     cleanup();
     renderer.mockRestore();
+  }
+});
+
+/** A WebGL2 context limited to `maxTexture` texels a side that records each texture's size and each draw to the canvas itself. */
+function recordingGl(canvas: HTMLCanvasElement, maxTexture: number, record: { textures: [number, number][]; canvasDraws: number }) {
+  let framebuffer: unknown = null;
+  return new Proxy({}, {
+    get: (_, name) => {
+      if (typeof name === "string" && /^[A-Z_0-9]+$/.test(name)) return name;
+      if (name === "drawingBufferWidth") return canvas.width;
+      if (name === "drawingBufferHeight") return canvas.height;
+      if (name === "getParameter") return (pname: string) => (pname === "MAX_TEXTURE_SIZE" ? maxTexture : null);
+      if (name === "getProgramParameter") return (_program: unknown, pname: string) => (pname === "ACTIVE_UNIFORMS" ? 0 : true);
+      if (name === "getShaderParameter") return () => true;
+      if (name === "getExtension") return (extension: string) => (extension === "EXT_color_buffer_float" ? {} : null);
+      if (name === "texImage2D") return (_target: unknown, _level: unknown, _format: unknown, width: number, height: number) => { record.textures.push([width, height]); };
+      if (name === "bindFramebuffer") return (_target: unknown, bound: unknown) => { framebuffer = bound; };
+      if (name === "drawArrays") return () => { if (framebuffer === null) record.canvasDraws += 1; };
+      return () => ({});
+    },
+  });
+}
+
+/** Mounts a vendored effect, Plume unless named, in a header band of the given CSS size on the recording context, with animation frames run only by `runFrames`. */
+function effectBand(width: number, height: number, maxTexture: number, motion: boolean, mountEffect: (container: HTMLElement, options: { motion: boolean }) => { destroy(): void } = plume.mount) {
+  const record = { textures: [] as [number, number][], canvasDraws: 0 };
+  const frames: FrameRequestCallback[] = [];
+  const context = spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((function (this: HTMLCanvasElement, kind: string) {
+    return kind === "webgl2" ? recordingGl(this, maxTexture, record) : null;
+  }) as typeof HTMLCanvasElement.prototype.getContext);
+  const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => frames.push(callback));
+  for (const [side, value] of [["clientWidth", width], ["clientHeight", height]] as const) {
+    Object.defineProperty(HTMLCanvasElement.prototype, side, { configurable: true, get: () => value });
+  }
+  const container = document.createElement("div");
+  const effectHandle = mountEffect(container, { motion });
+  let clock = performance.now();
+  return {
+    record,
+    container,
+    runFrames: (count: number, frameMs = 16) => {
+      for (let frame = 0; frame < count; frame += 1) {
+        clock += frameMs;
+        frames.splice(0).forEach((callback) => callback(clock));
+      }
+    },
+    restore: () => {
+      effectHandle.destroy();
+      context.mockRestore();
+      raf.mockRestore();
+      for (const side of ["clientWidth", "clientHeight"]) delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>)[side];
+    },
+  };
+}
+
+test("Plume in a 1440px header band keeps Spectra's cloud and offset texture sizes, its short edge times the band's aspect, where they fit the GPU", () => {
+  const band = effectBand(1440, 188, 8192, true);
+  try {
+    expect(band.record.textures).toContainEqual([Math.round((1024 * 1440) / 188), 1024]);
+    expect(band.record.textures).toContainEqual([Math.round((512 * 1440) / 188), 512]);
+  } finally {
+    band.restore();
+  }
+});
+
+test("Plume in a 3840px header band asks for no texture wider or taller than the GPU allows", () => {
+  const band = effectBand(3840, 188, 8192, true);
+  try {
+    expect(band.record.textures.length).toBeGreaterThan(0);
+    expect(band.record.textures.filter(([width, height]) => width > 8192 || height > 8192)).toEqual([]);
+  } finally {
+    band.restore();
+  }
+});
+
+test("Plume with Motion off draws the canvas once and then holds that frame across later animation frames", () => {
+  const band = effectBand(1440, 188, 16384, false);
+  try {
+    band.runFrames(1);
+    expect(band.record.canvasDraws).toBe(1);
+    band.runFrames(8);
+    expect(band.record.canvasDraws).toBe(1);
+  } finally {
+    band.restore();
+  }
+});
+
+test("Plume with Motion off holds its one frame and keeps its canvas through half a minute of 20 fps frames", () => {
+  const band = effectBand(1440, 188, 16384, false);
+  try {
+    band.runFrames(600, 50);
+    expect(band.record.canvasDraws).toBe(1);
+    expect(band.container.querySelectorAll("canvas")).toHaveLength(1);
+  } finally {
+    band.restore();
+  }
+});
+
+test("Caustics, Ribbons, Lava and Haze with Motion off keep their one frame at its first size through half a minute of 20 fps frames", () => {
+  for (const [name, mountEffect] of [["Caustics", caustics.mount], ["Ribbons", ribbons.mount], ["Lava", lava.mount], ["Haze", haze.mount]] as const) {
+    const band = effectBand(1440, 188, 16384, false, mountEffect);
+    try {
+      band.runFrames(1);
+      const canvas = band.container.querySelector("canvas")!;
+      const first = [band.record.canvasDraws, canvas.width, canvas.height];
+      expect([name, ...first]).toEqual([name, 1, 1440, 188]);
+      band.runFrames(600, 50);
+      expect([name, band.record.canvasDraws, canvas.width, canvas.height]).toEqual([name, ...first]);
+    } finally {
+      band.restore();
+    }
+  }
+});
+
+test("Plume that fell back while moving draws again when Motion is turned off", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Plume"));
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    act(() => { band.querySelector("canvas")!.dispatchEvent(new Event("webglcontextlost")); });
+    expect([effects.live, band.classList.contains("haze-fallback")]).toEqual([[], true]);
+    fireEvent.click(motion());
+    expect([effects.live, effects.options.Plume!.at(-1)!.motion, band.classList.contains("haze-fallback")]).toEqual([["Plume"], false, false]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("Plume that fell back while moving draws again when the system turns on reduced motion", async () => {
+  let reduced = false;
+  const listeners = new Set<() => void>();
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    get matches() { return query === "(prefers-reduced-motion: reduce)" && reduced; },
+    media: query,
+    addEventListener: (_type: string, listener: () => void) => { if (query === "(prefers-reduced-motion: reduce)") listeners.add(listener); },
+    removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener); },
+  }) as unknown as MediaQueryList);
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Plume"));
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    act(() => { band.querySelector("canvas")!.dispatchEvent(new Event("webglcontextlost")); });
+    expect(effects.live).toEqual([]);
+    act(() => {
+      reduced = true;
+      listeners.forEach((listener) => listener());
+    });
+    expect(motion().getAttribute("aria-checked")).toBe("false");
+    expect([effects.live, band.classList.contains("haze-fallback")]).toEqual([["Plume"], false]);
+  } finally {
+    cleanup();
+    effects.restore();
+    media.mockRestore();
+  }
+});
+
+test("an effect whose shaders fail to compile falls back and releases its WebGL context and canvas, for each of the four new effects", async () => {
+  let released = 0;
+  const failingGl = new Proxy({}, {
+    get: (_, name) => {
+      if (typeof name === "string" && /^[A-Z_0-9]+$/.test(name)) return name;
+      if (name === "getShaderParameter") return () => false;
+      if (name === "getExtension") return (extension: string) => (extension === "WEBGL_lose_context" ? { loseContext: () => { released += 1; } } : {});
+      return () => ({});
+    },
+  });
+  const context = spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(((kind: string) => (kind === "webgl2" ? failingGl : null)) as typeof HTMLCanvasElement.prototype.getContext);
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    const band = () => screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    for (const name of ["Caustics", "Plume", "Ribbons", "Lava"]) {
+      released = 0;
+      fireEvent.click(tile("Header", name));
+      expect([name, released, band().querySelectorAll("canvas").length, band().classList.contains("haze-fallback")]).toEqual([name, 1, 0, true]);
+    }
+  } finally {
+    cleanup();
+    context.mockRestore();
   }
 });
