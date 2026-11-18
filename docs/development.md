@@ -139,6 +139,24 @@ Each module, one line:
 - `holophyte/config/serve_settings.py` — the `[console]` and `[serve]` readers.
 - `holophyte/config/review_settings.py` — the `[review]` reader: the
   blast-radius path lists and the fan-in and packages thresholds.
+- `holophyte/revert/__init__.py` — the `revert` package; empty.
+- `holophyte/revert/settings.py` — the `[revert]` reader: `enabled` and the
+  `refuse_paths` globs, each compiled, checked at startup with the other
+  tables.
+- `holophyte/revert/checks.py` — what a revert may undo: KEY's newest merged
+  run and the files its merge commit changed against its first parent, the
+  refused-path globs, an open revert ticket (in the store, or one an earlier
+  revert filed that the board reports open), and the dependents (`git
+  rev-list` after the merge on `origin/main` and local `main` against the
+  store's merged runs, kept when they changed a file the merge changed).
+- `holophyte/revert/ticket_text.py` — the revert ticket's fixed text: its
+  `Reverts: KEY at SHA` line, the `git revert` it asks for, the files as its
+  scope and the original ticket's verify commands.
+- `holophyte/revert/command.py` — `--revert`: fetches origin, runs the
+  checks, prints them
+  and the dependents, and unless `--dry-run` files the ticket through
+  `file_ticket()` in Todo at priority urgent and records a `revert`
+  intervention on the merged run.
 - `holophyte/config/config_tables.py` — the per-table readers (KO-397): the
   `[supervisor]`, `[loop]`, `[board]`, `[merge]` and `[report]` tables with
   `CONSOLE_KEYS` and `split_address()`, the namedtuples and defaults they own.

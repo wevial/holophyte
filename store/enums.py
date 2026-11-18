@@ -192,6 +192,7 @@ class InterventionAction(str, Enum):
     STEER = 'steer'
     QUEUE_JUMP = 'queue_jump'
     QUEUE_REMOVE = 'queue_remove'
+    REVERT = 'revert'
 
 
 class GapLayer(str, Enum):

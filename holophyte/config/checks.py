@@ -46,6 +46,7 @@ from holophyte.config.worktree_settings import (
     setup_timeout,
     worktree_environment,
 )
+from holophyte.revert.settings import revert_config
 from holophyte.review import review_runner
 
 
@@ -97,6 +98,7 @@ def check_config(project):
     story_config(project)
     trim_config(project)
     review_config(project)
+    revert_config(project)
     console_config(project)
     serve_config(project)
 

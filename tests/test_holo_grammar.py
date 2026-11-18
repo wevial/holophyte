@@ -74,6 +74,8 @@ SAMPLES = {
     ("release",): (["done"], "release_hold", True, "done", {}),
     ("close",): (["HOLO-1", URL, "landed by hand"], "close", "HOLO-1",
                  "landed by hand", {"landed": URL}),
+    ("revert",): (["HOLO-1", "broke the header", "--dry-run"], "revert",
+                  "HOLO-1", "broke the header", {"dry_run": True}),
     ("gap",): (["HOLO-1", "static", "a lint", "--found-by", "witness"],
                "gap_layer", ["HOLO-1", "static"], "a lint", {"found_by": "witness"}),
     ("story", "file"): (["slug", "--update", "HOLO-1", "--revision", "3"],

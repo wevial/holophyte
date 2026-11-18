@@ -157,6 +157,10 @@ COMMANDS = (
             note=REQUIRED, flags=(NOW,), records=("hold",)),
     Command(("close",), "--close", "record a change landed outside the factory",
             takes=("KEY",), landed="URL", note=OPTIONAL, records=("close_out",)),
+    Command(("revert",), "--revert",
+            "file an urgent ticket that reverts a merged ticket's merge",
+            takes=("KEY",), note=REQUIRED, flags=(DRY_RUN,),
+            records=("revert",)),
     Command(("gap",), "--gap-layer", "where a gap's lesson landed",
             takes=("KEY", "LAYER"), note=REQUIRED, flags=(CARRIED_BY, FOUND_BY),
             records=()),
@@ -270,7 +274,8 @@ NOT_EXPOSED = {"--worker": "internal: the loop's pool spawns it",
                "--automation-firing": "internal: the host sweep spawns it"}
 
 TICKET_VERBS = ("file", "move", "cancel", "requeue", "approve", "babysit",
-                "repoint", "pause", "resume", "abort", "close", "gap")
+                "repoint", "pause", "resume", "abort", "close", "revert",
+                "gap")
 
 ALIASES = (tuple((("ticket", verb), (verb,)) for verb in TICKET_VERBS)
            + ((("loop", "start"), ("start",)), (("loop", "stop"), ("stop",))))
