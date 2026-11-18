@@ -1,10 +1,11 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { SegmentedControl, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
 import {
-  DEFAULT_FADE, FADES, FULL, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useFade, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
+  FADES, FULL, OPACITIES, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useEffectSettings, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
   type BandEffect, type HeaderEffect, type ReadingFont,
 } from "../appearance";
+import { KNOBS, THEME, type Knob } from "../effectKnobs";
 import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
@@ -54,7 +55,8 @@ const WavesGlyph = () => <Glyph><path d="M2 6.5c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10.5
 const TextGlyph = () => <Glyph><path d="M1.5 13 5 3.5 8.5 13M2.8 9.5h4.4M10 13l2.2-6 2.3 6M10.7 11h3" /></Glyph>;
 const GrainGlyph = () => <Glyph><path d="M3 3h.01M8 3h.01M13 3h.01M5.5 6h.01M10.5 6h.01M3 9h.01M8 9h.01M13 9h.01M5.5 12h.01M10.5 12h.01" /></Glyph>;
 const FontGlyph = () => <Glyph><path d="M3 13h4M5 13V3h6M5 8h4.5" /></Glyph>;
-const FadeGlyph = () => <Glyph><path d="M2.5 3h11M2.5 6h11M3.5 9h9M5 12h6" /></Glyph>;
+const KnobsGlyph = () => <Glyph><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6M10 3v3M6 10v3" /></Glyph>;
+const ChevronGlyph = ({ up }: { up: boolean }) => <Glyph><path d={up ? "M5 9.5 8 6.5l3 3" : "M5 6.5 8 9.5l3-3"} /></Glyph>;
 const DensityGlyph = () => <Glyph><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></Glyph>;
 
 function Row({ id, icon, title, children, reset, labelTop = "pt-2" }: {
@@ -133,6 +135,14 @@ function ThemeRow({ mode, onSubject }: { mode: ThemeMode; onSubject: (subject: E
 function EffectRow() {
   const { effect, setEffect } = useHeaderEffect();
   const { motion, reduced, setMotion } = useMotion();
+  const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const section = useId();
+  const shown = effect !== "none" && (open || closing);
+  const toggle = () => {
+    setClosing(open && !reduced);
+    setOpen(!open);
+  };
   return (
     <Row id="appearance-header" icon={<WavesGlyph />} title="Header" labelTop="pt-1.5">
       <div className="flex flex-wrap items-start gap-3">
@@ -140,7 +150,7 @@ function EffectRow() {
           {EFFECTS.map((item) => {
             const pressed = effect === item.value;
             return (
-              <button key={item.value} type="button" aria-pressed={pressed} onClick={() => setEffect(item.value)} className="group flex w-[96px] flex-col gap-1.5 text-left">
+              <button key={item.value} type="button" aria-pressed={pressed} onClick={() => { setEffect(item.value); setClosing(false); }} className="group flex w-[96px] flex-col gap-1.5 text-left">
                 <span aria-hidden="true"
                   className={`relative block h-[40px] w-full overflow-hidden rounded-card bg-canvas shadow-[inset_0_0_0_1px_var(--hair)] ${item.still ? "after:absolute after:inset-0 after:rounded-card after:shadow-[inherit] after:content-['']" : ""} ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}>
                   {item.still && <img src={item.still} alt="" draggable={false} className="size-full object-cover" />}
@@ -157,8 +167,75 @@ function EffectRow() {
           <span aria-hidden="true">Motion</span>
           {reduced && <span className="font-sans text-[12px] text-ink-3">off under reduced motion</span>}
         </label>
+        {effect !== "none" && (
+          <button type="button" aria-expanded={open} aria-controls={shown ? section : undefined} onClick={toggle}
+            className={`flex min-h-11 items-center gap-2 rounded-button px-3 text-[13px] font-medium ${open ? "bg-selected text-ink" : "text-ink-2 hover:text-ink"}`}>
+            <KnobsGlyph />Customize<ChevronGlyph up={open} />
+          </button>
+        )}
       </div>
+      {shown && (
+        <div id={section} inert={!open} onTransitionEnd={(event) => { if (event.target === event.currentTarget && !open) setClosing(false); }}
+          className={`grid transition-[grid-template-rows,opacity] duration-250 ease-out transition-discrete motion-reduce:transition-none ${open ? "grid-rows-[1fr] opacity-100 starting:grid-rows-[0fr] starting:opacity-0" : "grid-rows-[0fr] opacity-0"}`}>
+          <div className="min-h-0 overflow-hidden">
+            <EffectCustomize key={effect} effect={effect} />
+          </div>
+        </div>
+      )}
     </Row>
+  );
+}
+
+const EFFECT_NAMES = Object.fromEntries(EFFECTS.map((item) => [item.value, item.name])) as Record<HeaderEffect, string>;
+
+const decimals = (step: number) => String(step).split(".")[1]?.length ?? 0;
+
+function KnobSlider({ label, value, range, onChange, unit = "" }: {
+  label: string; value: number; range: { min: number; max: number; step: number }; onChange: (value: number) => void; unit?: string;
+}) {
+  const shown = unit ? `${value}${unit}` : value.toFixed(decimals(range.step));
+  return (
+    <div className="grid min-h-11 grid-cols-[80px_minmax(0,1fr)_64px] items-center gap-3">
+      <span aria-hidden="true" className="text-[13px] text-ink-2">{label}</span>
+      <input type="range" aria-label={label} min={range.min} max={range.max} step={range.step} value={value}
+        onChange={(event) => onChange(Number(event.currentTarget.value))} className="h-11 min-w-0 accent-act" />
+      <output aria-label={`${label} value`} className="rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2">{shown}</output>
+    </div>
+  );
+}
+
+function KnobChoice({ knob, value, onChange }: { knob: Extract<Knob, { kind: "choice" }>; value: string; onChange: (value: string) => void }) {
+  return (
+    <div className="grid min-h-11 grid-cols-[80px_minmax(0,1fr)] items-center gap-3 min-[1100px]:col-span-2">
+      <span aria-hidden="true" className="text-[13px] text-ink-2">{knob.label}</span>
+      <div className="min-w-0 overflow-x-auto">
+        <Segmented label={knob.label} options={knob.choices.map((choice) => ({ value: choice, label: choice === THEME ? "Theme" : choice }))} value={value} onPick={onChange} />
+      </div>
+    </div>
+  );
+}
+
+function EffectCustomize({ effect }: { effect: BandEffect }) {
+  const { values, set, changed, reset } = useEffectSettings(effect);
+  const { hazeStrength, setHazeStrength } = useHazeStrength();
+  const heading = useId();
+  return (
+    <section aria-labelledby={heading} className={`mt-4 px-4 pt-3 pb-4 ${CARD}`}>
+      <div className="flex items-center justify-between">
+        <h4 id={heading} className="font-sans text-[13px] font-semibold text-ink">{EFFECT_NAMES[effect]}</h4>
+        <button type="button" disabled={!changed} onClick={reset} className="flex min-h-9 items-center gap-1.5 px-1 text-[13px] text-ink-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-2">
+          <ResetGlyph />Reset
+        </button>
+      </div>
+      <div className="mt-2 grid gap-x-7 gap-y-1 min-[1100px]:grid-cols-2">
+        <KnobSlider label="Fade" value={Number(values.fade)} range={FADES} unit="%" onChange={(value) => set("fade", value)} />
+        <KnobSlider label="Opacity" value={Number(values.opacity)} range={OPACITIES} unit="%" onChange={(value) => set("opacity", value)} />
+        {effect === "haze" && <KnobSlider label="Strength" value={hazeStrength} range={STRENGTHS} unit="%" onChange={setHazeStrength} />}
+        {KNOBS[effect].map((knob) => knob.kind === "choice"
+          ? <KnobChoice key={knob.key} knob={knob} value={String(values[knob.key])} onChange={(value) => set(knob.key, value)} />
+          : <KnobSlider key={knob.key} label={knob.label} value={Number(values[knob.key])} range={knob} onChange={(value) => set(knob.key, value)} />)}
+      </div>
+    </section>
   );
 }
 
@@ -175,11 +252,6 @@ function SliderRow({ id, icon, title, label, value, range, onChange, pillFirst =
       </div>
     </Row>
   );
-}
-
-function FadeRow({ effect }: { effect: BandEffect }) {
-  const { fade, setFade } = useFade(effect);
-  return <SliderRow id="appearance-fade" icon={<FadeGlyph />} title="Fade" label="Fade" value={fade} range={FADES} onChange={setFade} initial={DEFAULT_FADE} />;
 }
 
 function FontRow() {
@@ -270,17 +342,13 @@ export function AppearanceTab() {
   const [subject, setSubject] = useState<EditorSubject>(() => ({ mode: resolvedTheme, pick: resolvedTheme === "dark" ? darkPick : lightPick }));
   const { textSize, setTextSize } = useTextSize();
   const { grain, setGrain } = useGrain();
-  const { hazeStrength, setHazeStrength } = useHazeStrength();
-  const { effect } = useHeaderEffect();
   return (
     <div>
       <ThemeRow mode="light" onSubject={setSubject} />
       <ThemeRow mode="dark" onSubject={setSubject} />
       <EffectRow />
-      {effect !== "none" && <FadeRow effect={effect} />}
       <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} pillFirst />
       <SliderRow id="appearance-grain" icon={<GrainGlyph />} title="Grain" label="Grain" value={grain} range={STRENGTHS} onChange={setGrain} />
-      {effect === "haze" && <SliderRow id="appearance-haze" icon={<WavesGlyph />} title="Haze" label="Haze strength" value={hazeStrength} range={STRENGTHS} onChange={setHazeStrength} />}
       <div className="mt-2 border-t border-rule-2">
         <FontRow />
         <DensityRow />

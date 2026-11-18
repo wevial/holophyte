@@ -3,6 +3,7 @@ import {
   applyCustomTheme, applyPick, applyTheme, deriveTheme, isCustom, parseCustomThemes, readCustomThemesRaw, readPick, readTheme, writeCustomThemes, writePick, writeTheme,
   type CustomTheme, type Theme, type ThemeMode, type ThemePick,
 } from "../lib/theme";
+import { KNOBS, validKnob, type KnobValue } from "./effectKnobs";
 
 export type ReadingFont = "sans" | "serif" | "hyperlegible";
 
@@ -26,13 +27,16 @@ export type HeaderEffect = (typeof HEADER_EFFECTS)[number];
 
 export type BandEffect = Exclude<HeaderEffect, "none">;
 
-type EffectSettings = Partial<Record<BandEffect, { fade: number }>>;
+type EffectEntry = Record<string, KnobValue>;
+
+type EffectSettings = Partial<Record<BandEffect, EffectEntry>>;
 
 export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
 export const FULL = 100;
 export const FADES = { min: 0, max: 100, step: 5 };
 export const DEFAULT_FADE = 70;
+export const OPACITIES = { min: 0, max: 100, step: 5 };
 
 function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
@@ -93,6 +97,12 @@ export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
 
+function validEntryValue(effect: BandEffect, key: string, value: unknown): value is KnobValue {
+  if (key === "fade") return inRange(value, FADES);
+  if (key === "opacity") return inRange(value, OPACITIES);
+  return validKnob(effect, key, value);
+}
+
 function parseEffectSettings(raw: string | null): EffectSettings {
   let parsed: unknown;
   try {
@@ -100,18 +110,22 @@ function parseEffectSettings(raw: string | null): EffectSettings {
   } catch {
     return {};
   }
-  const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, { fade?: unknown } | null>;
+  const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
   const settings: EffectSettings = {};
   for (const effect of HEADER_EFFECTS) {
-    const fade = stored[effect]?.fade;
-    if (effect !== "none" && inRange(fade, FADES)) settings[effect] = { fade };
+    const entry = stored[effect];
+    if (effect === "none" || !entry || typeof entry !== "object") continue;
+    const kept = Object.entries(entry).filter(([key, value]) => validEntryValue(effect, key, value));
+    if (kept.length) settings[effect] = Object.fromEntries(kept);
   }
   return settings;
 }
 
+type UnsavedEntries = Map<BandEffect, EffectEntry | null>;
+
 let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
-let unsavedFades = new Map<BandEffect, number | null>();
-let effectSettingsShown: [EffectSettings, Map<BandEffect, number | null>, EffectSettings] = [{}, unsavedFades, {}];
+let unsavedEntries: UnsavedEntries = new Map();
+let effectSettingsShown: [EffectSettings, UnsavedEntries, EffectSettings] = [{}, unsavedEntries, {}];
 
 function readStoredEffectSettings(): EffectSettings {
   const raw = localStorage.getItem(EFFECTS_KEY);
@@ -126,17 +140,19 @@ function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
   } catch {
     return fallback;
   }
-  if (!unsavedFades.size) return stored;
-  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedFades) {
+  if (!unsavedEntries.size) return stored;
+  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedEntries) {
     const shown = { ...stored };
-    for (const [effect, fade] of unsavedFades) {
-      if (fade === null) delete shown[effect];
-      else shown[effect] = { fade };
+    for (const [effect, entry] of unsavedEntries) {
+      if (entry === null) delete shown[effect];
+      else shown[effect] = entry;
     }
-    effectSettingsShown = [stored, unsavedFades, shown];
+    effectSettingsShown = [stored, unsavedEntries, shown];
   }
   return effectSettingsShown[2];
 }
+
+const sameEntry = (one: EffectEntry | undefined, other: EffectEntry | undefined) => JSON.stringify(one ?? null) === JSON.stringify(other ?? null);
 
 function writeEffectSettings(settings: EffectSettings): void {
   const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
@@ -147,13 +163,12 @@ function writeEffectSettings(settings: EffectSettings): void {
   } catch {
     stored = {};
   }
-  const unsaved = new Map<BandEffect, number | null>();
+  const unsaved: UnsavedEntries = new Map();
   for (const effect of HEADER_EFFECTS) {
     if (effect === "none") continue;
-    const fade = settings[effect]?.fade ?? null;
-    if (fade !== (stored[effect]?.fade ?? null)) unsaved.set(effect, fade);
+    if (!sameEntry(settings[effect], stored[effect])) unsaved.set(effect, settings[effect] ?? null);
   }
-  unsavedFades = unsaved;
+  unsavedEntries = unsaved;
 }
 
 function readMotion(fallback = true): boolean {
@@ -346,15 +361,32 @@ export function useHeaderEffect() {
   return { effect: useSyncExternalStore(effectStore.subscribe, effectStore.getSnapshot), setEffect: effectStore.set };
 }
 
-export function useFade(effect: BandEffect) {
+function knobDefaults(effect: BandEffect): EffectEntry {
+  return { fade: DEFAULT_FADE, opacity: FULL, ...Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, knob.initial])) };
+}
+
+/** An effect's Fade, Opacity and knobs over their defaults, with Haze's Strength; only values off their default are saved. */
+export function useEffectSettings(effect: BandEffect) {
   const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
-  const setFade = (fade: number) => {
+  const { hazeStrength, setHazeStrength } = useHazeStrength();
+  const defaults = knobDefaults(effect);
+  const saved = settings[effect];
+  const set = (key: string, value: KnobValue) => {
     const next = { ...effectSettingsStore.getSnapshot() };
-    if (fade === DEFAULT_FADE) delete next[effect];
-    else next[effect] = { fade };
+    const entry = { ...next[effect], [key]: value };
+    if (value === defaults[key]) delete entry[key];
+    if (Object.keys(entry).length) next[effect] = entry;
+    else delete next[effect];
     effectSettingsStore.set(next);
   };
-  return { fade: settings[effect]?.fade ?? DEFAULT_FADE, setFade };
+  const changed = Object.entries(saved ?? {}).some(([key, value]) => value !== defaults[key]) || (effect === "haze" && hazeStrength !== FULL);
+  const reset = () => {
+    const next = { ...effectSettingsStore.getSnapshot() };
+    delete next[effect];
+    effectSettingsStore.set(next);
+    if (effect === "haze") setHazeStrength(FULL);
+  };
+  return { values: { ...defaults, ...saved }, set, changed, reset };
 }
 
 export function useMotion() {
