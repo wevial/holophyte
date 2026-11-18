@@ -210,7 +210,7 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  scope=(), adversary=(), then=None):
     if conn is None:
         return
-    criteria = numbered(conn, run_id, criteria)
+    criteria = numbered(conn, run_id, criteria) if criteria else []
     verdicts = (review_runner.REVIEW_VERDICTS if role == "review"
                 else review_runner.ADJUDICATION_VERDICTS)
     verdict = round_verdict(reply, verdicts)
