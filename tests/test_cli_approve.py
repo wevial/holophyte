@@ -33,7 +33,10 @@ import store.read
 import store.tickets
 from holophyte.loop.branch_sync import _candidate_drift
 from holophyte.loop.runs import open_store
+from tests.fake_agent import Commit, Reply
 from tests.host_fixture import git
+from tests.loop_fixture import BRANCH as LOOP_BRANCH
+from tests.loop_fixture import LoopFixture, StubProvider, a_task
 from tests.phase_fixture import finish_run, park_run
 from tests.test_serve_merge import FakeGithub, review_rule
 
@@ -587,13 +590,22 @@ class SweptApproveCliTests(unittest.TestCase):
         """The command exits non-zero and neither the store nor a ref changes."""
         store_before, tip = list(self.conn.iterdump()), self.ref(
             f"refs/heads/{BRANCH}")
+        worktree_before = self.worktree_state()
         with self.assertRaises(SystemExit) as raised:
             self.cli("--approve", "KO-1", *args)
         self.assertNotEqual(raised.exception.code, 0)
         self.assertEqual(list(self.conn.iterdump()), store_before)
+        self.assertEqual(self.worktree_state(), worktree_before)
         self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), tip)
         self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
         return str(raised.exception)
+
+    def worktree_state(self):
+        """What the worktree's HEAD names, its index and its status."""
+        return (git(self.wt, "symbolic-ref", "HEAD"),
+                git(self.wt, "rev-parse", "HEAD"),
+                git(self.wt, "ls-files", "--stage"),
+                git(self.wt, "status", "--porcelain", "--ignored"))
 
     def assert_released_at_reviewed(self):
         self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
@@ -652,7 +664,7 @@ class SweptApproveCliTests(unittest.TestCase):
         (self.wt / "work").write_text("local only\n")
         self.sweep()
 
-        self.assertIn("cannot check out", self.refused("--note", "ok"))
+        self.assertIn("the rewind would overwrite work", self.refused("--note", "ok"))
         self.assertEqual((self.wt / "work").read_text(), "local only\n")
 
     def test_a_run_failed_on_verify_is_refused_as_before(self):
@@ -661,6 +673,124 @@ class SweptApproveCliTests(unittest.TestCase):
 
         self.assertIn("KO-1 is in_flight, not blocked_on_operator",
                       self.refused("--note", "ok"))
+
+    def test_a_stale_lock_on_the_dropped_ref_refuses_and_a_retry_approves(self):
+        self.branch_with_wip()
+        self.sweep()
+        lock = self.repo / ".git" / "refs" / "holophyte" / "dropped" / (
+            f"{self.run}.lock")
+        lock.parent.mkdir(parents=True)
+        lock.write_text("")
+
+        self.assertIn("cannot lock the refs", self.refused("--note", "ok"))
+
+        lock.unlink()
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
+
+    def test_a_worker_commit_while_the_rewind_holds_the_refs_is_not_lost(self):
+        """The swept worker commits its last edit while approve is moving
+        the worktree: the commit cannot land, approve refuses, and the edit
+        is still in the worktree."""
+        self.branch_with_wip()
+        self.sweep()
+        rewound = holophyte.cli.operator._moved_tree
+
+        def worker_commits_first(worktree, sha, tip):
+            (worktree / "work").write_text("the worker's last edit\n")
+            late = subprocess.run(
+                ["git", "-c", "user.name=w", "-c", "user.email=w@w",
+                 "commit", "-qam", "WIP: implementer ended mid-edit"],
+                cwd=worktree, capture_output=True, text=True)
+            self.assertNotEqual(late.returncode, 0)
+            return rewound(worktree, sha, tip)
+
+        with patch.object(holophyte.cli.operator, "_moved_tree",
+                          worker_commits_first), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("nothing approved", str(raised.exception))
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertEqual((self.wt / "work").read_text(),
+                         "the worker's last edit\n")
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_ticket_renamed_since_the_run_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        self.conn.execute("UPDATE tickets SET title = 'a renamed ticket'"
+                          " WHERE id = ?", (self.ticket,))
+        self.conn.commit()
+
+        self.assertIn("the next claim resumes task/ko-1-a-renamed-ticket",
+                      self.refused("--note", "ok"))
+
+    def test_a_ticket_in_the_backlog_column_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        self.conn.execute("UPDATE tickets SET boardState = 'Icebox',"
+                          " boardColumn = 'backlog' WHERE id = ?",
+                          (self.ticket,))
+        self.conn.commit()
+
+        self.assertIn("not blocked_on_operator", self.refused("--note", "ok"))
+
+
+MET_BUT_CHANGES = Reply(
+    "Blocker: the scripted change is incomplete.\n"
+    "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+    "VERDICT: REQUEST_CHANGES")
+
+
+class SweptApproveLoopTests(LoopFixture):
+    """The real loop reviews a candidate, the supervisor's sweep fails the
+    run while its fix turn commits WIP, and after approve the next claim
+    takes the reviewed candidate through the merge gate."""
+
+    def sweep_during_the_fix_turn(self):
+        db = self.db
+
+        class SweptFix(Commit):
+            def play(self, cwd, turn):
+                conn = store.open(str(db))
+                try:
+                    (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
+                    store.release(
+                        conn, run_id, "failed",
+                        STUCK.replace("phase reviewing", "phase addressing"),
+                        failure_kind="swept")
+                finally:
+                    conn.close()
+                return super().play(cwd, turn)
+
+        self.loop(Commit("the reviewed work"), MET_BUT_CHANGES,
+                  SweptFix("WIP: implementer ended mid-edit"))
+
+    def test_the_next_claim_merges_the_reviewed_commit_without_the_wip(self):
+        self.sweep_during_the_fix_turn()
+        reviewed = self.git("rev-parse", f"{LOOP_BRANCH}~1").strip()
+        wip = self.git("rev-parse", LOOP_BRANCH).strip()
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "swept")])
+        out = io.StringIO()
+        holophyte.cli.operator.approve(self.project, "KO-131", "non-blocking",
+                                       out=out)
+        self.assertIn(f"approved at {reviewed}", out.getvalue())
+
+        fake, _ = self.loop(provider=StubProvider(a_task()))
+
+        self.assertEqual(fake.roles, [])
+        self.assertIn("the reviewed work", self.subjects())
+        self.assertNotIn("WIP: implementer ended mid-edit", self.subjects())
+        self.assertEqual(
+            self.git("rev-parse", "refs/holophyte/dropped/1").strip(), wip)
+        self.assertEqual(
+            self.read("SELECT id, outcome FROM runs ORDER BY id"),
+            [(1, "failed"), (2, "merged")])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
+
 
 if __name__ == "__main__":
     unittest.main()

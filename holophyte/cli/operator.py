@@ -16,7 +16,6 @@ from holophyte.agents.probes import probe_diagnostic, probe_implementer
 from holophyte.board.projection import release_lease_label
 from holophyte.cli.report import migration_header, report_lines
 from holophyte.config.config_tables import loop_config, merge_config, report_config
-from holophyte.config.project import worktree_path
 from holophyte.host.reconcile import (
     CloseRefused,
     _reconcile_at_startup,
@@ -25,7 +24,7 @@ from holophyte.host.reconcile import (
 )
 from holophyte.host.startup import banner
 from holophyte.host.supervisor import linear_budget_low, supervisor_liveness_line
-from holophyte.loop.claim import _claim_next
+from holophyte.loop.claim import _claim_next, claimed_run
 from holophyte.loop.claim_store import BOARD_DOWN, announce, store_mode, sync_board
 from holophyte.loop.gates import sh
 from holophyte.loop.implementer_profile import run_view
@@ -326,10 +325,16 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
     if unmet:
         note = f"forced past criteria: {', '.join(unmet)}; {note}"
     branch = store.read.park_facts(conn, run_id).branch
-    if branch is None:
-        raise SystemExit(f"[holo2] {identifier}: run {run_id} recorded no"
-                         " branch; nothing approved")
-    dropped = _set_aside(target, run_id, branch, sha, identifier)
+    (title,) = conn.execute("SELECT title FROM tickets WHERE id = ?",
+                            (ticket_id,)).fetchone()
+    claim = claimed_run(target, {"id": identifier, "title": title,
+                                 "budget_min": 0})
+    if branch != claim.branch:
+        raise SystemExit(
+            f"[holo2] {identifier}: run {run_id} recorded branch {branch},"
+            f" but the next claim resumes {claim.branch}; nothing approved")
+    dropped = _set_aside(target.path, claim.wt, run_id, branch, sha,
+                         identifier)
     try:
         store.approve_swept(conn, ticket_id, note, sha, run_id=run_id)
     except (store.ApproveRefused, ValueError) as refused:
@@ -371,8 +376,8 @@ def _git(repo, *args):
                           text=True)
 
 
-def _set_aside(target, run_id, branch, sha, identifier):
-    repo, refused = target.path, f"[holo2] {identifier}: "
+def _set_aside(repo, worktree, run_id, branch, sha, identifier):
+    refused = f"[holo2] {identifier}: "
     tip = _git(repo, "rev-parse", "--verify", "--quiet",
                f"refs/heads/{branch}").stdout.strip()
     if not tip:
@@ -381,7 +386,6 @@ def _set_aside(target, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}branch {branch} at {tip[:12]} does not descend from"
             f" the reviewed commit {sha[:12]}; nothing approved")
-    worktree = worktree_path(target, branch)
     if _checked_out(repo, branch) != worktree.resolve():
         raise SystemExit(
             f"{refused}branch {branch} is not checked out at {worktree},"
@@ -400,23 +404,49 @@ def _set_aside(target, run_id, branch, sha, identifier):
             " not contain; nothing approved")
     dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
                  cwd=repo).split()
-    _rewind(worktree, branch, sha, tip, ref, refused)
+    why = _rewind(worktree, [f"update refs/heads/{branch} {sha} {tip}",
+                             f"update {ref} {tip} {kept or NO_REF}"],
+                  sha, tip)
+    if why is not None:
+        raise SystemExit(f"{refused}{why}; {branch} left at {tip[:12]};"
+                         " nothing approved")
     return dropped
 
 
-def _rewind(worktree, branch, sha, tip, ref, refused):
-    detached = _git(worktree, "checkout", "--no-overwrite-ignore", "--detach",
-                    sha)
-    if detached.returncode != 0:
-        raise SystemExit(f"{refused}cannot check out {sha[:12]} in"
-                         f" {worktree}: {detached.stderr.strip()};"
-                         f" {branch} left at {tip[:12]}; nothing approved")
-    sh(["git", "update-ref", ref, tip], cwd=worktree)
-    moved = _git(worktree, "update-ref", f"refs/heads/{branch}", sha, tip)
-    sh(["git", "checkout", branch], cwd=worktree)
+NO_REF = "0" * 40
+
+
+def _rewind(worktree, updates, sha, tip):
+    lock = subprocess.Popen(["git", "update-ref", "--stdin"], cwd=worktree,
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+    lock.stdin.write("start\n" + "".join(f"{u}\n" for u in updates)
+                     + "prepare\n")
+    lock.stdin.flush()
+    if [lock.stdout.readline() for _ in range(2)] != ["start: ok\n",
+                                                      "prepare: ok\n"]:
+        return f"cannot lock the refs: {lock.communicate()[1].strip()}"
+    why = _moved_tree(worktree, sha, tip)
+    _, error = lock.communicate("abort\n" if why else "commit\n")
+    if lock.returncode != 0 and why is None:
+        why = f"cannot move the refs: {error.strip()}"
+    return why
+
+
+def _moved_tree(worktree, sha, tip):
+    added = _git(worktree, "diff", "--name-only", "--no-renames",
+                 "--diff-filter=A", tip, sha).stdout.splitlines()
+    present = [path for path in added if os.path.lexists(worktree / path)]
+    if present:
+        return f"the rewind would overwrite {', '.join(present)} in {worktree}"
+    moved = _git(worktree, "read-tree", "-m", "-u", tip, sha)
     if moved.returncode != 0:
-        raise SystemExit(f"{refused}branch {branch} moved past {tip[:12]}"
-                         " while it was set aside; nothing approved")
+        return f"cannot check out {sha[:12]}: {moved.stderr.strip()}"
+    if (_git(worktree, "diff-index", "--quiet", "--cached", sha).returncode
+            or _git(worktree, "diff-files", "--quiet").returncode):
+        _git(worktree, "read-tree", "-m", "-u", sha, tip)
+        return f"the worktree {worktree} changed while it was rewound"
+    return None
 
 
 def _checked_out(repo, branch):
