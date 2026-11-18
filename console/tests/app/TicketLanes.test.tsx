@@ -108,7 +108,7 @@ test("Group by Project draws a lane per project in fleet order with its count, h
   cleanup();
 
   await mount("#/tickets", projects);
-  expect(pressed("Project")).toBe("true");
+  expect(segments().map(pressed)).toEqual(["true", "false", "false"]);
   expect(lanes()).toHaveLength(2);
 });
 
@@ -149,7 +149,6 @@ test("a lane's heading folds its grid, and the fold-all button folds every lane 
   expect((demo.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(true);
   expect((writer.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(false);
 
-  expect(within(screen.getByRole("group", { name: "Group by" })).getAllByRole("button").map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
   await press("Collapse all lanes");
   expect(lanes().map((lane) => headOf(lane).getAttribute("aria-expanded"))).toEqual(["false", "false"]);
   expect(screen.getByRole("button", { name: "Expand all lanes" })).toBeTruthy();
@@ -157,7 +156,7 @@ test("a lane's heading folds its grid, and the fold-all button folds every lane 
   expect(lanes().map((lane) => headOf(lane).getAttribute("aria-expanded"))).toEqual(["true", "true"]);
 });
 
-test("a picked project offers no Project grouping, None draws no lane heading or fold-all link, and a throwing storage still switches", async () => {
+test("a picked project offers no Project grouping, None draws no lane heading or fold-all button, and a throwing storage still switches", async () => {
   localStorage.setItem("holophyte.next.tickets.group", "project");
   await mount("#/tickets?project=demo", projects);
   expect(segments()).toEqual(["Story", "None"]);
