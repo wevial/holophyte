@@ -1958,8 +1958,7 @@ Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
 behind its token. It does what `holo revert KEY REASON [--dry-run]` does:
 the same checks (`[revert] enabled`, KEY merged on `origin/main`, its merge
 touching no `[revert] refuse_paths` path, no revert of it already open),
-the same dependents and the same urgent Todo ticket. A preview's `enabled`
-says whether the project allows it.
+the same dependents and the same urgent Todo ticket.
 
 ```json
 {"key": "KO-n", "reason": "broke the header", "dry_run": true}
