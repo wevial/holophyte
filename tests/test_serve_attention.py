@@ -185,16 +185,24 @@ class FailedAttentionTests(ServeTestCase):
                     self.assertEqual(body["level"], "working")
                     self.assertEqual(body["items"], [])
 
-    def test_only_failure_remains_for_in_flight_and_ready(self):
+    def failed_runs(self):
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        return [item["run"] for item in body["items"] if item["kind"] == "failed"]
+
+    def test_a_requeued_failure_is_unlisted_until_its_next_run_fails(self):
         self.mirror_state("Todo")
-        for status in ("in_flight", "ready"):
-            with self.subTest(status=status):
-                if status == "ready":
-                    store.requeue(self.conn, self.ticket.id, "retry later")
-                code, _, body = self.request("GET", "/attention")
-                self.assertEqual(code, 200)
-                self.assertEqual([item["run"] for item in body["items"]
-                                  if item["kind"] == "failed"], [self.run])
+        self.assertEqual(self.failed_runs(), [self.run])
+        store.requeue(self.conn, self.ticket.id, "retry later")
+        self.assertEqual(store.read.ticket_by_id(self.conn, self.ticket.id).status,
+                         "ready")
+        self.assertEqual(self.failed_runs(), [])
+        store.tickets.transition(self.conn, self.ticket.id, "in_flight")
+        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        latest = store.claim(self.conn, project, self.ticket.id, now=self.now)
+        store.release(self.conn, latest, "failed", reason="verify red again",
+                      now=self.now)
+        self.assertEqual(self.failed_runs(), [latest])
 
     def test_superseded_requeue_is_refused_without_writes(self):
         latest = self.retry()

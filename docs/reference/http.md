@@ -1340,10 +1340,11 @@ or its `cancel` note when abandoned. It carries no age. `project` is the project
 is `working` if any run is live. Items come in this order: `blocked` and
 `pr_open` tickets in ticket order, `stale_run`, `failed` within the last 24
 hours while it is its ticket's latest attempt and the ticket has neither
-merged nor started a new one (a requeue to `ready` keeps it), or at any
+merged nor started a new one, or at any
 age while it strands its ticket (its last run, the ticket `in_flight` with
-no active run, which only the operator will move on; a requeue ends this
-unbounded stay, not the 24 hours), oldest end first, `stuck_wait` in
+no active run, which only the operator will move on); a requeued run is not
+listed, its ticket waiting in the queue, and the run that next fails is,
+oldest end first, `stuck_wait` in
 waiting-ticket order, `supervisor` when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
 `/status`; any other failure of `/attention` is shown, never hidden.
