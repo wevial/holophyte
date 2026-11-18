@@ -54,6 +54,11 @@ for the operator.
 * A change that crosses into git, containers, file permissions or another
   external tool has at least one test that runs the real tool (real `git` in
   a temporary repository), not only a fake.
+* Console unit tests run in happy-dom without the compiled stylesheet. A
+  test that asserts rendered text, roles, attributes or named classes
+  witnesses its criterion even though compiled or responsive CSS could still
+  hide or restack the element; layout seen wrong in a browser is a finding
+  against the code, not an unwitnessed criterion.
 * Zero tests discovered, or an opaque shell failure, is a failure.
 * A test's name and assertions say what it checks; its comments and
   docstrings cite no ticket and tell no incident story.
