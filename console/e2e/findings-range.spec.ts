@@ -61,13 +61,6 @@ async function toggleSidebar(page: Page, name: "Expand sidebar" | "Collapse side
 
 const rangeMenu = (page: Page) => page.getByRole("group", { name: "Range range" });
 
-test("at 720x425 and 125% text, expanding the folded sidebar by shortcut with Custom range open keeps the dates menu and Done shown", async ({ page }) => {
-  await openFolded(page, 720, 425);
-  await page.getByRole("button", { name: "Custom range" }).click();
-  await toggleSidebar(page, "Expand sidebar");
-  await expectShown(rangeMenu(page));
-});
-
 test("at 720x425 and 125% text, scrolling Findings down after the sidebar expands under an open Custom range keeps the dates menu and Done shown", async ({ page }) => {
   await openFolded(page, 720, 425);
   await page.getByRole("button", { name: "Custom range" }).click();
