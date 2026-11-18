@@ -65,7 +65,6 @@ export function ScoutGroups({ groups, row }: { groups: ScoutGroup[]; row: (row: 
   );
 }
 
-/** The line a list with no scouts reads in place of its groups. */
 export function ScoutsEmpty({ project, narrowed }: { project: string | undefined; narrowed: boolean }) {
   return (
     <p className="m-0 flex items-center gap-2 px-2.5 py-2.5 font-sans text-[13px] leading-[1.4] text-ink-3">
@@ -75,7 +74,6 @@ export function ScoutsEmpty({ project, narrowed }: { project: string | undefined
   );
 }
 
-/** New scout as the small primary action, with its plus glyph. */
 export function NewScoutButton({ expanded, disabled, onClick }: { expanded: boolean; disabled: boolean; onClick: () => void }) {
   return (
     <Btn variant="primary" className="h-7! gap-1.5! rounded-[7px]! px-2.5! text-[12.5px]!" expanded={expanded} disabled={disabled} title={disabled ? ACTIONS_OFF : undefined} onClick={onClick}>

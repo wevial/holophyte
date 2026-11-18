@@ -101,7 +101,6 @@ const picker = (name: string) => screen.getByRole("button", { name: new RegExp(`
 const groups = () => [...document.querySelectorAll("li[data-scout-group]")] as HTMLElement[];
 const groupHeading = (group: HTMLElement) => within(group).getByRole("heading", { level: 2 });
 const groupNames = () => groups().map((group) => groupHeading(group).textContent);
-/** Each group's level-2 heading and the count beside it. */
 const groupHeads = () => groups().map((group) => [groupHeading(group).textContent, groupHeading(group).parentElement!.querySelector("[data-count]")!.textContent]);
 const rowsOf = (element: ParentNode) => [...element.querySelectorAll("[data-scout]")].map((row) => row.getAttribute("data-scout"));
 const ids = () => rowsOf(document);
