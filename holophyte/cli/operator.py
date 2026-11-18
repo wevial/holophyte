@@ -283,8 +283,7 @@ def approve(target, identifier, note, out=None, force=False):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         parked_run = store.read.ticket_by_id(conn, ticket_id).lastRunId
-        condition = (None if parked_run is None
-                     else swept_condition(conn, parked_run))
+        condition = swept_condition(conn, parked_run)
         if condition is not None:
             return _approve_swept(target, conn, identifier, ticket_id,
                                   parked_run, condition, note, force, out)

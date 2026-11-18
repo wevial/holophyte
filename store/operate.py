@@ -225,16 +225,15 @@ STUCK_SWEEP = re.compile(
 def swept_condition(conn, run_id):
     row = conn.execute(
         "SELECT r.outcome, r.failureKind, r.outcomeReason, r.approvedAt,"
-        " t.status, t.activeRunId, t.lastRunId FROM runs r"
+        " t.status, t.activeRunId FROM runs r"
         " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
         (run_id,)).fetchone()
     if row is None:
         return None
-    outcome, kind, reason, approved_at, status, active, last = row
+    outcome, kind, reason, approved_at, status, active = row
     matched = STUCK_SWEEP.match(reason or "")
     if (outcome != "failed" or kind != "swept" or matched is None
             or approved_at is not None or active is not None
-            or last != run_id
             or status not in ("in_flight", "blocked_on_operator")):
         return None
     return matched[1]
@@ -254,7 +253,7 @@ def approve_swept(conn, ticket_id, note, sha, now=None, run_id=None):
             raise ApproveRefused(
                 f"{identifier}'s newest run is {last_run_id}, not run"
                 f" {run_id}; nothing approved")
-        if last_run_id is None or swept_condition(conn, last_run_id) is None:
+        if swept_condition(conn, last_run_id) is None:
             raise ApproveRefused(
                 f"{identifier}: run {last_run_id} is not a run swept as"
                 " review_stuck or criterion_stuck awaiting approval;"
