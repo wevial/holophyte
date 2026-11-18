@@ -242,7 +242,8 @@ def build_parser():
              " abandoned, no strike); refuses live runs, other states or "
              "outcomes and other parks (use --approve or --babysit); refusals"
              " write nothing; refuses a ticket relaunched twice against one"
-             " failure since a human last acted on it unless --force")
+             " failure since a human last acted on it unless --force or"
+             " --amend")
     parser.add_argument(
         "--amend", metavar="TEXT",
         help="with --requeue: record TEXT as an amendment of the ticket, as"
