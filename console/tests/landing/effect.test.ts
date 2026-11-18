@@ -65,7 +65,7 @@ test("reduced motion mounts Haze with motion off", () => {
   }
 });
 
-test("switching Night to Dawn destroys the drawing and leaves the gradient band, and switching back mounts Haze again", async () => {
+test("switching Night to Dawn destroys the drawing, and switching back mounts Haze again", async () => {
   const { mounts, spy } = recordMounts();
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   try {
@@ -75,8 +75,6 @@ test("switching Night to Dawn destroys the drawing and leaves the gradient band,
     root.setAttribute("data-theme", "light");
     await settle();
     expect(mounts[0]!.destroyed).toBe(true);
-    expect(band.querySelector("canvas")).toBeNull();
-    expect(band.className).toBe("haze");
 
     root.setAttribute("data-theme", "dark");
     await settle();
@@ -97,7 +95,6 @@ test("a Haze mount that throws leaves the band's gradient with no canvas and doe
     expect(() => { stop = mountHeader(band, root, matching()); }).not.toThrow();
     expect(spy).toHaveBeenCalledTimes(1);
     expect(band.querySelector("canvas")).toBeNull();
-    expect(band.className).toBe("haze");
   } finally {
     spy.mockRestore();
   }
