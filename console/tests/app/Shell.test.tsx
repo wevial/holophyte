@@ -567,8 +567,6 @@ test("in the macOS app Cmd with [ goes back and Cmd with ] goes forward", async 
 test("in a browser the title bar holds no Back or Next", async () => {
   await mountAt("#/");
   await openTickets();
-  expect(within(titleBar()).queryByRole("button", { name: "Back" })).toBeNull();
-  expect(within(titleBar()).queryByRole("button", { name: "Next" })).toBeNull();
   expect(childNames(titleBar())).toEqual(["Collapse sidebar", "holophyte"]);
 });
 
