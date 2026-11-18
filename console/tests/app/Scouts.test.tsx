@@ -269,7 +269,7 @@ test("Cancel closes the form and New scout opens it again as typed", async () =>
   expect(disclosure().textContent).toBe("sol · luna ×2 · 10 min");
 });
 
-test("defaults naming unlisted routes press the first listed, and a project with no lead cannot scout", async () => {
+test("defaults naming unlisted routes select the first listed, and a project with no lead cannot scout", async () => {
   await openForm("#/scouts?project=demo", { demo: [], routes: { ...demoRoutes, defaults: { ...demoRoutes.defaults, lead: "glm", helper: "haiku" } } });
   await click(within(form()).getByRole("button", { name: "opus · luna ×4 · 30 min" }));
   expect((await listed("Lead")).selected).toEqual(["opus"]);
