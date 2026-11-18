@@ -182,22 +182,23 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
             except InfraFailure as failure:
                 record_review_boundary(conn, run_id, role, failure)
                 raise
+
+        def attempt():
+            return refusal_guarded(project, role, goal, cwd, kwargs, launch)
         try:
-            output = launch()
+            output = attempt()
+        except RefusedReview:
+            raise
         except InfraFailure as failure:
-            refusal = argv is None and refused_review(project, role, failure)
-            if refusal:
-                return refused_once(project, role, goal, cwd, kwargs, failure,
-                                    refusal)
             reason = argv is None and route_down(project, role, failure)
             if reason and activate_fallback(project, role, reason, conn, run_id):
                 return second_attempt(launch, failure)
             if timed_out(failure):
-                output = second_attempt(launch, failure)
+                output = second_attempt(attempt, failure)
             elif reason or unreadable_output(role, failure) is None:
                 raise
             else:
-                output = launch()
+                output = attempt()
         if argv is not None:
             return output
         return outage_checked(project, role, output, launch, conn, run_id)
@@ -214,12 +215,24 @@ def outage_checked(project, role, output, launch, conn, run_id):
     return output
 
 
-def refused_review(project, role, failure):
+class RefusedReview(InfraFailure):
+    failure_kind = "review_route"
+
+
+def refusal_guarded(project, role, goal, cwd, kwargs, launch):
+    try:
+        return launch()
+    except InfraFailure as failure:
+        refusal = kwargs["argv"] is None and refused_review(role, failure)
+        if not refusal:
+            raise
+        return refused_once(project, role, goal, cwd, kwargs, failure, refusal)
+
+
+def refused_review(role, failure):
     from holophyte.review.adversary import REFUSAL, refused
     cause = failure.__cause__
     if (role != "review"
-            or (container_fallback_profile(project, role)
-                and not fallback_entries(project, role))
             or not isinstance(cause, review_runner.ReviewBoundaryError)
             or not refused(cause.provider_error)):
         return None
@@ -232,13 +245,12 @@ def refused_once(project, role, goal, cwd, kwargs, failure, refusal):
     command = refusal_fallback(project, role, refusal, conn, run_id)
     if command is None:
         raise refusal_failure(failure, refusal) from failure.__cause__
-    argv = shlex.split(command)
-    turn = dict(kwargs, argv=argv, fallback_route=True)
+    turn = dict(kwargs, fallback_command=command)
     try:
         output = fallback_turn(
-            project, role, argv, conn, run_id,
+            project, role, shlex.split(command), conn, run_id,
             lambda: _agent(project, role, goal, cwd, **turn))
-    except InfraFailure as again:
+    except (InfraFailure, OSError, UnicodeError) as again:
         raise refusal_failure(failure, refusal, again) from again
     if failed_turn(output):
         raise refusal_failure(failure, refusal, failure_line(output))
@@ -263,7 +275,7 @@ def refusal_failure(failure, refusal, fallback=None):
     message = str(failure) if refusal in str(failure) else f"{failure}\n{refusal}"
     if fallback is not None:
         message += f"\nfallback reviewer failed: {fallback}"
-    raised = InfraFailure(message, "review_route")
+    raised = RefusedReview(message)
     raised.output = getattr(failure, "output", "")
     raised.command = getattr(failure, "command", None)
     return raised
@@ -432,7 +444,7 @@ def stream_watch(project, streamed, role, cwd, conn, run_id):
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
           review_round=None, session=False, family_route=None,
-          fallback_route=False):
+          fallback_command=None):
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
     if role in SHA_ROLES and not (base_sha and candidate_sha):
@@ -440,7 +452,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     goal = outbound(goal, known_secrets(project.config()))
     switched = (role in routes(project).commands
                 and container_fallback_profile(project, role) is not None)
-    command = None if switched else routes(project).commands.get(role)
+    command = fallback_command or (None if switched
+                                   else routes(project).commands.get(role))
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(project, role, goal))
     session_id = (agent_session(project, role, cmd)
@@ -475,7 +488,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                         os.environ,
                         HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
                         HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
-                    route = ('fallback' if fallback_route
+                    route = ('fallback' if fallback_command
                              or role in routes(project).commands else 'primary')
                     prepare_environment(project, env, conn, run_id, role, route,
                                         review_round)
