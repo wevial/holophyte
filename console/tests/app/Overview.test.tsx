@@ -108,6 +108,20 @@ test("on a picked project, the more link counts that project's merges and keeps 
   expect(Object.fromEntries(new URLSearchParams(window.location.hash.split("?")[1]))).toEqual({ project: "demo", state: "merged", range: "today" });
 });
 
+test("with two Needs you rows and the first opened, only the opened row carries the need tint", async () => {
+  await mount("#/", fleet({ items: [blocked, ...failed] }, { items: [] }));
+  const tint = ["bg-(image:--need-tint)", "shadow-[inset_0_0_0_1px_var(--need-edge)]"];
+  const tinted = (row: HTMLElement) => row.hasAttribute("data-open") && tint.every((name) => classes(row).includes(`data-open:${name}`));
+  expect(needRows().map(tinted)).toEqual([true, false]);
+  const tintClasses = [...document.querySelectorAll("[class]")].flatMap((element) => classes(element).filter((name) => /need-(tint|edge)/.test(name)).map((name) => [element, name] as const));
+  for (const [element, name] of tintClasses) {
+    expect(needRows()).toContain(element as HTMLElement);
+    expect(name).toStartWith("data-open:");
+  }
+  fireEvent.click(within(needRows()[1]!).getAllByRole("button")[0]!);
+  expect(needRows().map(tinted)).toEqual([false, true]);
+});
+
 test("a ready pull request is a Waiting row, not a Needs you item, and a thread or question park is a Needs you item, not a Waiting row", async () => {
   const waitingKeys = () => [...screen.getByRole("region", { name: "Waiting" }).querySelectorAll("[data-pr-row]")].map((row) => row.textContent!.match(/[A-Z]+-\d+/)![0]);
   await mount("#/", fleet({ items: [] }, { items: [prPark] }));

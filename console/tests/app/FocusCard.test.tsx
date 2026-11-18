@@ -237,7 +237,18 @@ test("the open detail's container grows its rows and fades over a transition tha
   expect(panel.contains(openDetail())).toBe(true);
   const classes = panel.className.split(/\s+/);
   expect(classes).toEqual(expect.arrayContaining(["grid-rows-[0fr]", "group-data-open:grid-rows-[1fr]", "opacity-0", "group-data-open:opacity-100", "duration-200", "motion-reduce:transition-none"]));
-  expect(classes.some((cls) => cls.startsWith("transition-["))).toBe(true);
+  expect(classes.filter((cls) => cls.startsWith("transition"))).toEqual(["transition-[grid-template-rows,opacity]"]);
+});
+
+test("a row closed while it is still expanding keeps its detail, inert, through its collapse and then drops it", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
+  const detailOf = () => document.getElementById(toggleOf("B-2").getAttribute("aria-controls")!);
+  fireEvent.click(toggleOf("B-2"));
+  fireEvent.click(toggleOf("B-2"));
+  expect(detailOf()).not.toBeNull();
+  expect((toggleOf("B-2").nextElementSibling as HTMLElement).inert).toBe(true);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 250)));
+  expect(detailOf()).toBeNull();
 });
 
 test("the open detail sits in its own row under the toggle and holds only its sentence and its actions, even when the run has events", async () => {

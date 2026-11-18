@@ -74,7 +74,7 @@ function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: H
   const seen = num(item.last_seen_ms);
   const sentence = "max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink";
   return (
-    <div id={id} data-need-detail className="flex flex-col gap-3 pt-1 pb-4 pl-12 pr-4 max-[720px]:px-3 [&>[data-card-actions]]:mt-0">
+    <div id={id} data-need-detail className="flex flex-col gap-3 pt-1 pb-4 pl-[38px] pr-4 max-[720px]:pr-3 [&>[data-card-actions]]:mt-0">
       {item.kind === UNREACHABLE ? (
         <p className={sentence}>{description.body} {seen == null ? "It never answered." : `Last seen ${formatAge(now - seen)} ago.`}</p>
       ) : item.kind === "blocked" ? (
@@ -91,16 +91,19 @@ function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: H
 
 const EXPAND_MS = 200;
 
-/** `open` as it stood `EXPAND_MS` ago, so a row keeps its detail through
- *  its collapse and clips it only while it expands. */
-function useSettled(open: boolean): boolean {
+/** Whether the detail is mounted, which outlasts `open` by its collapse,
+ *  and whether it has finished expanding, so it clips only while it moves. */
+function useExpansion(open: boolean): { mounted: boolean; settled: boolean } {
+  const [mounted, setMounted] = useState(open);
   const [settled, setSettled] = useState(open);
+  if (open && !mounted) setMounted(true);
+  if (!open && settled) setSettled(false);
   useEffect(() => {
-    if (open === settled) return;
-    const timer = setTimeout(() => setSettled(open), EXPAND_MS);
+    if (open === settled && open === mounted) return;
+    const timer = setTimeout(() => (open ? setSettled(true) : setMounted(false)), EXPAND_MS);
     return () => clearTimeout(timer);
-  }, [open, settled]);
-  return settled;
+  }, [open, mounted, settled]);
+  return { mounted: open || mounted, settled: open && settled };
 }
 
 function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; hosts: Host[]; now: number; open: boolean; onToggle: () => void }) {
@@ -116,7 +119,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const name = key ?? str(item.host) ?? str(item.daemon) ?? item.kind;
   const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));
   const age = ageOf(item, now);
-  const settled = useSettled(open);
+  const { mounted, settled } = useExpansion(open);
   return (
     <li
       data-wait-row={name}
@@ -128,7 +131,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
         aria-expanded={open}
         aria-controls={detailId}
         onClick={onToggle}
-        className="grid min-h-8 w-full grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 group-data-open:rounded-t-lg max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
+        className="grid min-h-8 w-full grid-cols-[16px_84px_minmax(0,1fr)_auto] items-center gap-3 px-2.5 py-1 text-left font-mono text-[12px] text-ink-3 hover:bg-paper-2 group-data-open:rounded-t-lg group-data-open:hover:bg-transparent max-[720px]:grid-cols-[16px_minmax(0,1fr)_auto]"
       >
         <StateDot state={state} hideWord />
         <span className="truncate text-ink-2">{name}</span>
@@ -140,7 +143,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
         inert={!open}
         className="grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-out group-data-open:grid-rows-[1fr] group-data-open:opacity-100 motion-reduce:transition-none"
       >
-        <div className={`min-h-0 ${open && settled ? "" : "overflow-hidden"}`}>{(open || settled) && <Detail entry={entry} host={host} now={now} title={title ?? key} id={detailId} />}</div>
+        <div className={`min-h-0 min-w-0 ${settled ? "" : "overflow-hidden"}`}>{mounted && <Detail entry={entry} host={host} now={now} title={title ?? key} id={detailId} />}</div>
       </div>
     </li>
   );
