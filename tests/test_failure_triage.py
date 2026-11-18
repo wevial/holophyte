@@ -23,6 +23,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     FAIL,
     REQUEST_CHANGES,
+    REQUEST_CHANGES_AGAIN,
     Commit,
     Idle,
 )
@@ -467,7 +468,8 @@ class SteeredEscalationTests(SteerFixture):
 
         with ProfileTurns(
                 Commit("work", path="app.txt"), REQUEST_CHANGES,
-                Commit("fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+                Commit("fix", path="app.txt", body="fixed\n"),
+                REQUEST_CHANGES_AGAIN,
                 Commit("fix again", path="app.txt", body="fixed again\n"),
                 FAIL) as turns:
             self.loop(fake=turns, guard=question_guard(), provider=StubProvider(

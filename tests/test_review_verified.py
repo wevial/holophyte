@@ -10,7 +10,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from fake_agent import APPROVE, PASS, Commit, Reply  # noqa: E402
+from fake_agent import APPROVE, PASS, RULED_FIX, Commit, Reply  # noqa: E402
 from loop_fixture import LoopFixture  # noqa: E402
 
 from holophyte.config.checks import check_config  # noqa: E402
@@ -54,7 +54,7 @@ class VerifiedReviewLoopTests(LoopFixture):
         if config is not None:
             self.configure(config)
         fake, _ = self.loop(Commit(), Reply(first), Commit(), Reply(second),
-                            Commit(), PASS)
+                            RULED_FIX, Commit(), PASS)
         return fake
 
     def mode_events(self):

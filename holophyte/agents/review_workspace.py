@@ -121,9 +121,13 @@ def review_worktrees(repo, env=None):
 def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
     try:
         code, output = run_capped(cmd, cwd, cap, on_start=on_start, env=env)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
-        return AgentOutput(message, command, timed_out=True)
+        timed_out = AgentOutput(message, command, timed_out=True)
+        printed = e.output or ""
+        timed_out.printed = (printed.decode(errors="replace")
+                             if isinstance(printed, bytes) else printed)
+        return timed_out
     output = AgentOutput(output.strip(), command, exit_code=code)
     output.is_error = claude_json_turn(cmd) and claude_marked_error(output)
     return output
