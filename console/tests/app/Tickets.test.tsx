@@ -221,7 +221,7 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   const foot = within(card).getByRole("heading").nextElementSibling!;
   expect(Array.from(foot.children, (part) => part.hasAttribute("data-state-line") || part.hasAttribute("data-time-box"))).toEqual([true, true]);
   expect(foot.classList).toContain("flex");
-  expect(Array.from(foot.classList).filter((name) => /(^|:)(flex-col|flex-wrap|block|grid)$/.test(name))).toEqual([]);
+  expect(Array.from(foot.classList).filter((name) => name.includes(":") || /^(flex-col|flex-col-reverse|flex-wrap|flex-wrap-reverse|block|grid|contents)$/.test(name))).toEqual([]);
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
@@ -272,8 +272,8 @@ test("cards keep their need, done, backlog and plain looks, and no card title us
   expect(backlog!.classList).not.toContain("bg-raised");
   for (const card of [need!, done!, plain!]) expect(card.className).not.toContain("border-dashed");
   expect(plain!.className).not.toContain("var(--need-edge)");
-  expect(plain!.classList).toContain("bg-raised");
-  expect(plain!.classList).toContain("shadow-[inset_0_0_0_1px_var(--hair)]");
+  for (const card of [need!, done!, plain!]) expect(card.classList).toContain("bg-raised");
+  for (const card of [done!, plain!]) expect(card.classList).toContain("shadow-[inset_0_0_0_1px_var(--hair)]");
   const inkOf = (card: Element) => Array.from(within(card as HTMLElement).getByRole("heading").classList).find((name) => name.startsWith("text-ink"));
   expect([done!, backlog!, plain!].map(inkOf)).toEqual(["text-ink-2", "text-ink-3", "text-ink"]);
 });

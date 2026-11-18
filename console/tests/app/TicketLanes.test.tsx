@@ -73,6 +73,14 @@ const lanes = () => screen.queryAllByRole("region").filter((region) => region.qu
 const laneNamed = (name: string) => screen.getByRole("region", { name });
 const headOf = (lane: HTMLElement) => within(lane).getByRole("heading", { level: 2 }).querySelector("button")!;
 const metaOf = (lane: HTMLElement) => lane.querySelector("[data-lane-meta]")?.textContent;
+const concealers = (element: Element) => {
+  const found: string[] = [];
+  for (let node: Element | null = element; node != null; node = node.parentElement) {
+    if (node.hasAttribute("hidden")) found.push("hidden attribute");
+    found.push(...Array.from(node.classList).filter((name) => /(^|:)(hidden|invisible|sr-only|collapse)$/.test(name)));
+  }
+  return found;
+};
 const needOf = (lane: HTMLElement) => lane.querySelector("[data-lane-need]")?.textContent ?? null;
 const keysIn = (lane: HTMLElement, column: string) =>
   within(within(lane).getByRole("list", { name: column })).queryAllByRole("article").map((card) => card.firstElementChild?.firstElementChild?.textContent);
@@ -150,7 +158,7 @@ test("a lane's heading folds its grid, and the fold-all button folds every lane 
   expect(headOf(demo).getAttribute("aria-expanded")).toBe("false");
   expect((demo.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(true);
   expect((writer.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(false);
-  expect(headOf(demo).closest("[hidden]")).toBeNull();
+  expect(concealers(headOf(demo))).toEqual([]);
   fireEvent.click(headOf(demo));
   await act(settle);
   expect((demo.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(false);
