@@ -5,6 +5,7 @@ import { aboutWords, defaultPicks, sentence, useScoutRoutes, wholeIn, type Scout
 import { Btn } from "./Btn";
 import { FoldChevron } from "./icons";
 import { Picker, type PickerOption } from "./Picker";
+import { CloseGlyph } from "./ScoutThread";
 import { Segmented } from "./Segmented";
 import { INPUT } from "./TicketFields";
 
@@ -56,9 +57,7 @@ function AboutLine({ about, onRemove }: { about: string; onRemove: () => void })
         onClick={onRemove}
         className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none"
       >
-        <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
-          <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-        </svg>
+        <CloseGlyph />
       </button>
     </div>
   );
