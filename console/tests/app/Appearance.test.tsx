@@ -129,6 +129,18 @@ test("the Header group offers the six effects and None in order, all enabled wit
   expect(pressed("Header")).toEqual(["Hyphae"]);
 });
 
+test("each effect tile previews one decorative still served from the console's public effects folder, and None shows no image", async () => {
+  await mount();
+  const tiles = within(screen.getByRole("group", { name: "Header" })).getAllByRole("button");
+  const previews = tiles.map((button) => [...button.querySelectorAll("img")].map((img) => [img.getAttribute("src"), img.getAttribute("alt")]));
+  expect(previews).toEqual([
+    ...["haze", "caustics", "plume", "ribbons", "lava", "hyphae"].map((name) => [[`/effects/${name}.webp`, ""]]),
+    [],
+  ]);
+  const served = await Promise.all(previews.flat().map(([src]) => Bun.file(new URL(`../../public${src}`, import.meta.url)).exists()));
+  expect(served).toEqual(Array(6).fill(true));
+});
+
 /** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs and destroys. */
 function fakeEffects() {
   const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava, Hyphae: hyphae };

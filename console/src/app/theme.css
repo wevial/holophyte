@@ -1097,14 +1097,6 @@ body {
   background: var(--accent);
 }
 
-.effect-haze {
-  background: radial-gradient(45% 110% at 30% 0%, var(--haze-back), transparent 75%), radial-gradient(40% 100% at 68% 0%, var(--haze-front), transparent 75%), var(--canvas);
-}
-
-.effect-caustics {
-  background: repeating-radial-gradient(circle at 50% 60%, var(--hair-2) 0 1px, transparent 1px 5px), var(--canvas);
-}
-
 @layer base {
   main {
     background-image: var(--grain);

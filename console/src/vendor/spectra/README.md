@@ -17,6 +17,10 @@ same at `d34e0f8`. Hyphae and Mycelium were taken at `256aa26`.
 | `film` | `cursors/film/src/spectrum.ts`, the part Caustics imports |
 | `mycelium` | `cursors/mycelium/src/shaders.ts`, the part Hyphae imports |
 
+The Header tiles' previews in `console/public/effects/` (`haze`, `caustics`,
+`plume`, `ribbons`, `lava` and `hyphae` `.webp`) are byte-for-byte copies of
+Spectra's `apps/gallery/public/previews/` at commit `75ae266`.
+
 Each file is Spectra's own apart from these changes, so a later sync stays a
 copy:
 
