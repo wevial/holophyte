@@ -221,7 +221,7 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   const foot = within(card).getByRole("heading").nextElementSibling!;
   expect(Array.from(foot.children, (part) => part.hasAttribute("data-state-line") || part.hasAttribute("data-time-box"))).toEqual([true, true]);
   expect(foot.classList).toContain("flex");
-  expect(Array.from(foot.classList).filter((name) => /^(flex-col|flex-col-reverse|flex-wrap|flex-wrap-reverse|block|grid|contents|hidden)!?$/.test(name.split(":").at(-1)!))).toEqual([]);
+  expect(Array.from(foot.classList).filter((name) => /^(flex-col|flex-col-reverse|flex-wrap|flex-wrap-reverse|block|grid|contents|hidden|invisible|sr-only)!?$/.test(name.split(":").at(-1)!))).toEqual([]);
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
