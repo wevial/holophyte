@@ -206,7 +206,11 @@ function appearanceStore<T>(read: (fallback?: T) => T, write: (value: T) => void
     apply(next);
     listeners.forEach((listener) => listener());
   };
-  return { getSnapshot, subscribe, set };
+  const reload = () => {
+    value = read(value);
+    listeners.forEach((listener) => listener());
+  };
+  return { getSnapshot, subscribe, set, reload };
 }
 
 const themeStore = appearanceStore(readTheme, writeTheme, (theme) => { applyTheme(theme); applyCustomPick(); });
@@ -274,6 +278,12 @@ export function applyCustomPick(): void {
 }
 
 systemDark.subscribe(applyCustomPick);
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== EFFECTS_KEY && event.key !== null) return;
+  unsavedEffectSettings = null;
+  effectSettingsStore.reload();
+});
 
 export function useTheme() {
   const theme: Theme = useSyncExternalStore(themeStore.subscribe, themeStore.getSnapshot);

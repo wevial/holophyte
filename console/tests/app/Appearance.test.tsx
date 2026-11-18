@@ -248,9 +248,18 @@ test("each effect keeps its own Fade: Lava at 40 leaves Haze at 70, and Lava's 4
   fireEvent.click(tile("Header", "Haze"));
   expect(slider("Fade").value).toBe("70");
   fireEvent.click(tile("Header", "Lava"));
-  expect(slider("Fade").value).toBe("40");
+  expect([slider("Fade").value, localStorage.getItem("holophyte.effects")]).toEqual(["40", JSON.stringify({ lava: { fade: 40 } })]);
   await reload();
   expect([pressed("Header"), slider("Fade").value]).toEqual([["Lava"], "40"]);
+});
+
+test("a Fade saved in another open tab survives this tab setting a different effect's Fade", async () => {
+  await mount();
+  const other = JSON.stringify({ lava: { fade: 40 } });
+  localStorage.setItem("holophyte.effects", other);
+  act(() => { window.dispatchEvent(new StorageEvent("storage", { key: "holophyte.effects", newValue: other })); });
+  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { fade: 40 }, haze: { fade: 20 } });
 });
 
 test("Fade at 0, 70 and 100 sets the band's fade to 0%, 70% and 100%, and None shows no Fade row", async () => {
