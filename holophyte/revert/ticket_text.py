@@ -1,14 +1,21 @@
 from holophyte.revert.checks import dependent_lines, title_prefix
-from holophyte.tickets.ticket_template import MAX_IN_SCOPE
+from holophyte.tickets.ticket_template import MAX_IN_SCOPE, PLACEHOLDER_RE
 
 ESTIMATE_MIN = 30
 
 
+def plain(text):
+    return text.replace("<", "&lt;").replace("{{", "{&#123;")
+
+
+def shown(path):
+    return plain(path) if PLACEHOLDER_RE.search(path) else f"`{path}`"
+
+
 def revert_ticket(merge, reason, found):
-    reason = " ".join(reason.split()).replace("<", "&lt;").replace(
-        "{{", "{&#123;")
+    reason = plain(" ".join(reason.split()))
     mainline = " -m 1" if merge.parents > 1 else ""
-    quoted = [f"`{path}`" for path in merge.files]
+    quoted = [shown(path) for path in merge.files]
     files = ", ".join(quoted)
     scope = ([f"- {path}" for path in quoted] if len(quoted) <= MAX_IN_SCOPE
              else [f"- {files}"])
@@ -28,13 +35,14 @@ def revert_ticket(merge, reason, found):
         "",
         f"Files: {files}.",
         "",
-        f"Dependents: {'; '.join(dependent_lines(found))}.",
+        f"Dependents: {plain('; '.join(dependent_lines(found)))}.",
         "",
         f"Reverts: {merge.key} at {merge.sha}",
         "",
         "## What / Why / How",
         "",
-        f"**What:** Run `git revert --no-edit{mainline} {merge.sha}` in the"
+        "**What:** Run `git -c revert.reference=false revert --no-edit"
+        f"{mainline} {merge.sha}` in the"
         " task worktree and"
         " commit nothing else. If it conflicts, stop without resolving it"
         " and say so as an unmet criterion.",

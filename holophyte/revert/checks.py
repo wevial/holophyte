@@ -37,22 +37,41 @@ def git(repo, *args):
     return done.returncode, done.stdout
 
 
+def listed(repo, *args):
+    done = subprocess.run(["git", *args], cwd=repo, capture_output=True,
+                          text=True)
+    if done.returncode != 0:
+        raise Refused(f"git {args[0]} failed in {repo}, so the paths a"
+                      f" revert would touch are unknown:"
+                      f" {done.stderr.strip() or done.returncode}")
+    return done.stdout
+
+
+def fetch_origin(repo):
+    if "origin" not in git(repo, "remote")[1].split():
+        return None
+    done = subprocess.run(["git", "fetch", "-q", "origin"], cwd=repo,
+                          capture_output=True, text=True)
+    return None if done.returncode == 0 else (done.stderr.strip()
+                                              or str(done.returncode))
+
+
 def commit_sha(repo, ref):
     code, full = git(repo, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}")
     return full.strip() if code == 0 else None
 
 
 def parent_shas(repo, sha):
-    return git(repo, "rev-list", "--parents", "-n", "1", sha)[1].split()[1:]
+    return listed(repo, "rev-list", "--parents", "-n", "1", sha).split()[1:]
 
 
 def changed_files(repo, sha):
     parents = parent_shas(repo, sha)
     if parents:
-        _, names = git(repo, "diff", "--no-renames", "--name-only", "-z",
+        names = listed(repo, "diff", "--no-renames", "--name-only", "-z",
                        "--ignore-submodules=none", parents[0], sha)
     else:
-        _, names = git(repo, "diff-tree", "--root", "-r", "--no-renames",
+        names = listed(repo, "diff-tree", "--root", "-r", "--no-renames",
                        "--no-commit-id", "--name-only", "-z",
                        "--ignore-submodules=none", sha)
     return tuple(name for name in names.split("\0") if name)
@@ -107,11 +126,13 @@ def glob_part(part):
         negated = part[1] in "!^"
         members = class_members(part[1 + negated:-1])
         return f"(?!/)[{'^' if negated else ''}{members}]"
+    if part.startswith("\\") and len(part) == 2:
+        return re.escape(part[1])
     return re.escape(part)
 
 
 def glob_pattern(glob):
-    parts = re.split(r"(\*\*/|/\*\*$|\*\*|\*|\?"
+    parts = re.split(r"(\\.|\*\*/|/\*\*$|\*\*|\*|\?"
                      r"|\[!?\]?(?:\[:[a-z]+:\]|[^\]/])*\])", glob)
     return re.compile("".join(glob_part(part) for part in parts), re.DOTALL)
 
@@ -135,11 +156,15 @@ def open_revert(conn, board, merge):
         " JOIN tickets t ON t.id = r.ticketId WHERE t.linearIdentifier = ?"
         " AND i.\"action\" = 'revert' ORDER BY i.id DESC", (merge.key,))
         if (match := FILED_NOTE.match(note or ""))]
-    if not filed:
-        return None
-    states = board.states(filed)
-    return next((key for key in filed
-                 if states.get(key, {}).get("state") == "open"), None)
+    states = board.states(filed) if filed else {}
+    opened = next((key for key in filed
+                   if states.get(key, {}).get("state") == "open"), None)
+    if opened is not None:
+        return opened
+    issues = getattr(board, "open_issues", board.listing)()
+    return next((issue["id"] for issue in issues
+                 if (issue.get("title") or "").startswith(
+                     title_prefix(merge.key))), None)
 
 
 def title_prefix(key):
@@ -149,9 +174,9 @@ def title_prefix(key):
 def dependents(conn, repo, merge):
     heads = [ref for ref in (MAIN, LOCAL_MAIN)
              if commit_sha(repo, ref) is not None]
-    _, listed = git(repo, "rev-list", "--reverse", "--ancestry-path", *heads,
-                    f"^{merge.sha}")
-    if not listed.split():
+    later = listed(repo, "rev-list", "--reverse", "--ancestry-path", *heads,
+                   f"^{merge.sha}").split()
+    if not later:
         return []
     by_sha = {}
     for key, sha in conn.execute(
@@ -164,7 +189,7 @@ def dependents(conn, repo, merge):
             by_sha[full] = key
     touched = set(merge.files)
     found = []
-    for sha in listed.split():
+    for sha in later:
         if sha not in by_sha:
             continue
         shared = tuple(path for path in changed_files(repo, sha)

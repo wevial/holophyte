@@ -2132,12 +2132,17 @@ ticket. It refuses, filing nothing and exiting 1, unless `enabled` is `true`,
 KEY has a `merged` run whose merge commit is on `origin/main`, that commit
 touches no path matching `refuse_paths`, and no open ticket already reverts
 KEY: one titled `[Revert] Undo KEY:` with a `Reverts: KEY at` line in the
-store, or one an earlier `holo revert` filed, that the board reports open.
+store, or one an earlier `holo revert` filed, that the board reports open,
+or an open issue on the board titled `[Revert] Undo KEY:`. It runs `git fetch
+origin` first; a failed fetch is printed as a warning and the checks read
+`origin/main` as last fetched, and a git command that fails listing the
+merge's paths refuses the revert naming git's error.
 On a board with `[board] label` the filed ticket is given that label. A glob
 is matched against the whole repository-relative path, a newline in a name
 included: `*`, `?` and a `[...]` class (`[!...]` negated, with `[:digit:]`,
 `[:alpha:]`, `[:alnum:]`, `[:lower:]`, `[:upper:]`, `[:space:]` and
-`[:xdigit:]` inside it) stay within one path segment, `**/`
+`[:xdigit:]` inside it) stay within one path segment, a backslash makes the
+next character literal (`app/\[id\]/page.tsx`), `**/`
 matches any number of leading directories, none included, and a trailing
 `/**` matches everything under a directory. The table is read at startup with the others, so a bad
 value stops every command naming its key.

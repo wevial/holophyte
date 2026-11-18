@@ -151,7 +151,7 @@ class RevertCliTests(ConfigTestCase):
         self.assertEqual(title, "[Revert] Undo NAT-1: Header")
         self.assertEqual((priority, column), (1, "ready"))
         self.assertIn(f"\nReverts: NAT-1 at {self.key_sha}\n", text)
-        self.assertIn(f"`git revert --no-edit {self.key_sha}`", text)
+        self.assertIn(f"revert --no-edit {self.key_sha}`", text)
         parsed = ticket_template.parse(text)
         self.assertEqual(parsed.in_scope, ["`src/footer.py`", "`src/header.py`"])
         self.assertEqual(parsed.verify_commands, [VERIFY])
@@ -219,6 +219,7 @@ class RevertCliTests(ConfigTestCase):
         ((text,),) = self.read(
             "SELECT body FROM tickets WHERE linearIdentifier = 'NAT-3'")
         command = text.split("**What:** Run `", 1)[1].split("`", 1)[0]
+        self.git("config", "revert.reference", "true")
 
         self.git(*command.split()[1:])
 
@@ -260,6 +261,14 @@ class RevertCliTests(ConfigTestCase):
 
                 self.assertIn("db/changes/change_2026.py",
                               self.refused("NAT-1", "broke the header"))
+
+    def test_an_escaped_bracket_in_refuse_paths_matches_itself(self):
+        self.project_with(
+            ENABLED + 'refuse_paths = ["app/\\\\[id\\\\]/page.tsx"]\n',
+            {"app/[id]/page.tsx": "page\n"})
+
+        self.assertIn("app/[id]/page.tsx",
+                      self.refused("NAT-1", "broke the header"))
 
     def test_a_migration_whose_name_holds_a_newline_is_refused(self):
         self.project_with(ENABLED, {"db/migrations/2026\nadd.py": "op\n"})
@@ -322,14 +331,67 @@ class RevertCliTests(ConfigTestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("revert ticket LIN-2 filed", out)
 
-    def test_a_revert_whose_read_back_fails_still_counts_as_filed(self):
+    def read_back_failing(self, **failing):
         self.unmirrored_board()
-        with patch.object(FileProvider, "stored_body", return_value=""):
+        with patch.object(FileProvider, "stored_body", **failing):
             code, out, err = self.holo("revert", "NAT-1", "broke the header")
         self.assertEqual(code, 2, out + err)
 
         self.assertIn("NAT-1: LIN-1 is its open revert ticket",
                       self.refused("NAT-1", "still broken"))
+
+    def test_a_revert_whose_read_back_is_invalid_still_counts_as_filed(self):
+        self.read_back_failing(return_value="")
+
+    def test_a_revert_whose_read_back_raises_still_counts_as_filed(self):
+        self.read_back_failing(side_effect=RuntimeError("the board timed out"))
+
+    def test_a_revert_filed_by_hand_on_an_unmirrored_board_is_open(self):
+        board = self.unmirrored_board()
+        board.file("[Revert] Undo NAT-1: Header", body("Header"), 30, "Todo")
+
+        self.assertIn("NAT-1: LIN-1 is its open revert ticket",
+                      self.refused("NAT-1", "broke the header"))
+
+    def test_a_merge_pushed_from_another_clone_is_fetched_as_a_dependent(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n"})
+        other = self.root / "other"
+        subprocess.run(["git", "clone", "-q", "-b", "main",
+                        str(self.root / "origin.git"), str(other)], check=True)
+        (other / "src/header.py").write_text("upstream\n")
+        subprocess.run(["git", "-c", "user.name=Tester", "-c",
+                        "user.email=t@example.org", "commit", "-qam",
+                        "NAT-2: upstream"], cwd=other, check=True)
+        subprocess.run(["git", "push", "-q", "origin", "main"], cwd=other,
+                       check=True)
+        upstream = subprocess.run(["git", "rev-parse", "HEAD"], cwd=other,
+                                  capture_output=True, text=True,
+                                  check=True).stdout.strip()
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
+            conn.execute("UPDATE runs SET mergeSha = ? WHERE id = ?",
+                         (upstream, self.runs["NAT-2"]))
+            conn.commit()
+
+        code, out, err = self.holo("revert", "NAT-1", "broke the header",
+                                   "--dry-run")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"dependent: NAT-2 {upstream} src/header.py", out)
+
+    def test_a_git_failure_listing_the_paths_is_refused_naming_git(self):
+        self.project_with(ENABLED, {"db/migrations/0002_add.py": "op\n"})
+        self.git("config", "diff.orderFile", str(self.root / "missing"))
+
+        self.assertIn("git diff failed", self.refused("NAT-1", "broke it"))
+
+    def test_a_template_path_is_filed_in_a_form_the_checker_accepts(self):
+        path = "template/{{cookiecutter.project_slug}}/app.py"
+        self.project_with(ENABLED, {path: "broken\n"})
+
+        code, out, err = self.holo("revert", "NAT-1", "broke the header")
+
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("revert ticket NAT-3 filed", out)
 
     def test_a_ticket_quoting_the_reverts_line_is_no_open_revert(self):
         self.project_with(ENABLED, {"src/header.py": "broken\n"})

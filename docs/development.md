@@ -152,7 +152,8 @@ Each module, one line:
 - `holophyte/revert/ticket_text.py` — the revert ticket's fixed text: its
   `Reverts: KEY at SHA` line, the `git revert` it asks for, the files as its
   scope and the original ticket's verify commands.
-- `holophyte/revert/command.py` — `--revert`: runs the checks, prints them
+- `holophyte/revert/command.py` — `--revert`: fetches origin, runs the
+  checks, prints them
   and the dependents, and unless `--dry-run` files the ticket through
   `file_ticket()` in Todo at priority urgent and records a `revert`
   intervention on the merged run.

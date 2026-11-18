@@ -14,6 +14,7 @@ from holophyte.revert.checks import (
     Refused,
     dependent_lines,
     dependents,
+    fetch_origin,
     merged_run,
     open_revert,
     refused_paths,
@@ -45,6 +46,10 @@ def _revert(target, conn, board, key, reason, dry_run):
         print(f"[holo2] {key}: {line}")
 
     say("[revert] enabled")
+    unfetched = fetch_origin(target.path)
+    if unfetched is not None:
+        say(f"warning: git fetch origin failed, so {MAIN} is as last"
+            f" fetched: {unfetched}")
     merge = merged_run(conn, target.path, key)
     say(f"merged at {merge.sha}, on {MAIN}")
     refused = refused_paths(merge.files, revert_config(target).refuse_paths)
@@ -72,14 +77,22 @@ def _file(target, conn, board, merge, text, reason):
     with tempfile.TemporaryDirectory() as scratch:
         path = Path(scratch) / f"revert-{merge.key}.md"
         path.write_text(text)
-        code = file_ticket(target, path, "Todo", board, out=printed,
-                           priority="urgent")
+        broken = None
+        try:
+            code = file_ticket(target, path, "Todo", board, out=printed,
+                               priority="urgent")
+        except Exception as raised:
+            code, broken = 2, raised
     sys.stdout.write(printed.getvalue())
     filed = FILED.search(printed.getvalue())
     if filed is None:
+        if broken is not None:
+            raise broken
         raise SystemExit(code or 1)
     store.record_intervention(conn, merge.run_id, "revert",
                               f"filed {filed[1]}: {reason}")
+    if broken is not None:
+        print(f"[holo2] {filed[1]}: filed, then not confirmed: {broken}")
     label = board_config(target).label
     if code == 0 and label is not None:
         try:
