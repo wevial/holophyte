@@ -472,6 +472,20 @@ function scrollParent(node: HTMLElement): HTMLElement {
   return document.documentElement;
 }
 
+/** The part of `pane` the reader sees, inside the window and clear of its scrollbars, in viewport pixels. */
+function shownPart(pane: HTMLElement, scale: number) {
+  const root = document.documentElement;
+  const right = root.getBoundingClientRect().right;
+  if (pane === root) return { left: 0, top: 0, right, bottom: window.innerHeight };
+  const box = pane.getBoundingClientRect();
+  return {
+    left: Math.max(0, box.left + pane.clientLeft * scale),
+    top: Math.max(0, box.top + pane.clientTop * scale),
+    right: Math.min(right, box.left + (pane.clientLeft + pane.clientWidth) * scale),
+    bottom: Math.min(window.innerHeight, box.top + (pane.clientTop + pane.clientHeight) * scale),
+  };
+}
+
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 export function dayLabel(day: string): string {
@@ -506,31 +520,49 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   }, [reveals]);
   useLayoutEffect(() => {
     if (!open) return;
-    const scroller = scrollParent(anchor.current!);
-    const fit = () => {
+    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit(true));
+    let pane: HTMLElement | null = null;
+    let placedAt = "";
+    let scrolledTo = "";
+    const fit = (reveal: boolean) => {
+      const node = anchor.current!;
+      const sheet = menu.current!;
+      const parent = scrollParent(node);
+      if (parent !== pane) {
+        pane = parent;
+        moves?.disconnect();
+        for (const watched of [node, sheet, pane]) moves?.observe(watched);
+      }
       // Bounding rectangles are in zoomed viewport pixels, while `left` is in the menu's own CSS pixels.
-      const { width, height } = menu.current!.getBoundingClientRect();
-      const scale = width / menu.current!.offsetWidth;
-      const { left, top, bottom } = anchor.current!.getBoundingClientRect();
-      const over = left + width - (document.documentElement.getBoundingClientRect().right - MENU_EDGE);
-      setShift(over > 0 ? -Math.min(over, Math.max(0, left - MENU_EDGE)) / scale : 0);
+      const { width, height } = sheet.getBoundingClientRect();
+      const scale = width / sheet.offsetWidth;
+      const { left, top, bottom } = node.getBoundingClientRect();
+      const view = shownPart(pane, scale);
+      const over = left + width - (view.right - MENU_EDGE);
+      setShift(over > 0 ? -Math.min(over, Math.max(0, left - view.left - MENU_EDGE)) / scale : 0);
       const reach = height + MENU_GAP * scale + MENU_EDGE;
-      const pane = scroller.getBoundingClientRect();
-      const fitsBelow = bottom + reach <= Math.min(window.innerHeight, pane.bottom);
-      const fitsAbove = top - reach >= Math.max(0, pane.top);
+      const fitsBelow = bottom + reach <= view.bottom;
+      const fitsAbove = top - reach >= view.top;
       setAbove(!fitsBelow && fitsAbove);
-      if (!fitsBelow && !fitsAbove) setReveals((count) => count + 1);
+      if (reveal && !fitsBelow && !fitsAbove) setReveals((count) => count + 1);
+      placedAt = `${left},${top}`;
+      scrolledTo = `${pane.scrollLeft},${pane.scrollTop}`;
     };
-    fit();
-    window.addEventListener("resize", fit);
-    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
-    for (let at: HTMLElement = anchor.current!; moves != null; at = at.parentElement!) {
-      moves.observe(at);
-      if (at === scroller) break;
-    }
+    let frame = 0;
+    // Moves that resize nothing, a scroll among them, show only in the anchor's position; a reader who scrolled is not scrolled back.
+    const watch = () => {
+      const { left, top } = anchor.current!.getBoundingClientRect();
+      if (`${left},${top}` !== placedAt) fit(`${pane!.scrollLeft},${pane!.scrollTop}` === scrolledTo);
+      frame = requestAnimationFrame(watch);
+    };
+    const resized = () => fit(true);
+    fit(true);
+    frame = requestAnimationFrame(watch);
+    window.addEventListener("resize", resized);
     return () => {
-      window.removeEventListener("resize", fit);
+      window.removeEventListener("resize", resized);
       moves?.disconnect();
+      cancelAnimationFrame(frame);
     };
   }, [open]);
   return (
