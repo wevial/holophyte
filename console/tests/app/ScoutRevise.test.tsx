@@ -111,6 +111,7 @@ const facts = () => document.querySelector<HTMLElement>("[data-scout-facts]")!;
 const factPairs = () => Array.from(facts().children, (pair) => [pair.querySelector("dt")!.textContent, pair.querySelector("dd")!.textContent]);
 const showActivity = () => click(screen.getByRole("tab", { name: "Activity" }));
 const region = () => screen.getByRole("region", { name: "Decide" });
+const revisionLine = () => document.querySelector<HTMLElement>("[data-page-count]")?.textContent;
 const rowOf = (id: string) =>
   Array.from(within(region()).getByRole("list", { name: "Action items" }).children).find((row) => row.querySelector("[data-action-id]")!.textContent === id) as HTMLElement;
 const reviseButton = () => within(rowOf("A2")).getByRole<HTMLButtonElement>("button", { name: "Revise" });
@@ -177,7 +178,7 @@ test("Revise opens DEMO-7's edit page with the draft over revision 2, the change
   await click(reviseButton());
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-7/edit");
   expect(title()).toBe(A2_TITLE);
-  expect(screen.getByText("revision 2 + scout 31's draft")).toBeTruthy();
+  expect(revisionLine()).toBe("revision 2 + scout 31's draft");
   expect(screen.getByRole("textbox", { name: "Title" }).closest("[data-changed]")).not.toBeNull();
   expect(filePosts(seen)).toHaveLength(0);
 });
@@ -223,13 +224,13 @@ test("a revise item's title opens the edit page with the draft as Revise does", 
   await click(within(rowOf("A2")).getByRole("link", { name: A2_TITLE }));
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-7/edit");
   expect(title()).toBe(A2_TITLE);
-  expect(screen.getByText("revision 2 + scout 31's draft")).toBeTruthy();
+  expect(revisionLine()).toBe("revision 2 + scout 31's draft");
 });
 
 test("a draft of revision 2 opened over revision 3 names the revision it was drafted against", async () => {
   await mount(demo({ revision: 3 }).fetch);
   await click(reviseButton());
-  expect(screen.getByText("revision 3 + scout 31's draft of revision 2")).toBeTruthy();
+  expect(revisionLine()).toBe("revision 3 + scout 31's draft of revision 2");
 });
 
 test("actions off disables Revise with the actions-off title", async () => {

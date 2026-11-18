@@ -109,21 +109,11 @@ function FieldHead({ label, htmlFor, aside, changed }: { label: string; htmlFor?
   </div>;
 }
 
-const PROJECT = "Project";
-
-/** The Project control is restyled with its page, not with the shared fields. */
-function ProjectHead() {
-  return <div className="flex flex-wrap items-baseline gap-x-2">
-    <label htmlFor={`new-${PROJECT}`} className="font-['IBM_Plex_Sans'] text-[14px] font-semibold text-ink">{PROJECT}</label>
-    <span className="font-mono text-[10.5px] uppercase text-ink-3">Required</span>
-  </div>;
-}
-
 export function Field({ label, optional = false, hint, extra, messages = [], changed = false, children }: { label: string; optional?: boolean; hint?: string; extra?: string; messages?: Message[]; changed?: boolean; children: ReactNode }) {
   const aside = `${optional ? "Optional" : ""}${extra ?? ""}`.replace(/^ · /, "").trim();
   return (
     <div data-changed={changed || undefined} className="min-w-0">
-      {label === PROJECT && !optional ? <ProjectHead /> : <FieldHead label={label} htmlFor={`new-${label}`} aside={aside} changed={changed} />}
+      <FieldHead label={label} htmlFor={`new-${label}`} aside={aside} changed={changed} />
       {hint && <p className="mt-1 font-sans text-[13px] text-ink-3">{hint}</p>}
       {children}
       <Messages id={messagesId(label)} messages={messages} />

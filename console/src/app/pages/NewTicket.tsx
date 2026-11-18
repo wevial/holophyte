@@ -6,14 +6,16 @@ import { formatClock } from "../../lib/format";
 import { projectName } from "../../lib/derive";
 import { checkSummary, fileNote } from "../checker";
 import { Btn } from "../components/Btn";
-import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { PageHeader } from "../components/PageHeader";
+import { Picker } from "../components/Picker";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { blankForm, clampEstimate, composeBody, fieldOf, parseBody, withField, type Evidence } from "../ticketForm";
 import { hostCards } from "../tickets";
-import { CRUMB_LINK } from "./runShared";
+import { CRUMB_LINK, FORM_CARD, SAVE_CARD, SMALL_BTN } from "./runShared";
 
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
@@ -218,25 +220,24 @@ export function NewTicket() {
           <Link to="/tickets" search={{}} className={CRUMB_LINK}>Tickets</Link>{" / "}
           <Link to="/tickets" search={{ project }} className={CRUMB_LINK}>{project}</Link>{" / new"}
         </nav>
-        <header className="mt-5 border-b border-rule pb-[18px]">
-          <h1 id="page-title" className="text-[24px] font-semibold text-ink">New ticket</h1>
-          <p className="mt-1.5 font-mono text-[13px] text-ink-2">{project} · from the ticket template · lands in Backlog</p>
-        </header>
-        {!target ? answered ? <div className="mt-6 font-mono text-[13px] text-ink-2">
+        <div className="mt-5"><PageHeader title="New ticket" /></div>
+        {!target ? answered ? <div className="mt-6 font-sans text-[14px] text-ink-2">
           <p>{project} takes no tickets from the console: its board is on Linear, or its host has actions off.</p>
           <Link to="/tickets" search={{ project }} className="mt-3 inline-block text-act underline">Back to Tickets</Link>
         </div> : <p className="mt-6 text-ink-3">Loading project board…</p> : <>
-          {restoredAt !== null && <p className="mt-5 font-mono text-[12.5px] text-ink-2">
-            Draft from {formatClock(restoredAt)} restored.{" "}
-            <button type="button" disabled={busy} onClick={startOver} className="cursor-pointer underline underline-offset-2 hover:text-ink">Start over</button>
+          {restoredAt !== null && <p className="mt-5 flex flex-wrap items-center gap-2.5 font-sans text-[13px] text-ink-2">
+            Draft from {formatClock(restoredAt)} restored.
+            <Btn className={SMALL_BTN} disabled={busy} onClick={startOver}>Start over</Btn>
           </p>}
           <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
+            <div className={FORM_CARD}>
               <Field label="Project">
-                <select id="new-Project" className={`${INPUT} font-sans`} value={project} disabled={busy} onChange={event => {
-                  setProblems([]);
-                  void navigate({ to: "/tickets/$project/new", params: { project: event.target.value }, search: {} });
-                }}>{editable.map(row => <option key={row.name} value={row.name}>{row.name}</option>)}</select>
+                <div className="mt-1.5">
+                  <Picker id="new-Project" label="Project" value={project} options={editable.map(row => ({ value: row.name, label: row.name, disabled: busy }))} onPick={name => {
+                    setProblems([]);
+                    void navigate({ to: "/tickets/$project/new", params: { project: name }, search: {} });
+                  }} />
+                </div>
               </Field>
               {input("title", "Title", "The outcome, as the board card says it.")}
               {input("summary", "Summary", "One or two sentences. Shown under the title on the card and in peek.")}
@@ -280,18 +281,16 @@ export function NewTicket() {
             </div>
             <aside aria-label="File ticket" className="min-w-0">
               <CheckerPanel summary={summary} marks={checked} />
-              <div className="border border-rule bg-paper p-5">
+              <div className={SAVE_CARD}>
                 <div className="flex flex-wrap gap-2">
                   <Btn variant="primary" busy={busy} busyLabel="Filing…" disabled={held} onClick={() => void file()}>File ticket</Btn>
                   <Btn disabled={busy || ((priority === null || priority === 0 || priority === 2) && !FIELDS.some(field => values[field].trim()) && !criteria.some(value => value.trim()) && estimate === 25 && !dependsOn.length && !dependency.trim() && !uiChange && !blastRadius && !evidence.length)} onClick={save}>Save draft</Btn>
                 </div>
-                <p className="mt-3 font-mono text-[12px] text-ink-2">{fileNote(blank, errors, project)}</p>
+                <p className="mt-3 font-sans text-[13px] text-ink-2">{fileNote(blank, errors, project)}</p>
                 {problems.length > 0 && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{problems.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
               </div>
-              <p className="mt-4 font-mono text-[12px] text-ink-3">From the ticket template. Errors block; advisories are the house style and do not.</p>
             </aside>
           </div>
-          <footer className="mt-6 font-mono text-[12px] text-ink-3">a filed ticket lands in Backlog; move it to Ready when it is specced</footer>
         </>}
       </section>
     </div>

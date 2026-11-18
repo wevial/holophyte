@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Board, Status, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -54,6 +54,13 @@ async function mount(project = "demo", fetch: Fetch = fleet()) {
 
 async function press(name: string) {
   await act(async () => void fireEvent.click(screen.getByRole("button", { name })));
+  await flush();
+}
+
+async function pickProject(name: string) {
+  await act(async () => void fireEvent.click(screen.getByLabelText("Project", { selector: "button" })));
+  await flush();
+  await act(async () => void fireEvent.click(within(screen.getByRole("listbox", { name: "Project" })).getByRole("option", { name })));
   await flush();
 }
 
@@ -125,16 +132,14 @@ test("Save draft stays disabled on a restored blank draft with null priority unt
   expect(save.disabled).toBe(false);
 });
 
-test("switching projects clears fields and priority without a draft and restores the saved project's draft", async () => {
+test("picking another project in the Project picker clears fields and priority without a draft and picking back restores the saved draft", async () => {
   await mount();
   await fill();
   await press("Save draft");
-  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "relos" } }));
-  await flush();
+  await pickProject("relos");
   expect(window.location.hash).toBe("#/tickets/relos/new");
   expectBlank();
-  await act(async () => void fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "demo" } }));
-  await flush();
+  await pickProject("demo");
   expect(window.location.hash).toBe("#/tickets/demo/new");
   for (const [name, value] of Object.entries(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
   expect(screen.getByRole("button", { name: "P1" }).getAttribute("aria-pressed")).toBe("true");

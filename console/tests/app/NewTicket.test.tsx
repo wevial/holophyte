@@ -88,14 +88,16 @@ test("Tickets offers New ticket only for editable scoped boards and the direct n
   expect(screen.queryByRole("button", { name: "File ticket" })).toBeNull();
 });
 
-test("New ticket renders the template heading, linked breadcrumb and Summary hint on the static new route", async () => {
+test("New ticket heads the page with the title alone, a linked breadcrumb and the Summary hint, with no subtitle or footer", async () => {
   await mount("#/tickets/demo/new");
   const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
   expect(crumb.textContent).toBe("Tickets / demo / new");
   expect(within(crumb).getByRole("link", { name: "Tickets" }).getAttribute("href")).toEndWith("#/tickets");
   expect(within(crumb).getByRole("link", { name: "demo" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
-  expect(screen.getByRole("heading", { name: "New ticket" })).toBeTruthy();
-  expect(screen.getByText("demo · from the ticket template · lands in Backlog")).toBeTruthy();
+  const page = screen.getByRole("region", { name: "New ticket" });
+  expect(page.querySelector("header")!.textContent).toBe("New ticket");
+  expect(within(page).queryByText(/from the ticket template|lands in Backlog/)).toBeNull();
+  expect(page.querySelector("footer")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Summary" }).getAttribute("placeholder")).toBe("Describe the outcome in one or two sentences.");
 });
 
@@ -133,14 +135,13 @@ test("a 422 lists every problem beside File ticket with no toast and preserves a
   }
 });
 
-test("All projects opens the first editable project and changing the form project updates the filing destination", async () => {
+test("All projects opens the first editable project and picking another project in the Project picker updates the filing destination", async () => {
   await mount("#/tickets", fleet(undefined, true));
   await press("New ticket");
   expect(window.location.hash).toBe("#/tickets/demo/new");
-  const project = screen.getByRole("combobox", { name: "Project" });
-  expect(within(project).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
-  await act(async () => void fireEvent.change(project, { target: { value: "relos" } }));
-  await flush();
+  expect(document.querySelector("select")).toBeNull();
+  expect(await projectOptions()).toEqual(["demo", "relos"]);
+  await pickProject("relos");
   expect(window.location.hash).toBe("#/tickets/relos/new");
   await fill();
   expect(screen.getByText("Files to relos Backlog.")).toBeTruthy();
@@ -162,11 +163,29 @@ test("All projects keeps switcher project order when its first project is editab
   await mount("#/tickets", fetch);
   await press("New ticket");
   expect(window.location.hash).toBe("#/tickets/demo/new");
-  expect(within(screen.getByRole("combobox", { name: "Project" })).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
+  expect(await projectOptions()).toEqual(["demo", "relos"]);
   await type("Title", "Steer notes show on the run detail card");
   await press("File ticket");
   expect(answer.seen.map((request) => request.url)).toEqual([`${otherDemo}/tickets`]);
 });
+
+async function openProject() {
+  await act(async () => void fireEvent.click(screen.getByLabelText("Project", { selector: "button" })));
+  await flush();
+  return screen.getByRole("listbox", { name: "Project" });
+}
+
+async function projectOptions() {
+  const options = within(await openProject()).getAllByRole("option").map((option) => option.textContent);
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  await flush();
+  return options;
+}
+
+async function pickProject(name: string) {
+  await act(async () => void fireEvent.click(within(await openProject()).getByRole("option", { name })));
+  await flush();
+}
 
 async function type(name: string, value: string) {
   await act(async () => void fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } }));
