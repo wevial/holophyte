@@ -248,8 +248,7 @@ test("each effect keeps its own Fade: Lava at 40 leaves Haze at 70, and Lava's 4
   expect(slider("Fade").value).toBe("70");
   fireEvent.click(tile("Header", "Lava"));
   expect(slider("Fade").value).toBe("40");
-  cleanup();
-  await mount();
+  await reload();
   expect([pressed("Header"), slider("Fade").value]).toEqual([["Lava"], "40"]);
 });
 
