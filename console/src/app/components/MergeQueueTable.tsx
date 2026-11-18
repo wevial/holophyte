@@ -10,8 +10,8 @@ import { Section } from "./Section";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
-const GRID = "grid grid-cols-[40px_60px_minmax(0,1fr)_128px_80px_60px_52px] items-start gap-x-2.5";
-const ACTION_GRID = "grid grid-cols-[40px_60px_minmax(0,1fr)_128px_80px_60px_52px_124px] items-start gap-x-2.5";
+const GRID = "grid grid-cols-[40px_60px_minmax(0,1fr)_128px_80px_60px_52px] gap-x-2.5";
+const ACTION_GRID = "grid grid-cols-[40px_60px_minmax(0,1fr)_128px_80px_60px_52px_140px] gap-x-2.5";
 const gridFor = (daemon: QueueDaemon) => (daemon.actions ? ACTION_GRID : GRID);
 const NARROW_GRID = "grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-2.5";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
@@ -99,7 +99,7 @@ export function EntryDetail({ entry, now, id, daemon, pad, links }: { entry: Mer
   const line = entryLine(entry, now);
   return (
     <div id={id} data-entry-detail className={`flex flex-col gap-4 pt-1 pb-4 ${pad}`}>
-      {line && <p className={MONO}>{line}</p>}
+      {line && <p className={QUIET}>{line}</p>}
       {entry.checks.runs.length > 0 && (
         <div className="grid grid-cols-2 gap-x-10 gap-y-5 max-[720px]:grid-cols-1">
           <CheckColumn title="Required" part={required} now={now} />
@@ -135,13 +135,13 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
       {entry.position}
     </button>
   );
-  const titleText = <span data-entry-title className="font-sans text-[13.5px] font-medium leading-[1.4] text-ink"><TitleText>{title}</TitleText></span>;
+  const titleText = <span data-entry-title className="min-w-0 font-sans text-[13.5px] font-medium leading-[1.4] [overflow-wrap:anywhere] text-ink"><TitleText>{title}</TitleText></span>;
   const carrier = <Carrier project={project} run={entry.run} author={entry.pr.author} />;
   const jump = daemon.actions && entry.position > 1 ? <JumpToFront queue={queue} entry={entry} daemon={daemon} /> : null;
   return (
     <li data-entry={entry.position} data-open={open || undefined} className="border-b border-hair hover:bg-hover data-open:bg-hover">
       {wide ? (
-        <div data-row className={`${gridFor(daemon)} px-2.5 py-2`}>
+        <div data-row className={`${gridFor(daemon)} items-start px-2.5 py-2`}>
           {toggle}
           <span className="pt-[4px] font-mono text-[12.5px]"><PrNumber pr={entry.pr} /></span>
           <span className="flex min-w-0 flex-col gap-0.5">
@@ -186,7 +186,7 @@ export function QueueTable({ queue, project, daemon, label, lead }: { queue: Mer
   const words = [lead, configurationWords(queue.configuration)].filter(Boolean).join(" · ");
   return (
     <div data-queue-table className="min-w-0">
-      <Section label={label} count={queue.entries.length} aside={<span className={QUIET}>{words}</span>} empty="The queue is empty.">
+      <Section label={label} count={queue.entries.length} aside={<span title={words} className={`${QUIET} block max-w-[60vw] truncate`}>{words}</span>} empty="The queue is empty.">
         {wide && (
           <div data-queue-heads className={`${gridFor(daemon)} h-[30px] items-center border-b border-hair px-2.5 font-sans text-[12px] font-medium leading-none text-ink-3`}>
             {HEADS.map((head) => <span key={head} className={RIGHT_HEADS.has(head) ? "text-right" : undefined}>{head}</span>)}
@@ -210,7 +210,7 @@ function LeftRow({ row, project }: { row: MergeQueueLeft; project: string }) {
     <li data-left className="grid grid-cols-[60px_minmax(0,1fr)_auto] items-start gap-x-2.5 border-b border-hair px-2.5 py-2 hover:bg-hover max-[720px]:grid-cols-[minmax(0,1fr)_auto]">
       <span className="pt-[4px] font-mono text-[12.5px] max-[720px]:hidden"><PrNumber pr={row.pr} /></span>
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="font-sans text-[13.5px] font-medium leading-[1.4] text-ink-2"><TitleText>{row.pr.title ?? `#${row.pr.number}`}</TitleText></span>
+        <span className="font-sans text-[13.5px] font-medium leading-[1.4] [overflow-wrap:anywhere] text-ink"><TitleText>{row.pr.title ?? `#${row.pr.number}`}</TitleText></span>
         <span className={`${QUIET} [overflow-wrap:anywhere]`}>
           <span className="font-mono text-[12px] min-[721px]:hidden"><PrNumber pr={row.pr} />{DOT}</span>
           <Carrier project={project} run={row.run} author={row.pr.author} round />

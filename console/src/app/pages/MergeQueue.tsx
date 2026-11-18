@@ -15,8 +15,7 @@ import { zoneName } from "./runShared";
 const LINE = "m-0 font-sans text-[13px] leading-[1.4]";
 
 /** `4 queued · 1 building · clears ~16:29` over every readable queue, the clear time only when known. */
-function countText(queues: MergeQueue[]): { text: string } | undefined {
-  if (queues.length === 0) return undefined;
+function countText(queues: MergeQueue[]): { text: string } {
   const queued = queues.reduce((sum, queue) => sum + queue.entries.length, 0);
   const building = queues.reduce((sum, queue) => sum + queueCounts(queue).building, 0);
   const clears = queues.map(clearsAt).filter((at) => at != null);
@@ -42,10 +41,10 @@ function TimesShown({ now }: { now: number }) {
   return <p className="font-sans text-[12px] leading-[1.4] text-ink-3">times show in {zoneName(now)}</p>;
 }
 
-function Page({ queues, children }: { queues: MergeQueue[]; children: ReactNode }) {
+function Page({ queues, counted, children }: { queues: MergeQueue[]; counted: boolean; children: ReactNode }) {
   return (
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-4">
-      <PageHeader title="Merge queue" count={countText(queues)} />
+      <PageHeader title="Merge queue" count={counted ? countText(queues) : undefined} />
       {children}
       {queues[0] && <TimesShown now={queues[0].now} />}
     </section>
@@ -67,7 +66,7 @@ function Lanes({ answers }: { answers: Answer[] }) {
   const without = answers.filter(({ queue }) => queue.configured === false).map(({ name }) => name);
   const queues = lanes.filter(({ queue }) => queue.configured === true).map(({ queue }) => queue);
   return (
-    <Page queues={queues}>
+    <Page queues={queues} counted>
       {lanes.map(({ name, project, key, queue, daemon }) => (
         <div key={key} data-queue-lane className="flex flex-col gap-2">
           {queue.configured === true ? (
@@ -99,7 +98,7 @@ export function MergeQueuePage() {
   const queue = answers[0]?.queue;
   const daemon = answers[0]?.daemon;
   return (
-    <Page queues={queue?.configured === true ? [queue] : []}>
+    <Page queues={queue?.configured === true ? [queue] : []} counted={queue?.configured === true}>
       {queue?.configured === false && <p className={`${LINE} text-ink-3`}>No merge queue on this repository.</p>}
       {queue?.configured == null && queue && <Unread queue={queue} />}
       {queue?.configured === true && daemon && <QueueBody queue={queue} project={project} daemon={daemon} label={queue.branch} />}
