@@ -367,7 +367,7 @@ test("Requeue opens a form that posts nothing until its own Requeue, then toasts
   await mount(daemon(state));
   const reads = attentionReads(asked);
   await press(inDetail("Requeue"));
-  expect(requeueForm()).not.toBeNull();
+  expect(requeueForm() == null).toBe(false);
   expect(taken.seen).toEqual([]);
   await press(inForm("Requeue"));
   expect(taken.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-11" } }]);
@@ -393,16 +393,19 @@ test("the requeue form posts a typed note as note, or as amend with no note when
   expect(await bodyFor(true)).toEqual([{ ticket: "DEMO-11", amend: "the flaky test is fixed on main" }]);
 });
 
-test("Cancel or Escape closes the requeue form and posts nothing", async () => {
+test("Cancel, or Escape from the note or the card's Open run, closes the requeue form and posts nothing", async () => {
   const action = fakeFetch({ ok: true, detail: "requeued" });
   await mount(daemon({ items: [failedAt()], actions: true, act: action.fetchImpl }));
   await press(inDetail("Requeue"));
   typeNote("not yet");
   await press(inForm("Cancel"));
-  expect(requeueForm()).toBeNull();
+  expect(requeueForm() == null).toBe(true);
   await press(inDetail("Requeue"));
   await act(async () => void fireEvent.keyDown(within(requeueForm()!).getByRole("textbox", { name: "Note" }), { key: "Escape" }));
-  expect(requeueForm()).toBeNull();
+  expect(requeueForm() == null).toBe(true);
+  await press(inDetail("Requeue"));
+  await act(async () => void fireEvent.keyDown(within(openDetail()).getByRole("link", { name: "Open run" }), { key: "Escape" }));
+  expect(requeueForm() == null).toBe(true);
   expect(action.seen).toEqual([]);
 });
 

@@ -7,10 +7,15 @@ import { detailLine } from "./CardActions";
 const REQUEUE_NOTE = "Note";
 const REVIEWERS_SEE = "Reviewers see this";
 
-/** Requeue's form for `ticket`: a note, a switch that sends it to the
- *  reviewers as an amendment, and Requeue and Cancel. Requeue hands
- *  `onRequeue` the body to post; Cancel or Escape calls `onCancel`. The
- *  daemon's `refused` detail reads inside the form. */
+export function escapeCloses(close: () => void, busy: boolean) {
+  return (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || busy || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  };
+}
+
 export function RequeueForm({ ticket, busy, refused, onRequeue, onCancel }: {
   ticket: string;
   busy: boolean;
@@ -20,14 +25,8 @@ export function RequeueForm({ ticket, busy, refused, onRequeue, onCancel }: {
 }) {
   const [text, setText] = useState("");
   const [amend, setAmend] = useState(false);
-  const escape = (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || busy) return;
-    event.preventDefault();
-    event.stopPropagation();
-    onCancel();
-  };
   return (
-    <div role="group" aria-label={`Requeue ${ticket}`} data-requeue-form onKeyDown={escape} className="flex w-full max-w-[520px] flex-col gap-3">
+    <div role="group" aria-label={`Requeue ${ticket}`} data-requeue-form className="flex w-full max-w-[520px] flex-col gap-3">
       <textarea
         aria-label={REQUEUE_NOTE}
         autoFocus

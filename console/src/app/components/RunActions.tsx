@@ -9,7 +9,7 @@ import type { RunPage } from "../run";
 import { Btn } from "./Btn";
 import { ACTIONS_OFF_LINE, BUSY, detailLine } from "./CardActions";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { RequeueForm } from "./RequeueForm";
+import { escapeCloses, RequeueForm } from "./RequeueForm";
 
 const PAUSE = "Pause";
 const REQUEUE = "Requeue";
@@ -76,6 +76,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
     const result = await post(REQUEUE, ROUTES[REQUEUE]!, body, `Requeued ${run.ticket}.`);
     if (result.ok) setRequeueing(false);
   };
+  const open = requeueing && page.actions;
   const pr = run.pr_url == null ? null : prLabel(run.pr_url);
   const close = pr != null && closing;
   const confirmAbort = async () => {
@@ -87,7 +88,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const kept = close ? `${branch} is kept, ${pr} is closed` : pr == null ? `${branch} is kept` : `${branch} and ${pr} are kept`;
 
   return (
-    <div data-run-actions className="flex shrink-0 flex-col items-end gap-2">
+    <div data-run-actions onKeyDown={open ? escapeCloses(closeRequeue, pending === REQUEUE) : undefined} className="flex shrink-0 flex-col items-end gap-2">
       <div className="flex flex-wrap justify-end gap-2">
         {labels.map((label) => (
           <Btn
@@ -104,7 +105,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           </Btn>
         ))}
       </div>
-      {requeueing && (
+      {open && (
         <RequeueForm
           ticket={run.ticket}
           busy={pending === REQUEUE}
@@ -113,7 +114,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           onCancel={closeRequeue}
         />
       )}
-      {refused != null && !aborting && !requeueing && (
+      {refused != null && !aborting && !open && (
         <p role="status" data-action-detail className={`m-0 text-bad ${detailLine}`}>
           {refused}
         </p>
