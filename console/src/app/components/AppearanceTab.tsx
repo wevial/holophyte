@@ -24,6 +24,7 @@ const EFFECTS: { value: HeaderEffect; name: string; preview?: string; swatch?: s
   { value: "plume", name: "Plume", swatch: "radial-gradient(42% 80% at 28% 45%, var(--p-violet), transparent 72%), radial-gradient(38% 75% at 62% 60%, var(--p-teal), transparent 72%), radial-gradient(30% 60% at 80% 25%, var(--orange-9), transparent 72%), var(--canvas)" },
   { value: "ribbons", name: "Ribbons", swatch: "linear-gradient(172deg, transparent 28%, var(--p-blue) 36%, transparent 46%), linear-gradient(8deg, transparent 46%, var(--p-violet) 54%, transparent 62%), linear-gradient(176deg, transparent 60%, var(--p-teal) 67%, transparent 76%), var(--canvas)" },
   { value: "lava", name: "Lava", swatch: "radial-gradient(18% 34% at 30% 72%, var(--orange-9) 55%, transparent 70%), radial-gradient(12% 26% at 62% 30%, var(--red-9) 55%, transparent 70%), radial-gradient(10% 20% at 80% 78%, var(--pink-9) 55%, transparent 70%), var(--canvas)" },
+  { value: "hyphae", name: "Hyphae", swatch: "linear-gradient(28deg, transparent 47%, var(--p-teal) 49%, transparent 51%), linear-gradient(152deg, transparent 54%, var(--p-violet) 56%, transparent 58%), linear-gradient(98deg, transparent 63%, var(--p-blue) 65%, transparent 67%), radial-gradient(14% 28% at 58% 52%, var(--p-green), transparent 72%), var(--canvas)" },
   { value: "none", name: "None", preview: "bg-canvas" },
 ];
 

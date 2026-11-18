@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { destroyStages } from "../../vendor/spectra/core/stage";
 import * as caustics from "../../vendor/spectra/caustics";
 import * as haze from "../../vendor/spectra/haze";
+import * as hyphae from "../../vendor/spectra/hyphae";
 import * as lava from "../../vendor/spectra/lava";
 import * as plume from "../../vendor/spectra/plume";
 import * as ribbons from "../../vendor/spectra/ribbons";
@@ -14,7 +15,7 @@ interface Handle {
   destroy(): void;
 }
 
-const SPECTRA = { caustics, lava, plume, ribbons };
+const SPECTRA = { caustics, hyphae, lava, plume, ribbons };
 
 const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed: 0.8 };
 
