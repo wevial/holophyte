@@ -30,14 +30,14 @@ function place(index: number, count: number, value: number, top: number) {
   return { left: `${weekX(index, count)}%`, top: `${plotY(value, top)}%` };
 }
 
-function segments(values: (number | null)[], top: number): Point[][] {
+function segments(values: (number | null)[], top: number, x = weekX): Point[][] {
   const runs: Point[][] = [];
   let current: Point[] = [];
   values.forEach((value, index) => {
     if (value == null) {
       if (current.length > 0) runs.push(current);
       current = [];
-    } else current.push([round(weekX(index, values.length)), round(plotY(value, top))]);
+    } else current.push([round(x(index, values.length)), round(plotY(value, top))]);
   });
   if (current.length > 0) runs.push(current);
   return runs;
@@ -233,17 +233,26 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
   );
 }
 
+function edgeX(index: number, count: number): number {
+  return count > 1 ? (index / (count - 1)) * 100 : 50;
+}
+
 export function Sparkline({ values }: { values: (number | null)[] }) {
   const known = values.flatMap((value) => (value == null ? [] : [value]));
   const bottom = Math.min(...known);
   const span = Math.max(...known) - bottom || 1;
-  const scaled = values.map((value) => (value == null ? null : value - bottom));
+  const runs = segments(values.map((value) => (value == null ? null : value - bottom)), span, edgeX);
   return (
-    <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-7 w-full overflow-visible text-accent">
-      {segments(scaled, span).map((points) => (
-        <path key={points[0]![0]} d={smoothPath(points)} fill="none" stroke="currentColor" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+    <span aria-hidden="true" className="relative block h-7 w-full text-accent">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
+        {runs.filter((points) => points.length > 1).map((points) => (
+          <path key={points[0]![0]} d={smoothPath(points)} fill="none" stroke="currentColor" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
+      {runs.filter((points) => points.length === 1).map(([[x, y]]) => (
+        <span key={x} data-lone style={{ left: `${x}%`, top: `${y}%` }} className="absolute size-1.5 -translate-1/2 rounded-full bg-current" />
       ))}
-    </svg>
+    </span>
   );
 }
 

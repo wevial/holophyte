@@ -752,7 +752,8 @@ test("the Flow page header holds the one Flow title, the window's span beside it
   const [title, ...more] = screen.getAllByRole("heading", { level: 1 });
   expect(more).toHaveLength(0);
   expect(title!.textContent).toBe("Flow");
-  expect(title!.nextElementSibling!.textContent).toBe("Two weeks, 30 October to 12 November");
+  const [first, last] = [new Date(NOV_6 - WEEK), new Date(NOV_6 + WEEK - 1)];
+  expect(title!.nextElementSibling!.textContent).toBe(`Two weeks, ${first.getDate()} October to ${last.getDate()} November`);
   const header = title!.closest("header")!;
   expect(header.contains(projectPicker())).toBe(true);
   expect(header.contains(screen.getByRole("button", { name: "Range" }))).toBe(true);
@@ -762,6 +763,9 @@ test("on All projects the Flow numbers sum both hosts: merged adds, and waiting 
   await mount("#/flow", flowDaemons(demoFlow, writerFlow));
   await act(settle);
   expect(projectPicker().textContent).toBe("All projects");
+  const numbers = document.querySelector('dl[aria-label="Flow numbers"]')!;
+  expect([...numbers.querySelectorAll("dt")].map((term) => term.textContent)).toEqual(["Merged", "Waiting", "Rounds per merge", "Interventions per merge", "Reverted"]);
+  expect([...numbers.querySelectorAll("[data-number]")].map((number) => number.getAttribute("data-number"))).toEqual(["Merged", "Waiting", "Rounds per merge", "Interventions per merge", "Reverted"]);
   expect(figure("Merged")).toBe("12");
   expect(figure("Waiting")).toBe("47%");
   expect(figure("Reverted")).toBe("0 of 6");
