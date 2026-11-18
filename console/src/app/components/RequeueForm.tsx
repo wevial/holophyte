@@ -6,6 +6,7 @@ import { detailLine } from "./CardActions";
 
 const REQUEUE_NOTE = "Note";
 const REVIEWERS_SEE = "Reviewers see this";
+const POPUPS = '[role="dialog"], [role="listbox"], [role="menu"], [role="combobox"]';
 
 export function RequeueForm({ ticket, busy, refused, onRequeue, onCancel }: {
   ticket: string;
@@ -20,18 +21,21 @@ export function RequeueForm({ ticket, busy, refused, onRequeue, onCancel }: {
   cancel.current = onCancel;
   const pending = useRef(busy);
   pending.current = busy;
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Captured so a peek or popover that also closes on Escape sees it handled.
+    // On body so a widget's own Escape runs first, and before the peek's document listener.
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || pending.current || document.querySelector('[aria-modal="true"]')) return;
+      const popup = event.target instanceof Element ? event.target.closest(POPUPS) : null;
+      if (popup != null && !popup.contains(box.current)) return;
       event.preventDefault();
       cancel.current();
     };
-    document.addEventListener("keydown", escape, true);
-    return () => document.removeEventListener("keydown", escape, true);
+    document.body.addEventListener("keydown", escape);
+    return () => document.body.removeEventListener("keydown", escape);
   }, []);
   return (
-    <div role="group" aria-label={`Requeue ${ticket}`} data-requeue-form className="flex w-full max-w-[520px] flex-col gap-3">
+    <div ref={box} role="group" aria-label={`Requeue ${ticket}`} data-requeue-form className="flex w-full max-w-[520px] flex-col gap-3">
       <textarea
         aria-label={REQUEUE_NOTE}
         autoFocus

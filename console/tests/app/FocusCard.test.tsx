@@ -412,6 +412,24 @@ test("Cancel, or Escape from the note, the card's Open run or the row's toggle, 
   expect(action.seen).toEqual([]);
 });
 
+test("Escape that closes the More menu or the project picker leaves the requeue form and its draft open", async () => {
+  await mount(daemon({ items: [failedAt()], actions: true }));
+  await press(inDetail("Requeue"));
+  typeNote("keep this");
+  const draft = () => (within(requeueForm()!).getByRole("textbox", { name: "Note" }) as HTMLTextAreaElement).value;
+  await press(inDetail("More"));
+  const more = screen.getByRole("group", { name: "More actions" });
+  await act(async () => void fireEvent.keyDown(within(more).getByRole("button", { name: "Mark needs_spec" }), { key: "Escape" }));
+  expect(screen.queryAllByRole("group", { name: "More actions" }).length).toBe(0);
+  expect(draft()).toBe("keep this");
+  await press(screen.getByRole("button", { name: /Switch project$/ }));
+  const picker = screen.getByRole("dialog", { name: "Switch project" });
+  await act(async () => void fireEvent.keyDown(within(picker).getByRole("combobox"), { key: "Escape" }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(screen.queryAllByRole("dialog", { name: "Switch project" }).length).toBe(0);
+  expect(draft()).toBe("keep this");
+});
+
 test("a requeue form closed by the host turning actions off stays closed when they come back on", async () => {
   const state: Daemon = { items: [failedAt()], actions: true };
   await mount(daemon(state));
