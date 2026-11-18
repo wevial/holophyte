@@ -68,7 +68,7 @@ from holophyte.config.worktree_settings import carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.pr.mockup import review_carry
-from holophyte.redact import known_secrets, outbound
+from holophyte.redact import known_secrets, outbound, redact_prose
 from holophyte.review import review_runner
 
 REVIEW_TIMEOUT = 1800
@@ -244,16 +244,19 @@ def refused_once(project, role, goal, cwd, kwargs, failure, refusal):
     conn, run_id = kwargs["conn"], kwargs["run_id"]
     command = refusal_fallback(project, role, refusal, conn, run_id)
     if command is None:
-        raise refusal_failure(project, failure, refusal) from failure.__cause__
+        raise refusal_failure(failure, refusal) from failure.__cause__
+    argv = shlex.split(command)
     turn = dict(kwargs, fallback_command=command)
     try:
         output = fallback_turn(
-            project, role, shlex.split(command), conn, run_id,
+            project, role, argv, conn, run_id,
             lambda: _agent(project, role, goal, cwd, **turn))
-    except (InfraFailure, OSError, UnicodeError) as again:
-        raise refusal_failure(project, failure, refusal, again) from again
+    except (InfraFailure, OSError, RuntimeError, UnicodeError) as again:
+        raise refusal_failure(failure, refusal,
+                              fallback_prose(project, argv, again)) from again
     if failed_turn(output):
-        raise refusal_failure(project, failure, refusal, failure_line(output))
+        raise refusal_failure(failure, refusal,
+                              fallback_prose(project, argv, failure_line(output)))
     return output
 
 
@@ -267,15 +270,23 @@ def fallback_turn(project, role, argv, conn, run_id, launch):
         record_turn(conn, run_id, payload)
         if crashed is not None:
             record_crash(project, conn, run_id, role, payload["exit_status"],
-                         route_prose(project, str(crashed)))
+                         fallback_prose(project, argv, crashed))
     return timed_turn(project, role, role, launch, ended)
 
 
-def refusal_failure(project, failure, refusal, fallback=None):
+def fallback_prose(project, argv, text):
+    arguments = {part for arg in argv[1:] if not arg.startswith("-")
+                 for part in (arg, arg.split("=", 1)[-1]) if part}
+    arguments |= {arg.split("=", 1)[1] for arg in argv[1:]
+                  if arg.startswith("-") and "=" in arg[1:]
+                  and arg.split("=", 1)[1]}
+    return redact_prose(route_prose(project, str(text)), arguments)
+
+
+def refusal_failure(failure, refusal, fallback=None):
     message = str(failure) if refusal in str(failure) else f"{failure}\n{refusal}"
     if fallback is not None:
-        message += ("\nfallback reviewer failed: "
-                    f"{route_prose(project, str(fallback))}")
+        message += f"\nfallback reviewer failed: {fallback}"
     raised = RefusedReview(message)
     raised.output = getattr(failure, "output", "")
     raised.command = getattr(failure, "command", None)

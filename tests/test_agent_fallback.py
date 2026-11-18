@@ -1187,10 +1187,39 @@ class ReviewerFallbackListTests(SweepTestCase):
                 self.assertEqual(routes(self.project).commands, {})
 
 
+    def test_an_undecodable_first_probe_moves_on_to_the_next_entry(self):
+        undecodable = self.failing_reviewer(
+            'undecodable-probe', 'pass',
+            probe_failure='sys.stdout.buffer.write(b"\\xff\\xfe bad\\n")')
+        claude = self.reviewer('claude-review')
+        self.configure_fallback(f'["{undecodable}", "{claude}"]')
+        run = self.a_run()
+        with self.refusing({'judge'}):
+            self.assertEqual(self.review_run(run), 'VERDICT: PASS')
+        self.assertEqual(self.calls.read_text().splitlines()[-1],
+                         'claude-review judge')
+        switch, = [json.loads(m) for m in self.events(run, 'route_fallback')]
+        self.assertEqual(switch['command'], claude)
+
+    def test_a_fallback_that_cannot_publish_review_refs_fails_the_route(self):
+        from holophyte.agents.review_workspace import review_refs
+        from holophyte.loop.gates import InfraFailure
+
+        self.configure_fallback(f'"{self.reviewer("claude-review")}"')
+        run = self.a_run()
+        lock = self.target / '.git' / f'{review_refs(run)[0]}.lock'
+        lock.parent.mkdir(parents=True)
+        lock.write_text('')
+        with self.refusing({'judge'}), \
+                self.assertRaises(InfraFailure) as raised:
+            self.review_run(run)
+        self.assertEqual(raised.exception.failure_kind, 'review_route')
+        self.assertIn(self.REFUSAL_LINE, str(raised.exception))
+
     def test_a_failing_fallback_keeps_its_credential_out_of_the_record(self):
         from holophyte.loop.gates import InfraFailure
 
-        token = 'synthetic-command-credential'
+        token = 'c3ludGhldGljLWNyZWRlbnRpYWw='
         echoes = 'print("Quota exhausted for", sys.argv[1]); sys.stdout.flush()'
         for name, failure in (
                 ('quota error', echoes),

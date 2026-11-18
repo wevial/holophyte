@@ -204,7 +204,8 @@ def probe_route(project, role, fallback, timeout, entry):
             return ProbeResult(cmd, None, partial, cap, seat=AGENT_CONFIG_KEYS[role],
                                expected_commit=sha, entry=entry)
         # The config write has already landed: a route that cannot start fails.
-        except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
+        except (OSError, RuntimeError, UnicodeError,
+                review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap,
                                launch_error=launch_failure_reason(failed),
                                launch_diagnostic=str(failed),
@@ -226,7 +227,8 @@ def probe_launch(project, cmd, cap, seat, entry=0, *, claude=False):
             if isinstance(partial, bytes):
                 partial = partial.decode(errors="replace")
             return ProbeResult(cmd, None, partial, cap, seat=seat, entry=entry)
-        except (OSError, RuntimeError, review_runner.ReviewBoundaryError) as failed:
+        except (OSError, RuntimeError, UnicodeError,
+                review_runner.ReviewBoundaryError) as failed:
             return ProbeResult(cmd, None, "", cap,
                                launch_error=launch_failure_reason(failed),
                                launch_diagnostic=str(failed),
