@@ -27,10 +27,6 @@ function themePaint(palette: string): { palette: string; intensity: number } {
   return { palette: named, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
 }
 
-function paint(effect: BandEffect, palette: string) {
-  return effect === "haze" ? themePaint(palette) : {};
-}
-
 function mountEffect(effect: BandEffect, container: HTMLElement, palette: string, motion: boolean): Handle {
   if (effect === "haze") return haze.mount(container, { ...OPTIONS, ...themePaint(palette), motion });
   return SPECTRA[effect].mount(container, { motion });
@@ -81,7 +77,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
   }, [dark, effect, attempt]);
 
   useEffect(() => {
-    if (live.current) Object.assign(live.current.config, paint(effect, palette), { motion });
+    if (live.current) Object.assign(live.current.config, effect === "haze" ? themePaint(palette) : {}, { motion });
   }, [palette, hazeStrength, motion, customThemes]);
 
   // A renderer that fell back under a slow moving frame gets another try at its one still frame.
