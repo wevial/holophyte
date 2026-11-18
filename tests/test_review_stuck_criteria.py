@@ -245,7 +245,7 @@ class UnjudgedRoundTests(StuckCriteriaTestCase):
         self.number += 1
         record_round(None, self.conn, self.run_id, self.number, "review",
                      reply, None, True, "", criteria=criteria,
-                     route="mechanical:main-refresh")
+                     route="reviewer" if criteria else "mechanical:main-refresh")
         verdict, findings = self.conn.execute(
             "SELECT verdict, findings FROM reviewRounds"
             " WHERE runId = ? AND round = ?",
