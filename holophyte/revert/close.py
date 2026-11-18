@@ -19,4 +19,4 @@ def close_reverted(conn, run_id, provider):
         return
     warn_on_run(conn, run_id, f"{key} still reads merged: only a native board"
                               f" is returned to Backlog by a revert; move it"
-                              f" by hand with the note {note!r}")
+                              f" by hand with the note: {note}")

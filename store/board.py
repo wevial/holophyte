@@ -5,7 +5,7 @@ import json
 import re
 import time
 
-from holophyte.revert.checks import FILED_NOTE, title_prefix
+from holophyte.revert.checks import FILED_NOTE
 from holophyte.tickets import ticket_criteria, ticket_template
 from holophyte.tickets.ticket_depends import rewrite_depends
 
@@ -175,7 +175,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
                               author, now)
 
 
-REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,40})")
+REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,64})")
 WHY = re.compile(r"\*\*Why:\s*\*\*\s*(.+)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
@@ -185,11 +185,11 @@ def reopen_reverted(conn, run_id, native=True):
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.outcome, r.mergeSha, t.projectId, t.linearIdentifier,"
-            " t.title, t.body FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " t.body FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.id = ?", (run_id,)).fetchone()
         if row is None or row[0] != "merged":
             return None
-        _, merge_sha, project_id, revert_key, title, text = row
+        _, merge_sha, project_id, revert_key, text = row
         lines = _unfenced(ticket_template.parse(text)
                           .sections.get("Summary", ""))
         named = next(filter(None, map(REVERTS.fullmatch, lines)), None)
@@ -208,10 +208,8 @@ def reopen_reverted(conn, run_id, native=True):
         if original is None:
             return None
         ticket_id, merged_run = original
-        filed = _filed_reason(conn, merged_run, revert_key)
-        if filed is None and not title.startswith(title_prefix(key)):
-            return None
-        reason = filed or _written_reason(key, text)
+        reason = (_filed_reason(conn, merged_run, revert_key)
+                  or _written_reason(key, text))
         why = f": {reason}" if reason else ""
         note = f"Reverted by {revert_key}{why or '.'}"
         if not native:
@@ -221,10 +219,10 @@ def reopen_reverted(conn, run_id, native=True):
                      f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
         conn.execute("UPDATE tickets SET status = 'ready' WHERE id = ?",
                      (ticket_id,))
-        set_board_state(conn, ticket_id, _BOARD_STATES["backlog"], "backlog")
-        record_board_fields(conn, ticket_id, "factory", now)
-        record_note(conn, ticket_id, "move", note, f"reverted:{run_id}",
-                    author="factory", now=now)
+        (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
+                                   (ticket_id,)).fetchone()
+        move_ticket(conn, project_id, key, "backlog", revision,
+                    author="factory", note=note, now=now)
     return key, note
 
 
@@ -237,7 +235,7 @@ def _unfenced(text):
         elif fence is not None:
             if opened and opened[1][0] == fence[0] \
                     and len(opened[1]) >= len(fence) \
-                    and not line.strip(" " + fence[0]):
+                    and not line.strip(" \t" + fence[0]):
                 fence = None
         else:
             kept.append(line.rstrip())

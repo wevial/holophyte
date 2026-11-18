@@ -22,7 +22,7 @@ from holophyte.loop.gates import RunFailure  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from tests import test_cli_revert as cli_revert  # noqa: E402
 
-REASON = "broke the <header> band"
+REASON = r"broke the <header> band \n mid-word"
 
 
 class MirrorBoard:
@@ -104,6 +104,7 @@ class RevertCloseTests(ConfigTestCase):
         self.assertEqual(len(reverted), 1, state["events"])
         self.assertIn("NAT-3", reverted[0])
         self.assertIn(revert_sha, reverted[0])
+        self.assertIn(REASON, reverted[0])
         self.assertEqual(state["run"], [("merged", self.key_sha)])
         self.assertEqual(
             board_for(self.project).states(["NAT-1"])["NAT-1"]["column"],
@@ -157,7 +158,7 @@ class RevertCloseTests(ConfigTestCase):
         self.edit_revert(
             "body = replace(body, '## Summary\n', ?)",
             f"## Summary\n\n  ~~~\nReverts: NAT-2 at {self.later_sha}\n"
-            "  ~~~\n")
+            "  ~~~\t\n")
         self.run_revert(self.merge_the_revert)
         self.assertEqual(self.key_state()["ticket"],
                          [("ready", "backlog", "Backlog")])
@@ -165,27 +166,34 @@ class RevertCloseTests(ConfigTestCase):
                                    " linearIdentifier = 'NAT-2'"),
                          [("merged",)])
 
-    def test_a_renamed_revert_ticket_still_returns_its_ticket(self):
+    def test_a_renamed_revert_ticket_with_no_filing_record_still_returns(self):
         self.file_revert()
         self.edit_revert("title = ?", "Put the header back")
+        with contextlib.closing(open_store(self.project)) as conn:
+            conn.execute("DELETE FROM interventions WHERE \"action\" = 'revert'")
+            conn.commit()
+        (body,) = self.read("SELECT body FROM tickets WHERE"
+                            " linearIdentifier = 'NAT-3'")[0]
+        written = body.split("**Why:** ", 1)[1].splitlines()[0]
+        self.run_revert(self.merge_the_revert)
+        state = self.key_state()
+        self.assertEqual(state["ticket"], [("ready", "backlog", "Backlog")])
+        self.assertIn(("move", f"Reverted by NAT-3: {written}"),
+                      state["notes"])
+
+    def test_a_sha256_reverts_marker_returns_its_ticket(self):
+        self.file_revert()
+        long_sha = "ab" * 32
+        with contextlib.closing(open_store(self.project)) as conn:
+            conn.execute("UPDATE runs SET mergeSha = ? WHERE id = ?",
+                         (long_sha, self.runs["NAT-1"]))
+            conn.commit()
+        self.edit_revert("body = replace(body, ?, ?)",
+                         f"Reverts: NAT-1 at {self.key_sha}",
+                         f"Reverts: NAT-1 at {long_sha}")
         self.run_revert(self.merge_the_revert)
         self.assertEqual(self.key_state()["ticket"],
                          [("ready", "backlog", "Backlog")])
-
-    def test_an_ordinary_tickets_reverts_line_reopens_nothing(self):
-        self.project_with(cli_revert.ENABLED, {"src/header.py": "broken\n"})
-        with contextlib.closing(open_store(self.project)) as conn:
-            store.tickets.transition(conn, self.ticket_id(conn, "NAT-1"),
-                                     "merged")
-            run = self.runs["NAT-2"]
-            conn.execute(
-                "UPDATE tickets SET body = replace(body, '## Summary\n',"
-                " ?) WHERE linearIdentifier = 'NAT-2'",
-                (f"## Summary\n\nReverts: NAT-1 at {self.key_sha}\n",))
-            conn.commit()
-            before = self.key_state()
-            self.assertIsNone(store.board.reopen_reverted(conn, run))
-        self.assertEqual(self.key_state(), before)
 
     @staticmethod
     def ticket_id(conn, key):
