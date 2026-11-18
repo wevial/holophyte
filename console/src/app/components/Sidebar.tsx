@@ -309,11 +309,9 @@ export function useSidebarFold(): SidebarFold {
   return { folded, foldable: !settingsMenu, fold };
 }
 
-type HistoryReach = { index: number; furthest: number };
-
 function useHistoryNav(bound: boolean) {
   const { history } = useRouter();
-  const [reach, setReach] = useState<HistoryReach>(() => {
+  const [reach, setReach] = useState(() => {
     const index = history.location.state.__TSR_index;
     return { index, furthest: index };
   });
