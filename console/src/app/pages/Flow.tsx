@@ -299,7 +299,9 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
     if (endedRange(next.from || undefined, next.to || undefined)) choose({ range: undefined, from: next.from, to: next.to });
   };
   return (
-    <div ref={box} className="relative">
+    <div ref={box} className="relative" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
       <button ref={button} type="button" aria-label="Range" aria-haspopup="true" aria-expanded={open} onClick={toggle}
         className="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
         {custom ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === preset)!.label}

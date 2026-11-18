@@ -857,6 +857,18 @@ test("the open Range menu marks the current preset, and choosing From and To put
   expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toEndWith(" to 12 November");
 });
 
+test("the open Range menu closes when focus moves out of it to the Project picker", async () => {
+  await mount("#/flow", flowDaemons(demoFlow, writerFlow));
+  await act(settle);
+  const range = screen.getByRole("button", { name: "Range" });
+  range.focus();
+  fireEvent.click(range);
+  screen.getByLabelText("From").focus();
+  expect(screen.getByRole("group", { name: "Range choices" })).toBeTruthy();
+  act(() => projectPicker().focus());
+  expect(screen.queryByRole("group", { name: "Range choices" })).toBeNull();
+});
+
 test("a From and To under a whole week, or with a To day not yet ended, stay out of the address and the asks", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   const later = new Date(Date.now() + 2 * 24 * 3600 * 1000);
