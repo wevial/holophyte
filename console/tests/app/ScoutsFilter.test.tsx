@@ -99,10 +99,12 @@ function wideScreen() {
 const field = () => screen.getByRole("searchbox", { name: "Search scouts" }) as HTMLInputElement;
 const picker = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}: `) });
 const groups = () => [...document.querySelectorAll("li[data-scout-group]")] as HTMLElement[];
-const groupNames = () => groups().map((group) => group.querySelector("[data-lane-head]")!.firstElementChild!.textContent);
+const groupHeading = (group: HTMLElement) => within(group).getByRole("heading", { level: 2 });
+const groupNames = () => groups().map((group) => groupHeading(group).textContent);
+const groupHeads = () => groups().map((group) => [groupHeading(group).textContent, groupHeading(group).parentElement!.querySelector("[data-count]")!.textContent]);
 const rowsOf = (element: ParentNode) => [...element.querySelectorAll("[data-scout]")].map((row) => row.getAttribute("data-scout"));
 const ids = () => rowsOf(document);
-const countLine = () => document.querySelector("[data-count-line]")!.textContent;
+const pageCount = () => document.querySelector("[data-page-count]")!.textContent;
 const searchParam = (name: string) => new URLSearchParams(window.location.hash.split("?")[1] ?? "").get(name);
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -114,13 +116,12 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("the narrow list draws one group per project, newest group first, under a lane head and the table's column heads", async () => {
+test("the narrow list draws one group per project, newest group first, under a heading with its count and the table's column heads", async () => {
   await mount("#/scouts", scoutFetch(demo, writer));
-  expect(groupNames()).toEqual(["demo", "writer"]);
+  expect(groupHeads()).toEqual([["demo", "3"], ["writer", "1"]]);
+  expect(document.querySelector("[data-lane-head]")).toBeNull();
   const [demoGroup, writerGroup] = groups();
-  expect(demoGroup!.querySelector("[data-lane-head]")!.textContent).toBe("demo3 scouts");
   expect(rowsOf(within(demoGroup!).getByRole("list", { name: "demo scouts" }))).toEqual(["31", "29", "27"]);
-  expect(writerGroup!.querySelector("[data-lane-head]")!.textContent).toBe("writer1 scout");
   expect(rowsOf(within(writerGroup!).getByRole("list", { name: "writer scouts" }))).toEqual(["30"]);
   const heads = [...document.querySelectorAll("[data-scout-table] > [aria-hidden] > span")].map((head) => head.textContent);
   expect(heads).toEqual(["", "Title", "Kind", "Lead", "Helpers", "Took"]);
@@ -131,11 +132,12 @@ test("the narrow list draws one group per project, newest group first, under a l
   expect(groups().map(rowsOf)).toEqual([["31", "29", "27"]]);
 });
 
-test("the wide list draws the same groups with no id cell and the first group's first scout beside it", async () => {
+test("the wide list draws the same headed groups with no id cell and the first group's first scout beside it", async () => {
   const media = wideScreen();
   try {
     await mount("#/scouts", scoutFetch(demo, writer));
-    expect(groupNames()).toEqual(["demo", "writer"]);
+    expect(groupHeads()).toEqual([["demo", "3"], ["writer", "1"]]);
+    expect(document.querySelector("[data-lane-head]")).toBeNull();
     expect(groups().map(rowsOf)).toEqual([["31", "29", "27"], ["30"]]);
     expect(document.querySelector('[data-scout-list] [data-cell="id"]')).toBeNull();
     expect(document.querySelector("[data-scout-list] li[aria-current]")!.getAttribute("data-scout")).toBe("31");
@@ -151,7 +153,7 @@ test("Search keeps scouts whose title or ask holds the text in any case, as q, a
   await search("lock");
   expect(ids()).toEqual(["31", "29"]);
   expect(searchParam("q")).toBe("lock");
-  expect(countLine()).toStartWith("all projects · 2 scouts");
+  expect(pageCount()).toStartWith("2 scouts");
   const hash = window.location.hash;
   cleanup();
   await mount(hash, scoutFetch(locks));
@@ -218,9 +220,12 @@ test("the Kind picker opens on ArrowDown, picks with Enter and closes on Escape 
   expect(document.activeElement).toBe(picker("Kind"));
 });
 
-test("a search matching no scout reads No scouts match alone, and an empty scope still names its project", async () => {
+test("a search matching no scout reads No scouts match alone, in one paragraph after an icon, and an empty scope still names its project", async () => {
   await mount("#/scouts?q=nothing", scoutFetch(demo, writer));
   expect(screen.getAllByText("No scouts match")).toHaveLength(1);
+  const line = screen.getByText("No scouts match");
+  expect(line.tagName).toBe("P");
+  expect([...line.childNodes].map((node) => node.nodeName)).toEqual(["svg", "#text"]);
   expect(groups()).toEqual([]);
   expect(document.querySelector("[data-scout-table]")).toBeNull();
   cleanup();

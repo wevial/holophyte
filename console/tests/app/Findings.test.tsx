@@ -467,6 +467,28 @@ test("choosing Category security shows only the security finding, and Uncategori
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("category")).toBe("uncategorized");
 });
 
+test("with must and Open and Follow-up picked, the Severity heading's box shows mixed, picks every severity keeping Status, and pressed again clears Severity alone", async () => {
+  await mount("#/findings?severity=must&status=open,follow_up", fleet(demoDaemon([demo7]), {}).fetch);
+  fireEvent.click(screen.getByRole("button", { name: /^Filter findings/ }));
+  const dialog = within(screen.getByRole("dialog", { name: "Filter findings" }));
+  const box = (name: string) => dialog.getByRole("checkbox", { name }) as HTMLInputElement;
+  const params = () => new URLSearchParams(window.location.hash.split("?")[1]);
+  const heads = () => ["Severity", "Category", "Status"].map((name) => [box(name).checked, box(name).indeterminate]);
+  expect(heads()).toEqual([[false, true], [false, false], [false, true]]);
+
+  fireEvent.click(box("Severity"));
+  for (let step = 0; step < 2; step += 1) await act(settle);
+  expect(["must", "should", "nit"].map((name) => box(name).checked)).toEqual([true, true, true]);
+  expect([box("Severity").checked, box("Severity").indeterminate]).toEqual([true, false]);
+  expect([params().get("severity"), params().get("status")]).toEqual(["must,should,nit", "open,follow_up"]);
+
+  fireEvent.click(box("Severity"));
+  for (let step = 0; step < 2; step += 1) await act(settle);
+  expect(["must", "should", "nit"].map((name) => box(name).checked)).toEqual([false, false, false]);
+  expect([params().has("severity"), params().get("status")]).toEqual([false, "open,follow_up"]);
+  expect(["Open", "Follow-up"].map((name) => box(name).checked)).toEqual([true, true]);
+});
+
 test("a linked range and severity press 30d, show only must rows under a Severity chip, and clearing the chip drops severity from the URL", async () => {
   const runs = [runOf(1, "DEMO-1", [round(1, [finding("must.py", "p0")])]), runOf(2, "DEMO-2", [round(1, [finding("should.py", "p2")])])];
   await mount("#/findings?range=30d&severity=must", fleet({ runs, live: live7 }, writerDaemon).fetch);

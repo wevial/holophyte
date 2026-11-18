@@ -102,17 +102,13 @@ const click = async (element: Element) => {
   for (let round = 0; round < 6; round += 1) await act(settle);
 };
 
-const change = async (element: Element, value: string) => {
-  await act(async () => void fireEvent.change(element, { target: { value } }));
-  for (let round = 0; round < 6; round += 1) await act(settle);
-};
-
 const scoutButtons = (scope: HTMLElement = document.body) => within(scope).queryAllByRole("button", { name: "Scout" });
 const form = () => screen.getByRole("form", { name: "New scout" });
 const ask = () => within(form()).getByLabelText("Ask") as HTMLTextAreaElement;
 const pressedKind = () =>
   within(within(form()).getByRole("group", { name: "Kind" })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
-const project = () => (within(form()).getByLabelText("Project") as HTMLSelectElement).selectedOptions[0]!.textContent;
+const projectPicker = () => within(form()).getByRole("button", { name: /^Project: / });
+const project = () => projectPicker().textContent;
 const about = () => form().querySelector("[data-about]")?.textContent ?? null;
 const findingRow = (title: string) =>
   [...document.querySelectorAll<HTMLElement>("[data-finding-row]")].find((row) => row.querySelector("[data-title]")!.textContent === title)!;
@@ -226,11 +222,13 @@ test("closing a prefilled form with New scout drops its subject, so the next bla
   expect(Object.keys(posts[0]!.body!)).not.toContain("subject");
 });
 
-test("picking another project drops the subject, so that project's launch names none", async () => {
+test("picking another project in the Project picker drops the About line, so that project's launch names no subject", async () => {
   const daemon = scoutThisFetch();
   await mount("#/runs/demo/12", daemon.fetch);
   await click(scoutButtons()[0]!);
-  await change(within(form()).getByLabelText("Project"), WRITER);
+  expect(about()).not.toBeNull();
+  await click(projectPicker());
+  await click(within(screen.getByRole("listbox", { name: "Project" })).getByRole("option", { name: "writer" }));
   expect(project()).toBe("writer");
   expect(about()).toBeNull();
   await click(within(form()).getByRole("button", { name: "Scout" }));

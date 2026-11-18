@@ -4,14 +4,17 @@ import type { useAction } from "../actions";
 import { aboutWords, defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks, type ScoutsSearch } from "../scouts";
 import { Btn } from "./Btn";
 import { FoldChevron } from "./icons";
+import { Picker, type PickerOption } from "./Picker";
+import { CloseGlyph } from "./ScoutThread";
+import { Segmented } from "./Segmented";
 import { INPUT } from "./TicketFields";
 
 type Kind = ScoutRow["kind"];
 
-const KINDS: { id: Kind; label: string }[] = [
-  { id: "bug", label: "Bug" },
-  { id: "research", label: "Research" },
-  { id: "recon", label: "Recon" },
+const KINDS: { value: Kind; label: string }[] = [
+  { value: "bug", label: "Bug" },
+  { value: "research", label: "Research" },
+  { value: "recon", label: "Recon" },
 ];
 
 export interface LaunchProject {
@@ -46,45 +49,48 @@ function AboutLine({ about, onRemove }: { about: string; onRemove: () => void })
   if (words == null) return null;
   return (
     <div className="mb-2 flex items-center gap-2">
-      <p data-about className="m-0 min-w-0 font-mono text-[12.5px] [overflow-wrap:anywhere] text-ink-2">About {words}</p>
+      <p data-about className="m-0 min-w-0 font-sans text-[13px] [overflow-wrap:anywhere] text-ink-2">About {words}</p>
       <button
         type="button"
         aria-label={`Remove ${words}`}
         title={`Remove ${words}`}
         onClick={onRemove}
-        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center font-mono text-[14px] leading-none text-ink-3 hover:text-ink"
+        className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none"
       >
-        ×
+        <CloseGlyph />
       </button>
     </div>
   );
 }
 
-const LABEL = "font-sans text-[14px] font-semibold text-ink";
-const PRESS =
-  "min-h-9 cursor-pointer border-l border-ink-3 px-3 font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] text-ink-2 first:border-l-0 aria-pressed:bg-ink aria-pressed:text-paper";
+const LABEL = "font-sans text-[13px] font-semibold text-ink";
+const ERROR = "mt-3 text-right font-sans text-[13px] text-bad";
 
-function Pressed<T extends string>({ label, options, picked, onPick }: {
-  label: string;
-  options: { id: T; label: string; title?: string }[];
-  picked: T | null;
-  onPick: (id: T) => void;
-}) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
       <span className={LABEL}>{label}</span>
-      <div role="group" aria-label={label} className="inline-flex flex-wrap self-start border border-ink-3">
-        {options.map((option) => (
-          <button key={option.id} type="button" title={option.title} aria-pressed={picked === option.id} onClick={() => onPick(option.id)} className={PRESS}>
-            {option.label}
-          </button>
-        ))}
-      </div>
+      {children}
     </div>
   );
 }
 
-const routeOptions = (routes: ScoutRoute[]) => routes.map((route) => ({ id: route.name, label: route.name, title: `${route.harness} · ${route.model}` }));
+const routeOptions = (routes: ScoutRoute[], picked: string | null): PickerOption[] => {
+  const names = routes.map((route) => route.name);
+  const options = (picked == null || names.includes(picked) ? names : [...names, picked]).map((name) => ({ value: name, label: name }));
+  return picked == null ? [{ value: "", label: "–", disabled: true }, ...options] : options;
+};
+const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
+
+function RoutePicker({ id, label, routes, value, onPick }: { id: string; label: string; routes: ScoutRoute[]; value: string | null; onPick: (name: string) => void }) {
+  return (
+    <Field label={label}>
+      {routes.length === 0
+        ? <span className="font-sans text-[13px] leading-[30px] text-ink-3">none</span>
+        : <Picker id={id} label={label} passPress options={routeOptions(routes, value)} value={value ?? ""} onPick={onPick} />}
+    </Field>
+  );
+}
 
 function NumberField({ id, label, value, least, most, onChange }: {
   id: string;
@@ -102,8 +108,8 @@ function NumberField({ id, label, value, least, most, onChange }: {
   );
 }
 
-function Band({ column, children }: { column: boolean; children: ReactNode }) {
-  return <div className={`border-b border-rule-2 last:border-b-0 max-[720px]:p-4 ${column ? "px-6 py-5" : "p-5"}`}>{column ? <div className="max-w-[712px]">{children}</div> : children}</div>;
+function Band({ children }: { children: ReactNode }) {
+  return <div className="border-b border-rule-2 p-5 last:border-b-0 max-[720px]:p-4">{children}</div>;
 }
 
 /** The New scout form: the ask, its kind and project, and one disclosure
@@ -117,7 +123,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   onDraft: (draft: ScoutDraft) => void;
   onCancel: () => void;
   onLaunched: () => void;
-  /** Drawn alone in a pane: headed, unframed, its fields and buttons in one column. */
+  /** Drawn alone in a pane, under its own heading. */
   pane?: boolean;
 }) {
   const askRef = useRef<HTMLTextAreaElement>(null);
@@ -149,6 +155,57 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
     );
   };
   const summary = picks ? `${picks.lead ?? "–"} · ${picks.helper ?? "–"} ×${picks.swarm} · ${picks.minutes} min` : "reading routes…";
+  const bands = (
+    <>
+      <Band>
+        {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
+        <label htmlFor="scout-ask" className="flex flex-col">
+          <span className={LABEL}>Ask</span>
+          <textarea id="scout-ask" ref={askRef} rows={pane ? 3 : 2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans ${pane ? "min-h-[86px]" : ""}`} />
+        </label>
+      </Band>
+      <Band>
+        <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
+          <Field label="Kind">
+            <Segmented label="Kind" options={KINDS} value={draft.kind} onPick={(kind) => set({ kind })} />
+          </Field>
+          <Field label="Project">
+            <Picker id="scout-project" label="Project" passPress options={projects.map((each) => ({ value: each.base, label: each.name }))} value={project.base}
+              onPick={(base) => {
+                if (base !== project.base) set({ base, picks: null, about: null });
+              }} />
+          </Field>
+        </div>
+      </Band>
+      <Band>
+        <button
+          type="button"
+          aria-expanded={draft.disclosed}
+          onClick={() => set({ disclosed: !draft.disclosed })}
+          className="group inline-flex min-h-9 cursor-pointer items-center gap-2 font-sans text-[13px] text-ink"
+        >
+          <FoldChevron open={draft.disclosed} />
+          {summary}
+        </button>
+        {draft.disclosed && picks && (
+          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-start gap-x-6 gap-y-5">
+            <RoutePicker id="scout-lead" label="Lead" routes={leads} value={picks.lead} onPick={(lead) => pick({ lead })} />
+            <RoutePicker id="scout-helpers" label="Helpers" routes={helperRoutes} value={picks.helper} onPick={(helper) => pick({ helper })} />
+            <NumberField id="scout-swarm" label="At once" value={picks.swarm} least={1} most={turns} onChange={(value) => pick({ swarm: value })} />
+            <NumberField id="scout-minutes" label="Minutes" value={picks.minutes} least={1} onChange={(value) => pick({ minutes: value })} />
+          </div>
+        )}
+      </Band>
+      <Band>
+        <div className="flex flex-wrap justify-end gap-3">
+          <Btn onClick={onCancel}>Cancel</Btn>
+          <Btn variant="primary" busy={action.isPending} busyLabel="Scouting…" disabled={!ready} onClick={launch}>Scout</Btn>
+        </div>
+        {missing && <p className={ERROR}>No {missing} route on {project.name} passed its probe.</p>}
+        {refusal && <p role="alert" className={`${ERROR} [overflow-wrap:anywhere]`}>{refusal}</p>}
+      </Band>
+    </>
+  );
   return (
     <form
       aria-label="New scout"
@@ -156,54 +213,10 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
         event.preventDefault();
         launch();
       }}
-      className={pane ? "" : "mb-4 border border-rule bg-paper"}
+      className={pane ? "px-6 pt-6 pb-7 max-[720px]:px-4" : CARD}
     >
-      {pane && <h2 className="m-0 px-6 pt-6 font-sans text-[20px] font-semibold leading-[1.25] text-ink">New scout</h2>}
-      <Band column={pane}>
-        {about != null && <AboutLine about={about} onRemove={() => set({ about: null })} />}
-        <label htmlFor="scout-ask" className="flex flex-col">
-          <span className={LABEL}>Ask</span>
-          <textarea id="scout-ask" ref={askRef} rows={pane ? 3 : 2} value={draft.ask} onChange={(event) => set({ ask: event.target.value })} className={`${INPUT} resize-y font-sans ${pane ? "min-h-[86px]" : ""}`} />
-        </label>
-      </Band>
-      <Band column={pane}>
-        <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
-          <Pressed label="Kind" options={KINDS} picked={draft.kind} onPick={(kind) => set({ kind })} />
-          <label htmlFor="scout-project" className="flex w-full max-w-[260px] flex-col">
-            <span className={LABEL}>Project</span>
-            <select id="scout-project" value={project.base} onChange={(event) => set({ base: event.target.value, picks: null, about: null })} className={`${INPUT} font-sans`}>
-              {projects.map((each) => <option key={each.base} value={each.base}>{each.name}</option>)}
-            </select>
-          </label>
-        </div>
-      </Band>
-      <Band column={pane}>
-        <button
-          type="button"
-          aria-expanded={draft.disclosed}
-          onClick={() => set({ disclosed: !draft.disclosed })}
-          className="group inline-flex min-h-9 cursor-pointer items-center gap-2 font-mono text-[13px] text-ink"
-        >
-          <FoldChevron open={draft.disclosed} />
-          {summary}
-        </button>
-        {draft.disclosed && picks && (
-          <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] items-start gap-x-6 gap-y-5">
-            <Pressed label="Lead" options={routeOptions(leads)} picked={picks.lead} onPick={(lead) => pick({ lead })} />
-            <Pressed label="Helpers" options={routeOptions(helperRoutes)} picked={picks.helper} onPick={(helper) => pick({ helper })} />
-            <NumberField id="scout-swarm" label="At once" value={picks.swarm} least={1} most={turns} onChange={(value) => pick({ swarm: value })} />
-            <NumberField id="scout-minutes" label="Minutes" value={picks.minutes} least={1} onChange={(value) => pick({ minutes: value })} />
-          </div>
-        )}
-      </Band>
-      <Band column={pane}>
-        <div className="flex flex-wrap justify-end gap-3">
-          <Btn onClick={onCancel}>Cancel</Btn>
-          <Btn variant="primary" busy={action.isPending} busyLabel="Scouting…" disabled={!ready} onClick={launch}>Scout</Btn>
-        </div>
-        {missing && <p className="mt-3 text-right font-mono text-[12.5px] text-bad">No {missing} route on {project.name} passed its probe.</p>}
-        {refusal && <p role="alert" className="mt-3 text-right font-mono text-[12.5px] [overflow-wrap:anywhere] text-bad">{refusal}</p>}
-      </Band>
+      {pane && <h2 className="m-0 mb-4 font-sans text-[20px] font-semibold leading-[1.25] text-ink">New scout</h2>}
+      {pane ? <div className={`${CARD} max-w-[760px]`}>{bands}</div> : bands}
     </form>
   );
 }
