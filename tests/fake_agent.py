@@ -140,6 +140,11 @@ PASS = Reply("Mergeable as it stands.\n"
              "VERDICT: PASS")
 FAIL = Reply("Not mergeable as it stands.\nVERDICT: FAIL")
 MALFORMED = Reply("I have some thoughts about this but never say the word.")
+# A second round's blocker that does not repeat REQUEST_CHANGES's finding.
+REQUEST_CHANGES_AGAIN = Reply("Blocker: the scripted fix is still not done.\n"
+                              "VERDICT: REQUEST_CHANGES")
+# The stuck-review adjudicator's ruling on the one finding REQUEST_CHANGES repeats.
+RULED_FIX = Reply("THREAD 1: FIX -- the scripted change is still incomplete")
 
 
 @dataclass(frozen=True)

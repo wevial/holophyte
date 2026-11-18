@@ -1,3 +1,4 @@
+import ast
 import json
 import os
 import re
@@ -166,7 +167,146 @@ def trim_brief(root, base_sha, sha):
             "missing at the range's final state.\n\n")
 
 
-def criteria_brief(criteria, refused="REQUEST_CHANGES"):
+_TESTS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _python_tests(text):
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return []
+    names = []
+    for node in tree.body:
+        if isinstance(node, _TESTS) and node.name.startswith("test"):
+            names.append(node.name)
+        elif isinstance(node, ast.ClassDef):
+            names += [f"{node.name}::{child.name}" for child in node.body
+                      if isinstance(child, _TESTS)
+                      and child.name.startswith("test")]
+    return names
+
+
+_DECLARED = re.compile(
+    r"(?<![.\w$])(?:it|test)"
+    r"(?:\.(?:only|skip|concurrent|todo|failing|serial))*(\.each)?\s*\(")
+
+
+_TITLE = re.compile(r"\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
+
+
+_EACH_TITLE = re.compile(r"\s*\(" + _TITLE.pattern)
+
+
+_BACKTICKED = re.compile(r"`(?:[^`\\]|\\.)*`")
+
+
+def _skipped(text, i):
+    from holophyte.review.reply_parsing import _JS_REGEX, _JS_SKIPPED, _regex_starts
+
+    return (_JS_SKIPPED.match(text, i) or _BACKTICKED.match(text, i)
+            or text[i] == "/" and _regex_starts(text, i, False)
+            and _JS_REGEX.match(text, i))
+
+
+def _declared_titles(text):
+    titles, closes, depth, i = [], [], 0, 0
+    while i < len(text):
+        skipped = _skipped(text, i)
+        declared = not skipped and _DECLARED.match(text, i)
+        if skipped or declared:
+            if declared and declared[1]:
+                closes.append(depth)
+            elif declared and (title := _TITLE.match(text, declared.end())):
+                titles.append(title[2])
+            depth += bool(declared)
+            i = (skipped or declared).end()
+            continue
+        depth += {"(": 1, ")": -1}.get(text[i], 0)
+        if text[i] == ")" and closes and closes[-1] == depth:
+            closes.pop()
+            if title := _EACH_TITLE.match(text, i + 1):
+                titles.append(title[2])
+        i += 1
+    return titles
+
+
+def _test_names(text, suffix):
+    from holophyte.review.reply_parsing import test_names
+
+    if suffix == ".py":
+        return _python_tests(text)
+    if suffix == ".go":
+        return test_names(text, suffix)
+    return test_names(text, suffix) + _declared_titles(text)
+
+
+def _cited(file, path, name):
+    from holophyte.review.reply_parsing import _scan_witness
+
+    if path.endswith(".py") or re.fullmatch(r"\w+", name):
+        return f"{path}::{name}"
+    unescaped = re.sub(r"\\([\\\"'`])", r"\1", name)
+    title = unescaped if _scan_witness(file, None, unescaped) is None else name
+    quoted = title.replace("\\", "\\\\").replace('"', '\\"')
+    return f'{path}::"{quoted}"'
+
+
+def _citable(wt, file, citations):
+    from holophyte.review.reply_parsing import (
+        _import_witnesses,
+        _witness_reason,
+        test_references,
+    )
+
+    single = {}
+    for citation in citations:
+        references = test_references(citation)
+        if len(references) == 1:
+            single[citation] = tuple(references[0])
+    imported = _import_witnesses(list(single.values()), wt)
+    return [citation for citation, ref in single.items()
+            if _witness_reason(file, ref, imported.get(ref))[0] is None]
+
+
+_WITNESS_CLAUSE = re.compile(r"\(((?:[^()]|\([^()]*\))*)\)[\s.]*$")
+
+
+def _witness_clause(text):
+    clause = _WITNESS_CLAUSE.search(text.strip())
+    return clause[1] if clause else ""
+
+
+def test_name_listing(wt, paths):
+    from holophyte.review.reply_parsing import _inside
+
+    listed = []
+    for path in dict.fromkeys(paths):
+        file = _inside(wt, path)
+        if file is None or not file.is_file():
+            continue
+        names = _test_names(file.read_text(errors="replace"), file.suffix)
+        citations = sorted({_cited(file, path, name) for name in names})
+        cited = "".join(f"- {citation}\n" for citation
+                        in _citable(wt, file, citations)) or "- (no tests)\n"
+        listed.append(f"`{path}`:\n{cited}")
+    return "\n".join(listed)
+
+
+def _named_tests_brief(wt, criteria):
+    from holophyte.review.witness_precheck import named_files
+
+    if wt is None:
+        return ""
+    listing = test_name_listing(wt, [path for files in named_files(
+        [_witness_clause(text) for _, text in criteria]) for path in files])
+    if not listing:
+        return ""
+    return ("The test files these criteria name define exactly these tests; "
+            "copy a test name from this list verbatim into its CRITERION "
+            f"line, as the loop matches names exactly:\n{listing}\n")
+
+
+def criteria_brief(criteria, refused="REQUEST_CHANGES", wt=None):
     if not criteria:
         return ""
     pairs = numbered(None, None, criteria)
@@ -186,7 +326,7 @@ def criteria_brief(criteria, refused="REQUEST_CHANGES"):
             "quote inside a test name with a backslash, `\\\"`.\n"
             "A criterion marked not met or unwitnessed, or left out of this "
             f"list, is a blocker: the round is {refused} regardless of "
-            "the verdict line.\n\n")
+            "the verdict line.\n\n" + _named_tests_brief(wt, pairs))
 
 
 def witness_brief(gaps, unnamed, when):
