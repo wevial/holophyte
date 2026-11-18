@@ -247,9 +247,9 @@ test("a row closed while it is still expanding keeps its detail, inert, through 
   fireEvent.click(toggleOf("B-2"));
   expect(detailOf()).not.toBeNull();
   expect((toggleOf("B-2").nextElementSibling as HTMLElement).inert).toBe(true);
-  await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 170)));
   expect(detailOf()).not.toBeNull();
-  await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
   expect(detailOf()).toBeNull();
 });
 
@@ -417,6 +417,15 @@ test("the requeue form posts a typed note as note, or as amend with no note when
   };
   expect(await bodyFor(false)).toEqual([{ ticket: "DEMO-11", note: "the flaky test is fixed on main" }]);
   expect(await bodyFor(true)).toEqual([{ ticket: "DEMO-11", amend: "the flaky test is fixed on main" }]);
+});
+
+test("a row reopened while its detail is still collapsing opens without the requeue draft it closed on", async () => {
+  await mount(daemon({ items: [failedAt()], actions: true }));
+  await press(inDetail("Requeue"));
+  typeNote("the flaky test is fixed on main");
+  fireEvent.click(toggleOf("DEMO-11"));
+  fireEvent.click(toggleOf("DEMO-11"));
+  expect(requeueForm()).toBeNull();
 });
 
 test("Cancel, or Escape from the note, the card's Open run or the row's toggle, closes the requeue form and posts nothing", async () => {

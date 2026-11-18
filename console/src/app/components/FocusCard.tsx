@@ -91,11 +91,18 @@ function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: H
 
 const EXPAND_MS = 200;
 
-/** Whether the detail is mounted, which outlasts `open` by its collapse,
- *  and whether it has finished expanding, so it clips only while it moves. */
-function useExpansion(open: boolean): { mounted: boolean; settled: boolean } {
+/** Whether the detail is mounted, which outlasts `open` by its collapse;
+ *  whether it has finished expanding, so it clips only while it moves; and
+ *  a count of openings, so each opening mounts a fresh detail. */
+function useExpansion(open: boolean): { mounted: boolean; settled: boolean; opening: number } {
   const [mounted, setMounted] = useState(open);
   const [settled, setSettled] = useState(open);
+  const [wasOpen, setWasOpen] = useState(open);
+  const [opening, setOpening] = useState(0);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setOpening(opening + 1);
+  }
   if (open && !mounted) setMounted(true);
   if (!open && settled) setSettled(false);
   useEffect(() => {
@@ -103,7 +110,7 @@ function useExpansion(open: boolean): { mounted: boolean; settled: boolean } {
     const timer = setTimeout(() => (open ? setSettled(true) : setMounted(false)), EXPAND_MS);
     return () => clearTimeout(timer);
   }, [open, mounted, settled]);
-  return { mounted: open || mounted, settled: open && settled };
+  return { mounted: open || mounted, settled: open && settled, opening };
 }
 
 function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; hosts: Host[]; now: number; open: boolean; onToggle: () => void }) {
@@ -119,7 +126,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
   const name = key ?? str(item.host) ?? str(item.daemon) ?? item.kind;
   const title = unreachable ? null : (namedTitle(item, host) ?? str(run.data?.run.title));
   const age = ageOf(item, now);
-  const { mounted, settled } = useExpansion(open);
+  const { mounted, settled, opening } = useExpansion(open);
   return (
     <li
       data-wait-row={name}
@@ -143,7 +150,7 @@ function WaitRow({ entry, hosts, now, open, onToggle }: { entry: NeedsYouEntry; 
         inert={!open}
         className="grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity] duration-200 ease-out group-data-open:grid-rows-[1fr] group-data-open:opacity-100 motion-reduce:transition-none"
       >
-        <div className={`min-h-0 min-w-0 ${settled ? "" : "overflow-hidden"}`}>{mounted && <Detail entry={entry} host={host} now={now} title={title ?? key} id={detailId} />}</div>
+        <div className={`min-h-0 min-w-0 ${settled ? "" : "overflow-hidden"}`}>{mounted && <Detail key={opening} entry={entry} host={host} now={now} title={title ?? key} id={detailId} />}</div>
       </div>
     </li>
   );
