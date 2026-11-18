@@ -8,6 +8,7 @@ import { Btn } from "../components/Btn";
 import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
 import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
+import { FoldChevron } from "../components/icons";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { pickedBody, pickedSide, priorityPart, sectionParts, type Part, type Pick } from "../sectionPicks";
@@ -331,8 +332,9 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
             changed={index => !same(fields.evidence[index], origin.fields.evidence[index])} />}
           {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
           {fields.others.length + removed.length > 0 && <div>
-            <details open={read.raw.size > 0 || removed.length > 0}>
+            <details open={read.raw.size > 0 || removed.length > 0} className="group">
               <summary className="flex h-[30px] cursor-pointer items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold text-ink">
+                <span className="flex group-open:[&>svg]:rotate-90"><FoldChevron open={false} /></span>
                 Other sections <span className="min-w-0 truncate font-normal text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">

@@ -132,7 +132,7 @@ test("Save draft stays disabled on a restored blank draft with null priority unt
   expect(save.disabled).toBe(false);
 });
 
-test("picking another project in the Project picker clears fields and priority without a draft and picking back restores the saved draft", async () => {
+test("picking a project in the Project picker restores its saved draft, and picking a project without one clears fields and priority", async () => {
   await mount();
   await fill();
   await press("Save draft");
@@ -144,6 +144,9 @@ test("picking another project in the Project picker clears fields and priority w
   for (const [name, value] of Object.entries(values)) expect((screen.getByRole("textbox", { name }) as HTMLInputElement).value).toBe(value);
   expect(screen.getByRole("button", { name: "P1" }).getAttribute("aria-pressed")).toBe("true");
   expect(screen.getByText(/^Draft from .* restored\.$/)).toBeTruthy();
+  await pickProject("relos");
+  expect(window.location.hash).toBe("#/tickets/relos/new");
+  expectBlank();
 });
 
 test("Save draft preserves paragraphs and fenced field labels across repeated saves", async () => {

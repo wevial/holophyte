@@ -147,6 +147,32 @@ test("All projects opens the first editable project and picking another project 
   expect(screen.getByText("Files to relos Backlog.")).toBeTruthy();
 });
 
+test("the Project picker lists only editable projects in switcher order and filing after a pick posts to the picked project", async () => {
+  const [zeta, alpha, mid] = ["http://writer-host:7720", "http://writer-host:7721", "http://writer-host:7722"];
+  const daemon = (project: string) => ({
+    status: { ...working, project: `/srv/dev/${project}`, actions: true, runs: [], queued: [], now: NOW },
+    attention: { level: "none", now: NOW, project: `/srv/dev/${project}`, items: [] },
+  });
+  const polls = peersFetch(zeta, { [zeta]: daemon("zeta"), [alpha]: daemon("alpha"), [mid]: daemon("mid") });
+  const answer = fakeFetch(() => Response.json({ problems: ["Complete the ticket"] }, { status: 422 }));
+  const fetch: Fetch = async (url, init) => {
+    if (url.endsWith("/board")) return Response.json({ ...board, columns: [], stories: [], editable: !url.startsWith(alpha) });
+    if (url.endsWith("/tickets")) return answer.fetchImpl(url, init);
+    return polls(url);
+  };
+  window.location.hash = "#/tickets/zeta/new";
+  const fake = fakeDeps(fetch);
+  fake.clock.now = NOW;
+  render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={zeta} pollDeps={fake.deps} /></QueryClientProvider>);
+  await flush();
+  expect(await projectOptions()).toEqual(["zeta", "mid"]);
+  await pickProject("mid");
+  expect(window.location.hash).toBe("#/tickets/mid/new");
+  await type("Title", "Steer notes show on the run detail card");
+  await press("File ticket");
+  expect(answer.seen.map((request) => request.url)).toEqual([`${mid}/tickets`]);
+});
+
 test("All projects keeps switcher project order when its first project is editable only on a later host", async () => {
   const otherDemo = "http://writer-host:7712";
   const daemon = (project: string) => ({

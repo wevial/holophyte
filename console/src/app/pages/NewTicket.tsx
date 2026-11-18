@@ -15,7 +15,7 @@ import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { blankForm, clampEstimate, composeBody, fieldOf, parseBody, withField, type Evidence } from "../ticketForm";
 import { hostCards } from "../tickets";
-import { CRUMB_LINK, FORM_CARD, SAVE_CARD } from "./runShared";
+import { CRUMB_LINK, FORM_CARD, GHOST, SAVE_CARD } from "./runShared";
 
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
@@ -227,13 +227,14 @@ export function NewTicket() {
         </div> : <p className="mt-6 text-ink-3">Loading project board…</p> : <>
           {restoredAt !== null && <p className="mt-5 flex flex-wrap items-center gap-2.5 font-sans text-[13px] text-ink-2">
             Draft from {formatClock(restoredAt)} restored.
-            <Btn className={SMALL} disabled={busy} onClick={startOver}>Start over</Btn>
+            <Btn className={`${SMALL} ${GHOST}`} disabled={busy} onClick={startOver}>Start over</Btn>
           </p>}
           <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
             <div className={FORM_CARD}>
-              <Field label="Project">
+              <Field label="Project" extra=" · Required">
                 <div className="mt-1.5">
-                  <Picker id="new-Project" label="Project" value={project} options={editable.map(row => ({ value: row.name, label: row.name, disabled: busy }))} onPick={name => {
+                  <Picker id="new-Project" label="Project" passPress value={project} options={editable.map(row => ({ value: row.name, label: row.name, disabled: busy }))} onPick={name => {
+                    if (name === project) return;
                     setProblems([]);
                     void navigate({ to: "/tickets/$project/new", params: { project: name }, search: {} });
                   }} />
