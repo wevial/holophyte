@@ -42,6 +42,9 @@ EXPECTED = [
     # KO-258: the operator's `--approve`, the release of a run parked in
     # `awaiting_merge_approval`, one transaction like `requeue`.
     "approve",
+    # HOLO-791: `--approve` of a run swept as review_stuck or
+    # criterion_stuck, released at the commit its last review judged.
+    "approve_swept",
     # KO-262: `--babysit`, the release of a run parked on its pull request
     # back to the babysitter; `approve`'s transaction with its own action
     # (`shepherd` until KO-374 renamed it with the rows).

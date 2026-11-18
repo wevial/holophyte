@@ -1,6 +1,7 @@
 import getpass
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -39,7 +40,7 @@ from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
 from store import operator_notes, steer_notes
 from store.gap_layers import record_gap_layer
-from store.operate import acting_as, author_actor
+from store.operate import acting_as, author_actor, swept_condition
 
 BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
@@ -282,6 +283,11 @@ def approve(target, identifier, note, out=None, force=False):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         parked_run = store.read.ticket_by_id(conn, ticket_id).lastRunId
+        condition = (None if parked_run is None
+                     else swept_condition(conn, parked_run))
+        if condition is not None:
+            return _approve_swept(target, conn, identifier, ticket_id,
+                                  parked_run, condition, note, force, out)
         if _parked_at_pull_request(conn, parked_run) \
                 and merge_config(target).approve == "human":
             ready = readiness(target, parked_run)
@@ -302,6 +308,106 @@ def approve(target, identifier, note, out=None, force=False):
               file=out)
     finally:
         conn.close()
+
+
+def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
+                   note, force, out):
+    rnd, sha, unmet = _reviewed_commit(conn, run_id)
+    if sha is None:
+        raise SystemExit(
+            f"[holo2] {identifier}: run {run_id} was swept {condition} but no"
+            " ended review round of it names the commit it judged; nothing"
+            " approved")
+    if unmet and not force:
+        raise SystemExit(
+            f"[holo2] {identifier}: run {run_id} was swept {condition} and"
+            f" its review round {rnd} left {', '.join(unmet)}; nothing"
+            " approved, and --force --note TEXT approves it anyway")
+    if unmet:
+        note = f"forced past criteria: {', '.join(unmet)}; {note}"
+    branch = store.read.park_facts(conn, run_id).branch
+    if branch is None:
+        raise SystemExit(f"[holo2] {identifier}: run {run_id} recorded no"
+                         " branch; nothing approved")
+    dropped = _set_aside(target.path, run_id, branch, sha, identifier)
+    try:
+        store.approve_swept(conn, ticket_id, note, sha, run_id=run_id)
+    except (store.ApproveRefused, ValueError) as refused:
+        raise SystemExit(f"[holo2] {refused}") from None
+    print(f"[holo2] {identifier} approved at {sha}: run {run_id}, swept"
+          f" {condition}, released at the commit its review round {rnd}"
+          " judged and the ticket is ready; the loop's next claim resumes"
+          " that candidate at the merge gate", file=out)
+    if dropped:
+        print(f"[holo2] set aside {len(dropped)} later commit(s) of {branch}"
+              f" under {DROPPED_REF}{run_id}: {', '.join(dropped)}", file=out)
+
+
+DROPPED_REF = "refs/holophyte/dropped/"
+
+
+def _reviewed_commit(conn, run_id):
+    rounds = store.read.newest_ended_rounds(conn, run_id, 1)
+    if not rounds:
+        return None, None, []
+    rnd, sha, unmet = rounds[0].round, None, []
+    for kind, payload in conn.execute(
+            "SELECT kind, payload FROM runEvents WHERE runId = ? AND kind IN"
+            " ('blast_radius', 'criteria') ORDER BY seq", (run_id,)):
+        payload = json.loads(payload or "{}")
+        if payload.get("round") != rnd:
+            continue
+        if kind == "blast_radius":
+            sha = payload.get("sha")
+        else:
+            unmet = [f"{entry['id']} {entry['status']}"
+                     for entry in payload.get("criteria", [])
+                     if entry.get("status") != "met"]
+    return rnd, sha, unmet
+
+
+def _git(repo, *args):
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True,
+                          text=True)
+
+
+def _set_aside(repo, run_id, branch, sha, identifier):
+    tip = _git(repo, "rev-parse", "--verify", "--quiet",
+               f"refs/heads/{branch}").stdout.strip()
+    if not tip:
+        raise SystemExit(f"[holo2] {identifier}: branch {branch} is gone;"
+                         " nothing approved")
+    if tip == sha:
+        return []
+    if _git(repo, "merge-base", "--is-ancestor", sha, tip).returncode != 0:
+        raise SystemExit(
+            f"[holo2] {identifier}: branch {branch} at {tip[:12]} does not"
+            f" descend from the reviewed commit {sha[:12]}; nothing approved")
+    worktree = _checked_out(repo, branch)
+    if worktree is not None and sh(["git", "status", "--porcelain"],
+                                   cwd=worktree):
+        raise SystemExit(
+            f"[holo2] {identifier}: the worktree {worktree} holds uncommitted"
+            f" changes on {branch}; nothing approved")
+    dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
+                 cwd=repo).split()
+    sh(["git", "update-ref", f"{DROPPED_REF}{run_id}", tip], cwd=repo)
+    if worktree is not None:
+        sh(["git", "reset", "--hard", sha], cwd=worktree)
+    else:
+        sh(["git", "update-ref", f"refs/heads/{branch}", sha, tip], cwd=repo)
+    return dropped
+
+
+def _checked_out(repo, branch):
+    path = None
+    for line in sh(["git", "worktree", "list", "--porcelain"],
+                   cwd=repo).splitlines():
+        if line.startswith("worktree "):
+            path = line.removeprefix("worktree ")
+        elif line == f"branch refs/heads/{branch}":
+            return path
+    return None
 
 
 def _parked_at_pull_request(conn, run_id):

@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -510,6 +512,134 @@ class ApproveCliTests(unittest.TestCase):
             self.cli("--approve", "KO-1", "--note", "  ")
         self.assertEqual(raised.exception.code, 2)
         self.assertEqual(self.interventions(), [])
+
+
+
+STUCK = ("swept by the supervisor in phase reviewing: review_stuck (rounds 1"
+         " and 2 share 0.90 of their findings (0.8 threshold)); branch and"
+         " worktree preserved for a human")
+
+
+class SweptApproveCliTests(unittest.TestCase):
+    """A run the supervisor swept with its branch in a real sibling worktree:
+    reviewed commit R, then a WIP commit W the review never judged."""
+
+    setUp = ApproveCliTests.setUp
+    claim = ApproveCliTests.claim
+    cli = ApproveCliTests.cli
+    interventions = ApproveCliTests.interventions
+    ticket_row = ApproveCliTests.ticket_row
+
+    def branch_with_wip(self):
+        git(self.repo, "init", "-b", "main")
+        git(self.repo, "commit", "--allow-empty", "-m", "base")
+        self.wt = self.root / "wt"
+        git(self.repo, "worktree", "add", "-b", BRANCH, str(self.wt))
+        (self.wt / "work").write_text("reviewed\n")
+        git(self.wt, "add", "work")
+        git(self.wt, "commit", "-m", "the reviewed candidate")
+        self.reviewed = git(self.wt, "rev-parse", "HEAD")
+        (self.wt / "work").write_text("half an edit\n")
+        git(self.wt, "commit", "-am", "WIP: implementer ended mid-edit")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+
+    def sweep(self, statuses=("met", "met"), reason=STUCK, kind="swept"):
+        """A run whose ended round 1 judged R, ended failed as `kind`."""
+        self.claim()
+        store.set_branch(self.conn, self.run, BRANCH)
+        for phase in ("working", "verifying", "reviewing"):
+            store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
+        store.record_event(
+            self.conn, self.run, "blast_radius", "round 1 blast radius: low",
+            level="detail", payload=json.dumps(
+                {"round": 1, "sha": self.reviewed, "tier": "low"}))
+        store.record_event(
+            self.conn, self.run, "criteria", "review round 1", level="detail",
+            payload=json.dumps({"round": 1, "criteria": [
+                {"id": f"C{n}", "n": n, "status": status, "text": "t"}
+                for n, status in enumerate(statuses, 1)]}))
+        store.record_review_round(self.conn, self.run, 1, "changes_requested",
+                                  "codex", started_at=T0, ended_at=T0 + 1)
+        store.release(self.conn, self.run, "failed", reason,
+                      now=T0 + 2 * MINUTE, failure_kind=kind)
+
+    def ref(self, name):
+        return subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", name], cwd=self.repo,
+            capture_output=True, text=True).stdout.strip() or None
+
+    def assert_released_at_reviewed(self):
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
+        self.assertEqual(git(self.wt, "rev-parse", "HEAD"), self.reviewed)
+        self.assertEqual(self.ref(f"refs/holophyte/dropped/{self.run}"),
+                         self.wip)
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        carried = store.read.approved_candidate(self.conn, self.ticket, -1)
+        self.assertEqual((carried.run_id, carried.sha, carried.approved),
+                         (self.run, self.reviewed, True))
+        self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
+
+    def assert_untouched(self):
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertEqual(self.interventions(), [])
+        self.assertEqual(self.ticket_row(), ("in_flight", None, self.run))
+
+    def test_a_stuck_run_is_approved_at_its_reviewed_commit(self):
+        self.branch_with_wip()
+        self.sweep()
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertIn(f"approved at {self.reviewed}", out)
+        self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
+                      out)
+
+    def test_an_unwitnessed_criterion_refuses_unless_forced(self):
+        self.branch_with_wip()
+        self.sweep(statuses=("met", "unwitnessed"))
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "non-blocking")
+        self.assertIn("left C2 unwitnessed", str(raised.exception))
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assert_untouched()
+
+        self.cli("--approve", "KO-1", "--force", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        self.assertEqual(summary, "human approve: forced past criteria:"
+                                  " C2 unwitnessed; non-blocking")
+
+    def test_a_branch_not_descending_from_the_reviewed_commit_is_refused(self):
+        self.branch_with_wip()
+        git(self.wt, "reset", "--hard", "main")
+        git(self.wt, "commit", "--allow-empty", "-m", "rewritten")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        self.sweep()
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("does not descend from the reviewed commit",
+                      str(raised.exception))
+        self.assert_untouched()
+
+    def test_a_run_failed_on_verify_is_refused_as_before(self):
+        self.branch_with_wip()
+        self.sweep(reason="verify failed: exit 1", kind="verify")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("KO-1 is in_flight, not blocked_on_operator",
+                      str(raised.exception))
+        self.assert_untouched()
 
 
 if __name__ == "__main__":
