@@ -1,5 +1,6 @@
 """The terminal adjudication: one bare verdict once the review rounds are spent."""
 import json
+from collections import Counter
 from functools import partial
 from time import time
 
@@ -139,17 +140,25 @@ def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
     return recite
 
 
-def _cites_as_many(line, n, cited):
-    status, note = criteria_block(line)[n]
-    return status != "met" or len(test_references(note)) >= cited
+def _cited_per_file(line, n):
+    return Counter(path for path, _, _ in {
+        tuple(ref) for ref in test_references(criteria_block(line)[n][1])})
+
+
+def _cites_as_many(line, n, first):
+    if criteria_block(line)[n][0] != "met":
+        return True
+    cited = _cited_per_file(line, n)
+    return all(cited[path] >= count
+               for path, count in _cited_per_file(first, n).items())
 
 
 def _recited_lines(reply, recite, refused):
     numbers = {finding["line"] for finding in refused}
     first = _criterion_lines(reply, numbers)
     answered = _criterion_lines(recite, numbers)
-    restated = [line for n, line in answered.items() if _cites_as_many(
-        line, n, len(test_references(criteria_block(first[n])[n][1])))]
+    restated = [line for n, line in answered.items()
+                if _cites_as_many(line, n, first[n])]
     return "Re-cited after a refused test name:\n" + "".join(
         f"Cited: {first.get(n, '(no line)')}\n"
         f"Restated: {answered.get(n, '(no line)')}\n"
@@ -161,13 +170,13 @@ def _recited(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
     paths = _mistyped(refused, reply, wt)
     if not paths:
         return None, "", refused
+    if recorded is None:
+        checkpoint(reply=str(reply), unrecorded=True)
     try:
-        if recorded is None:
-            checkpoint(reply=str(reply))
         recite = recorded if recorded is not None else _recite(
             project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
             paths)
-    except (InfraFailure, store.RunEnded):
+    except InfraFailure:
         if record:
             record(structured_findings=refused)
         raise
@@ -204,7 +213,8 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
              ok=ok, out=str(out), reply=pending.get("reply"),
-             recite=pending.get("recite"), left_open=left_open,
+             recite=pending.get("recite"),
+             unrecorded=pending.get("unrecorded"), left_open=left_open,
              review_round=review_round, verify_cmd=verify_cmd)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
@@ -262,9 +272,9 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
         raise InfraFailure("terminal adjudication PASS named no criterion")
     refused = (_criteria_gate(reply, criteria, wt, left_open)
                if decision == "PASS" else [])
-    record = None if recorded else partial(
+    record = None if recorded and not pending.get("unrecorded") else partial(
         record_round, project, conn, run_id, cap + 1, "adjudicate", reply,
-        verify_cmd, ok, out, started_at=round_started)
+        verify_cmd, ok, out, started_at=None if recorded else round_started)
     checkpoint = partial(boundary, conn, run_id, "reviewing", terminal=True,
                          rnd=cap + 1, ok=ok, out=str(out), left_open=left_open,
                          review_round=review_round, verify_cmd=verify_cmd)

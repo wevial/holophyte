@@ -177,7 +177,7 @@ def _python_tests(text):
         return []
     names = []
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name.startswith("test"):
+        if isinstance(node, _TESTS) and node.name.startswith("test"):
             names.append(node.name)
         elif isinstance(node, ast.ClassDef):
             names += [f"{node.name}::{child.name}" for child in node.body
@@ -186,28 +186,40 @@ def _python_tests(text):
     return names
 
 
-_EACH = re.compile(r"(?<![.\w$])(?:it|test)(?:\.(?:only|skip|concurrent))?"
-                   r"\.each\s*\(")
+_DECLARED = re.compile(
+    r"(?<![.\w$])(?:it|test)"
+    r"(?:\.(?:only|skip|concurrent|todo|failing|serial))*(\.each)?\s*\(")
 
 
-_EACH_TITLE = re.compile(r"\s*\(\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
+_TITLE = re.compile(r"\s*(['\"`])((?:(?!\1)[^\\]|\\.)*)\1")
+
+
+_EACH_TITLE = re.compile(r"\s*\(" + _TITLE.pattern)
 
 
 _BACKTICKED = re.compile(r"`(?:[^`\\]|\\.)*`")
 
 
-def _each_titles(text):
-    from holophyte.review.reply_parsing import _JS_SKIPPED
+def _skipped(text, i):
+    from holophyte.review.reply_parsing import _JS_REGEX, _JS_SKIPPED, _regex_starts
 
+    return (_JS_SKIPPED.match(text, i) or _BACKTICKED.match(text, i)
+            or text[i] == "/" and _regex_starts(text, i, False)
+            and _JS_REGEX.match(text, i))
+
+
+def _declared_titles(text):
     titles, closes, depth, i = [], [], 0, 0
     while i < len(text):
-        skipped = _JS_SKIPPED.match(text, i) or _BACKTICKED.match(text, i)
-        each = not skipped and _EACH.match(text, i)
-        if skipped or each:
-            if each:
+        skipped = _skipped(text, i)
+        declared = not skipped and _DECLARED.match(text, i)
+        if skipped or declared:
+            if declared and declared[1]:
                 closes.append(depth)
-                depth += 1
-            i = (skipped or each).end()
+            elif declared and (title := _TITLE.match(text, declared.end())):
+                titles.append(title[2])
+            depth += bool(declared)
+            i = (skipped or declared).end()
             continue
         depth += {"(": 1, ")": -1}.get(text[i], 0)
         if text[i] == ")" and closes and closes[-1] == depth:
@@ -225,18 +237,35 @@ def _test_names(text, suffix):
         return _python_tests(text)
     if suffix == ".go":
         return test_names(text, suffix)
-    return test_names(text, suffix) + _each_titles(text)
+    return test_names(text, suffix) + _declared_titles(text)
 
 
 def _cited(file, path, name):
     from holophyte.review.reply_parsing import _scan_witness
 
-    if path.endswith((".py", ".go")):
+    if path.endswith(".py") or re.fullmatch(r"\w+", name):
         return f"{path}::{name}"
     unescaped = re.sub(r"\\([\\\"'`])", r"\1", name)
     title = unescaped if _scan_witness(file, None, unescaped) is None else name
     quoted = title.replace("\\", "\\\\").replace('"', '\\"')
     return f'{path}::"{quoted}"'
+
+
+def _citable(wt, file, citations):
+    from holophyte.review.reply_parsing import (
+        _import_witnesses,
+        _witness_reason,
+        test_references,
+    )
+
+    single = {}
+    for citation in citations:
+        references = test_references(citation)
+        if len(references) == 1:
+            single[citation] = tuple(references[0])
+    imported = _import_witnesses(list(single.values()), wt)
+    return [citation for citation, ref in single.items()
+            if _witness_reason(file, ref, imported.get(ref))[0] is None]
 
 
 _WITNESS_CLAUSE = re.compile(r"\(((?:[^()]|\([^()]*\))*)\)[\s.]*$")
@@ -256,8 +285,9 @@ def test_name_listing(wt, paths):
         if file is None or not file.is_file():
             continue
         names = _test_names(file.read_text(errors="replace"), file.suffix)
-        cited = "".join(f"- {_cited(file, path, name)}\n"
-                        for name in sorted(set(names))) or "- (no tests)\n"
+        citations = sorted({_cited(file, path, name) for name in names})
+        cited = "".join(f"- {citation}\n" for citation
+                        in _citable(wt, file, citations)) or "- (no tests)\n"
         listed.append(f"`{path}`:\n{cited}")
     return "\n".join(listed)
 

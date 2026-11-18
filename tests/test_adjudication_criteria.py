@@ -189,15 +189,17 @@ class AdjudicationCriteriaTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.git("rev-parse", "main").strip(), self.base)
 
-    def test_a_bare_typo_beside_a_valid_citation_still_fails(self):
+    def test_a_bare_typo_beside_valid_citations_of_another_file_still_fails(self):
         cited = ("CRITERION 1: met \u2014 tests/test_other.py::test_other_works"
                  " and tests/test_thing.py::test_it_work")
         fake = self.recite_after(
             LEFT_UNWITNESSED,
             Commit("fix round 2", path="tests/test_other.py",
-                   body="def test_other_works():\n    pass\n"),
+                   body="def test_other_works():\n    pass\n\n\n"
+                        "def test_other_holds():\n    pass\n"),
             cited, Reply("CRITERION 1: met \u2014 "
-                         "tests/test_other.py::test_other_works and test_it_work"))
+                         "tests/test_other.py::test_other_works and "
+                         "tests/test_other.py::test_other_holds and test_it_work"))
 
         self.assertEqual(fake.roles.count("adjudicate"), 2)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
@@ -224,8 +226,10 @@ class AdjudicationCriteriaTests(LoopFixture):
         resumed, _ = self.loop(Reply(EXACT))
 
         self.assertEqual(resumed.roles, ["adjudicate"])
-        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
-                         [("paused",), ("merged",)])
+        self.assertEqual(self.read(
+            "SELECT r.outcome, rr.verdict FROM reviewRounds rr"
+            " JOIN runs r ON r.id = rr.runId WHERE rr.round = 3"),
+            [("merged", "pass")])
 
     def test_the_re_cite_prompt_lists_every_file_the_refused_line_cites(self):
         cited = ("CRITERION 1: met \u2014 tests/test_other.py::test_other_works"
