@@ -158,12 +158,13 @@ Each module, one line:
   `file_ticket()` in Todo at priority urgent and records a `revert`
   intervention on the merged run.
 - `holophyte/revert/close.py` — after a revert ticket's run merges (its
-  title `[Revert] Undo KEY: ` and its Summary's unfenced `Reverts: KEY at
-  SHA` line), KEY returns to Backlog through `store.board.reopen_reverted()`,
-  with a `Reverted by REVERT-KEY: REASON` note (the reason `holo revert`
-  recorded) and a `reverted` event on KEY's merged run, whose outcome and
-  `mergeSha` stay. A Linear board is set to Backlog in the same store
-  transaction, so a refused write leaves KEY merged, and gets the note.
+  Summary's `Reverts: KEY at SHA` line outside any fence, and either the
+  `revert` intervention `holo revert` recorded or the `[Revert] Undo KEY: `
+  title), KEY returns to Backlog on a native board through
+  `store.board.reopen_reverted()`, with a `Reverted by REVERT-KEY: REASON`
+  note and a `reverted` event on KEY's merged run, whose outcome and
+  `mergeSha` stay. On any other board KEY stays merged and the revert run
+  carries a warning to move it by hand.
 - `holophyte/config/config_tables.py` — the per-table readers (KO-397): the
   `[supervisor]`, `[loop]`, `[board]`, `[merge]` and `[report]` tables with
   `CONSOLE_KEYS` and `split_address()`, the namedtuples and defaults they own.

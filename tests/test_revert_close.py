@@ -29,17 +29,14 @@ class MirrorBoard:
     native = False
     store_mode = False
 
-    def __init__(self, refused=None):
-        self.refused = refused
+    def __init__(self):
         self.writes = []
 
     def set_state(self, issue_id, state):
-        if (issue_id, state) == self.refused:
-            raise RuntimeError("Linear is unreachable")
-        self.writes.append(("state", issue_id, state))
+        self.writes.append((issue_id, state))
 
     def comment(self, task_id, body):
-        self.writes.append(("comment", task_id, body))
+        pass
 
 
 class RevertCloseTests(ConfigTestCase):
@@ -140,27 +137,52 @@ class RevertCloseTests(ConfigTestCase):
         self.git("revert", "--no-edit", self.key_sha)
         return self.git("rev-parse", "HEAD")
 
-    def test_a_mirror_board_gets_backlog_and_the_note(self):
-        self.file_revert()
-        board = MirrorBoard()
-        self.run_revert(self.merge_the_revert, board)
-        note = f"Reverted by NAT-3: {REASON}"
-        self.assertIn(("state", "NAT-1", "Backlog"), board.writes)
-        self.assertIn(("comment", "NAT-1", note), board.writes)
-        self.assertEqual(self.key_state()["ticket"],
-                         [("ready", "backlog", "Backlog")])
-        self.assertEqual(self.read(
-            "SELECT postedAt IS NOT NULL FROM ticketNotes WHERE text = ?",
-            note), [(1,)])
-
-    def test_a_refused_board_write_leaves_the_ticket_merged(self):
+    def test_a_non_native_board_keeps_the_ticket_merged_and_warns(self):
         self.file_revert()
         before = self.key_state()
-        self.run_revert(self.merge_the_revert,
-                        MirrorBoard(refused=("NAT-1", "Backlog")))
+        board = MirrorBoard()
+        run = self.run_revert(self.merge_the_revert, board)
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = ?",
+                                   run), [("merged",)])
         self.assertEqual(self.key_state(), before)
+        self.assertNotIn(("NAT-1", "Backlog"), board.writes)
+        warnings = [summary for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'warning'", run)]
+        self.assertTrue(any("NAT-1 still reads merged" in w
+                            and f"Reverted by NAT-3: {REASON}" in w
+                            for w in warnings), warnings)
 
-    def test_an_ordinary_tickets_fenced_reverts_example_reopens_nothing(self):
+    def edit_revert(self, sql, *params):
+        with contextlib.closing(open_store(self.project)) as conn:
+            conn.execute(f"UPDATE tickets SET {sql} WHERE"
+                         " linearIdentifier = 'NAT-3'", params)
+            conn.commit()
+
+    def test_a_fenced_example_does_not_hide_the_live_reverts_line(self):
+        self.file_revert()
+        with contextlib.closing(open_store(self.project)) as conn:
+            store.tickets.transition(conn, self.ticket_id(conn, "NAT-2"),
+                                     "merged")
+        self.edit_revert(
+            "body = replace(body, '## Summary\n', ?)",
+            f"## Summary\n\n  ~~~\nReverts: NAT-2 at {self.later_sha}\n"
+            "  ~~~\n")
+        self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.key_state()["ticket"],
+                         [("ready", "backlog", "Backlog")])
+        self.assertEqual(self.read("SELECT status FROM tickets WHERE"
+                                   " linearIdentifier = 'NAT-2'"),
+                         [("merged",)])
+
+    def test_a_renamed_revert_ticket_still_returns_its_ticket(self):
+        self.file_revert()
+        self.edit_revert("title = ?", "Put the header back")
+        self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.key_state()["ticket"],
+                         [("ready", "backlog", "Backlog")])
+
+    def test_an_ordinary_tickets_reverts_line_reopens_nothing(self):
         self.project_with(cli_revert.ENABLED, {"src/header.py": "broken\n"})
         with contextlib.closing(open_store(self.project)) as conn:
             store.tickets.transition(conn, self.ticket_id(conn, "NAT-1"),
@@ -169,8 +191,7 @@ class RevertCloseTests(ConfigTestCase):
             conn.execute(
                 "UPDATE tickets SET body = replace(body, '## Summary\n',"
                 " ?) WHERE linearIdentifier = 'NAT-2'",
-                (f"## Summary\n\n```\nReverts: NAT-1 at {self.key_sha}\n```"
-                 "\n",))
+                (f"## Summary\n\nReverts: NAT-1 at {self.key_sha}\n",))
             conn.commit()
             before = self.key_state()
             self.assertIsNone(store.board.reopen_reverted(conn, run))

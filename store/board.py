@@ -1,7 +1,6 @@
 """store.board: filing, editing, moving and canceling a native board's tickets."""
 from __future__ import annotations
 
-import html
 import json
 import re
 import time
@@ -176,11 +175,12 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
                               author, now)
 
 
-REVERTS = re.compile(r"^Reverts: (\S+) at ([0-9a-f]{7,40})$", re.MULTILINE)
-FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
+REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,40})")
+WHY = re.compile(r"\*\*Why:\s*\*\*\s*(.+)")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
 
-def reopen_reverted(conn, run_id):
+def reopen_reverted(conn, run_id, native=True):
     now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
@@ -190,11 +190,10 @@ def reopen_reverted(conn, run_id):
         if row is None or row[0] != "merged":
             return None
         _, merge_sha, project_id, revert_key, title, text = row
-        summary = FENCE.sub("", ticket_template.parse(text or "")
-                            .sections.get("Summary", ""))
-        named = REVERTS.search(summary)
-        if named is None or not (title or "").startswith(
-                title_prefix(named[1])):
+        lines = _unfenced(ticket_template.parse(text or "")
+                          .sections.get("Summary", ""))
+        named = next(filter(None, map(REVERTS.fullmatch, lines)), None)
+        if named is None:
             return None
         key, sha = named.groups()
         original = conn.execute(
@@ -208,9 +207,14 @@ def reopen_reverted(conn, run_id):
         if original is None:
             return None
         ticket_id, merged_run = original
-        reason = _revert_reason(conn, merged_run, revert_key, key, text)
+        filed = _filed_reason(conn, merged_run, revert_key)
+        if filed is None and not (title or "").startswith(title_prefix(key)):
+            return None
+        reason = filed or _written_reason(key, text)
         why = f": {reason}" if reason else ""
         note = f"Reverted by {revert_key}{why or '.'}"
+        if not native:
+            return key, note
         record_event(conn, merged_run, "reverted",
                      f"reverted by {revert_key}, merged at"
                      f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
@@ -218,21 +222,44 @@ def reopen_reverted(conn, run_id):
                      (ticket_id,))
         set_board_state(conn, ticket_id, _BOARD_STATES["backlog"], "backlog")
         record_board_fields(conn, ticket_id, "factory", now)
-        note_id = record_note(conn, ticket_id, "move", note,
-                              f"reverted:{run_id}", author="factory", now=now)
-    return ticket_id, note_id, note
+        record_note(conn, ticket_id, "move", note, f"reverted:{run_id}",
+                    author="factory", now=now)
+    return key, note
 
 
-def _revert_reason(conn, merged_run, revert_key, key, text):
+def _unfenced(text):
+    fence, kept = None, []
+    for line in text.splitlines():
+        opened = FENCE.match(line)
+        if fence is None and opened:
+            fence = opened[1]
+        elif fence is not None:
+            if opened and opened[1][0] == fence[0] \
+                    and len(opened[1]) >= len(fence) \
+                    and not line.strip(" " + fence[0]):
+                fence = None
+        else:
+            kept.append(line.rstrip())
+    return kept
+
+
+def _filed_reason(conn, merged_run, revert_key):
     for (filed,) in conn.execute(
             "SELECT note FROM interventions WHERE runId = ?"
             " AND \"action\" = 'revert' ORDER BY id DESC", (merged_run,)):
         named = FILED_NOTE.match(filed or "")
         if named and named[1] == revert_key:
             return filed[named.end():]
-    written = re.search(rf"^(?:Undo {re.escape(key)}'s merge: |\*\*Why:\*\* )"
-                        r"(.+)$", FENCE.sub("", text or ""), re.MULTILINE)
-    return html.unescape(written[1]) if written else None
+    return None
+
+
+def _written_reason(key, text):
+    undo = re.compile(rf"Undo {re.escape(key)}'s merge: (.+)")
+    for line in _unfenced(text or ""):
+        written = undo.fullmatch(line) or WHY.fullmatch(line)
+        if written:
+            return written[1]
+    return None
 
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
