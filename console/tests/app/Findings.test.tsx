@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status, TicketDefect } from "../../src/lib/contract.gen";
@@ -281,6 +281,114 @@ test("a custom range presses no preset and presses Custom range reading its days
   await pressRange("30d");
   const params = addressParams();
   expect([params.get("range"), params.has("from"), params.has("to")]).toEqual(["30d", false, false]);
+});
+
+/** A ResizeObserver whose callbacks run only when `resize` is called with one of their targets, and animation frames that run only when `runFrames` is called. */
+function heldLayout() {
+  const live = new Map<object, { targets: Element[]; fire: () => void }>();
+  const saved = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      live.set(this, { targets: [], fire: () => callback([], this as unknown as ResizeObserver) });
+    }
+    observe(target: Element) {
+      live.get(this)?.targets.push(target);
+    }
+    unobserve() {}
+    disconnect() {
+      live.get(this)!.targets = [];
+    }
+  } as unknown as typeof ResizeObserver;
+  const frames = new Map<number, FrameRequestCallback>();
+  let lastFrame = 0;
+  const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.set(++lastFrame, callback);
+    return lastFrame;
+  });
+  const caf = spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+  return {
+    observing: (target: Element) => [...live.values()].filter((observer) => observer.targets.includes(target)).length,
+    resize: (target: Element) => act(() => [...live.values()].filter((observer) => observer.targets.includes(target)).forEach((observer) => observer.fire())),
+    runFrames: () => act(() => {
+      const due = [...frames.entries()];
+      frames.clear();
+      due.forEach(([, callback]) => callback(performance.now()));
+    }),
+    restore: () => {
+      globalThis.ResizeObserver = saved;
+      raf.mockRestore();
+      caf.mockRestore();
+    },
+  };
+}
+
+const rectAt = (left: number, width: number) => () => ({ left, width, right: left + width, top: 0, bottom: 0, height: 0, x: left, y: 0, toJSON: () => ({}) });
+
+/** Findings in a 720px window whose main scrolls and shows all 720px, with the dates menu 248px wide and the Custom range button at `left`. */
+async function openRangeMenu(left: number) {
+  await mount("#/findings", fleet({}, {}).fetch);
+  const main = screen.getByRole("main");
+  main.style.overflowX = "auto";
+  main.getBoundingClientRect = rectAt(0, 720);
+  Object.defineProperty(main, "clientWidth", { configurable: true, value: 720 });
+  const anchor = customRange().parentElement!;
+  anchor.getBoundingClientRect = rectAt(left, 32);
+  fireEvent.click(customRange());
+  const menu = screen.getByRole("group", { name: "Range range" });
+  Object.defineProperty(menu, "offsetWidth", { configurable: true, value: 248 });
+  menu.getBoundingClientRect = rectAt(0, 248);
+  act(() => void window.dispatchEvent(new Event("resize")));
+  return { main, anchor, menu };
+}
+
+test("with Custom range open, the scrolling main resizing as its button moves right, with no window resize, places the dates menu again inside the window", async () => {
+  const held = heldLayout();
+  const viewport = document.documentElement.getBoundingClientRect;
+  document.documentElement.getBoundingClientRect = rectAt(0, 720);
+  try {
+    const { main, anchor, menu } = await openRangeMenu(100);
+    anchor.getBoundingClientRect = rectAt(600, 32);
+    held.resize(main);
+    const left = 600 + parseFloat(menu.style.left);
+    expect([left >= 0, left + 248 <= 720]).toEqual([true, true]);
+  } finally {
+    document.documentElement.getBoundingClientRect = viewport;
+    held.restore();
+  }
+});
+
+test("with Custom range open, its button moving left with nothing resized places the dates menu again at the button's new left edge on the next frame", async () => {
+  const held = heldLayout();
+  const viewport = document.documentElement.getBoundingClientRect;
+  document.documentElement.getBoundingClientRect = rectAt(0, 720);
+  try {
+    const { anchor, menu } = await openRangeMenu(600);
+    held.runFrames();
+    expect(parseFloat(menu.style.left)).toBeLessThan(0);
+    anchor.getBoundingClientRect = rectAt(330, 32);
+    held.runFrames();
+    expect(parseFloat(menu.style.left)).toBe(0);
+  } finally {
+    document.documentElement.getBoundingClientRect = viewport;
+    held.restore();
+  }
+});
+
+test("closing the Custom range menu with Done leaves no observer on its button or the scrolling main, and no frame reading the button's place", async () => {
+  const held = heldLayout();
+  try {
+    const { main, anchor, menu } = await openRangeMenu(100);
+    expect([held.observing(anchor), held.observing(main)]).toEqual([1, 1]);
+    fireEvent.click(within(menu).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("group", { name: "Range range" })).toBeNull();
+    expect([held.observing(anchor), held.observing(main)]).toEqual([0, 0]);
+    let reads = 0;
+    anchor.getBoundingClientRect = () => (reads += 1, rectAt(330, 32)());
+    held.runFrames();
+    expect(reads).toBe(0);
+  } finally {
+    held.restore();
+  }
 });
 
 const openTitles = () => [...group("Open").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);
