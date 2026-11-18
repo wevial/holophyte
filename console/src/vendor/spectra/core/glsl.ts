@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@9f2195d packages/core/src/glsl.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@d34e0f8 packages/core/src/glsl.ts (MIT, see ../LICENSE).
 // GLSL chunks shared by effects. Interpolate into a shader source with ${...}.
 
 /** hash12, hash32, value noise, and 4-octave fbm. */

@@ -18,9 +18,12 @@ const SCHEMES: { value: Theme; name: string; icon: ReactNode }[] = [
 ];
 
 
-const EFFECTS: { value: HeaderEffect | "caustics"; name: string; preview: string }[] = [
+const EFFECTS: { value: HeaderEffect; name: string; preview?: string; swatch?: string }[] = [
   { value: "haze", name: "Haze", preview: "effect-haze" },
   { value: "caustics", name: "Caustics", preview: "effect-caustics" },
+  { value: "plume", name: "Plume", swatch: "radial-gradient(42% 80% at 28% 45%, var(--p-violet), transparent 72%), radial-gradient(38% 75% at 62% 60%, var(--p-teal), transparent 72%), radial-gradient(30% 60% at 80% 25%, var(--orange-9), transparent 72%), var(--canvas)" },
+  { value: "ribbons", name: "Ribbons", swatch: "linear-gradient(172deg, transparent 28%, var(--p-blue) 36%, transparent 46%), linear-gradient(8deg, transparent 46%, var(--p-violet) 54%, transparent 62%), linear-gradient(176deg, transparent 60%, var(--p-teal) 67%, transparent 76%), var(--canvas)" },
+  { value: "lava", name: "Lava", swatch: "radial-gradient(18% 34% at 30% 72%, var(--orange-9) 55%, transparent 70%), radial-gradient(12% 26% at 62% 30%, var(--red-9) 55%, transparent 70%), radial-gradient(10% 20% at 80% 78%, var(--pink-9) 55%, transparent 70%), var(--canvas)" },
   { value: "none", name: "None", preview: "bg-canvas" },
 ];
 
@@ -133,15 +136,12 @@ function EffectRow() {
       <div className="flex flex-wrap items-start gap-3">
         <div role="group" aria-labelledby="appearance-header" className="flex flex-wrap gap-3">
           {EFFECTS.map((item) => {
-            const soon = item.value === "caustics";
             const pressed = effect === item.value;
             return (
-              <button key={item.value} type="button" aria-pressed={pressed} disabled={soon} onClick={() => { if (item.value !== "caustics") setEffect(item.value); }}
-                className="group flex w-[96px] flex-col gap-1.5 text-left disabled:cursor-not-allowed">
-                <span aria-hidden="true" className={`${item.preview} block h-[40px] w-full rounded-card shadow-[inset_0_0_0_1px_var(--hair)] ${pressed ? "outline-2 outline-offset-2 outline-focus" : ""} ${soon ? "opacity-50" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`} />
-                <span className={`flex items-baseline gap-2 text-[13px] ${pressed ? "text-ink" : soon ? "text-ink-3" : "text-ink-2"}`}>
-                  {item.name}{soon && <span className="font-sans text-[12px] text-ink-3">soon</span>}
-                </span>
+              <button key={item.value} type="button" aria-pressed={pressed} onClick={() => setEffect(item.value)} className="group flex w-[96px] flex-col gap-1.5 text-left">
+                <span aria-hidden="true" style={item.swatch ? { background: item.swatch } : undefined}
+                  className={`${item.preview ?? ""} block h-[40px] w-full rounded-card shadow-[inset_0_0_0_1px_var(--hair)] ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`} />
+                <span className={`text-[13px] ${pressed ? "text-ink" : "text-ink-2"}`}>{item.name}</span>
               </button>
             );
           })}
@@ -262,6 +262,7 @@ export function AppearanceTab() {
   const { textSize, setTextSize } = useTextSize();
   const { grain, setGrain } = useGrain();
   const { hazeStrength, setHazeStrength } = useHazeStrength();
+  const { effect } = useHeaderEffect();
   return (
     <div>
       <ThemeRow mode="light" onSubject={setSubject} />
@@ -269,7 +270,7 @@ export function AppearanceTab() {
       <EffectRow />
       <SliderRow id="appearance-text" icon={<TextGlyph />} title="Text" label="Text size" value={textSize} range={TEXT_SIZES} onChange={setTextSize} pillFirst />
       <SliderRow id="appearance-grain" icon={<GrainGlyph />} title="Grain" label="Grain" value={grain} range={STRENGTHS} onChange={setGrain} />
-      <SliderRow id="appearance-haze" icon={<WavesGlyph />} title="Haze" label="Haze strength" value={hazeStrength} range={STRENGTHS} onChange={setHazeStrength} />
+      {effect === "haze" && <SliderRow id="appearance-haze" icon={<WavesGlyph />} title="Haze" label="Haze strength" value={hazeStrength} range={STRENGTHS} onChange={setHazeStrength} />}
       <div className="mt-2 border-t border-rule-2">
         <FontRow />
         <DensityRow />
