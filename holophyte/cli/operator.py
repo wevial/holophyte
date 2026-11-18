@@ -336,7 +336,7 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
     dropped = _set_aside(target.path, claim.wt, run_id, branch, sha,
                          identifier)
     try:
-        store.approve_swept(conn, ticket_id, note, sha, run_id=run_id)
+        store.approve_swept(conn, ticket_id, note, sha, run_id)
     except (store.ApproveRefused, ValueError) as refused:
         raise SystemExit(f"[holo2] {refused}") from None
     print(f"[holo2] {identifier} approved at {sha}: run {run_id}, swept"

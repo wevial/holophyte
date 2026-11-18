@@ -241,9 +241,8 @@ def swept_condition(conn, run_id):
     return matched[1]
 
 
-def approve_swept(conn, ticket_id, note, sha, now=None, run_id=None):
-    if now is None:
-        now = int(time.time() * 1000)
+def approve_swept(conn, ticket_id, note, sha, run_id):
+    now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
             "SELECT linearIdentifier, lastRunId FROM tickets WHERE id = ?",
@@ -251,7 +250,7 @@ def approve_swept(conn, ticket_id, note, sha, now=None, run_id=None):
         if row is None:
             raise ApproveRefused(f"ticket {ticket_id} does not exist")
         identifier, last_run_id = row
-        if run_id is not None and last_run_id != run_id:
+        if last_run_id != run_id:
             raise ApproveRefused(
                 f"{identifier}'s newest run is {last_run_id}, not run"
                 f" {run_id}; nothing approved")
@@ -268,7 +267,6 @@ def approve_swept(conn, ticket_id, note, sha, now=None, run_id=None):
         conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
                      (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
-    return last_run_id
 
 
 def babysit(conn, ticket_id, note, now=None, source="human", *,
