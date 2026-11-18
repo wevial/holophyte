@@ -125,6 +125,7 @@ test("a Done today row draws the merged state as an outlined check circle", asyn
   const glyph = rowOf("DEMO-10").querySelector("[data-cell=status] [role=img]")!;
   expect([glyph.getAttribute("aria-label"), glyph.getAttribute("data-state")]).toEqual(["merged", "merged"]);
   expect(glyph.querySelector("circle")!.closest("[fill]")!.getAttribute("fill")).toBe("none");
+  for (const mark of glyph.querySelectorAll("circle, path")) expect(mark.closest("[stroke]")!.getAttribute("stroke")).toBe("currentColor");
   expect(glyph.querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
 });
 
@@ -135,8 +136,9 @@ test("compact density gives a Table row an important 34 px floor, under its comf
   const floors = declarations(utilities.build(Array.from(rowOf("DEMO-3").classList))).filter((entry) => entry.name === "min-height");
   const floorsUnder = (density: string | null) => {
     const page = document.implementation.createHTMLDocument();
+    page.documentElement.replaceChild(page.importNode(document.body, true), page.body);
     if (density != null) page.documentElement.setAttribute("data-density", density);
-    const row = page.body.appendChild(page.importNode(rowOf("DEMO-3"), true));
+    const row = page.getElementById(rowOf("DEMO-3").id)!;
     const named = (selector: string) => selector.replace(/\.((?:\\.|[\w-])+)/g, (_, name: string) => (row.classList.contains(name.replace(/\\(.)/g, "$1")) ? "*" : ":not(*)"));
     return floors.filter((entry) => row.matches(named(entry.path.join(" "))));
   };

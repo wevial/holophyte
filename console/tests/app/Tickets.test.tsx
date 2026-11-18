@@ -259,6 +259,7 @@ test("a held host's ready card says it is held, and a merge of today says when i
   expect(lineOf("DEMO-10").textContent).toBe("merged 11:15");
   expect([glyphOf("DEMO-10").getAttribute("aria-label"), glyphOf("DEMO-10").getAttribute("data-state")]).toEqual(["merged", "merged"]);
   expect(glyphOf("DEMO-10").querySelector("circle")!.closest("[fill]")!.getAttribute("fill")).toBe("none");
+  for (const mark of glyphOf("DEMO-10").querySelectorAll("circle, path")) expect(mark.closest("[stroke]")!.getAttribute("stroke")).toBe("currentColor");
   expect(glyphOf("DEMO-10").querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
   expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
