@@ -158,8 +158,8 @@ export function Scouts() {
     <section aria-labelledby="page-title" className="flex flex-col gap-6 px-6 pt-3.5 pb-7 max-[720px]:px-4">
       <div className="flex flex-col gap-3">
         <PageHeader title="Scouts" count={{ text: `${rows.length} ${rows.length === 1 ? "scout" : "scouts"} · ${countScouts(rows, "running")} running` }} tools={newScout} />
-        <div className="flex items-center gap-2 [&>div]:shrink-0">
-          <ScoutFilters searchWidth="w-56 min-w-0 shrink!" />
+        <div className="flex flex-wrap items-center gap-2 [&>div]:shrink-0">
+          <ScoutFilters searchWidth="min-w-[120px] max-w-56 grow basis-[120px]" />
         </div>
       </div>
       {launching && form(false)}
