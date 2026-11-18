@@ -197,7 +197,7 @@ test("a search under All counts only its matches in the column heads and the cou
   await mount("#/tickets?project=demo", fleet(board).fetch);
   await search("login");
   expect(headCounts()).toEqual(["0", "1", "2", "0", "0"]);
-  expect(document.querySelector("[data-count-line]")?.textContent).toBe("demo · 3 tickets / 2 in flight / 0 need you / 1 ready");
+  expect(document.querySelector("[data-page-count]")?.textContent).toBe("3 tickets · 2 in flight · 0 need you · 1 ready");
 });
 
 test("a search or a state that leaves no ticket reads No tickets match in place of the board", async () => {

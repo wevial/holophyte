@@ -31,6 +31,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     MALFORMED,
     PASS,
     REQUEST_CHANGES,
+    RULED_FIX,
     Commit,
     FakeAgent,
     Idle,
@@ -421,7 +422,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
 
     # --- failure-pattern escalation --------------------------------------
 
-    def fail_once(self, tag="first"):
+    def fail_once(self, tag="first", *ruling):
         """Drive one whole run of the ticket that ends in a terminal FAIL.
 
         `tag` keeps a rerun's scripted commits distinct: a run after an
@@ -429,7 +430,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         files would leave the scripted `git commit` nothing to commit.
         """
         self.loop(Commit(f"{tag} cut"), REQUEST_CHANGES,
-                  Commit(f"{tag} fix round 1"), REQUEST_CHANGES,
+                  Commit(f"{tag} fix round 1"), REQUEST_CHANGES, *ruling,
                   Commit(f"{tag} fix round 2"), FAIL)
 
     def offer_again(self):
@@ -456,7 +457,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
     def fail_again(self, tag="retry"):
         """A second run that fails on the work: the second `work` strike."""
         self.drag_back()
-        self.fail_once(tag)
+        self.fail_once(tag, RULED_FIX)
 
     def status(self):
         (status,), = self.read("SELECT status FROM tickets")
@@ -683,7 +684,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         self.fail_again()  # second failure parks it
         self.intervene("human")
 
-        self.fail_once("third")  # first failure since the human acted
+        self.fail_once("third", RULED_FIX)  # first failure since the human acted
 
         self.assertEqual(self.status(), "in_flight")  # not re-parked
 
@@ -716,7 +717,7 @@ class LoopTests(AbortTurnCases, PauseFailureCases, FailureKindCases,
         self.fail_again()
         self.intervene("supervisor")
 
-        self.fail_once("third")
+        self.fail_once("third", RULED_FIX)
 
         self.assertEqual(self.status(), "blocked_on_operator")
 
