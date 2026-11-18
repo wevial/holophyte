@@ -1,11 +1,13 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { compile } from "tailwindcss";
 import type { Board, BoardColumn, BoardTicket, ShippedRow, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
+import { declarations } from "../cssTokens";
 import { blocked, ciPark, DEMO, failed, merged, MINUTE, NOW, SERVE, WRITER } from "./needsFleet";
 
 const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status;
@@ -98,6 +100,7 @@ test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog a
   await press("Table");
   const heads = document.querySelector("[data-table-heads]")!;
   expect(Array.from(heads.children, (head) => head.textContent)).toEqual(["Status", "Key", "Title", "Stage", "Est."]);
+  for (const element of [heads, ...heads.children]) expect(element.className).not.toMatch(/\buppercase\b|\btracking-/);
   expect(rowsIn().map(cells)).toEqual([
     ["Needs you", "DEMO-4", "DEMO-4 title", "question open 8h 02m", ""],
     ["Needs you", "DEMO-11", "DEMO-11 title", "failed · verify failed", ""],
@@ -114,6 +117,35 @@ test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog a
   await mount("#/tickets?project=demo", seeded);
   expect(view().getByRole("button", { name: "Table" }).getAttribute("aria-pressed")).toBe("true");
   expect(keysIn()).toHaveLength(8);
+});
+
+test("a Done today row draws the merged state as an outlined check circle", async () => {
+  await mount("#/tickets?project=demo", seeded);
+  await press("Table");
+  const glyph = rowOf("DEMO-10").querySelector("[data-cell=status] [role=img]")!;
+  expect([glyph.getAttribute("aria-label"), glyph.getAttribute("data-state")]).toEqual(["merged", "merged"]);
+  expect(glyph.querySelector("circle")!.closest("[fill]")!.getAttribute("fill")).toBe("none");
+  for (const mark of glyph.querySelectorAll("circle, path")) expect(mark.closest("[stroke]")!.getAttribute("stroke")).toBe("currentColor");
+  expect(glyph.querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
+});
+
+test("compact density gives a Table row an important 34 px floor, under its comfortable height", async () => {
+  await mount("#/tickets?project=demo", seeded);
+  await press("Table");
+  const utilities = await compile("@theme { --spacing: 0.25rem; } @tailwind utilities;", { base: import.meta.dir });
+  const floors = declarations(utilities.build(Array.from(rowOf("DEMO-3").classList))).filter((entry) => entry.name === "min-height");
+  const floorsUnder = (density: string | null) => {
+    const page = document.implementation.createHTMLDocument();
+    page.documentElement.replaceChild(page.importNode(document.body, true), page.body);
+    if (density != null) page.documentElement.setAttribute("data-density", density);
+    const row = page.getElementById(rowOf("DEMO-3").id)!;
+    const named = (selector: string) => selector.replace(/\.((?:\\.|[\w-])+)/g, (_, name: string) => (row.classList.contains(name.replace(/\\(.)/g, "$1")) ? "*" : ":not(*)"));
+    return floors.filter((entry) => row.matches(named(entry.path.join(" "))));
+  };
+  const comfortable = floorsUnder(null);
+  expect(floorsUnder("compact").filter((entry) => !comfortable.includes(entry)).map((entry) => entry.value)).toEqual(["34px !important"]);
+  expect(comfortable.map((entry) => parseFloat(entry.value))).toEqual([expect.any(Number)]);
+  expect(parseFloat(comfortable[0]!.value)).toBeGreaterThan(34);
 });
 
 test("under 820 px the heading row hides and a row's title wraps onto its own line under status and key", async () => {

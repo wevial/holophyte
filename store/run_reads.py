@@ -688,13 +688,16 @@ class RecentFailedRun:
     boardState: str | None = None
     triage: dict | None = None
     title: str | None = None
+    requeued: bool = False
 
 
 FAILED_RUN_COLUMNS = (
     "SELECT r.id, t.linearIdentifier, r.outcomeReason, r.endedAt,"
     " t.status, r.attempt, r.prUrl, t.lastRunId, t.activeRunId, t.url, t.boardState,"
     " t.title, (SELECT e.payload FROM runEvents e WHERE e.runId = r.id"
-    "  AND e.kind = 'failure_triage' ORDER BY e.seq DESC LIMIT 1)"
+    "  AND e.kind = 'failure_triage' ORDER BY e.seq DESC LIMIT 1),"
+    " EXISTS (SELECT 1 FROM interventions i WHERE i.runId = r.id"
+    "  AND i.\"action\" = 'requeue')"
     " FROM runs r JOIN tickets t ON t.id = r.ticketId")
 
 
@@ -705,7 +708,8 @@ def _failed_run(row):
                            prUrl=row[6], lastRunId=row[7], activeRunId=row[8],
                            ticketUrl=row[9], boardState=row[10],
                            title=row[11],
-                           triage=json.loads(row[12]) if row[12] else None)
+                           triage=json.loads(row[12]) if row[12] else None,
+                           requeued=bool(row[13]))
 
 
 def recent_failed_runs(conn, since_ms):

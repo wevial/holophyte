@@ -216,8 +216,12 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   await mount("#/tickets?project=demo", fleet({ board, runs: [reviewing] }).fetch);
   const card = cardOf("DEMO-3");
   expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
+  expect(card.querySelector("[data-time-box] .sr-only")?.textContent).toBe(" time box");
   expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
-  expect(within(card).getByRole("heading").classList).toContain("font-read");
+  const foot = within(card).getByRole("heading").nextElementSibling!;
+  expect(Array.from(foot.children, (part) => part.hasAttribute("data-state-line") || part.hasAttribute("data-time-box"))).toEqual([true, true]);
+  expect(foot.classList).toContain("flex");
+  expect(Array.from(foot.classList).filter((name) => /^(flex-col|flex-col-reverse|flex-wrap|flex-wrap-reverse|block|grid|contents|hidden|invisible|sr-only)!?$/.test(name.split(":").at(-1)!))).toEqual([]);
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
@@ -247,32 +251,37 @@ test("each card's line says what its ticket waits on, why it failed, how long it
   expect(glyphOf("DEMO-8").querySelector(".state-march")).not.toBeNull();
 });
 
-test("a held host's ready card says it is held, and a merge of today says when it merged and keeps its time box", async () => {
+test("a held host's ready card says it is held, and a merge of today says when it merged under an outlined check circle and keeps its time box", async () => {
   const board = boardOf({ ready: ["DEMO-2"] });
   await mount("#/tickets?project=demo", fleet({ board, admission: "held", shipped: [{ ...merged(10, "DEMO-10", NOW - 45 * MINUTE), estimate_min: 25 }] }).fetch);
   expect(lineOf("DEMO-2").textContent).toBe("held with demo");
   expect(glyphOf("DEMO-2").getAttribute("data-state")).toBe("held");
   expect(lineOf("DEMO-10").textContent).toBe("merged 11:15");
+  expect([glyphOf("DEMO-10").getAttribute("aria-label"), glyphOf("DEMO-10").getAttribute("data-state")]).toEqual(["merged", "merged"]);
+  expect(glyphOf("DEMO-10").querySelector("circle")!.closest("[fill]")!.getAttribute("fill")).toBe("none");
+  for (const mark of glyphOf("DEMO-10").querySelectorAll("circle, path")) expect(mark.closest("[stroke]")!.getAttribute("stroke")).toBe("currentColor");
+  expect(glyphOf("DEMO-10").querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
   expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
 
-test("cards keep their column looks and use semibold reading titles for Ready, medium for done and backlog", async () => {
+test("cards keep their need, done, backlog and plain looks, and no card title uses the reading face", async () => {
   await mount("#/tickets?project=demo", fleet(demo).fetch);
   const looks = ["Needs you", "Done today", "Backlog", "Ready"].map((label) => cardsIn(label)[0]!);
   expect(looks.map((card) => card.getAttribute("data-look"))).toEqual(["need", "done", "backlog", "plain"]);
-  const [, done, backlog, plain] = looks;
-  expect(Array.from(within(plain!).getByRole("heading").classList)).toEqual(expect.arrayContaining([
-    "font-read", "font-semibold", "text-[15px]", "leading-[1.35]",
-  ]));
-  for (const card of [done!, backlog!]) {
-    expect(Array.from(within(card).getByRole("heading").classList)).toEqual(expect.arrayContaining([
-      "font-read", "font-medium", "text-[15px]", "leading-[1.35]",
-    ]));
-  }
+  for (const card of screen.getAllByRole("article")) expect(within(card).getByRole("heading").classList).not.toContain("font-read");
+  const [need, done, backlog, plain] = looks;
+  expect(need!.className).toContain("var(--need-edge)");
   expect(backlog!.className).toContain("border-dashed");
-  expect(done!.className).toContain("bg-live-wash");
-  expect(plain!.className).not.toContain("border-dashed");
-  expect(plain!.className).not.toContain("bg-live-wash");
+  expect(backlog!.classList).toContain("bg-transparent");
+  expect(backlog!.classList).not.toContain("bg-raised");
+  for (const card of [need!, done!, plain!]) expect(card.className).not.toContain("border-dashed");
+  expect(plain!.className).not.toContain("var(--need-edge)");
+  for (const card of [need!, done!, plain!]) expect(card.classList).toContain("bg-raised");
+  const fillAndEdge = (card: Element) => Array.from(card.classList).filter((name) => /(^|:|!)(bg|shadow)-|!$/.test(name));
+  const raised = ["bg-raised", "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]", "shadow-[inset_0_0_0_1px_var(--hair)]"];
+  for (const card of [done!, plain!]) expect(fillAndEdge(card).toSorted()).toEqual(raised);
+  const inkOf = (card: Element) => Array.from(within(card as HTMLElement).getByRole("heading").classList).find((name) => name.startsWith("text-ink"));
+  expect([done!, backlog!, plain!].map(inkOf)).toEqual(["text-ink-2", "text-ink-3", "text-ink"]);
 });
 
 const viewsFleet = () =>

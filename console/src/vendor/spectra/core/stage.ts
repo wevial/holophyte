@@ -1,15 +1,24 @@
-// Vendored from wevial/spectra@9f2195d packages/core/src/stage.ts (MIT, see ../LICENSE), trimmed to what the haze uses.
+// Vendored from wevial/spectra@d34e0f8 packages/core/src/stage.ts (MIT, see ../LICENSE), given a held option that keeps adaptive resolution off a still frame and destroyStages for a mount that threw.
 // Host plumbing every effect needs: a canvas filling its container, a WebGL2
-// context, DPR-capped sizing, and a render loop that pauses while the tab is
-// hidden or the canvas is scrolled out of view.
+// context, DPR-capped sizing, mouse tracking in GL uv space, and a render loop
+// that pauses while the tab is hidden or the canvas is scrolled out of view.
 // Resolution adapts to the GPU: each frame is timed (GPU timer queries where
 // available) and the drawing buffer shrinks when frames run over budget.
 
 import { AdaptiveResolution } from './resolution';
 
+export interface Pointer {
+  x: number;        // GL uv, origin bottom-left
+  y: number;
+  dx: number;       // movement accumulated since the last frame
+  dy: number;
+  active: boolean;  // false until the first move, and after the mouse leaves
+}
+
 export interface Stage {
   gl: WebGL2RenderingContext;
   canvas: HTMLCanvasElement;
+  pointer: Pointer;
   reducedMotion: MediaQueryList;
   dprCap: number;
   /** Device px per CSS px actually rendered: DPR, capped, times the adaptive scale. */
@@ -32,6 +41,15 @@ export interface StageOptions {
   /** GPU ms per frame the adaptive resolution aims to stay under (default 6). */
   budgetMs?: number;
   onResize?: () => void;
+  /** True while the effect holds one still frame, whose frame times are the page's and must not shrink the drawing buffer. */
+  held?: () => boolean;
+}
+
+const stagesIn = new WeakMap<HTMLElement, Set<Stage>>();
+
+/** Destroys every stage still live in `container`, such as one left by an effect whose mount threw after creating it. */
+export function destroyStages(container: HTMLElement): void {
+  stagesIn.get(container)?.forEach((stage) => stage.destroy());
 }
 
 /** Returns null when WebGL2 (or float targets, if asked) is unavailable. */
@@ -54,7 +72,28 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
   const gl: WebGL2RenderingContext = context;
 
   const ac = new AbortController();
+  const listen = { passive: true, signal: ac.signal } as const;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+  // Mouse only — touch is left free for scrolling/gestures. Coordinates are
+  // relative to the canvas, so an effect can live in any box on the page.
+  const pointer: Pointer = { x: 0.5, y: 0.5, dx: 0, dy: 0, active: false };
+  window.addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const r = canvas.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = 1 - (e.clientY - r.top) / r.height;
+    const inside = x >= 0 && x <= 1 && y >= 0 && y <= 1;
+    if (pointer.active && inside) {
+      pointer.dx += x - pointer.x;
+      pointer.dy += y - pointer.y;
+    }
+    pointer.x = x;
+    pointer.y = y;
+    pointer.active = inside;
+  }, listen);
+  document.addEventListener('pointerleave', () => { pointer.active = false; }, listen);
+  window.addEventListener('blur', () => { pointer.active = false; }, listen);
 
   const adaptive = opts.adaptive === false ? null : new AdaptiveResolution({ budgetMs: opts.budgetMs });
   // GPU time per frame, read back a few frames late. Disjoint results
@@ -72,6 +111,7 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
   const stage: Stage = {
     gl,
     canvas,
+    pointer,
     reducedMotion,
     dprCap: opts.dprCap ?? 2,
     get scale() {
@@ -104,6 +144,7 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
       io.disconnect();
       gl.getExtension('WEBGL_lose_context')?.loseContext();
       canvas.remove();
+      stagesIn.get(container)?.delete(stage);
     },
   };
 
@@ -120,7 +161,8 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
         gl.deleteQuery(q);
       }
     }
-    if (adaptive?.sample(rawDt, gpuMs) && stage.resize()) {
+    const held = reducedMotion.matches || !!opts.held?.();
+    if (!held && adaptive?.sample(rawDt, gpuMs) && stage.resize()) {
       gpuMs = undefined;
       opts.onResize?.();
     }
@@ -132,6 +174,8 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
       gl.endQuery(timer!.TIME_ELAPSED_EXT);
       queries.push(q);
     }
+    pointer.dx = 0;
+    pointer.dy = 0;
     schedule();
   }
 
@@ -161,10 +205,23 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
   });
   io.observe(canvas);
 
+  // Resizing the canvas clears its drawing buffer, and ResizeObserver runs
+  // after this frame's rAF draw but before paint, so without a redraw here
+  // every resize step paints one blank frame: a black flash while dragging.
+  // A zero-length frame redraws in place; pointer deltas it consumes are
+  // cleared so the next tick doesn't apply them twice.
   const ro = new ResizeObserver(() => {
-    if (stage.resize()) opts.onResize?.();
+    if (!stage.resize()) return;
+    opts.onResize?.();
+    if (frameFn && visible && onScreen) {
+      frameFn(0, 0);
+      pointer.dx = 0;
+      pointer.dy = 0;
+    }
   });
   ro.observe(canvas);
+  if (!stagesIn.has(container)) stagesIn.set(container, new Set());
+  stagesIn.get(container)!.add(stage);
 
   stage.resize();
   return stage;
