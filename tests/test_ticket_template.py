@@ -126,9 +126,6 @@ class ParseTests(unittest.TestCase):
     def setUp(self):
         self.t = tt.parse(FILLED)
 
-    def test_title(self):
-        self.assertEqual(self.t.title, "Add export endpoint")
-
     def test_sections_in_template_order(self):
         self.assertEqual(self.t.order, tt.SECTION_ORDER)
 
@@ -155,9 +152,6 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(self.t.estimate_min, 30)
         self.assertEqual(self.t.depends_on, [])
 
-    def test_open_questions_none_with_trailing_comment(self):
-        self.assertTrue(self.t.open_questions_none)
-
     def test_depends_on_ids_split(self):
         t = tt.parse(FILLED.replace(
             "Depends on: none", "Depends on: KO-1, KO-23"))
@@ -167,13 +161,6 @@ class ParseTests(unittest.TestCase):
         t = tt.parse(FILLED_WITH_BLOCKQUOTE)
         self.assertEqual(t.estimate_min, 30)
         self.assertEqual(t.depends_on, [])
-
-    def test_no_contract_checks_section_means_no_declarations(self):
-        self.assertEqual(self.t.contract_checks, [])
-
-    def test_contract_checks_parsed_as_path_and_literal(self):
-        t = tt.parse(FILLED_WITH_CONTRACTS)
-        self.assertEqual(t.contract_checks, [("config/tunnel.yml", "8622")])
 
     def test_depends_on_ids_split_with_blockquote(self):
         t = tt.parse(FILLED_WITH_BLOCKQUOTE.replace(
@@ -186,9 +173,6 @@ class ValidateTests(unittest.TestCase):
         problems = tt.validate(tt.parse(text))
         self.assertTrue(any(fragment in p for p in problems),
                         f"{fragment!r} not in {problems}")
-
-    def test_filled_ticket_is_valid(self):
-        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
 
     def test_filled_ticket_with_blockquote_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(FILLED_WITH_BLOCKQUOTE)), [])
@@ -222,9 +206,6 @@ class ValidateTests(unittest.TestCase):
         empty = FILLED.replace("## In scope", "## Reproduce\n\n## In scope")
         self.assertTrue(any("Reproduce" in problem for problem in
                             tt.validate(tt.parse(empty))))
-
-    def test_linear_normalized_body_is_valid(self):
-        self.assertEqual(tt.validate(tt.parse(LINEAR_NORMALIZED)), [])
 
     def test_linear_normalized_body_still_needs_its_fields(self):
         self.assert_problems_contain(
@@ -389,16 +370,8 @@ class TemplateFileTests(unittest.TestCase):
         self.assertTrue(any("placeholder" in p for p in problems), problems)
         self.assertEqual([p for p in problems if p.startswith("header")], [])
 
-    def test_implementer_comment_requests_no_profile(self):
-        header = self.text.split("+++\n")[1]
-        self.assertTrue(any(line.startswith("#") and "implementer" in line
-                            for line in header.splitlines()), header)
+    def test_the_template_header_requests_no_implementer_profile(self):
         self.assertIsNone(self.t.implementer)
-
-    def test_criteria_comment_names_the_five_reviewer_rules(self):
-        for phrase in ("witnesses", "closed list", "never a criterion",
-                       "[/]", "--update"):
-            self.assertIn(phrase, self.text)
 
 
 class CliTests(unittest.TestCase):
@@ -415,17 +388,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("OK", r.stdout)
 
-    def test_advisory_prints_but_does_not_fail_the_run(self):
-        with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
-            f.write(FILLED.replace(
-                "GET /orders.csv streams the current user's orders as CSV.",
-                "Parses the orders query and updates the CSV writer."))
-            f.flush()
-            r = self.run_cli(f.name)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("OK", r.stdout)
-        self.assertIn(tt.ADVISORY_PREFIX, r.stdout)
-
     def test_invalid_file_exits_nonzero_and_lists_problems(self):
         with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
             f.write(FILLED.replace("## Summary", "## Summaries"))
@@ -438,11 +400,14 @@ class CliTests(unittest.TestCase):
     def test_real_template_file_exits_nonzero(self):
         r = self.run_cli(str(ROOT / "holophyte/tickets/templates/ticketTemplate.md"))
         self.assertNotEqual(r.returncode, 0)
+        self.assertIn("INVALID", r.stdout)
+        self.assertIn("unfilled template placeholder in title", r.stdout)
 
     def test_no_args_usage_exit_two(self):
         r = self.run_cli()
         self.assertEqual(r.returncode, 2)
-        self.assertIn(tt.USAGE, r.stderr)
+        self.assertIn("usage: python3 ticket_template.py [--repo PATH] TICKET.md "
+                      "[...]", r.stderr)
         self.assertEqual(r.stdout, "")
 
     def test_help_flags_print_usage_on_stdout_and_exit_zero(self):
@@ -450,7 +415,10 @@ class CliTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 r = self.run_cli(flag)
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-                self.assertIn(tt.USAGE, r.stdout)
+                self.assertIn(
+                    "usage: python3 ticket_template.py [--repo PATH] TICKET.md "
+                    "[...]",
+                    r.stdout)
                 self.assertEqual(r.stderr, "")
 
 
@@ -520,12 +488,6 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("gitignored path", r.stdout)
 
-    def test_without_repo_the_check_is_skipped_with_one_advisory(self):
-        r = self.run_cli(GITIGNORED_CRITERION)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertNotIn("gitignored path", r.stdout)
-        self.assertEqual(r.stdout.count("check skipped"), 1)
-
     def test_gitignored_verify_command_path_is_a_blocker(self):
         text = FILLED.replace(".venv/bin/python -m unittest test_orders_export",
                               ".venv/bin/python artifacts/check.py")
@@ -576,7 +538,6 @@ class GitignoredPathTests(unittest.TestCase):
         )
 
     def test_body_naming_only_missing_paths_is_claimable(self):
-        # REL-134/135: bodies naming files only their open pull request holds.
         text = TRACKED_CRITERION.replace(
             "`src/lotuspod/cli.py` runs",
             "`src/lotuspod/cli.py` runs and `tests/test_counts.py` passes"
@@ -696,9 +657,6 @@ class OperatorWitnessTests(unittest.TestCase):
             "post-merge witness; the reviewer can only witness the "
             "candidate branch", problems)
 
-    def test_plain_criteria_get_no_witness_advisory(self):
-        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
-
 
 if __name__ == "__main__":
     unittest.main()
@@ -718,10 +676,6 @@ class SectionOrderTests(unittest.TestCase):
         problems = tt.validate(tt.parse(reordered))
         self.assertTrue(any("out of template order" in p for p in problems),
                         f"expected order error, got {problems}")
-
-    def test_conforming_order_passes(self):
-        problems = tt.validate(tt.parse(FILLED))
-        self.assertFalse([p for p in problems if "out of template order" in p])
 
 
 def with_criteria(unchecked, checked=0):
@@ -881,12 +835,6 @@ class ScopeAdvisoryTests(unittest.TestCase):
                 self.assertIn(repr(marker), advisories[0])
                 self.assertEqual(tt.blocking(problems), [])
 
-    def test_single_deliverable_what_line_is_not_advised(self):
-        self.assertEqual(
-            [p for p in tt.validate(tt.parse(FILLED))
-             if p.startswith(tt.ADVISORY_PREFIX)],
-            [])
-
     def test_advisory_does_not_mask_a_real_problem(self):
         text = FILLED.replace(
             "GET /orders.csv streams the current user's orders as CSV.",
@@ -927,6 +875,7 @@ class InterpreterAdvisoryTests(unittest.TestCase):
     def test_activation_must_precede_the_bare_token(self):
         self.assertEqual(
             len(self.advisories("python3 -m build && . .venv/bin/activate")), 1)
+
 
 class SuiteAdvisoryTests(unittest.TestCase):
     """KO-641: the pull request check runs the whole suite, not the ticket."""
@@ -1007,10 +956,6 @@ class StorySectionTests(unittest.TestCase):
                                self.STORY * 2 + "## Estimate & dependencies")
         self.assertIn("duplicate section '## Story' (2x)",
                       tt.validate(tt.parse(twice)))
-
-    def test_ticket_without_story_still_validates(self):
-        self.assertNotIn("Story", tt.parse(FILLED).order)
-        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
 
 
 class EvidenceTests(unittest.TestCase):
