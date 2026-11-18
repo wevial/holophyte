@@ -121,10 +121,6 @@ function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
   }
 }
 
-function writeEffectSettings(settings: EffectSettings): void {
-  writeStored(EFFECTS_KEY, Object.keys(settings).length ? JSON.stringify(settings) : null);
-}
-
 function readMotion(fallback = true): boolean {
   try {
     return localStorage.getItem(MOTION_KEY) !== "off";
@@ -232,7 +228,7 @@ const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
-const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, () => {});
+const effectSettingsStore = appearanceStore(readEffectSettings, (settings) => writeStored(EFFECTS_KEY, Object.keys(settings).length ? JSON.stringify(settings) : null), () => {});
 const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
