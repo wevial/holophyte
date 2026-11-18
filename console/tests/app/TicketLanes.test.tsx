@@ -139,7 +139,7 @@ test("Group by Story holds each story's children, merged ones in Done today, the
   expect(keysIn(rest, "Ready")).toEqual(["DEMO-24"]);
 });
 
-test("a lane's heading folds its grid, and the fold-all link folds every lane then reads Expand all lanes", async () => {
+test("a lane's heading folds its grid, and the fold-all button folds every lane then reads Expand all lanes", async () => {
   await mount("#/tickets", projects);
   await press("Project");
   const [demo, writer] = lanes() as [HTMLElement, HTMLElement];
@@ -149,6 +149,7 @@ test("a lane's heading folds its grid, and the fold-all link folds every lane th
   expect((demo.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(true);
   expect((writer.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(false);
 
+  expect(within(screen.getByRole("group", { name: "Group by" })).getAllByRole("button").map((button) => button.getAttribute("aria-pressed"))).toEqual(["true", "false", "false"]);
   await press("Collapse all lanes");
   expect(lanes().map((lane) => headOf(lane).getAttribute("aria-expanded"))).toEqual(["false", "false"]);
   expect(screen.getByRole("button", { name: "Expand all lanes" })).toBeTruthy();
