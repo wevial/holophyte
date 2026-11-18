@@ -679,24 +679,49 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn("the rewind would overwrite work", self.refused("--note", "ok"))
         self.assertEqual((self.wt / "work").read_text(), "local only\n")
 
-    def test_an_ignored_non_ascii_file_the_rewind_would_overwrite_is_refused(
-            self):
+    def reviewed_then_ignored(self, name, pattern):
+        """R tracks `name`; W stops tracking it and ignores `pattern`."""
         self.branch_with_wip()
         git(self.wt, "reset", "-q", "--hard", self.earlier)
-        (self.wt / "r\u00e9sum\u00e9").write_text("reviewed\n")
-        git(self.wt, "add", "r\u00e9sum\u00e9")
+        (self.wt / name).parent.mkdir(exist_ok=True)
+        (self.wt / name).write_text("reviewed\n")
+        git(self.wt, "add", "--", name)
         self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
-        git(self.wt, "rm", "-q", "r\u00e9sum\u00e9")
-        (self.wt / ".gitignore").write_text("r\u00e9sum\u00e9\n")
+        git(self.wt, "rm", "-rq", "--", name.split("/")[0])
+        (self.wt / ".gitignore").write_text(pattern + "\n")
         git(self.wt, "add", ".gitignore")
         git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
-        (self.wt / "r\u00e9sum\u00e9").write_text("local only\n")
+
+    def test_an_ignored_file_with_a_non_ascii_carriage_return_name_is_kept(
+            self):
+        name = "r\u00e9sum\u00e9\r.txt"
+        self.reviewed_then_ignored(name, "*.txt")
+        (self.wt / name).write_text("local only\n")
         self.sweep()
 
-        self.assertIn("the rewind would overwrite r\u00e9sum\u00e9",
+        self.assertIn(f"the rewind would overwrite {name}",
                       self.refused("--note", "ok"))
-        self.assertEqual((self.wt / "r\u00e9sum\u00e9").read_text(),
-                         "local only\n")
+        self.assertEqual((self.wt / name).read_text(), "local only\n")
+
+    def test_an_ignored_file_where_a_reviewed_directory_goes_is_kept(self):
+        self.reviewed_then_ignored("cache/input", "cache")
+        (self.wt / "cache").write_text("local only\n")
+        self.sweep()
+
+        self.assertIn("the rewind would overwrite cache",
+                      self.refused("--note", "ok"))
+        self.assertEqual((self.wt / "cache").read_text(), "local only\n")
+
+    def test_a_reviewed_file_with_a_non_utf8_name_is_rewound(self):
+        name = os.fsdecode(b"caf\xe9")
+        self.reviewed_then_ignored(name, "nothing")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual((self.wt / name).read_text(), "reviewed\n")
 
     def test_a_tracked_directory_replacing_a_reviewed_file_is_rewound(self):
         self.branch_with_wip()
@@ -728,18 +753,64 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assert_released_at_reviewed()
 
     @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
-    def test_a_wip_file_the_rewind_cannot_remove_is_refused(self):
+    def test_a_dropped_ref_git_cannot_log_leaves_the_branch_at_its_tip(self):
+        self.branch_with_wip()
+        self.sweep()
+        reflog = (self.repo / ".git" / "logs" / "refs" / "holophyte"
+                  / "dropped" / str(self.run))
+        reflog.parent.mkdir(parents=True)
+        reflog.write_text("")
+        reflog.chmod(0o444)
+        self.addCleanup(reflog.chmod, 0o644)
+
+        self.assertIn("cannot lock the refs", self.refused("--note", "ok"))
+
+    def wip_in(self, mode):
+        """W adds stuck/new, in a directory then given `mode`."""
         self.branch_with_wip()
         (self.wt / "stuck").mkdir()
         (self.wt / "stuck" / "new").write_text("wip only\n")
         git(self.wt, "add", "stuck")
         git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
         self.sweep()
-        (self.wt / "stuck").chmod(0o555)
+        (self.wt / "stuck").chmod(mode)
         self.addCleanup((self.wt / "stuck").chmod, 0o755)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_wip_file_the_rewind_cannot_remove_is_refused(self):
+        self.wip_in(0o555)
 
         self.assertIn("could not remove stuck/new",
                       self.refused("--note", "ok"))
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_wip_file_in_an_unlistable_directory_is_refused(self):
+        self.wip_in(0o111)
+
+        self.assertIn("could not remove stuck/new",
+                      self.refused("--note", "ok"))
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_checkout_failing_part_way_restores_the_worktree(self):
+        self.branch_with_wip()
+        git(self.wt, "reset", "-q", "--hard", self.earlier)
+        (self.wt / "zz").mkdir()
+        (self.wt / "zz" / "f").write_text("reviewed\n")
+        git(self.wt, "add", "zz")
+        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
+        (self.wt / "zz" / "f").write_text("half an edit\n")
+        git(self.wt, "add", "zz")
+        self.wip = self.commit("half an edit\n",
+                               "WIP: implementer ended mid-edit")
+        self.sweep()
+        (self.wt / "zz").chmod(0o555)
+        self.addCleanup((self.wt / "zz").chmod, 0o755)
+
+        self.assertIn("cannot check out", self.refused("--note", "ok"))
+
+        (self.wt / "zz").chmod(0o755)
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
 
     def test_a_run_failed_on_verify_is_refused_as_before(self):
         self.branch_with_wip()

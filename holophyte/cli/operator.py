@@ -1,3 +1,4 @@
+import contextlib
 import getpass
 import json
 import os
@@ -410,7 +411,7 @@ def _reviewed_commit(conn, run_id):
 
 def _git(repo, *args):
     return subprocess.run(["git", *args], cwd=repo, capture_output=True,
-                          text=True)
+                          text=True, errors="replace")
 
 
 def _set_aside(repo, worktree, run_id, branch, sha, identifier):
@@ -442,9 +443,7 @@ def _set_aside(repo, worktree, run_id, branch, sha, identifier):
             " not contain; nothing approved")
     dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
                  cwd=repo).split()
-    why = _rewind(worktree, [f"update refs/heads/{branch} {sha} {tip}",
-                             f"update {ref} {tip} {kept or NO_REF}"],
-                  sha, tip)
+    why = _rewind(worktree, branch, ref, kept or NO_REF, sha, tip)
     if why is not None:
         raise SystemExit(f"{refused}{why}; {branch} left at {tip[:12]};"
                          " nothing approved")
@@ -454,28 +453,38 @@ def _set_aside(repo, worktree, run_id, branch, sha, identifier):
 NO_REF = "0" * 40
 
 
-def _rewind(worktree, updates, sha, tip):
+def _rewind(worktree, branch, ref, kept, sha, tip):
     lock = subprocess.Popen(["git", "update-ref", "--stdin"], cwd=worktree,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True)
-    lock.stdin.write("start\n" + "".join(f"{u}\n" for u in updates)
-                     + "prepare\n")
+                            stderr=subprocess.PIPE, text=True,
+                            errors="replace")
+    lock.stdin.write(f"start\nupdate refs/heads/{branch} {sha} {tip}\n"
+                     "prepare\n")
     lock.stdin.flush()
     if [lock.stdout.readline() for _ in range(2)] != ["start: ok\n",
                                                       "prepare: ok\n"]:
         return f"cannot lock the refs: {lock.communicate()[1].strip()}"
+    aside = _git(worktree, "update-ref", ref, tip, kept)
+    if aside.returncode != 0:
+        lock.communicate("abort\n")
+        return f"cannot lock the refs: {aside.stderr.strip()}"
     why = _moved_tree(worktree, sha, tip)
     _, error = lock.communicate("abort\n" if why else "commit\n")
-    if lock.returncode != 0 and why is None:
+    if why is None and lock.returncode != 0 and _git(
+            worktree, "rev-parse", f"refs/heads/{branch}").stdout.strip() != sha:
         _git(worktree, "read-tree", "-m", "-u", sha, tip)
         why = f"cannot move the refs: {error.strip()}"
+    if why is not None:
+        _git(worktree, "update-ref", *(
+            ["-d", ref, tip] if kept == NO_REF else [ref, kept, tip]))
     return why
 
 
 def _paths(worktree, command, *args):
-    listed = _git(worktree, "--literal-pathspecs", command, "-z",
-                  *args).stdout
-    return [path for path in listed.split("\0") if path]
+    listed = subprocess.run(
+        ["git", "--literal-pathspecs", command, "-z", *args], cwd=worktree,
+        capture_output=True).stdout
+    return [os.fsdecode(path) for path in listed.split(b"\0") if path]
 
 
 def _untracked(worktree, paths):
@@ -483,20 +492,51 @@ def _untracked(worktree, paths):
         paths) else []
 
 
+def _holds_file(path):
+    return os.path.islink(path) or (os.path.lexists(path)
+                                    and not os.path.isdir(path))
+
+
+def _occupied(worktree, tip, added):
+    tracked = set(_paths(worktree, "ls-tree", "-r", "--name-only", tip))
+    occupied = set()
+    for path in added:
+        parts = path.split("/")
+        for depth in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:depth])
+            local = worktree / prefix
+            if prefix not in tracked and (_holds_file(local) or (
+                    depth == len(parts) and os.path.isdir(local)
+                    and _untracked(worktree, [prefix]))):
+                occupied.add(prefix)
+                break
+    return sorted(occupied)
+
+
+def _restore_files(worktree, added, edited):
+    for path in added:
+        if _holds_file(worktree / path):
+            with contextlib.suppress(OSError):
+                os.unlink(worktree / path)
+    changed = [path for path in _paths(worktree, "diff-files", "--name-only")
+               if path not in edited]
+    if changed:
+        _git(worktree, "checkout-index", "-f", "--", *changed)
+
+
 def _moved_tree(worktree, sha, tip):
     added, removed = (
         _paths(worktree, "diff", "--name-only", "--no-renames",
                f"--diff-filter={kind}", tip, sha) for kind in "AD")
-    present = [path for path in added if os.path.lexists(worktree / path)
-               and (os.path.islink(worktree / path)
-                    or not os.path.isdir(worktree / path)
-                    or _untracked(worktree, [path]))]
+    present = _occupied(worktree, tip, added)
     if present:
         return f"the rewind would overwrite {', '.join(present)} in {worktree}"
+    edited = set(_paths(worktree, "diff-files", "--name-only"))
     moved = _git(worktree, "read-tree", "-m", "-u", tip, sha)
     if moved.returncode != 0:
+        _restore_files(worktree, added, edited)
         return f"cannot check out {sha[:12]}: {moved.stderr.strip()}"
-    left = _untracked(worktree, removed)
+    left = [path for path in removed if _holds_file(worktree / path)]
     if left:
         _git(worktree, "update-index", "--add", "--", *left)
         _git(worktree, "read-tree", "-m", "-u", sha, tip)
