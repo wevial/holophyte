@@ -569,9 +569,19 @@ def _require_at_reviewed(repo, worktree, head, sha):
 
 def _rewind_origin(undo, repo, branch, sha, tip, pull):
     if "origin" not in _git(repo, "remote").stdout.split():
-        return
+        if pull is None:
+            return
+        raise _StepFailed(
+            f"no origin remote holds {branch}, so {pull} cannot be moved to"
+            f" the reviewed commit {sha[:12]}")
     head = f"refs/heads/{branch}"
-    url = _git(repo, "remote", "get-url", "--push", "origin").stdout.strip()
+    urls = _git(repo, "remote", "get-url", "--push", "--all", "origin"
+                ).stdout.split()
+    if len(urls) > 1:
+        raise _StepFailed(
+            f"origin pushes to {len(urls)} URLs, and a rewind one of them"
+            " rejects could not be undone on the others")
+    url = urls[0] if urls else ""
     fetched = _origin_tip(repo, "origin", head)
     pushed = fetched if url in ("", _git(
         repo, "remote", "get-url", "origin").stdout.strip()) \

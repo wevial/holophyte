@@ -1059,6 +1059,34 @@ class SweptApproveCliTests(unittest.TestCase):
             self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
                              self.wip)
 
+    def test_a_pull_request_with_no_origin_to_rewind_refuses(self):
+        self.branch_with_wip()
+        renamed = self.origin("upstream.git", self.wip)
+        git(self.repo, "remote", "add", "upstream", str(renamed))
+        self.sweep(pull=PULL)
+
+        self.assertIn(f"no origin remote holds {BRANCH}, so {PULL}",
+                      self.refused("--note", "ok"))
+        self.assertEqual(git(renamed, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_an_origin_pushing_to_two_urls_refuses_before_pushing(self):
+        self.branch_with_wip()
+        first, second = (self.origin(name, self.wip)
+                         for name in ("first.git", "second.git"))
+        git(self.repo, "remote", "add", "origin", str(first))
+        for bare in (first, second):
+            git(self.repo, "remote", "set-url", "--add", "--push", "origin",
+                str(bare))
+        git(self.root, "--git-dir", str(second), "config",
+            "receive.denyNonFastForwards", "true")
+        self.sweep(pull=PULL)
+
+        self.assertIn("origin pushes to 2 URLs", self.refused("--note", "ok"))
+        for bare in (first, second):
+            self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                             self.wip)
+
     def test_an_origin_a_rewind_would_not_reach_refuses_unpushed(self):
         """Behind R with a pull request open, or diverged from R though W
         merges it, origin could reach R only by publishing new commits."""
