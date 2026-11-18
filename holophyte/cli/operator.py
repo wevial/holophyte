@@ -284,8 +284,9 @@ def _requeue_writes(conn, ticket_id, note, force, amend):
     with store.transaction(conn):
         run_id = store.requeue(
             conn, ticket_id, note, force=force,
-            amend=None if amend is None else lambda: steered.append(
-                steer_notes.steer(conn, ticket_id, amend, getpass.getuser())))
+            amend=None if amend is None else lambda at: steered.append(
+                steer_notes.steer(conn, ticket_id, amend, getpass.getuser(),
+                                  now=at)))
     return run_id, steered[0] if steered else None
 
 

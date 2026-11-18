@@ -148,10 +148,16 @@ def requeue(conn, ticket_id, note, now=None, source="human", force=False,
                      " WHERE id = ?", (last_run_id,))
         walk_ticket(conn, ticket_id, "ready")
         if amend is not None:
-            amend()
+            amend(_after_end(conn, last_run_id))
             record_intervention(conn, last_run_id, "requeue", note,
                                 source=source, now=now)
     return last_run_id
+
+
+def _after_end(conn, run_id):
+    (ended,) = conn.execute("SELECT endedAt FROM runs WHERE id = ?",
+                            (run_id,)).fetchone()
+    return max(int(time.time() * 1000), (ended or 0) + 1)
 
 
 RELAUNCH_LIMIT = 2

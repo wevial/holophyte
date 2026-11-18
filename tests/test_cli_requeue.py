@@ -30,6 +30,7 @@ import store
 import store.read
 import store.steer_notes
 import store.tickets
+from holophyte.babysit import maintainer_notes
 from holophyte.board import linear_provider
 from holophyte.config.config_tables import board_config
 from holophyte.holo import cli as holo_cli
@@ -450,6 +451,23 @@ class RequeueAmendTests(RequeueTarget):
         self.assertEqual(self.status(), "ready")
         self.assertEqual(self.requeue_notes(), ["body corrected"])
         self.assertEqual(self.amendments(), [("DROP C1", "caller")])
+
+    def test_a_prose_amendment_on_a_released_park_reaches_the_next_run(self):
+        park_run(self.conn, self.run, "blocked_on_operator",
+                 "C1 cannot be met", park_kind="contradiction")
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.commit()
+
+        with patch("time.time", return_value=T0 / 1000 + 600):
+            self.cli("--requeue", "KO-1", "--note", "ruled",
+                     "--amend", "an empty list counts as worked")
+        self.assertEqual(self.status(), "ready")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        next_run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
+
+        self.assertIn("an empty list counts as worked",
+                      maintainer_notes.carry_amendments(self.conn, next_run,
+                                                        "the ticket"))
 
     def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
         self.fail_the_run()
