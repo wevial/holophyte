@@ -2,7 +2,7 @@ import { useId, useState, type CSSProperties, type ReactNode } from "react";
 import { SegmentedControl, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
 import {
-  FADES, FULL, OPACITIES, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useEffectSettings, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
+  FADES, FULL, OPACITIES, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useEffectSettings, useGrain, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
   type BandEffect, type HeaderEffect, type ReadingFont,
 } from "../appearance";
 import { KNOBS, THEME, type ChoiceKnob } from "../effectKnobs";
@@ -195,21 +195,26 @@ function KnobSlider({ label, value, range, onChange, unit = "" }: {
 }) {
   const shown = unit ? `${value}${unit}` : value.toFixed(decimals(range.step));
   return (
-    <div className="grid min-h-11 grid-cols-[80px_minmax(0,1fr)_64px] items-center gap-3">
+    <div className="grid h-[38px] grid-cols-[77px_minmax(0,1fr)_52px] items-center gap-3">
       <span aria-hidden="true" className="text-[13px] text-ink-2">{label}</span>
       <input type="range" aria-label={label} min={range.min} max={range.max} step={range.step} value={value}
-        onChange={(event) => onChange(Number(event.currentTarget.value))} className="h-11 min-w-0 accent-act" />
-      <output aria-label={`${label} value`} className="rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2">{shown}</output>
+        onChange={(event) => onChange(Number(event.currentTarget.value))} className="h-[38px] min-w-0 accent-act" />
+      <output aria-label={`${label} value`} className="rounded-pill border border-rule bg-paper-2 py-0.5 text-center font-mono text-[12px] text-ink-2">{shown}</output>
     </div>
   );
 }
 
 function KnobChoice({ knob, value, onChange }: { knob: ChoiceKnob; value: string; onChange: (value: string) => void }) {
   return (
-    <div className="grid min-h-11 grid-cols-[80px_minmax(0,1fr)] items-center gap-3 min-[1100px]:col-span-2">
+    <div className="grid min-h-[38px] grid-cols-[77px_minmax(0,1fr)] items-center gap-3 min-[1100px]:col-span-2">
       <span aria-hidden="true" className="text-[13px] text-ink-2">{knob.label}</span>
-      <div className="min-w-0 overflow-x-auto">
-        <Segmented label={knob.label} options={knob.choices.map((choice) => ({ value: choice, label: choice === THEME ? "Theme" : choice }))} value={value} onPick={onChange} />
+      <div role="group" aria-label={knob.label} className="flex h-[38px] min-w-0 items-stretch gap-0.5 overflow-x-auto rounded-[7px] bg-paper-2 p-[3px] shadow-[inset_0_0_0_1px_var(--hair)]">
+        {knob.choices.map((choice) => (
+          <button key={choice} type="button" aria-pressed={choice === value} onClick={() => onChange(choice)}
+            className="shrink-0 rounded-[5px] px-2.5 font-sans text-[13.5px] text-ink-3 transition-colors hover:text-ink aria-pressed:bg-canvas aria-pressed:font-medium aria-pressed:text-ink aria-pressed:shadow-[inset_0_1px_2px_rgb(0_0_0/0.35)]">
+            {choice === THEME ? "Theme" : choice}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -217,7 +222,6 @@ function KnobChoice({ knob, value, onChange }: { knob: ChoiceKnob; value: string
 
 function EffectCustomize({ effect }: { effect: BandEffect }) {
   const { values, set, changed, reset } = useEffectSettings(effect);
-  const { hazeStrength, setHazeStrength } = useHazeStrength();
   const heading = useId();
   return (
     <section aria-labelledby={heading} className={`mt-4 px-4 pt-3 pb-4 ${CARD}`}>
@@ -227,10 +231,10 @@ function EffectCustomize({ effect }: { effect: BandEffect }) {
           <ResetGlyph />Reset
         </button>
       </div>
-      <div className="mt-2 grid gap-x-7 gap-y-1 min-[1100px]:grid-cols-2">
+      <div className="mt-2.5 grid gap-x-7 gap-y-1 min-[1100px]:grid-cols-2">
         <KnobSlider label="Fade" value={Number(values.fade)} range={FADES} unit="%" onChange={(value) => set("fade", value)} />
         <KnobSlider label="Opacity" value={Number(values.opacity)} range={OPACITIES} unit="%" onChange={(value) => set("opacity", value)} />
-        {effect === "haze" && <KnobSlider label="Strength" value={hazeStrength} range={STRENGTHS} unit="%" onChange={setHazeStrength} />}
+        {effect === "haze" && <KnobSlider label="Strength" value={Number(values.strength)} range={STRENGTHS} unit="%" onChange={(value) => set("strength", value)} />}
         {KNOBS[effect].map((knob) => knob.kind === "choice"
           ? <KnobChoice key={knob.key} knob={knob} value={String(values[knob.key])} onChange={(value) => set(knob.key, value)} />
           : <KnobSlider key={knob.key} label={knob.label} value={Number(values[knob.key])} range={knob} onChange={(value) => set(knob.key, value)} />)}

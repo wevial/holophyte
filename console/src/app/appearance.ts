@@ -93,13 +93,13 @@ export function applyTextSize(percent: number, root: HTMLElement = document.docu
 }
 
 export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
-export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
 
 function validEntryValue(effect: BandEffect, key: string, value: unknown): value is KnobValue {
   if (key === "fade") return inRange(value, FADES);
   if (key === "opacity") return inRange(value, OPACITIES);
+  if (key === "strength") return effect === "haze" && inRange(value, STRENGTHS);
   return validKnob(effect, key, value);
 }
 
@@ -121,11 +121,11 @@ function parseEffectSettings(raw: string | null): EffectSettings {
   return settings;
 }
 
-type UnsavedEntries = Map<BandEffect, EffectEntry | null>;
+type UnsavedValues = Map<BandEffect, Map<string, KnobValue | null>>;
 
 let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
-let unsavedEntries: UnsavedEntries = new Map();
-let effectSettingsShown: [EffectSettings, UnsavedEntries, EffectSettings] = [{}, unsavedEntries, {}];
+let unsavedValues: UnsavedValues = new Map();
+let effectSettingsShown: [EffectSettings, UnsavedValues, EffectSettings] = [{}, unsavedValues, {}];
 
 function readStoredEffectSettings(): EffectSettings {
   const raw = localStorage.getItem(EFFECTS_KEY);
@@ -140,19 +140,22 @@ function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
   } catch {
     return fallback;
   }
-  if (!unsavedEntries.size) return stored;
-  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedEntries) {
+  if (!unsavedValues.size) return stored;
+  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedValues) {
     const shown = { ...stored };
-    for (const [effect, entry] of unsavedEntries) {
-      if (entry === null) delete shown[effect];
-      else shown[effect] = entry;
+    for (const [effect, values] of unsavedValues) {
+      const entry = { ...stored[effect] };
+      for (const [key, value] of values) {
+        if (value === null) delete entry[key];
+        else entry[key] = value;
+      }
+      if (Object.keys(entry).length) shown[effect] = entry;
+      else delete shown[effect];
     }
-    effectSettingsShown = [stored, unsavedEntries, shown];
+    effectSettingsShown = [stored, unsavedValues, shown];
   }
   return effectSettingsShown[2];
 }
-
-const sameEntry = (one: EffectEntry | undefined, other: EffectEntry | undefined) => JSON.stringify(one ?? null) === JSON.stringify(other ?? null);
 
 function writeEffectSettings(settings: EffectSettings): void {
   const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
@@ -163,13 +166,41 @@ function writeEffectSettings(settings: EffectSettings): void {
   } catch {
     stored = {};
   }
-  const unsaved: UnsavedEntries = new Map();
+  const unsaved: UnsavedValues = new Map();
   for (const effect of HEADER_EFFECTS) {
     if (effect === "none") continue;
-    if (!sameEntry(settings[effect], stored[effect])) unsaved.set(effect, settings[effect] ?? null);
+    const [wanted, saved] = [settings[effect] ?? {}, stored[effect] ?? {}];
+    const differing = new Map<string, KnobValue | null>();
+    for (const key of new Set([...Object.keys(wanted), ...Object.keys(saved)])) {
+      if (wanted[key] !== saved[key]) differing.set(key, wanted[key] ?? null);
+    }
+    if (differing.size) unsaved.set(effect, differing);
   }
-  unsavedEntries = unsaved;
+  unsavedValues = unsaved;
 }
+
+export function readHazeStrength(): number {
+  const strength = readEffectSettings().haze?.strength;
+  return typeof strength === "number" ? strength : FULL;
+}
+
+function moveSavedHazeStrength(): void {
+  try {
+    const legacy = localStorage.getItem(HAZE_STRENGTH_KEY);
+    if (legacy === null) return;
+    const strength = Number(legacy);
+    const settings = readStoredEffectSettings();
+    if (inRange(strength, STRENGTHS) && strength !== FULL && settings.haze?.strength === undefined) {
+      writeStored(EFFECTS_KEY, JSON.stringify({ ...settings, haze: { ...settings.haze, strength } }));
+      if (readStoredEffectSettings().haze?.strength !== strength) return;
+    }
+    localStorage.removeItem(HAZE_STRENGTH_KEY);
+  } catch {
+    return;
+  }
+}
+
+moveSavedHazeStrength();
 
 function readMotion(fallback = true): boolean {
   try {
@@ -282,11 +313,10 @@ const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
-const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, () => {});
+const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, (settings) => applyHazeStrength(Number(settings.haze?.strength ?? FULL)));
 const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
-const hazeStrengthStore = appearanceStore(readHazeStrength, writePercent(HAZE_STRENGTH_KEY), applyHazeStrength);
 
 function mediaQuery(media: string) {
   return {
@@ -316,7 +346,9 @@ export function applyCustomPick(): void {
 systemDark.subscribe(applyCustomPick);
 
 window.addEventListener("storage", (event) => {
-  if (event.key === EFFECTS_KEY || event.key === null) effectSettingsStore.reload();
+  if (event.key !== EFFECTS_KEY && event.key !== null) return;
+  effectSettingsStore.reload();
+  applyHazeStrength(readHazeStrength());
 });
 
 export function useTheme() {
@@ -362,13 +394,12 @@ export function useHeaderEffect() {
 }
 
 function knobDefaults(effect: BandEffect): EffectEntry {
-  return { fade: DEFAULT_FADE, opacity: FULL, ...Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, knob.initial])) };
+  return { fade: DEFAULT_FADE, opacity: FULL, ...(effect === "haze" && { strength: FULL }), ...Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, knob.initial])) };
 }
 
 /** An effect's Fade, Opacity and knobs over their defaults, with Haze's Strength; only values off their default are saved. */
 export function useEffectSettings(effect: BandEffect) {
   const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
-  const { hazeStrength, setHazeStrength } = useHazeStrength();
   const defaults = knobDefaults(effect);
   const saved = settings[effect];
   const set = (key: string, value: KnobValue) => {
@@ -379,12 +410,11 @@ export function useEffectSettings(effect: BandEffect) {
     else delete next[effect];
     effectSettingsStore.set(next);
   };
-  const changed = Object.entries(saved ?? {}).some(([key, value]) => value !== defaults[key]) || (effect === "haze" && hazeStrength !== FULL);
+  const changed = Object.entries(saved ?? {}).some(([key, value]) => value !== defaults[key]);
   const reset = () => {
     const next = { ...effectSettingsStore.getSnapshot() };
     delete next[effect];
     effectSettingsStore.set(next);
-    if (effect === "haze") setHazeStrength(FULL);
   };
   return { values: { ...defaults, ...saved }, set, changed, reset };
 }
@@ -402,10 +432,6 @@ export function useGrain() {
   return { grain: useSyncExternalStore(grainStore.subscribe, grainStore.getSnapshot), setGrain: grainStore.set };
 }
 
-export function useHazeStrength() {
-  return { hazeStrength: useSyncExternalStore(hazeStrengthStore.subscribe, hazeStrengthStore.getSnapshot), setHazeStrength: hazeStrengthStore.set };
-}
-
 export function resetAppearance(): void {
   themeStore.set("system");
   lightPickStore.set("lotus");
@@ -415,7 +441,6 @@ export function resetAppearance(): void {
   motionStore.set(true);
   textSizeStore.set(FULL);
   grainStore.set(FULL);
-  hazeStrengthStore.set(FULL);
   fontStore.set("sans");
   densityStore.set("comfortable");
 }

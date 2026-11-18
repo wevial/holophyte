@@ -49,7 +49,7 @@ function customize() {
 }
 const knob = (name: string) => customize().getByRole("slider", { name }) as HTMLInputElement;
 const shell = () => screen.getByRole("main").parentElement!;
-const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.hazeStrength", "holophyte.next.font", "holophyte.next.density"];
+const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.effects", "holophyte.next.font", "holophyte.next.density"];
 const stored = () => KEYS.filter((key) => localStorage.getItem(key) !== null);
 const FONT_NAMES = ["Plex Sans", "Plex Serif", "Hyperlegible"];
 const storedValues = () => Object.fromEntries(KEYS.map((key) => [key, localStorage.getItem(key)]));
@@ -368,6 +368,7 @@ test("Heat 2 and Palette magma reach mounted Lava's live config without a remoun
     choose("Palette", "magma");
     const running = effects.configs.Lava!.at(-1)! as { heat?: number; palette?: string };
     expect([effects.configs.Lava!.length, running.heat, running.palette]).toEqual([1, 2, "magma"]);
+    expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { heat: 2, palette: "magma" } });
     await reload();
     const remounted = effects.options.Lava!.at(-1)! as { heat?: number; palette?: string };
     expect([remounted.heat, remounted.palette]).toEqual([2, "magma"]);
@@ -377,7 +378,7 @@ test("Heat 2 and Palette magma reach mounted Lava's live config without a remoun
   }
 });
 
-test("Lava's Opacity at 40 sets the band's opacity to 0.4, and Haze keeps Opacity 100 and an opacity of 1", async () => {
+test("Lava's Opacity at 40 sets the band's opacity to 0.4 in Dark and Light, and Haze keeps Opacity 100 and an opacity of 1", async () => {
   const effects = fakeEffects();
   try {
     await mount();
@@ -385,6 +386,9 @@ test("Lava's Opacity at 40 sets the band's opacity to 0.4, and Haze keeps Opacit
     fireEvent.click(tile("Header", "Lava"));
     fireEvent.change(knob("Opacity"), { target: { value: "40" } });
     expect(band().style.opacity).toBe("0.4");
+    fireEvent.click(scheme("Light"));
+    expect(band().style.opacity).toBe("0.4");
+    fireEvent.click(scheme("Dark"));
     fireEvent.click(tile("Header", "Haze"));
     expect([knob("Opacity").value, band().style.opacity]).toEqual(["100", "1"]);
   } finally {
@@ -496,6 +500,28 @@ test("when storage refuses this tab's write of Lava's Fade, another tab saving H
   } finally {
     storage.restore();
   }
+});
+
+test("when storage refuses this tab's write of Lava's Heat, another tab saving Lava's Fade 30 shows Fade 30 beside the unsaved Heat 2", async () => {
+  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { fade: 20 } }));
+  await mount();
+  const storage = refuseWrites();
+  try {
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    storage.otherTab("holophyte.effects", JSON.stringify({ lava: { fade: 30 } }));
+    expect([knob("Fade").value, knob("Heat").value]).toEqual(["30", "2"]);
+  } finally {
+    storage.restore();
+  }
+});
+
+test("Haze's Strength is saved in Haze's entry of holophyte.effects and returns after a reload", async () => {
+  await mount();
+  fireEvent.change(knob("Strength"), { target: { value: "150" } });
+  expect([localStorage.getItem("holophyte.effects"), localStorage.getItem("holophyte.hazeStrength")]).toEqual([JSON.stringify({ haze: { strength: 150 } }), null]);
+  await reload();
+  expect([knob("Strength").value, root.style.getPropertyValue("--haze-scale")]).toEqual(["150", "1.5"]);
 });
 
 test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {

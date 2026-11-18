@@ -6,7 +6,7 @@ import * as hyphae from "../../vendor/spectra/hyphae";
 import * as lava from "../../vendor/spectra/lava";
 import * as plume from "../../vendor/spectra/plume";
 import * as ribbons from "../../vendor/spectra/ribbons";
-import { useCustomThemes, useEffectSettings, useHazeStrength, useMotion, useTheme, type BandEffect } from "../appearance";
+import { useCustomThemes, useEffectSettings, useMotion, useTheme, type BandEffect } from "../appearance";
 import { HAZE_TUNING, KNOBS, paletteKnob, THEME, themePaint, themePalette, type KnobValue, type ThemeColours } from "../effectKnobs";
 
 interface Handle {
@@ -64,7 +64,6 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const { resolvedTheme, lightPick, darkPick } = useTheme();
   const dark = resolvedTheme === "dark";
   const palette = `${dark ? darkPick : lightPick}-${resolvedTheme}`;
-  const { hazeStrength } = useHazeStrength();
   const { motion, reduced } = useMotion();
   const still = !motion || reduced;
   const { customThemes } = useCustomThemes();
@@ -106,7 +105,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
 
   useEffect(() => {
     if (live.current) Object.assign(live.current.config, liveOptions(effect, values, palette), { motion });
-  }, [palette, hazeStrength, motion, customThemes, knobs]);
+  }, [palette, motion, customThemes, knobs]);
 
   // A renderer that fell back under a slow moving frame gets another try at its one still frame.
   useEffect(() => {
@@ -118,7 +117,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
       ref={band}
       aria-hidden="true"
       data-haze=""
-      style={dark ? { "--haze-fade": `${values.fade}%`, opacity: Number(values.opacity) / 100 } as CSSProperties : undefined}
+      style={{ ...(dark && { "--haze-fade": `${values.fade}%` }), opacity: Number(values.opacity) / 100 } as CSSProperties}
       className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
     >
       {/* Lava pools its wax at the bottom of its box, so the box runs past the band's clipped edge. */}
