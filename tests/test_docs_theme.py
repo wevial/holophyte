@@ -6,9 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 CONSOLE_THEME = ROOT / "console" / "src" / "app" / "theme.css"
-# The selectors that style the live console root, in rising specificity.
-LIVE_ROOT = {"default": (":root",),
-             "slate": (":root", ':root[data-theme="dark"]')}
+# The live console root's attributes under the Lotus theme in each scheme.
+LIVE_ROOT = {"default": {"data-theme": "light"}, "slate": {"data-theme": "dark"}}
 LOTUS_TOKENS = ("--canvas", "--side", "--ink", "--ink-2", "--ink-3",
                 "--accent", "--hair")
 # Each Material surface the docs paint, and the Lotus token it must carry.
@@ -23,27 +22,61 @@ SURFACES = {
     "--md-accent-fg-color": "--accent",
     "--md-typeset-a-color": "--accent",
 }
-# The primary navigation's surfaces: the desktop sidebar and the mobile drawer.
-SIDEBARS = (".md-sidebar--primary .md-sidebar__scrollwrap", ".md-nav--primary",
+# Every sidebar surface: navigation and contents columns, and the mobile drawer.
+SIDEBARS = (".md-sidebar--primary .md-sidebar__scrollwrap",
+            ".md-nav--primary > .md-nav__title",
+            ".md-sidebar--secondary .md-sidebar__scrollwrap",
+            ".md-sidebar--secondary .md-nav__title", ".md-nav--primary",
             ".md-nav--primary .md-nav",
             ".md-nav--primary .md-nav__title ~ .md-nav__list")
 VAR = re.compile(r"var\(\s*(--[\w-]+)\s*\)")
+ROOT_SELECTOR = re.compile(r":root((?:\[[^\]]+\]|:not\(\[[^\]]+\]\))*)")
+ATTRIBUTE = re.compile(r'(:not\()?\[([\w-]+)(?:=(?:"([^"]*)"|([\w-]+)))?\]')
 
 
 def rules(css):
+    """Yield (top_level, selectors, declarations) for every innermost rule."""
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    css = re.sub(r"@import[^;]*;", "", css)
-    for selector, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
-        selectors = {part.strip() for part in selector.split(",")}
-        yield selectors, dict(re.findall(r"([\w-]+)\s*:\s*([^;]+);", body))
+    css = re.sub(r"@import[^;{]*;", "", css)
+    depth, end = 0, 0
+    for match in re.finditer(r"([^{}]*)\{([^{}]*)\}", css):
+        between = css[end:match.start()]
+        depth += between.count("{") - between.count("}")
+        end = match.end()
+        selectors = {part.strip() for part in match.group(1).split(",")}
+        yield depth == 0, selectors, parse_declarations(match.group(2))
+
+
+def parse_declarations(body):
+    found = {}
+    for part in re.split(r";(?![^(]*\))", body):
+        pair = re.fullmatch(r"\s*([\w-]+)\s*:\s*(.*?)\s*", part, re.DOTALL)
+        if pair:
+            found[pair.group(1)] = pair.group(2)
+    return found
 
 
 def declarations(css, matches):
     merged = {}
-    for selectors, body in rules(css):
+    for _, selectors, body in rules(css):
         if matches(selectors):
             merged.update(body)
     return merged
+
+
+def root_specificity(selector, attributes):
+    """A `:root` compound's specificity when it matches the attributes, else None."""
+    whole = ROOT_SELECTOR.fullmatch(selector)
+    if not whole:
+        return None
+    tests = list(ATTRIBUTE.finditer(whole.group(1)))
+    for test in tests:
+        negated, name = test.group(1), test.group(2)
+        value = test.group(3) if test.group(3) is not None else test.group(4)
+        hit = name in attributes and value in (None, attributes[name])
+        if hit == bool(negated):
+            return None
+    return 1 + len(tests)
 
 
 def resolve(value, scope):
@@ -53,28 +86,57 @@ def resolve(value, scope):
 
 
 def yaml_lines(document):
-    return [re.sub(r"\s+#.*$", "", line) for line in document.splitlines()]
+    stripped = (re.sub(r"(^|\s)#.*$", "", line).rstrip()
+                for line in document.splitlines())
+    return [line for line in stripped if line.strip()]
+
+
+def indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def block(document, key):
+    """The key's inline value and the lines nested under it."""
+    lines = yaml_lines(document)
+    for at, line in enumerate(lines):
+        head = re.fullmatch(rf"\s*{key}:\s*(.*)", line)
+        if not head:
+            continue
+        nested = []
+        for following in lines[at + 1:]:
+            deeper = indent(following) > indent(line)
+            item = indent(following) == indent(line) and following.lstrip()[:1] == "-"
+            if not (deeper or item):
+                break
+            nested.append(following)
+        return head.group(1), nested
+    return "", []
+
+
+def items(nested):
+    """Split nested lines into list items at their outermost dash."""
+    dashes = [indent(line) for line in nested if line.lstrip().startswith("-")]
+    groups = []
+    for line in nested:
+        if dashes and indent(line) == min(dashes) and line.lstrip().startswith("-"):
+            groups.append([])
+        if groups:
+            groups[-1].append(line)
+    return groups
 
 
 def palette(document):
-    text = "\n".join(yaml_lines(document)) + "\n"
-    found = re.search(r"^  palette:\n((?:    .*\n)+)", text, re.MULTILINE)
-    return [dict(re.findall(r"^\s*-?\s*(scheme|primary|accent): (\S+)$",
-                            entry, re.MULTILINE))
-            for entry in re.split(r"^    - ", found.group(1), flags=re.MULTILINE)
-            if entry.strip()]
+    return [dict(re.findall(r"^\s*-?\s*(scheme|primary|accent):\s*(\S+)$",
+                            "\n".join(entry), re.MULTILINE))
+            for entry in items(block(document, "palette")[1])]
 
 
 def extra_css(document):
-    text = "\n".join(yaml_lines(document)) + "\n"
-    flow = re.search(r"^extra_css:\s*\[(.*)\]\s*$", text, re.MULTILINE)
-    if flow:
-        return [item.strip().strip("'\"") for item in flow.group(1).split(",")
-                if item.strip()]
-    found = re.search(r"^extra_css:\s*\n((?:\s+-.*\n)+)", text, re.MULTILINE)
-    return ([item.strip().strip("'\"") for item in
-             re.findall(r"^\s+-\s*(.+)$", found.group(1), re.MULTILINE)]
-            if found else [])
+    inline, nested = block(document, "extra_css")
+    flow = re.fullmatch(r"\[(.*)\]", inline)
+    values = (flow.group(1).split(",") if flow
+              else [entry[0].lstrip()[1:] for entry in items(nested)])
+    return [value.strip().strip("'\"") for value in values if value.strip()]
 
 
 def under_docs(sheet):
@@ -83,10 +145,17 @@ def under_docs(sheet):
 
 
 def lotus(scheme):
-    css = CONSOLE_THEME.read_text()
+    applied = []
+    for order, (top_level, selectors, body) in enumerate(
+            rules(CONSOLE_THEME.read_text())):
+        weights = [weight for weight in
+                   (root_specificity(selector, LIVE_ROOT[scheme])
+                    for selector in selectors) if weight is not None]
+        if top_level and weights:
+            applied.append((max(weights), order, body))
     scope = {}
-    for root in LIVE_ROOT[scheme]:
-        scope.update(declarations(css, lambda selectors: root in selectors))
+    for _, _, body in sorted(applied, key=lambda rule: rule[:2]):
+        scope.update(body)
     return {token: resolve(scope[token], scope) for token in LOTUS_TOKENS}
 
 

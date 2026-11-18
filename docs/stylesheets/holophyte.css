@@ -64,6 +64,19 @@
   }
 }
 
+@media screen and (min-width: 60em) {
+  .md-sidebar--secondary .md-sidebar__scrollwrap {
+    background-color: var(--lotus-side);
+    border: 1px solid var(--lotus-hair);
+    border-radius: 0.4rem;
+  }
+
+  .md-sidebar--secondary .md-nav__title {
+    background-color: var(--lotus-side);
+    box-shadow: none;
+  }
+}
+
 @media screen and (max-width: 76.234375em) {
   .md-nav--primary,
   .md-nav--primary .md-nav,
