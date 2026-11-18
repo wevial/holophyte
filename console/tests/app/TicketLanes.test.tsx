@@ -108,7 +108,7 @@ test("Group by Project draws a lane per project in fleet order with its count, h
   cleanup();
 
   await mount("#/tickets", projects);
-  expect(pressed("Project")).toBe("true");
+  expect(segments().map(pressed)).toEqual(["true", "false", "false"]);
   expect(lanes()).toHaveLength(2);
 });
 
@@ -139,7 +139,7 @@ test("Group by Story holds each story's children, merged ones in Done today, the
   expect(keysIn(rest, "Ready")).toEqual(["DEMO-24"]);
 });
 
-test("a lane's heading folds its grid, and the fold-all link folds every lane then reads Expand all lanes", async () => {
+test("a lane's heading folds its grid, and the fold-all button folds every lane then reads Expand all lanes", async () => {
   await mount("#/tickets", projects);
   await press("Project");
   const [demo, writer] = lanes() as [HTMLElement, HTMLElement];
@@ -156,7 +156,7 @@ test("a lane's heading folds its grid, and the fold-all link folds every lane th
   expect(lanes().map((lane) => headOf(lane).getAttribute("aria-expanded"))).toEqual(["true", "true"]);
 });
 
-test("a picked project offers no Project grouping, None draws no lane heading or fold-all link, and a throwing storage still switches", async () => {
+test("a picked project offers no Project grouping, None draws no lane heading or fold-all button, and a throwing storage still switches", async () => {
   localStorage.setItem("holophyte.next.tickets.group", "project");
   await mount("#/tickets?project=demo", projects);
   expect(segments()).toEqual(["Story", "None"]);

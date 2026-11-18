@@ -167,8 +167,8 @@ function CheckIcon() {
  *  picking one calls `onPick` with its value. `passPress` lets a press
  *  outside the open list close it and keep its own effect, so a press in
  *  another field focuses that field. */
-export function Picker({ id, label, options, value, onPick, passPress, "aria-invalid": invalid, "aria-describedby": describedBy }: {
-  id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; passPress?: boolean; "aria-invalid"?: boolean; "aria-describedby"?: string;
+export function Picker({ id, label, options, value, onPick, passPress, disabled, "aria-invalid": invalid, "aria-describedby": describedBy }: {
+  id?: string; label: string; options: readonly PickerOption[]; value: string; onPick: (value: string) => void; passPress?: boolean; disabled?: boolean; "aria-invalid"?: boolean; "aria-describedby"?: string;
 }) {
   const current = options.find((option) => option.value === value) ?? options[0];
   const labelId = useId();
@@ -191,6 +191,7 @@ export function Picker({ id, label, options, value, onPick, passPress, "aria-inv
           </span>
           <Trigger
             id={id}
+            disabled={disabled}
             aria-invalid={invalid}
             aria-describedby={describedBy}
             aria-haspopup="listbox"
@@ -200,7 +201,7 @@ export function Picker({ id, label, options, value, onPick, passPress, "aria-inv
               event.preventDefault();
               handle.api.setOpen(true, { event: event.nativeEvent });
             }}
-            className="inline-flex min-h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected py-1.5 pr-2 pl-2.5 text-left text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
+            className="inline-flex min-h-[30px] max-w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-button border-0 bg-selected py-1.5 pr-2 pl-2.5 text-left text-[13px] leading-[1.25] font-medium text-ink enabled:hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-[invalid=true]:shadow-[inset_0_0_0_1px_var(--bad)]"
           >
             <span className="min-w-0 [overflow-wrap:anywhere]">{current?.label}</span>
             {current?.note && <span className="shrink-0 whitespace-nowrap text-ink-3">{" "}{current.note}</span>}

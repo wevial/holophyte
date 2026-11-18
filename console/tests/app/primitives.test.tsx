@@ -2,7 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ConfirmDialog } from "../../src/app/components/ConfirmDialog";
 import { Btn } from "../../src/app/components/Btn";
-import { BarChart, Change, LineChart } from "../../src/app/components/FlowCharts";
+import { BarChart, Change, LineChart, Sparkline } from "../../src/app/components/FlowCharts";
 import { Section } from "../../src/app/components/Section";
 import { StageChip } from "../../src/app/components/StageChip";
 import { StateDot } from "../../src/app/components/StateDot";
@@ -175,6 +175,18 @@ test("a waiting line breaks at a week with no merges into two segments and puts 
   expect([...container.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot"))).toEqual(["0", "1", "3", "4", "5"]);
   expect(screen.getByRole("figure").getAttribute("aria-label")).toContain("no data");
   expect([...container.querySelectorAll("button[data-point]")].map((point) => point.getAttribute("data-point"))).toEqual(["0", "1", "3", "4", "5"]);
+});
+
+test("a sparkline's stroke runs from the left edge to the right edge, and a week standing alone between gaps, or as the only week, still shows a mark", () => {
+  const { container: gapped } = render(<Sparkline values={[1, 2, null, 5, null, 3, 4]} />);
+  const strokes = [...gapped.querySelectorAll("path")].map((path) => path.getAttribute("d")!);
+  expect(strokes).toHaveLength(2);
+  expect(strokes[0]!.startsWith("M0 ")).toBe(true);
+  expect(strokes[1]!.split(" ").at(-2)).toBe("100");
+  expect([...gapped.querySelectorAll("[data-lone]")].map((mark) => (mark as HTMLElement).style.left)).toEqual(["50%"]);
+  const { container: single } = render(<Sparkline values={[38]} />);
+  expect(single.querySelectorAll("path")).toHaveLength(0);
+  expect(single.querySelectorAll("[data-lone]")).toHaveLength(1);
 });
 
 test("a weekly change is green when the number moved the good way and the accent colour when not", () => {

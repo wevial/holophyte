@@ -88,14 +88,16 @@ test("Tickets offers New ticket only for editable scoped boards and the direct n
   expect(screen.queryByRole("button", { name: "File ticket" })).toBeNull();
 });
 
-test("New ticket renders the template heading, linked breadcrumb and Summary hint on the static new route", async () => {
+test("New ticket heads the page with the title alone, a linked breadcrumb and the Summary hint, with no subtitle or footer", async () => {
   await mount("#/tickets/demo/new");
   const crumb = screen.getByRole("navigation", { name: "Breadcrumb" });
   expect(crumb.textContent).toBe("Tickets / demo / new");
   expect(within(crumb).getByRole("link", { name: "Tickets" }).getAttribute("href")).toEndWith("#/tickets");
   expect(within(crumb).getByRole("link", { name: "demo" }).getAttribute("href")).toEndWith("#/tickets?project=demo");
-  expect(screen.getByRole("heading", { name: "New ticket" })).toBeTruthy();
-  expect(screen.getByText("demo · from the ticket template · lands in Backlog")).toBeTruthy();
+  const page = screen.getByRole("region", { name: "New ticket" });
+  expect(page.querySelector("header")!.textContent).toBe("New ticket");
+  expect(within(page).queryByText(/from the ticket template|lands in Backlog/)).toBeNull();
+  expect(page.querySelector("footer")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Summary" }).getAttribute("placeholder")).toBe("Describe the outcome in one or two sentences.");
 });
 
@@ -118,6 +120,22 @@ test("File ticket sends one Backlog POST with the composed markdown then toasts 
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-12");
 });
 
+test("while a filing is pending the Project picker is disabled and opens no list", async () => {
+  let answer: (response: Response) => void = () => {};
+  const pending = new Promise<Response>((resolve) => { answer = resolve; });
+  await mount("#/tickets/demo/new", fleet(() => pending));
+  await fill();
+  await press("File ticket");
+  const project = screen.getByLabelText("Project", { selector: "button" }) as HTMLButtonElement;
+  expect(project.disabled).toBe(true);
+  await act(async () => void fireEvent.click(project));
+  await flush();
+  expect(screen.queryByRole("listbox", { name: "Project" })).toBeNull();
+  await act(async () => answer(Response.json({ problems: ["Complete the ticket"] }, { status: 422 })));
+  await flush();
+  expect(project.disabled).toBe(false);
+});
+
 test("a 422 lists every problem beside File ticket with no toast and preserves all form fields", async () => {
   const answer = fakeFetch(() => Response.json({ problems: ["'Summary' is empty", "'In scope' has no entries"] }, { status: 422 }));
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
@@ -133,17 +151,42 @@ test("a 422 lists every problem beside File ticket with no toast and preserves a
   }
 });
 
-test("All projects opens the first editable project and changing the form project updates the filing destination", async () => {
+test("All projects opens the first editable project and picking another project in the Project picker updates the filing destination", async () => {
   await mount("#/tickets", fleet(undefined, true));
   await press("New ticket");
   expect(window.location.hash).toBe("#/tickets/demo/new");
-  const project = screen.getByRole("combobox", { name: "Project" });
-  expect(within(project).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
-  await act(async () => void fireEvent.change(project, { target: { value: "relos" } }));
-  await flush();
+  expect(document.querySelector("select")).toBeNull();
+  expect(await projectOptions()).toEqual(["demo", "relos"]);
+  await pickProject("relos");
   expect(window.location.hash).toBe("#/tickets/relos/new");
   await fill();
   expect(screen.getByText("Files to relos Backlog.")).toBeTruthy();
+});
+
+test("the Project picker lists only editable projects in switcher order and filing after a pick posts to the picked project", async () => {
+  const [zeta, alpha, mid] = ["http://writer-host:7720", "http://writer-host:7721", "http://writer-host:7722"];
+  const daemon = (project: string) => ({
+    status: { ...working, project: `/srv/dev/${project}`, actions: true, runs: [], queued: [], now: NOW },
+    attention: { level: "none", now: NOW, project: `/srv/dev/${project}`, items: [] },
+  });
+  const polls = peersFetch(zeta, { [zeta]: daemon("zeta"), [alpha]: daemon("alpha"), [mid]: daemon("mid") });
+  const answer = fakeFetch(() => Response.json({ problems: ["Complete the ticket"] }, { status: 422 }));
+  const fetch: Fetch = async (url, init) => {
+    if (url.endsWith("/board")) return Response.json({ ...board, columns: [], stories: [], editable: !url.startsWith(alpha) });
+    if (url.endsWith("/tickets")) return answer.fetchImpl(url, init);
+    return polls(url);
+  };
+  window.location.hash = "#/tickets/zeta/new";
+  const fake = fakeDeps(fetch);
+  fake.clock.now = NOW;
+  render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={zeta} pollDeps={fake.deps} /></QueryClientProvider>);
+  await flush();
+  expect(await projectOptions()).toEqual(["zeta", "mid"]);
+  await pickProject("mid");
+  expect(window.location.hash).toBe("#/tickets/mid/new");
+  await type("Title", "Steer notes show on the run detail card");
+  await press("File ticket");
+  expect(answer.seen.map((request) => request.url)).toEqual([`${mid}/tickets`]);
 });
 
 test("All projects keeps switcher project order when its first project is editable only on a later host", async () => {
@@ -162,11 +205,29 @@ test("All projects keeps switcher project order when its first project is editab
   await mount("#/tickets", fetch);
   await press("New ticket");
   expect(window.location.hash).toBe("#/tickets/demo/new");
-  expect(within(screen.getByRole("combobox", { name: "Project" })).getAllByRole("option").map((option) => option.textContent)).toEqual(["demo", "relos"]);
+  expect(await projectOptions()).toEqual(["demo", "relos"]);
   await type("Title", "Steer notes show on the run detail card");
   await press("File ticket");
   expect(answer.seen.map((request) => request.url)).toEqual([`${otherDemo}/tickets`]);
 });
+
+async function openProject() {
+  await act(async () => void fireEvent.click(screen.getByLabelText("Project", { selector: "button" })));
+  await flush();
+  return screen.getByRole("listbox", { name: "Project" });
+}
+
+async function projectOptions() {
+  const options = within(await openProject()).getAllByRole("option").map((option) => option.textContent);
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  await flush();
+  return options;
+}
+
+async function pickProject(name: string) {
+  await act(async () => void fireEvent.click(within(await openProject()).getByRole("option", { name })));
+  await flush();
+}
 
 async function type(name: string, value: string) {
   await act(async () => void fireEvent.change(screen.getByRole("textbox", { name }), { target: { value } }));
