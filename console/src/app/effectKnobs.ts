@@ -9,7 +9,7 @@ import type { BandEffect } from "./appearance";
 
 export type KnobValue = number | string;
 
-export interface RangeKnob { kind: "range"; key: string; label: string; min: number; max: number; step: number; initial: number }
+interface RangeKnob { kind: "range"; key: string; label: string; min: number; max: number; step: number; initial: number }
 
 export interface ChoiceKnob { kind: "choice"; key: string; label: string; choices: readonly string[]; initial: string }
 
