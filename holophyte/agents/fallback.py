@@ -64,7 +64,7 @@ def record_pending_switch(project, role, conn, run_id):
         del state.pending[role]
 
 
-def refusal_fallback(project, role, refusal, conn=None, run_id=None):
+def refusal_fallback(project, role, refusal, conn, run_id):
     import store
 
     commands = fallback_entries(project, role)
