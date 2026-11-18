@@ -22,6 +22,7 @@ from phase_fixture import finish_run  # noqa: E402 - after the sys.path insert
 
 import holophyte.cli.entry  # noqa: E402
 import holophyte.config.project  # noqa: E402
+import holophyte.revert.command  # noqa: E402
 import holophyte.serve.server  # noqa: E402
 import store  # noqa: E402
 import store.tickets  # noqa: E402
@@ -155,13 +156,35 @@ class RevertActionTests(ConfigTestCase):
         self.serve({"db/migrations/0002.sql": "drop table t;\n",
                     "src/header.py": "broken\n"}, {"README.md": "later\n"})
 
-        code, reply = self.post({"key": "NAT-1", "reason": REASON})
+        for dry_run in (False, True):
+            with self.subTest(dry_run=dry_run):
+                code, reply = self.post({"key": "NAT-1", "reason": REASON,
+                                         "dry_run": dry_run})
 
-        self.assertEqual(code, 409, reply)
-        self.assertEqual(reply["paths"], ["db/migrations/0002.sql"])
-        self.assertIn("db/migrations/0002.sql", reply["error"])
+                self.assertEqual(code, 409, reply)
+                self.assertEqual(reply["paths"], ["db/migrations/0002.sql"])
+                self.assertIn("db/migrations/0002.sql", reply["error"])
+                self.assertEqual(reply["refused"]["paths"],
+                                 ["db/migrations/0002.sql"])
         self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
         self.assertEqual(self.reverts(), [])
+
+    def test_a_failed_filing_answers_500_without_the_origin_credentials(self):
+        self.serve({"src/header.py": "broken\n"}, {"README.md": "later\n"})
+
+        def rejected(target, path, state, board, out, priority):
+            print("[holo2] fetch https://bot:hunter2@git.example.test/r.git"
+                  " failed; ticket rejected", file=out)
+            return 2
+
+        with patch.object(holophyte.revert.command, "file_ticket", rejected):
+            code, reply = self.post({"key": "NAT-1", "reason": REASON})
+
+        self.assertEqual(code, 500, reply)
+        self.assertNotIn("hunter2", json.dumps(reply))
+        self.assertIn("https://[redacted]@git.example.test/r.git",
+                      reply["error"])
+        self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
 
     def test_an_empty_reason_is_400_and_files_nothing(self):
         self.serve({"src/header.py": "broken\n"}, {"README.md": "later\n"})

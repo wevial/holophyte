@@ -1973,8 +1973,9 @@ files nothing:
 ```
 
 `enabled` is `[revert] enabled`; with it false `refused` is null and
-`dependents` empty. `refused` is null, or `{"reason", "paths"}` naming the
-check that refuses and, for `refuse_paths`, the paths it refuses.
+`dependents` empty. `refused` is null in a 200; a check that refuses
+answers 409, its body carrying `refused` as `{"reason", "paths"}`, naming
+the check and, for `refuse_paths`, the paths it refuses.
 `dependents` are the later merges that changed a file KEY's merge changed.
 Without `dry_run` it files the ticket and records a `revert` intervention
 on KEY's merged run, with the requester as actor:
@@ -1983,10 +1984,11 @@ on KEY's merged run, with the requester as actor:
 {"action": "revert", "recorded": 42, "key": "KO-p"}
 ```
 
-`key` is the new ticket. Without `dry_run` a refusal is 409 with `error`
-the reason and `paths` the refused paths, if any, and nothing is filed; a
-filing the board did not confirm is 500 with `holo revert`'s lines in
-`error`. With `dry_run` a refusal is 200 with `refused` set. A missing
+`key` is the new ticket. A refusal, with or without `dry_run`, is 409
+with `error` the reason, `paths` the refused paths, if any, and `refused`
+as above, and nothing is filed; a filing the board did not confirm is 500
+with `holo revert`'s lines in `error`. Both carry URLs with their
+credentials and the config's secrets redacted. A missing
 `key`, an empty `reason` or a `dry_run` that is not a boolean is 400; a
 project with no store is 503.
 

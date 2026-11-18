@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import io
+import re
 
 from holophyte.board.provider import board_for
 from holophyte.cli.board_verbs import require_board
+from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.revert.checks import Refused
 from holophyte.revert.command import checked, file_revert
 from holophyte.revert.settings import revert_config
@@ -11,6 +13,12 @@ from holophyte.serve.serve_actions import action_store, written_on
 from holophyte.serve.serve_runs import no_store
 
 REVERT_ACTION = "revert"
+URL_USERINFO = re.compile(r"(\b[a-zA-Z][\w+.-]*://)[^/\s@]+@")
+
+
+def scrubbed(project, text):
+    return URL_USERINFO.sub(rf"\g<1>{REDACTED}@", outbound(
+        text, known_secrets(project.config())))
 
 
 def revert_action(project, body):
@@ -37,11 +45,10 @@ def revert_action(project, body):
         try:
             merge, found = checked(project, conn, board, key, lambda line: None)
         except Refused as refused:
-            if dry_run:
-                return 200, {"enabled": True, "dependents": [], "refused": {
-                    "reason": str(refused), "paths": list(refused.paths)}}
-            return 409, {"error": f"{refused}; nothing filed",
-                         "paths": list(refused.paths)}
+            reason, paths = scrubbed(project, str(refused)), list(refused.paths)
+            return 409, {"error": f"{reason}; nothing filed", "paths": paths,
+                         "enabled": True, "dependents": [],
+                         "refused": {"reason": reason, "paths": paths}}
         if dry_run:
             return 200, {"enabled": True, "refused": None, "dependents": [
                 {"key": one.key, "sha": one.sha, "paths": list(one.paths)}
@@ -51,8 +58,8 @@ def revert_action(project, body):
             filed = file_revert(project, conn, board, merge, reason, found,
                                 said)
         except SystemExit as stopped:
-            return 500, {"error": said.getvalue().strip()
-                         or f"filing exited {stopped.code}"}
+            return 500, {"error": scrubbed(project, said.getvalue().strip()
+                                           or f"filing exited {stopped.code}")}
         return 200, {"key": filed, "recorded": written_on(conn, REVERT_ACTION)}
     finally:
         conn.close()
