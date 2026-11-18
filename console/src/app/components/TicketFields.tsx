@@ -13,7 +13,7 @@ import type { Tone } from "../state";
 const FOCUS_RING = "[&:is(input,textarea):focus-visible]:!shadow-[0_0_0_2px_var(--wait)] [&:is(input,textarea)[aria-invalid=true]:focus-visible]:!shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)]";
 export const INPUT = "field mt-2 w-full min-w-0";
 export const TICKET_INPUT = `field mt-1.5 w-full min-w-0 ${FOCUS_RING}`;
-const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
+export const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
 const ICON_BUTTON = "grid size-7 shrink-0 cursor-pointer place-items-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent motion-reduce:transition-none";
 type Message = { text: string; error: boolean; field: string };
 const CHECK_DELAY_MS = 600;

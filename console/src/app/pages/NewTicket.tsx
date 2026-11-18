@@ -6,7 +6,7 @@ import { formatClock } from "../../lib/format";
 import { projectName } from "../../lib/derive";
 import { checkSummary, fileNote } from "../checker";
 import { Btn } from "../components/Btn";
-import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, PriorityField, SMALL, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
 import { PageHeader } from "../components/PageHeader";
 import { Picker } from "../components/Picker";
 import { useToast } from "../components/Toast";
@@ -15,7 +15,7 @@ import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext, useConsolePeers } from "../scope";
 import { blankForm, clampEstimate, composeBody, fieldOf, parseBody, withField, type Evidence } from "../ticketForm";
 import { hostCards } from "../tickets";
-import { CRUMB_LINK, FORM_CARD, SAVE_CARD, SMALL_BTN } from "./runShared";
+import { CRUMB_LINK, FORM_CARD, SAVE_CARD } from "./runShared";
 
 const FIELDS = ["title", "summary", "what", "why", "how", "inScope", "outOfScope", "verify", "notes"] as const;
 type TextField = typeof FIELDS[number];
@@ -227,7 +227,7 @@ export function NewTicket() {
         </div> : <p className="mt-6 text-ink-3">Loading project board…</p> : <>
           {restoredAt !== null && <p className="mt-5 flex flex-wrap items-center gap-2.5 font-sans text-[13px] text-ink-2">
             Draft from {formatClock(restoredAt)} restored.
-            <Btn className={SMALL_BTN} disabled={busy} onClick={startOver}>Start over</Btn>
+            <Btn className={SMALL} disabled={busy} onClick={startOver}>Start over</Btn>
           </p>}
           <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
             <div className={FORM_CARD}>

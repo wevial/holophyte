@@ -6,7 +6,6 @@ export const CRUMB_LINK = "border-b border-rule text-ink-3 no-underline hover:bo
 const RAISED = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 export const FORM_CARD = `min-w-0 divide-y divide-hair ${RAISED} [&>div]:p-5`;
 export const SAVE_CARD = `${RAISED} p-5`;
-export const SMALL_BTN = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
 
 export function zoneName(at: number): string {
   const parts = new Intl.DateTimeFormat("en-US", { timeZoneName: "short" }).formatToParts(at);
