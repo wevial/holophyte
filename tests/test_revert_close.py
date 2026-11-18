@@ -25,6 +25,23 @@ from tests import test_cli_revert as cli_revert  # noqa: E402
 REASON = "broke the <header> band"
 
 
+class MirrorBoard:
+    native = False
+    store_mode = False
+
+    def __init__(self, refused=None):
+        self.refused = refused
+        self.writes = []
+
+    def set_state(self, issue_id, state):
+        if (issue_id, state) == self.refused:
+            raise RuntimeError("Linear is unreachable")
+        self.writes.append(("state", issue_id, state))
+
+    def comment(self, task_id, body):
+        self.writes.append(("comment", task_id, body))
+
+
 class RevertCloseTests(ConfigTestCase):
     setUp = cli_revert.RevertCliTests.setUp
     git = cli_revert.RevertCliTests.git
@@ -46,7 +63,7 @@ class RevertCloseTests(ConfigTestCase):
                       self.read("SELECT body FROM tickets WHERE"
                                 " linearIdentifier = 'NAT-3'")[0][0])
 
-    def run_revert(self, task):
+    def run_revert(self, task, board=None):
         with contextlib.closing(open_store(self.project)) as conn:
             (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
             (ticket_id,) = conn.execute(
@@ -58,7 +75,8 @@ class RevertCloseTests(ConfigTestCase):
             with patch.object(pipeline, "run_task", task), \
                     contextlib.redirect_stdout(io.StringIO()):
                 dispatch._dispatch(self.project, conn, run,
-                                   board_for(self.project), {"id": "NAT-3"},
+                                   board or board_for(self.project),
+                                   {"id": "NAT-3"},
                                    ticket_id, refresh=False)
         return run
 
@@ -116,3 +134,49 @@ class RevertCloseTests(ConfigTestCase):
                                    run), [("failed",)])
         self.assertEqual(self.key_state(), before)
         self.assertEqual(before["ticket"], [("merged", "ready", None)])
+
+    def merge_the_revert(self, _target, _task, conn, run_id, _provider):
+        advance_phase(conn, run_id, "merging")
+        self.git("revert", "--no-edit", self.key_sha)
+        return self.git("rev-parse", "HEAD")
+
+    def test_a_mirror_board_gets_backlog_and_the_note(self):
+        self.file_revert()
+        board = MirrorBoard()
+        self.run_revert(self.merge_the_revert, board)
+        note = f"Reverted by NAT-3: {REASON}"
+        self.assertIn(("state", "NAT-1", "Backlog"), board.writes)
+        self.assertIn(("comment", "NAT-1", note), board.writes)
+        self.assertEqual(self.key_state()["ticket"],
+                         [("ready", "backlog", "Backlog")])
+        self.assertEqual(self.read(
+            "SELECT postedAt IS NOT NULL FROM ticketNotes WHERE text = ?",
+            note), [(1,)])
+
+    def test_a_refused_board_write_leaves_the_ticket_merged(self):
+        self.file_revert()
+        before = self.key_state()
+        self.run_revert(self.merge_the_revert,
+                        MirrorBoard(refused=("NAT-1", "Backlog")))
+        self.assertEqual(self.key_state(), before)
+
+    def test_an_ordinary_tickets_fenced_reverts_example_reopens_nothing(self):
+        self.project_with(cli_revert.ENABLED, {"src/header.py": "broken\n"})
+        with contextlib.closing(open_store(self.project)) as conn:
+            store.tickets.transition(conn, self.ticket_id(conn, "NAT-1"),
+                                     "merged")
+            run = self.runs["NAT-2"]
+            conn.execute(
+                "UPDATE tickets SET body = replace(body, '## Summary\n',"
+                " ?) WHERE linearIdentifier = 'NAT-2'",
+                (f"## Summary\n\n```\nReverts: NAT-1 at {self.key_sha}\n```"
+                 "\n",))
+            conn.commit()
+            before = self.key_state()
+            self.assertIsNone(store.board.reopen_reverted(conn, run))
+        self.assertEqual(self.key_state(), before)
+
+    @staticmethod
+    def ticket_id(conn, key):
+        return conn.execute("SELECT id FROM tickets WHERE"
+                            " linearIdentifier = ?", (key,)).fetchone()[0]

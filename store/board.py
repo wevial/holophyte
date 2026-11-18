@@ -6,6 +6,7 @@ import json
 import re
 import time
 
+from holophyte.revert.checks import FILED_NOTE, title_prefix
 from holophyte.tickets import ticket_criteria, ticket_template
 from holophyte.tickets.ticket_depends import rewrite_depends
 
@@ -176,6 +177,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 
 REVERTS = re.compile(r"^Reverts: (\S+) at ([0-9a-f]{7,40})$", re.MULTILINE)
+FENCE = re.compile(r"^```.*?^```", re.MULTILINE | re.DOTALL)
 
 
 def reopen_reverted(conn, run_id):
@@ -183,14 +185,16 @@ def reopen_reverted(conn, run_id):
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.outcome, r.mergeSha, t.projectId, t.linearIdentifier,"
-            " t.body FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " t.title, t.body FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.id = ?", (run_id,)).fetchone()
         if row is None or row[0] != "merged":
             return None
-        _, merge_sha, project_id, revert_key, text = row
-        summary = ticket_template.parse(text or "").sections.get("Summary", "")
+        _, merge_sha, project_id, revert_key, title, text = row
+        summary = FENCE.sub("", ticket_template.parse(text or "")
+                            .sections.get("Summary", ""))
         named = REVERTS.search(summary)
-        if named is None:
+        if named is None or not (title or "").startswith(
+                title_prefix(named[1])):
             return None
         key, sha = named.groups()
         original = conn.execute(
@@ -204,18 +208,31 @@ def reopen_reverted(conn, run_id):
         if original is None:
             return None
         ticket_id, merged_run = original
-        reason = re.search(rf"^Undo {re.escape(key)}'s merge: (.+)$", summary,
-                           re.MULTILINE)
-        why = f": {html.unescape(reason[1])}" if reason else ""
+        reason = _revert_reason(conn, merged_run, revert_key, key, text)
+        why = f": {reason}" if reason else ""
         note = f"Reverted by {revert_key}{why or '.'}"
         record_event(conn, merged_run, "reverted",
                      f"reverted by {revert_key}, merged at"
                      f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
         conn.execute("UPDATE tickets SET status = 'ready' WHERE id = ?",
                      (ticket_id,))
-        _record_column(conn, ticket_id, "backlog", "move", note, "factory",
-                       now)
-    return ticket_id
+        set_board_state(conn, ticket_id, _BOARD_STATES["backlog"], "backlog")
+        record_board_fields(conn, ticket_id, "factory", now)
+        note_id = record_note(conn, ticket_id, "move", note,
+                              f"reverted:{run_id}", author="factory", now=now)
+    return ticket_id, note_id, note
+
+
+def _revert_reason(conn, merged_run, revert_key, key, text):
+    for (filed,) in conn.execute(
+            "SELECT note FROM interventions WHERE runId = ?"
+            " AND \"action\" = 'revert' ORDER BY id DESC", (merged_run,)):
+        named = FILED_NOTE.match(filed or "")
+        if named and named[1] == revert_key:
+            return filed[named.end():]
+    written = re.search(rf"^(?:Undo {re.escape(key)}'s merge: |\*\*Why:\*\* )"
+                        r"(.+)$", FENCE.sub("", text or ""), re.MULTILINE)
+    return html.unescape(written[1]) if written else None
 
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
