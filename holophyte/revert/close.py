@@ -4,8 +4,6 @@ from holophyte.redact import safe_print as print
 
 
 def close_reverted(conn, run_id, provider):
-    if conn is None:
-        return
     native = getattr(provider, "native", False) is True
     try:
         reopened = store.board.reopen_reverted(conn, run_id, native=native)

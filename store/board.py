@@ -190,7 +190,7 @@ def reopen_reverted(conn, run_id, native=True):
         if row is None or row[0] != "merged":
             return None
         _, merge_sha, project_id, revert_key, title, text = row
-        lines = _unfenced(ticket_template.parse(text or "")
+        lines = _unfenced(ticket_template.parse(text)
                           .sections.get("Summary", ""))
         named = next(filter(None, map(REVERTS.fullmatch, lines)), None)
         if named is None:
@@ -209,7 +209,7 @@ def reopen_reverted(conn, run_id, native=True):
             return None
         ticket_id, merged_run = original
         filed = _filed_reason(conn, merged_run, revert_key)
-        if filed is None and not (title or "").startswith(title_prefix(key)):
+        if filed is None and not title.startswith(title_prefix(key)):
             return None
         reason = filed or _written_reason(key, text)
         why = f": {reason}" if reason else ""
@@ -256,7 +256,7 @@ def _filed_reason(conn, merged_run, revert_key):
 
 def _written_reason(key, text):
     undo = re.compile(rf"Undo {re.escape(key)}'s merge: (.+)")
-    for line in _unfenced(text or ""):
+    for line in _unfenced(text):
         written = undo.fullmatch(line) or WHY.fullmatch(line)
         if written:
             return written[1]
