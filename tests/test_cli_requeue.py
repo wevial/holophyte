@@ -28,6 +28,7 @@ import holophyte.loop.merge_gate
 import holophyte.loop.stop
 import store
 import store.read
+import store.steer_notes
 import store.tickets
 from holophyte.board import linear_provider
 from holophyte.config.config_tables import board_config
@@ -368,6 +369,62 @@ class RequeueCliTests(RequeueTarget):
         with self.assertRaises(SystemExit) as raised:
             self.cli("--report", "--note", "stray")
         self.assertEqual(raised.exception.code, 2)
+
+
+class RequeueAmendTests(RequeueTarget):
+    def amendments(self):
+        return [(note.note, note.author)
+                for note in store.steer_notes.amendments(self.conn, self.ticket)]
+
+    def requeue_notes(self):
+        return [row[0] for row in self.conn.execute(
+            "SELECT note FROM interventions WHERE action = 'requeue'")]
+
+    def test_holo_requeue_amend_requeues_with_the_note_and_amends_with_the_text(self):
+        self.fail_the_run()
+
+        with patch.object(holophyte.cli.entry, "board_for", stub_board_for), \
+                patch("getpass.getuser", return_value="caller"):
+            self.holo("requeue", "KO-1", "contract fixed", "--amend",
+                      "ADD: Given an empty list, then nothing is worked")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), ["contract fixed"])
+        self.assertEqual(self.amendments(), [
+            ("ADD: Given an empty list, then nothing is worked", "caller")])
+
+    def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
+        self.fail_the_run()
+        self.conn.commit()
+        before = list(self.conn.iterdump())
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "retry", "--amend",
+                     "DROP C9")
+
+        self.assertEqual(raised.exception.code,
+                         "[holo2] DROP C9 names no current criterion")
+        self.assertEqual(list(self.conn.iterdump()), before)
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(self.amendments(), [])
+
+    def test_a_refused_requeue_writes_no_amendment(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "too soon", "--amend",
+                     "ADD: Given an empty list, then nothing is worked")
+
+        self.assertIn("still live", str(raised.exception))
+        self.assertEqual(self.amendments(), [])
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_requeue_without_amend_writes_no_amendment(self):
+        self.fail_the_run()
+
+        out, _ = self.cli("--requeue", "KO-1", "--note", "contract fixed")
+
+        self.assertEqual(out.strip(), f"[holo2] KO-1 requeued after run {self.run}")
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.amendments(), [])
 
 
 class RelaunchLimitTests(RequeueTarget):

@@ -238,7 +238,8 @@ def report(target, conn=None, out=None, now=None):
             conn.close()
 
 
-def requeue(target, identifier, note, out=None, provider=None, force=False):
+def requeue(target, identifier, note, out=None, provider=None, force=False,
+            amend=None):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
@@ -251,10 +252,16 @@ def requeue(target, identifier, note, out=None, provider=None, force=False):
                 note = (f"{note}\n\nThe failed run's branch is still open"
                         f" as {pr_url}")
         try:
-            run_id = store.requeue(conn, ticket_id, note, force=force)
+            with store.transaction(conn):
+                run_id = store.requeue(conn, ticket_id, note, force=force)
+                steered = None if amend is None else steer_notes.steer(
+                    conn, ticket_id, amend, getpass.getuser())
         except (store.RequeueRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} requeued after run {run_id}", file=out)
+        if steered is not None:
+            print(f"[holo2] {identifier} amended: steer note {steered.id}",
+                  file=out)
     finally:
         conn.close()
 
