@@ -1437,7 +1437,9 @@ ask and filtered by state and kind; `console/src/app/components/ListFilters.tsx`
 State and Kind pickers the Tickets and Scouts pages share, and the Search toggle, `FilterPopover` and `RangeButtons` of
 the Runs page, its third user; the Findings page's `RangeButtons` draws its range presets on the shared Segmented
 control of `console/src/app/components/Segmented.tsx`, a group of pressed buttons for a few fixed choices, beside a
-Custom range calendar button; `console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
+Custom range calendar button; `console/src/app/components/PageHeader.tsx` is the shared page header, a title row
+with the page's quiet count and its icon tools at the right over optional tabs, which Findings uses;
+`console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
 a filled button reading the current option that opens a listbox with arrow keys, Enter and Escape; and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
