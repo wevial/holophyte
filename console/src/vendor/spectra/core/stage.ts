@@ -147,8 +147,6 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
       stagesIn.get(container)?.delete(stage);
     },
   };
-  if (!stagesIn.has(container)) stagesIn.set(container, new Set());
-  stagesIn.get(container)!.add(stage);
 
   function tick(now: number) {
     rafId = 0;
@@ -222,6 +220,8 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
     }
   });
   ro.observe(canvas);
+  if (!stagesIn.has(container)) stagesIn.set(container, new Set());
+  stagesIn.get(container)!.add(stage);
 
   stage.resize();
   return stage;
