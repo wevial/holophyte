@@ -291,17 +291,46 @@ test("in a dark theme Lava draws in a box inside the band anchored at its top an
   }
 });
 
-test("Reset to default returns the saved fades of Lava and Haze to 70", async () => {
+const fades = () => {
+  fireEvent.click(tile("Header", "Lava"));
+  const lava = slider("Fade").value;
+  fireEvent.click(tile("Header", "Haze"));
+  return { lava, haze: slider("Fade").value };
+};
+
+async function reload() {
+  cleanup();
+  await mount();
+}
+
+test("Reset to default returns the saved fades of Lava and Haze to 70, also after a reload", async () => {
   await mount();
   fireEvent.click(tile("Header", "Lava"));
   fireEvent.change(slider("Fade"), { target: { value: "40" } });
   fireEvent.click(tile("Header", "Haze"));
   fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  await reload();
+  expect(fades()).toEqual({ lava: "40", haze: "20" });
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
   fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
-  const hazeFade = slider("Fade").value;
-  fireEvent.click(tile("Header", "Lava"));
-  expect([hazeFade, slider("Fade").value]).toEqual(["70", "70"]);
+  expect(fades()).toEqual({ lava: "70", haze: "70" });
+  await reload();
+  expect(fades()).toEqual({ lava: "70", haze: "70" });
+});
+
+test("a Fade set in another tab survives this tab setting a different effect's Fade", async () => {
+  await mount();
+  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { fade: 40 } }));
+  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  await reload();
+  expect(fades()).toEqual({ lava: "40", haze: "20" });
+});
+
+test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {
+  await mount();
+  fireEvent.click(scheme("Light"));
+  fireEvent.change(slider("Fade"), { target: { value: "0" } });
+  expect(band().style.getPropertyValue("--haze-fade")).toBe("");
 });
 
 test("under prefers-reduced-motion the Motion switch is off and disabled", async () => {

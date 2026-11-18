@@ -306,7 +306,7 @@ export function useHeaderEffect() {
 export function useFade(effect: BandEffect) {
   const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
   const setFade = (fade: number) => {
-    const next = { ...effectSettingsStore.getSnapshot() };
+    const next = { ...readEffectSettings(effectSettingsStore.getSnapshot()) };
     if (fade === DEFAULT_FADE) delete next[effect];
     else next[effect] = { fade };
     effectSettingsStore.set(next);

@@ -94,7 +94,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
       ref={band}
       aria-hidden="true"
       data-haze=""
-      style={{ "--haze-fade": `${fade}%` } as CSSProperties}
+      style={dark ? { "--haze-fade": `${fade}%` } as CSSProperties : undefined}
       className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
     >
       {/* Lava pools its wax at the bottom of its box, so the box runs past the band's clipped edge. */}
