@@ -13,6 +13,22 @@ let stop = () => {};
 const matching = (...queries: string[]) => (query: string) =>
   ({ matches: queries.includes(query), addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList;
 
+/** A media query lookup whose system colour scheme the test flips, firing its change listeners. */
+function systemScheme(dark: boolean) {
+  const listeners: (() => void)[] = [];
+  const scheme = { matches: dark, addEventListener: (_: string, listener: () => void) => listeners.push(listener), removeEventListener() {} };
+  const still = { matches: false, addEventListener() {}, removeEventListener() {} };
+  return {
+    media: (query: string) => (query === "(prefers-color-scheme: dark)" ? scheme : still) as unknown as MediaQueryList,
+    flip() {
+      scheme.matches = !scheme.matches;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
+
+const gradient = () => getComputedStyle(band).backgroundImage;
+
 /** Replaces Haze's mount with one that adds a canvas and records each call's band and options. */
 function recordMounts() {
   const mounts: { band: HTMLElement; options: Partial<haze.HazeConfig>; destroyed: boolean }[] = [];
@@ -58,7 +74,7 @@ test("reduced motion mounts Haze with motion off", () => {
   expect(mounts[0]!.options.motion).toBe(false);
 });
 
-test("switching Night to Dawn destroys the drawing, and switching back mounts Haze again", async () => {
+test("switching Night to Dawn destroys the drawing and shows the gradient with no canvas, and switching back mounts Haze again", async () => {
   const mounts = recordMounts();
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
   stop = mountHeader(band, root, matching());
@@ -67,6 +83,8 @@ test("switching Night to Dawn destroys the drawing, and switching back mounts Ha
   root.setAttribute("data-theme", "light");
   await settle();
   expect(mounts[0]!.destroyed).toBe(true);
+  expect(band.querySelector("canvas")).toBeNull();
+  expect(gradient()).toContain("radial-gradient");
 
   root.setAttribute("data-theme", "dark");
   await settle();
@@ -75,7 +93,7 @@ test("switching Night to Dawn destroys the drawing, and switching back mounts Ha
   expect(band.querySelectorAll("canvas").length).toBe(1);
 });
 
-test("a Haze mount that throws leaves the band's gradient with no canvas and does not throw", () => {
+test("a Haze mount that throws leaves the band's gradient showing with no canvas and does not throw", () => {
   const spy = spyOn(haze, "mount").mockImplementation((container: HTMLElement) => {
     container.appendChild(document.createElement("canvas"));
     throw new Error("shader failed");
@@ -83,4 +101,18 @@ test("a Haze mount that throws leaves the band's gradient with no canvas and doe
   expect(() => { stop = mountHeader(band, root, matching()); }).not.toThrow();
   expect(spy).toHaveBeenCalledTimes(1);
   expect(band.querySelector("canvas")).toBeNull();
+  expect(gradient()).toContain("radial-gradient");
+});
+
+test("a saved Night whose WebGL context was lost keeps the gradient through a system colour scheme change", () => {
+  const mounts = recordMounts();
+  const system = systemScheme(false);
+  stop = mountHeader(band, root, system.media);
+  band.querySelector("canvas")!.dispatchEvent(new Event("webglcontextlost"));
+  expect(mounts[0]!.destroyed).toBe(true);
+
+  system.flip();
+  expect(mounts.length).toBe(1);
+  expect(band.querySelector("canvas")).toBeNull();
+  expect(gradient()).toContain("radial-gradient");
 });

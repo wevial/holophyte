@@ -19,6 +19,7 @@ export function mountHeader(band: HTMLElement, root: HTMLElement, media: Media):
   const dark = media("(prefers-color-scheme: dark)");
   const reduced = media("(prefers-reduced-motion: reduce)");
   let live: haze.HazeHandle | null = null;
+  let failed = false;
   let unlisten = () => {};
 
   const night = () => {
@@ -33,7 +34,13 @@ export function mountHeader(band: HTMLElement, root: HTMLElement, media: Media):
     live = null;
   }
 
+  function lose() {
+    drop();
+    failed = true;
+  }
+
   function draw() {
+    failed = true;
     let drawing: haze.HazeHandle;
     try {
       drawing = haze.mount(band, { ...OPTIONS, ...themePaint(root), motion: !reduced.matches });
@@ -45,13 +52,16 @@ export function mountHeader(band: HTMLElement, root: HTMLElement, media: Media):
     const canvas = band.querySelector("canvas");
     if (!canvas) return;
     live = drawing;
-    canvas.addEventListener("webglcontextlost", drop, { once: true });
-    unlisten = () => canvas.removeEventListener("webglcontextlost", drop);
+    failed = false;
+    canvas.addEventListener("webglcontextlost", lose, { once: true });
+    unlisten = () => canvas.removeEventListener("webglcontextlost", lose);
   }
 
   const sync = () => {
-    if (night() && !live) draw();
-    else if (!night() && live) drop();
+    if (!night()) {
+      drop();
+      failed = false;
+    } else if (!live && !failed) draw();
   };
   const still = () => {
     if (live) live.config.motion = !reduced.matches;
