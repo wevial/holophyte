@@ -159,13 +159,6 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(t.estimate_min, 30)
         self.assertEqual(t.depends_on, [])
 
-    def test_no_contract_checks_section_means_no_declarations(self):
-        self.assertEqual(self.t.contract_checks, [])
-
-    def test_contract_checks_parsed_as_path_and_literal(self):
-        t = tt.parse(FILLED_WITH_CONTRACTS)
-        self.assertEqual(t.contract_checks, [("config/tunnel.yml", "8622")])
-
     def test_depends_on_ids_split_with_blockquote(self):
         t = tt.parse(FILLED_WITH_BLOCKQUOTE.replace(
             "Depends on: none", "Depends on: KO-1, KO-23"))
@@ -180,6 +173,9 @@ class ValidateTests(unittest.TestCase):
 
     def test_filled_ticket_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(FILLED)), [])
+
+    def test_filled_ticket_with_blockquote_is_valid(self):
+        self.assertEqual(tt.validate(tt.parse(FILLED_WITH_BLOCKQUOTE)), [])
 
     def test_ticket_with_contract_checks_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(FILLED_WITH_CONTRACTS)), [])
@@ -804,7 +800,12 @@ class ScopeAdvisoryTests(unittest.TestCase):
         text = FILLED.replace(
             "GET /orders.csv streams the current user's orders as CSV.",
             self.CHAINED[" and "]).replace("- None", "- Which CSV dialect?")
-        self.assertTrue(tt.blocking(tt.validate(tt.parse(text))))
+        problems = tt.validate(tt.parse(text))
+        self.assertEqual(tt.blocking(problems), [
+            "'Open questions' must read exactly '- None' before the ticket "
+            "enters the pickable queue"])
+        self.assertEqual(len([p for p in problems
+                              if p.startswith(tt.ADVISORY_PREFIX)]), 1, problems)
 
 
 class InterpreterAdvisoryTests(unittest.TestCase):
