@@ -77,17 +77,35 @@ const change = async (element: Element, value: string) => {
   await act(async () => void fireEvent.change(element, { target: { value } }));
   for (let round = 0; round < 4; round += 1) await act(settle);
 };
+const key = async (element: Element, name: string) => {
+  await act(async () => void fireEvent.keyDown(element, { key: name }));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+};
 
 const pages = () => within(screen.getByRole("navigation", { name: "Pages" })).getAllByRole("link").filter((link) => !link.closest("ul"));
 const scoutsLink = () => pages().find((link) => link.getAttribute("aria-label")!.startsWith("Scouts"))!;
 const list = () => screen.getByRole("list", { name: "Scouts, newest first" });
 const ids = () => [...list().querySelectorAll("[data-scout]")].map((row) => row.getAttribute("data-scout"));
-const countLine = () => document.querySelector("[data-count-line]")!.textContent;
+const pageHeader = () => screen.getByRole("heading", { level: 1, name: "Scouts" }).closest("header")!;
+const pageCount = () => pageHeader().querySelector("[data-page-count]")!.textContent;
 const form = () => screen.getByRole("form", { name: "New scout" });
 const pressed = (group: string) =>
   within(within(form()).getByRole("group", { name: group })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
 const buttons = (group: string) => within(within(form()).getByRole("group", { name: group })).getAllByRole("button").map((button) => button.textContent);
-const disclosure = () => form().querySelector("button[aria-expanded]")!;
+const picker = (name: string) => within(form()).getByRole("button", { name: new RegExp(`^${name}: `) });
+/** The `name` picker's options and which of them is selected, read open and closed again with Escape. */
+const listed = async (name: string) => {
+  await click(picker(name));
+  const options = within(screen.getByRole("listbox", { name })).getAllByRole("option");
+  const read = { texts: options.map((option) => option.textContent), selected: options.filter((option) => option.getAttribute("aria-selected") === "true").map((option) => option.textContent) };
+  await key(document.activeElement!, "Escape");
+  return read;
+};
+const choose = async (name: string, label: string) => {
+  await click(picker(name));
+  await click(within(screen.getByRole("listbox", { name })).getByRole("option", { name: label }));
+};
+const disclosure = () => form().querySelector("button[aria-expanded]:not([aria-haspopup])")!;
 const scoutButton = () => within(form()).getByRole("button", { name: "Scout" });
 
 function readRow(id: number) {
@@ -112,7 +130,7 @@ async function fillForm(ask: string) {
   await change(within(form()).getByLabelText("Ask"), ask);
   await click(within(within(form()).getByRole("group", { name: "Kind" })).getByRole("button", { name: "Bug" }));
   await click(disclosure());
-  await click(within(within(form()).getByRole("group", { name: "Lead" })).getByRole("button", { name: "sol" }));
+  await choose("Lead", "sol");
   await change(within(form()).getByLabelText("At once"), "2");
   await change(within(form()).getByLabelText("Minutes"), "10");
 }
@@ -138,15 +156,18 @@ test("the Scouts page link follows Findings, is current on #/scouts and counts r
   expect(scoutsLink().querySelector("[data-badge]")).toBeNull();
 });
 
-test("the list groups every scoped project's scouts newest first under its count line", async () => {
+test("the list groups every scoped project's scouts newest first under a page header of Scouts, its count and New scout alone", async () => {
   const daemons = { demo: [scout(31, "swarming", 1), scout(29, "queued", 3), scout(27, "done", 4)], writer: [scout(30, "planning", 2)] };
   await mount("#/scouts", scoutFetch(daemons).fetch);
   expect(ids()).toEqual(["31", "29", "27", "30"]);
-  expect(countLine()).toBe("all projects · 4 scouts / 2 running / 1 queued / newest first");
+  expect(pageCount()).toBe("4 scouts · 2 running");
+  expect(within(pageHeader()).getByRole("button", { name: "New scout" })).toBeTruthy();
+  expect(pageHeader().textContent).toBe("Scouts4 scouts · 2 runningNew scout");
   cleanup();
   await mount("#/scouts?project=demo", scoutFetch(daemons).fetch);
   expect(ids()).toEqual(["31", "29", "27"]);
-  expect(countLine()).toStartWith("demo · 3 scouts");
+  expect(pageCount()).toStartWith("3 scouts");
+  expect(pageHeader().textContent).toBe("Scouts3 scouts · 1 runningNew scout");
 });
 
 test("a row reads its state, title not ask, kind, routes, helper progress and time taken, with no id or project", async () => {
@@ -183,7 +204,7 @@ test("a failed row shows at most 160 characters of its reason, the whole line in
   expect(readRow(40).text).not.toContain("…");
 });
 
-test("a wide list row reads its title, then one mono line of kind, time taken, start and what it found, to file in the need colour", async () => {
+test("a wide list row reads its title, then one line of kind, time taken, start and what it found, to file in the need colour", async () => {
   const counts = { findings: 0, actions: 0, filed: 0, to_file: 0 };
   const started = new Date(2026, 9, 24, 2, 28).getTime();
   const rows = [
@@ -201,7 +222,6 @@ test("a wide list row reads its title, then one mono line of kind, time taken, s
     const line = (id: number) => row(id).querySelector("[data-scout-row-facts]")!;
     expect(row(31).querySelector("[data-cell='title']")!.textContent).toBe("Loop runs crash with database is locked");
     expect(row(31).querySelector("[data-cell='title']")!.classList.contains("line-clamp-2")).toBe(true);
-    expect(line(31).classList.contains("font-mono")).toBe(true);
     expect(line(31).textContent).toBe("bug · 13m · Sat 02:28 · 7 findings · 4 actions · 1 filed · 3 to file");
     const toFile = line(31).querySelector("[data-to-file]")!;
     expect([toFile.textContent, toFile.classList.contains("text-need")]).toEqual(["3 to file", true]);
@@ -220,18 +240,23 @@ test("with no scouts the page says so for its scope", async () => {
   expect(screen.getByText("No scouts in demo.")).toBeTruthy();
 });
 
-test("New scout opens the form on Ask with Research, the scoped project and the default routes picked", async () => {
-  await openForm("#/scouts?project=demo", { demo: [] });
+test("New scout opens on Ask with Research pressed, and the Project, Lead and Helpers pickers show and select demo's defaults", async () => {
+  const { seen } = await openForm("#/scouts", { demo: [] });
   expect(document.activeElement).toBe(within(form()).getByLabelText("Ask"));
+  expect(buttons("Kind")).toEqual(["Bug", "Research", "Recon"]);
   expect(pressed("Kind")).toEqual(["Research"]);
-  const project = within(form()).getByLabelText("Project") as HTMLSelectElement;
-  expect(project.selectedOptions[0]!.textContent).toBe("demo");
+  expect(picker("Project").textContent).toBe("demo");
+  expect(await listed("Project")).toEqual({ texts: ["demo", "writer"], selected: ["demo"] });
   const fold = within(form()).getByRole("button", { name: "opus · luna ×4 · 30 min" });
   expect(fold.getAttribute("aria-expanded")).toBe("false");
   await click(fold);
-  expect(buttons("Lead")).toEqual(["opus", "sol"]);
-  expect(pressed("Lead")).toEqual(["opus"]);
-  expect(buttons("Helpers")).toEqual(["luna"]);
+  expect([picker("Lead").textContent, picker("Helpers").textContent]).toEqual(["opus", "luna"]);
+  expect(await listed("Lead")).toEqual({ texts: ["opus", "sol"], selected: ["opus"] });
+  expect(await listed("Helpers")).toEqual({ texts: ["luna"], selected: ["luna"] });
+  await choose("Project", "writer");
+  expect(seen.some((request) => request.url === `${WRITER}/scouts/routes`)).toBe(true);
+  expect(picker("Project").textContent).toBe("writer");
+  expect(disclosure().textContent).toBe("glm · haiku ×2 · 15 min");
 });
 
 test("Cancel closes the form and New scout opens it again as typed", async () => {
@@ -245,16 +270,51 @@ test("Cancel closes the form and New scout opens it again as typed", async () =>
   expect(disclosure().textContent).toBe("sol · luna ×2 · 10 min");
 });
 
-test("defaults naming unlisted routes press the first listed, and a project with no lead cannot scout", async () => {
+test("defaults naming unlisted routes select the first listed, and a project with no lead offers no Lead picker and cannot scout", async () => {
   await openForm("#/scouts?project=demo", { demo: [], routes: { ...demoRoutes, defaults: { ...demoRoutes.defaults, lead: "glm", helper: "haiku" } } });
   await click(within(form()).getByRole("button", { name: "opus · luna ×4 · 30 min" }));
-  expect(pressed("Lead")).toEqual(["opus"]);
-  expect(pressed("Helpers")).toEqual(["luna"]);
+  expect((await listed("Lead")).selected).toEqual(["opus"]);
+  expect((await listed("Helpers")).selected).toEqual(["luna"]);
   cleanup();
   await openForm("#/scouts?project=demo", { demo: [], routes: { ...demoRoutes, leads: [] } });
   await change(within(form()).getByLabelText("Ask"), ASK);
+  await click(disclosure());
+  expect(within(form()).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? "").filter((label) => label.startsWith("Lead"))).toEqual([]);
   expect(scoutButton().hasAttribute("disabled")).toBe(true);
   expect(within(form()).getByText("No lead route on demo passed its probe.")).toBeTruthy();
+});
+
+test("a picked route no longer listed when New scout opens again stays picked, so the Lead picker, the disclosure and the launch name the same route", async () => {
+  const daemons: Daemons = { demo: [], launch: () => Response.json({ ok: true, detail: "scout 32 queued" }) };
+  const { seen } = await openForm("#/scouts?project=demo", daemons);
+  await fillForm(ASK);
+  await click(within(form()).getByRole("button", { name: "Cancel" }));
+  daemons.routes = { ...demoRoutes, leads: demoRoutes.leads.filter((route) => route.name !== "sol") };
+  await click(screen.getByRole("button", { name: "New scout" }));
+  expect(seen.filter((request) => request.url === `${DEMO}/scouts/routes`).length).toBeGreaterThan(1);
+  expect(picker("Lead").textContent).toBe("sol");
+  expect(disclosure().textContent).toBe("sol · luna ×2 · 10 min");
+  await click(scoutButton());
+  const posts = seen.filter((request) => request.method === "POST");
+  expect(posts.map((post) => post.body)).toEqual([{ ask: ASK, kind: "bug", lead: "sol", helper: "luna", swarm: 2, minutes: 10 }]);
+});
+
+test("a form kept with no helper picked shows no helper selected when a helper route appears, and Scout waits for one", async () => {
+  const daemons: Daemons = { demo: [], routes: { ...demoRoutes, helpers: [] } };
+  await openForm("#/scouts?project=demo", daemons);
+  await change(within(form()).getByLabelText("Ask"), ASK);
+  await click(disclosure());
+  await change(within(form()).getByLabelText("Minutes"), "10");
+  await click(within(form()).getByRole("button", { name: "Cancel" }));
+  daemons.routes = demoRoutes;
+  await click(screen.getByRole("button", { name: "New scout" }));
+  expect(disclosure().textContent).toBe("opus · – ×4 · 10 min");
+  expect((await listed("Helpers")).selected).toEqual(["–"]);
+  expect(picker("Helpers").textContent).toBe("–");
+  expect(scoutButton().hasAttribute("disabled")).toBe(true);
+  await choose("Helpers", "luna");
+  expect(disclosure().textContent).toBe("opus · luna ×4 · 10 min");
+  expect(scoutButton().hasAttribute("disabled")).toBe(false);
 });
 
 test("the disclosure label follows the picks, and a blank ask or too large a swarm disables Scout", async () => {
@@ -319,21 +379,11 @@ test("a refusal keeps the form open as typed and reads under its buttons", async
   }
 });
 
-test("with no scope the Project select lists every project taking actions and reads the picked one's routes", async () => {
-  const { seen } = await openForm("#/scouts", { demo: [] });
-  const project = within(form()).getByLabelText("Project") as HTMLSelectElement;
-  expect(Array.from(project.options, (option) => option.textContent)).toEqual(["demo", "writer"]);
-  await change(project, WRITER);
-  expect(seen.some((request) => request.url === `${WRITER}/scouts/routes`)).toBe(true);
-  expect(within(form()).getByRole("button", { name: "glm · haiku ×2 · 15 min" })).toBeTruthy();
-});
-
 test("returning to a project after picking another resets its pickers to its defaults", async () => {
   await openForm("#/scouts", { demo: [] });
   await fillForm(ASK);
-  const project = within(form()).getByLabelText("Project");
-  await change(project, WRITER);
-  await change(project, DEMO);
+  await choose("Project", "writer");
+  await choose("Project", "demo");
   expect(disclosure().textContent).toBe("opus · luna ×4 · 30 min");
 });
 

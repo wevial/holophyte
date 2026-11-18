@@ -1,6 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { mount, PALETTES, type HazeHandle } from "../../vendor/spectra/haze";
-import { useCustomThemes, useHazeStrength, useMotion, useTheme } from "../appearance";
+import { destroyStages } from "../../vendor/spectra/core/stage";
+import * as caustics from "../../vendor/spectra/caustics";
+import * as haze from "../../vendor/spectra/haze";
+import * as lava from "../../vendor/spectra/lava";
+import * as plume from "../../vendor/spectra/plume";
+import * as ribbons from "../../vendor/spectra/ribbons";
+import { useCustomThemes, useHazeStrength, useMotion, useTheme, type HeaderEffect } from "../appearance";
+
+type BandEffect = Exclude<HeaderEffect, "none">;
+
+interface Handle {
+  config: object;
+  destroy(): void;
+}
+
+const SPECTRA = { caustics, lava, plume, ribbons };
 
 const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed: 0.8 };
 
@@ -10,28 +24,36 @@ function themePaint(palette: string): { palette: string; intensity: number } {
   const colours: [string, string, string] = [token("--haze-ground"), token("--haze-back"), token("--haze-front")];
   // A static frame redraws only when the config changes, so the palette's name carries its colours.
   const named = `${palette}:${colours.join(":")}`;
-  PALETTES[named] = colours;
+  haze.PALETTES[named] = colours;
   return { palette: named, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) };
 }
 
-export function Haze() {
+function mountEffect(effect: BandEffect, container: HTMLElement, palette: string, motion: boolean): Handle {
+  if (effect === "haze") return haze.mount(container, { ...OPTIONS, ...themePaint(palette), motion });
+  return SPECTRA[effect].mount(container, { motion });
+}
+
+export function Haze({ effect }: { effect: BandEffect }) {
   const band = useRef<HTMLDivElement>(null);
-  const live = useRef<HazeHandle | null>(null);
+  const live = useRef<Handle | null>(null);
   const [fallback, setFallback] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const { resolvedTheme, lightPick, darkPick } = useTheme();
   const dark = resolvedTheme === "dark";
   const palette = `${dark ? darkPick : lightPick}-${resolvedTheme}`;
   const { hazeStrength } = useHazeStrength();
-  const { motion } = useMotion();
+  const { motion, reduced } = useMotion();
+  const still = !motion || reduced;
   const { customThemes } = useCustomThemes();
 
   useEffect(() => {
     if (!dark) return;
     const container = band.current!;
-    let haze: HazeHandle;
+    let drawing: Handle;
     try {
-      haze = mount(container, { ...OPTIONS, ...themePaint(palette), motion });
+      drawing = mountEffect(effect, container, palette, motion);
     } catch {
+      destroyStages(container);
       container.querySelector("canvas")?.remove();
       setFallback(true);
       return;
@@ -41,24 +63,29 @@ export function Haze() {
       setFallback(true);
       return;
     }
-    live.current = haze;
+    live.current = drawing;
     setFallback(false);
     const lost = () => {
       live.current = null;
-      haze.destroy();
+      drawing.destroy();
       setFallback(true);
     };
     canvas.addEventListener("webglcontextlost", lost, { once: true });
     return () => {
       canvas.removeEventListener("webglcontextlost", lost);
       live.current = null;
-      haze.destroy();
+      drawing.destroy();
     };
-  }, [dark]);
+  }, [dark, effect, attempt]);
 
   useEffect(() => {
-    if (live.current) Object.assign(live.current.config, themePaint(palette), { motion });
+    if (live.current) Object.assign(live.current.config, effect === "haze" ? themePaint(palette) : {}, { motion });
   }, [palette, hazeStrength, motion, customThemes]);
+
+  // A renderer that fell back under a slow moving frame gets another try at its one still frame.
+  useEffect(() => {
+    if (still && !live.current) setAttempt((count) => count + 1);
+  }, [still]);
 
   return (
     <div
