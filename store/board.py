@@ -188,8 +188,7 @@ def reopen_reverted(conn, run_id):
         if row is None or row[0] != "merged":
             return None
         _, merge_sha, project_id, revert_key, text = row
-        sections = ticket_template.parse(text or "").sections
-        summary = sections.get("Summary", "")
+        summary = ticket_template.parse(text or "").sections.get("Summary", "")
         named = REVERTS.search(summary)
         if named is None:
             return None
