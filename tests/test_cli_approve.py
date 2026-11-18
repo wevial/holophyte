@@ -718,6 +718,36 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertEqual(git(self.aside(), "rev-parse", "HEAD"), self.wip)
         self.assertIn(f"moved to {self.aside()}", out)
 
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_move_git_fails_after_renaming_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.sweep()
+        registration = Path(git(self.wt, "rev-parse", "--absolute-git-dir")
+                            ) / "gitdir"
+        registration.chmod(0o444)
+        self.addCleanup(registration.chmod, 0o644)
+
+        self.assertIn("git worktree move failed",
+                      self.refused("--note", "ok"))
+
+        registration.chmod(0o644)
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
+
+    def test_inherited_repository_selectors_do_not_redirect_the_git_steps(self):
+        self.branch_with_wip()
+        self.sweep()
+        main_checkout = (git(self.repo, "symbolic-ref", "HEAD"),
+                         git(self.repo, "rev-parse", "HEAD"))
+
+        with patch.dict(os.environ, {"GIT_DIR": str(self.repo / ".git"),
+                                     "GIT_WORK_TREE": str(self.repo)}):
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual((git(self.repo, "symbolic-ref", "HEAD"),
+                          git(self.repo, "rev-parse", "HEAD")), main_checkout)
+
     def test_a_worktree_with_an_initialized_submodule_is_refused(self):
         dependency = self.root / "dependency"
         git(self.root, "init", "-b", "main", str(dependency))

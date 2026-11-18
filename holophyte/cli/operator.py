@@ -26,6 +26,7 @@ from holophyte.host.reconcile import (
 )
 from holophyte.host.startup import banner
 from holophyte.host.supervisor import linear_budget_low, supervisor_liveness_line
+from holophyte.isolation.isolation_git import git_environment
 from holophyte.loop.claim import _claim_next, claimed_run
 from holophyte.loop.claim_store import BOARD_DOWN, announce, store_mode, sync_board
 from holophyte.loop.gates import sh
@@ -39,7 +40,6 @@ from holophyte.loop.pool_handoff import (  # noqa: F401
 from holophyte.loop.reexec import reexec_self
 from holophyte.loop.runs import open_store
 from holophyte.loop.task_worktree import run_worktree_setup
-from holophyte.pr.capture_files import checkout_of
 from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
 from store import operator_notes, steer_notes
@@ -417,7 +417,18 @@ def _reviewed_commit(conn, run_id):
 
 def _git(repo, *args):
     return subprocess.run(["git", *args], cwd=repo, capture_output=True,
-                          text=True, errors="replace")
+                          text=True, errors="replace", env=git_environment())
+
+
+def _checkout_of(repo, branch):
+    worktree = None
+    for line in _git(repo, "worktree", "list", "--porcelain"
+                     ).stdout.splitlines():
+        if line.startswith("worktree "):
+            worktree = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{branch}":
+            return worktree
+    return None
 
 
 class _StepFailed(Exception):
@@ -435,13 +446,13 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}branch {branch} at {tip[:12]} does not descend from"
             f" the reviewed commit {sha[:12]}; nothing approved")
-    checked_out = checkout_of(repo, branch)
+    checked_out = _checkout_of(repo, branch)
     if checked_out is None or checked_out.resolve() != worktree.resolve():
         raise SystemExit(
             f"{refused}branch {branch} is not checked out at {worktree},"
             " where the next claim resumes it; nothing approved")
-    if sh(["git", "status", "--porcelain", "--untracked-files=normal"],
-          cwd=worktree):
+    if _git(worktree, "status", "--porcelain", "--untracked-files=normal"
+            ).stdout.strip():
         raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
                          f" changes on {branch}; nothing approved")
     if tip == sha:
@@ -457,8 +468,8 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
     aside = worktree.with_name(f"{worktree.name}.dropped-{run_id}")
     if os.path.lexists(aside):
         raise SystemExit(f"{refused}{aside} already exists; nothing approved")
-    dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
-                 cwd=repo).split()
+    dropped = _git(repo, "rev-list", "--abbrev-commit",
+                   f"{sha}..{tip}").stdout.split()
     undo = []
     try:
         _replace_worktree(target, undo, worktree, aside, branch, ref,
@@ -489,8 +500,7 @@ def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
           else ["update-ref", "-d", ref, tip])
     _step(undo, worktree, ["checkout", "--quiet", "--detach"],
           lambda: _reattach(worktree, head, tip))
-    _step(undo, repo, ["worktree", "move", str(worktree), str(aside)],
-          lambda: _move_back(repo, aside, worktree))
+    _move_aside(undo, repo, worktree, aside)
     _step(undo, repo, ["update-ref", head, sha, tip],
           ["update-ref", head, tip, sha])
     _step(undo, repo, ["worktree", "add", "--quiet", str(worktree), branch],
@@ -505,12 +515,43 @@ def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
 
 
 def _reattach(worktree, head, tip):
+    if not os.path.isdir(worktree):
+        return subprocess.CompletedProcess([], 1, "", f"{worktree} is missing")
     moved = _git(worktree, "rev-parse", "HEAD").stdout.strip()
     if moved != _git(worktree, "rev-parse", head).stdout.strip():
         landed = _git(worktree, *NO_HOOKS, "update-ref", head, moved, tip)
         if landed.returncode != 0:
             return landed
     return _git(worktree, *NO_HOOKS, "symbolic-ref", "HEAD", head)
+
+
+def _move_aside(undo, repo, worktree, aside):
+    try:
+        _step(undo, repo, ["worktree", "move", str(worktree), str(aside)],
+              lambda: _move_back(repo, aside, worktree))
+    except _StepFailed as failed:
+        if os.path.lexists(worktree) or not os.path.lexists(aside):
+            raise
+        try:
+            os.rename(aside, worktree)
+        except OSError as stuck:
+            raise _StepFailed(f"{failed}; moving {aside} back to {worktree}"
+                              f" failed ({stuck}), so {aside} needs repair"
+                              ) from None
+        if not _registered(repo, worktree):
+            raise _StepFailed(f"{failed}; {worktree} is back in place but"
+                              " git no longer registers it, so it needs"
+                              " repair") from None
+        raise
+
+
+def _registered(repo, worktree):
+    listed = {Path(line[len("worktree "):]).resolve() for line in _git(
+        repo, "worktree", "list", "--porcelain").stdout.splitlines()
+        if line.startswith("worktree ")}
+    top = _git(worktree, "rev-parse", "--show-toplevel").stdout.strip()
+    return worktree.resolve() in listed and bool(top) \
+        and Path(top).resolve() == worktree.resolve()
 
 
 def _move_back(repo, aside, worktree):
