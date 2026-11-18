@@ -138,7 +138,10 @@ class StuckReviewTests(unittest.TestCase):
                 patch.object(review_round, "capture_review",
                              side_effect=captured), \
                 patch("holophyte.agents.fix_session.fix_turn",
-                      side_effect=fix_turn):
+                      side_effect=fix_turn), \
+                patch("holophyte.loop.fix_self_check.self_check_turn",
+                      side_effect=lambda *args, **kwargs: self.calls.append(
+                          ("self_check", args[8]))):
             head = self.git("rev-parse", "HEAD")
             return review_round._review_rounds(
                 PROJECT, self.conn, self.run_id, None, "NAT-1", "task/nat-1",
