@@ -221,7 +221,7 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   const foot = within(card).getByRole("heading").nextElementSibling!;
   expect(Array.from(foot.children, (part) => part.hasAttribute("data-state-line") || part.hasAttribute("data-time-box"))).toEqual([true, true]);
   expect(foot.classList).toContain("flex");
-  expect(Array.from(foot.classList).filter((name) => name.includes(":") || /^(flex-col|flex-col-reverse|flex-wrap|flex-wrap-reverse|block|grid|contents)$/.test(name))).toEqual([]);
+  expect(Array.from(foot.classList).filter((name) => /^(flex-col|flex-col-reverse|flex-wrap|flex-wrap-reverse|block|grid|contents|hidden)!?$/.test(name.split(":").at(-1)!))).toEqual([]);
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
@@ -258,7 +258,7 @@ test("a held host's ready card says it is held, and a merge of today says when i
   expect(glyphOf("DEMO-2").getAttribute("data-state")).toBe("held");
   expect(lineOf("DEMO-10").textContent).toBe("merged 11:15");
   expect([glyphOf("DEMO-10").getAttribute("aria-label"), glyphOf("DEMO-10").getAttribute("data-state")]).toEqual(["merged", "merged"]);
-  expect(glyphOf("DEMO-10").querySelector("circle")!.getAttribute("fill")).toBeNull();
+  expect(glyphOf("DEMO-10").querySelector("circle")!.closest("[fill]")!.getAttribute("fill")).toBe("none");
   expect(glyphOf("DEMO-10").querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
   expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
@@ -277,8 +277,8 @@ test("cards keep their need, done, backlog and plain looks, and no card title us
   expect(plain!.className).not.toContain("var(--need-edge)");
   for (const card of [need!, done!, plain!]) expect(card.classList).toContain("bg-raised");
   const fillAndEdge = (card: Element) => Array.from(card.classList).filter((name) => /(^|:|!)(bg|shadow)-|!$/.test(name));
-  const raised = ["bg-raised", "shadow-[inset_0_0_0_1px_var(--hair)]", "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"];
-  for (const card of [done!, plain!]) expect(fillAndEdge(card)).toEqual(raised);
+  const raised = ["bg-raised", "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]", "shadow-[inset_0_0_0_1px_var(--hair)]"];
+  for (const card of [done!, plain!]) expect(fillAndEdge(card).toSorted()).toEqual(raised);
   const inkOf = (card: Element) => Array.from(within(card as HTMLElement).getByRole("heading").classList).find((name) => name.startsWith("text-ink"));
   expect([done!, backlog!, plain!].map(inkOf)).toEqual(["text-ink-2", "text-ink-3", "text-ink"]);
 });

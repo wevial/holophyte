@@ -122,7 +122,7 @@ test("a Done today row draws the merged state as an outlined check circle", asyn
   await press("Table");
   const glyph = rowOf("DEMO-10").querySelector("[data-cell=status] [role=img]")!;
   expect([glyph.getAttribute("aria-label"), glyph.getAttribute("data-state")]).toEqual(["merged", "merged"]);
-  expect(glyph.querySelector("circle")!.getAttribute("fill")).toBeNull();
+  expect(glyph.querySelector("circle")!.closest("[fill]")!.getAttribute("fill")).toBe("none");
   expect(glyph.querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
 });
 

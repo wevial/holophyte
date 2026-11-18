@@ -25,7 +25,7 @@ const FLAT_CELL = "min-h-[520px]";
 
 export function LaneGrid({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
-    <div id={body.id} hidden={body.hidden} data-lane-grid className={`${GRID} ${body.flat ? "px-px" : "px-4 pt-4 pb-[18px]"}`}>
+    <div id={body.id} hidden={body.hidden} data-lane-grid className={`${GRID} ${body.flat ? "p-1" : "px-4 pt-4 pb-[18px]"}`}>
       {COLUMN_IDS.map((column) => (
         <ul key={column} aria-label={COLUMN_HEADS[column].label} className={`flex min-w-0 flex-col gap-2 ${body.flat ? FLAT_CELL : ""}`}>
           {lane.columns[column].map((card) => (

@@ -34,7 +34,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
         event.preventDefault();
         onOpen(card);
       }}
-      className={`${GRID} min-h-[34px]! px-4 py-1.5 font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
+      className={`${GRID} min-h-[42px] px-4 py-2 [:root[data-density=compact]_&]:min-h-[34px]! [:root[data-density=compact]_&]:py-1.5! font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
     >
       <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${open ? "text-ink" : TONE_TEXT[tone]}`}>
         <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} />
