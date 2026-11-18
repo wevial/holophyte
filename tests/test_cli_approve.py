@@ -812,6 +812,52 @@ class SweptApproveCliTests(unittest.TestCase):
         self.cli("--approve", "KO-1", "--note", "ok")
         self.assert_released_at_reviewed()
 
+    def test_a_worker_write_that_stops_the_checkout_is_kept(self):
+        self.reviewed_then_ignored("new", "nothing")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        self.sweep()
+        real_git = holophyte.cli.operator._git
+
+        def worker_writes_first(repo, *args):
+            if args[:1] == ("read-tree",) and args[-1] == self.reviewed:
+                (self.wt / "new").write_text("the worker's file\n")
+                (self.wt / "work").write_text("the worker's edit\n")
+            return real_git(repo, *args)
+
+        with patch.object(holophyte.cli.operator, "_git",
+                          worker_writes_first), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("cannot check out", str(raised.exception))
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertEqual((self.wt / "new").read_text(), "the worker's file\n")
+        self.assertEqual((self.wt / "work").read_text(),
+                         "the worker's edit\n")
+
+    def test_a_reviewed_symlink_where_the_wip_had_a_directory_is_rewound(
+            self):
+        self.branch_with_wip()
+        git(self.wt, "reset", "-q", "--hard", self.earlier)
+        (self.wt / "real").mkdir()
+        (self.wt / "real" / "x").write_text("reviewed\n")
+        (self.wt / "a").symlink_to("real")
+        git(self.wt, "add", "real", "a")
+        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
+        git(self.wt, "rm", "-q", "a")
+        (self.wt / "a").mkdir()
+        (self.wt / "a" / "x").write_text("half an edit\n")
+        git(self.wt, "add", "a")
+        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertTrue((self.wt / "a").is_symlink())
+
     def test_a_run_failed_on_verify_is_refused_as_before(self):
         self.branch_with_wip()
         self.sweep(reason="verify failed: exit 1", kind="verify")

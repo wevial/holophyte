@@ -454,6 +454,17 @@ NO_REF = "0" * 40
 
 
 def _rewind(worktree, branch, ref, kept, sha, tip):
+    aside = _git(worktree, "update-ref", ref, tip, kept)
+    if aside.returncode != 0:
+        return f"cannot lock the refs: {aside.stderr.strip()}"
+    why = _locked_rewind(worktree, branch, sha, tip)
+    if why is not None:
+        _git(worktree, "update-ref", *(
+            ["-d", ref, tip] if kept == NO_REF else [ref, kept, tip]))
+    return why
+
+
+def _locked_rewind(worktree, branch, sha, tip):
     lock = subprocess.Popen(["git", "update-ref", "--stdin"], cwd=worktree,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True,
@@ -464,19 +475,12 @@ def _rewind(worktree, branch, ref, kept, sha, tip):
     if [lock.stdout.readline() for _ in range(2)] != ["start: ok\n",
                                                       "prepare: ok\n"]:
         return f"cannot lock the refs: {lock.communicate()[1].strip()}"
-    aside = _git(worktree, "update-ref", ref, tip, kept)
-    if aside.returncode != 0:
-        lock.communicate("abort\n")
-        return f"cannot lock the refs: {aside.stderr.strip()}"
     why = _moved_tree(worktree, sha, tip)
     _, error = lock.communicate("abort\n" if why else "commit\n")
     if why is None and lock.returncode != 0 and _git(
             worktree, "rev-parse", f"refs/heads/{branch}").stdout.strip() != sha:
         _git(worktree, "read-tree", "-m", "-u", sha, tip)
         why = f"cannot move the refs: {error.strip()}"
-    if why is not None:
-        _git(worktree, "update-ref", *(
-            ["-d", ref, tip] if kept == NO_REF else [ref, kept, tip]))
     return why
 
 
@@ -497,6 +501,15 @@ def _holds_file(path):
                                     and not os.path.isdir(path))
 
 
+def _leftover(worktree, path):
+    parent = worktree
+    for part in path.split("/")[:-1]:
+        parent = parent / part
+        if os.path.islink(parent) or not os.path.isdir(parent):
+            return False
+    return _holds_file(worktree / path)
+
+
 def _occupied(worktree, tip, added):
     tracked = set(_paths(worktree, "ls-tree", "-r", "--name-only", tip))
     occupied = set()
@@ -513,13 +526,24 @@ def _occupied(worktree, tip, added):
     return sorted(occupied)
 
 
-def _restore_files(worktree, added, edited):
-    for path in added:
-        if _holds_file(worktree / path):
-            with contextlib.suppress(OSError):
-                os.unlink(worktree / path)
+def _written_by_checkout(worktree, sha, paths):
+    paths = [path for path in paths if _leftover(worktree, path)]
+    listed = _paths(worktree, "ls-tree", "-r", sha, "--", *paths) if (
+        paths) else []
+    blobs = dict(reversed(entry.split("\t", 1)) for entry in listed)
+    return [path for path in paths if path in blobs and _git(
+        worktree, "hash-object", "--", path).stdout.strip()
+        == blobs[path].split()[2]]
+
+
+def _restore_files(worktree, sha, added, edited):
+    for path in _written_by_checkout(worktree, sha, added):
+        with contextlib.suppress(OSError):
+            os.unlink(worktree / path)
     changed = [path for path in _paths(worktree, "diff-files", "--name-only")
                if path not in edited]
+    changed = [path for path in changed if not os.path.lexists(
+        worktree / path)] + _written_by_checkout(worktree, sha, changed)
     if changed:
         _git(worktree, "checkout-index", "-f", "--", *changed)
 
@@ -534,9 +558,9 @@ def _moved_tree(worktree, sha, tip):
     edited = set(_paths(worktree, "diff-files", "--name-only"))
     moved = _git(worktree, "read-tree", "-m", "-u", tip, sha)
     if moved.returncode != 0:
-        _restore_files(worktree, added, edited)
+        _restore_files(worktree, sha, added, edited)
         return f"cannot check out {sha[:12]}: {moved.stderr.strip()}"
-    left = [path for path in removed if _holds_file(worktree / path)]
+    left = [path for path in removed if _leftover(worktree, path)]
     if left:
         _git(worktree, "update-index", "--add", "--", *left)
         _git(worktree, "read-tree", "-m", "-u", sha, tip)
