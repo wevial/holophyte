@@ -200,6 +200,7 @@ def reopen_reverted(conn, run_id, native=True):
             "SELECT t.id, r.id FROM tickets t JOIN runs r ON r.ticketId = t.id"
             " WHERE t.projectId = ? AND t.linearIdentifier = ?"
             " AND t.status = 'merged' AND r.outcome = 'merged'"
+            " AND r.mergeSha <> ''"
             " AND (substr(?, 1, length(r.mergeSha)) = r.mergeSha"
             "      OR substr(r.mergeSha, 1, length(?)) = ?)"
             " ORDER BY r.id DESC LIMIT 1",

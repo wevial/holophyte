@@ -95,13 +95,7 @@ class RevertCloseTests(ConfigTestCase):
 
     def test_a_merged_revert_returns_its_ticket_to_backlog_with_the_reason(self):
         self.file_revert()
-
-        def merge_the_revert(_target, _task, conn, run_id, _provider):
-            advance_phase(conn, run_id, "merging")
-            self.git("revert", "--no-edit", self.key_sha)
-            return self.git("rev-parse", "HEAD")
-
-        run = self.run_revert(merge_the_revert)
+        run = self.run_revert(self.merge_the_revert)
         revert_sha = self.git("rev-parse", "HEAD")
         self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
                                    " WHERE id = ?", run),
