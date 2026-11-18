@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { projectName } from "../../lib/derive";
 import { Btn } from "../components/Btn";
+import { PageHeader } from "../components/PageHeader";
 import { cardElementId } from "../components/BoardCard";
 import { BoardLane, GRID, LaneGrid } from "../components/BoardLane";
 import { GroupBy, readGroup, writeGroup } from "../components/GroupBy";
@@ -30,8 +31,19 @@ import {
 
 const STATE_OPTIONS = STATE_FILTERS.map((state) => ({ value: state, label: FILTER_LABELS[state] }));
 
-function Slash() {
-  return <span className="text-ink-3"> / </span>;
+const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
+const SMALL_QUIET = `${SMALL} ![--btn-face:transparent] ![--btn-edge:transparent] ![--btn-ink:var(--ink-2)] hover:![--btn-ink:var(--ink)]`;
+
+function PlusGlyph() {
+  return (
+    <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true" className="size-4 shrink-0">
+      <path d="M8 3.5v9M3.5 8h9" />
+    </svg>
+  );
+}
+
+function ticketCount(total: number, inFlight: number, needYou: number, ready: number) {
+  return { text: `${total} ${total === 1 ? "ticket" : "tickets"} · ${inFlight} in flight`, need: `${needYou} need you`, after: `${ready} ready` };
 }
 
 function findCard(columns: Record<ColumnId, TicketCard[]>, id: string | null): { card: TicketCard; column: ColumnId } | null {
@@ -100,61 +112,48 @@ export function Tickets() {
   const noMatch = (filter != null || q != null) && view.total === 0;
   return (
     <section aria-labelledby="page-title" className="flex flex-col px-8 pt-3.5 pb-7 max-[720px]:px-4 min-[720px]:h-full">
-      <header className="flex flex-col gap-2.5 border-b border-rule pb-3">
-        <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-2">
-          <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Tickets</h1>
-          {view.answered && (
-            <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
-              {view.project ?? "all projects"} · {view.total} {view.total === 1 ? "ticket" : "tickets"}
-              <Slash />
-              <b className="font-semibold text-ink">{columns.in_flight.length}</b> in flight
-              <Slash />
-              <b className="font-semibold text-need">{columns.needs_you.length}</b> need you
-              <Slash />
-              <b className="font-semibold text-ink">{columns.ready.length}</b> ready
-            </p>
-          )}
-          {view.project != null && (
-            <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
-              <span>
-                Showing <b className="font-medium [overflow-wrap:anywhere] text-act">{view.project}</b> only
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  storeScope(null);
-                  void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
-                }}
-                className="inline-flex min-h-8 cursor-pointer items-center font-medium text-act underline underline-offset-2"
-              >
-                Show all projects
-              </button>
-            </div>
-          )}
-          {newProject != null && (
-            <Btn variant="primary" className="ml-auto self-center" onClick={() => void navigate({ to: "/tickets/$project/new", params: { project: newProject }, search: {} })}>
-              New ticket
-            </Btn>
-          )}
-        </div>
+      <div className="flex flex-col gap-3">
+        <PageHeader
+          title="Tickets"
+          count={view.answered ? ticketCount(view.total, columns.in_flight.length, columns.needs_you.length, columns.ready.length) : undefined}
+          tools={
+            view.project == null && newProject == null ? undefined : (
+              <>
+                {view.project != null && (
+                  <Btn
+                    className={SMALL_QUIET}
+                    onClick={() => {
+                      storeScope(null);
+                      void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
+                    }}
+                  >
+                    Show all projects
+                  </Btn>
+                )}
+                {newProject != null && (
+                  <Btn variant="primary" className={SMALL} onClick={() => void navigate({ to: "/tickets/$project/new", params: { project: newProject }, search: {} })}>
+                    <PlusGlyph />
+                    New ticket
+                  </Btn>
+                )}
+              </>
+            )
+          }
+          tabs={view.answered && filter == null ? <ViewToggle view={layout} onPick={pickView} /> : undefined}
+        />
         {view.answered && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <SearchField label="Search tickets" />
             <FilterSelect label="State" param="filter" allLabel="All states" options={STATE_OPTIONS} />
-            {filter == null && <ViewToggle view={layout} onPick={pickView} />}
             <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
             {mode !== "none" && (
-              <button
-                type="button"
-                onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}
-                className="ml-auto inline-flex min-h-8 cursor-pointer items-center font-mono text-[12.5px] font-medium text-act underline underline-offset-2"
-              >
+              <Btn className={`${SMALL_QUIET} ml-auto`} onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}>
                 {anyOpen ? "Collapse all lanes" : "Expand all lanes"}
-              </button>
+              </Btn>
             )}
           </div>
         )}
-      </header>
+      </div>
       {view.answered && noMatch && <p className="mt-4 font-mono text-[13px] text-ink-3">No tickets match</p>}
       {view.answered && !noMatch && layout === "table" && (
         <div data-table-scroll className="mt-3.5 min-h-0 flex-1 overflow-auto pb-2">
