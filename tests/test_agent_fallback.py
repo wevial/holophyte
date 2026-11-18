@@ -1219,7 +1219,7 @@ class ReviewerFallbackListTests(SweepTestCase):
     def test_a_failing_fallback_keeps_its_credential_out_of_the_record(self):
         from holophyte.loop.gates import InfraFailure
 
-        token = 'c3ludGhldGljLWNyZWRlbnRpYWw='
+        token = 'c3ludGhldGljLWNyZWRlbnRpYWwx=='
         echoes = 'print("Quota exhausted for", sys.argv[1]); sys.stdout.flush()'
         for name, failure in (
                 ('quota error', echoes),
@@ -1228,15 +1228,17 @@ class ReviewerFallbackListTests(SweepTestCase):
             with self.subTest(name):
                 reviewer = self.failing_reviewer(
                     f'devin-review-{name.split()[0]}', failure)
-                self.configure_fallback(f'"{reviewer} {token}"')
+                self.configure_fallback(f'"{reviewer} {token} e"')
                 run = self.a_run()
                 with self.refusing({'judge'}), \
                         self.assertRaises(InfraFailure) as raised:
                     self.review_run(run)
                 self.assertIn(self.REFUSAL_LINE, str(raised.exception))
-                self.assertNotIn(token, str(raised.exception))
-                self.assertNotIn(token, str(self.conn.execute(
+                self.assertNotIn(token[:-2], str(raised.exception))
+                self.assertNotIn(token[:-2], str(self.conn.execute(
                     'SELECT summary, payload FROM runEvents').fetchall()))
+                self.assertIn('Quota exhausted for [redacted]',
+                              str(raised.exception))
         self.assertEqual(len(self.conn.execute(
             "SELECT 1 FROM runEvents WHERE kind='crash'").fetchall()), 1)
 

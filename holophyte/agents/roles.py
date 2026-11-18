@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -68,7 +69,7 @@ from holophyte.config.worktree_settings import carry_directories
 from holophyte.isolation import launcher
 from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.pr.mockup import review_carry
-from holophyte.redact import known_secrets, outbound, redact_prose
+from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.review import review_runner
 
 REVIEW_TIMEOUT = 1800
@@ -280,7 +281,13 @@ def fallback_prose(project, argv, text):
     arguments |= {arg.split("=", 1)[1] for arg in argv[1:]
                   if arg.startswith("-") and "=" in arg[1:]
                   and arg.split("=", 1)[1]}
-    return redact_prose(route_prose(project, str(text)), arguments)
+    text = str(text)
+    if arguments:
+        pattern = r"(?<!\w)(?:" + "|".join(
+            re.escape(value) for value in sorted(arguments, key=len, reverse=True)
+        ) + r")(?!\w)"
+        text = re.sub(pattern, REDACTED, text)
+    return route_prose(project, text)
 
 
 def refusal_failure(failure, refusal, fallback=None):
