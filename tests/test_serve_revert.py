@@ -176,6 +176,7 @@ class RevertActionTests(ConfigTestCase):
         def rejected(target, path, state, board, out, priority):
             print("[holo2] fetch https://bot:hunter2@git.example.test/r.git"
                   " and 'https://git.example.test/q.git?access_token=hun'ter3'"
+                  " and https://git.example.test?opaque=left@hunter4"
                   " failed; ticket rejected", file=out)
             return 2
 
@@ -185,10 +186,12 @@ class RevertActionTests(ConfigTestCase):
         self.assertEqual(code, 500, reply)
         self.assertNotIn("hunter2", json.dumps(reply))
         self.assertNotIn("ter3", json.dumps(reply))
+        self.assertNotIn("hunter4", json.dumps(reply))
         self.assertIn("https://[redacted]@git.example.test/r.git",
                       reply["error"])
         self.assertIn("https://git.example.test/q.git?[redacted]",
                       reply["error"])
+        self.assertIn("https://git.example.test?[redacted]", reply["error"])
         self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
 
     def test_reverts_disabled_after_the_daemon_started_are_refused(self):

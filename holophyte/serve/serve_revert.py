@@ -19,7 +19,7 @@ from holophyte.serve.serve_actions import action_store, written_on
 from holophyte.serve.serve_runs import no_store
 
 REVERT_ACTION = "revert"
-URL_USERINFO = re.compile(r"(\b[a-zA-Z][\w+.-]*://)[^/\s@]+@")
+URL_USERINFO = re.compile(r"(\b[a-zA-Z][\w+.-]*://)[^/\s?#@]+@")
 URL_QUERY = re.compile(r"(\b[a-zA-Z][\w+.-]*://[^\s?#'\"]*)\?\S+")
 
 
