@@ -12,6 +12,7 @@ sweep reads what the loop would have written.
 
 Run: python3 -m unittest discover -s tests -p 'test_review_stuck_criteria.py'
 """
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -20,6 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.steer_notes  # noqa: E402 - after the sys.path insert above
+from holophyte.loop.runs import record_round  # noqa: E402
 from holophyte.review.reply_parsing import criteria_findings  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -225,6 +228,58 @@ class RepeatedReasonTests(StuckCriteriaTestCase):
         run_id = self.converging_run(*NEW_GAPS, REPEATED_GAP, REPEATED_GAP)
 
         self.assertEqual(self.sweep(run_id).trips, [])
+
+
+AMENDED = "Given ticket 1, then it is worked and logged"
+
+
+class UnjudgedRoundTests(StuckCriteriaTestCase):
+    def setUp(self):
+        super().setUp()
+        self.run_id = self.a_run(phase="addressing")
+        store.steer_notes.steer(self.conn, self.ticket_of[self.run_id],
+                                f"REPLACE C1: {AMENDED}", "maintainer")
+        self.number = 0
+
+    def record(self, reply, criteria=()):
+        self.number += 1
+        record_round(None, self.conn, self.run_id, self.number, "review",
+                     reply, None, True, "", criteria=criteria,
+                     route="reviewer" if criteria else "mechanical:main-refresh")
+        verdict, findings = self.conn.execute(
+            "SELECT verdict, findings FROM reviewRounds"
+            " WHERE runId = ? AND round = ?",
+            (self.run_id, self.number)).fetchone()
+        return verdict, json.loads(findings)
+
+    def criteria_events(self):
+        return self.conn.execute(
+            "SELECT payload FROM runEvents WHERE runId = ? AND kind = 'criteria'",
+            (self.run_id,)).fetchall()
+
+    def test_a_round_given_no_criteria_judges_none(self):
+        verdict, findings = self.record("VERDICT: APPROVE")
+
+        self.assertEqual((verdict, findings), ("pass", []))
+        self.assertEqual(self.criteria_events(), [])
+
+    def test_unjudged_rounds_after_a_met_review_do_not_trip(self):
+        met = self.record("CRITERION C1: met - checked the log\nVERDICT: APPROVE",
+                          criteria=["Given ticket 1, then it is worked"])
+        self.assertEqual(met, ("pass", []))
+        for _ in range(3):
+            self.record("VERDICT: APPROVE")
+
+        self.assertIsNone(holophyte.host.supervisor.review_trip(
+            self.conn, self.run_id, 0.5))
+
+    def test_a_round_given_the_criteria_still_flags_the_amended_one(self):
+        verdict, (finding,) = self.record(
+            "VERDICT: APPROVE", criteria=["Given ticket 1, then it is worked"])
+
+        self.assertEqual(verdict, "changes_requested")
+        self.assertTrue(finding["message"].startswith("CRITERION C1: unwitnessed"))
+        self.assertIn(AMENDED, finding["message"])
 
 
 if __name__ == "__main__":

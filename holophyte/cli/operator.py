@@ -240,29 +240,60 @@ def report(target, conn=None, out=None, now=None):
             conn.close()
 
 
-def requeue(target, identifier, note, out=None, provider=None, force=False):
+def requeue(target, identifier, note, out=None, provider=None, force=False,
+            amend=None):
     out = out or sys.stdout
     conn = _operator_store(target)
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         failed_run = _requeue_candidate(conn, ticket_id)
-        if failed_run is not None:
-            run_id, pr_url = failed_run
-            release_lease_label(target, conn, ticket_id, provider, run_id)
-            if pr_url:
-                note = (f"{note}\n\nThe failed run's branch is still open"
-                        f" as {pr_url}")
+        if failed_run is not None and failed_run[1]:
+            note = (f"{note}\n\nThe failed run's branch is still open"
+                    f" as {failed_run[1]}")
         try:
-            run_id = store.requeue(conn, ticket_id, note, force=force)
+            if amend is not None:
+                _rehearse(conn, ticket_id, note, force, amend)
+            if failed_run is not None:
+                release_lease_label(target, conn, ticket_id, provider,
+                                    failed_run[0])
+            run_id, steered = _requeue_writes(conn, ticket_id, note, force,
+                                              amend)
         except (store.RequeueRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
         print(f"[holo2] {identifier} requeued after run {run_id}", file=out)
+        if steered is not None:
+            print(f"[holo2] {identifier} amended: steer note {steered.id}",
+                  file=out)
     finally:
         conn.close()
 
 
+class _Rehearsed(Exception):
+    pass
+
+
+def _rehearse(conn, ticket_id, note, force, amend):
+    try:
+        with store.transaction(conn):
+            _requeue_writes(conn, ticket_id, note, force, amend)
+            raise _Rehearsed
+    except _Rehearsed:
+        pass
+
+
+def _requeue_writes(conn, ticket_id, note, force, amend):
+    steered = []
+    with store.transaction(conn):
+        run_id = store.requeue(
+            conn, ticket_id, note, force=force,
+            amend=None if amend is None else lambda at: steered.append(
+                steer_notes.steer(conn, ticket_id, amend, getpass.getuser(),
+                                  now=at)))
+    return run_id, steered[0] if steered else None
+
+
 def _requeue_candidate(conn, ticket_id):
-    """Read first, so the lease label comes off while the ticket is in_flight."""
+    """Read before the requeue, which walks the ticket out of in_flight."""
     ticket = store.read.ticket_by_id(conn, ticket_id)
     if ticket is None or ticket.activeRunId is not None \
             or ticket.lastRunId is None \

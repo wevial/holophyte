@@ -28,7 +28,9 @@ import holophyte.loop.merge_gate
 import holophyte.loop.stop
 import store
 import store.read
+import store.steer_notes
 import store.tickets
+from holophyte.babysit import maintainer_notes
 from holophyte.board import linear_provider
 from holophyte.config.config_tables import board_config
 from holophyte.holo import cli as holo_cli
@@ -370,6 +372,138 @@ class RequeueCliTests(RequeueTarget):
         self.assertEqual(raised.exception.code, 2)
 
 
+class RequeueAmendTests(RequeueTarget):
+    def amendments(self):
+        return [(note.note, note.author)
+                for note in store.steer_notes.amendments(self.conn, self.ticket)]
+
+    def requeue_notes(self):
+        return [row[0] for row in self.conn.execute(
+            "SELECT note FROM interventions WHERE action = 'requeue'")]
+
+    def test_holo_requeue_amend_requeues_with_the_note_and_amends_with_the_text(self):
+        self.fail_the_run()
+
+        out = io.StringIO()
+        with patch.object(holophyte.cli.entry, "board_for", stub_board_for), \
+                patch("getpass.getuser", return_value="caller"), \
+                contextlib.redirect_stdout(out):
+            holo_cli.main(["requeue", "KO-1", "contract fixed", "--amend",
+                           "ADD: Given an empty list, then nothing is worked",
+                           "-p", str(self.repo)])
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), ["contract fixed"])
+        self.assertEqual(self.amendments(), [
+            ("ADD: Given an empty list, then nothing is worked", "caller")])
+        (note_id,) = [note.id for note in
+                      store.steer_notes.amendments(self.conn, self.ticket)]
+        self.assertIn(f"KO-1 requeued after run {self.run}", out.getvalue())
+        self.assertIn(f"steer note {note_id}", out.getvalue())
+
+    def test_an_amended_requeue_keeps_the_open_branch_line_out_of_the_amendment(self):
+        url = "https://github.com/example/repo/pull/2177"
+        park_run(self.conn, self.run, "awaiting_merge_approval",
+                 "parked on its pull request", pr_url=url)
+        store.release(self.conn, self.run, "failed",
+                      "the babysit pass died", now=T0 + MINUTE)
+
+        with patch("getpass.getuser", return_value="caller"):
+            self.cli("--requeue", "KO-1", "--note", "contract fixed",
+                     "--amend", "DROP C1")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), [
+            "contract fixed\n\nThe failed run's branch is still open"
+            f" as {url}"])
+        self.assertEqual(self.amendments(), [("DROP C1", "caller")])
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes a read-only file")
+    def test_a_lease_cleanup_failure_writes_nothing_so_a_retry_lands(self):
+        self.fail_the_run()
+        self.conn.commit()
+        lock = holophyte.board.projection.lease_turn_path(self.target)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.touch()
+        lock.chmod(0o444)
+
+        with self.assertRaises(PermissionError):
+            self.cli("--requeue", "KO-1", "--note", "retry", "--amend",
+                     "DROP C1")
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(self.amendments(), [])
+
+        lock.chmod(0o644)
+        self.cli("--requeue", "KO-1", "--note", "retry", "--amend", "DROP C1")
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual([text for text, _ in self.amendments()], ["DROP C1"])
+
+    def test_an_amended_requeue_walks_an_aborted_ticket_to_ready(self):
+        store.abort(self.conn, self.run, "claimed before the body was fixed",
+                    now=T0 + MINUTE)
+        with self.assertRaises(holophyte.loop.stop.Aborted):
+            holophyte.loop.stop.end_aborted(self.conn, self.run)
+
+        with patch("getpass.getuser", return_value="caller"):
+            self.cli("--requeue", "KO-1", "--note", "body corrected",
+                     "--amend", "DROP C1")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), ["body corrected"])
+        self.assertEqual(self.amendments(), [("DROP C1", "caller")])
+
+    def test_a_prose_amendment_on_a_released_park_reaches_the_next_run(self):
+        park_run(self.conn, self.run, "blocked_on_operator",
+                 "C1 cannot be met", park_kind="contradiction")
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.commit()
+
+        with patch("time.time", return_value=T0 / 1000 + 600):
+            self.cli("--requeue", "KO-1", "--note", "ruled",
+                     "--amend", "an empty list counts as worked")
+        self.assertEqual(self.status(), "ready")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        next_run = store.claim(self.conn, self.project_id, self.ticket, now=T0)
+
+        self.assertIn("an empty list counts as worked",
+                      maintainer_notes.carry_amendments(self.conn, next_run,
+                                                        "the ticket"))
+
+    def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
+        self.fail_the_run()
+        self.conn.commit()
+        before = list(self.conn.iterdump())
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "retry", "--amend",
+                     "DROP C9")
+
+        self.assertEqual(raised.exception.code,
+                         "[holo2] DROP C9 names no current criterion")
+        self.assertEqual(list(self.conn.iterdump()), before)
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(self.amendments(), [])
+        self.assertEqual(StubBoard.instance.unlabelled, [])
+
+    def test_a_refused_requeue_writes_no_amendment(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "too soon", "--amend",
+                     "ADD: Given an empty list, then nothing is worked")
+
+        self.assertIn("still live", str(raised.exception))
+        self.assertEqual(self.amendments(), [])
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_requeue_without_amend_writes_no_amendment(self):
+        self.fail_the_run()
+
+        out, _ = self.cli("--requeue", "KO-1", "--note", "contract fixed")
+
+        self.assertEqual(out.strip(), f"[holo2] KO-1 requeued after run {self.run}")
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.amendments(), [])
+
+
 class RelaunchLimitTests(RequeueTarget):
     """Two relaunches against one failure, then a written diagnosis."""
 
@@ -429,6 +563,34 @@ class RelaunchLimitTests(RequeueTarget):
 
         self.assertEqual(self.interventions(), before)
         self.assertEqual(self.status(), "in_flight")
+
+    def park_the_failed_ticket(self):
+        store.tickets.transition(self.conn, self.ticket, "blocked_on_operator")
+        self.conn.commit()
+
+    def amended_past_the_limit_then_counted_as_one(self, park):
+        self.relaunched_twice()
+        park()
+
+        self.cli("--requeue", "KO-1", "--note", "contract fixed", "--amend",
+                 "DROP C1")
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes()[-1], "contract fixed")
+
+        self.claim_again()
+        self.relaunch()
+        self.fail_the_run()
+        park()
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "once more")
+        self.assertIn("--force", str(raised.exception))
+
+    def test_an_amended_requeue_past_the_limit_needs_no_force_and_counts_as_one(self):
+        self.amended_past_the_limit_then_counted_as_one(lambda: None)
+
+    def test_a_blocked_failed_ticket_amended_past_the_limit_counts_as_one(self):
+        self.amended_past_the_limit_then_counted_as_one(
+            self.park_the_failed_ticket)
 
     def test_force_without_approve_or_requeue_is_a_usage_error(self):
         with self.assertRaises(SystemExit) as raised:

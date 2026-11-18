@@ -19,7 +19,7 @@ const GRAIN_KEY = "holophyte.grain";
 const HAZE_STRENGTH_KEY = "holophyte.hazeStrength";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
-const HEADER_EFFECTS = ["haze", "caustics", "plume", "ribbons", "lava", "none"] as const;
+const HEADER_EFFECTS = ["haze", "caustics", "plume", "ribbons", "lava", "hyphae", "none"] as const;
 
 export type HeaderEffect = (typeof HEADER_EFFECTS)[number];
 

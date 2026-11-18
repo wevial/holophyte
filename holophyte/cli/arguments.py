@@ -116,6 +116,8 @@ def _note_checks(parser, args):
             and not (args.note or "").strip():
         parser.error("--approve --force releases a pull request GitHub would "
                      "not merge; say why with --note TEXT")
+    if args.amend is not None and args.requeue is None:
+        parser.error("--amend belongs to --requeue")
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
@@ -240,7 +242,14 @@ def build_parser():
              " abandoned, no strike); refuses live runs, other states or "
              "outcomes and other parks (use --approve or --babysit); refusals"
              " write nothing; refuses a ticket relaunched twice against one"
-             " failure since a human last acted on it unless --force")
+             " failure since a human last acted on it unless --force or"
+             " --amend")
+    parser.add_argument(
+        "--amend", metavar="TEXT",
+        help="with --requeue: record TEXT as an amendment of the ticket, as"
+             " holo steer does on a ticket with no live run, edit lines"
+             " included, in the requeue's transaction; a refused amendment"
+             " or requeue writes neither")
     modes.add_argument(
         "--approve", metavar="KEY-n",
         help="release the ticket parked awaiting merge approval: records an "
