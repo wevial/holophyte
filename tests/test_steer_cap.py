@@ -12,7 +12,13 @@ from unittest.mock import patch
 import holophyte.loop.review_round
 import store
 from tests.failure_triage_fixture import REQUEUE, FakeClaude, question_guard
-from tests.fake_agent import APPROVE, FAIL, REQUEST_CHANGES, Commit
+from tests.fake_agent import (
+    APPROVE,
+    FAIL,
+    REQUEST_CHANGES,
+    REQUEST_CHANGES_AGAIN,
+    Commit,
+)
 from tests.loop_fixture import StubProvider, a_task
 from tests.test_steer import SteerFixture
 
@@ -21,7 +27,8 @@ TIME_CAP = "[supervisor]\nrun_cap = 3\n"
 CAPPED_TASK = dict(a_task(), budget_min=30)
 OUT_OF_TIME = (Commit("work", path="app.txt"), REQUEST_CHANGES)
 ROUND_CAP = (Commit("work", path="app.txt"), REQUEST_CHANGES,
-             Commit("fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+             Commit("fix", path="app.txt", body="fixed\n"),
+             REQUEST_CHANGES_AGAIN,
              Commit("fix again", path="app.txt", body="fixed again\n"), FAIL)
 
 

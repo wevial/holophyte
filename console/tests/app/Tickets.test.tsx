@@ -99,7 +99,9 @@ const toneOf = (element: Element) => Array.from(element.classList).find((name) =
 const columns = () => Object.fromEntries(LABELS.map((label) => [label, keysIn(label)]));
 const heads = () => document.querySelector("[data-column-heads]");
 const headCounts = () => Array.from(heads()!.querySelectorAll("[data-count]"), (count) => count.textContent);
-const countLine = () => document.querySelector("[data-count-line]")?.textContent;
+const countLine = () => document.querySelector("[data-page-count]")?.textContent;
+const needPart = () => document.querySelector("[data-page-count] .text-need")?.textContent;
+const viewGroup = () => screen.queryByRole("group", { name: "View" });
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
@@ -129,22 +131,44 @@ test("each board ticket lands in the column its state and Needs you entry name, 
   expect(document.querySelector("[data-board-scroll]")!.className).toContain("overflow-auto");
 });
 
-test("the count line counts every project's tickets with no scope", async () => {
+test("with no scope the header holds the title Tickets and a count of every project's tickets, the need part in need ink", async () => {
   await mount("#/tickets", fleet(demo, writer).fetch);
-  expect(countLine()).toBe("all projects · 9 tickets / 2 in flight / 2 need you / 3 ready");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tickets");
+  expect(countLine()).toBe("9 tickets · 2 in flight · 2 need you · 3 ready");
+  expect(needPart()).toBe("2 need you");
   expect(screen.queryByText(/^Showing/)).toBeNull();
 });
 
-test("a scoped count line counts the project's tickets, and Show all projects drops the scope", async () => {
+test("a scoped count counts the project's tickets without its name or a Showing line, and Show all projects drops the scope", async () => {
   sessionStorage.setItem("holophyte.next.project", "demo");
   await mount("#/tickets?project=demo", fleet(demo, writer).fetch);
-  expect(countLine()).toBe("demo · 8 tickets / 2 in flight / 2 need you / 2 ready");
-  expect(screen.getByText(/^Showing/).textContent).toBe("Showing demo only");
+  expect(countLine()).toBe("8 tickets · 2 in flight · 2 need you · 2 ready");
+  expect(screen.queryByText(/Showing/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Show all projects" }));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(window.location.hash).toBe("#/tickets");
   expect(sessionStorage.getItem("holophyte.next.project")).toBeNull();
-  expect(countLine()).toStartWith("all projects · 9 tickets");
+  expect(countLine()).toStartWith("9 tickets ·");
+});
+
+test("the View group offers Board and Table as pressed buttons and a pick holds across a remount, and a state filter draws the table with no View group", async () => {
+  await mount("#/tickets", fleet(demo, writer).fetch);
+  const pressed = () => within(viewGroup()!).getAllByRole("button").map((button) => [button.textContent, button.getAttribute("aria-pressed")]);
+  expect(pressed()).toEqual([["Board", "true"], ["Table", "false"]]);
+  fireEvent.click(within(viewGroup()!).getByRole("button", { name: "Table" }));
+  await act(settle);
+  cleanup();
+
+  await mount("#/tickets", fleet(demo, writer).fetch);
+  expect(pressed()).toEqual([["Board", "false"], ["Table", "true"]]);
+  expect(document.querySelector("[data-table-scroll]")).not.toBeNull();
+  cleanup();
+
+  localStorage.clear();
+  await mount("#/tickets?filter=ready", fleet(demo, writer).fetch);
+  expect(viewGroup()).toBeNull();
+  expect(document.querySelector("[data-table-scroll]")).not.toBeNull();
+  expect(document.querySelector("[data-board-scroll]")).toBeNull();
 });
 
 test("a pull request park waits In flight until its merge readiness answers ready, then needs you", async () => {
@@ -268,15 +292,15 @@ test("the sidebar's Views list Ready, Needs spec and Backlog with the project's 
   for (const count of counts) expect(count.classList).toContain("font-mono");
 });
 
-test("a view link shows only its tickets and marks itself current, and All drops the filter but keeps the scope", async () => {
+test("a view link shows only its tickets and marks itself current with a zero need you still in need ink, and All drops the filter but keeps the scope", async () => {
   await mount("#/?project=demo", viewsFleet());
   fireEvent.click(screen.getByRole("link", { name: "Needs spec" }));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(window.location.hash).toBe("#/tickets?project=demo&filter=needs_spec");
   const rowKeys = Array.from(document.querySelectorAll("[data-row] [data-cell=key]"), (cell) => cell.textContent).sort();
   expect(rowKeys).toEqual(["DEMO-6", "DEMO-7"]);
-  expect(countLine()).toBe("demo · 2 tickets / 0 in flight / 0 need you / 0 ready");
-  expect(screen.getAllByText(/^Showing/).map((line) => line.textContent)).toEqual(["Showing demo only"]);
+  expect(countLine()).toBe("2 tickets · 0 in flight · 0 need you · 0 ready");
+  expect(needPart()).toBe("0 need you");
   expect(viewLinks().map((link) => link.getAttribute("aria-current"))).toEqual([null, "page", null]);
   const state = screen.getByRole("button", { name: /^State: / });
   expect(state.textContent).toBe("Needs spec");
@@ -291,6 +315,5 @@ test("a view link shows only its tickets and marks itself current, and All drops
 
 test("an unknown filter lists every ticket as no filter does", async () => {
   await mount("#/tickets?filter=nonsense", fleet(demo, writer).fetch);
-  expect(countLine()).toBe("all projects · 9 tickets / 2 in flight / 2 need you / 3 ready");
-  expect(screen.queryAllByText(/^Showing/)).toEqual([]);
+  expect(countLine()).toBe("9 tickets · 2 in flight · 2 need you · 3 ready");
 });

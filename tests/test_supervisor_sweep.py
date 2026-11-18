@@ -34,6 +34,7 @@ import holophyte.config.checks  # noqa: E402 - after the sys.path insert above
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import holophyte.host.supervisor  # noqa: E402 - after the sys.path insert above
 import holophyte.host.sweep_report  # noqa: E402 - after the sys.path insert above
+import holophyte.loop.stuck_review  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 from holophyte.review import review_runner  # noqa: E402 - after sys.path setup
 
@@ -340,6 +341,37 @@ class ReviewStuckTests(SweepTestCase):
         # Both round numbers and the overlap value, so a reader can agree.
         self.assertIn("rounds 1 and 2", trip.evidence)
         self.assertIn("1.00", trip.evidence)
+
+    def test_a_round_put_to_the_adjudicator_is_not_tripped_as_stuck(self):
+        adjudicated = self.a_run(phase="addressing")
+        plain = self.a_run(phase="addressing", project=self.another_project())
+        for run_id in (adjudicated, plain):
+            self.round(run_id, 1, [finding("a.py"), finding("b.py"),
+                                   finding("c.py")])
+            self.round(run_id, 2, [finding("a.py"), finding("b.py"),
+                                   finding("d.py")], at=T0 + 3 * MINUTE)
+        holophyte.loop.stuck_review.adjudication_started(
+            self.conn, adjudicated, 2, 2)
+        self.heartbeat_at(adjudicated, T0 + 10 * MINUTE)
+
+        trip, = self.sweep(plain).trips
+        self.assertEqual((trip.run_id, trip.condition), (plain, "review_stuck"))
+        self.assertIn("share 0.50", trip.evidence)
+
+    def test_a_newer_round_repeating_an_adjudicated_one_trips(self):
+        run_id = self.a_run(phase="addressing")
+        self.round(run_id, 1, [finding("a.py"), finding("b.py")])
+        self.round(run_id, 2, [finding("a.py"), finding("b.py")],
+                   at=T0 + 3 * MINUTE)
+        holophyte.loop.stuck_review.adjudication_started(
+            self.conn, run_id, 2, 2)
+        self.round(run_id, 3, [finding("a.py"), finding("b.py")],
+                   at=T0 + 5 * MINUTE)
+
+        trip, = self.sweep(run_id).trips
+
+        self.assertEqual(trip.condition, "review_stuck")
+        self.assertIn("rounds 2 and 3", trip.evidence)
 
     def test_overlap_at_the_threshold_trips_and_below_it_does_not(self):
         """The threshold is on the Jaccard measure: two of three findings
