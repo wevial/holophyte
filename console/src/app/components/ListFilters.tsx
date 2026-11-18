@@ -403,14 +403,14 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
   const sheet = useRef<HTMLDivElement>(null);
-  const shift = useRef(0);
+  const shift = useRef({ x: 0, y: 0 });
   const fit = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     if (!open || !icon) return;
     const node = sheet.current!;
     const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit.current?.());
     let pane: HTMLElement | null = null;
-    shift.current = 0;
+    shift.current = { x: 0, y: 0 };
     // Size, stacking and offset are set on the node, not in state, as each is measured after the one before it lays out.
     fit.current = () => {
       const parent = scrollParent(node);
@@ -423,17 +423,25 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       // offsetWidth is rounded, so a scale taken from it drifts and the width it sets flips between two values.
       const scale = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? node.getBoundingClientRect().width / node.offsetWidth;
       const view = shownPart(pane, scale);
+      const inDocument = pane === document.documentElement;
+      // Trying two columns shortens the dialog, which would reset a reader's scroll inside it.
+      const scrolled = node.scrollTop;
       node.style.maxWidth = `${Math.max(0, view.right - view.left - 2 * MENU_EDGE) / scale}px`;
+      node.style.maxHeight = `${Math.max(0, Math.min(MENU_HEIGHT, (view.bottom - view.top - 2 * MENU_EDGE) / scale))}px`;
       node.removeAttribute("data-stacked");
       if ([...node.querySelectorAll("[data-option-label]")].some((label) => label.scrollWidth > label.clientWidth)) node.setAttribute("data-stacked", "");
-      const { left, top, width } = node.getBoundingClientRect();
-      const from = left - shift.current * scale;
-      const over = from + width - (view.right - MENU_EDGE);
-      shift.current = (Math.max(view.left + MENU_EDGE, from - Math.max(0, over)) - from) / scale;
-      node.style.translate = `${shift.current}px 0`;
+      node.scrollTop = scrolled;
+      const { left, top, width, height } = node.getBoundingClientRect();
+      const fromX = left - shift.current.x * scale;
+      const overX = fromX + width - (view.right - MENU_EDGE);
+      const fromY = top - shift.current.y * scale;
       // The document grows to hold the dialog, while a scrolling pane would hide what passes its bottom.
-      const room = pane === document.documentElement ? view.bottom - view.top - 2 * MENU_EDGE : view.bottom - MENU_EDGE - top;
-      node.style.maxHeight = `${Math.min(MENU_HEIGHT, Math.max(0, room) / scale)}px`;
+      const overY = inDocument ? 0 : fromY + height - (view.bottom - MENU_EDGE);
+      shift.current = {
+        x: (Math.max(view.left + MENU_EDGE, fromX - Math.max(0, overX)) - fromX) / scale,
+        y: (Math.max(Math.min(fromY, view.top + MENU_EDGE), fromY - Math.max(0, overY)) - fromY) / scale,
+      };
+      node.style.translate = `${shift.current.x}px ${shift.current.y}px`;
     };
     fit.current();
     return () => {
