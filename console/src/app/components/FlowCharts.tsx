@@ -30,14 +30,14 @@ function place(index: number, count: number, value: number, top: number) {
   return { left: `${weekX(index, count)}%`, top: `${plotY(value, top)}%` };
 }
 
-function segments(values: (number | null)[], top: number): Point[][] {
+function segments(values: (number | null)[], top: number, x = weekX): Point[][] {
   const runs: Point[][] = [];
   let current: Point[] = [];
   values.forEach((value, index) => {
     if (value == null) {
       if (current.length > 0) runs.push(current);
       current = [];
-    } else current.push([round(weekX(index, values.length)), round(plotY(value, top))]);
+    } else current.push([round(x(index, values.length)), round(plotY(value, top))]);
   });
   if (current.length > 0) runs.push(current);
   return runs;
@@ -77,7 +77,7 @@ function Tooltip({ range, tip, style, align }: { range: string; tip: Tip; style:
       aria-hidden="true"
       data-tooltip
       style={style}
-      className={`pointer-events-none absolute z-10 flex -translate-y-[calc(100%+10px)] ${align} flex-col gap-0.5 whitespace-nowrap border border-rule bg-paper px-2.5 py-1.5`}
+      className={`pointer-events-none absolute z-10 flex -translate-y-[calc(100%+10px)] ${align} flex-col gap-0.5 whitespace-nowrap rounded-[9px] bg-raised px-2.5 py-1.5 shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]`}
     >
       <span className="font-mono text-[10.5px] text-ink-3">{range}</span>
       <span className="font-mono text-[12px] font-semibold text-ink">{tip.value}</span>
@@ -95,7 +95,7 @@ function Chart({ title, note, starts, format, tip, top, values, none, children }
   const spoken = values.map((value, index) => `${weekLabel(starts[index]!)} ${value == null ? none : format(value)}`).join(", ");
   const activeValue = active == null ? null : values[active];
   return (
-    <figure aria-label={`${title} ${note}: ${spoken}`} data-chart={title} className="flex flex-col gap-3 bg-paper px-4 pt-3.5 pb-3">
+    <figure aria-label={`${title} ${note}: ${spoken}`} data-chart={title} className="flex flex-col gap-3 rounded-[10px] bg-raised px-4 pt-3.5 pb-3 shadow-[inset_0_0_0_1px_var(--hair)]">
       <figcaption aria-hidden="true" className="flex items-baseline justify-between gap-3">
         <span className="font-sans text-[13px] font-semibold text-ink">{title}</span>
         <span className="font-sans text-[11.5px] text-ink-3">{note}</span>
@@ -109,7 +109,7 @@ function Chart({ title, note, starts, format, tip, top, values, none, children }
         <div className="relative">
           <div aria-hidden="true" className="contents">
             {ticks.map((value) => (
-              <span key={value} data-grid={format(value)} style={{ top: `${plotY(value, top)}%` }} className="absolute inset-x-0 border-t border-dashed border-rule" />
+              <span key={value} data-grid={format(value)} style={{ top: `${plotY(value, top)}%` }} className="absolute inset-x-0 border-t border-dashed border-hair" />
             ))}
             {children(active)}
           </div>
@@ -214,7 +214,7 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
                 key={index}
                 data-dot={index}
                 style={place(index, values.length, value, top)}
-                className={`absolute -translate-1/2 rounded-full border-[1.5px] border-wait ${index === active ? "size-3" : "size-2"} ${index === latest ? "bg-wait" : "bg-paper"}`}
+                className={`absolute -translate-1/2 rounded-full border-[1.5px] border-wait ${index === active ? "size-3" : "size-2"} ${index === latest ? "bg-wait" : "bg-raised"}`}
               />
             ),
           )}
@@ -233,22 +233,25 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
   );
 }
 
+function edgeX(index: number, count: number): number {
+  return count > 1 ? (index / (count - 1)) * 100 : 50;
+}
+
 export function Sparkline({ values }: { values: (number | null)[] }) {
   const known = values.flatMap((value) => (value == null ? [] : [value]));
   const bottom = Math.min(...known);
   const span = Math.max(...known) - bottom || 1;
-  const scaled = values.map((value) => (value == null ? null : value - bottom));
-  const latest = scaled.at(-1);
+  const runs = segments(values.map((value) => (value == null ? null : value - bottom)), span, edgeX);
   return (
-    <span aria-hidden="true" className="relative block h-6 w-16 shrink-0">
+    <span aria-hidden="true" className="relative block h-7 w-full text-accent">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
-        {segments(scaled, span).map((points) => (
-          <path key={points[0]![0]} d={smoothPath(points)} fill="none" strokeWidth={1.5} vectorEffect="non-scaling-stroke" className="stroke-wait" />
+        {runs.filter((points) => points.length > 1).map((points) => (
+          <path key={points[0]![0]} d={smoothPath(points)} fill="none" stroke="currentColor" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
         ))}
       </svg>
-      {latest != null && (
-        <span style={place(scaled.length - 1, scaled.length, latest, span)} className="absolute size-1.5 -translate-1/2 rounded-full bg-wait" />
-      )}
+      {runs.filter((points) => points.length === 1).map(([[x, y]]) => (
+        <span key={x} data-lone style={{ left: `${x}%`, top: `${y}%` }} className="absolute size-1.5 -translate-1/2 rounded-full bg-current" />
+      ))}
     </span>
   );
 }
@@ -268,5 +271,5 @@ export function Change({ number, values }: { number: TrendNumber; values: (numbe
   const { better, unit } = TRENDS[number];
   const change = weeklyChange(values, better, unit);
   if (change == null) return null;
-  return <dd data-change={number} className={`font-mono text-[11.5px] ${TONES[change.tone]}`}>{change.text}</dd>;
+  return <span data-change={number} className={`font-sans text-[12px] ${TONES[change.tone]}`}>{change.text}</span>;
 }

@@ -1,4 +1,5 @@
 import type { GroupMode } from "../tickets";
+import { Segmented } from "./Segmented";
 
 const GROUP_KEY = "holophyte.next.tickets.group";
 
@@ -27,21 +28,7 @@ export function GroupBy({ modes, mode, onPick }: { modes: GroupMode[]; mode: Gro
       <span aria-hidden="true" className="font-sans text-[12.5px] text-ink-3">
         Group
       </span>
-      <div role="group" aria-label="Group by" className="inline-flex border border-rule bg-paper [&>*+*]:border-l [&>*+*]:border-rule">
-        {modes.map((each) => (
-          <button
-            key={each}
-            type="button"
-            aria-pressed={each === mode}
-            onClick={() => onPick(each)}
-            className={`inline-flex min-h-8 cursor-pointer items-center px-3 font-sans text-[12.5px] leading-none ${
-              each === mode ? "bg-act-wash text-act" : "text-ink-3 hover:text-ink"
-            }`}
-          >
-            {LABELS[each]}
-          </button>
-        ))}
-      </div>
+      <Segmented label="Group by" options={modes.map((each) => ({ value: each, label: LABELS[each] }))} value={mode} onPick={onPick} />
     </div>
   );
 }
