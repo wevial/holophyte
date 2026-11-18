@@ -16,6 +16,7 @@ from holophyte.agents.probes import probe_diagnostic, probe_implementer
 from holophyte.board.projection import release_lease_label
 from holophyte.cli.report import migration_header, report_lines
 from holophyte.config.config_tables import loop_config, merge_config, report_config
+from holophyte.config.project import worktree_path
 from holophyte.host.reconcile import (
     CloseRefused,
     _reconcile_at_startup,
@@ -328,7 +329,7 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
     if branch is None:
         raise SystemExit(f"[holo2] {identifier}: run {run_id} recorded no"
                          " branch; nothing approved")
-    dropped = _set_aside(target.path, run_id, branch, sha, identifier)
+    dropped = _set_aside(target, run_id, branch, sha, identifier)
     try:
         store.approve_swept(conn, ticket_id, note, sha, run_id=run_id)
     except (store.ApproveRefused, ValueError) as refused:
@@ -370,32 +371,52 @@ def _git(repo, *args):
                           text=True)
 
 
-def _set_aside(repo, run_id, branch, sha, identifier):
+def _set_aside(target, run_id, branch, sha, identifier):
+    repo, refused = target.path, f"[holo2] {identifier}: "
     tip = _git(repo, "rev-parse", "--verify", "--quiet",
                f"refs/heads/{branch}").stdout.strip()
     if not tip:
-        raise SystemExit(f"[holo2] {identifier}: branch {branch} is gone;"
-                         " nothing approved")
+        raise SystemExit(f"{refused}branch {branch} is gone; nothing approved")
     if _git(repo, "merge-base", "--is-ancestor", sha, tip).returncode != 0:
         raise SystemExit(
-            f"[holo2] {identifier}: branch {branch} at {tip[:12]} does not"
-            f" descend from the reviewed commit {sha[:12]}; nothing approved")
-    worktree = _checked_out(repo, branch)
-    if worktree is not None and sh(["git", "status", "--porcelain"],
-                                   cwd=worktree):
+            f"{refused}branch {branch} at {tip[:12]} does not descend from"
+            f" the reviewed commit {sha[:12]}; nothing approved")
+    worktree = worktree_path(target, branch)
+    if _checked_out(repo, branch) != worktree.resolve():
         raise SystemExit(
-            f"[holo2] {identifier}: the worktree {worktree} holds uncommitted"
-            f" changes on {branch}; nothing approved")
+            f"{refused}branch {branch} is not checked out at {worktree},"
+            " where the next claim resumes it; nothing approved")
+    if sh(["git", "status", "--porcelain"], cwd=worktree):
+        raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
+                         f" changes on {branch}; nothing approved")
     if tip == sha:
         return []
+    ref = f"{DROPPED_REF}{run_id}"
+    kept = _git(repo, "rev-parse", "--verify", "--quiet", ref).stdout.strip()
+    if kept and _git(repo, "merge-base", "--is-ancestor", kept,
+                     tip).returncode != 0:
+        raise SystemExit(
+            f"{refused}{ref} already holds {kept[:12]}, which {branch} does"
+            " not contain; nothing approved")
     dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
                  cwd=repo).split()
-    sh(["git", "update-ref", f"{DROPPED_REF}{run_id}", tip], cwd=repo)
-    if worktree is not None:
-        sh(["git", "reset", "--hard", sha], cwd=worktree)
-    else:
-        sh(["git", "update-ref", f"refs/heads/{branch}", sha, tip], cwd=repo)
+    _rewind(worktree, branch, sha, tip, ref, refused)
     return dropped
+
+
+def _rewind(worktree, branch, sha, tip, ref, refused):
+    detached = _git(worktree, "checkout", "--no-overwrite-ignore", "--detach",
+                    sha)
+    if detached.returncode != 0:
+        raise SystemExit(f"{refused}cannot check out {sha[:12]} in"
+                         f" {worktree}: {detached.stderr.strip()};"
+                         f" {branch} left at {tip[:12]}; nothing approved")
+    sh(["git", "update-ref", ref, tip], cwd=worktree)
+    moved = _git(worktree, "update-ref", f"refs/heads/{branch}", sha, tip)
+    sh(["git", "checkout", branch], cwd=worktree)
+    if moved.returncode != 0:
+        raise SystemExit(f"{refused}branch {branch} moved past {tip[:12]}"
+                         " while it was set aside; nothing approved")
 
 
 def _checked_out(repo, branch):
@@ -403,7 +424,7 @@ def _checked_out(repo, branch):
     for line in sh(["git", "worktree", "list", "--porcelain"],
                    cwd=repo).splitlines():
         if line.startswith("worktree "):
-            path = line.removeprefix("worktree ")
+            path = Path(line.removeprefix("worktree ")).resolve()
         elif line == f"branch refs/heads/{branch}":
             return path
     return None
