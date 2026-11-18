@@ -1,5 +1,7 @@
 """The terminal adjudication: one bare verdict once the review rounds are spent."""
 import json
+from collections import Counter
+from functools import partial
 from time import time
 
 import store
@@ -23,13 +25,22 @@ from holophyte.loop.steering import adopted_verify, reviewed_ticket
 from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.redact import safe_print as print
 from holophyte.review import review_runner
-from holophyte.review.briefs import criteria_brief, left_open_brief, tests_brief
-from holophyte.review.criterion_ids import numbered
+from holophyte.review.briefs import (
+    criteria_brief,
+    left_open_brief,
+    test_name_listing,
+    tests_brief,
+)
+from holophyte.review.criterion_ids import numbered, parse
 from holophyte.review.reply_parsing import (
     DEFAULT_SEVERITY,
+    MISSING_WITNESS_NOTE,
+    _inside,
     criteria_block,
     criteria_findings,
+    criterion_accounts,
     finding_message,
+    missing_witnesses,
     test_references,
 )
 
@@ -81,6 +92,99 @@ def _refusal(refused):
     return f"{lines}\n" if lines else ""
 
 
+def _mistyped(refused, reply, wt):
+    block, paths = criteria_block(reply), []
+    for finding in refused:
+        n = finding["line"]
+        status, note = block.get(n, (None, ""))
+        prefix = f"CRITERION C{n}: unwitnessed \u2014 {MISSING_WITNESS_NOTE}"
+        if status != "met" or not finding["message"].startswith(prefix):
+            return []
+        references = test_references(note)
+        missing = [ref for ref in references if missing_witnesses([ref], wt)]
+        if not missing or any((file := _inside(wt, ref[0])) is None
+                              or not file.is_file() for ref in missing):
+            return []
+        paths += [ref[0] for ref in references]
+    return paths
+
+
+def _criterion_lines(reply, numbers):
+    return {parse(match["n"]): match[0].strip()
+            for match in criterion_accounts(reply)
+            if parse(match["n"]) in numbers}
+
+
+def _recite(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
+            paths):
+    lines = _criterion_lines(reply, {finding["line"] for finding in refused})
+    with heartbeat_while(conn, run_id, beat_s):
+        recite = agent(project, "adjudicate",
+            f"Your terminal adjudication of commit {sha} replied VERDICT: "
+            "PASS, but the loop refused these CRITERION lines, as each names "
+            "a test its file does not define:\n"
+            + "".join(f"{line}\n" for line in lines.values()) + "\n"
+            + _refusal(refused)
+            + "The files they name define exactly these tests:\n"
+            + test_name_listing(wt, paths) + "\n"
+            "First run one read-only command that shows each test you will "
+            "cite in its file, such as `grep -n NAME PATH`. Then restate only "
+            "those CRITERION lines, one line each in the same form, naming "
+            "every test it cites copied verbatim from this list, the ones the "
+            "loop found included. Do not modify anything and write nothing "
+            "else.", wt,
+            base_sha=base_sha, candidate_sha=sha, conn=conn, run_id=run_id)
+    failed = failure_line(recite)
+    if failed:
+        raise InfraFailure(f"terminal adjudication re-cite turn failed: {failed}")
+    return recite
+
+
+def _cited_per_file(line, n):
+    return Counter(path for path, _, _ in {
+        tuple(ref) for ref in test_references(criteria_block(line)[n][1])})
+
+
+def _cites_as_many(line, n, first):
+    if criteria_block(line)[n][0] != "met":
+        return True
+    cited = _cited_per_file(line, n)
+    return all(cited[path] >= count
+               for path, count in _cited_per_file(first, n).items())
+
+
+def _recited_lines(reply, recite, refused):
+    numbers = {finding["line"] for finding in refused}
+    first = _criterion_lines(reply, numbers)
+    answered = _criterion_lines(recite, numbers)
+    restated = [line for n, line in answered.items()
+                if _cites_as_many(line, n, first[n])]
+    return "Re-cited after a refused test name:\n" + "".join(
+        f"Cited: {first.get(n, '(no line)')}\n"
+        f"Restated: {answered.get(n, '(no line)')}\n"
+        for n in sorted(numbers)) + "\n", "\n".join(restated)
+
+
+def _recited(project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
+             criteria, left_open, recorded, record, checkpoint):
+    paths = _mistyped(refused, reply, wt)
+    if not paths:
+        return None, "", refused
+    if recorded is None:
+        checkpoint(reply=str(reply), unrecorded=True)
+    try:
+        recite = recorded if recorded is not None else _recite(
+            project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
+            paths)
+    except InfraFailure:
+        if record:
+            record(structured_findings=refused)
+        raise
+    recited, restated = _recited_lines(reply, recite, refused)
+    return recite, recited, _criteria_gate(f"{reply}\n{restated}", criteria,
+                                           wt, left_open)
+
+
 def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                            branch, wt, beat_s, base_sha, sha, ticket,
                            verify_cmd, contracts, cap, criteria=(), resume=None,
@@ -109,8 +213,9 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                                    conn, run_id)
     boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
              ok=ok, out=str(out), reply=pending.get("reply"),
-             left_open=left_open, review_round=review_round,
-             verify_cmd=verify_cmd)
+             recite=pending.get("recite"),
+             unrecorded=pending.get("unrecorded"), left_open=left_open,
+             review_round=review_round, verify_cmd=verify_cmd)
     if not ok:
         record_unreviewed_verification(conn, run_id, out)
         print(f"[holo2] verify FAILED before adjudication; leaving branch "
@@ -140,7 +245,7 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
                 "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
                 f"{ticket}\n\n"
                 + _verify_brief(verify_cmd, ok, out)
-                + criteria_brief(criteria, "FAIL")
+                + criteria_brief(criteria, "FAIL", wt)
                 + left_open_brief(criteria, left_open)
                 + tests_brief(wt)
                 + "This candidate has already had its review rounds and their "
@@ -167,22 +272,30 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
         raise InfraFailure("terminal adjudication PASS named no criterion")
     refused = (_criteria_gate(reply, criteria, wt, left_open)
                if decision == "PASS" else [])
-    if not recorded:
-        record_round(project, conn, run_id, cap + 1, "adjudicate", reply,
-                     verify_cmd, ok, out, started_at=round_started,
-                     structured_findings=refused or None)
+    record = None if recorded and not pending.get("unrecorded") else partial(
+        record_round, project, conn, run_id, cap + 1, "adjudicate", reply,
+        verify_cmd, ok, out, started_at=None if recorded else round_started)
+    checkpoint = partial(boundary, conn, run_id, "reviewing", terminal=True,
+                         rnd=cap + 1, ok=ok, out=str(out), left_open=left_open,
+                         review_round=review_round, verify_cmd=verify_cmd)
+    recite, recited, refused = _recited(
+        project, conn, run_id, wt, beat_s, base_sha, sha, reply, refused,
+        criteria, left_open, pending.get("recite"), record, checkpoint)
+    if record:
+        record(structured_findings=refused or None)
+    if recite is not None and not pending.get("recite"):
+        checkpoint(reply=str(reply), recite=recite)
     if refused:
         decision = "FAIL"
     if decision != "PASS":
-        boundary(conn, run_id, "reviewing", terminal=True, rnd=cap + 1,
-                 ok=ok, out=str(out), reply=str(reply), left_open=left_open,
-                 review_round=review_round, verify_cmd=verify_cmd)
+        checkpoint(reply=str(reply), recite=recite)
         print(f"[holo2] terminal adjudication: {decision}; leaving branch "
               f"{branch} (worktree {wt}) at {sha} for a human. Task: {task}")
         ledger(conn, run_id, task_id, "adjudication",
                f"Terminal adjudication after {cap} review "
                f"rounds: {decision}; branch {branch} preserved at "
-               f"{sha}\n\n{_refusal(refused)}Adjudicator reply:\n{reply}",
+               f"{sha}\n\n{_refusal(refused)}{recited}"
+               f"Adjudicator reply:\n{reply}",
                provider)
         raise RunFailure(failure_reason.adjudication(
             refused or criteria_findings(reply, criteria), criteria, decision,
@@ -191,4 +304,4 @@ def _terminal_adjudication(project, conn, run_id, provider, task_id, task,
     print("[holo2] terminal adjudication: PASS")
     ledger(conn, run_id, task_id, "adjudication",
            f"Terminal adjudication after {cap} review "
-           f"rounds: PASS\n\nAdjudicator reply:\n{reply}", provider)
+           f"rounds: PASS\n\n{recited}Adjudicator reply:\n{reply}", provider)
