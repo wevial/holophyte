@@ -52,8 +52,8 @@ const COLUMNS = [
   "min-[1200px]:grid-cols-[minmax(0,780px)_290px] min-[1200px]:grid-rows-[auto_auto_1fr] min-[1200px]:gap-x-[46px]",
   "min-[1600px]:grid-cols-[minmax(0,780px)_330px]",
   "min-[1680px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_380px] min-[1680px]:grid-rows-none min-[1680px]:gap-x-12",
-  "[--log-floor:calc(var(--week-bars-height,0px)+14rem)] min-[1680px]:[--log-floor:12rem]",
-  "[--column-top:min(0.875rem,calc(var(--panel-height)-1.75rem-var(--log-floor)))]",
+  "[--log-floor:calc(var(--week-bars-height,0px)+6rem)] min-[1680px]:[--log-floor:4rem]",
+  "[--column-top:min(0.875rem,calc((var(--panel-height)-2.625rem-var(--log-floor))*1000))]",
 ].join(" ");
 
 export function Overview() {
