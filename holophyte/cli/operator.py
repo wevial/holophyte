@@ -355,7 +355,12 @@ def _reviewed_commit(conn, run_id):
     rounds = store.read.newest_ended_rounds(conn, run_id, 1)
     if not rounds:
         return None, None, []
-    rnd, sha, unmet = rounds[0].round, None, []
+    rnd, sha = rounds[0].round, None
+    (verdict,) = conn.execute(
+        "SELECT verdict FROM reviewRounds WHERE runId = ? AND round = ?",
+        (run_id, rnd)).fetchone()
+    unmet = ["no criterion judged (the review errored)"] if (
+        verdict == "error") else []
     for kind, payload in conn.execute(
             "SELECT kind, payload FROM runEvents WHERE runId = ? AND kind IN"
             " ('blast_radius', 'criteria') ORDER BY seq", (run_id,)):

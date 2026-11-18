@@ -556,13 +556,15 @@ class SweptApproveCliTests(unittest.TestCase):
             self.conn, self.run, "blast_radius", f"round {rnd} blast radius",
             level="detail", payload=json.dumps(
                 {"round": rnd, "sha": sha, "tier": "low"}))
-        store.record_event(
-            self.conn, self.run, "criteria", f"review round {rnd}",
-            level="detail", payload=json.dumps({"round": rnd, "criteria": [
-                {"id": f"C{n}", "n": n, "status": status, "text": "t"}
-                for n, status in enumerate(statuses, 1)]}))
+        if statuses is not None:
+            store.record_event(
+                self.conn, self.run, "criteria", f"review round {rnd}",
+                level="detail", payload=json.dumps({"round": rnd, "criteria": [
+                    {"id": f"C{n}", "n": n, "status": status, "text": "t"}
+                    for n, status in enumerate(statuses, 1)]}))
         store.record_review_round(
-            self.conn, self.run, rnd, "changes_requested", "codex",
+            self.conn, self.run, rnd,
+            "error" if statuses is None else "changes_requested", "codex",
             findings=[{"path": "work", "line": 1, "severity": "p1",
                        "message": "the same finding"}],
             started_at=T0 + rnd, ended_at=T0 + rnd)
@@ -574,7 +576,7 @@ class SweptApproveCliTests(unittest.TestCase):
         store.set_branch(self.conn, self.run, BRANCH)
         for phase in ("working", "verifying", "reviewing"):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
-        oldest = (("met", "met") if "unwitnessed" in newest
+        oldest = (("met", "met") if newest is None or "unwitnessed" in newest
                   else ("met", "unwitnessed"))
         self.judged(1, self.earlier, oldest)
         self.judged(2, self.reviewed, newest)
@@ -645,6 +647,16 @@ class SweptApproveCliTests(unittest.TestCase):
             " 'intervention'", (self.run,)).fetchone()
         self.assertEqual(summary, "human approve: forced past criteria:"
                                   " C2 unwitnessed; non-blocking")
+
+    def test_a_newest_round_whose_review_errored_refuses_unless_forced(self):
+        self.branch_with_wip()
+        self.sweep(newest=None)
+
+        self.assertIn("no criterion judged", self.refused("--note", "ok"))
+
+        self.cli("--approve", "KO-1", "--force", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
 
     def test_a_branch_not_descending_from_the_reviewed_commit_is_refused(self):
         self.branch_with_wip()
