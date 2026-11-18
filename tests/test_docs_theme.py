@@ -4,9 +4,11 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+DOCS = ROOT / "docs"
 CONSOLE_THEME = ROOT / "console" / "src" / "app" / "theme.css"
-LOTUS_BLOCKS = {"default": '[data-tile="light-lotus"]',
-                "slate": '[data-tile="dark-lotus"]'}
+# The selectors that style the live console root, in rising specificity.
+LIVE_ROOT = {"default": (":root",),
+             "slate": (":root", ':root[data-theme="dark"]')}
 LOTUS_TOKENS = ("--canvas", "--side", "--ink", "--ink-2", "--ink-3",
                 "--accent", "--hair")
 # Each Material surface the docs paint, and the Lotus token it must carry.
@@ -21,7 +23,10 @@ SURFACES = {
     "--md-accent-fg-color": "--accent",
     "--md-typeset-a-color": "--accent",
 }
-SIDEBAR = ".md-sidebar--primary .md-sidebar__scrollwrap"
+# The primary navigation's surfaces: the desktop sidebar and the mobile drawer.
+SIDEBARS = (".md-sidebar--primary .md-sidebar__scrollwrap", ".md-nav--primary",
+            ".md-nav--primary .md-nav",
+            ".md-nav--primary .md-nav__title ~ .md-nav__list")
 VAR = re.compile(r"var\(\s*(--[\w-]+)\s*\)")
 
 
@@ -47,24 +52,41 @@ def resolve(value, scope):
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def yaml_lines(document):
+    return [re.sub(r"\s+#.*$", "", line) for line in document.splitlines()]
+
+
 def palette(document):
-    found = re.search(r"^  palette:\n((?:    .*\n)+)", document, re.MULTILINE)
-    return [dict(re.findall(r"^\s+-?\s*(scheme|primary|accent): (\S+)$",
+    text = "\n".join(yaml_lines(document)) + "\n"
+    found = re.search(r"^  palette:\n((?:    .*\n)+)", text, re.MULTILINE)
+    return [dict(re.findall(r"^\s*-?\s*(scheme|primary|accent): (\S+)$",
                             entry, re.MULTILINE))
             for entry in re.split(r"^    - ", found.group(1), flags=re.MULTILINE)
             if entry.strip()]
 
 
 def extra_css(document):
-    found = re.search(r"^extra_css:\n((?:  - .*\n)+)", document, re.MULTILINE)
-    return re.findall(r"^  - (\S+)$", found.group(1), re.MULTILINE) if found else []
+    text = "\n".join(yaml_lines(document)) + "\n"
+    flow = re.search(r"^extra_css:\s*\[(.*)\]\s*$", text, re.MULTILINE)
+    if flow:
+        return [item.strip().strip("'\"") for item in flow.group(1).split(",")
+                if item.strip()]
+    found = re.search(r"^extra_css:\s*\n((?:\s+-.*\n)+)", text, re.MULTILINE)
+    return ([item.strip().strip("'\"") for item in
+             re.findall(r"^\s+-\s*(.+)$", found.group(1), re.MULTILINE)]
+            if found else [])
+
+
+def under_docs(sheet):
+    target = (DOCS / sheet).resolve()
+    return "://" not in sheet and target.is_relative_to(DOCS.resolve())
 
 
 def lotus(scheme):
     css = CONSOLE_THEME.read_text()
-    shared = declarations(css, lambda selectors: selectors == {":root"})
-    block = declarations(css, lambda selectors: LOTUS_BLOCKS[scheme] in selectors)
-    scope = {**shared, **block}
+    scope = {}
+    for root in LIVE_ROOT[scheme]:
+        scope.update(declarations(css, lambda selectors: root in selectors))
     return {token: resolve(scope[token], scope) for token in LOTUS_TOKENS}
 
 
@@ -75,22 +97,25 @@ class DocsThemeTests(unittest.TestCase):
     def stylesheet(self):
         sheets = extra_css(self.mkdocs)
         self.assertEqual(len(sheets), 1, sheets)
-        return (ROOT / "docs" / sheets[0]).read_text()
+        return (DOCS / sheets[0]).read_text()
 
     def test_both_schemes_use_custom_palettes_and_one_docs_stylesheet(self):
         entries = palette(self.mkdocs)
-        self.assertEqual({entry["scheme"] for entry in entries}, {"default", "slate"})
+        schemes = sorted(entry["scheme"] for entry in entries)
+        self.assertEqual(schemes, ["default", "slate"])
         for entry in entries:
             self.assertEqual((entry["primary"], entry["accent"]), ("custom", "custom"),
                              entry["scheme"])
         sheets = extra_css(self.mkdocs)
         self.assertEqual(len(sheets), 1, sheets)
-        self.assertTrue((ROOT / "docs" / sheets[0]).is_file(), sheets[0])
+        self.assertTrue(under_docs(sheets[0]), sheets[0])
+        self.assertTrue((DOCS / sheets[0]).is_file(), sheets[0])
 
     def test_each_scheme_paints_the_matching_lotus_values(self):
         css = self.stylesheet()
-        sidebar = declarations(css, lambda selectors: SIDEBAR in selectors)
-        for scheme in LOTUS_BLOCKS:
+        sidebars = {selector: declarations(css, lambda selectors: selector in selectors)
+                    for selector in SIDEBARS}
+        for scheme in LIVE_ROOT:
             expected = lotus(scheme)
             own = f'[data-md-color-scheme="{scheme}"]'
             scope = declarations(css, lambda selectors: own in selectors)
@@ -98,8 +123,9 @@ class DocsThemeTests(unittest.TestCase):
                 for variable, token in SURFACES.items():
                     self.assertEqual(resolve(scope[variable], scope), expected[token],
                                      f"{scheme} {variable}")
-                self.assertEqual(resolve(sidebar["background-color"], scope),
-                                 expected["--side"], f"{scheme} sidebar")
+                for selector, sidebar in sidebars.items():
+                    self.assertEqual(resolve(sidebar["background-color"], scope),
+                                     expected["--side"], f"{scheme} {selector}")
 
 
 if __name__ == "__main__":
