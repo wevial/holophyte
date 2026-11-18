@@ -65,7 +65,7 @@ function JumpCostLines({ queue, entry }: { queue: MergeQueue; entry: MergeQueueE
         {cost.drops != null && <Warning><PrNumber number={cost.drops.number} /> drops {cost.drops.minutes}m of checks already run</Warning>}
         <Warning>needs bypass permission on the repository's merge rules</Warning>
       </ul>
-      <p data-jump-next className="mt-3.5 text-[15px] text-ink">
+      <p data-jump-next className="mt-3.5 text-[14px] text-ink">
         #{entry.pr.number} builds next{later != null && ` and merges in ${later}`}.
       </p>
     </>
