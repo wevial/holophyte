@@ -254,6 +254,7 @@ class StrandedAttentionTests(ServeTestCase):
     HOUR = 60 * MIN
     mirror_state = FailedAttentionTests.mirror_state
     retry = FailedAttentionTests.retry
+    failed_runs = FailedAttentionTests.failed_runs
 
     def setUp(self):
         super().setUp()
@@ -274,11 +275,6 @@ class StrandedAttentionTests(ServeTestCase):
                       now=self.now - 30 * self.HOUR)
         self.ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
         self.start()
-
-    def failed_runs(self):
-        code, _, body = self.request("GET", "/attention")
-        self.assertEqual(code, 200)
-        return [item["run"] for item in body["items"] if item["kind"] == "failed"]
 
     def test_a_stranded_failure_is_listed(self):
         self.assertEqual(self.failed_runs(), [self.run])

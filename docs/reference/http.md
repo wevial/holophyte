@@ -1245,7 +1245,7 @@ What needs the operator, computed where the store is:
    "pr_url": null, "level": "attention"},
   {"kind": "failed", "run": 51, "ticket": "KO-n", "title": "…", "reason": "…", "ended_ms": 1788450000000, "attempt": 2,
    "pr_url": null, "triage": {"choice": "infra", "confidence": 0.92, "backend": "claude",
-   "model": "sonnet", "requeued": true}, "level": "attention"},
+   "model": "sonnet", "requeued": false}, "level": "attention"},
   {"kind": "stuck_wait", "ticket": "KO-n", "ticket_url": null, "title": "…", "dependency": "KO-m",
    "dependency_state": "needs_spec", "reason": "critic: stale — already shipped by KO-l",
    "behind": 4, "level": "attention"},
@@ -1311,7 +1311,8 @@ row shows when `pr.title` is null. A `failed` item's `attempt` is the run's 1-ba
 attempt number. Its `triage` is the run's cause question under
 `[questions.failures]` (see `docs/config.md`): `choice` (`infra`, `code` or
 `spec`), `confidence`, the `backend` and `model` asked, and `requeued`, true
-when the factory requeued the ticket on that answer; `choice` and
+when the factory requeued the ticket on that answer, which is never listed
+here since a requeued run drops out; `choice` and
 `confidence` are null when the question failed, and `triage` is null for a
 run never asked. Every item that names a `run` carries its `pr_url`: the
 pull request the run opened under `[merge] mode = "pr"` (`runs.prUrl`),
@@ -1342,8 +1343,9 @@ is `working` if any run is live. Items come in this order: `blocked` and
 hours while it is its ticket's latest attempt and the ticket has neither
 merged nor started a new one, or at any
 age while it strands its ticket (its last run, the ticket `in_flight` with
-no active run, which only the operator will move on); a requeued run is not
-listed, its ticket waiting in the queue, and the run that next fails is,
+no active run, which only the operator will move on); a requeued run, by
+the operator or the factory, is not listed, its ticket waiting in the
+queue, and the run that next fails is,
 oldest end first, `stuck_wait` in
 waiting-ticket order, `supervisor` when not live. A daemon older than this endpoint answers 404, and the
 drawer then computes the stale-run and supervisor rows itself from
