@@ -216,6 +216,7 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   await mount("#/tickets?project=demo", fleet({ board, runs: [reviewing] }).fetch);
   const card = cardOf("DEMO-3");
   expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
+  expect(card.querySelector("[data-time-box] .sr-only")?.textContent).toBe(" time box");
   expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
   const foot = card.querySelector("[data-card-foot]")!;
   expect(within(card).getByRole("heading").nextElementSibling).toBe(foot);
