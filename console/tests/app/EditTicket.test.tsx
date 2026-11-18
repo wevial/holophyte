@@ -192,16 +192,22 @@ test("the edit page refuses a merged or abandoned ticket opened by its address",
   }
 });
 
-test("the edit page loads the current revision with its header line and holds Save until a field changes", async () => {
+test("the edit page heads Edit and the key with the revision line beside it, shows the project as text, and holds Save until a field changes", async () => {
   await mount("#/tickets/demo/DEMO-2/edit");
   expect(screen.getByRole("navigation", { name: "Breadcrumb" }).textContent).toBe("Tickets / demo / DEMO-2 / edit");
   expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByRole<HTMLAnchorElement>("link", { name: "DEMO-2" }).hash).toBe("#/tickets/demo/DEMO-2");
+  const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Edit DEMO-2");
-  expect(screen.getByText("revision 3 · saved 2h ago by console · Ready")).toBeTruthy();
+  expect(header.querySelector("[data-page-count]")!.textContent).toBe("revision 3 · saved 2h ago by console · Ready");
+  const project = document.querySelector<HTMLElement>("[data-project]")!.parentElement!;
+  expect(project.textContent).toBe("Projectdemo");
+  expect(project.querySelector("input, select, button, textarea, [role=combobox]")).toBeNull();
   for (const [name, value] of Object.entries(SERVED)) expect(box(name).value).toBe(value);
   expect(saveButton().textContent).toBe("Save revision 4");
   expect(saveButton().disabled).toBe(true);
   expect(within(savePanel()).getByText("No changes yet.")).toBeTruthy();
+  await type("Title", "Steer notes show on the run page and its turns");
+  expect(saveButton().disabled).toBe(false);
 });
 
 test("Save sends the served body with only the rewritten criterion at the loaded revision, toasts and opens the Ticket page", async () => {
