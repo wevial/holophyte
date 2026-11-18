@@ -17,6 +17,7 @@ import contextlib
 import io
 import json
 import os
+import sqlite3
 import subprocess
 import tempfile
 import unittest
@@ -25,6 +26,7 @@ from unittest.mock import patch
 
 import holophyte.cli.arguments
 import holophyte.cli.entry
+import holophyte.cli.operator
 import holophyte.cli.report
 import holophyte.config.project
 import holophyte.serve.serve_runs
@@ -600,7 +602,11 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertEqual(self.worktree_state(), worktree_before)
         self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), tip)
         self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
         return str(raised.exception)
+
+    def aside(self):
+        return self.wt.with_name(f"{self.wt.name}.dropped-{self.run}")
 
     def worktree_state(self):
         """What the worktree's HEAD names, its index and its status."""
@@ -667,77 +673,6 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn("does not descend from the reviewed commit",
                       self.refused("--note", "ok"))
 
-    def test_an_ignored_file_the_rewind_would_overwrite_is_refused(self):
-        self.branch_with_wip()
-        git(self.wt, "rm", "-q", "work")
-        (self.wt / ".gitignore").write_text("work\n")
-        git(self.wt, "add", ".gitignore")
-        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
-        (self.wt / "work").write_text("local only\n")
-        self.sweep()
-
-        self.assertIn("the rewind would overwrite work", self.refused("--note", "ok"))
-        self.assertEqual((self.wt / "work").read_text(), "local only\n")
-
-    def reviewed_then_ignored(self, name, pattern):
-        """R tracks `name`; W stops tracking it and ignores `pattern`."""
-        self.branch_with_wip()
-        git(self.wt, "reset", "-q", "--hard", self.earlier)
-        (self.wt / name).parent.mkdir(exist_ok=True)
-        (self.wt / name).write_text("reviewed\n")
-        git(self.wt, "add", "--", name)
-        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
-        git(self.wt, "rm", "-rq", "--", name.split("/")[0])
-        (self.wt / ".gitignore").write_text(pattern + "\n")
-        git(self.wt, "add", ".gitignore")
-        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
-
-    def test_an_ignored_file_with_a_non_ascii_carriage_return_name_is_kept(
-            self):
-        name = "r\u00e9sum\u00e9\r.txt"
-        self.reviewed_then_ignored(name, "*.txt")
-        (self.wt / name).write_text("local only\n")
-        self.sweep()
-
-        self.assertIn(f"the rewind would overwrite {name}",
-                      self.refused("--note", "ok"))
-        self.assertEqual((self.wt / name).read_text(), "local only\n")
-
-    def test_an_ignored_file_where_a_reviewed_directory_goes_is_kept(self):
-        self.reviewed_then_ignored("cache/input", "cache")
-        (self.wt / "cache").write_text("local only\n")
-        self.sweep()
-
-        self.assertIn("the rewind would overwrite cache",
-                      self.refused("--note", "ok"))
-        self.assertEqual((self.wt / "cache").read_text(), "local only\n")
-
-    def test_a_reviewed_file_with_a_non_utf8_name_is_rewound(self):
-        name = os.fsdecode(b"caf\xe9")
-        self.reviewed_then_ignored(name, "nothing")
-        self.wip = git(self.wt, "rev-parse", "HEAD")
-        self.sweep()
-
-        self.cli("--approve", "KO-1", "--note", "ok")
-
-        self.assert_released_at_reviewed()
-        self.assertEqual((self.wt / name).read_text(), "reviewed\n")
-
-    def test_a_tracked_directory_replacing_a_reviewed_file_is_rewound(self):
-        self.branch_with_wip()
-        git(self.wt, "rm", "-q", "work")
-        (self.wt / "work").mkdir()
-        (self.wt / "work" / "part").write_text("half an edit\n")
-        git(self.wt, "add", "work")
-        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
-        self.wip = git(self.wt, "rev-parse", "HEAD")
-        self.sweep()
-
-        self.cli("--approve", "KO-1", "--note", "ok")
-
-        self.assert_released_at_reviewed()
-        self.assertEqual((self.wt / "work").read_text(), "reviewed\n")
-
     @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
     def test_a_ref_update_git_rejects_restores_the_worktree(self):
         self.branch_with_wip()
@@ -746,7 +681,8 @@ class SweptApproveCliTests(unittest.TestCase):
         reflog.chmod(0o444)
         self.addCleanup(reflog.chmod, 0o644)
 
-        self.assertIn("cannot move the refs", self.refused("--note", "ok"))
+        self.assertIn(f"git update-ref refs/heads/{BRANCH} failed",
+                      self.refused("--note", "ok"))
 
         reflog.chmod(0o644)
         self.cli("--approve", "KO-1", "--note", "ok")
@@ -763,100 +699,150 @@ class SweptApproveCliTests(unittest.TestCase):
         reflog.chmod(0o444)
         self.addCleanup(reflog.chmod, 0o644)
 
-        self.assertIn("cannot lock the refs", self.refused("--note", "ok"))
+        self.assertIn(f"git update-ref refs/holophyte/dropped/{self.run} failed",
+                      self.refused("--note", "ok"))
 
-    def wip_in(self, mode):
-        """W adds stuck/new, in a directory then given `mode`."""
+    def test_an_ignored_local_file_moves_aside_with_the_old_worktree(self):
         self.branch_with_wip()
-        (self.wt / "stuck").mkdir()
-        (self.wt / "stuck" / "new").write_text("wip only\n")
-        git(self.wt, "add", "stuck")
+        (self.repo / ".git" / "info" / "exclude").write_text("local.cache\n")
+        (self.wt / "local.cache").write_text("local only\n")
+        self.sweep()
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual((self.wt / "work").read_text(), "reviewed\n")
+        self.assertFalse((self.wt / "local.cache").exists())
+        self.assertEqual((self.aside() / "local.cache").read_text(),
+                         "local only\n")
+        self.assertEqual(git(self.aside(), "rev-parse", "HEAD"), self.wip)
+        self.assertIn(f"moved to {self.aside()}", out)
+
+    def test_a_worktree_with_an_initialized_submodule_is_refused(self):
+        dependency = self.root / "dependency"
+        git(self.root, "init", "-b", "main", str(dependency))
+        git(dependency, "commit", "--allow-empty", "-m", "dependency")
+        self.branch_with_wip()
+        git(self.wt, "-c", "protocol.file.allow=always", "submodule", "add",
+            "-q", str(dependency), "deps")
         git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
         self.sweep()
-        (self.wt / "stuck").chmod(mode)
-        self.addCleanup((self.wt / "stuck").chmod, 0o755)
 
-    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
-    def test_a_wip_file_the_rewind_cannot_remove_is_refused(self):
-        self.wip_in(0o555)
+        self.assertIn("git worktree move failed", self.refused("--note", "ok"))
+        self.assertTrue((self.wt / "deps" / ".git").exists())
 
-        self.assertIn("could not remove stuck/new",
-                      self.refused("--note", "ok"))
-
-    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
-    def test_a_wip_file_in_an_unlistable_directory_is_refused(self):
-        self.wip_in(0o111)
-
-        self.assertIn("could not remove stuck/new",
-                      self.refused("--note", "ok"))
-
-    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
-    def test_a_checkout_failing_part_way_restores_the_worktree(self):
+    def test_a_store_that_rejects_the_release_restores_the_worktree(self):
         self.branch_with_wip()
-        git(self.wt, "reset", "-q", "--hard", self.earlier)
-        (self.wt / "zz").mkdir()
-        (self.wt / "zz" / "f").write_text("reviewed\n")
-        git(self.wt, "add", "zz")
-        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
-        (self.wt / "zz" / "f").write_text("half an edit\n")
-        git(self.wt, "add", "zz")
-        self.wip = self.commit("half an edit\n",
-                               "WIP: implementer ended mid-edit")
         self.sweep()
-        (self.wt / "zz").chmod(0o555)
-        self.addCleanup((self.wt / "zz").chmod, 0o755)
+        with patch.object(store, "approve_swept", side_effect=
+                          sqlite3.OperationalError(
+                              "attempt to write a readonly database")):
+            self.assertIn("readonly database", self.refused("--note", "ok"))
 
-        self.assertIn("cannot check out", self.refused("--note", "ok"))
+        out, _ = self.cli("--approve", "KO-1", "--note", "ok")
 
-        (self.wt / "zz").chmod(0o755)
-        self.cli("--approve", "KO-1", "--note", "ok")
         self.assert_released_at_reviewed()
+        self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
+                      out)
 
-    def test_a_worker_write_that_stops_the_checkout_is_kept(self):
-        self.reviewed_then_ignored("new", "nothing")
-        self.wip = git(self.wt, "rev-parse", "HEAD")
-        self.sweep()
-        real_git = holophyte.cli.operator._git
+    def worker_commits(self, before, where):
+        """Approve runs while the swept worker commits in `where()` just
+        before the first git command whose arguments hold all of `before`."""
+        real_git, done = holophyte.cli.operator._git, []
 
-        def worker_writes_first(repo, *args):
-            if args[:1] == ("read-tree",) and args[-1] == self.reviewed:
-                (self.wt / "new").write_text("the worker's file\n")
-                (self.wt / "work").write_text("the worker's edit\n")
-            return real_git(repo, *args)
+        def worker_commits_first(cwd, *args):
+            if set(before) <= set(args) and not done:
+                done.append(True)
+                (where() / "work").write_text("the worker's last edit\n")
+                git(where(), "commit", "-qam", "the worker's last commit")
+            return real_git(cwd, *args)
 
         with patch.object(holophyte.cli.operator, "_git",
-                          worker_writes_first), \
+                          worker_commits_first), \
                 self.assertRaises(SystemExit) as raised:
             self.cli("--approve", "KO-1", "--note", "ok")
+        return str(raised.exception)
 
-        self.assertIn("cannot check out", str(raised.exception))
-        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+    def assert_worker_commit_on_the_branch(self):
+        self.assertEqual(git(self.wt, "symbolic-ref", "HEAD"),
+                         f"refs/heads/{BRANCH}")
+        self.assertEqual(git(self.wt, "log", "-1", "--format=%s", BRANCH),
+                         "the worker's last commit")
+        self.assertEqual(git(self.wt, "status", "--porcelain"), "")
         self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
-        self.assertEqual((self.wt / "new").read_text(), "the worker's file\n")
-        self.assertEqual((self.wt / "work").read_text(),
-                         "the worker's edit\n")
+        self.assertFalse(self.aside().exists())
+        self.assertEqual(self.interventions(), [])
 
-    def test_a_reviewed_symlink_where_the_wip_had_a_directory_is_rewound(
-            self):
+    def test_a_worker_commit_before_the_detach_is_kept(self):
         self.branch_with_wip()
-        git(self.wt, "reset", "-q", "--hard", self.earlier)
-        (self.wt / "real").mkdir()
-        (self.wt / "real" / "x").write_text("reviewed\n")
-        (self.wt / "a").symlink_to("real")
-        git(self.wt, "add", "real", "a")
-        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
-        git(self.wt, "rm", "-q", "a")
-        (self.wt / "a").mkdir()
-        (self.wt / "a" / "x").write_text("half an edit\n")
-        git(self.wt, "add", "a")
-        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
-        self.wip = git(self.wt, "rev-parse", "HEAD")
+        self.sweep()
+
+        why = self.worker_commits(["checkout"], lambda: self.wt)
+
+        self.assertIn(f"git update-ref refs/heads/{BRANCH} failed", why)
+        self.assert_worker_commit_on_the_branch()
+
+    def test_a_worker_commit_after_the_detach_is_kept(self):
+        self.branch_with_wip()
+        self.sweep()
+
+        why = self.worker_commits(["update-ref", f"refs/heads/{BRANCH}"],
+                                  self.aside)
+
+        self.assertIn("moved on to", why)
+        self.assert_worker_commit_on_the_branch()
+
+    def test_a_failing_post_checkout_hook_does_not_stop_the_approval(self):
+        self.branch_with_wip()
+        hook = self.repo / ".git" / "hooks" / "post-checkout"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
         self.sweep()
 
         self.cli("--approve", "KO-1", "--note", "ok")
 
         self.assert_released_at_reviewed()
-        self.assertTrue((self.wt / "a").is_symlink())
+
+    def with_setup(self, command):
+        with self.target.config_path.open("a") as config:
+            config.write(f"[worktree]\nsetup = [{json.dumps(command)}]\n")
+
+    def test_the_fresh_worktree_runs_the_project_setup(self):
+        self.branch_with_wip()
+        self.with_setup("pwd > ../setup-ran")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(
+            Path((self.wt.parent / "setup-ran").read_text().strip()),
+            self.wt.resolve())
+
+    def test_a_failed_setup_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.with_setup("false")
+        self.sweep()
+
+        self.assertIn("worktree setup failed", self.refused("--note", "ok"))
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_an_undo_that_cannot_remove_the_fresh_worktree_stops(self):
+        self.branch_with_wip()
+        self.with_setup("mkdir -p cache/pkg && touch cache/pkg/f && chmod 555 cache/pkg"
+                        " && false")
+        self.sweep()
+        self.addCleanup(lambda: (self.wt / "cache" / "pkg").exists()
+                        and (self.wt / "cache" / "pkg").chmod(0o755))
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("undoing it stopped at git worktree remove",
+                      str(raised.exception))
+        self.assertEqual(git(self.aside(), "rev-parse", "HEAD"), self.wip)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
+        self.assertEqual(self.interventions(), [])
 
     def test_a_run_failed_on_verify_is_refused_as_before(self):
         self.branch_with_wip()
@@ -873,39 +859,12 @@ class SweptApproveCliTests(unittest.TestCase):
         lock.parent.mkdir(parents=True)
         lock.write_text("")
 
-        self.assertIn("cannot lock the refs", self.refused("--note", "ok"))
+        self.assertIn(f"git update-ref refs/holophyte/dropped/{self.run} failed",
+                      self.refused("--note", "ok"))
 
         lock.unlink()
         self.cli("--approve", "KO-1", "--note", "ok")
         self.assert_released_at_reviewed()
-
-    def test_a_worker_commit_while_the_rewind_holds_the_refs_is_not_lost(self):
-        """The swept worker commits its last edit while approve is moving
-        the worktree: the commit cannot land, approve refuses, and the edit
-        is still in the worktree."""
-        self.branch_with_wip()
-        self.sweep()
-        rewound = holophyte.cli.operator._moved_tree
-
-        def worker_commits_first(worktree, sha, tip):
-            (worktree / "work").write_text("the worker's last edit\n")
-            late = subprocess.run(
-                ["git", "-c", "user.name=w", "-c", "user.email=w@w",
-                 "commit", "-qam", "WIP: implementer ended mid-edit"],
-                cwd=worktree, capture_output=True, text=True)
-            self.assertNotEqual(late.returncode, 0)
-            return rewound(worktree, sha, tip)
-
-        with patch.object(holophyte.cli.operator, "_moved_tree",
-                          worker_commits_first), \
-                self.assertRaises(SystemExit) as raised:
-            self.cli("--approve", "KO-1", "--note", "ok")
-
-        self.assertIn("nothing approved", str(raised.exception))
-        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
-        self.assertEqual((self.wt / "work").read_text(),
-                         "the worker's last edit\n")
-        self.assertEqual(self.interventions(), [])
 
     def test_a_ticket_renamed_since_the_run_is_refused(self):
         self.branch_with_wip()

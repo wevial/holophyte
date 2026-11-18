@@ -2,6 +2,7 @@ import contextlib
 import getpass
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,7 @@ from holophyte.loop.pool_handoff import (  # noqa: F401
 )
 from holophyte.loop.reexec import reexec_self
 from holophyte.loop.runs import open_store
+from holophyte.loop.task_worktree import run_worktree_setup
 from holophyte.pr.capture_files import checkout_of
 from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
@@ -366,12 +368,12 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
         raise SystemExit(
             f"[holo2] {identifier}: run {run_id} recorded branch {branch},"
             f" but the next claim resumes {claim.branch}; nothing approved")
-    dropped = _set_aside(target.path, claim.wt, run_id, branch, sha,
-                         identifier)
-    try:
-        store.approve_swept(conn, ticket_id, note, sha, run_id)
-    except (store.ApproveRefused, ValueError) as refused:
-        raise SystemExit(f"[holo2] {refused}") from None
+    with _set_aside(target, claim.wt, run_id, branch, sha,
+                    identifier) as (dropped, aside):
+        try:
+            store.approve_swept(conn, ticket_id, note, sha, run_id)
+        except (store.ApproveRefused, ValueError, sqlite3.Error) as refused:
+            raise SystemExit(f"[holo2] {refused}; nothing approved") from None
     print(f"[holo2] {identifier} approved at {sha}: run {run_id}, swept"
           f" {condition}, released at the commit its review round {rnd}"
           " judged and the ticket is ready; the loop's next claim resumes"
@@ -379,6 +381,10 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
     if dropped:
         print(f"[holo2] set aside {len(dropped)} later commit(s) of {branch}"
               f" under {DROPPED_REF}{run_id}: {', '.join(dropped)}", file=out)
+    if aside:
+        print(f"[holo2] the worktree that held them, with its local files,"
+              f" moved to {aside}; {sha[:12]} checked out fresh at"
+              f" {claim.wt}", file=out)
 
 
 DROPPED_REF = "refs/holophyte/dropped/"
@@ -414,8 +420,13 @@ def _git(repo, *args):
                           text=True, errors="replace")
 
 
-def _set_aside(repo, worktree, run_id, branch, sha, identifier):
-    refused = f"[holo2] {identifier}: "
+class _StepFailed(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def _set_aside(target, worktree, run_id, branch, sha, identifier):
+    repo, refused = target.path, f"[holo2] {identifier}: "
     tip = _git(repo, "rev-parse", "--verify", "--quiet",
                f"refs/heads/{branch}").stdout.strip()
     if not tip:
@@ -433,7 +444,8 @@ def _set_aside(repo, worktree, run_id, branch, sha, identifier):
         raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
                          f" changes on {branch}; nothing approved")
     if tip == sha:
-        return []
+        yield [], None
+        return
     ref = f"{DROPPED_REF}{run_id}"
     kept = _git(repo, "rev-parse", "--verify", "--quiet", ref).stdout.strip()
     if kept and _git(repo, "merge-base", "--is-ancestor", kept,
@@ -441,134 +453,88 @@ def _set_aside(repo, worktree, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}{ref} already holds {kept[:12]}, which {branch} does"
             " not contain; nothing approved")
+    aside = worktree.with_name(f"{worktree.name}.dropped-{run_id}")
+    if os.path.lexists(aside):
+        raise SystemExit(f"{refused}{aside} already exists; nothing approved")
     dropped = sh(["git", "rev-list", "--abbrev-commit", f"{sha}..{tip}"],
                  cwd=repo).split()
-    why = _rewind(worktree, branch, ref, kept or NO_REF, sha, tip)
-    if why is not None:
-        raise SystemExit(f"{refused}{why}; {branch} left at {tip[:12]};"
-                         " nothing approved")
-    return dropped
+    undo = []
+    try:
+        _replace_worktree(target, undo, worktree, aside, branch, ref,
+                          kept, sha, tip)
+        yield dropped, aside
+    except BaseException as failed:
+        stuck = _undo(undo)
+        left = (f"; undoing it stopped at {stuck}, so {branch}, {worktree}"
+                f" and {aside} need a human" if stuck
+                else f"; {branch} left at {tip[:12]}")
+        if isinstance(failed, _StepFailed):
+            raise SystemExit(f"{refused}{failed}{left}; nothing approved"
+                             ) from None
+        if stuck:
+            print(f"{refused}{left[2:]}", file=sys.stderr)
+        raise
 
 
 NO_REF = "0" * 40
+NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 
 
-def _rewind(worktree, branch, ref, kept, sha, tip):
-    aside = _git(worktree, "update-ref", ref, tip, kept)
-    if aside.returncode != 0:
-        return f"cannot lock the refs: {aside.stderr.strip()}"
-    why = _locked_rewind(worktree, branch, sha, tip)
-    if why is not None:
-        _git(worktree, "update-ref", *(
-            ["-d", ref, tip] if kept == NO_REF else [ref, kept, tip]))
-    return why
+def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
+                      tip):
+    repo, head = target.path, f"refs/heads/{branch}"
+    _step(undo, repo, ["update-ref", ref, tip, kept or NO_REF],
+          ["update-ref", ref, kept, tip] if kept
+          else ["update-ref", "-d", ref, tip])
+    _step(undo, worktree, ["checkout", "--quiet", "--detach"],
+          lambda: _reattach(worktree, head, tip))
+    _step(undo, repo, ["worktree", "move", str(worktree), str(aside)],
+          lambda: _move_back(repo, aside, worktree))
+    _step(undo, repo, ["update-ref", head, sha, tip],
+          ["update-ref", head, tip, sha])
+    _step(undo, repo, ["worktree", "add", "--quiet", str(worktree), branch],
+          ["worktree", "remove", "--force", "--force", str(worktree)])
+    ok, report = run_worktree_setup(target, worktree)
+    if not ok:
+        raise _StepFailed(f"worktree setup failed in {worktree}: {report}")
+    moved = _git(aside, "rev-parse", "HEAD").stdout.strip()
+    if moved != tip:
+        raise _StepFailed(f"the worktree set aside at {aside} moved on to"
+                          f" {moved[:12]}")
 
 
-def _locked_rewind(worktree, branch, sha, tip):
-    lock = subprocess.Popen(["git", "update-ref", "--stdin"], cwd=worktree,
-                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True,
-                            errors="replace")
-    lock.stdin.write(f"start\nupdate refs/heads/{branch} {sha} {tip}\n"
-                     "prepare\n")
-    lock.stdin.flush()
-    if [lock.stdout.readline() for _ in range(2)] != ["start: ok\n",
-                                                      "prepare: ok\n"]:
-        return f"cannot lock the refs: {lock.communicate()[1].strip()}"
-    why = _moved_tree(worktree, sha, tip)
-    _, error = lock.communicate("abort\n" if why else "commit\n")
-    if why is None and lock.returncode != 0 and _git(
-            worktree, "rev-parse", f"refs/heads/{branch}").stdout.strip() != sha:
-        _git(worktree, "read-tree", "-m", "-u", sha, tip)
-        why = f"cannot move the refs: {error.strip()}"
-    return why
+def _reattach(worktree, head, tip):
+    moved = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    if moved != _git(worktree, "rev-parse", head).stdout.strip():
+        landed = _git(worktree, *NO_HOOKS, "update-ref", head, moved, tip)
+        if landed.returncode != 0:
+            return landed
+    return _git(worktree, *NO_HOOKS, "symbolic-ref", "HEAD", head)
 
 
-def _paths(worktree, command, *args):
-    listed = subprocess.run(
-        ["git", "--literal-pathspecs", command, "-z", *args], cwd=worktree,
-        capture_output=True).stdout
-    return [os.fsdecode(path) for path in listed.split(b"\0") if path]
+def _move_back(repo, aside, worktree):
+    if os.path.lexists(worktree):
+        return subprocess.CompletedProcess(
+            [], 1, "", f"{worktree} still exists")
+    return _git(repo, *NO_HOOKS, "worktree", "move", str(aside),
+                str(worktree))
 
 
-def _untracked(worktree, paths):
-    return _paths(worktree, "ls-files", "--others", "--", *paths) if (
-        paths) else []
+def _step(undo, cwd, argv, reverse):
+    done = _git(cwd, *NO_HOOKS, *argv)
+    if done.returncode != 0:
+        raise _StepFailed(f"git {argv[0]} {argv[1]} failed:"
+                          f" {done.stderr.strip()}")
+    undo.append(reverse if callable(reverse)
+                else lambda: _git(cwd, *NO_HOOKS, *reverse))
 
 
-def _holds_file(path):
-    return os.path.islink(path) or (os.path.lexists(path)
-                                    and not os.path.isdir(path))
-
-
-def _leftover(worktree, path):
-    parent = worktree
-    for part in path.split("/")[:-1]:
-        parent = parent / part
-        if os.path.islink(parent) or not os.path.isdir(parent):
-            return False
-    return _holds_file(worktree / path)
-
-
-def _occupied(worktree, tip, added):
-    tracked = set(_paths(worktree, "ls-tree", "-r", "--name-only", tip))
-    occupied = set()
-    for path in added:
-        parts = path.split("/")
-        for depth in range(1, len(parts) + 1):
-            prefix = "/".join(parts[:depth])
-            local = worktree / prefix
-            if prefix not in tracked and (_holds_file(local) or (
-                    depth == len(parts) and os.path.isdir(local)
-                    and _untracked(worktree, [prefix]))):
-                occupied.add(prefix)
-                break
-    return sorted(occupied)
-
-
-def _written_by_checkout(worktree, sha, paths):
-    paths = [path for path in paths if _leftover(worktree, path)]
-    listed = _paths(worktree, "ls-tree", "-r", sha, "--", *paths) if (
-        paths) else []
-    blobs = dict(reversed(entry.split("\t", 1)) for entry in listed)
-    return [path for path in paths if path in blobs and _git(
-        worktree, "hash-object", "--", path).stdout.strip()
-        == blobs[path].split()[2]]
-
-
-def _restore_files(worktree, sha, added, edited):
-    for path in _written_by_checkout(worktree, sha, added):
-        with contextlib.suppress(OSError):
-            os.unlink(worktree / path)
-    changed = [path for path in _paths(worktree, "diff-files", "--name-only")
-               if path not in edited]
-    changed = [path for path in changed if not os.path.lexists(
-        worktree / path)] + _written_by_checkout(worktree, sha, changed)
-    if changed:
-        _git(worktree, "checkout-index", "-f", "--", *changed)
-
-
-def _moved_tree(worktree, sha, tip):
-    added, removed = (
-        _paths(worktree, "diff", "--name-only", "--no-renames",
-               f"--diff-filter={kind}", tip, sha) for kind in "AD")
-    present = _occupied(worktree, tip, added)
-    if present:
-        return f"the rewind would overwrite {', '.join(present)} in {worktree}"
-    edited = set(_paths(worktree, "diff-files", "--name-only"))
-    moved = _git(worktree, "read-tree", "-m", "-u", tip, sha)
-    if moved.returncode != 0:
-        _restore_files(worktree, sha, added, edited)
-        return f"cannot check out {sha[:12]}: {moved.stderr.strip()}"
-    left = [path for path in removed if _leftover(worktree, path)]
-    if left:
-        _git(worktree, "update-index", "--add", "--", *left)
-        _git(worktree, "read-tree", "-m", "-u", sha, tip)
-        return f"the rewind could not remove {', '.join(left)} in {worktree}"
-    if (_git(worktree, "diff-index", "--quiet", "--cached", sha).returncode
-            or _git(worktree, "diff-files", "--quiet").returncode):
-        _git(worktree, "read-tree", "-m", "-u", sha, tip)
-        return f"the worktree {worktree} changed while it was rewound"
+def _undo(undo):
+    for reverse in reversed(undo):
+        done = reverse()
+        if done.returncode != 0:
+            return f"git {' '.join(done.args[3:5])}: {done.stderr.strip()}" \
+                if done.args else done.stderr
     return None
 
 
