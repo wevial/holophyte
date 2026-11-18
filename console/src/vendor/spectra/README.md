@@ -22,6 +22,9 @@ copy:
   the sibling folders.
 - Haze, Caustics, Ribbons, Lava and Nebula (so Plume) take a `motion` option:
   `false` draws one still frame, as the system's reduced-motion setting does.
+- The stage takes a `held` option, which those effects set from `motion`:
+  while a still frame is held, or reduced motion is on, slow frames do not
+  shrink the drawing buffer and so do not redraw the frame.
 - Nebula's still frame draws once and holds until its cloud, config or
   drawing buffer changes, its quality governor rests while the frame is held,
   and its textures are capped to the GPU's limit and

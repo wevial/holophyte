@@ -137,7 +137,7 @@ function fakeEffects() {
     container.appendChild(document.createElement("canvas"));
     live.push(name);
     (options[name] ??= []).push({ ...given });
-    return { config: { ...given }, destroy: () => { live.splice(live.indexOf(name), 1); } };
+    return { config: { ...given }, destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); } };
   }) as never));
   return { live, options, restore: () => spies.forEach((spy) => spy.mockRestore()) };
 }
@@ -491,8 +491,8 @@ function recordingGl(canvas: HTMLCanvasElement, maxTexture: number, record: { te
   });
 }
 
-/** Mounts the vendored Plume in a header band of the given CSS size on the recording context, with animation frames run only by `runFrames`. */
-function plumeBand(width: number, height: number, maxTexture: number, motion: boolean) {
+/** Mounts a vendored effect, Plume unless named, in a header band of the given CSS size on the recording context, with animation frames run only by `runFrames`. */
+function effectBand(width: number, height: number, maxTexture: number, motion: boolean, mountEffect: (container: HTMLElement, options: { motion: boolean }) => { destroy(): void } = plume.mount) {
   const record = { textures: [] as [number, number][], canvasDraws: 0 };
   const frames: FrameRequestCallback[] = [];
   const context = spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((function (this: HTMLCanvasElement, kind: string) {
@@ -503,7 +503,7 @@ function plumeBand(width: number, height: number, maxTexture: number, motion: bo
     Object.defineProperty(HTMLCanvasElement.prototype, side, { configurable: true, get: () => value });
   }
   const container = document.createElement("div");
-  const plumeHandle = plume.mount(container, { motion });
+  const effectHandle = mountEffect(container, { motion });
   let clock = performance.now();
   return {
     record,
@@ -515,7 +515,7 @@ function plumeBand(width: number, height: number, maxTexture: number, motion: bo
       }
     },
     restore: () => {
-      plumeHandle.destroy();
+      effectHandle.destroy();
       context.mockRestore();
       raf.mockRestore();
       for (const side of ["clientWidth", "clientHeight"]) delete (HTMLCanvasElement.prototype as unknown as Record<string, unknown>)[side];
@@ -524,7 +524,7 @@ function plumeBand(width: number, height: number, maxTexture: number, motion: bo
 }
 
 test("Plume in a 3840px header band asks for no texture wider or taller than the GPU allows", () => {
-  const band = plumeBand(3840, 188, 8192, true);
+  const band = effectBand(3840, 188, 8192, true);
   try {
     expect(band.record.textures.length).toBeGreaterThan(0);
     expect(band.record.textures.filter(([width, height]) => width > 8192 || height > 8192)).toEqual([]);
@@ -534,7 +534,7 @@ test("Plume in a 3840px header band asks for no texture wider or taller than the
 });
 
 test("Plume with Motion off draws the canvas once and then holds that frame across later animation frames", () => {
-  const band = plumeBand(1440, 188, 16384, false);
+  const band = effectBand(1440, 188, 16384, false);
   try {
     band.runFrames(1);
     expect(band.record.canvasDraws).toBe(1);
@@ -546,12 +546,44 @@ test("Plume with Motion off draws the canvas once and then holds that frame acro
 });
 
 test("Plume with Motion off holds its one frame and keeps its canvas through half a minute of 20 fps frames", () => {
-  const band = plumeBand(1440, 188, 16384, false);
+  const band = effectBand(1440, 188, 16384, false);
   try {
     band.runFrames(600, 50);
     expect(band.record.canvasDraws).toBe(1);
     expect(band.container.querySelectorAll("canvas")).toHaveLength(1);
   } finally {
     band.restore();
+  }
+});
+
+test("Caustics, Ribbons, Lava and Haze with Motion off keep their one frame at its first size through half a minute of 20 fps frames", () => {
+  for (const [name, mountEffect] of [["Caustics", caustics.mount], ["Ribbons", ribbons.mount], ["Lava", lava.mount], ["Haze", haze.mount]] as const) {
+    const band = effectBand(1440, 188, 16384, false, mountEffect);
+    try {
+      band.runFrames(1);
+      const canvas = band.container.querySelector("canvas")!;
+      const first = [band.record.canvasDraws, canvas.width, canvas.height];
+      band.runFrames(600, 50);
+      expect([name, band.record.canvasDraws, canvas.width, canvas.height]).toEqual([name, ...first]);
+    } finally {
+      band.restore();
+    }
+  }
+});
+
+test("Plume that fell back while moving draws again when Motion is turned off", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Plume"));
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    act(() => { band.querySelector("canvas")!.dispatchEvent(new Event("webglcontextlost")); });
+    expect([effects.live, band.classList.contains("haze-fallback")]).toEqual([[], true]);
+    fireEvent.click(motion());
+    expect([effects.live, effects.options.Plume!.at(-1)!.motion, band.classList.contains("haze-fallback")]).toEqual([["Plume"], false, false]);
+  } finally {
+    cleanup();
+    effects.restore();
   }
 });

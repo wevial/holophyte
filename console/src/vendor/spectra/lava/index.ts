@@ -76,7 +76,7 @@ export function mount(container: HTMLElement, opts: Partial<LavaConfig> = {}): L
   const config: LavaConfig = { ...DEFAULTS, ...opts };
 
   let drawn = '';
-  const stage = createStage(container, { floatTargets: true, onResize: () => { drawn = ''; } });
+  const stage = createStage(container, { floatTargets: true, held: () => !config.motion, onResize: () => { drawn = ''; } });
   if (!stage) {
     container.classList.add('lava-fallback');
     return { config, measure: () => null, advance() {}, destroy() {} };

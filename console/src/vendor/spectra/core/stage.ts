@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 packages/core/src/stage.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@d34e0f8 packages/core/src/stage.ts (MIT, see ../LICENSE), given a held option that keeps adaptive resolution off a still frame.
 // Host plumbing every effect needs: a canvas filling its container, a WebGL2
 // context, DPR-capped sizing, mouse tracking in GL uv space, and a render loop
 // that pauses while the tab is hidden or the canvas is scrolled out of view.
@@ -41,6 +41,8 @@ export interface StageOptions {
   /** GPU ms per frame the adaptive resolution aims to stay under (default 6). */
   budgetMs?: number;
   onResize?: () => void;
+  /** True while the effect holds one still frame, whose frame times are the page's and must not shrink the drawing buffer. */
+  held?: () => boolean;
 }
 
 /** Returns null when WebGL2 (or float targets, if asked) is unavailable. */
@@ -151,7 +153,8 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
         gl.deleteQuery(q);
       }
     }
-    if (adaptive?.sample(rawDt, gpuMs) && stage.resize()) {
+    const held = reducedMotion.matches || !!opts.held?.();
+    if (!held && adaptive?.sample(rawDt, gpuMs) && stage.resize()) {
       gpuMs = undefined;
       opts.onResize?.();
     }

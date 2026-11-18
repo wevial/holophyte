@@ -40,6 +40,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const band = useRef<HTMLDivElement>(null);
   const live = useRef<Handle | null>(null);
   const [fallback, setFallback] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const { resolvedTheme, lightPick, darkPick } = useTheme();
   const dark = resolvedTheme === "dark";
   const palette = `${dark ? darkPick : lightPick}-${resolvedTheme}`;
@@ -76,11 +77,16 @@ export function Haze({ effect }: { effect: BandEffect }) {
       live.current = null;
       drawing.destroy();
     };
-  }, [dark, effect]);
+  }, [dark, effect, attempt]);
 
   useEffect(() => {
     if (live.current) Object.assign(live.current.config, paint(effect, palette), { motion });
   }, [palette, hazeStrength, motion, customThemes]);
+
+  // A renderer that fell back under a slow moving frame gets another try at its one still frame.
+  useEffect(() => {
+    if (!motion && !live.current) setAttempt((count) => count + 1);
+  }, [motion]);
 
   return (
     <div

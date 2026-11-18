@@ -93,6 +93,7 @@ export function mount(container: HTMLElement, opts: Partial<RibbonsConfig> = {})
   let drawn = '';
   const stage = createStage(container, {
     floatTargets: true,
+    held: () => !config.motion,
     onResize: () => { resizeGlow(); drawn = ''; },
   });
   if (!stage) {

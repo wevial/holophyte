@@ -198,6 +198,7 @@ export function mount(container: HTMLElement, opts: Partial<CausticsConfig> = {}
   let drawn = '';
   const stage = createStage(container, {
     floatTargets: true,
+    held: () => !config.motion,
     onResize: () => { resizeLight(); drawn = ''; },
   });
   if (!stage) {
