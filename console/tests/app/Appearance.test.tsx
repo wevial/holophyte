@@ -9,6 +9,7 @@ import { declarations } from "../cssTokens";
 import { oklchToHex } from "../../src/lib/oklch";
 import * as caustics from "../../src/vendor/spectra/caustics";
 import * as haze from "../../src/vendor/spectra/haze";
+import * as hyphae from "../../src/vendor/spectra/hyphae";
 import * as lava from "../../src/vendor/spectra/lava";
 import * as plume from "../../src/vendor/spectra/plume";
 import * as ribbons from "../../src/vendor/spectra/ribbons";
@@ -113,24 +114,24 @@ test("Tide in the Dark row and Dune in the Light row are pressed, stored and car
   }
 });
 
-const EFFECT_NAMES = ["Haze", "Caustics", "Plume", "Ribbons", "Lava", "None"];
+const EFFECT_NAMES = ["Haze", "Caustics", "Plume", "Ribbons", "Lava", "Hyphae", "None"];
 
-test("the Header group offers the five effects and None in order, all enabled with no soon mark, and a picked Lava alone stays pressed across a reload", async () => {
+test("the Header group offers the six effects and None in order, all enabled with no soon mark, and a picked Hyphae alone stays pressed across a reload", async () => {
   await mount();
   const tiles = within(screen.getByRole("group", { name: "Header" })).getAllByRole("button") as HTMLButtonElement[];
   expect(tiles.map((button) => button.textContent)).toEqual(EFFECT_NAMES);
   expect(tiles.filter((button) => button.disabled)).toEqual([]);
   expect(within(screen.getByRole("group", { name: "Header" })).queryByText(/soon/i)).toBeNull();
-  fireEvent.click(tile("Header", "Lava"));
-  expect(pressed("Header")).toEqual(["Lava"]);
+  fireEvent.click(tile("Header", "Hyphae"));
+  expect(pressed("Header")).toEqual(["Hyphae"]);
   cleanup();
   await mount();
-  expect(pressed("Header")).toEqual(["Lava"]);
+  expect(pressed("Header")).toEqual(["Hyphae"]);
 });
 
 /** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs and destroys. */
 function fakeEffects() {
-  const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava };
+  const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava, Hyphae: hyphae };
   const live: string[] = [];
   const options: Record<string, { motion?: boolean }[]> = {};
   const configs: Record<string, { motion?: boolean }[]> = {};
@@ -164,13 +165,28 @@ test("in a dark theme the band mounts only the picked effect: Caustics, then Rib
   }
 });
 
-test("with Motion off each of the five effects is mounted asking for a still frame", async () => {
+test("in a dark theme Hyphae mounts alone in the band, and picking Lava destroys it", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Hyphae"));
+    expect(effects.live).toEqual(["Hyphae"]);
+    fireEvent.click(tile("Header", "Lava"));
+    expect([effects.live, effects.options.Hyphae]).toEqual([["Lava"], [{ motion: true }]]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("with Motion off each of the six effects is mounted asking for a still frame", async () => {
   const effects = fakeEffects();
   try {
     await mount();
     fireEvent.click(scheme("Dark"));
     fireEvent.click(motion());
-    for (const name of ["Caustics", "Plume", "Ribbons", "Lava", "Haze"]) {
+    for (const name of ["Caustics", "Plume", "Ribbons", "Lava", "Hyphae", "Haze"]) {
       fireEvent.click(tile("Header", name));
       expect([name, effects.live]).toEqual([name, [name]]);
       expect([name, effects.options[name]!.at(-1)!.motion]).toEqual([name, false]);
