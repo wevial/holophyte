@@ -141,7 +141,7 @@ function EffectRow() {
             return (
               <button key={item.value} type="button" aria-pressed={pressed} onClick={() => setEffect(item.value)} className="group flex w-[96px] flex-col gap-1.5 text-left">
                 <span aria-hidden="true"
-                  className={`relative block h-[40px] w-full overflow-hidden rounded-card bg-canvas shadow-[inset_0_0_0_1px_var(--hair)] after:absolute after:inset-0 after:rounded-card after:shadow-[inherit] after:content-[''] ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}>
+                  className={`relative block h-[40px] w-full overflow-hidden rounded-card bg-canvas shadow-[inset_0_0_0_1px_var(--hair)] ${item.still ? "after:absolute after:inset-0 after:rounded-card after:shadow-[inherit] after:content-['']" : ""} ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}>
                   {item.still && <img src={item.still} alt="" draggable={false} className="size-full object-cover" />}
                 </span>
                 <span className={`text-[13px] ${pressed ? "text-ink" : "text-ink-2"}`}>{item.name}</span>
