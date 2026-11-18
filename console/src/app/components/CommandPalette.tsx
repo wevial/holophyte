@@ -317,10 +317,9 @@ function Confirm({ entry, busy, refusal, onConfirm, onCancel }: { entry: Palette
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="px-5 py-5">
-      <p className="font-mono text-[11px] font-medium uppercase tracking-[0.1em] text-ink-3">Confirm</p>
-      <h3 id={headingId} className="mt-2 text-[17px] font-semibold text-ink">{entry.title}</h3>
+      <h3 id={headingId} className="text-[17px] font-semibold text-ink">{entry.title}</h3>
       <p className="mt-1 font-mono text-[12px] text-ink-2">{entry.meta}</p>
-      {refusal && <p className="mt-3 font-mono text-[12px] text-bad">{refusal}</p>}
+      {refusal && <p className="mt-3 text-[13px] text-bad">{refusal}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <Btn onClick={onCancel}>Cancel</Btn>
         <Btn ref={confirm} variant="primary" busy={busy} busyLabel="Confirming…" onClick={onConfirm}>Confirm</Btn>
