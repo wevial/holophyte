@@ -95,14 +95,26 @@ afterEach(() => {
   happyDOM.setViewport({ width: 1024, height: 768 });
 });
 
-const countLine = () => document.querySelector("[data-count-line]")!.textContent;
+const pageCount = () => document.querySelector("[data-page-count]")?.textContent ?? null;
+const sectionCount = (region: HTMLElement) => region.querySelector("header [data-count]")!.textContent;
 const rows = () => [...screen.getByRole("list", { name: "relos merge queue" }).querySelectorAll<HTMLElement>("[data-entry]")];
 
-test("the page heads the project's queue with its counts and settings and lists its entries in position order", async () => {
+test("the page header counts the queue beside its one title, with no line naming the project or branch", async () => {
   await mount("#/merge-queue?project=relos", queueFetch(QUEUE));
-  expect(countLine()).toMatch(/^relos · main · 4 queued \/ 1 building \/ clears ~\d\d:\d\d$/);
-  const tab = document.querySelector("[data-queue-table] [data-lane-head]")!.textContent!;
-  for (const words of ["squash", "all green", "builds 1 at a time", "60m"]) expect(tab).toContain(words);
+  const titles = screen.getAllByRole("heading", { level: 1 });
+  expect(titles.map((title) => title.textContent)).toEqual(["Merge queue"]);
+  expect(pageCount()).toMatch(/^4 queued · 1 building · clears ~\d\d:\d\d$/);
+  expect(titles[0]!.closest("header")!.textContent).toBe(`Merge queue${pageCount()}`);
+});
+
+test("the queue is a section named by its branch with its count and settings, its column head and its entries in position order", async () => {
+  await mount("#/merge-queue?project=relos", queueFetch(QUEUE), 1024);
+  const main = screen.getByRole("region", { name: "main" });
+  expect(sectionCount(main)).toBe("4");
+  const heading = main.querySelector("header")!.textContent!;
+  for (const words of ["squash", "all green", "builds 1 at a time", "60m"]) expect(heading).toContain(words);
+  expect(document.querySelector("[data-lane-head]")).toBeNull();
+  expect([...main.querySelector("[data-queue-heads]")!.children].map((head) => head.textContent)).toEqual(["#", "PR", "Title", "State", "Checks", "Merges", "Added"]);
   expect(rows().map((row) => row.getAttribute("data-entry"))).toEqual(["1", "2", "3", "4"]);
   const [first, second, , fourth] = rows();
   expect(first!.querySelector("[data-entry-state]")!.textContent).toBe("checks running");
@@ -110,6 +122,15 @@ test("the page heads the project's queue with its counts and settings and lists 
   expect(within(second!).getByRole("link", { name: "RELOS-231" }).getAttribute("href")).toMatch(/#\/tickets\/relos\/RELOS-231(\?|$)/);
   expect(second!.querySelector("[data-entry-state]")!.textContent).toBe("queued");
   expect(fourth!.querySelector("[data-entry-sub]")!.textContent).toBe("wevial");
+});
+
+test("an empty queue keeps its section at 0 with the empty line and no column head or rows", async () => {
+  await mount("#/merge-queue?project=relos", queueFetch({ ...QUEUE, entries: [], left: [] }));
+  const main = screen.getByRole("region", { name: "main" });
+  expect(sectionCount(main)).toBe("0");
+  expect(within(main).getByText("The queue is empty.")).toBeTruthy();
+  expect(main.querySelector("[data-queue-heads]")).toBeNull();
+  expect(main.querySelector("[data-entry]")).toBeNull();
 });
 
 test("a row's chevron opens its merge group and its checks split into required and other, and closes them again", async () => {
@@ -136,7 +157,9 @@ test("a row's chevron opens its merge group and its checks split into required a
 
 test("Left the queue lists the removals and merges newest first with their clock times, and is absent when nothing left", async () => {
   await mount("#/merge-queue?project=relos", queueFetch(QUEUE));
-  const left = screen.getByRole("region", { name: "relos left the queue" });
+  const left = screen.getByRole("region", { name: "Left the queue" });
+  expect(sectionCount(left)).toBe("3");
+  expect(left.querySelector("header")!.textContent).toContain("last 2h");
   const read = [...left.querySelectorAll("[data-left]")].map((row) => [
     row.querySelector("[data-left-outcome]")!.textContent, row.querySelector("[data-left-at]")!.textContent,
   ]);
@@ -148,29 +171,33 @@ test("Left the queue lists the removals and merges newest first with their clock
   expect(screen.queryByText("Left the queue")).toBeNull();
 });
 
-test("a project without a merge queue reads one panel and no table, and All projects names it on one quiet line", async () => {
+const laneNames = () => [...document.querySelectorAll("[data-queue-lane]")].map((lane) => lane.querySelector("section")!.getAttribute("aria-label"));
+
+test("a project without a merge queue reads one line and no table, and All projects names it on one quiet line", async () => {
   await mount("#/merge-queue?project=holophyte", queueFetch(QUEUE));
-  expect(countLine()).toBe("holophyte · main");
+  expect(pageCount()).toBeNull();
   expect(screen.getByText("No merge queue on this repository.")).toBeTruthy();
   expect(document.querySelector("[data-queue-table]")).toBeNull();
   cleanup();
 
   await mount("#/merge-queue", queueFetch(QUEUE));
-  expect([...document.querySelectorAll("[data-queue-lane]")].map((lane) => lane.getAttribute("aria-label"))).toEqual(["relos"]);
+  expect(laneNames()).toEqual(["relos"]);
+  expect(sectionCount(screen.getByRole("region", { name: "relos" }))).toBe("4");
   expect(document.querySelector("[data-no-queue]")!.textContent).toBe("No merge queue on holophyte.");
 });
 
 test("a project two daemons serve draws a lane per daemon and counts every queue in its header", async () => {
   await mount("#/merge-queue?project=relos", queueFetch(NO_QUEUE, QUEUE, "/srv/dev/relos"));
-  expect(countLine()).toMatch(/^relos · 4 queued \/ 1 building \/ clears ~\d\d:\d\d$/);
-  expect([...document.querySelectorAll("[data-queue-lane]")].map((lane) => lane.getAttribute("aria-label"))).toEqual(["writer-host:7711"]);
+  expect(pageCount()).toMatch(/^4 queued · 1 building · clears ~\d\d:\d\d$/);
+  expect(laneNames()).toEqual(["writer-host:7711"]);
+  expect(screen.getByRole("region", { name: "writer-host:7711" }).querySelector("header")!.textContent).toContain("main · squash");
   expect(rows()).toHaveLength(4);
   expect(document.querySelector("[data-no-queue]")!.textContent).toBe("No merge queue on writer-host:7710.");
 });
 
-test("a project two daemons serve without a queue reads its branch and one panel, not lanes", async () => {
+test("a project two daemons serve without a queue reads one line, not lanes", async () => {
   await mount("#/merge-queue?project=relos", queueFetch(NO_QUEUE, NO_QUEUE, "/srv/dev/relos"));
-  expect(countLine()).toBe("relos · main");
+  expect(pageCount()).toBeNull();
   expect(screen.getByText("No merge queue on this repository.")).toBeTruthy();
   expect(document.querySelector("[data-queue-lane]")).toBeNull();
   expect(document.querySelector("[data-no-queue]")).toBeNull();
