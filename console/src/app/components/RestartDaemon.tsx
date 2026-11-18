@@ -47,7 +47,7 @@ export function RestartDaemon({ host, onRestart }: {
       onConfirm={() => void confirm()}
       refusal={action.data && !action.data.ok && <p role="alert" className="mt-3 break-words font-mono text-[12px] text-bad">{action.data.detail}</p>}
     >
-      <p className="mt-4 font-read text-[15px] leading-6 text-ink-2">
+      <p className="mt-4 font-read text-[14px] leading-6 text-ink-2">
         The daemon finishes the requests it is answering, stops, and starts again on the checkout&apos;s build {root.build.head?.slice(0, 7) ?? "—"}.
       </p>
       <ul className="mt-4 space-y-3 border-y border-rule py-4 text-[14px] leading-6 text-ink-2">
