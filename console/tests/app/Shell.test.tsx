@@ -733,6 +733,7 @@ async function flush() {
 }
 
 const figure = (label: string) => document.querySelector(`[data-number="${label}"]`)!.textContent;
+const projectPicker = () => screen.getByRole("button", { name: "Project: All projects" });
 
 test("the sidebar's Flow link opens the Flow page", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
@@ -745,10 +746,22 @@ test("the sidebar's Flow link opens the Flow page", async () => {
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Flow");
 });
 
+test("the Flow page header holds the one Flow title, the window's span beside it, and the Project and Range tools", async () => {
+  await mount("#/flow", flowDaemons(demoFlow, writerFlow));
+  await act(settle);
+  const [title, ...more] = screen.getAllByRole("heading", { level: 1 });
+  expect(more).toHaveLength(0);
+  expect(title!.textContent).toBe("Flow");
+  expect(title!.nextElementSibling!.textContent).toBe("Two weeks, 30 October to 12 November");
+  const header = title!.closest("header")!;
+  expect(header.contains(projectPicker())).toBe(true);
+  expect(header.contains(screen.getByRole("button", { name: "Range" }))).toBe(true);
+});
+
 test("on All projects the Flow numbers sum both hosts: merged adds, and waiting is waiting and operator hours over all hours", async () => {
   await mount("#/flow", flowDaemons(demoFlow, writerFlow));
   await act(settle);
-  expect((screen.getByRole("combobox", { name: "Project" }) as HTMLSelectElement).value).toBe("");
+  expect(projectPicker().textContent).toBe("All projects");
   expect(figure("Merged")).toBe("12");
   expect(figure("Waiting")).toBe("47%");
   expect(figure("Reverted")).toBe("0 of 6");
@@ -769,11 +782,16 @@ test("on All projects a host whose revert count is unknown leaves the summed Rev
   expect(figure("Reverted")).toBe("–");
 });
 
-test("picking a project in the Flow dropdown shows only its host's numbers and puts it in the address", async () => {
+test("the Flow Project picker lists All projects then each project, and picking one shows only its host's numbers and puts it in the address", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   await mount("#/flow", flowDaemons(demoFlow, writerFlow));
   await act(settle);
-  fireEvent.change(screen.getByRole("combobox", { name: "Project" }), { target: { value: "writer" } });
+  expect(document.querySelector("select")).toBeNull();
+  fireEvent.click(projectPicker());
+  const options = within(screen.getByRole("listbox", { name: "Project" })).getAllByRole("option");
+  expect(options.map((option) => option.textContent)).toEqual(["All projects", "demo", "writer"]);
+  expect(options.map((option) => option.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
+  fireEvent.click(options[2]!);
   await flush();
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("project")).toBe("writer");
   expect(figure("Merged")).toBe("5");
@@ -823,6 +841,8 @@ test("choosing From and To puts them in the address and asks for the whole weeks
   await mount("#/flow", askedFlows(asked));
   await flush();
   fireEvent.click(screen.getByRole("button", { name: "Range" }));
+  const choices = within(screen.getByRole("group", { name: "Range choices" }));
+  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 6 weeks"]);
   fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-01" } });
   fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
   await flush();
