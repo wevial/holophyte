@@ -347,7 +347,7 @@ function useHistoryNav(bound: boolean) {
   return { canBack, canForward, back, forward };
 }
 
-const TITLE_BUTTON = `flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${APP_NO_DRAG}`;
+const TITLE_BUTTON = "flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink";
 
 function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; shortcut: string; enabled: boolean; go: () => void; next?: boolean }) {
   return (
@@ -356,7 +356,7 @@ function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; sh
         aria-label={name}
         disabled={!enabled}
         onClick={go}
-        className={`${TITLE_BUTTON} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-3`}
+        className={`${TITLE_BUTTON} ${APP_NO_DRAG} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-3`}
       >
         <TurnArrow next={next} />
       </TooltipTrigger>
@@ -380,7 +380,7 @@ export function TitleBar({ folded, foldable, fold }: SidebarFold) {
             aria-label={toggleName}
             aria-expanded={!folded}
             onClick={fold}
-            className={`flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+            className={`${TITLE_BUTTON} ${macApp ? APP_NO_DRAG : ""}`}
           >
             <PanelLeftIcon />
           </TooltipTrigger>
