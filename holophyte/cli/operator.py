@@ -528,7 +528,7 @@ def _require_clean(worktree, branch, refused):
 
 
 NO_REF = "0" * 40
-REMOTE_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"]+")
+REMOTE_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://.*")
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 
 
@@ -586,17 +586,15 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
             f"origin pushes to {len(urls)} URLs, and a rewind one of them"
             " rejects could not be undone on the others")
     url = urls[0] if urls else ""
+    target = "origin" if url in ("", _git(
+        repo, "remote", "get-url", "origin").stdout.strip()) else url
     fetched = _origin_tip(repo, "origin", head)
-    pushed = fetched if url in ("", _git(
-        repo, "remote", "get-url", "origin").stdout.strip()) \
+    pushed = fetched if target == "origin" \
         else _origin_tip(repo, url, head, "origin's push URL")
     rewinds = {remote: _needs_rewind(repo, branch, remote, sha, tip, pull)
                for remote in (fetched, pushed)}
     if rewinds[pushed]:
-        lease = f"--force-with-lease={head}:"
-        push = ["push", "origin", "--no-verify", "--no-follow-tags"]
-        _step(undo, repo, [*push, f"{lease}{pushed}", f"{sha}:{head}"],
-              [*push, f"{lease}{sha}", f"{pushed}:{head}"])
+        _push_rewind(undo, repo, target, head, sha, pushed)
     if rewinds[fetched]:
         after = _origin_tip(repo, "origin", head)
         if after != sha:
@@ -605,6 +603,30 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
             raise _StepFailed(
                 f"origin's {branch} {reads} after the push, so the next"
                 " claim would not fetch the reviewed commit")
+
+
+def _push_rewind(undo, repo, target, head, sha, pushed):
+    push = ["push", "origin", "--no-verify", "--no-follow-tags"]
+    lease = f"--force-with-lease={head}:"
+
+    landed = []
+
+    def reverse():
+        done = _git(repo, *NO_HOOKS, *push, f"{lease}{sha}", f"{pushed}:{head}")
+        try:
+            restored = done.returncode == 0 or (
+                _origin_tip(repo, target, head) == pushed if any(landed)
+                else _origin_tip(repo, target, head) != sha)
+        except _StepFailed:
+            restored = False
+        return subprocess.CompletedProcess(
+            done.args, 0 if restored else done.returncode, "", done.stderr)
+
+    undo.append(reverse)
+    done = _git(repo, *NO_HOOKS, *push, f"{lease}{pushed}", f"{sha}:{head}")
+    landed.append(done.returncode == 0)
+    if done.returncode != 0:
+        raise _StepFailed(f"git push origin failed: {done.stderr.strip()}")
 
 
 def _origin_tip(repo, remote, head, label="origin"):

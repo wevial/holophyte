@@ -1088,13 +1088,14 @@ class SweptApproveCliTests(unittest.TestCase):
             self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
                              self.wip)
 
-    def http_remote(self, backend):
+    def http_remote(self, backend, drop_push=False):
         """A loopback HTTP remote taking a token in the URL's query:
         `git http-backend` over `backend`, which serves fetches and refuses
-        an anonymous push, or 403 for all."""
+        an anonymous push, or 403 for all. With `drop_push` it applies each
+        push and closes the connection before answering."""
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), _GitHttp)
-        server.backend = backend
+        server.backend, server.drop_push = backend, drop_push
         loopback = patch.dict(os.environ, {"no_proxy": "127.0.0.1",
                                            "NO_PROXY": "127.0.0.1"})
         loopback.start()
@@ -1110,7 +1111,7 @@ class SweptApproveCliTests(unittest.TestCase):
             str(self.origin("origin.git", self.wip)))
         host = self.http_remote(None)
         git(self.repo, "remote", "set-url", "--push", "origin",
-            f"http://{host}/repo.git?access_token=s3cret-token")
+            f"http://{host}/repo.git?ref='main'&access_token=s3cret-token")
         self.sweep(pull=PULL)
 
         message = self.refused("--note", "ok")
@@ -1125,7 +1126,7 @@ class SweptApproveCliTests(unittest.TestCase):
         served = self.origin("served.git", self.wip)
         host = self.http_remote(served.parent)
         git(self.repo, "remote", "set-url", "--push", "origin",
-            f"http://{host}/served.git?access_token=s3cret-token")
+            f"http://{host}/served.git?ref='main'&access_token=s3cret-token")
         self.sweep(pull=PULL)
 
         message = self.refused("--note", "ok")
@@ -1134,6 +1135,39 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertNotIn("s3cret-token", message)
         self.assertEqual(git(served, "rev-parse", f"refs/heads/{BRANCH}"),
                          self.wip)
+
+    def test_a_push_lost_after_it_landed_is_pushed_back(self):
+        self.branch_with_wip()
+        served = self.origin("served.git", self.wip)
+        host = self.http_remote(served.parent, drop_push=True)
+        git(self.repo, "remote", "add", "origin", f"http://{host}/served.git")
+        self.sweep(pull=PULL)
+
+        self.assertIn("git push origin failed", self.refused("--note", "ok"))
+        self.assertEqual(git(served, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_a_rewind_the_remote_moved_past_is_left_for_a_human(self):
+        self.branch_with_wip()
+        bare = self.origin("origin.git", self.wip)
+        later = git(self.repo, "commit-tree", f"{self.reviewed}^{{tree}}",
+                    "-p", self.reviewed, "-m", "pushed by another writer")
+        git(self.repo, "push", "-q", str(bare), f"{later}:refs/keep/later")
+        git(self.repo, "remote", "add", "origin", str(bare))
+        hook = bare / "hooks" / "post-receive"
+        hook.write_text(f"#!/bin/sh\ngit update-ref refs/heads/{BRANCH}"
+                        f" {later}\n")
+        hook.chmod(0o755)
+        self.sweep(pull=PULL)
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("undoing it stopped at git push origin",
+                      str(raised.exception))
+        self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                         later)
+        self.assertEqual(self.interventions(), [])
 
     def test_a_pull_request_with_no_origin_to_rewind_refuses(self):
         self.branch_with_wip()
@@ -1311,7 +1345,11 @@ class _GitHttp(http.server.BaseHTTPRequestHandler):
                  "PATH_INFO": path, "QUERY_STRING": query,
                  "REQUEST_METHOD": self.command,
                  "CONTENT_TYPE": self.headers["Content-Type"] or "",
-                 "CONTENT_LENGTH": str(len(body))})
+                 "CONTENT_LENGTH": str(len(body)),
+                 **({"REMOTE_USER": "bot"} if self.server.drop_push else {})})
+        if self.server.drop_push and path.endswith("/git-receive-pack"):
+            self.close_connection = True
+            return
         head, _, payload = cgi.stdout.partition(b"\r\n\r\n")
         headers = [line.split(":", 1) for line in head.decode().splitlines()]
         status = dict((k.lower(), v.strip()) for k, v in headers).get(
