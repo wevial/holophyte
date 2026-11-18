@@ -345,7 +345,8 @@ function useHistoryNav(bound: boolean) {
     [history],
   );
 
-  const canBack = reach.index > 0;
+  const oldestRetained = Math.max(0, reach.furthest - (window.history.length - 1));
+  const canBack = reach.index > oldestRetained;
   const canForward = reach.index < reach.furthest;
   const back = () => canBack && history.back();
   const forward = () => canForward && history.forward();
