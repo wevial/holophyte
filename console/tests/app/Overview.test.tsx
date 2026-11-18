@@ -111,13 +111,12 @@ test("on a picked project, the more link counts that project's merges and keeps 
 test("with two Needs you rows and the first opened, only the opened row carries the need tint", async () => {
   await mount("#/", fleet({ items: [blocked, ...failed] }, { items: [] }));
   const tint = ["bg-(image:--need-tint)", "shadow-[inset_0_0_0_1px_var(--need-edge)]"];
-  const tinted = (row: HTMLElement) => [...row.querySelectorAll("[class]")].some((element) => tint.every((name) => classes(element).includes(name)));
+  const tinted = (row: HTMLElement) => row.hasAttribute("data-open") && tint.every((name) => classes(row).includes(`data-open:${name}`));
   expect(needRows().map(tinted)).toEqual([true, false]);
   const tintClasses = [...document.querySelectorAll("[class]")].flatMap((element) => classes(element).filter((name) => /need-(tint|edge)/.test(name)).map((name) => [element, name] as const));
   for (const [element, name] of tintClasses) {
-    expect(needRows().filter((row) => row.hasAttribute("data-open") && row.contains(element))).toHaveLength(1);
-    expect(needRows().some((row) => row === element)).toBe(false);
-    expect(name).not.toStartWith("data-open:");
+    expect(needRows()).toContain(element as HTMLElement);
+    expect(name).toStartWith("data-open:");
   }
   fireEvent.click(within(needRows()[1]!).getAllByRole("button")[0]!);
   expect(needRows().map(tinted)).toEqual([false, true]);
@@ -300,4 +299,28 @@ test("This week and Today's log each render once on the Overview", async () => {
   await mount("#/", fleet({ items: [], runs: threeRuns, shipped: [merged(11, "DEMO-11", NOW - 20 * MINUTE)] }, { items: [] }));
   expect(screen.getAllByRole("heading", { name: "This week" })).toHaveLength(1);
   expect(screen.getAllByRole("complementary", { name: "Today" })).toHaveLength(1);
+});
+
+test("the Overview's header opens the now column above its first section, beside landed and the log starting at the grid's first row", async () => {
+  await mount("#/", fleet({ items: [blocked], runs: threeRuns }, { items: [] }));
+  const now = column("now");
+  const head = document.querySelector<HTMLElement>("[data-overview-head]")!;
+  expect(now.contains(head)).toBe(true);
+  const firstSection = within(now).getAllByRole("region")[0]!;
+  expect(firstSection.getAttribute("aria-label")).toBe("Needs you");
+  expect(head.compareDocumentPosition(firstSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const grid = now.parentElement!;
+  expect([column("landed").parentElement, column("log").parentElement]).toEqual([grid, grid]);
+  expect(classes(now)).toContain("row-start-1");
+  expect(classes(column("landed"))).toContain("min-[1680px]:row-start-1");
+  expect(classes(column("log"))).toContain("row-span-full");
+});
+
+test("before any host answers, the first-load line opens the now column above Running", async () => {
+  await mount("#/", () => new Promise<Response>(() => {}));
+  const now = column("now");
+  const asking = within(now).getAllByRole("status").find((line) => line.textContent?.startsWith("Asking"))!;
+  const running = within(now).getByRole("region", { name: "Running" });
+  expect(regionsIn(now)[0]).toBe("Running");
+  expect(asking.compareDocumentPosition(running) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
