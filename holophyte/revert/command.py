@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import fcntl
 import io
 import os
@@ -35,22 +36,25 @@ def revert_turn(target):
     fd = os.open(target.holo_dir / TURN_FILE, os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
+        yield dataclasses.replace(target, _config=None)
     finally:
         os.close(fd)
 
 
+def disabled(target, key):
+    return f"{key}: [revert] enabled is not true in {target.config_path}"
+
+
 def revert(target, board, key, reason, dry_run):
     if not revert_config(target).enabled:
-        raise SystemExit(f"[holo2] {key}: [revert] enabled is not true in"
-                         f" {target.config_path}; nothing filed")
+        raise SystemExit(f"[holo2] {disabled(target, key)}; nothing filed")
     if not target.store_path.exists():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     board = require_board(target, board)
     conn = open_store(target)
     try:
-        with revert_turn(target):
-            return _revert(target, conn, board, key, reason, dry_run)
+        with revert_turn(target) as fresh:
+            return _revert(fresh, conn, board, key, reason, dry_run)
     except Refused as refused:
         raise SystemExit(f"[holo2] {refused}; nothing filed") from None
     finally:
@@ -73,6 +77,8 @@ def _revert(target, conn, board, key, reason, dry_run):
 
 
 def checked(target, conn, board, key, say):
+    if not revert_config(target).enabled:
+        raise Refused(disabled(target, key))
     unfetched = fetch_origin(target.path)
     if unfetched is not None:
         say(f"warning: git fetch origin failed, so {MAIN} is as last"

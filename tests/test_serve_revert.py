@@ -175,7 +175,7 @@ class RevertActionTests(ConfigTestCase):
 
         def rejected(target, path, state, board, out, priority):
             print("[holo2] fetch https://bot:hunter2@git.example.test/r.git"
-                  " and 'https://git.example.test/q.git?access_token=hunter3'"
+                  " and 'https://git.example.test/q.git?access_token=hun'ter3'"
                   " failed; ticket rejected", file=out)
             return 2
 
@@ -184,10 +184,10 @@ class RevertActionTests(ConfigTestCase):
 
         self.assertEqual(code, 500, reply)
         self.assertNotIn("hunter2", json.dumps(reply))
-        self.assertNotIn("hunter3", json.dumps(reply))
+        self.assertNotIn("ter3", json.dumps(reply))
         self.assertIn("https://[redacted]@git.example.test/r.git",
                       reply["error"])
-        self.assertIn("https://git.example.test/q.git?[redacted]'",
+        self.assertIn("https://git.example.test/q.git?[redacted]",
                       reply["error"])
         self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
 
@@ -197,11 +197,35 @@ class RevertActionTests(ConfigTestCase):
         self.project.config_path.write_text(
             config.replace("enabled = true", "enabled = false"))
 
-        code, reply = self.post({"key": "NAT-1", "reason": REASON})
+        for dry_run in (False, True):
+            with self.subTest(dry_run=dry_run):
+                code, reply = self.post({"key": "NAT-1", "reason": REASON,
+                                         "dry_run": dry_run})
 
+                self.assertEqual(code, 409, reply)
+                self.assertIs(reply["enabled"], False)
+                self.assertIn("[revert] enabled is not true",
+                              reply["refused"]["reason"])
+        self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
+
+    def test_a_path_refused_while_the_request_waits_on_the_lock_is_refused(self):
+        self.serve({"src/header.py": "broken\n"}, {"README.md": "later\n"})
+        replies = []
+        sender = threading.Thread(target=lambda: replies.append(
+            self.post({"key": "NAT-1", "reason": REASON})))
+
+        with holophyte.revert.command.revert_turn(self.project):
+            sender.start()
+            time.sleep(0.5)
+            config = self.project.config_path.read_text()
+            self.project.config_path.write_text(config.replace(
+                "enabled = true",
+                'enabled = true\nrefuse_paths = ["src/header.py"]'))
+        sender.join()
+
+        ((code, reply),) = replies
         self.assertEqual(code, 409, reply)
-        self.assertIs(reply["enabled"], False)
-        self.assertIn("[revert] enabled is not true", reply["refused"]["reason"])
+        self.assertEqual(reply["paths"], ["src/header.py"])
         self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
 
     def test_two_requests_at_once_file_one_revert(self):

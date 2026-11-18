@@ -8,14 +8,19 @@ from holophyte.board.provider import board_for
 from holophyte.cli.board_verbs import require_board
 from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.revert.checks import Refused
-from holophyte.revert.command import checked, file_revert, revert_turn
+from holophyte.revert.command import (
+    checked,
+    disabled,
+    file_revert,
+    revert_turn,
+)
 from holophyte.revert.settings import revert_config
 from holophyte.serve.serve_actions import action_store, written_on
 from holophyte.serve.serve_runs import no_store
 
 REVERT_ACTION = "revert"
 URL_USERINFO = re.compile(r"(\b[a-zA-Z][\w+.-]*://)[^/\s@]+@")
-URL_QUERY = re.compile(r"(\b[a-zA-Z][\w+.-]*://[^\s?#'\"]*)\?[^\s#'\"]+")
+URL_QUERY = re.compile(r"(\b[a-zA-Z][\w+.-]*://[^\s?#'\"]*)\?\S+")
 
 
 def scrubbed(project, text):
@@ -42,18 +47,14 @@ def revert_action(project, body):
     key = key.strip()
     project = dataclasses.replace(project, _config=None)
     if not revert_config(project).enabled:
-        if dry_run:
-            return 200, {"enabled": False, "refused": None, "dependents": []}
-        return refusal(f"{key}: [revert] enabled is not true in"
-                       f" {project.config_path}", enabled=False)
+        return refusal(disabled(project, key), enabled=False)
     if not project.store_path.exists():
         return 503, no_store(project)
     board = require_board(project, board_for(project))
     conn = action_store(project)
     try:
-        with revert_turn(project):
-            return checked_and_filed(project, conn, board, key, reason,
-                                     dry_run)
+        with revert_turn(project) as fresh:
+            return checked_and_filed(fresh, conn, board, key, reason, dry_run)
     finally:
         conn.close()
 
@@ -62,7 +63,8 @@ def checked_and_filed(project, conn, board, key, reason, dry_run):
     try:
         merge, found = checked(project, conn, board, key, lambda line: None)
     except Refused as refused:
-        return refusal(scrubbed(project, str(refused)), refused.paths)
+        return refusal(scrubbed(project, str(refused)), refused.paths,
+                       enabled=revert_config(project).enabled)
     if dry_run:
         return 200, {"enabled": True, "refused": None, "dependents": [
             {"key": one.key, "sha": one.sha, "paths": list(one.paths)}
