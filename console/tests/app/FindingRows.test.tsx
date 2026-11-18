@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, isInaccessible, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -99,6 +99,8 @@ const toggle = (row: HTMLElement) => row.querySelector<HTMLButtonElement>("butto
 const titles = (label: string) => rowsOf(label).map((row) => row.querySelector("[data-title]")!.textContent);
 const fateOf = (row: HTMLElement) => row.querySelector<HTMLElement>("[data-fate]")!;
 const iconOf = (row: HTMLElement) => toggle(row).querySelector<HTMLElement>("[data-state]")!;
+const shown = (element: HTMLElement) => (isInaccessible(element) ? null : element.textContent);
+const fateWord = (row: HTMLElement) => shown(toggle(row).querySelector<HTMLElement>("[data-fate-word]")!);
 
 function unfoldAll(label: string): HTMLElement[] {
   const rows = rowsOf(label);
@@ -125,13 +127,10 @@ const writer3 = runOf(3, "WRITER-3", [
 ]);
 const reviewing7 = [{ ...run(7, "DEMO-7"), phase: "reviewing", round: 1, max_rounds: 3, heartbeat_age_ms: 30_000 }];
 
-test("open rows read worst first, then the higher round first even when it ended earlier, each pill coloured by severity", async () => {
+test("open rows read worst first, then the higher round first even when it ended earlier", async () => {
   await mount("#/findings", fleet({ runs: [demo11, demo7, writer3], live: reviewing7 }));
   expect(titles("Open")).toEqual(["Retry loops forever", "Lease never expires", "Flag is ignored"]);
-  const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);
-  expect(pills.map((pill) => pill.textContent)).toEqual(["P1", "P1", "P2"]);
-  expect(pills[0]!.classList.contains("bg-p1")).toBe(true);
-  expect(pills[2]!.classList.contains("bg-p2")).toBe(true);
+  expect(rowsOf("Open").map((row) => row.querySelector("[data-severity]")!.textContent)).toEqual(["P1", "P1", "P2"]);
   cleanup();
 
   sessionStorage.setItem("holophyte.next.project", "demo");
@@ -140,20 +139,39 @@ test("open rows read worst first, then the higher round first even when it ended
   expect(group("Open").querySelector("[data-project]")).toBeNull();
 });
 
-test("each severity pill and a filled tag pair their fill with that fill's own ink", async () => {
-  const nit = runOf(12, "DEMO-12", [round(1, [finding("Trailing space in the log", "p3")])]);
-  const tagged = followUp(1, "DEMO-7", "Guard the lease clock.", { run: 7, kind: "guardrail", state: "pending", created_ms: AT });
-  await mount("#/findings", fleet({ runs: [demo11, writer3, nit], live: reviewing7, followUps: [tagged] }));
-  const pills = rowsOf("Open").map((row) => row.querySelector("[data-pill]")!);
-  expect(pills.map((pill) => [pill.textContent, [...pill.classList].filter((name) => /^(bg|text)-p\d/.test(name))])).toEqual([
-    ["P1", ["bg-p1", "text-p1-ink"]],
-    ["P2", ["bg-p2", "text-p2-ink"]],
-    ["P3", ["bg-p3", "text-p3-ink"]],
+test("open rows of must, should and nit tag P1, P2 and P3 worst first, and each unfolds to its own text, place, fate, run link and one action", async () => {
+  const own = (id: number, title: string, severity: string, detail: string, facts: Partial<FindingsRun> = {}) =>
+    runOf(id, `DEMO-${id}`, [round(1, [finding(title, severity, { message: `**${title}** ${detail}` })])], facts);
+  const runs = [
+    own(23, "Trailing space in the log", "p3", "The log line ends in a space."),
+    own(22, "Flag is ignored", "p2", "The flag never reaches the parser.", { phase: "failed", outcome: "failed" }),
+    own(21, "Retry loops forever", "p1", "The retry has no ceiling."),
+  ];
+  await mount("#/findings", fleet({ runs }));
+  expect(rowsOf("Open").map((row) => shown(row.querySelector<HTMLElement>("[data-severity]")!))).toEqual(["P1", "P2", "P3"]);
+  const rows = unfoldAll("Open");
+  const bodies = rows.map((row) => document.getElementById(toggle(row).getAttribute("aria-controls")!)!);
+  expect(bodies.map((body) => shown(body.querySelector<HTMLElement>("[data-text]")!))).toEqual([
+    "The retry has no ceiling.",
+    "The flag never reaches the parser.",
+    "The log line ends in a space.",
   ]);
-  const tag = rowsOf("Follow-ups")[0]!.querySelector("[data-tag]")!;
-  expect(tag.textContent).toBe("guardrail");
-  expect(tag.classList.contains("bg-tag")).toBe(true);
-  expect(tag.classList.contains("text-tag-ink")).toBe(true);
+  expect(bodies.map((body) => shown(body.querySelector<HTMLElement>("[data-place]")!))).toEqual([
+    "holophyte/retry_loops_forever.py:3 · DEMO-21 · round 1",
+    "holophyte/flag_is_ignored.py:3 · DEMO-22 · round 1",
+    "holophyte/trailing_space_in_the_log.py:3 · DEMO-23 · round 1",
+  ]);
+  expect(rows.map((row) => shown(fateOf(row)))).toEqual([
+    "open · the ticket has no run, so nobody is fixing it",
+    "open · the run failed, so nobody is fixing it",
+    "open · the ticket has no run, so nobody is fixing it",
+  ]);
+  expect(bodies.map((body) => within(body).getByRole("link", { name: "Open run" }).getAttribute("href")!.split("#")[1])).toEqual([
+    "/runs/demo/21",
+    "/runs/demo/22",
+    "/runs/demo/23",
+  ]);
+  for (const body of bodies) expect(within(body).getAllByRole("button", { name: /^(Steer into next run|File ticket)$/ })).toHaveLength(1);
 });
 
 test("a row folds open from its tag, title and path to its place", async () => {
@@ -175,7 +193,9 @@ test("a row folds open from its tag, title and path to its place", async () => {
 
 test("an open row's fate says who is fixing it, or why nobody is", async () => {
   await mount("#/findings", fleet({ runs: [demo7, demo11], live: reviewing7 }));
-  const [fixing, idle] = unfoldAll("Open");
+  const [fixing, idle] = rowsOf("Open");
+  expect([fateWord(fixing!), fateWord(idle!)]).toEqual(["being fixed", "open, nobody fixing it"]);
+  unfoldAll("Open");
   expect(fateOf(fixing!).textContent).toBe("being fixed · reviewing, round 2 of 3");
   expect(iconOf(fixing!).getAttribute("data-state")).toBe("running");
   expect(fateOf(idle!).textContent).toBe("open · the run failed, so nobody is fixing it");
@@ -183,7 +203,7 @@ test("an open row's fate says who is fixing it, or why nobody is", async () => {
   expect(fateOf(idle!).classList.contains("text-ask-ink")).toBe(true);
 });
 
-test("settled rows say what became of each finding, under a quiet icon", async () => {
+test("settled rows say what became of each finding, the glyph and word carrying the text-ink-2 class", async () => {
   const declineLedger = [{
     ...pinnedLedger,
     text: "Round 1: REQUEST_CHANGES -> fix round\nImplementer response:\nDECLINE holophyte/serve/views.py:20 — the store column is lease_age_ms",
@@ -198,7 +218,10 @@ test("settled rows say what became of each finding, under a quiet icon", async (
     "declined · the store column is lease_age_ms",
     "merged with this finding open",
   ]);
-  for (const row of rows) expect(iconOf(row).classList.contains("text-ink-3")).toBe(true);
+  for (const row of rows) {
+    expect(iconOf(row).classList.contains("text-ink-2")).toBe(true);
+    expect(iconOf(row).querySelector("[class*='text-']")).toBeNull();
+  }
 });
 
 test("follow-ups read their state's fate, the pending ones first", async () => {

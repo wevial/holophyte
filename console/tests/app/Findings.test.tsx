@@ -1,11 +1,10 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Findings, FindingsRun, FollowUpRow, Round, Status, TicketDefect } from "../../src/lib/contract.gen";
 import { formatStamp } from "../../src/lib/format";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
-import { dayRangeLabel } from "../../src/app/components/ListFilters";
 import { weekSince } from "../../src/app/queries";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, peersFetch, settle } from "../harness";
@@ -98,7 +97,7 @@ const GROUPS = ["Open", "Follow-ups", "Settled this week", "Clean reviews"];
 const group = (label: string) => screen.getByRole("region", { name: label });
 const counts = () => GROUPS.map((label) => group(label).querySelector("[data-count]")?.textContent ?? null);
 const verdict = () => document.querySelector("[data-verdict]")?.textContent;
-const countLine = () => document.querySelector("[data-count-line]")?.textContent;
+const pageCount = () => screen.getByRole("heading", { level: 1 }).nextElementSibling?.textContent;
 const emptyOf = (label: string) => group(label).querySelector("p")?.textContent ?? null;
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -111,12 +110,31 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("every project's week sorts into the four groups, counted in two digits, under the count line", async () => {
+test("every project's week sorts into the four groups, each headed by its label and a plain count", async () => {
   await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
-  expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.firstChild?.textContent)).toEqual(GROUPS);
-  expect(counts()).toEqual(["02", "01", "01", "02"]);
-  expect(countLine()).toBe("last 7 days / 5 reviews / 3 findings / worst first");
+  expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(GROUPS);
+  expect(GROUPS.map((label) => within(group(label)).getByRole("heading", { level: 2 }).textContent)).toEqual(GROUPS);
+  expect(counts()).toEqual(["2", "1", "1", "2"]);
   expect(document.querySelector("[data-scope-line]")).toBeNull();
+});
+
+test("the single title reads Findings beside its open count and how many of those nobody is fixing", async () => {
+  await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
+  expect(screen.getAllByRole("heading", { level: 1 }).map((heading) => heading.textContent)).toEqual(["Findings"]);
+  expect(pageCount()).toBe("2 open · 1 needs you");
+  await choose("must");
+  expect([pageCount(), group("Open").querySelector("[data-count]")!.textContent]).toEqual(["1 open", "1"]);
+  cleanup();
+
+  await mount("#/findings", fleet(demoDaemon([demo7, demo5, demo10]), writerDaemon).fetch);
+  expect(pageCount()).toBe("1 open");
+});
+
+test("the page has no count line or fates footer under its verdict", async () => {
+  await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
+  expect(verdict()).toBe("Two findings are still open, and one is already being fixed. One follow-up becomes a Backlog draft when its PR merges.");
+  expect(document.body.textContent).not.toContain("worst first");
+  expect(document.body.textContent).not.toContain("Fates come from the fix commit");
 });
 
 test("the verdict says how many findings are open, who is on them and why nobody is, then the pending drafts", async () => {
@@ -139,7 +157,7 @@ test("a picked project scopes every group and the scope line, whose link clears 
   sessionStorage.setItem("holophyte.next.project", "writer");
   await mount("#/findings?project=writer", fleet(demoDaemon([demo7, demo11, demo5, demo10]), writerDaemon).fetch);
   expect(emptyOf("Open")).toBe("Nothing open in writer.");
-  expect(counts()).toEqual([null, "01", null, null]);
+  expect(counts()).toEqual(["0", "1", "0", "0"]);
   expect(document.querySelector("[data-scope-line] span")!.textContent).toBe("Showing writer only");
   const all = screen.getByRole("link", { name: "Show all projects" });
   expect(all.getAttribute("href")).toBe("/#/findings");
@@ -147,7 +165,7 @@ test("a picked project scopes every group and the scope line, whose link clears 
   for (let step = 0; step < 2; step += 1) await act(settle);
   expect(window.location.hash).toBe("#/findings");
   expect(sessionStorage.getItem("holophyte.next.project")).toBeNull();
-  expect(counts()).toEqual(["02", "01", "01", "02"]);
+  expect(counts()).toEqual(["2", "1", "1", "2"]);
 });
 
 test("clearing the project scope keeps the range and facet filters", async () => {
@@ -166,7 +184,7 @@ test("a finding adjudicated FOLLOW_UP is counted once, as its follow-up row", as
   const deferred = runOf(8, "DEMO-8", [round(1, [finding("app.py", "p2")])], { ledger });
   const row = followUp("DEMO-8", { run: 8, kind: "feature", state: "pending" });
   await mount("#/findings", fleet({ runs: [deferred], followUps: [row] }, {}).fetch);
-  expect(counts()).toEqual([null, "01", null, null]);
+  expect(counts()).toEqual(["0", "1", "0", "0"]);
 });
 
 test("a clean week reads as no open findings, and a daemon without the route leaves the other's groups", async () => {
@@ -177,7 +195,7 @@ test("a clean week reads as no open findings, and a daemon without the route lea
   cleanup();
 
   await mount("#/findings", fleet(demoDaemon([demo7, demo11, demo5, demo10]), { missing: true }).fetch);
-  expect(counts()).toEqual(["02", null, "01", "02"]);
+  expect(counts()).toEqual(["2", "0", "1", "2"]);
 });
 
 const rangeGroup = () => screen.getByRole("group", { name: "Range" });
@@ -185,7 +203,7 @@ const pressed = () => within(rangeGroup()).getAllByRole("button", { pressed: tru
 const findingsAsked = (asked: string[]) => asked.filter((url) => url.includes("/findings?"));
 
 async function choose(...names: string[]) {
-  fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Filter findings/ }));
   const dialog = screen.getByRole("dialog", { name: "Filter findings" });
   for (const name of names) {
     fireEvent.click(within(dialog).getByRole("checkbox", { name }));
@@ -227,24 +245,23 @@ test("where today's midnight falls in a clock change, the default window still s
   }
 });
 
-test("range 30d asks since local midnight 29 days before today and names the last 30 days in the count, verdict and empty lines", async () => {
+test("range 30d asks since local midnight 29 days before today and names the last 30 days in the verdict and empty lines", async () => {
   const { fetch, asked } = fleet({}, {});
   await mount("#/findings?range=30d", fetch);
   expect(pressed()).toEqual(["30d"]);
   expect(asked).toContain(`${DEMO}/findings?since=${new Date(2026, 8, 16).getTime()}&limit=500`);
-  expect(countLine()).toStartWith("last 30 days / ");
   expect(verdict()).toBe("No reviews in the last 30 days.");
   const settled = "Settled in the last 30 days";
   expect([settled, "Clean reviews"].map(emptyOf)).toEqual(["Nothing settled in the last 30 days.", "No clean reviews in the last 30 days."]);
 });
 
-test("a custom range from 1 to 15 October asks since midnight 1 October until midnight 16 October and heads the count line with its label", async () => {
+test("a custom range from 1 to 15 October asks since midnight 1 October until midnight 16 October and names its days in the Range chip", async () => {
   const { fetch, asked } = fleet({}, {});
   await mount("#/findings?from=2026-10-01&to=2026-10-15", fetch);
   const since = new Date(2026, 9, 1).getTime();
   const until = new Date(2026, 9, 16).getTime();
   expect(asked).toContain(`${DEMO}/findings?since=${since}&limit=500&until=${until}`);
-  expect(countLine()).toStartWith(`${dayRangeLabel("2026-10-01", "2026-10-15")} / `);
+  expect(screen.getByRole("button", { name: "Remove Range: Oct 1 – Oct 15" })).toBeTruthy();
 });
 
 const customRange = () => screen.getByRole("button", { name: "Custom range" });
@@ -283,9 +300,131 @@ test("a custom range presses no preset and presses Custom range reading its days
   expect([params.get("range"), params.has("from"), params.has("to")]).toEqual(["30d", false, false]);
 });
 
+test("the Range group and Filter findings sit in the page header; pressing 30d asks each host for 30 days and picking must leaves must rows", async () => {
+  const runs = [runOf(1, "DEMO-1", [round(1, [finding("must.py", "p1")])]), runOf(2, "DEMO-2", [round(1, [finding("should.py", "p2")])])];
+  const { fetch, asked } = fleet({ runs, live: live7 }, {});
+  await mount("#/findings", fetch);
+  const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+  expect(header.contains(rangeGroup())).toBe(true);
+  expect(header.contains(screen.getByRole("button", { name: "Filter findings" }))).toBe(true);
+  await pressRange("30d");
+  const since = new Date(2026, 8, 16).getTime();
+  for (const base of [DEMO, WRITER]) expect(asked).toContain(`${base}/findings?since=${since}&limit=500`);
+  await choose("must");
+  expect(openTitles()).toEqual(["must.py needs care"]);
+});
+
+/** A ResizeObserver whose callbacks run only when `resize` is called with one of their targets, and animation frames that run only when `runFrames` is called. */
+function heldLayout() {
+  const live = new Map<object, { targets: Element[]; fire: () => void }>();
+  const saved = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      live.set(this, { targets: [], fire: () => callback([], this as unknown as ResizeObserver) });
+    }
+    observe(target: Element) {
+      live.get(this)?.targets.push(target);
+    }
+    unobserve() {}
+    disconnect() {
+      live.get(this)!.targets = [];
+    }
+  } as unknown as typeof ResizeObserver;
+  const frames = new Map<number, FrameRequestCallback>();
+  let lastFrame = 0;
+  const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    frames.set(++lastFrame, callback);
+    return lastFrame;
+  });
+  const caf = spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+  return {
+    observing: (target: Element) => [...live.values()].filter((observer) => observer.targets.includes(target)).length,
+    resize: (target: Element) => act(() => [...live.values()].filter((observer) => observer.targets.includes(target)).forEach((observer) => observer.fire())),
+    runFrames: () => act(() => {
+      const due = [...frames.entries()];
+      frames.clear();
+      due.forEach(([, callback]) => callback(performance.now()));
+    }),
+    restore: () => {
+      globalThis.ResizeObserver = saved;
+      raf.mockRestore();
+      caf.mockRestore();
+    },
+  };
+}
+
+const rectAt = (left: number, width: number) => () => ({ left, width, right: left + width, top: 0, bottom: 0, height: 0, x: left, y: 0, toJSON: () => ({}) });
+
+/** Findings in a 720px window whose main scrolls and shows all 720px, with the dates menu 248px wide and the Custom range button at `left`. */
+async function openRangeMenu(left: number) {
+  await mount("#/findings", fleet({}, {}).fetch);
+  const main = screen.getByRole("main");
+  main.style.overflowX = "auto";
+  main.getBoundingClientRect = rectAt(0, 720);
+  Object.defineProperty(main, "clientWidth", { configurable: true, value: 720 });
+  const anchor = customRange().parentElement!;
+  anchor.getBoundingClientRect = rectAt(left, 32);
+  fireEvent.click(customRange());
+  const menu = screen.getByRole("group", { name: "Range range" });
+  Object.defineProperty(menu, "offsetWidth", { configurable: true, value: 248 });
+  menu.getBoundingClientRect = rectAt(0, 248);
+  act(() => void window.dispatchEvent(new Event("resize")));
+  return { main, anchor, menu };
+}
+
+test("with Custom range open, the scrolling main resizing as its button moves right, with no window resize, places the dates menu again inside the window", async () => {
+  const held = heldLayout();
+  const viewport = document.documentElement.getBoundingClientRect;
+  document.documentElement.getBoundingClientRect = rectAt(0, 720);
+  try {
+    const { main, anchor, menu } = await openRangeMenu(100);
+    anchor.getBoundingClientRect = rectAt(600, 32);
+    held.resize(main);
+    const left = 600 + parseFloat(menu.style.left);
+    expect([left >= 0, left + 248 <= 720]).toEqual([true, true]);
+  } finally {
+    document.documentElement.getBoundingClientRect = viewport;
+    held.restore();
+  }
+});
+
+test("with Custom range open, its button moving left with nothing resized places the dates menu again at the button's new left edge on the next frame", async () => {
+  const held = heldLayout();
+  const viewport = document.documentElement.getBoundingClientRect;
+  document.documentElement.getBoundingClientRect = rectAt(0, 720);
+  try {
+    const { anchor, menu } = await openRangeMenu(600);
+    held.runFrames();
+    expect(parseFloat(menu.style.left)).toBeLessThan(0);
+    anchor.getBoundingClientRect = rectAt(330, 32);
+    held.runFrames();
+    expect(parseFloat(menu.style.left)).toBe(0);
+  } finally {
+    document.documentElement.getBoundingClientRect = viewport;
+    held.restore();
+  }
+});
+
+test("closing the Custom range menu with Done leaves no observer on its button or the scrolling main, and no frame reading the button's place", async () => {
+  const held = heldLayout();
+  try {
+    const { main, anchor, menu } = await openRangeMenu(100);
+    expect([held.observing(anchor), held.observing(main)]).toEqual([1, 1]);
+    fireEvent.click(within(menu).getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("group", { name: "Range range" })).toBeNull();
+    expect([held.observing(anchor), held.observing(main)]).toEqual([0, 0]);
+    let reads = 0;
+    anchor.getBoundingClientRect = () => (reads += 1, rectAt(330, 32)());
+    held.runFrames();
+    expect(reads).toBe(0);
+  } finally {
+    held.restore();
+  }
+});
+
 const openTitles = () => [...group("Open").querySelectorAll("[data-finding-row] [data-title]")].map((title) => title.textContent);
 
-test("choosing severities must and should leaves only those open rows, counted 02", async () => {
+test("choosing severities must and should leaves only those open rows, counted 2", async () => {
   const runs = [
     runOf(1, "DEMO-1", [round(1, [finding("must.py", "p1")])]),
     runOf(2, "DEMO-2", [round(1, [finding("should.py", "p2")])]),
@@ -295,7 +434,7 @@ test("choosing severities must and should leaves only those open rows, counted 0
   expect(openTitles()).toHaveLength(3);
   await choose("must", "should");
   expect(openTitles()).toEqual(["must.py needs care", "should.py needs care"]);
-  expect(group("Open").querySelector("[data-count]")!.textContent).toBe("02");
+  expect(group("Open").querySelector("[data-count]")!.textContent).toBe("2");
 });
 
 test("choosing status Fixed alone leaves Settled with only the fixed row and every other group empty", async () => {

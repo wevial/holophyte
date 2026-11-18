@@ -2,6 +2,8 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { CleanReviewLine, FindingRow } from "../components/FindingRow";
 import { dayLabel, dayRangeLabel, FilterChips, FilterPopover, RangeButtons, type FilterChip, type FilterSection } from "../components/ListFilters";
+import { PageHeader } from "../components/PageHeader";
+import { Section } from "../components/Section";
 import { StateDot } from "../components/StateDot";
 import { TicketDefectRow } from "../components/TicketDefectRow";
 import {
@@ -64,14 +66,12 @@ interface Part {
   rows: ReactNode[];
 }
 
-const LABEL = "font-sans text-[11px] font-semibold uppercase leading-none tracking-[0.06em]";
-
 function ProjectPart({ project, rows }: Part) {
   if (project == null) return <ul>{rows}</ul>;
   return (
-    <div data-project-group className="flex flex-col gap-2">
-      <h3 className={`flex items-center gap-2 ${LABEL} text-ink-3`}>
-        <span className="[overflow-wrap:anywhere]">{project}</span> <span className="text-ink">{rows.length}</span>
+    <div data-project-group className="flex flex-col">
+      <h3 className="flex items-center gap-2 px-2.5 pt-3 pb-1 font-sans text-[12px] text-ink-3">
+        <span className="[overflow-wrap:anywhere]">{project}</span> <span className="font-mono">{rows.length}</span>
       </h3>
       <ul>{rows}</ul>
     </div>
@@ -81,14 +81,9 @@ function ProjectPart({ project, rows }: Part) {
 function Group({ label, empty, parts }: { label: string; empty: string; parts: Part[] }) {
   const count = parts.reduce((total, part) => total + part.rows.length, 0);
   return (
-    <section aria-label={label} className="flex flex-col gap-3 px-5 py-4">
-      <h2 className={`flex items-center gap-2.5 ${LABEL} text-ink-3`}>
-        <span>{label}</span>
-        {count > 0 && <span data-count className="text-ink">{String(count).padStart(2, "0")}</span>}
-        <span aria-hidden="true" className="h-px flex-1 bg-rule-2" />
-      </h2>
-      {count === 0 ? <p className="font-mono text-[13px] text-ink-3">{empty}</p> : parts.map((part) => <ProjectPart key={part.project ?? ""} {...part} />)}
-    </section>
+    <Section label={label} count={count} empty={empty}>
+      {parts.map((part) => <ProjectPart key={part.project ?? ""} {...part} />)}
+    </Section>
   );
 }
 
@@ -111,7 +106,7 @@ const CLEARED = { range: undefined, from: undefined, to: undefined, severity: un
 
 type Clears = Partial<typeof CLEARED>;
 
-/** The count line's head and the phrase naming the window in sentences. */
+/** The Range chip's value and the phrase naming the window in sentences. */
 function windowWords({ range, from, to }: FindingsSearch): { head: string; span: string } {
   if (from != null && to != null) return { head: dayRangeLabel(from, to), span: `from ${dayLabel(from)} to ${dayLabel(to)}` };
   if (from != null) return { head: dayRangeLabel(from, to), span: `since ${dayLabel(from)}` };
@@ -127,10 +122,6 @@ function chipsOf(search: FindingsSearch, sections: FilterSection[], head: string
   });
   if (search.range != null || search.from != null || search.to != null) chips.push({ word: "Range", value: head, clears: { range: undefined, from: undefined, to: undefined } });
   return chips;
-}
-
-function Slash() {
-  return <span className="text-ink-3"> / </span>;
 }
 
 export function Findings() {
@@ -155,8 +146,8 @@ export function Findings() {
     project == null
       ? byProject(items, projectOf).map((part) => ({ project: part.project, rows: part.items.map(draw) }))
       : [{ project: null, rows: items.map(draw) }];
-  const findingRows = (list: { row: FindingRowView }[], quiet = false) =>
-    split(list, ({ row }) => row.project, ({ row }) => <FindingRow key={row.key} row={row} showProject={false} quiet={quiet} />);
+  const findingRows = (list: { row: FindingRowView }[]) =>
+    split(list, ({ row }) => row.project, ({ row }) => <FindingRow key={row.key} row={row} showProject={false} />);
   const groups = [
     { label: "Open", empty: `Nothing open${where}.`, parts: findingRows(page.open) },
     { label: "Follow-ups", empty: `No follow-ups${where}.`, parts: findingRows(page.followUps) },
@@ -169,43 +160,31 @@ export function Findings() {
             parts: split(page.defects, (defect) => defect.project, (defect) => <TicketDefectRow key={`${defect.base} ${defect.run} ${defect.at}`} defect={defect} />),
           },
         ]),
-    { label: `Settled ${span}`, empty: `Nothing settled${where} ${span}.`, parts: findingRows(page.settled, true) },
+    { label: `Settled ${span}`, empty: `Nothing settled${where} ${span}.`, parts: findingRows(page.settled) },
     {
       label: "Clean reviews",
       empty: `No clean reviews${where} ${span}.`,
       parts: split(page.clean, (clean) => clean.project, (clean) => <CleanReviewLine key={`${clean.project} ${clean.run} ${clean.round}`} {...clean} />),
     },
   ];
+  const idle = page.open.filter(({ idle }) => idle != null).length;
+  const count = page.answered ? { text: `${page.open.length} open`, need: idle === 0 ? undefined : `${idle} ${plural(idle, "needs", "need")} you` } : undefined;
   return (
-    <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-6 px-8 pt-3.5 pb-7">
-      <header className="flex flex-col gap-2">
-        <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Findings</h1>
-        {page.answered && (
-          <>
-            <p data-verdict className="flex items-start gap-2 font-read text-[17px] leading-[1.45] text-ink">
-              <span className="mt-[5px] shrink-0"><StateDot state={verdict.state} hideWord /></span>
-              <span>{verdict.sentence}</span>
-            </p>
-            <p data-count-line className="font-mono text-[13px] [overflow-wrap:anywhere] text-ink-2">
-              {head}
-              <Slash />
-              {all.reviews} {plural(all.reviews, "review")}
-              <Slash />
-              {all.findings} {plural(all.findings, "finding")}
-              <Slash />
-              worst first
-            </p>
-          </>
-        )}
-        <div data-controls className="flex flex-col gap-2.5 pt-1">
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2.5">
-            <RangeButtons label="Range" presets={RANGES} fallback={DEFAULT_FINDINGS_RANGE} hidden={false} />
-            <FilterPopover label="Filter findings" sections={sections} hidden={false} />
-          </div>
-          {chips.length > 0 && <FilterChips chips={chips} onClear={go} onClearAll={() => go(CLEARED)} />}
-        </div>
+    <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-6 px-8 pt-3.5 pb-7 max-[720px]:px-2">
+      <div className="flex flex-col gap-3">
+        <PageHeader
+          title="Findings"
+          count={count}
+          tools={
+            <>
+              <RangeButtons label="Range" presets={RANGES} fallback={DEFAULT_FINDINGS_RANGE} hidden={false} />
+              <FilterPopover icon label="Filter findings" sections={sections} hidden={false} />
+            </>
+          }
+        />
+        {chips.length > 0 && <FilterChips chips={chips} onClear={go} onClearAll={() => go(CLEARED)} />}
         {project != null && (
-          <div data-scope-line className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
+          <div data-scope-line className="flex flex-wrap items-center gap-x-3.5 gap-y-2 font-mono text-[12.5px] text-ink-2">
             <span>
               Showing <b className="font-medium [overflow-wrap:anywhere] text-act">{project}</b> only
             </span>
@@ -219,17 +198,20 @@ export function Findings() {
             </Link>
           </div>
         )}
-      </header>
+        {page.answered && (
+          <p data-verdict className="flex items-start gap-2 font-sans text-[14px] leading-[1.45] text-ink-2">
+            <span className="mt-[2px] shrink-0"><StateDot state={verdict.state} hideWord /></span>
+            <span>{verdict.sentence}</span>
+          </p>
+        )}
+      </div>
       {page.answered && (
-        <div className="flex flex-col gap-2 border border-rule bg-paper py-2">
+        <div className="flex flex-col gap-5">
           {groups.map((group) => (
             <Group key={group.label} {...group} />
           ))}
         </div>
       )}
-      <footer className="border-t border-rule pt-3 font-mono text-[12px] text-ink-3">
-        Fates come from the fix commit: ADDRESS, FOLLOW_UP or DECLINE.
-      </footer>
     </section>
   );
 }

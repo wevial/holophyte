@@ -107,7 +107,7 @@ describe("the Hybrid palette", () => {
     const pairs = [
       ["--ink-3", "--paper-2"], ["--ink-3", "--side"], ["--ink-3", "--side-hover"],
       ["--act", "--act-wash"], ["--ink-3", "--act-wash"], ["--act-ink", "--act"], ["--bad-ink", "--bad"],
-      ["--ok-ink", "--live-wash"], ["--bad-text", "--bad-wash"], ["--ask-ink", "--paper"], ["--warn-ink", "--paper"],
+      ["--ok-ink", "--live-wash"], ["--bad-text", "--bad-wash"], ["--ask-text", "--ask-wash"], ["--ask-ink", "--paper"], ["--warn-ink", "--paper"],
       ["--p1-ink", "--p1"], ["--p2-ink", "--p2"], ["--p3-ink", "--p3"], ["--tag-ink", "--tag"],
       ["--green-on", "--live"], ["--violet-on", "--wait"], ["--gold-on", "--ask"], ["--orange-on", "--fact-warn"],
     ] as const;

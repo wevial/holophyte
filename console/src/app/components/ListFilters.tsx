@@ -463,6 +463,28 @@ export function PressedGroup<V extends string | number>({ label, options, value,
 }
 
 const MENU_EDGE = 8;
+const MENU_GAP = 6;
+
+function scrollParent(node: HTMLElement): HTMLElement {
+  for (let at = node.parentElement; at != null; at = at.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(at).overflowX)) return at;
+  }
+  return document.documentElement;
+}
+
+/** The part of `pane` the reader sees, inside the window and clear of its scrollbars, in viewport pixels. */
+function shownPart(pane: HTMLElement, scale: number) {
+  const root = document.documentElement;
+  const right = root.getBoundingClientRect().right;
+  if (pane === root) return { left: 0, top: 0, right, bottom: window.innerHeight };
+  const box = pane.getBoundingClientRect();
+  return {
+    left: Math.max(0, box.left + pane.clientLeft * scale),
+    top: Math.max(0, box.top + pane.clientTop * scale),
+    right: Math.min(right, box.left + (pane.clientLeft + pane.clientWidth) * scale),
+    bottom: Math.min(window.innerHeight, box.top + (pane.clientTop + pane.clientHeight) * scale),
+  };
+}
 
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
@@ -491,22 +513,60 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   const anchor = useRef<HTMLDivElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const [shift, setShift] = useState(0);
+  const [above, setAbove] = useState(false);
+  const [reveals, setReveals] = useState(0);
+  useLayoutEffect(() => {
+    if (reveals > 0) menu.current?.scrollIntoView({ block: "nearest" });
+  }, [reveals]);
   useLayoutEffect(() => {
     if (!open) return;
-    const fit = () => {
+    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit(true));
+    let pane: HTMLElement | null = null;
+    let placedAt = "";
+    let scrolledTo = "";
+    const fit = (reveal: boolean) => {
+      const node = anchor.current!;
+      const sheet = menu.current!;
+      const parent = scrollParent(node);
+      if (parent !== pane) {
+        pane = parent;
+        moves?.disconnect();
+        for (const watched of [node, sheet, pane]) moves?.observe(watched);
+      }
       // Bounding rectangles are in zoomed viewport pixels, while `left` is in the menu's own CSS pixels.
-      const width = menu.current!.getBoundingClientRect().width;
-      const scale = width / menu.current!.offsetWidth;
-      const left = anchor.current!.getBoundingClientRect().left;
-      const over = left + width - (document.documentElement.getBoundingClientRect().right - MENU_EDGE);
-      setShift(over > 0 ? -Math.min(over, Math.max(0, left - MENU_EDGE)) / scale : 0);
+      const { width, height } = sheet.getBoundingClientRect();
+      const scale = width / sheet.offsetWidth;
+      const { left, top, bottom } = node.getBoundingClientRect();
+      const view = shownPart(pane, scale);
+      const over = left + width - (view.right - MENU_EDGE);
+      setShift(over > 0 ? -Math.min(over, Math.max(0, left - view.left - MENU_EDGE)) / scale : 0);
+      const reach = height + MENU_GAP * scale + MENU_EDGE;
+      const fitsBelow = bottom + reach <= view.bottom;
+      const fitsAbove = top - reach >= view.top;
+      setAbove(!fitsBelow && fitsAbove);
+      if (reveal && !fitsBelow && !fitsAbove) setReveals((count) => count + 1);
+      placedAt = `${left},${top}`;
+      scrolledTo = `${pane.scrollLeft},${pane.scrollTop}`;
     };
-    fit();
-    window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    let frame = 0;
+    // Moves that resize nothing, a scroll among them, show only in the anchor's position; a reader who scrolled is not scrolled back.
+    const watch = () => {
+      const { left, top } = anchor.current!.getBoundingClientRect();
+      if (`${left},${top}` !== placedAt) fit(`${pane!.scrollLeft},${pane!.scrollTop}` === scrolledTo);
+      frame = requestAnimationFrame(watch);
+    };
+    const resized = () => fit(true);
+    fit(true);
+    frame = requestAnimationFrame(watch);
+    window.addEventListener("resize", resized);
+    return () => {
+      window.removeEventListener("resize", resized);
+      moves?.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, [open]);
   return (
-    <div ref={box} className="flex shrink-0 items-center gap-1.5">
+    <div ref={box} className="flex max-w-full flex-wrap items-center gap-1.5">
       <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
         onPick={(picked) => write({ range: picked === fallback ? undefined : picked, from: undefined, to: undefined })} />
       <div ref={anchor} className="relative shrink-0">
@@ -517,7 +577,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
         </button>
         {open && (
           <div ref={menu} role="group" aria-label={`${label} range`} style={{ left: shift }}
-            className="absolute top-full z-20 mt-1.5 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
+            className={`absolute ${above ? "bottom-full mb-1.5" : "top-full mt-1.5"} z-20 flex w-62 scroll-my-2 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card`}>
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
               <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
               <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}
