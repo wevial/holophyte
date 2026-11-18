@@ -1021,28 +1021,29 @@ class ReviewerFallbackListTests(SweepTestCase):
                                             r'\[agents\] reviewer_fallback must'):
                     check_config(self.project)
 
-
     REFUSAL_LINE = ('This content was flagged for possible cybersecurity risk.'
                     ' Try rephrasing your request.')
 
-    def refusing(self, refuse):
-        """The container reviewer, whose model refuses every goal in `refuse`."""
+    def refusing(self, refuse, models=None):
+        """The container reviewer, refusing each goal in `refuse` on `models`."""
         from holophyte.review import review_runner
 
         self.reviews = []
         stdout = json.dumps({'type': 'turn.failed',
                              'error': {'message': self.REFUSAL_LINE}})
 
-        def run_review(*, candidate_sha, prompt, **_):
+        def run_review(*, candidate_sha, prompt, model, **_):
             self.reviews.append(prompt)
-            if prompt in refuse:
+            if prompt == probes.REVIEW_PROBE_GOAL:
+                return f'ready {candidate_sha}'
+            if prompt in refuse and (models is None or model in models):
                 error = review_runner.ReviewBoundaryError(
                     f'command failed (1): docker exec review codex\n{stdout}')
                 error.returncode = 1
                 error.output = error.stdout = stdout
                 error.provider_error = review_runner.provider_error(stdout)
                 raise error
-            return 'VERDICT: PASS (primary)'
+            return 'VERDICT: PASS (container)'
         return patch.object(roles.review_runner, 'run_review',
                             side_effect=run_review)
 
@@ -1085,7 +1086,7 @@ class ReviewerFallbackListTests(SweepTestCase):
 
             later = self.a_run()
             self.assertEqual(self.review_run(later, 'judge again'),
-                             'VERDICT: PASS (primary)')
+                             'VERDICT: PASS (container)')
         self.assertEqual(self.reviews, ['judge', 'judge again'])
         self.assertEqual(
             [json.loads(p)['route'] for p in self.events(later, 'agent_turn')],
@@ -1120,6 +1121,18 @@ class ReviewerFallbackListTests(SweepTestCase):
                 self.assertIn(self.REFUSAL_LINE, str(raised.exception))
                 self.assertEqual(self.calls.read_text().splitlines()
                                  if self.calls.exists() else [], ran)
+
+
+    def test_a_refused_review_with_only_a_fallback_pair_still_switches(self):
+        from holophyte.agents.agent_routes import routes
+
+        self.configure(ContainerReviewFallbackTests.PAIRS)
+        with self.refusing({'judge'}, models={'gpt-6-astra'}):
+            self.assertEqual(self.review_run(self.a_run()),
+                             'VERDICT: PASS (container)')
+        self.assertEqual(self.reviews, ['judge', probes.REVIEW_PROBE_GOAL,
+                                        'judge'])
+        self.assertIn('review', routes(self.project).commands)
 
 
 class FailedRouteLoopTests(LoopFixture):

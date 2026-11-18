@@ -185,7 +185,7 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         try:
             output = launch()
         except InfraFailure as failure:
-            refusal = argv is None and refused_review(role, failure)
+            refusal = argv is None and refused_review(project, role, failure)
             if refusal:
                 return refused_once(project, role, goal, cwd, kwargs, failure,
                                     refusal)
@@ -214,10 +214,12 @@ def outage_checked(project, role, output, launch, conn, run_id):
     return output
 
 
-def refused_review(role, failure):
+def refused_review(project, role, failure):
     from holophyte.review.adversary import REFUSAL, refused
     cause = failure.__cause__
     if (role != "review"
+            or (container_fallback_profile(project, role)
+                and not fallback_entries(project, role))
             or not isinstance(cause, review_runner.ReviewBoundaryError)
             or not refused(cause.provider_error)):
         return None
@@ -231,7 +233,7 @@ def refused_once(project, role, goal, cwd, kwargs, failure, refusal):
     if command is None:
         raise refusal_failure(failure, refusal) from failure.__cause__
     argv = shlex.split(command)
-    turn = dict(kwargs, argv=argv)
+    turn = dict(kwargs, argv=argv, fallback_route=True)
     try:
         output = fallback_turn(
             project, role, argv, conn, run_id,
@@ -429,7 +431,8 @@ def stream_watch(project, streamed, role, cwd, conn, run_id):
 
 def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
           timeout=None, on_start=None, conn=None, run_id=None, argv=None,
-          review_round=None, session=False, family_route=None):
+          review_round=None, session=False, family_route=None,
+          fallback_route=False):
     if role not in AGENT_CONFIG_KEYS:
         raise ValueError(role)
     if role in SHA_ROLES and not (base_sha and candidate_sha):
@@ -472,8 +475,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                         os.environ,
                         HOLOPHYTE_REVIEW_CANDIDATE=review_refs(run_id)[1],
                         HOLOPHYTE_REVIEW_SCRATCH=str(scratch))
-                    route = ('fallback' if role in routes(project).commands
-                             else 'primary')
+                    route = ('fallback' if fallback_route
+                             or role in routes(project).commands else 'primary')
                     prepare_environment(project, env, conn, run_id, role, route,
                                         review_round)
                     if seat is not None:
