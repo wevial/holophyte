@@ -417,6 +417,25 @@ class RequeueAmendTests(RequeueTarget):
             f" as {url}"])
         self.assertEqual(self.amendments(), [("DROP C1", "caller")])
 
+    def test_a_lease_cleanup_failure_writes_nothing_so_a_retry_lands(self):
+        self.fail_the_run()
+        self.conn.commit()
+        lock = holophyte.board.projection.lease_turn_path(self.target)
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        lock.touch()
+        lock.chmod(0o444)
+
+        with self.assertRaises(PermissionError):
+            self.cli("--requeue", "KO-1", "--note", "retry", "--amend",
+                     "DROP C1")
+        self.assertEqual(self.status(), "in_flight")
+        self.assertEqual(self.amendments(), [])
+
+        lock.chmod(0o644)
+        self.cli("--requeue", "KO-1", "--note", "retry", "--amend", "DROP C1")
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual([text for text, _ in self.amendments()], ["DROP C1"])
+
     def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
         self.fail_the_run()
         self.conn.commit()
@@ -511,6 +530,21 @@ class RelaunchLimitTests(RequeueTarget):
 
         self.assertEqual(self.interventions(), before)
         self.assertEqual(self.status(), "in_flight")
+
+    def test_an_amended_requeue_past_the_limit_needs_no_force_and_counts_as_one(self):
+        self.relaunched_twice()
+
+        self.cli("--requeue", "KO-1", "--note", "contract fixed", "--amend",
+                 "DROP C1")
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes()[-1], "contract fixed")
+
+        self.claim_again()
+        self.relaunch()
+        self.fail_the_run()
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--requeue", "KO-1", "--note", "once more")
+        self.assertIn("--force", str(raised.exception))
 
     def test_force_without_approve_or_requeue_is_a_usage_error(self):
         with self.assertRaises(SystemExit) as raised:

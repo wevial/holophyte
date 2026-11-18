@@ -249,21 +249,41 @@ def requeue(target, identifier, note, out=None, provider=None, force=False,
             note = (f"{note}\n\nThe failed run's branch is still open"
                     f" as {failed_run[1]}")
         try:
-            with store.transaction(conn):
-                run_id = store.requeue(conn, ticket_id, note, force=force)
-                steered = None if amend is None else steer_notes.steer(
-                    conn, ticket_id, amend, getpass.getuser())
+            if amend is not None:
+                _rehearse(conn, ticket_id, note, force, amend)
+            if failed_run is not None:
+                release_lease_label(target, conn, ticket_id, provider,
+                                    failed_run[0])
+            run_id, steered = _requeue_writes(conn, ticket_id, note, force,
+                                              amend)
         except (store.RequeueRefused, ValueError) as refused:
             raise SystemExit(f"[holo2] {refused}") from None
-        if failed_run is not None:
-            release_lease_label(target, conn, ticket_id, provider,
-                                failed_run[0])
         print(f"[holo2] {identifier} requeued after run {run_id}", file=out)
         if steered is not None:
             print(f"[holo2] {identifier} amended: steer note {steered.id}",
                   file=out)
     finally:
         conn.close()
+
+
+class _Rehearsed(Exception):
+    pass
+
+
+def _rehearse(conn, ticket_id, note, force, amend):
+    try:
+        with store.transaction(conn):
+            _requeue_writes(conn, ticket_id, note, force, amend)
+            raise _Rehearsed
+    except _Rehearsed:
+        pass
+
+
+def _requeue_writes(conn, ticket_id, note, force, amend):
+    with store.transaction(conn):
+        steered = None if amend is None else steer_notes.steer(
+            conn, ticket_id, amend, getpass.getuser())
+        return store.requeue(conn, ticket_id, note, force=force), steered
 
 
 def _requeue_candidate(conn, ticket_id):
