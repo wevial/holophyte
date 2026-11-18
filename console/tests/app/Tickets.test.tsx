@@ -292,7 +292,7 @@ test("the sidebar's Views list Ready, Needs spec and Backlog with the project's 
   for (const count of counts) expect(count.classList).toContain("font-mono");
 });
 
-test("a view link shows only its tickets and marks itself current, and All drops the filter but keeps the scope", async () => {
+test("a view link shows only its tickets and marks itself current with a zero need you still in need ink, and All drops the filter but keeps the scope", async () => {
   await mount("#/?project=demo", viewsFleet());
   fireEvent.click(screen.getByRole("link", { name: "Needs spec" }));
   for (let round = 0; round < 2; round += 1) await act(settle);
@@ -300,6 +300,7 @@ test("a view link shows only its tickets and marks itself current, and All drops
   const rowKeys = Array.from(document.querySelectorAll("[data-row] [data-cell=key]"), (cell) => cell.textContent).sort();
   expect(rowKeys).toEqual(["DEMO-6", "DEMO-7"]);
   expect(countLine()).toBe("2 tickets · 0 in flight · 0 need you · 0 ready");
+  expect(needPart()).toBe("0 need you");
   expect(viewLinks().map((link) => link.getAttribute("aria-current"))).toEqual([null, "page", null]);
   const state = screen.getByRole("button", { name: /^State: / });
   expect(state.textContent).toBe("Needs spec");
