@@ -69,7 +69,7 @@ function Shell() {
           <main className="relative isolate min-w-0 flex-1 bg-canvas min-[720px]:overflow-y-auto min-[720px]:rounded-tl-[10px] min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]">
             <TokenPrompt />
             <Outlet />
-            {effect === "haze" && <Haze />}
+            {effect !== "none" && <Haze effect={effect} />}
           </main>
         </div>
       </div>

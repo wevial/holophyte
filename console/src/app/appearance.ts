@@ -19,7 +19,9 @@ const GRAIN_KEY = "holophyte.grain";
 const HAZE_STRENGTH_KEY = "holophyte.hazeStrength";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
-export type HeaderEffect = "haze" | "none";
+const HEADER_EFFECTS = ["haze", "caustics", "plume", "ribbons", "lava", "none"] as const;
+
+export type HeaderEffect = (typeof HEADER_EFFECTS)[number];
 
 export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
@@ -27,7 +29,8 @@ export const FULL = 100;
 
 function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
-    return localStorage.getItem(EFFECT_KEY) === "none" ? "none" : "haze";
+    const stored = localStorage.getItem(EFFECT_KEY);
+    return HEADER_EFFECTS.find((effect) => effect === stored) ?? "haze";
   } catch {
     return fallback;
   }

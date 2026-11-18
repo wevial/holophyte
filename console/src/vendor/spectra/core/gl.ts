@@ -1,5 +1,5 @@
-// Vendored from wevial/spectra@9f2195d packages/core/src/gl.ts (MIT, see ../LICENSE), trimmed to what the haze uses.
-// Minimal WebGL2 helpers: program/uniform management, FBOs, fullscreen blit.
+// Vendored from wevial/spectra@d34e0f8 packages/core/src/gl.ts (MIT, see ../LICENSE).
+// Minimal WebGL2 helpers: program/uniform management, ping-pong FBOs, fullscreen blit.
 
 export function compileShader(gl: WebGL2RenderingContext, type: GLenum, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -56,6 +56,17 @@ export interface FBO {
   dispose(): void;
 }
 
+export interface DoubleFBO {
+  width: number;
+  height: number;
+  texelSizeX: number;
+  texelSizeY: number;
+  readonly read: FBO;
+  readonly write: FBO;
+  swap(): void;
+  dispose(): void;
+}
+
 export function createFBO(
   gl: WebGL2RenderingContext, w: number, h: number,
   internalFormat: GLenum, format: GLenum, type: GLenum, filter: GLenum,
@@ -92,6 +103,24 @@ export function createFBO(
       gl.deleteTexture(texture);
       gl.deleteFramebuffer(fbo);
     },
+  };
+}
+
+export function createDoubleFBO(
+  gl: WebGL2RenderingContext, w: number, h: number,
+  internalFormat: GLenum, format: GLenum, type: GLenum, filter: GLenum,
+): DoubleFBO {
+  let a = createFBO(gl, w, h, internalFormat, format, type, filter);
+  let b = createFBO(gl, w, h, internalFormat, format, type, filter);
+  return {
+    width: w,
+    height: h,
+    texelSizeX: a.texelSizeX,
+    texelSizeY: a.texelSizeY,
+    get read() { return a; },
+    get write() { return b; },
+    swap() { [a, b] = [b, a]; },
+    dispose() { a.dispose(); b.dispose(); },
   };
 }
 

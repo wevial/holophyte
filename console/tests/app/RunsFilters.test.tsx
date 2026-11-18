@@ -120,9 +120,10 @@ const openFilter = async () => {
   return dialog()!;
 };
 const section = async (name: string) => within(within(await openFilter()).getByRole("group", { name }));
-const valueRows = async (name: string) => (await section(name)).getAllByRole("checkbox").map((box) => box.closest("label")!.textContent);
-const checkedIn = async (name: string) =>
-  ((await section(name)).getAllByRole("checkbox") as HTMLInputElement[]).filter((box) => box.checked).map((box) => box.getAttribute("aria-label"));
+/** A section's option boxes, without the heading's box named for the section. */
+const optionBoxes = async (name: string) => ((await section(name)).getAllByRole("checkbox") as HTMLInputElement[]).filter((box) => box.getAttribute("aria-label") !== name);
+const valueRows = async (name: string) => (await optionBoxes(name)).map((box) => box.closest("label")!.textContent);
+const checkedIn = async (name: string) => (await optionBoxes(name)).filter((box) => box.checked).map((box) => box.getAttribute("aria-label"));
 const check = async (sectionName: string, value: string) => press((await section(sectionName)).getByRole("checkbox", { name: value }));
 const tabs = () => within(screen.getByRole("group", { name: "Run states" })).getAllByRole("button");
 const tabTexts = () => tabs().map((tab) => tab.textContent);
@@ -375,7 +376,7 @@ test("the Filter popover holds Sort, Project, Failure kind and Implementer with 
   expect(within(box).getAllByRole("group")).toEqual(["Sort", "Per page", "Project", "Failure kind", "Implementer"].map((name) => within(box).getByRole("group", { name })));
   expect((within(box).getAllByRole("checkbox") as HTMLInputElement[]).filter((each) => each.checked || each.indeterminate)).toEqual([]);
   expect((await valueRows("Failure kind")).slice(0, 2)).toEqual(["verify 3", "review 1"]);
-  expect((await section("Implementer")).getAllByRole("checkbox").map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
+  expect((await optionBoxes("Implementer")).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
 
   const main = document.querySelector("main")!;
   main.scrollTop = 100;
@@ -384,7 +385,7 @@ test("the Filter popover holds Sort, Project, Failure kind and Implementer with 
   expect(controls().hasAttribute("data-hidden")).toBe(true);
 });
 
-test("checking Failure kind boxes writes them as a comma list in the section's order under a heading that is no box, and unchecking both drops it", async () => {
+test("checking Failure kind boxes writes them as a comma list in the section's order, and unchecking both drops it", async () => {
   const daemons = countedFleet(60);
   await mount("#/runs?page=2", daemons.fetchImpl);
   expect(hashSearch().get("page")).toBe("2");
@@ -394,14 +395,22 @@ test("checking Failure kind boxes writes them as a comma list in the section's o
   expect(hashSearch().has("page")).toBe(false);
   for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).failure).toBe("verify,review_route");
   expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort, 2 filters on");
-  expect((await section("Failure kind")).queryByRole("checkbox", { name: "Failure kind" })).toBeNull();
-  expect((await section("Failure kind")).getAllByRole("checkbox")).toHaveLength(9);
+  expect(await optionBoxes("Failure kind")).toHaveLength(9);
   expect(chips()).toEqual(["Failure: verify, review"]);
 
   await check("Failure kind", "verify");
   await check("Failure kind", "review");
   expect(await checkedIn("Failure kind")).toEqual([]);
   expect(hashSearch().has("failure")).toBe(false);
+});
+
+test("with a Failure kind and a Project picked, the Failure kind heading's box picks every failure kind and keeps the Project pick", async () => {
+  await mount("#/runs?failure=verify&projects=demo", countedFleet().fetchImpl);
+  await press((await section("Failure kind")).getByRole("checkbox", { name: "Failure kind" }));
+  expect((await optionBoxes("Failure kind")).map((box) => box.checked)).toEqual(Array(9).fill(true));
+  expect(hashSearch().get("failure")!.split(",")).toHaveLength(9);
+  expect(await checkedIn("Project")).toEqual(["demo"]);
+  expect(hashSearch().get("projects")).toBe("demo");
 });
 
 test("each state tab shows its group's count summed over the hosts and All their sum; Failed writes state=failed and lists only failed runs", async () => {
@@ -518,7 +527,7 @@ test("an Implementer the hosts do not list is dropped from the query, the boxes 
   const daemons = countedFleet();
   await mount("#/runs?implementer=nope,claude%20opus", daemons.fetchImpl);
   for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).implementer).toBe("claude opus");
-  expect((await section("Implementer")).getAllByRole("checkbox").map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
+  expect((await optionBoxes("Implementer")).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
   expect(await checkedIn("Implementer")).toEqual(["claude opus"]);
   expect(chips()).toEqual(["Implementer: claude opus"]);
   expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort, 1 filter on");
