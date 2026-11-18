@@ -102,18 +102,26 @@ const press = async (button: HTMLElement) => {
   await flush();
 };
 
+const openRows = async () => {
+  for (const row of rows()) await press(within(row).getByRole("button", { name: /^Position / }));
+};
+
 async function openJump(on: ReturnType<typeof daemon>) {
   await mount(on.fetch);
+  await openRows();
   await press(jumpIn(rows()[3]!)!);
   return dialog()!;
 }
 
-test("Jump to front is on every row from position 2 down when the daemon allows actions, and on none when it does not", async () => {
+test("Jump to front is in every open row's detail from position 2 down when the daemon allows actions, and in none when it does not", async () => {
   await mount(daemon(true).fetch);
-  expect(rows().map((row) => jumpIn(row) != null)).toEqual([false, true, true, true]);
+  expect(rows().map((row) => jumpIn(row) != null)).toEqual([false, false, false, false]);
+  await openRows();
+  expect(rows().map((row) => jumpIn(row.querySelector<HTMLElement>("[data-entry-detail]")!) != null)).toEqual([false, true, true, true]);
   cleanup();
 
   await mount(daemon(false).fetch);
+  await openRows();
   expect(rows()).toHaveLength(4);
   expect(rows().map((row) => jumpIn(row) != null)).toEqual([false, false, false, false]);
 });
