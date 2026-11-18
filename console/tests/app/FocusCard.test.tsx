@@ -214,7 +214,7 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("an open row and its detail are one tinted surface: the open li alone carries the tint and edge, with no divider under its toggle", async () => {
+test("an open row and its detail are one tinted surface: each li carries the tint and edge only while data-open, with no divider under its toggle", async () => {
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
   const tint = ["bg-(image:--need-tint)", "shadow-[inset_0_0_0_1px_var(--need-edge)]"];
   const classes = (element: Element) => element.className.split(/\s+/);
@@ -236,7 +236,7 @@ test("the open detail's container grows its rows and fades over a transition tha
   const panel = toggleOf("A-1").nextElementSibling as HTMLElement;
   expect(panel.contains(openDetail())).toBe(true);
   const classes = panel.className.split(/\s+/);
-  expect(classes).toEqual(expect.arrayContaining(["grid-rows-[0fr]", "group-data-open:grid-rows-[1fr]", "duration-200", "motion-reduce:transition-none"]));
+  expect(classes).toEqual(expect.arrayContaining(["grid-rows-[0fr]", "group-data-open:grid-rows-[1fr]", "opacity-0", "group-data-open:opacity-100", "duration-200", "motion-reduce:transition-none"]));
   expect(classes.some((cls) => cls.startsWith("transition-["))).toBe(true);
 });
 
