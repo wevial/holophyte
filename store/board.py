@@ -178,9 +178,8 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 REVERTS = re.compile(r"^Reverts: (\S+) at ([0-9a-f]{7,40})$", re.MULTILINE)
 
 
-def reopen_reverted(conn, run_id, author="factory", now=None):
-    if now is None:
-        now = int(time.time() * 1000)
+def reopen_reverted(conn, run_id):
+    now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.outcome, r.mergeSha, t.projectId, t.linearIdentifier,"
@@ -215,7 +214,8 @@ def reopen_reverted(conn, run_id, author="factory", now=None):
                      f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
         conn.execute("UPDATE tickets SET status = 'ready' WHERE id = ?",
                      (ticket_id,))
-        _record_column(conn, ticket_id, "backlog", "move", note, author, now)
+        _record_column(conn, ticket_id, "backlog", "move", note, "factory",
+                       now)
     return ticket_id
 
 
