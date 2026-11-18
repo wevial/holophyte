@@ -52,6 +52,8 @@ const COLUMNS = [
   "min-[1200px]:grid-cols-[minmax(0,780px)_290px] min-[1200px]:grid-rows-[auto_auto_1fr] min-[1200px]:gap-x-[46px]",
   "min-[1600px]:grid-cols-[minmax(0,780px)_330px]",
   "min-[1680px]:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_380px] min-[1680px]:grid-rows-none min-[1680px]:gap-x-12",
+  "[--log-floor:calc(var(--week-bars-height,0px)+14rem)] min-[1680px]:[--log-floor:12rem]",
+  "[--column-top:min(0.875rem,calc(var(--panel-height)-1.75rem-var(--log-floor)))]",
 ].join(" ");
 
 export function Overview() {
@@ -75,10 +77,10 @@ export function Overview() {
   const more = merged.length - SHOWN_MERGES;
   const shown = (count: number) => (loaded ? count : undefined);
   const weekBars = useRef<HTMLDivElement>(null);
-  const logColumn = useRef<HTMLDivElement>(null);
-  useHeightVariable(weekBars, logColumn, "--week-bars-height");
+  const page = useRef<HTMLDivElement>(null);
+  useHeightVariable(weekBars, page, "--week-bars-height");
   return (
-    <div className="pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:pl-[54px]">
+    <div ref={page} className="pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:pl-[54px]">
       <div className={COLUMNS}>
         <div data-overview-column="now" className="col-start-1 row-start-1 flex min-w-0 flex-col gap-10">
           <div className="flex min-w-0 max-w-[780px] flex-col gap-6">
@@ -146,11 +148,11 @@ export function Overview() {
               <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
             </Section>
           </div>
-          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-3.5 min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
+          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-(--column-top) min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
             <WeekBars rows={week} now={view.now} colours={colours} />
           </div>
         </div>
-        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-3.5 min-[1600px]:h-[max(calc(var(--panel-height)-2.625rem),calc(var(--week-bars-height,0px)+14rem))] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
+        <div data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-(--column-top) min-[1600px]:h-[max(calc(var(--panel-height)-2.625rem),var(--log-floor))] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
           <DayLog entries={log.entries} className="min-h-0 flex-1" />
         </div>
       </div>
