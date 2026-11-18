@@ -50,10 +50,11 @@ def changed_files(repo, sha):
     parents = parent_shas(repo, sha)
     if parents:
         _, names = git(repo, "diff", "--no-renames", "--name-only", "-z",
-                       parents[0], sha)
+                       "--ignore-submodules=none", parents[0], sha)
     else:
         _, names = git(repo, "diff-tree", "--root", "-r", "--no-renames",
-                       "--no-commit-id", "--name-only", "-z", sha)
+                       "--no-commit-id", "--name-only", "-z",
+                       "--ignore-submodules=none", sha)
     return tuple(name for name in names.split("\0") if name)
 
 
@@ -82,6 +83,21 @@ def merged_run(conn, repo, key):
                  tuple(json.loads(ticket[2] or "[]")))
 
 
+POSIX_CLASSES = {"alnum": "a-zA-Z0-9", "alpha": "a-zA-Z", "digit": "0-9",
+                 "lower": "a-z", "upper": "A-Z", "space": " \\t\\n\\r\\f\\v",
+                 "xdigit": "0-9a-fA-F"}
+POSIX_CLASS = re.compile(r"\[:([a-z]+):\]")
+
+
+def class_members(members):
+    def posix(match):
+        if match[1] not in POSIX_CLASSES:
+            raise re.error(f"unknown character class [:{match[1]}:]")
+        return POSIX_CLASSES[match[1]]
+    escaped = re.sub(r"[\\\[]", lambda m: "\\" + m[0], members)
+    return POSIX_CLASS.sub(posix, escaped.replace("\\[:", "[:"))
+
+
 def glob_part(part):
     tokens = {"**/": "(?:.*/)?", "/**": "/.*", "**": ".*", "*": "[^/]*",
               "?": "[^/]"}
@@ -89,14 +105,15 @@ def glob_part(part):
         return tokens[part]
     if part.startswith("[") and part.endswith("]") and len(part) > 2:
         negated = part[1] in "!^"
-        members = part[1 + negated:-1].replace("\\", "\\\\")
+        members = class_members(part[1 + negated:-1])
         return f"(?!/)[{'^' if negated else ''}{members}]"
     return re.escape(part)
 
 
 def glob_pattern(glob):
-    parts = re.split(r"(\*\*/|/\*\*$|\*\*|\*|\?|\[!?\]?[^\]/]*\])", glob)
-    return re.compile("".join(glob_part(part) for part in parts))
+    parts = re.split(r"(\*\*/|/\*\*$|\*\*|\*|\?"
+                     r"|\[!?\]?(?:\[:[a-z]+:\]|[^\]/])*\])", glob)
+    return re.compile("".join(glob_part(part) for part in parts), re.DOTALL)
 
 
 def refused_paths(files, globs):
@@ -106,17 +123,14 @@ def refused_paths(files, globs):
 
 
 def open_revert(conn, board, merge):
-    row = conn.execute(
+    mirrored = [key for (key,) in conn.execute(
         "SELECT linearIdentifier FROM tickets WHERE substr(title, 1, ?) = ?"
         " AND instr(char(10) || body, ?) > 0"
         f" AND status IN ({', '.join('?' * len(OPEN_STATUSES))})"
-        " AND COALESCE(boardColumn, '') != 'canceled'"
-        " ORDER BY id DESC LIMIT 1",
+        " ORDER BY id DESC",
         (len(title_prefix(merge.key)), title_prefix(merge.key),
-         f"\nReverts: {merge.key} at ", *OPEN_STATUSES)).fetchone()
-    if row is not None:
-        return row[0]
-    filed = [match[1] for (note,) in conn.execute(
+         f"\nReverts: {merge.key} at ", *OPEN_STATUSES))]
+    filed = mirrored + [match[1] for (note,) in conn.execute(
         "SELECT i.note FROM interventions i JOIN runs r ON r.id = i.runId"
         " JOIN tickets t ON t.id = r.ticketId WHERE t.linearIdentifier = ?"
         " AND i.\"action\" = 'revert' ORDER BY i.id DESC", (merge.key,))
@@ -135,7 +149,8 @@ def title_prefix(key):
 def dependents(conn, repo, merge):
     heads = [ref for ref in (MAIN, LOCAL_MAIN)
              if commit_sha(repo, ref) is not None]
-    _, listed = git(repo, "rev-list", "--reverse", *heads, f"^{merge.sha}")
+    _, listed = git(repo, "rev-list", "--reverse", "--ancestry-path", *heads,
+                    f"^{merge.sha}")
     if not listed.split():
         return []
     by_sha = {}

@@ -20,6 +20,7 @@ from phase_fixture import finish_run  # noqa: E402 - after the sys.path insert
 import holophyte.cli.entry  # noqa: E402
 import store  # noqa: E402
 from holophyte.board import linear_provider  # noqa: E402
+from holophyte.board.provider import FileProvider  # noqa: E402
 from holophyte.holo.cli import main as holo  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
 from holophyte.tickets import ticket_template  # noqa: E402
@@ -27,6 +28,10 @@ from tests.test_cli_native_update import body  # noqa: E402
 
 NATIVE = '[board]\nkind = "native"\nprefix = "NAT"\n'
 ENABLED = NATIVE + "[revert]\nenabled = true\n"
+LINEAR_LABELLED = ('[board]\nproject_id = "p-1"\nteam = "T"\nlabel = "factory"\n'
+                   "[revert]\nenabled = true\n")
+SUBMODULE = "db/migrations/catalog"
+GITLINKS = {SUBMODULE}
 VERIFY = "python3 -m unittest discover -s tests -p 'test_thing.py'"
 
 
@@ -50,9 +55,14 @@ class RevertCliTests(ConfigTestCase):
 
     def commit(self, files, message):
         for path, text in files.items():
+            if path in GITLINKS:
+                continue
             (self.target / path).parent.mkdir(parents=True, exist_ok=True)
             (self.target / path).write_text(text)
         self.git("add", "-A")
+        for path in GITLINKS.intersection(files):
+            self.git("update-index", "--add", "--cacheinfo",
+                     f"160000,{files[path]},{path}")
         self.git("commit", "-q", "-m", message)
         return self.git("rev-parse", "HEAD")
 
@@ -129,8 +139,9 @@ class RevertCliTests(ConfigTestCase):
         self.project_with(ENABLED, {"src/header.py": "broken\n",
                                     "src/footer.py": "broken\n"})
 
-        code, out, err = self.holo("revert", "NAT-1",
-                                   "broke the <header>\n## In scope")
+        code, out, err = self.holo(
+            "revert", "NAT-1", "broke the <header> {{ product.header }}\n"
+                               "## In scope")
 
         self.assertEqual(code, 0, err)
         self.assertIn("revert ticket NAT-3 filed", out)
@@ -147,7 +158,8 @@ class RevertCliTests(ConfigTestCase):
         self.assertIn(VERIFY, verify)
         self.assertEqual(self.reverts(),
                          [(self.runs["NAT-1"],
-                           "filed NAT-3: broke the <header>\n## In scope")])
+                           "filed NAT-3: broke the <header> {{ product.header }}\n"
+                           "## In scope")])
         filed = self.root / "filed.md"
         filed.write_text(text)
         with contextlib.redirect_stdout(io.StringIO()) as checked:
@@ -184,6 +196,21 @@ class RevertCliTests(ConfigTestCase):
 
         self.assertEqual(code, 0, err)
         self.assertIn(f"dependent: NAT-2 {self.later_sha} src/header.py", out)
+
+    def test_an_older_merge_on_a_divergent_local_main_is_no_dependent(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n"})
+        self.git("reset", "-q", "--hard", f"{self.key_sha}^")
+        local = self.commit({"src/header.py": "local\n"}, "NAT-2: local")
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
+            conn.execute("UPDATE runs SET mergeSha = ? WHERE id = ?",
+                         (local, self.runs["NAT-2"]))
+            conn.commit()
+
+        code, out, err = self.holo("revert", "NAT-1", "broke the header",
+                                   "--dry-run")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("dependent: none", out)
 
     def test_a_merge_commit_revert_runs_against_its_first_parent(self):
         self.project_with(ENABLED, {"src/header.py": "broken\n"},
@@ -225,12 +252,26 @@ class RevertCliTests(ConfigTestCase):
                       self.refused("NAT-1", "broke the header"))
 
     def test_a_refuse_paths_character_class_refuses_a_matching_path(self):
-        self.project_with(
-            ENABLED + 'refuse_paths = ["db/changes/change_[0-9]*.py"]\n',
-            {"db/changes/change_2026.py": "op\n"})
+        for glob in ("change_[0-9]*.py", "change_[[:digit:]]*.py"):
+            with self.subTest(glob=glob):
+                self.project_with(
+                    ENABLED + f'refuse_paths = ["db/changes/{glob}"]\n',
+                    {"db/changes/change_2026.py": "op\n"})
 
-        self.assertIn("db/changes/change_2026.py",
-                      self.refused("NAT-1", "broke the header"))
+                self.assertIn("db/changes/change_2026.py",
+                              self.refused("NAT-1", "broke the header"))
+
+    def test_a_migration_whose_name_holds_a_newline_is_refused(self):
+        self.project_with(ENABLED, {"db/migrations/2026\nadd.py": "op\n"})
+
+        self.assertIn("db/migrations/2026", self.refused("NAT-1", "broke it"))
+
+    def test_a_submodule_under_migrations_is_refused_whatever_diff_ignores(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n",
+                                    SUBMODULE: "1" * 40})
+        self.git("config", "diff.ignoreSubmodules", "all")
+
+        self.assertIn(SUBMODULE, self.refused("NAT-1", "broke the header"))
 
     def test_a_merge_touching_a_migrations_folder_is_refused(self):
         self.project_with(ENABLED, {"src/header.py": "broken\n",
@@ -255,15 +296,39 @@ class RevertCliTests(ConfigTestCase):
         self.assertIn("NAT-1: NAT-3 is its open revert ticket",
                       self.refused("NAT-1", "still broken"))
 
-    def test_a_filed_revert_the_store_has_not_mirrored_is_asked_of_the_board(self):
+    def unmirrored_board(self):
+        """The project moved to a board that writes no store row, labelled."""
         self.project_with(ENABLED, {"src/header.py": "broken\n"})
-        self.assertEqual(self.holo("revert", "NAT-1", "broke the header")[0], 0)
-        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
-            conn.execute("UPDATE tickets SET title = 'mirrored later', body = ''"
-                         " WHERE linearIdentifier = 'NAT-3'")
-            conn.commit()
+        self.project.config_path.write_text(LINEAR_LABELLED)
+        board = FileProvider(self.root / "LIN")
+        board.root.mkdir()
+        patcher = patch("holophyte.cli.entry.board_for", return_value=board)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return board
 
-        self.assertIn("NAT-1: NAT-3 is its open revert ticket",
+    def test_a_revert_on_an_unmirrored_board_is_labelled_and_not_filed_twice(self):
+        board = self.unmirrored_board()
+
+        code, out, err = self.holo("revert", "NAT-1", "broke the header")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("revert ticket LIN-1 filed", out)
+        self.assertEqual(board.issue_labels("LIN-1"), ["factory"])
+        self.assertIn("NAT-1: LIN-1 is its open revert ticket",
+                      self.refused("NAT-1", "still broken"))
+        board.set_state("LIN-1", "Canceled")
+        code, out, err = self.holo("revert", "NAT-1", "still broken")
+        self.assertEqual(code, 0, err)
+        self.assertIn("revert ticket LIN-2 filed", out)
+
+    def test_a_revert_whose_read_back_fails_still_counts_as_filed(self):
+        self.unmirrored_board()
+        with patch.object(FileProvider, "stored_body", return_value=""):
+            code, out, err = self.holo("revert", "NAT-1", "broke the header")
+        self.assertEqual(code, 2, out + err)
+
+        self.assertIn("NAT-1: LIN-1 is its open revert ticket",
                       self.refused("NAT-1", "still broken"))
 
     def test_a_ticket_quoting_the_reverts_line_is_no_open_revert(self):

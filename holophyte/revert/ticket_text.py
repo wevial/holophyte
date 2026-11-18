@@ -5,7 +5,8 @@ ESTIMATE_MIN = 30
 
 
 def revert_ticket(merge, reason, found):
-    reason = " ".join(reason.split()).replace("<", "&lt;")
+    reason = " ".join(reason.split()).replace("<", "&lt;").replace(
+        "{{", "{&#123;")
     mainline = " -m 1" if merge.parents > 1 else ""
     quoted = [f"`{path}`" for path in merge.files]
     files = ", ".join(quoted)

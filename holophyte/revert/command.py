@@ -7,6 +7,7 @@ from pathlib import Path
 import store
 from holophyte.board.projection import file_ticket
 from holophyte.cli.board_verbs import require_board
+from holophyte.config.config_tables import board_config
 from holophyte.loop.runs import open_store
 from holophyte.revert.checks import (
     MAIN,
@@ -75,9 +76,19 @@ def _file(target, conn, board, merge, text, reason):
                            priority="urgent")
     sys.stdout.write(printed.getvalue())
     filed = FILED.search(printed.getvalue())
-    if code != 0 or filed is None:
+    if filed is None:
         raise SystemExit(code or 1)
     store.record_intervention(conn, merge.run_id, "revert",
                               f"filed {filed[1]}: {reason}")
+    label = board_config(target).label
+    if code == 0 and label is not None:
+        try:
+            board.label_issue(board.fetch_task(filed[1])["issue_id"], label)
+        except Exception as unlabeled:
+            print(f"[holo2] {filed[1]}: filed, its label {label!r} not"
+                  f" confirmed added: {unlabeled}")
+            code = 2
+    if code != 0:
+        raise SystemExit(code)
     print(f"[holo2] {merge.key}: revert ticket {filed[1]} filed")
     return 0

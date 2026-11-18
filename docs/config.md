@@ -2131,10 +2131,13 @@ revert goes through verify, review and the project's merge rules like any
 ticket. It refuses, filing nothing and exiting 1, unless `enabled` is `true`,
 KEY has a `merged` run whose merge commit is on `origin/main`, that commit
 touches no path matching `refuse_paths`, and no open ticket already reverts
-KEY: one in the store titled `[Revert] Undo KEY:` with a `Reverts: KEY at`
-line, or one an earlier `holo revert` filed that the board still reports
-open. A glob is matched against the whole repository-relative path: `*`, `?`
-and a `[...]` class (`[!...]` negated) stay within one path segment, `**/`
+KEY: one titled `[Revert] Undo KEY:` with a `Reverts: KEY at` line in the
+store, or one an earlier `holo revert` filed, that the board reports open.
+On a board with `[board] label` the filed ticket is given that label. A glob
+is matched against the whole repository-relative path, a newline in a name
+included: `*`, `?` and a `[...]` class (`[!...]` negated, with `[:digit:]`,
+`[:alpha:]`, `[:alnum:]`, `[:lower:]`, `[:upper:]`, `[:space:]` and
+`[:xdigit:]` inside it) stay within one path segment, `**/`
 matches any number of leading directories, none included, and a trailing
 `/**` matches everything under a directory. The table is read at startup with the others, so a bad
 value stops every command naming its key.
