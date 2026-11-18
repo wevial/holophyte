@@ -271,7 +271,7 @@ def attention(project, now=None, beat_stale_ms=None):
                   "pr_url": run.prUrl, "triage": triage_view(run.triage),
                   "level": "attention"}
                  for run in failed if run.id == run.lastRunId
-                 and run.activeRunId is None
+                 and run.activeRunId is None and not run.requeued
                  and run.ticketStatus in ("ready", "in_flight", "blocked_on_operator")
                  and run.boardState not in ("Backlog", "Canceled", "Done"))
     items.extend({"kind": "stuck_wait", **item, "level": "attention"}

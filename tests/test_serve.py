@@ -915,20 +915,6 @@ class AttentionTests(ServeTestCase):
                   for item in body["items"] if item["kind"] == "failed"]
         self.assertEqual(failed, [(self.failed, 2)])
 
-    def test_a_requeued_failure_stays_until_a_new_attempt(self):
-        self.seed_attention()
-        conn = store.open(str(self.db))
-        try:
-            store.requeue(conn, self.failed_ticket, "operator requeued")
-        finally:
-            conn.close()
-        self.start()
-
-        _, _, body = self.request("GET", "/attention")
-
-        kinds = [item["kind"] for item in body["items"]]
-        self.assertEqual(kinds, ["blocked", "stale_run", "failed", "supervisor"])
-
     def test_a_failure_stranding_its_ticket_stays_past_a_day(self):
         self.seed_attention(failed_ago=30 * self.HOUR)
         self.start()
