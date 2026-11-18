@@ -329,12 +329,27 @@ test("Reset to default returns the saved fades of Lava and Haze to 70, also afte
   expect(fades()).toEqual({ lava: "70", haze: "70" });
 });
 
-test("when storage refuses writes, setting Haze's Fade after passing through None keeps Lava's Fade from earlier in the session", async () => {
-  await mount();
+function refuseWrites() {
   const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
   const real = localStorage;
   const full = { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) };
   Object.defineProperty(globalThis, "localStorage", full);
+  return {
+    otherTab: (key: string, value: string) => {
+      real.setItem(key, value);
+      act(() => { window.dispatchEvent(new StorageEvent("storage", { key, newValue: value })); });
+    },
+    restore: () => {
+      Object.defineProperty(globalThis, "localStorage", storage);
+      fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    },
+  };
+}
+
+test("when storage refuses writes, setting Haze's Fade after passing through None keeps Lava's Fade from earlier in the session", async () => {
+  await mount();
+  const storage = refuseWrites();
   try {
     fireEvent.click(tile("Header", "Lava"));
     fireEvent.change(slider("Fade"), { target: { value: "40" } });
@@ -343,9 +358,21 @@ test("when storage refuses writes, setting Haze's Fade after passing through Non
     fireEvent.change(slider("Fade"), { target: { value: "20" } });
     expect([fades(), localStorage.getItem("holophyte.effects")]).toEqual([{ lava: "40", haze: "20" }, null]);
   } finally {
-    Object.defineProperty(globalThis, "localStorage", storage);
-    fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
-    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    storage.restore();
+  }
+});
+
+test("when storage refuses this tab's write of Lava's Fade, another tab saving Haze's Fade keeps Lava's unsaved 40 and shows Haze's 20", async () => {
+  localStorage.setItem("holophyte.effects", JSON.stringify({ haze: { fade: 40 } }));
+  await mount();
+  const storage = refuseWrites();
+  try {
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    storage.otherTab("holophyte.effects", JSON.stringify({ haze: { fade: 20 } }));
+    expect(fades()).toEqual({ lava: "40", haze: "20" });
+  } finally {
+    storage.restore();
   }
 });
 

@@ -110,29 +110,50 @@ function parseEffectSettings(raw: string | null): EffectSettings {
 }
 
 let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
-let unsavedEffectSettings: EffectSettings | null = null;
+let unsavedFades = new Map<BandEffect, number | null>();
+let effectSettingsShown: [EffectSettings, Map<BandEffect, number | null>, EffectSettings] = [{}, unsavedFades, {}];
+
+function readStoredEffectSettings(): EffectSettings {
+  const raw = localStorage.getItem(EFFECTS_KEY);
+  if (raw !== effectSettingsRead[0]) effectSettingsRead = [raw, parseEffectSettings(raw)];
+  return effectSettingsRead[1];
+}
 
 function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
-  if (unsavedEffectSettings) return unsavedEffectSettings;
+  let stored: EffectSettings;
   try {
-    const raw = localStorage.getItem(EFFECTS_KEY);
-    if (raw !== effectSettingsRead[0]) effectSettingsRead = [raw, parseEffectSettings(raw)];
-    return effectSettingsRead[1];
+    stored = readStoredEffectSettings();
   } catch {
     return fallback;
   }
+  if (!unsavedFades.size) return stored;
+  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedFades) {
+    const shown = { ...stored };
+    for (const [effect, fade] of unsavedFades) {
+      if (fade === null) delete shown[effect];
+      else shown[effect] = { fade };
+    }
+    effectSettingsShown = [stored, unsavedFades, shown];
+  }
+  return effectSettingsShown[2];
 }
 
 function writeEffectSettings(settings: EffectSettings): void {
   const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
   writeStored(EFFECTS_KEY, raw);
-  let saved = false;
+  let stored: EffectSettings = {};
   try {
-    saved = localStorage.getItem(EFFECTS_KEY) === raw;
+    stored = readStoredEffectSettings();
   } catch {
-    saved = false;
+    stored = {};
   }
-  unsavedEffectSettings = saved ? null : settings;
+  const unsaved = new Map<BandEffect, number | null>();
+  for (const effect of HEADER_EFFECTS) {
+    if (effect === "none") continue;
+    const fade = settings[effect]?.fade ?? null;
+    if (fade !== (stored[effect]?.fade ?? null)) unsaved.set(effect, fade);
+  }
+  unsavedFades = unsaved;
 }
 
 function readMotion(fallback = true): boolean {
@@ -280,9 +301,7 @@ export function applyCustomPick(): void {
 systemDark.subscribe(applyCustomPick);
 
 window.addEventListener("storage", (event) => {
-  if (event.key !== EFFECTS_KEY && event.key !== null) return;
-  unsavedEffectSettings = null;
-  effectSettingsStore.reload();
+  if (event.key === EFFECTS_KEY || event.key === null) effectSettingsStore.reload();
 });
 
 export function useTheme() {
