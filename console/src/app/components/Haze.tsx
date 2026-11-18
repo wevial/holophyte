@@ -13,6 +13,8 @@ interface Handle {
   destroy(): void;
 }
 
+export const LAVA_BOX = 4.73;
+
 const SPECTRA = { caustics, hyphae, lava, plume, ribbons };
 
 const OPTIONS = { warp: 0.4, grain: 0.05, fadeBottom: 0.9, fadeSide: 0.55, speed: 0.8 };
@@ -98,7 +100,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
       className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
     >
       {/* Lava pools its wax at the bottom of its box, so the box runs past the band's clipped edge. */}
-      {tall && <div ref={floored} style={{ position: "absolute", insetInline: 0, top: 0, height: "430%" }} />}
+      {tall && <div ref={floored} style={{ position: "absolute", insetInline: 0, top: 0, height: `${Math.round(LAVA_BOX * 100)}%` }} />}
     </div>
   );
 }

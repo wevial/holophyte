@@ -110,8 +110,10 @@ function parseEffectSettings(raw: string | null): EffectSettings {
 }
 
 let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
+let unsavedEffectSettings: EffectSettings | null = null;
 
 function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
+  if (unsavedEffectSettings) return unsavedEffectSettings;
   try {
     const raw = localStorage.getItem(EFFECTS_KEY);
     if (raw !== effectSettingsRead[0]) effectSettingsRead = [raw, parseEffectSettings(raw)];
@@ -119,6 +121,18 @@ function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
   } catch {
     return fallback;
   }
+}
+
+function writeEffectSettings(settings: EffectSettings): void {
+  const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
+  writeStored(EFFECTS_KEY, raw);
+  let saved = false;
+  try {
+    saved = localStorage.getItem(EFFECTS_KEY) === raw;
+  } catch {
+    saved = false;
+  }
+  unsavedEffectSettings = saved ? null : settings;
 }
 
 function readMotion(fallback = true): boolean {
@@ -228,7 +242,7 @@ const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
-const effectSettingsStore = appearanceStore(readEffectSettings, (settings) => writeStored(EFFECTS_KEY, Object.keys(settings).length ? JSON.stringify(settings) : null), () => {});
+const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, () => {});
 const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);

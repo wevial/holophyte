@@ -13,6 +13,7 @@ import * as hyphae from "../../src/vendor/spectra/hyphae";
 import * as lava from "../../src/vendor/spectra/lava";
 import * as plume from "../../src/vendor/spectra/plume";
 import * as ribbons from "../../src/vendor/spectra/ribbons";
+import { LAVA_BOX } from "../../src/app/components/Haze";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -271,15 +272,15 @@ test("Fade at 0, 70 and 100 sets the band's fade to 0%, 70% and 100%, and None s
   }
 });
 
-test("in a dark theme Lava draws in a box inside the band anchored at its top and at least 160% of its height, and the other effects draw in the band itself", async () => {
+test("in a dark theme Lava draws in a box inside the band anchored at its top and LAVA_BOX, at least 1.6, times its height, and the other effects draw in the band itself", async () => {
   const effects = fakeEffects();
   try {
     await mount();
     fireEvent.click(scheme("Dark"));
     fireEvent.click(tile("Header", "Lava"));
     const box = band().querySelector("canvas")!.parentElement!;
-    expect([box === band(), band().contains(box), box.style.top, box.style.height]).toEqual([false, true, "0px", expect.stringMatching(/^\d+(\.\d+)?%$/)]);
-    expect(parseFloat(box.style.height)).toBeGreaterThanOrEqual(160);
+    expect(LAVA_BOX).toBeGreaterThanOrEqual(1.6);
+    expect([box === band(), band().contains(box), box.style.top, box.style.height]).toEqual([false, true, "0px", `${Math.round(LAVA_BOX * 100)}%`]);
     const containers = ["Haze", "Caustics", "Plume", "Ribbons", "Hyphae"].map((name) => {
       fireEvent.click(tile("Header", name));
       return [name, band().querySelector("canvas")!.parentElement === band()];
@@ -319,17 +320,23 @@ test("Reset to default returns the saved fades of Lava and Haze to 70, also afte
   expect(fades()).toEqual({ lava: "70", haze: "70" });
 });
 
-test("when storage refuses writes, setting Haze's Fade keeps Lava's Fade from earlier in the session", async () => {
+test("when storage refuses writes, setting Haze's Fade after passing through None keeps Lava's Fade from earlier in the session", async () => {
   await mount();
-  const full = spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new DOMException("full", "QuotaExceededError"); });
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  const full = { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) };
+  Object.defineProperty(globalThis, "localStorage", full);
   try {
     fireEvent.click(tile("Header", "Lava"));
     fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    fireEvent.click(tile("Header", "None"));
     fireEvent.click(tile("Header", "Haze"));
     fireEvent.change(slider("Fade"), { target: { value: "20" } });
-    expect(fades()).toEqual({ lava: "40", haze: "20" });
+    expect([fades(), localStorage.getItem("holophyte.effects")]).toEqual([{ lava: "40", haze: "20" }, null]);
   } finally {
-    full.mockRestore();
+    Object.defineProperty(globalThis, "localStorage", storage);
+    fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
   }
 });
 
