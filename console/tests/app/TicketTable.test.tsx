@@ -128,7 +128,7 @@ test("a Done today row draws the merged state as an outlined check circle", asyn
   expect(glyph.querySelector("path")!.getAttribute("d")).toBe("M5 8.3 7.1 10.4 11 6.2");
 });
 
-test("compact density holds a Table row to 34 px, under its comfortable height and past the shared 44 px compact floor", async () => {
+test("compact density gives a Table row an important 34 px floor, under its comfortable height", async () => {
   await mount("#/tickets?project=demo", seeded);
   await press("Table");
   const utilities = await compile("@theme { --spacing: 0.25rem; } @tailwind utilities;", { base: import.meta.dir });
