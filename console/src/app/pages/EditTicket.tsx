@@ -333,9 +333,9 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
           {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
           {fields.others.length + removed.length > 0 && <div>
             <details open={read.raw.size > 0 || removed.length > 0} className="group">
-              <summary className="flex h-[30px] cursor-pointer items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold text-ink">
+              <summary className="flex h-[30px] min-w-0 cursor-pointer items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold text-ink">
                 <span className="flex group-open:[&>svg]:rotate-90"><FoldChevron open={false} /></span>
-                Other sections <span className="min-w-0 truncate font-normal text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
+                <span className="shrink-0 whitespace-nowrap">Other sections</span><span className="min-w-0 truncate font-normal text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">
                 {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(fields, at, origin.fields)}>

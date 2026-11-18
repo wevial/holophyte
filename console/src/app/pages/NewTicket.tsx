@@ -233,7 +233,7 @@ export function NewTicket() {
             <div className={FORM_CARD}>
               <Field label="Project" extra=" · Required">
                 <div className="mt-1.5">
-                  <Picker id="new-Project" label="Project" passPress value={project} options={editable.map(row => ({ value: row.name, label: row.name, disabled: busy }))} onPick={name => {
+                  <Picker id="new-Project" label="Project" passPress value={project} disabled={busy} options={editable.map(row => ({ value: row.name, label: row.name }))} onPick={name => {
                     if (name === project) return;
                     setProblems([]);
                     void navigate({ to: "/tickets/$project/new", params: { project: name }, search: {} });

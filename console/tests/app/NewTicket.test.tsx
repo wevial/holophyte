@@ -120,6 +120,22 @@ test("File ticket sends one Backlog POST with the composed markdown then toasts 
   expect(window.location.hash).toBe("#/tickets/demo/DEMO-12");
 });
 
+test("while a filing is pending the Project picker is disabled and opens no list", async () => {
+  let answer: (response: Response) => void = () => {};
+  const pending = new Promise<Response>((resolve) => { answer = resolve; });
+  await mount("#/tickets/demo/new", fleet(() => pending));
+  await fill();
+  await press("File ticket");
+  const project = screen.getByLabelText("Project", { selector: "button" }) as HTMLButtonElement;
+  expect(project.disabled).toBe(true);
+  await act(async () => void fireEvent.click(project));
+  await flush();
+  expect(screen.queryByRole("listbox", { name: "Project" })).toBeNull();
+  await act(async () => answer(Response.json({ problems: ["Complete the ticket"] }, { status: 422 })));
+  await flush();
+  expect(project.disabled).toBe(false);
+});
+
 test("a 422 lists every problem beside File ticket with no toast and preserves all form fields", async () => {
   const answer = fakeFetch(() => Response.json({ problems: ["'Summary' is empty", "'In scope' has no entries"] }, { status: 422 }));
   await mount("#/tickets/demo/new", fleet(answer.fetchImpl));
