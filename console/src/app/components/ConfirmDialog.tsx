@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { Btn } from "./Btn";
 import { trap } from "./trap";
 
+export const REASON_LABEL = "mt-4 block font-sans text-[13px] font-semibold leading-none text-ink";
+
 /** A modal confirm labelled by its `heading`: focus starts on the cancel
  *  button (`cancelLabel`) and Tab stays inside, Esc or that button calls
  *  `onCancel`, and the `confirm` button (`primary` unless `confirmVariant`)
@@ -11,7 +13,7 @@ import { trap } from "./trap";
 export function ConfirmDialog({
   label,
   ariaLabel,
-  labelClassName = "font-sans",
+  labelClassName = "font-mono",
   heading,
   confirm,
   busyLabel,
@@ -58,12 +60,12 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : headingId}
-        className="relative box-border w-full max-w-[520px] border border-rule bg-paper px-7 pb-6 pt-[26px] text-[15px] leading-normal text-ink shadow-[0_24px_60px_rgba(0,0,0,.45)]"
+        className="relative box-border w-full max-w-[480px] rounded-[12px] bg-raised px-[22px] pb-5 pt-[18px] text-[14px] leading-normal text-ink shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
-        <div className={`${labelClassName} flex items-center gap-2.5 text-[11px] font-semibold uppercase leading-none tracking-[.06em] text-ink-3 after:flex-1 after:border-t after:border-rule-2 after:content-['']`}>
+        <div className={`${labelClassName} text-[12px] leading-none text-ink-3`}>
           {label}
         </div>
-        <h2 id={headingId} className="mt-3.5 font-sans text-[30px] font-extrabold leading-[1.05] tracking-[-0.01em] [font-stretch:112%]">
+        <h2 id={headingId} className="m-0 mt-2.5 font-sans text-[18px] font-semibold leading-[1.3] tracking-[-0.01em]">
           {heading}
         </h2>
         {children}
