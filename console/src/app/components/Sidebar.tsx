@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, useRouterState, useSearch } from "@tanstack/react-router";
+import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
@@ -29,6 +29,7 @@ import {
   SunIcon,
   SystemIcon,
   TicketsIcon,
+  TurnArrow,
 } from "./icons";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SettingsNav } from "./SettingsNav";
@@ -279,6 +280,10 @@ function StoryList({ stories }: { stories: ListedStory[] }) {
   );
 }
 
+function modChord(event: KeyboardEvent, key: string): boolean {
+  return event.key === key && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
+}
+
 export type SidebarFold = { folded: boolean; foldable: boolean; fold: () => void };
 
 export function useSidebarFold(): SidebarFold {
@@ -293,7 +298,7 @@ export function useSidebarFold(): SidebarFold {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "\\" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (!modChord(event, "\\")) return;
       event.preventDefault();
       fold();
     };
@@ -304,8 +309,93 @@ export function useSidebarFold(): SidebarFold {
   return { folded, foldable: !settingsMenu, fold };
 }
 
+const REACH_KEY = "holophyte.history-reach";
+
+type SavedReach = { entry: string; furthest: number };
+
+function readReach(): SavedReach | null {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(REACH_KEY) ?? "null") as SavedReach | null;
+    return typeof saved?.entry === "string" && typeof saved.furthest === "number" ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeReach(reach: SavedReach): void {
+  try {
+    sessionStorage.setItem(REACH_KEY, JSON.stringify(reach));
+  } catch {
+    // Storage may be disabled; Next still tracks this page's own navigation.
+  }
+}
+
+function useHistoryNav(bound: boolean) {
+  const { history } = useRouter();
+  const [reach, setReach] = useState(() => {
+    const { __TSR_index: index, __TSR_key: entry } = history.location.state;
+    const saved = readReach();
+    return { index, entry, furthest: saved && entry && saved.entry === entry ? Math.max(index, saved.furthest) : index };
+  });
+
+  useEffect(() => {
+    if (reach.entry) writeReach({ entry: reach.entry, furthest: reach.furthest });
+  }, [reach.entry, reach.furthest]);
+
+  useEffect(
+    () =>
+      history.subscribe(({ location, action }) => {
+        const { __TSR_index: index, __TSR_key: entry } = location.state;
+        setReach((last) => ({ index, entry, furthest: action.type === "PUSH" ? index : Math.max(last.furthest, index) }));
+      }),
+    [history],
+  );
+
+  const oldestRetained = Math.max(0, reach.furthest - (window.history.length - 1));
+  const canBack = reach.index > oldestRetained;
+  const canForward = reach.index < reach.furthest;
+  const back = () => canBack && history.back();
+  const forward = () => canForward && history.forward();
+
+  useEffect(() => {
+    if (!bound) return;
+    const onKey = (event: KeyboardEvent) => {
+      const go = modChord(event, "[") ? back : modChord(event, "]") ? forward : null;
+      if (!go) return;
+      event.preventDefault();
+      go();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
+
+  return { canBack, canForward, back, forward };
+}
+
+const TITLE_BUTTON = "flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink";
+
+function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; shortcut: string; enabled: boolean; go: () => void; next?: boolean }) {
+  return (
+    <Tooltip delay={300} shortcut={shortcut}>
+      <TooltipTrigger
+        aria-label={name}
+        disabled={!enabled}
+        onClick={go}
+        className={`${TITLE_BUTTON} ${APP_NO_DRAG} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-3`}
+      >
+        <TurnArrow next={next} />
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="start" sideOffset={6} className={TIP}>
+        {name}
+        <TooltipShortcut className="font-mono text-ink-3" />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function TitleBar({ folded, foldable, fold }: SidebarFold) {
   const [macApp] = useState(inMacApp);
+  const nav = useHistoryNav(macApp);
   const toggleName = folded ? "Expand sidebar" : "Collapse sidebar";
   return (
     <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
@@ -315,7 +405,7 @@ export function TitleBar({ folded, foldable, fold }: SidebarFold) {
             aria-label={toggleName}
             aria-expanded={!folded}
             onClick={fold}
-            className={`flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${macApp ? APP_NO_DRAG : ""}`}
+            className={`${TITLE_BUTTON} ${macApp ? APP_NO_DRAG : ""}`}
           >
             <PanelLeftIcon />
           </TooltipTrigger>
@@ -333,8 +423,16 @@ export function TitleBar({ folded, foldable, fold }: SidebarFold) {
         className={`flex h-6 items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-ink [&_svg]:size-4 ${macApp ? APP_NO_DRAG : ""}`}
       >
         <Mark />
-        <span aria-hidden="true">holophyte</span>
+        <span aria-hidden="true" className="leading-none [text-box:trim-both_cap_alphabetic]">
+          holophyte
+        </span>
       </Link>
+      {macApp && (
+        <>
+          <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} />
+          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next />
+        </>
+      )}
     </div>
   );
 }

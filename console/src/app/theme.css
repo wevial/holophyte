@@ -1039,7 +1039,7 @@ body {
 
 .haze-band {
   pointer-events: none;
-  mask-image: linear-gradient(to bottom, black 30%, transparent);
+  mask-image: linear-gradient(to bottom, black calc(100% - var(--haze-fade, 70%)), transparent);
 }
 
 .haze-fallback {
