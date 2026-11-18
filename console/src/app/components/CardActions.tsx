@@ -4,7 +4,7 @@ import { useContext, useRef, useState, type KeyboardEvent } from "react";
 import { NO_PR_URL } from "./RowActions";
 import { ReasonAction } from "./ReasonAction";
 import { RequeueForm } from "./RequeueForm";
-import { actionBody, NOT_WIRED, ROOT_LABELS, ROUTES } from "../../lib/actions";
+import { NOT_WIRED, ROOT_LABELS, ROUTES } from "../../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME, RUN_SWEEP, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
 import { UNREACHABLE, type HostRecord } from "../../lib/hosts";
@@ -178,7 +178,7 @@ export function CardActions({
     if (label === ABORT || label === ABORT_CLOSE) return run == null ? undefined : () => setReasoning(label);
     if (label === REQUEUE) return ticket == null ? undefined : () => { action.reset(); setRequeueing(true); };
     const route = ROUTES[label];
-    return route == null ? undefined : () => void post(label, route, actionBody(label, ticket));
+    return route == null ? undefined : () => void post(label, route, {});
   };
   const titleOf = (label: string) => (label === OPEN_PR ? (prUrl == null ? NO_PR_URL : undefined) : ROUTES[label] == null && label !== RESUME && !isMerge(label) ? NOT_WIRED : undefined);
 
