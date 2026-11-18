@@ -1,0 +1,73 @@
+/* @import must precede every other rule. */
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,200..800&display=swap");
+
+[data-md-color-scheme="default"] {
+  --lotus-canvas: #fbfaff;
+  --lotus-side: #ebe6f6;
+  --lotus-ink: #1d182b;
+  --lotus-ink-2: #4f4865;
+  --lotus-ink-3: #655e7b;
+  --lotus-accent: #5a4ebf;
+  --lotus-hair: color-mix(in srgb, var(--lotus-ink) 8%, transparent);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 258;
+  --lotus-canvas: #0d0a15;
+  --lotus-side: #151120;
+  --lotus-ink: #ece8fb;
+  --lotus-ink-2: #b3adcc;
+  --lotus-ink-3: #857fa2;
+  --lotus-accent: #b9a3ff;
+  --lotus-hair: color-mix(in srgb, var(--lotus-ink) 8%, transparent);
+}
+
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: var(--lotus-canvas);
+  --md-default-fg-color: var(--lotus-ink);
+  --md-default-fg-color--light: var(--lotus-ink-2);
+  --md-default-fg-color--lighter: var(--lotus-ink-3);
+  --md-default-fg-color--lightest: var(--lotus-hair);
+  --md-primary-fg-color: var(--lotus-side);
+  --md-primary-fg-color--light: var(--lotus-side);
+  --md-primary-fg-color--dark: var(--lotus-side);
+  --md-primary-bg-color: var(--lotus-ink);
+  --md-primary-bg-color--light: var(--lotus-ink-2);
+  --md-accent-fg-color: var(--lotus-accent);
+  --md-accent-fg-color--transparent: color-mix(in srgb, var(--lotus-accent) 10%, transparent);
+  --md-accent-bg-color: var(--lotus-canvas);
+  --md-typeset-color: var(--lotus-ink);
+  --md-typeset-a-color: var(--lotus-accent);
+  --md-code-bg-color: var(--lotus-side);
+  --md-footer-bg-color: var(--lotus-side);
+  --md-footer-bg-color--dark: var(--lotus-side);
+  --md-footer-fg-color: var(--lotus-ink);
+  --md-footer-fg-color--light: var(--lotus-ink-2);
+  --md-footer-fg-color--lighter: var(--lotus-ink-3);
+}
+
+.md-header {
+  border-bottom: 1px solid var(--lotus-hair);
+  box-shadow: none;
+}
+
+@media screen and (min-width: 76.25em) {
+  .md-sidebar--primary .md-sidebar__scrollwrap {
+    background-color: var(--lotus-side);
+    border: 1px solid var(--lotus-hair);
+    border-radius: 0.4rem;
+  }
+
+  .md-nav--primary > .md-nav__title {
+    background-color: var(--lotus-side);
+    box-shadow: none;
+  }
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-family: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  color: var(--lotus-ink);
+}
