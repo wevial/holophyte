@@ -27,7 +27,8 @@ import { storeScope } from "../projects";
 import { useFlows, type FlowWindow } from "../queries";
 import { PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 
-const H2 = "flex h-[30px] items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold text-ink";
+const HEADING = "font-sans text-[13px] font-semibold text-ink";
+const H2 = `flex h-[30px] items-center border-b border-hair ${HEADING}`;
 const INSIDE_MIN = 8;
 const RAISED = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 const MENU = "rounded-[9px] bg-raised shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]";
@@ -99,14 +100,16 @@ interface Trend {
 
 function Figure({ label, children, tone = "text-ink", trend, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; note?: string }) {
   return (
-    <div data-figure={label} className={`flex min-w-0 flex-col gap-2 px-3.5 py-3 ${RAISED}`}>
+    <div className={`flex min-w-0 flex-col gap-2 px-3.5 py-3 ${RAISED}`}>
       <dt className="font-sans text-[12px] text-ink-3">{label}</dt>
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <dd data-number={label} className={`font-sans text-[30px] font-[240] font-stretch-120% leading-none tracking-[-0.02em] ${tone}`}>{children}</dd>
-        {trend && <Change number={trend.number} values={trend.values} />}
-      </div>
+      <dd className="flex flex-col gap-2">
+        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span data-number={label} className={`font-sans text-[30px] font-[240] font-stretch-120% leading-none tracking-[-0.02em] ${tone}`}>{children}</span>
+          {trend && <Change number={trend.number} values={trend.values} />}
+        </span>
+        {trend && <Sparkline values={trend.values} />}
+      </dd>
       {note && <dd className="font-sans text-[12px] leading-[1.5] text-ink-3">{note}</dd>}
-      {trend && <Sparkline values={trend.values} />}
     </div>
   );
 }
@@ -153,9 +156,10 @@ function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: 
 function TimeSplit({ numbers }: { numbers: FlowNumbers }) {
   return (
     <section aria-labelledby="flow-split" className="flex flex-col gap-3">
-      <h2 id="flow-split" className={H2}>
-        Where run time went <span data-count className="font-mono text-[12px] font-normal text-ink-3">{Math.round(numbers.total)} run-hours</span>
-      </h2>
+      <header className="flex h-[30px] items-center gap-2.5 border-b border-hair">
+        <h2 id="flow-split" className={HEADING}>Where run time went</h2>
+        <span className="font-mono text-[12px] text-ink-3">{Math.round(numbers.total)} run-hours</span>
+      </header>
       <div data-split className="flex h-12 bg-paper-2">
         {SPLIT.map(({ part, name, fill }) => {
           const width = share(numbers.hours[part], numbers.total);
@@ -257,7 +261,7 @@ function ProjectsTable({ projects, scope, pick }: { projects: ProjectFlow[]; sco
 function Phases({ phases }: { phases: FlowNumbers["phases"] }) {
   return (
     <details>
-      <summary className={`${H2} cursor-pointer list-item`}>Every phase, in hours</summary>
+      <summary className={`h-[30px] cursor-pointer border-b border-hair leading-[30px] ${HEADING}`}>Every phase, in hours</summary>
       <dl className="mt-2 flex max-w-md flex-col">
         {phases.map(({ phase, hours }) => (
           <div key={phase} className="flex h-7 items-center justify-between gap-6 font-sans text-[13px]">

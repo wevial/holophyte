@@ -239,7 +239,7 @@ export function Sparkline({ values }: { values: (number | null)[] }) {
   const span = Math.max(...known) - bottom || 1;
   const scaled = values.map((value) => (value == null ? null : value - bottom));
   return (
-    <svg aria-hidden="true" data-sparkline viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-7 w-full overflow-visible text-accent">
+    <svg aria-hidden="true" viewBox="0 0 100 100" preserveAspectRatio="none" className="block h-7 w-full overflow-visible text-accent">
       {segments(scaled, span).map((points) => (
         <path key={points[0]![0]} d={smoothPath(points)} fill="none" stroke="currentColor" strokeWidth={1.6} vectorEffect="non-scaling-stroke" />
       ))}
@@ -262,5 +262,5 @@ export function Change({ number, values }: { number: TrendNumber; values: (numbe
   const { better, unit } = TRENDS[number];
   const change = weeklyChange(values, better, unit);
   if (change == null) return null;
-  return <dd data-change={number} className={`font-sans text-[12px] ${TONES[change.tone]}`}>{change.text}</dd>;
+  return <span data-change={number} className={`font-sans text-[12px] ${TONES[change.tone]}`}>{change.text}</span>;
 }
