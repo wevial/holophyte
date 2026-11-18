@@ -150,7 +150,7 @@ export function Overview() {
             <WeekBars rows={week} now={view.now} colours={colours} />
           </div>
         </div>
-        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-3.5 min-[1600px]:h-[calc(var(--panel-height)-2.625rem)] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
+        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-3.5 min-[1600px]:h-[max(calc(var(--panel-height)-2.625rem),calc(var(--week-bars-height,0px)+14rem))] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
           <DayLog entries={log.entries} className="min-h-0 flex-1" />
         </div>
       </div>
