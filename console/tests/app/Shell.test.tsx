@@ -839,21 +839,21 @@ test("opened with range=12w the Flow page asks each host for twelve weeks and ev
   expect(charts.map((chart) => chart.querySelectorAll("[data-point]").length)).toEqual([12, 12, 12, 12]);
 });
 
-test("choosing From and To puts them in the address and asks for the whole weeks ending with the To day", async () => {
+test("the open Range menu marks the current preset, and choosing From and To puts them in the address and asks for the whole weeks ending with the To day", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   const asked: URL[] = [];
-  await mount("#/flow", askedFlows(asked));
+  await mount("#/flow?range=12w", askedFlows(asked));
   await flush();
   fireEvent.click(screen.getByRole("button", { name: "Range" }));
   const choices = within(screen.getByRole("group", { name: "Range choices" }));
-  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 6 weeks"]);
-  fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-01" } });
+  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 12 weeks"]);
+  fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-03" } });
   fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
   await flush();
   const search = new URLSearchParams(window.location.hash.split("?")[1]);
-  expect([search.get("from"), search.get("to")]).toEqual(["2026-10-01", "2026-11-12"]);
+  expect([search.get("from"), search.get("to")]).toEqual(["2026-09-03", "2026-11-12"]);
   const last = asked.at(-1)!.searchParams;
-  expect([last.get("weeks"), last.get("until")]).toEqual(["6", String(new Date(2026, 10, 13).getTime())]);
+  expect([last.get("weeks"), last.get("until")]).toEqual(["10", String(new Date(2026, 10, 13).getTime())]);
   expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toEndWith(" to 12 November");
 });
 

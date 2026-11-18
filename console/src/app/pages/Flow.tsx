@@ -100,7 +100,7 @@ interface Trend {
 
 function Figure({ label, children, tone = "text-ink", trend, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; note?: string }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-2 px-3.5 py-3 ${RAISED}`}>
+    <div className={`flex min-w-0 flex-col gap-2 px-3.5 py-3 transition-colors duration-(--motion-colour) hover:bg-hover ${RAISED}`}>
       <dt className="font-sans text-[12px] text-ink-3">{label}</dt>
       <dd className="flex flex-col gap-2">
         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -232,7 +232,7 @@ function ProjectsTable({ projects, scope, pick }: { projects: ProjectFlow[]; sco
         </thead>
         <tbody>
           {projects.map(({ name, numbers }) => (
-            <tr key={name} aria-current={name === scope ? "true" : undefined} className="hover:bg-hover aria-[current]:bg-selected">
+            <tr key={name} aria-current={name === scope ? "true" : undefined} className="hover:bg-hover aria-[current]:not-hover:bg-selected">
               <th scope="row" className="h-[34px] border-b border-hair pr-2.5 text-left">
                 <button type="button" onClick={() => pick(name)} className="cursor-pointer font-sans text-[13px] font-medium text-ink hover:text-act">{name}</button>
               </th>

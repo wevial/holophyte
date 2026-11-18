@@ -177,14 +177,16 @@ test("a waiting line breaks at a week with no merges into two segments and puts 
   expect([...container.querySelectorAll("button[data-point]")].map((point) => point.getAttribute("data-point"))).toEqual(["0", "1", "3", "4", "5"]);
 });
 
-test("a sparkline's stroke runs from the left edge to the right edge, and a week standing alone between gaps still shows a mark", () => {
-  const { container: full } = render(<Sparkline values={[3, 1, 4, 2]} />);
-  const stroke = full.querySelector("path")!.getAttribute("d")!;
-  expect(stroke.startsWith("M0 ")).toBe(true);
-  expect(stroke.split(" ").at(-2)).toBe("100");
-  const { container: lone } = render(<Sparkline values={[null, null, null, null, null, 38]} />);
-  expect(lone.querySelectorAll("path")).toHaveLength(0);
-  expect([...lone.querySelectorAll("[data-lone]")].map((mark) => (mark as HTMLElement).style.left)).toEqual(["100%"]);
+test("a sparkline's stroke runs from the left edge to the right edge, and a week standing alone between gaps, or as the only week, still shows a mark", () => {
+  const { container: gapped } = render(<Sparkline values={[1, 2, null, 5, null, 3, 4]} />);
+  const strokes = [...gapped.querySelectorAll("path")].map((path) => path.getAttribute("d")!);
+  expect(strokes).toHaveLength(2);
+  expect(strokes[0]!.startsWith("M0 ")).toBe(true);
+  expect(strokes[1]!.split(" ").at(-2)).toBe("100");
+  expect([...gapped.querySelectorAll("[data-lone]")].map((mark) => (mark as HTMLElement).style.left)).toEqual(["50%"]);
+  const { container: single } = render(<Sparkline values={[38]} />);
+  expect(single.querySelectorAll("path")).toHaveLength(0);
+  expect(single.querySelectorAll("[data-lone]")).toHaveLength(1);
 });
 
 test("a weekly change is green when the number moved the good way and the accent colour when not", () => {
