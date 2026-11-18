@@ -1022,6 +1022,106 @@ class ReviewerFallbackListTests(SweepTestCase):
                     check_config(self.project)
 
 
+    REFUSAL_LINE = ('This content was flagged for possible cybersecurity risk.'
+                    ' Try rephrasing your request.')
+
+    def refusing(self, refuse):
+        """The container reviewer, whose model refuses every goal in `refuse`."""
+        from holophyte.review import review_runner
+
+        self.reviews = []
+        stdout = json.dumps({'type': 'turn.failed',
+                             'error': {'message': self.REFUSAL_LINE}})
+
+        def run_review(*, candidate_sha, prompt, **_):
+            self.reviews.append(prompt)
+            if prompt in refuse:
+                error = review_runner.ReviewBoundaryError(
+                    f'command failed (1): docker exec review codex\n{stdout}')
+                error.returncode = 1
+                error.output = error.stdout = stdout
+                error.provider_error = review_runner.provider_error(stdout)
+                raise error
+            return 'VERDICT: PASS (primary)'
+        return patch.object(roles.review_runner, 'run_review',
+                            side_effect=run_review)
+
+    def review_run(self, run, goal='judge'):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return roles.agent(self.project, 'review', goal, self.target,
+                                base_sha=self.sha, candidate_sha=self.sha,
+                                conn=self.conn, run_id=run)
+
+    def events(self, run, kind):
+        column = 'payload' if kind == 'agent_turn' else 'summary'
+        return [row for row, in self.conn.execute(
+            f"SELECT {column} FROM runEvents WHERE runId=? AND kind=?",
+            (run, kind))]
+
+    def test_a_refused_review_runs_once_on_the_first_passing_entry(self):
+        from holophyte.agents.agent_routes import routes
+
+        devin = self.reviewer('devin-review', down=True)
+        claude = self.reviewer('claude-review')
+        self.configure_fallback(f'["{devin}", "{claude}"]')
+        run = self.a_run()
+        with self.refusing({'judge'}):
+            self.assertEqual(self.review_run(run), 'VERDICT: PASS')
+            self.assertEqual(self.reviews, ['judge'])
+            self.assertEqual(self.calls.read_text().splitlines(), [
+                'devin-review ' + probes.REVIEW_PROBE_GOAL,
+                'claude-review ' + probes.REVIEW_PROBE_GOAL,
+                'claude-review judge'])
+            switch, = [json.loads(m) for m in self.events(run, 'route_fallback')]
+            self.assertEqual(switch, {'seat': 'reviewer',
+                                      'reason': self.REFUSAL_LINE,
+                                      'command': claude})
+            self.assertEqual(
+                [(turn['route'], turn['exit_status']) for turn in
+                 map(json.loads, self.events(run, 'agent_turn'))],
+                [('primary', 1), ('fallback', 0)])
+            self.assertEqual(routes(self.project).commands, {})
+            self.assertEqual(self.switches(), [])
+
+            later = self.a_run()
+            self.assertEqual(self.review_run(later, 'judge again'),
+                             'VERDICT: PASS (primary)')
+        self.assertEqual(self.reviews, ['judge', 'judge again'])
+        self.assertEqual(
+            [json.loads(p)['route'] for p in self.events(later, 'agent_turn')],
+            ['primary'])
+        self.assertEqual(self.events(later, 'route_fallback'), [])
+
+    def test_a_refused_review_without_a_working_fallback_fails_the_route(self):
+        from holophyte.loop.gates import InfraFailure
+
+        failing = self.root / 'failing-review'
+        failing.write_text(
+            f'#!{sys.executable}\nimport subprocess, sys\n'
+            f'with open({str(self.calls)!r}, "a") as f:\n'
+            ' f.write(sys.argv[-1] + "\\n")\n'
+            f'if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n'
+            ' print("ready", subprocess.check_output(\n'
+            '     ["git", "rev-parse", "HEAD"], text=True).strip())\n'
+            'else:\n sys.exit("reviewer crashed")\n')
+        failing.chmod(0o755)
+        for name, config, ran in (
+                ('no fallback', '[agents]\n', []),
+                ('failing fallback',
+                 f'[agents]\nreviewer_fallback = "{failing}"\n',
+                 [probes.REVIEW_PROBE_GOAL, 'judge'])):
+            with self.subTest(name):
+                self.calls.unlink(missing_ok=True)
+                self.configure(config)
+                with self.refusing({'judge'}), \
+                        self.assertRaises(InfraFailure) as raised:
+                    self.review_run(self.a_run())
+                self.assertEqual(raised.exception.failure_kind, 'review_route')
+                self.assertIn(self.REFUSAL_LINE, str(raised.exception))
+                self.assertEqual(self.calls.read_text().splitlines()
+                                 if self.calls.exists() else [], ran)
+
+
 class FailedRouteLoopTests(LoopFixture):
     def test_failed_fallback_probe_stops_even_when_work_failures_continue(self):
         primary = self.db.parent / 'codex-primary'

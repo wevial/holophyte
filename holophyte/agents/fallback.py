@@ -64,6 +64,28 @@ def record_pending_switch(project, role, conn, run_id):
         del state.pending[role]
 
 
+def refusal_fallback(project, role, refusal, conn=None, run_id=None):
+    import store
+
+    commands = fallback_entries(project, role)
+    if not commands or not all(isinstance(each, str) for each in commands):
+        return None
+    probe = probe_seat(project, role, fallback=True)
+    if probe is None or not probe.ok:
+        if probe is not None:
+            print(probe_diagnostic(project, probe))
+        return None
+    command = commands[probe.entry]
+    evidence = {"seat": AGENT_CONFIG_KEYS[role],
+                "reason": route_prose(project, refusal),
+                "command": safe_command(project, command)}
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "route_fallback", json.dumps(evidence))
+    print(f"[holo2] {evidence['seat']} refused the turn ({evidence['reason']}); "
+          f"running it once on fallback: {evidence['command']}")
+    return command
+
+
 SWITCHING = threading.RLock()
 
 
