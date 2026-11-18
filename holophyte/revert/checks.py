@@ -99,8 +99,6 @@ def open_revert(conn, merge):
 def dependents(conn, repo, merge):
     _, listed = git(repo, "rev-list", "--reverse", f"{merge.sha}..{MAIN}")
     later = listed.split()
-    if not later:
-        return []
     by_sha = {}
     for key, sha in conn.execute(
             "SELECT t.linearIdentifier, r.mergeSha FROM runs r"

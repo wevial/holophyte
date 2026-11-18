@@ -22,8 +22,7 @@ from holophyte.revert.ticket_text import revert_ticket
 FILED = re.compile(r"^\[holo2\] filed (\S+): ", re.MULTILINE)
 
 
-def revert(target, board, key, reason, dry_run=False, out=None):
-    out = sys.stdout if out is None else out
+def revert(target, board, key, reason, dry_run):
     if not revert_config(target).enabled:
         raise SystemExit(f"[holo2] {key}: [revert] enabled is not true in"
                          f" {target.config_path}; nothing filed")
@@ -31,16 +30,16 @@ def revert(target, board, key, reason, dry_run=False, out=None):
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     conn = open_store(target)
     try:
-        return _revert(target, conn, board, key, reason, dry_run, out)
+        return _revert(target, conn, board, key, reason, dry_run)
     except Refused as refused:
         raise SystemExit(f"[holo2] {refused}; nothing filed") from None
     finally:
         conn.close()
 
 
-def _revert(target, conn, board, key, reason, dry_run, out):
+def _revert(target, conn, board, key, reason, dry_run):
     def say(line):
-        print(f"[holo2] {key}: {line}", file=out)
+        print(f"[holo2] {key}: {line}")
 
     say("[revert] enabled")
     merge = merged_run(conn, target.path, key)
@@ -62,21 +61,21 @@ def _revert(target, conn, board, key, reason, dry_run, out):
         say("dry run; nothing filed")
         return 0
     return _file(target, conn, board, merge, revert_ticket(merge, reason, found),
-                 reason, out)
+                 reason)
 
 
-def _file(target, conn, board, merge, text, reason, out):
+def _file(target, conn, board, merge, text, reason):
     printed = io.StringIO()
     with tempfile.TemporaryDirectory() as scratch:
         path = Path(scratch) / f"revert-{merge.key}.md"
         path.write_text(text)
         code = file_ticket(target, path, "Todo", board, out=printed,
                            priority="urgent")
-    out.write(printed.getvalue())
+    sys.stdout.write(printed.getvalue())
     filed = FILED.search(printed.getvalue())
     if code != 0 or filed is None:
         raise SystemExit(code or 1)
     store.record_intervention(conn, merge.run_id, "revert",
                               f"filed {filed[1]}: {reason}")
-    print(f"[holo2] {merge.key}: revert ticket {filed[1]} filed", file=out)
+    print(f"[holo2] {merge.key}: revert ticket {filed[1]} filed")
     return 0
