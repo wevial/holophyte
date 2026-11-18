@@ -85,9 +85,10 @@ export function mount(container, opts = {}) {
   let drawn = '';
 
   stage.start((dt, rawDt) => {
-    if (!governor.frame(rawDt)) return; // bailed to static fallback
-
     const frozen = reducedMotion.matches || !fluid.config.motion;
+    // A held frame costs nothing, so its slow frames are the page's and must not walk the quality ladder.
+    if (!frozen && !governor.frame(rawDt)) return; // bailed to static fallback
+
     if (!frozen) {
       drawn = '';
       time += dt;

@@ -502,11 +502,17 @@ function plumeBand(width: number, height: number, maxTexture: number, motion: bo
   for (const [side, value] of [["clientWidth", width], ["clientHeight", height]] as const) {
     Object.defineProperty(HTMLCanvasElement.prototype, side, { configurable: true, get: () => value });
   }
-  const plumeHandle = plume.mount(document.createElement("div"), { motion });
+  const container = document.createElement("div");
+  const plumeHandle = plume.mount(container, { motion });
+  let clock = performance.now();
   return {
     record,
-    runFrames: (count: number) => {
-      for (let frame = 0; frame < count; frame += 1) frames.splice(0).forEach((callback) => callback(performance.now() + 16));
+    container,
+    runFrames: (count: number, frameMs = 16) => {
+      for (let frame = 0; frame < count; frame += 1) {
+        clock += frameMs;
+        frames.splice(0).forEach((callback) => callback(clock));
+      }
     },
     restore: () => {
       plumeHandle.destroy();
@@ -534,6 +540,17 @@ test("Plume with Motion off draws the canvas once and then holds that frame acro
     expect(band.record.canvasDraws).toBe(1);
     band.runFrames(8);
     expect(band.record.canvasDraws).toBe(1);
+  } finally {
+    band.restore();
+  }
+});
+
+test("Plume with Motion off holds its one frame and keeps its canvas through half a minute of 20 fps frames", () => {
+  const band = plumeBand(1440, 188, 16384, false);
+  try {
+    band.runFrames(600, 50);
+    expect(band.record.canvasDraws).toBe(1);
+    expect(band.container.querySelectorAll("canvas")).toHaveLength(1);
   } finally {
     band.restore();
   }
