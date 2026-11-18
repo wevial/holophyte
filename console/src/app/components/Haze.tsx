@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { destroyStages } from "../../vendor/spectra/core/stage";
 import * as caustics from "../../vendor/spectra/caustics";
 import * as haze from "../../vendor/spectra/haze";
@@ -6,9 +6,7 @@ import * as hyphae from "../../vendor/spectra/hyphae";
 import * as lava from "../../vendor/spectra/lava";
 import * as plume from "../../vendor/spectra/plume";
 import * as ribbons from "../../vendor/spectra/ribbons";
-import { useCustomThemes, useHazeStrength, useMotion, useTheme, type HeaderEffect } from "../appearance";
-
-type BandEffect = Exclude<HeaderEffect, "none">;
+import { useCustomThemes, useFade, useHazeStrength, useMotion, useTheme, type BandEffect } from "../appearance";
 
 interface Handle {
   config: object;
@@ -36,6 +34,7 @@ function mountEffect(effect: BandEffect, container: HTMLElement, palette: string
 
 export function Haze({ effect }: { effect: BandEffect }) {
   const band = useRef<HTMLDivElement>(null);
+  const floored = useRef<HTMLDivElement>(null);
   const live = useRef<Handle | null>(null);
   const [fallback, setFallback] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -46,10 +45,12 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const { motion, reduced } = useMotion();
   const still = !motion || reduced;
   const { customThemes } = useCustomThemes();
+  const { fade } = useFade(effect);
+  const tall = effect === "lava";
 
   useEffect(() => {
     if (!dark) return;
-    const container = band.current!;
+    const container = (tall ? floored : band).current!;
     let drawing: Handle;
     try {
       drawing = mountEffect(effect, container, palette, motion);
@@ -93,7 +94,11 @@ export function Haze({ effect }: { effect: BandEffect }) {
       ref={band}
       aria-hidden="true"
       data-haze=""
+      style={{ "--haze-fade": `${fade}%` } as CSSProperties}
       className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
-    />
+    >
+      {/* Lava pools its wax at the bottom of its box, so the box runs past the band's clipped edge. */}
+      {tall && <div ref={floored} style={{ position: "absolute", insetInline: 0, top: 0, height: "135%" }} />}
+    </div>
   );
 }

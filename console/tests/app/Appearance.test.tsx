@@ -81,7 +81,7 @@ afterEach(() => {
   clearRoot();
 });
 
-test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and every slider reads 100%", async () => {
+test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and the Text, Grain and Haze strength sliders read 100%", async () => {
   await mount();
   expect(scheme("System").getAttribute("aria-checked")).toBe("true");
   expect(pressed("Light")).toEqual(["Lotus"]);
@@ -236,6 +236,72 @@ test("the Haze strength row shows only while Haze is picked", async () => {
   expect(screen.queryByRole("slider", { name: "Haze strength" })).toBeNull();
   fireEvent.click(tile("Header", "Haze"));
   expect(screen.getByRole("slider", { name: "Haze strength" })).toBeTruthy();
+});
+
+const band = () => screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+
+test("each effect keeps its own Fade: Lava at 40 leaves Haze at 70, and Lava's 40 returns when picked again and after a reload", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  fireEvent.change(slider("Fade"), { target: { value: "40" } });
+  fireEvent.click(tile("Header", "Haze"));
+  expect(slider("Fade").value).toBe("70");
+  fireEvent.click(tile("Header", "Lava"));
+  expect(slider("Fade").value).toBe("40");
+  cleanup();
+  await mount();
+  expect([pressed("Header"), slider("Fade").value]).toEqual([["Lava"], "40"]);
+});
+
+test("Fade at 0, 70 and 100 sets the band's fade to 0%, 70% and 100%, and None shows no Fade row", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Caustics"));
+    const fades = ["0", "70", "100"].map((value) => {
+      fireEvent.change(slider("Fade"), { target: { value } });
+      return band().style.getPropertyValue("--haze-fade");
+    });
+    expect(fades).toEqual(["0%", "70%", "100%"]);
+    fireEvent.click(tile("Header", "None"));
+    expect(screen.queryByRole("slider", { name: "Fade" })).toBeNull();
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("in a dark theme Lava draws in a box inside the band anchored at its top and 135% of its height, and the other effects draw in the band itself", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    const box = band().querySelector("canvas")!.parentElement!;
+    expect([box === band(), band().contains(box), box.style.top, box.style.height]).toEqual([false, true, "0px", "135%"]);
+    const containers = ["Haze", "Caustics", "Plume", "Ribbons", "Hyphae"].map((name) => {
+      fireEvent.click(tile("Header", name));
+      return [name, band().querySelector("canvas")!.parentElement === band()];
+    });
+    expect(containers).toEqual(["Haze", "Caustics", "Plume", "Ribbons", "Hyphae"].map((name) => [name, true]));
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("Reset to default returns the saved fades of Lava and Haze to 70", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  fireEvent.change(slider("Fade"), { target: { value: "40" } });
+  fireEvent.click(tile("Header", "Haze"));
+  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  const hazeFade = slider("Fade").value;
+  fireEvent.click(tile("Header", "Lava"));
+  expect([hazeFade, slider("Fade").value]).toEqual(["70", "70"]);
 });
 
 test("under prefers-reduced-motion the Motion switch is off and disabled", async () => {

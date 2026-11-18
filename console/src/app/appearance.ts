@@ -17,15 +17,22 @@ const MOTION_KEY = "holophyte.next.motion";
 const TEXT_SIZE_KEY = "holophyte.textSize";
 const GRAIN_KEY = "holophyte.grain";
 const HAZE_STRENGTH_KEY = "holophyte.hazeStrength";
+const EFFECTS_KEY = "holophyte.effects";
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 const HEADER_EFFECTS = ["haze", "caustics", "plume", "ribbons", "lava", "hyphae", "none"] as const;
 
 export type HeaderEffect = (typeof HEADER_EFFECTS)[number];
 
+export type BandEffect = Exclude<HeaderEffect, "none">;
+
+type EffectSettings = Partial<Record<BandEffect, { fade: number }>>;
+
 export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
 export const FULL = 100;
+export const FADES = { min: 0, max: 100, step: 5 };
+export const DEFAULT_FADE = 70;
 
 function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
@@ -82,6 +89,41 @@ export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
 export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
+
+const inRange = (value: unknown, range: typeof STRENGTHS): value is number =>
+  Number.isInteger(value) && (value as number) >= range.min && (value as number) <= range.max && (value as number) % range.step === 0;
+
+function parseEffectSettings(raw: string | null): EffectSettings {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw ?? "{}");
+  } catch {
+    return {};
+  }
+  const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, { fade?: unknown } | null>;
+  const settings: EffectSettings = {};
+  for (const effect of HEADER_EFFECTS) {
+    const fade = effect !== "none" && Object.hasOwn(stored, effect) ? stored[effect]?.fade : undefined;
+    if (effect !== "none" && inRange(fade, FADES)) settings[effect] = { fade };
+  }
+  return settings;
+}
+
+let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
+
+function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
+  try {
+    const raw = localStorage.getItem(EFFECTS_KEY);
+    if (raw !== effectSettingsRead[0]) effectSettingsRead = [raw, parseEffectSettings(raw)];
+    return effectSettingsRead[1];
+  } catch {
+    return fallback;
+  }
+}
+
+function writeEffectSettings(settings: EffectSettings): void {
+  writeStored(EFFECTS_KEY, Object.keys(settings).length ? JSON.stringify(settings) : null);
+}
 
 function readMotion(fallback = true): boolean {
   try {
@@ -190,6 +232,7 @@ const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
+const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, () => {});
 const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
@@ -264,6 +307,17 @@ export function useHeaderEffect() {
   return { effect: useSyncExternalStore(effectStore.subscribe, effectStore.getSnapshot), setEffect: effectStore.set };
 }
 
+export function useFade(effect: BandEffect) {
+  const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
+  const setFade = (fade: number) => {
+    const next = { ...effectSettingsStore.getSnapshot() };
+    if (fade === DEFAULT_FADE) delete next[effect];
+    else next[effect] = { fade };
+    effectSettingsStore.set(next);
+  };
+  return { fade: settings[effect]?.fade ?? DEFAULT_FADE, setFade };
+}
+
 export function useMotion() {
   const reduced = useSyncExternalStore(reducedMotion.subscribe, reducedMotion.matches);
   return { motion: useSyncExternalStore(motionStore.subscribe, motionStore.getSnapshot), reduced, setMotion: motionStore.set };
@@ -286,6 +340,7 @@ export function resetAppearance(): void {
   lightPickStore.set("lotus");
   darkPickStore.set("lotus");
   effectStore.set("haze");
+  effectSettingsStore.set({});
   motionStore.set(true);
   textSizeStore.set(FULL);
   grainStore.set(FULL);
