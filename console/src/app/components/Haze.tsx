@@ -43,15 +43,11 @@ function registerTheme(effect: BandEffect, pick: string): string {
   return named;
 }
 
-function hazeIntensity(): number {
-  return Number(token("--haze-strength")) * Number(token("--haze-scale") || 1);
-}
-
 function liveOptions(effect: BandEffect, values: Record<string, KnobValue>, pick: string): Record<string, KnobValue> {
   const options = Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, values[knob.key]!]));
   const palette = paletteKnob(effect).key;
   if (options[palette] === THEME) options[palette] = registerTheme(effect, pick);
-  return effect === "haze" ? { ...options, intensity: hazeIntensity() } : options;
+  return effect === "haze" ? { ...options, intensity: Number(token("--haze-strength")) * Number(token("--haze-scale") || 1) } : options;
 }
 
 function mountEffect(effect: BandEffect, container: HTMLElement, options: Record<string, KnobValue>, motion: boolean): Handle {
