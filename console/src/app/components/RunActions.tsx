@@ -8,7 +8,7 @@ import { PollDepsContext } from "../scope";
 import type { RunPage } from "../run";
 import { Btn } from "./Btn";
 import { ACTIONS_OFF_LINE, BUSY, detailLine } from "./CardActions";
-import { ConfirmDialog, REASON_LABEL } from "./ConfirmDialog";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { RequeueForm } from "./RequeueForm";
 
 const PAUSE = "Pause";
@@ -143,7 +143,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">
             {page.stops} stops now. {kept}, and {run.ticket} waits for you to requeue it.
           </p>
-          <label htmlFor={reasonId} className={REASON_LABEL}>
+          <label htmlFor={reasonId} className="mt-4 block font-sans text-[13px] font-semibold leading-none text-ink">
             Reason · saved with the run
           </label>
           <textarea

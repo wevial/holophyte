@@ -3,8 +3,6 @@ import { createPortal } from "react-dom";
 import { Btn } from "./Btn";
 import { trap } from "./trap";
 
-export const REASON_LABEL = "mt-4 block font-sans text-[13px] font-semibold leading-none text-ink";
-
 /** A modal confirm labelled by its `heading`: focus starts on the cancel
  *  button (`cancelLabel`) and Tab stays inside, Esc or that button calls
  *  `onCancel`, and the `confirm` button (`primary` unless `confirmVariant`)
