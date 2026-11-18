@@ -9,7 +9,7 @@ import type { RunPage } from "../run";
 import { Btn } from "./Btn";
 import { ACTIONS_OFF_LINE, BUSY, detailLine } from "./CardActions";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { escapeCloses, RequeueForm } from "./RequeueForm";
+import { RequeueForm } from "./RequeueForm";
 
 const PAUSE = "Pause";
 const REQUEUE = "Requeue";
@@ -43,6 +43,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const opener = useRef<HTMLButtonElement>(null);
   const requeueOpener = useRef<HTMLButtonElement>(null);
   const labels = labelsOf(page, ticket.isSuccess && ticket.data?.runs[0]?.run === page.detail.run.id);
+  if (requeueing && !page.actions) setRequeueing(false);
   if (labels.length === 0) return null;
   const { run } = page.detail;
   const pending = action.isPending ? action.variables?.label : undefined;
@@ -69,14 +70,14 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
     opener.current?.focus();
   };
   const closeRequeue = () => {
+    const inForm = document.activeElement?.closest("[data-requeue-form]") != null;
     setRequeueing(false);
-    requeueOpener.current?.focus();
+    if (inForm) requeueOpener.current?.focus();
   };
   const requeue = async (body: Record<string, unknown>) => {
     const result = await post(REQUEUE, ROUTES[REQUEUE]!, body, `Requeued ${run.ticket}.`);
     if (result.ok) setRequeueing(false);
   };
-  const open = requeueing && page.actions;
   const pr = run.pr_url == null ? null : prLabel(run.pr_url);
   const close = pr != null && closing;
   const confirmAbort = async () => {
@@ -88,7 +89,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const kept = close ? `${branch} is kept, ${pr} is closed` : pr == null ? `${branch} is kept` : `${branch} and ${pr} are kept`;
 
   return (
-    <div data-run-actions onKeyDown={open ? escapeCloses(closeRequeue, pending === REQUEUE) : undefined} className="flex shrink-0 flex-col items-end gap-2">
+    <div data-run-actions className="flex shrink-0 flex-col items-end gap-2">
       <div className="flex flex-wrap justify-end gap-2">
         {labels.map((label) => (
           <Btn
@@ -105,7 +106,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           </Btn>
         ))}
       </div>
-      {open && (
+      {requeueing && (
         <RequeueForm
           ticket={run.ticket}
           busy={pending === REQUEUE}
@@ -114,7 +115,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           onCancel={closeRequeue}
         />
       )}
-      {refused != null && !aborting && !open && (
+      {refused != null && !aborting && !requeueing && (
         <p role="status" data-action-detail className={`m-0 text-bad ${detailLine}`}>
           {refused}
         </p>

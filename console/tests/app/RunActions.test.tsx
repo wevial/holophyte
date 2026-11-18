@@ -241,7 +241,7 @@ test("a failed run that is its chain's newest offers Requeue, whose form posts t
   expect(actionsBox()).toBeNull();
 });
 
-test("an open requeue form goes away when a status poll turns the host's actions off", async () => {
+test("an open requeue form goes away when a status poll turns the host's actions off, and stays away when they come back", async () => {
   const actions = { on: true };
   const post = fakeFetch({ ok: true, detail: "requeued" });
   await mount(40, { actions, post: post.fetchImpl });
@@ -253,6 +253,14 @@ test("an open requeue form goes away when a status poll turns the host's actions
     await settle();
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(formOpen()).toBe(false);
+  actions.on = true;
+  await act(async () => {
+    await client!.refetchQueries();
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(within(actionsBox()!).getByRole("button", { name: "Requeue" }).hasAttribute("disabled")).toBe(false);
   expect(formOpen()).toBe(false);
   expect(post.seen).toEqual([]);
 });

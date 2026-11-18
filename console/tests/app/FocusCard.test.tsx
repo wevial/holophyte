@@ -393,7 +393,7 @@ test("the requeue form posts a typed note as note, or as amend with no note when
   expect(await bodyFor(true)).toEqual([{ ticket: "DEMO-11", amend: "the flaky test is fixed on main" }]);
 });
 
-test("Cancel, or Escape from the note or the card's Open run, closes the requeue form and posts nothing", async () => {
+test("Cancel, or Escape from the note, the card's Open run or the row's toggle, closes the requeue form and posts nothing", async () => {
   const action = fakeFetch({ ok: true, detail: "requeued" });
   await mount(daemon({ items: [failedAt()], actions: true, act: action.fetchImpl }));
   await press(inDetail("Requeue"));
@@ -406,7 +406,24 @@ test("Cancel, or Escape from the note or the card's Open run, closes the requeue
   await press(inDetail("Requeue"));
   await act(async () => void fireEvent.keyDown(within(openDetail()).getByRole("link", { name: "Open run" }), { key: "Escape" }));
   expect(requeueForm() == null).toBe(true);
+  await press(inDetail("Requeue"));
+  await act(async () => void fireEvent.keyDown(toggleOf("DEMO-11"), { key: "Escape" }));
+  expect(requeueForm() == null).toBe(true);
   expect(action.seen).toEqual([]);
+});
+
+test("a requeue form closed by the host turning actions off stays closed when they come back on", async () => {
+  const state: Daemon = { items: [failedAt()], actions: true };
+  await mount(daemon(state));
+  await press(inDetail("Requeue"));
+  typeNote("not yet");
+  state.actions = false;
+  await repoll();
+  expect(requeueForm() == null).toBe(true);
+  state.actions = true;
+  await repoll();
+  expect(within(openDetail()).getByRole("button", { name: "Requeue" })).toBeTruthy();
+  expect(requeueForm() == null).toBe(true);
 });
 
 test("a refused requeue keeps the form open with the daemon's detail in it and says nothing in the toast", async () => {

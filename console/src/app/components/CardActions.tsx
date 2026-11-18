@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useContext, useRef, useState, type KeyboardEvent } from "react";
 import { NO_PR_URL } from "./RowActions";
 import { ReasonAction } from "./ReasonAction";
-import { escapeCloses, RequeueForm } from "./RequeueForm";
+import { RequeueForm } from "./RequeueForm";
 import { NOT_WIRED, ROOT_LABELS, ROUTES } from "../../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME, RUN_SWEEP, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
@@ -195,9 +195,11 @@ export function CardActions({
     setMerging(false);
     mergeRef.current?.focus();
   };
+  if (requeueing && !on) setRequeueing(false);
   const closeRequeue = () => {
+    const inForm = document.activeElement?.closest("[data-requeue-form]") != null;
     setRequeueing(false);
-    (requeueRef.current ?? moreRef.current)?.focus();
+    if (inForm) (requeueRef.current ?? moreRef.current)?.focus();
   };
   const requeue = async (body: Record<string, unknown>) => {
     const result = await post(REQUEUE, ROUTES[REQUEUE]!, body);
@@ -228,7 +230,7 @@ export function CardActions({
   };
 
   return (
-    <div data-card-actions onKeyDown={requeueing ? escapeCloses(closeRequeue, pending === REQUEUE) : undefined} className={`${only == null ? "mt-[22px] " : ""}flex flex-col gap-3`}>
+    <div data-card-actions className={`${only == null ? "mt-[22px] " : ""}flex flex-col gap-3`}>
       <div className="flex flex-wrap items-center gap-2">
         {on && primary != null && button(primary, primary === ABORT ? "danger" : "primary")}
         {on && only == null && more.length > 0 && (

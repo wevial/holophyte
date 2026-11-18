@@ -1,20 +1,11 @@
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { requeueBody } from "../../lib/actions";
 import { Btn } from "./Btn";
 import { detailLine } from "./CardActions";
 
 const REQUEUE_NOTE = "Note";
 const REVIEWERS_SEE = "Reviewers see this";
-
-export function escapeCloses(close: () => void, busy: boolean) {
-  return (event: KeyboardEvent) => {
-    if (event.key !== "Escape" || busy || event.defaultPrevented) return;
-    event.preventDefault();
-    event.stopPropagation();
-    close();
-  };
-}
 
 export function RequeueForm({ ticket, busy, refused, onRequeue, onCancel }: {
   ticket: string;
@@ -25,6 +16,20 @@ export function RequeueForm({ ticket, busy, refused, onRequeue, onCancel }: {
 }) {
   const [text, setText] = useState("");
   const [amend, setAmend] = useState(false);
+  const cancel = useRef(onCancel);
+  cancel.current = onCancel;
+  const pending = useRef(busy);
+  pending.current = busy;
+  useEffect(() => {
+    // Captured so a peek or popover that also closes on Escape sees it handled.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || pending.current || document.querySelector('[aria-modal="true"]')) return;
+      event.preventDefault();
+      cancel.current();
+    };
+    document.addEventListener("keydown", escape, true);
+    return () => document.removeEventListener("keydown", escape, true);
+  }, []);
   return (
     <div role="group" aria-label={`Requeue ${ticket}`} data-requeue-form className="flex w-full max-w-[520px] flex-col gap-3">
       <textarea
