@@ -4,7 +4,7 @@ import type { useAction } from "../actions";
 import { aboutWords, defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks, type ScoutsSearch } from "../scouts";
 import { Btn } from "./Btn";
 import { FoldChevron } from "./icons";
-import { Picker, type PickerOption } from "./Picker";
+import { Picker } from "./Picker";
 import { CloseGlyph } from "./ScoutThread";
 import { Segmented } from "./Segmented";
 import { INPUT } from "./TicketFields";
@@ -75,7 +75,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const routeOptions = (routes: ScoutRoute[]): PickerOption[] => routes.map((route) => ({ value: route.name, label: route.name }));
+const routeOptions = (routes: ScoutRoute[]) => routes.map((route) => ({ value: route.name, label: route.name }));
 
 function NumberField({ id, label, value, least, most, onChange }: {
   id: string;
