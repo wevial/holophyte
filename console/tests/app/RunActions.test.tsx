@@ -204,13 +204,31 @@ test("navigating to a cached run closes Abort and requires a fresh reason for th
   expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 13, close: false, note: "reason for thirteen" } }]);
 });
 
-test("a failed run that is its chain's newest offers Requeue alone and shows a refusal under it; a merged run offers nothing", async () => {
-  const post = fakeFetch({ ok: false, detail: "DEMO-40 has a live run" });
-  await mount(40, { post: post.fetchImpl });
-  expect(labels()).toEqual(["Requeue"]);
+test("a failed run that is its chain's newest offers Requeue, whose form posts the same bodies and shows a refusal in it; a merged run offers nothing", async () => {
+  const bodiesFor = async (note: string, amend: boolean) => {
+    const post = fakeFetch({ ok: true, detail: "requeued" });
+    await mount(40, { post: post.fetchImpl });
+    expect(labels()).toEqual(["Requeue"]);
+    await press("Requeue");
+    const form = screen.getByRole("group", { name: "Requeue DEMO-40" });
+    expect(post.seen).toEqual([]);
+    await act(async () => void fireEvent.change(within(form).getByRole("textbox", { name: "Note" }), { target: { value: note } }));
+    if (amend) await act(async () => void fireEvent.click(within(form).getByRole("switch", { name: "Reviewers see this" })));
+    await press("Requeue", form);
+    cleanup();
+    return posted(post.seen);
+  };
+  const requeue = (body: object) => [{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-40", ...body } }];
+  expect(await bodiesFor("", false)).toEqual(requeue({}));
+  expect(await bodiesFor("retry after the fix", false)).toEqual(requeue({ note: "retry after the fix" }));
+  expect(await bodiesFor("retry after the fix", true)).toEqual(requeue({ amend: "retry after the fix" }));
+
+  const refused = fakeFetch({ ok: false, detail: "DEMO-40 has a live run" });
+  await mount(40, { post: refused.fetchImpl });
   await press("Requeue");
-  expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-40" } }]);
-  expect(actionsBox()!.querySelector("[data-action-detail]")?.textContent).toBe("DEMO-40 has a live run");
+  const form = screen.getByRole("group", { name: "Requeue DEMO-40" });
+  await press("Requeue", form);
+  expect(within(form).getByRole("status").textContent).toBe("DEMO-40 has a live run");
   expect(toast()).toBe("");
   cleanup();
   await mount(9);

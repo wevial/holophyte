@@ -36,6 +36,14 @@ export function actionBody(label: string, ticket: string | null): Record<string,
   return label === "Requeue" && ticket != null ? { ticket } : {};
 }
 
+/** The body a requeue form posts for `ticket`: its `text` as `note`, or as
+ *  `amend` when the reviewers should see it, and the ticket alone when blank. */
+export function requeueBody(ticket: string, text: string, amend: boolean): Record<string, unknown> {
+  const said = text.trim();
+  if (said === "") return { ticket };
+  return amend ? { ticket, amend: said } : { ticket, note: said };
+}
+
 /** The title of a button whose daemon has no `[serve] actions = true`. */
 export const ACTIONS_OFF = "This daemon has not opted into actions ([serve] actions = true)";
 /** The title of a label with no daemon route yet. */

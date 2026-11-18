@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useContext, useRef, useState, type KeyboardEvent } from "react";
 import { NO_PR_URL } from "./RowActions";
 import { ReasonAction } from "./ReasonAction";
+import { RequeueForm } from "./RequeueForm";
 import { actionBody, NOT_WIRED, ROOT_LABELS, ROUTES } from "../../lib/actions";
 import { ABORT, ABORT_CLOSE, OPEN_PR, RESUME, RUN_SWEEP, type NeedsYouEntry, type PrFacts } from "../../lib/attention";
 import { projectName } from "../../lib/derive";
@@ -25,7 +26,8 @@ const MERGE = "Merge";
 const MERGE_BYPASS = "Merge without review";
 const isMerge = (label: string | undefined) => label === MERGE || label === MERGE_BYPASS;
 const PR_COMMENT = "Comment on the PR (optional)";
-const REASONED = new Set([RESUME, ABORT, ABORT_CLOSE]);
+const REQUEUE = "Requeue";
+const REASONED = new Set([RESUME, ABORT, ABORT_CLOSE, REQUEUE]);
 
 export const BUSY: Record<string, string> = {
   Pause: "Pausing…",
@@ -59,7 +61,7 @@ function saidFor(label: string, item: AttentionItem, host: Host): string {
   const ticket = str(item.ticket);
   const run = num(item.run);
   switch (label) {
-    case "Requeue":
+    case REQUEUE:
       return `Requeued ${ticket}.`;
     case RESUME:
       return `Resumed ${ticket}.`;
@@ -142,9 +144,11 @@ export function CardActions({
   const [reasoning, setReasoning] = useState<string | null>(null);
   const [prComment, setPrComment] = useState("");
   const [merging, setMerging] = useState(false);
+  const [requeueing, setRequeueing] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const mergeRef = useRef<HTMLButtonElement>(null);
+  const requeueRef = useRef<HTMLButtonElement>(null);
   const { item } = entry;
   if (item.kind === UNREACHABLE || host == null) return null;
   const run = num(item.run);
@@ -172,8 +176,8 @@ export function CardActions({
     if (isMerge(label)) return run == null ? undefined : () => { action.reset(); setMerging(true); };
     if (label === RESUME) return ticket == null ? undefined : () => setReasoning(label);
     if (label === ABORT || label === ABORT_CLOSE) return run == null ? undefined : () => setReasoning(label);
+    if (label === REQUEUE) return ticket == null ? undefined : () => { action.reset(); setRequeueing(true); };
     const route = ROUTES[label];
-    if (label === "Requeue" && ticket == null) return undefined;
     return route == null ? undefined : () => void post(label, route, actionBody(label, ticket));
   };
   const titleOf = (label: string) => (label === OPEN_PR ? (prUrl == null ? NO_PR_URL : undefined) : ROUTES[label] == null && label !== RESUME && !isMerge(label) ? NOT_WIRED : undefined);
@@ -191,6 +195,14 @@ export function CardActions({
     setMerging(false);
     mergeRef.current?.focus();
   };
+  const closeRequeue = () => {
+    setRequeueing(false);
+    (requeueRef.current ?? moreRef.current)?.focus();
+  };
+  const requeue = async (body: Record<string, unknown>) => {
+    const result = await post(REQUEUE, ROUTES[REQUEUE]!, body);
+    if (result.ok) setRequeueing(false);
+  };
   const confirmMerge = async () => {
     if (run == null) return;
     const result = await post(merge, ROUTES[MERGE]!, bypassReview ? { run, bypass_review: true } : { run });
@@ -202,7 +214,7 @@ export function CardActions({
     return (
       <Btn
         key={label}
-        ref={isMerge(label) ? mergeRef : undefined}
+        ref={isMerge(label) ? mergeRef : label === REQUEUE ? requeueRef : undefined}
         variant={variant}
         busy={pending === label}
         busyLabel={BUSY[label]}
@@ -261,6 +273,15 @@ export function CardActions({
             </label>
           )}
         </ReasonAction>
+      )}
+      {on && requeueing && ticket != null && (
+        <RequeueForm
+          ticket={ticket}
+          busy={pending === REQUEUE}
+          refused={action.data != null && !action.data.ok && last === REQUEUE ? action.data.detail : null}
+          onRequeue={(body) => void requeue(body)}
+          onCancel={closeRequeue}
+        />
       )}
       {refused != null && (
         <p role="status" data-action-detail className={`text-bad ${detailLine}`}>

@@ -352,7 +352,11 @@ test("a host without actions draws no button in the open row, says so, and still
   expect(within(openDetail()).getByRole("link", { name: "Open run" })).toBeTruthy();
 });
 
-test("a taken requeue says so in the toast and re-reads the fleet at once; a refused one shows the daemon's reason in the open row", async () => {
+const requeueForm = () => within(openDetail()).queryByRole("group", { name: "Requeue DEMO-11" });
+const inForm = (name: string) => within(requeueForm()!).getByRole("button", { name }) as HTMLButtonElement;
+const typeNote = (text: string) => fireEvent.change(within(requeueForm()!).getByRole("textbox", { name: "Note" }), { target: { value: text } });
+
+test("Requeue opens a form that posts nothing until its own Requeue, then toasts and re-reads the fleet", async () => {
   const asked: string[] = [];
   const state: Daemon = { items: [failedAt(), blocked("DEMO-4", 4, HOUR)], actions: true, asked };
   const taken = fakeFetch({ ok: true, detail: "requeued" });
@@ -363,17 +367,54 @@ test("a taken requeue says so in the toast and re-reads the fleet at once; a ref
   await mount(daemon(state));
   const reads = attentionReads(asked);
   await press(inDetail("Requeue"));
+  expect(requeueForm()).not.toBeNull();
+  expect(taken.seen).toEqual([]);
+  await press(inForm("Requeue"));
   expect(taken.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-11" } }]);
   expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe("Requeued DEMO-11.");
   expect(attentionReads(asked)).toBeGreaterThan(reads);
   expect(openRow().dataset.waitRow).toBe("DEMO-4");
-  cleanup();
+});
 
+test("the requeue form posts a typed note as note, or as amend with no note when Reviewers see this is on", async () => {
+  const bodyFor = async (amend: boolean) => {
+    const action = fakeFetch({ ok: true, detail: "requeued" });
+    await mount(daemon({ items: [failedAt()], actions: true, act: action.fetchImpl }));
+    await press(inDetail("Requeue"));
+    typeNote("  the flaky test is fixed on main  ");
+    const reviewers = within(requeueForm()!).getByRole("switch", { name: "Reviewers see this" });
+    expect(reviewers.getAttribute("aria-checked")).toBe("false");
+    if (amend) await press(reviewers);
+    await press(inForm("Requeue"));
+    cleanup();
+    return action.seen.map(({ body }) => body);
+  };
+  expect(await bodyFor(false)).toEqual([{ ticket: "DEMO-11", note: "the flaky test is fixed on main" }]);
+  expect(await bodyFor(true)).toEqual([{ ticket: "DEMO-11", amend: "the flaky test is fixed on main" }]);
+});
+
+test("Cancel or Escape closes the requeue form and posts nothing", async () => {
+  const action = fakeFetch({ ok: true, detail: "requeued" });
+  await mount(daemon({ items: [failedAt()], actions: true, act: action.fetchImpl }));
+  await press(inDetail("Requeue"));
+  typeNote("not yet");
+  await press(inForm("Cancel"));
+  expect(requeueForm()).toBeNull();
+  await press(inDetail("Requeue"));
+  await act(async () => void fireEvent.keyDown(within(requeueForm()!).getByRole("textbox", { name: "Note" }), { key: "Escape" }));
+  expect(requeueForm()).toBeNull();
+  expect(action.seen).toEqual([]);
+});
+
+test("a refused requeue keeps the form open with the daemon's detail in it and says nothing in the toast", async () => {
   const refused = fakeFetch({ ok: false, detail: "ticket DEMO-11 has a live run" });
   await mount(daemon({ items: [failedAt()], actions: true, act: refused.fetchImpl }));
   await press(inDetail("Requeue"));
+  typeNote("the reviewers should accept the shim");
+  await press(within(requeueForm()!).getByRole("switch", { name: "Reviewers see this" }));
+  await press(inForm("Requeue"));
   expect(openRow().dataset.waitRow).toBe("DEMO-11");
-  expect(within(openDetail()).getByRole("status").textContent).toBe("ticket DEMO-11 has a live run");
+  expect(within(requeueForm()!).getByRole("status").textContent).toBe("ticket DEMO-11 has a live run");
   expect(toast()).toBe("");
 });
 
