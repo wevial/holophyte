@@ -146,7 +146,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
         f"{ticket}\n\n"
         + _verify_brief(verify_cmd, ok, out)
-        + criteria_brief(criteria)
+        + criteria_brief(criteria, wt=wt)
         + witness_once.reviewer_brief(criteria)
         + witness
         + stale_approval_brief(stale)
