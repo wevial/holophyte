@@ -246,6 +246,7 @@ test("a taken Requeue posts the ticket once and swaps the box for the toast's se
   const action = fakeFetch({ ok: true, detail: "requeued" });
   await peekAt("DEMO-11", action.fetchImpl);
   await press(within(askBox()!).getByRole("button", { name: "Requeue" }));
+  await press(within(within(askBox()!).getByRole("group", { name: "Requeue DEMO-11" })).getByRole("button", { name: "Requeue" }));
 
   expect(action.seen.map((seen) => [seen.url, seen.method, seen.body])).toEqual([[`${DEMO}/actions/requeue`, "POST", { ticket: "DEMO-11" }]]);
   expect(askBox()).toBeNull();
@@ -253,13 +254,15 @@ test("a taken Requeue posts the ticket once and swaps the box for the toast's se
   expect(toast()).toBe("Requeued DEMO-11.");
 });
 
-test("a refused Requeue keeps the box, shows the daemon's detail and enables Requeue again", async () => {
+test("a refused Requeue keeps the box and its form, shows the daemon's detail and enables Requeue again", async () => {
   await peekAt("DEMO-11", fakeFetch({ ok: false, detail: "ticket DEMO-11 has a live run" }).fetchImpl);
   await press(within(askBox()!).getByRole("button", { name: "Requeue" }));
+  await press(within(within(askBox()!).getByRole("group", { name: "Requeue DEMO-11" })).getByRole("button", { name: "Requeue" }));
 
   const box = askBox()!;
-  expect(within(box).getByText("ticket DEMO-11 has a live run")).toBeTruthy();
-  expect((within(box).getByRole("button", { name: "Requeue" }) as HTMLButtonElement).disabled).toBe(false);
+  const form = within(box).getByRole("group", { name: "Requeue DEMO-11" });
+  expect(within(form).getByText("ticket DEMO-11 has a live run")).toBeTruthy();
+  expect((within(form).getByRole("button", { name: "Requeue" }) as HTMLButtonElement).disabled).toBe(false);
   expect(peek()!.querySelector("[data-peek-acted]")).toBeNull();
   expect(toast()).toBe("");
 });
