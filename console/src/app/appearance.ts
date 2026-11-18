@@ -103,7 +103,7 @@ function parseEffectSettings(raw: string | null): EffectSettings {
   const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, { fade?: unknown } | null>;
   const settings: EffectSettings = {};
   for (const effect of HEADER_EFFECTS) {
-    const fade = effect !== "none" && Object.hasOwn(stored, effect) ? stored[effect]?.fade : undefined;
+    const fade = stored[effect]?.fade;
     if (effect !== "none" && inRange(fade, FADES)) settings[effect] = { fade };
   }
   return settings;
