@@ -3,6 +3,7 @@ import fcntl
 import getpass
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -525,6 +526,7 @@ def _require_clean(worktree, branch, refused):
 
 
 NO_REF = "0" * 40
+URL_USERINFO = re.compile(r"://[^/@\s]+@")
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 
 
@@ -585,7 +587,7 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
     fetched = _origin_tip(repo, "origin", head)
     pushed = fetched if url in ("", _git(
         repo, "remote", "get-url", "origin").stdout.strip()) \
-        else _origin_tip(repo, url, head)
+        else _origin_tip(repo, url, head, "origin's push URL")
     rewinds = {remote: _needs_rewind(repo, branch, remote, sha, tip, pull)
                for remote in (fetched, pushed)}
     if rewinds[pushed]:
@@ -603,11 +605,11 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
                 " claim would not fetch the reviewed commit")
 
 
-def _origin_tip(repo, remote, head):
+def _origin_tip(repo, remote, head, label="origin"):
     listed = _git(repo, "ls-remote", remote, head)
     if listed.returncode != 0:
-        raise _StepFailed(f"git ls-remote {remote} failed:"
-                          f" {listed.stderr.strip()}")
+        raise _StepFailed(f"git ls-remote of {label} failed: "
+                          + URL_USERINFO.sub("://", listed.stderr.strip()))
     for line in listed.stdout.splitlines():
         sha, _, ref = line.partition("\t")
         if ref == head:

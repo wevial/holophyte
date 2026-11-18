@@ -1086,6 +1086,19 @@ class SweptApproveCliTests(unittest.TestCase):
             self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
                              self.wip)
 
+    def test_an_unreachable_push_url_refuses_without_its_credentials(self):
+        self.branch_with_wip()
+        git(self.repo, "remote", "add", "origin",
+            str(self.origin("origin.git", self.wip)))
+        git(self.repo, "remote", "set-url", "--push", "origin",
+            "http://bot:s3cret-token@127.0.0.1:9/repo.git")
+        self.sweep(pull=PULL)
+
+        message = self.refused("--note", "ok")
+
+        self.assertIn("git ls-remote of origin's push URL failed", message)
+        self.assertNotIn("s3cret-token", message)
+
     def test_a_pull_request_with_no_origin_to_rewind_refuses(self):
         self.branch_with_wip()
         renamed = self.origin("upstream.git", self.wip)
