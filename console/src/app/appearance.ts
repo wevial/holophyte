@@ -52,11 +52,14 @@ function writeStored(key: string, value: string | null): void {
   }
 }
 
+const inRange = (value: unknown, range: typeof STRENGTHS): value is number =>
+  Number.isInteger(value) && (value as number) >= range.min && (value as number) <= range.max && (value as number) % range.step === 0;
+
 function readPercent(key: string, range: typeof STRENGTHS) {
   return (fallback = FULL): number => {
     try {
       const stored = Number(localStorage.getItem(key) ?? FULL);
-      return Number.isInteger(stored) && stored >= range.min && stored <= range.max && stored % range.step === 0 ? stored : FULL;
+      return inRange(stored, range) ? stored : FULL;
     } catch {
       return fallback;
     }
@@ -89,9 +92,6 @@ export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
 export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
-
-const inRange = (value: unknown, range: typeof STRENGTHS): value is number =>
-  Number.isInteger(value) && (value as number) >= range.min && (value as number) <= range.max && (value as number) % range.step === 0;
 
 function parseEffectSettings(raw: string | null): EffectSettings {
   let parsed: unknown;
