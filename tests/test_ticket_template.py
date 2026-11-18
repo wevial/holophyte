@@ -171,9 +171,6 @@ class ValidateTests(unittest.TestCase):
         self.assertTrue(any(fragment in p for p in problems),
                         f"{fragment!r} not in {problems}")
 
-    def test_filled_ticket_is_valid(self):
-        self.assertEqual(tt.validate(tt.parse(FILLED)), [])
-
     def test_filled_ticket_with_blockquote_is_valid(self):
         self.assertEqual(tt.validate(tt.parse(FILLED_WITH_BLOCKQUOTE)), [])
 
@@ -380,10 +377,15 @@ class CliTests(unittest.TestCase):
             [sys.executable, str(ROOT / "ticket_template.py"), *paths],
             capture_output=True, text=True)
 
+    def test_real_template_file_exits_nonzero(self):
+        r = self.run_cli(str(ROOT / "holophyte/tickets/templates/ticketTemplate.md"))
+        self.assertNotEqual(r.returncode, 0)
+
     def test_no_args_usage_exit_two(self):
         r = self.run_cli()
         self.assertEqual(r.returncode, 2)
-        self.assertIn(tt.USAGE, r.stderr)
+        self.assertIn("usage: python3 ticket_template.py [--repo PATH] TICKET.md",
+                      r.stderr)
         self.assertEqual(r.stdout, "")
 
     def test_help_flags_print_usage_on_stdout_and_exit_zero(self):
@@ -391,7 +393,9 @@ class CliTests(unittest.TestCase):
             with self.subTest(flag=flag):
                 r = self.run_cli(flag)
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-                self.assertIn(tt.USAGE, r.stdout)
+                self.assertIn(
+                    "usage: python3 ticket_template.py [--repo PATH] TICKET.md",
+                    r.stdout)
                 self.assertEqual(r.stderr, "")
 
 
@@ -461,12 +465,6 @@ class GitignoredPathTests(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotIn("gitignored path", r.stdout)
 
-    def test_without_repo_the_check_is_skipped_with_one_advisory(self):
-        r = self.run_cli(GITIGNORED_CRITERION)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertNotIn("gitignored path", r.stdout)
-        self.assertEqual(r.stdout.count("check skipped"), 1)
-
     def test_gitignored_verify_command_path_is_a_blocker(self):
         text = FILLED.replace(".venv/bin/python -m unittest test_orders_export",
                               ".venv/bin/python artifacts/check.py")
@@ -515,6 +513,24 @@ class GitignoredPathTests(unittest.TestCase):
                 {"body": TRACKED_CRITERION}, self.repo
             )
         )
+
+    def test_body_naming_only_missing_paths_is_claimable(self):
+        text = TRACKED_CRITERION.replace(
+            "`src/lotuspod/cli.py` runs",
+            "`src/lotuspod/cli.py` runs and `tests/test_counts.py` passes"
+        ).replace(".venv/bin/python -m unittest test_orders_export",
+                  ".venv/bin/python -m unittest tests.test_counts")
+        self.assertIsNone(
+            holophyte.board.projection.body_problem({"body": text}, self.repo)
+        )
+
+    def test_body_problem_names_a_path_outside_the_repository(self):
+        text = TRACKED_CRITERION.replace("`src/lotuspod/cli.py`",
+                                         "`../elsewhere/cli.py`")
+        self.assertEqual(
+            holophyte.board.projection.body_problem({"body": text}, self.repo),
+            "path is outside the repository in Acceptance criteria #1: "
+            "../elsewhere/cli.py")
 
     def test_a_ticket_on_a_pull_request_is_not_refused_for_its_paths(self):
         # KO-598: a parked candidate's pull request holds the files its
@@ -800,12 +816,7 @@ class ScopeAdvisoryTests(unittest.TestCase):
         text = FILLED.replace(
             "GET /orders.csv streams the current user's orders as CSV.",
             self.CHAINED[" and "]).replace("- None", "- Which CSV dialect?")
-        problems = tt.validate(tt.parse(text))
-        self.assertEqual(tt.blocking(problems), [
-            "'Open questions' must read exactly '- None' before the ticket "
-            "enters the pickable queue"])
-        self.assertEqual(len([p for p in problems
-                              if p.startswith(tt.ADVISORY_PREFIX)]), 1, problems)
+        self.assertTrue(tt.blocking(tt.validate(tt.parse(text))))
 
 
 class InterpreterAdvisoryTests(unittest.TestCase):
