@@ -74,7 +74,7 @@ function Detail({ entry, host, now, title, id }: { entry: NeedsYouEntry; host: H
   const seen = num(item.last_seen_ms);
   const sentence = "max-w-[75ch] break-words font-read text-[16px] leading-[1.5] text-ink";
   return (
-    <div id={id} data-need-detail className="flex flex-col gap-3 pt-1 pb-4 pl-[38px] pr-4 max-[720px]:pr-3 [&>[data-card-actions]]:mt-0">
+    <div id={id} data-need-detail className="flex flex-col gap-3 pt-1 pb-4 pl-[calc(1.375rem+16px)] pr-4 max-[720px]:pr-3 [&>[data-card-actions]]:mt-0">
       {item.kind === UNREACHABLE ? (
         <p className={sentence}>{description.body} {seen == null ? "It never answered." : `Last seen ${formatAge(now - seen)} ago.`}</p>
       ) : item.kind === "blocked" ? (

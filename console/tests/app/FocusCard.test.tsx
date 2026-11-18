@@ -247,7 +247,9 @@ test("a row closed while it is still expanding keeps its detail, inert, through 
   fireEvent.click(toggleOf("B-2"));
   expect(detailOf()).not.toBeNull();
   expect((toggleOf("B-2").nextElementSibling as HTMLElement).inert).toBe(true);
-  await act(() => new Promise((resolve) => setTimeout(resolve, 250)));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+  expect(detailOf()).not.toBeNull();
+  await act(() => new Promise((resolve) => setTimeout(resolve, 150)));
   expect(detailOf()).toBeNull();
 });
 
