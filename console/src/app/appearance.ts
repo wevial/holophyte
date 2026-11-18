@@ -53,7 +53,7 @@ function writeStored(key: string, value: string | null): void {
 }
 
 const inRange = (value: unknown, range: typeof STRENGTHS): value is number =>
-  Number.isInteger(value) && (value as number) >= range.min && (value as number) <= range.max && (value as number) % range.step === 0;
+  typeof value === "number" && Number.isInteger(value) && value >= range.min && value <= range.max && value % range.step === 0;
 
 function readPercent(key: string, range: typeof STRENGTHS) {
   return (fallback = FULL): number => {
