@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import http.server
 import io
 import json
 import os
@@ -23,6 +24,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -1086,18 +1088,52 @@ class SweptApproveCliTests(unittest.TestCase):
             self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
                              self.wip)
 
-    def test_an_unreachable_push_url_refuses_without_its_credentials(self):
+    def http_remote(self, backend):
+        """A loopback HTTP remote taking a token in the URL's query:
+        `git http-backend` over `backend`, which serves fetches and refuses
+        an anonymous push, or 403 for all."""
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), _GitHttp)
+        server.backend = backend
+        loopback = patch.dict(os.environ, {"no_proxy": "127.0.0.1",
+                                           "NO_PROXY": "127.0.0.1"})
+        loopback.start()
+        self.addCleanup(loopback.stop)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"127.0.0.1:{server.server_address[1]}"
+
+    def test_a_refused_push_url_probe_prints_no_token(self):
         self.branch_with_wip()
         git(self.repo, "remote", "add", "origin",
             str(self.origin("origin.git", self.wip)))
+        host = self.http_remote(None)
         git(self.repo, "remote", "set-url", "--push", "origin",
-            "http://bot:s3cret-token@127.0.0.1:9/repo.git")
+            f"http://{host}/repo.git?access_token=s3cret-token")
         self.sweep(pull=PULL)
 
         message = self.refused("--note", "ok")
 
         self.assertIn("git ls-remote of origin's push URL failed", message)
         self.assertNotIn("s3cret-token", message)
+
+    def test_a_rejected_rewind_push_prints_no_token(self):
+        self.branch_with_wip()
+        git(self.repo, "remote", "add", "origin",
+            str(self.origin("origin.git", self.wip)))
+        served = self.origin("served.git", self.wip)
+        host = self.http_remote(served.parent)
+        git(self.repo, "remote", "set-url", "--push", "origin",
+            f"http://{host}/served.git?access_token=s3cret-token")
+        self.sweep(pull=PULL)
+
+        message = self.refused("--note", "ok")
+
+        self.assertIn("git push origin failed", message)
+        self.assertNotIn("s3cret-token", message)
+        self.assertEqual(git(served, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
 
     def test_a_pull_request_with_no_origin_to_rewind_refuses(self):
         self.branch_with_wip()
@@ -1247,6 +1283,45 @@ MET_BUT_CHANGES = Reply(
     "Blocker: the scripted change is incomplete.\n"
     "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
     "VERDICT: REQUEST_CHANGES")
+
+
+class _GitHttp(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        self.serve(b"")
+
+    def do_POST(self):
+        self.serve(self.rfile.read(int(self.headers["Content-Length"] or 0)))
+
+    def serve(self, body):
+        if self.server.backend is None:
+            self.send_error(403)
+            return
+        path, _, query = self.path.partition("?")
+        token, _, rest = query.partition("/")
+        if rest:
+            path, _, query = f"{path}/{rest}".replace("&", "?", 1
+                                                      ).partition("?")
+        cgi = subprocess.run(
+            ["git", "http-backend"], input=body, capture_output=True,
+            env={"PATH": os.environ["PATH"], "GIT_HTTP_EXPORT_ALL": "1",
+                 "GIT_PROJECT_ROOT": str(self.server.backend),
+                 "PATH_INFO": path, "QUERY_STRING": query,
+                 "REQUEST_METHOD": self.command,
+                 "CONTENT_TYPE": self.headers["Content-Type"] or "",
+                 "CONTENT_LENGTH": str(len(body))})
+        head, _, payload = cgi.stdout.partition(b"\r\n\r\n")
+        headers = [line.split(":", 1) for line in head.decode().splitlines()]
+        status = dict((k.lower(), v.strip()) for k, v in headers).get(
+            "status", "200")
+        self.send_response(int(status.split()[0]))
+        for key, value in headers:
+            if key.lower() != "status":
+                self.send_header(key, value.strip())
+        self.end_headers()
+        self.wfile.write(payload)
 
 
 class SweptApproveLoopTests(LoopFixture):

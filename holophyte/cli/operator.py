@@ -422,8 +422,10 @@ def _reviewed_commit(conn, run_id):
 
 
 def _git(repo, *args):
-    return subprocess.run(["git", *args], cwd=repo, capture_output=True,
+    done = subprocess.run(["git", *args], cwd=repo, capture_output=True,
                           text=True, errors="replace", env=git_environment())
+    done.stderr = REMOTE_URL.sub("<url>", done.stderr)
+    return done
 
 
 def _checkout_of(repo, branch):
@@ -526,7 +528,7 @@ def _require_clean(worktree, branch, refused):
 
 
 NO_REF = "0" * 40
-URL_USERINFO = re.compile(r"://[^/@\s]+@")
+REMOTE_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"]+")
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 
 
@@ -608,8 +610,8 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
 def _origin_tip(repo, remote, head, label="origin"):
     listed = _git(repo, "ls-remote", remote, head)
     if listed.returncode != 0:
-        raise _StepFailed(f"git ls-remote of {label} failed: "
-                          + URL_USERINFO.sub("://", listed.stderr.strip()))
+        raise _StepFailed(f"git ls-remote of {label} failed:"
+                          f" {listed.stderr.strip()}")
     for line in listed.stdout.splitlines():
         sha, _, ref = line.partition("\t")
         if ref == head:
