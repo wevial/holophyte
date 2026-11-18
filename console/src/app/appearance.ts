@@ -47,12 +47,13 @@ function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   }
 }
 
-function writeStored(key: string, value: string | null): void {
+function writeStored(key: string, value: string | null): boolean {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
+    return true;
   } catch {
-    return;
+    return false;
   }
 }
 
@@ -159,7 +160,11 @@ function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
 
 function writeEffectSettings(settings: EffectSettings): void {
   const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
-  writeStored(EFFECTS_KEY, raw);
+  if (writeStored(EFFECTS_KEY, raw)) {
+    unsavedValues = new Map();
+    writeStored(HAZE_STRENGTH_KEY, null);
+    return;
+  }
   let stored: EffectSettings = {};
   try {
     stored = readStoredEffectSettings();
@@ -190,9 +195,10 @@ function moveSavedHazeStrength(): void {
     if (legacy === null) return;
     const strength = Number(legacy);
     const settings = readStoredEffectSettings();
-    if (inRange(strength, STRENGTHS) && strength !== FULL && settings.haze?.strength === undefined) {
-      writeStored(EFFECTS_KEY, JSON.stringify({ ...settings, haze: { ...settings.haze, strength } }));
-      if (readStoredEffectSettings().haze?.strength !== strength) return;
+    if (inRange(strength, STRENGTHS) && strength !== FULL && settings.haze?.strength === undefined
+      && !writeStored(EFFECTS_KEY, JSON.stringify({ ...settings, haze: { ...settings.haze, strength } }))) {
+      unsavedValues = new Map([["haze", new Map([["strength", strength]])]]);
+      return;
     }
     localStorage.removeItem(HAZE_STRENGTH_KEY);
   } catch {

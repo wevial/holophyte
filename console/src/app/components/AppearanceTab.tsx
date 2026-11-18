@@ -169,7 +169,7 @@ function EffectRow() {
         </label>
         {effect !== "none" && (
           <button type="button" aria-expanded={open} aria-controls={shown ? section : undefined} onClick={toggle}
-            className={`flex min-h-11 items-center gap-2 rounded-button px-3 text-[13px] font-medium ${open ? "bg-selected text-ink" : "text-ink-2 hover:text-ink"}`}>
+            className={`mt-1 flex h-9 items-center gap-2 rounded-button px-3 text-[13px] font-medium ${open ? "bg-selected text-ink" : "text-ink-2 hover:text-ink"}`}>
             <KnobsGlyph />Customize<ChevronGlyph up={open} />
           </button>
         )}
@@ -224,7 +224,7 @@ function EffectCustomize({ effect }: { effect: BandEffect }) {
   const { values, set, changed, reset } = useEffectSettings(effect);
   const heading = useId();
   return (
-    <section aria-labelledby={heading} className={`mt-4 px-4 pt-3 pb-4 ${CARD}`}>
+    <section aria-labelledby={heading} className={`mt-4 max-w-[860px] px-4 pt-3 pb-4 ${CARD}`}>
       <div className="flex items-center justify-between">
         <h4 id={heading} className="font-sans text-[13px] font-semibold text-ink">{EFFECT_NAMES[effect]}</h4>
         <button type="button" disabled={!changed} onClick={reset} className="flex min-h-9 items-center gap-1.5 px-1 text-[13px] text-ink-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ink-2">

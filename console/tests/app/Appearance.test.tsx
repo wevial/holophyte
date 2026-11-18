@@ -154,21 +154,25 @@ test("each effect tile previews one decorative still served from the console's p
   expect(served).toEqual(Array(6).fill(true));
 });
 
-/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs and destroys. */
+/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs, destroys and calls to its handle's advance and reset. */
 function fakeEffects() {
   const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava, Hyphae: hyphae };
   const live: string[] = [];
   const options: Record<string, { motion?: boolean }[]> = {};
   const configs: Record<string, { motion?: boolean }[]> = {};
+  const handleCalls: string[] = [];
   const spies = Object.entries(modules).map(([name, module]) => spyOn(module, "mount").mockImplementation(((container: HTMLElement, given: { motion?: boolean } = {}) => {
     container.appendChild(document.createElement("canvas"));
     live.push(name);
     (options[name] ??= []).push({ ...given });
     const config = { ...given };
     (configs[name] ??= []).push(config);
-    return { config, destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); } };
+    return {
+      config, advance: (seconds: number) => handleCalls.push(`${name} advance ${seconds > 0}`), reset: () => handleCalls.push(`${name} reset`),
+      destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); },
+    };
   }) as never));
-  return { live, options, configs, restore: () => spies.forEach((spy) => spy.mockRestore()) };
+  return { live, options, configs, handleCalls, restore: () => spies.forEach((spy) => spy.mockRestore()) };
 }
 
 test("in a dark theme the band mounts only the picked effect: Caustics, then Ribbons in its place, and None leaves no band", async () => {
@@ -378,6 +382,28 @@ test("Heat 2 and Palette magma reach mounted Lava's live config without a remoun
   }
 });
 
+test("with Motion off, Lava's Heat runs the held lamp forward and Hyphae's Appetite and Patches bloom a fresh colony, while Speed and moving frames do neither", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    expect(effects.handleCalls).toEqual([]);
+    fireEvent.click(motion());
+    fireEvent.change(knob("Heat"), { target: { value: "2.5" } });
+    fireEvent.change(knob("Speed"), { target: { value: "2" } });
+    fireEvent.click(tile("Header", "Hyphae"));
+    fireEvent.change(knob("Appetite"), { target: { value: "1" } });
+    fireEvent.change(knob("Patches"), { target: { value: "3" } });
+    fireEvent.change(knob("Speed"), { target: { value: "2" } });
+    expect([effects.configs.Lava!.length, effects.configs.Hyphae!.length, effects.handleCalls]).toEqual([1, 1, ["Lava advance true", "Hyphae reset", "Hyphae reset"]]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
 test("Lava's Opacity at 40 sets the band's opacity to 0.4 in Dark and Light, and Haze keeps Opacity 100 and an opacity of 1", async () => {
   const effects = fakeEffects();
   try {
@@ -522,6 +548,22 @@ test("Haze's Strength is saved in Haze's entry of holophyte.effects and returns 
   expect([localStorage.getItem("holophyte.effects"), localStorage.getItem("holophyte.hazeStrength")]).toEqual([JSON.stringify({ haze: { strength: 150 } }), null]);
   await reload();
   expect([knob("Strength").value, root.style.getPropertyValue("--haze-scale")]).toEqual(["150", "1.5"]);
+});
+
+test("a Haze strength of 150 saved under the old key still shows 150 when storage is full, and Reset to default clears it", async () => {
+  localStorage.setItem("holophyte.hazeStrength", "150");
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  Object.defineProperty(globalThis, "localStorage", { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) });
+  try {
+    const freshInstance = "../../src/app/appearance.ts?quota";
+    const appearance: typeof import("../../src/app/appearance") = await import(freshInstance);
+    expect([appearance.readHazeStrength(), real.getItem("holophyte.effects")]).toEqual([150, null]);
+    appearance.resetAppearance();
+    expect([appearance.readHazeStrength(), real.getItem("holophyte.hazeStrength")]).toEqual([100, null]);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", storage);
+  }
 });
 
 test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {
