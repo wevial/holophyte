@@ -11,7 +11,7 @@ from holophyte.agents.agent_output import (
     claude_marked_error,
     claude_result,
 )
-from holophyte.agents.agent_routes import routes, safe_command
+from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.agent_turns import (
     argv_label,
     family_label,
@@ -192,7 +192,7 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         except InfraFailure as failure:
             reason = argv is None and route_down(project, role, failure)
             if reason and activate_fallback(project, role, reason, conn, run_id):
-                return second_attempt(launch, failure)
+                return second_attempt(attempt, failure)
             if timed_out(failure):
                 output = second_attempt(attempt, failure)
             elif reason or unreadable_output(role, failure) is None:
@@ -201,7 +201,7 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                 output = attempt()
         if argv is not None:
             return output
-        return outage_checked(project, role, output, launch, conn, run_id)
+        return outage_checked(project, role, output, attempt, conn, run_id)
 
 
 def outage_checked(project, role, output, launch, conn, run_id):
@@ -244,16 +244,16 @@ def refused_once(project, role, goal, cwd, kwargs, failure, refusal):
     conn, run_id = kwargs["conn"], kwargs["run_id"]
     command = refusal_fallback(project, role, refusal, conn, run_id)
     if command is None:
-        raise refusal_failure(failure, refusal) from failure.__cause__
+        raise refusal_failure(project, failure, refusal) from failure.__cause__
     turn = dict(kwargs, fallback_command=command)
     try:
         output = fallback_turn(
             project, role, shlex.split(command), conn, run_id,
             lambda: _agent(project, role, goal, cwd, **turn))
     except (InfraFailure, OSError, UnicodeError) as again:
-        raise refusal_failure(failure, refusal, again) from again
+        raise refusal_failure(project, failure, refusal, again) from again
     if failed_turn(output):
-        raise refusal_failure(failure, refusal, failure_line(output))
+        raise refusal_failure(project, failure, refusal, failure_line(output))
     return output
 
 
@@ -267,14 +267,15 @@ def fallback_turn(project, role, argv, conn, run_id, launch):
         record_turn(conn, run_id, payload)
         if crashed is not None:
             record_crash(project, conn, run_id, role, payload["exit_status"],
-                         crashed)
+                         route_prose(project, str(crashed)))
     return timed_turn(project, role, role, launch, ended)
 
 
-def refusal_failure(failure, refusal, fallback=None):
+def refusal_failure(project, failure, refusal, fallback=None):
     message = str(failure) if refusal in str(failure) else f"{failure}\n{refusal}"
     if fallback is not None:
-        message += f"\nfallback reviewer failed: {fallback}"
+        message += ("\nfallback reviewer failed: "
+                    f"{route_prose(project, str(fallback))}")
     raised = RefusedReview(message)
     raised.output = getattr(failure, "output", "")
     raised.command = getattr(failure, "command", None)

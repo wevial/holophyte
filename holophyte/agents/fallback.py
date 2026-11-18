@@ -70,7 +70,12 @@ def refusal_fallback(project, role, refusal, conn, run_id):
     commands = fallback_entries(project, role)
     if not commands or not all(isinstance(each, str) for each in commands):
         return None
-    probe = probe_seat(project, role, fallback=True)
+    try:
+        probe = probe_seat(project, role, fallback=True)
+    except UnicodeError as undecodable:
+        print(f"[holo2] {AGENT_CONFIG_KEYS[role]} fallback probe failed: "
+              f"{undecodable}")
+        return None
     if probe is None or not probe.ok:
         if probe is not None:
             print(probe_diagnostic(project, probe))

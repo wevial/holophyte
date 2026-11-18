@@ -1024,18 +1024,22 @@ class ReviewerFallbackListTests(SweepTestCase):
     REFUSAL_LINE = ('This content was flagged for possible cybersecurity risk.'
                     ' Try rephrasing your request.')
 
-    def refusing(self, refuse, unreadable_first=False):
+    def refusing(self, refuse, unreadable_first=False, down=()):
         """The container reviewer, refusing each goal in `refuse`.
 
-        With unreadable_first its first turn exits 0 with invalid JSONL."""
+        With unreadable_first its first turn exits 0 with invalid JSONL; a
+        model in `down` produces no events."""
         from holophyte.review import review_runner
 
         self.reviews = []
         stdout = json.dumps({'type': 'turn.failed',
                              'error': {'message': self.REFUSAL_LINE}})
 
-        def run_review(*, candidate_sha, prompt, **_):
+        def run_review(*, candidate_sha, prompt, model, **_):
             self.reviews.append(prompt)
+            if model in down:
+                raise review_runner.ReviewBoundaryError(
+                    f'{model}: container produced no events')
             if prompt == probes.REVIEW_PROBE_GOAL:
                 return f'ready {candidate_sha}'
             if unreadable_first and len(self.reviews) == 1:
@@ -1070,16 +1074,20 @@ class ReviewerFallbackListTests(SweepTestCase):
         return [(turn['route'], turn['exit_status'])
                 for turn in map(json.loads, self.events(run, 'agent_turn'))]
 
-    def failing_reviewer(self, failure):
-        """A reviewer that passes its probe, then runs `failure` and exits 1."""
-        path = self.root / 'failing-review'
+    def failing_reviewer(self, name, failure, probe_failure=None):
+        """A reviewer that runs `failure` on its turn and exits 1.
+
+        Its probe passes unless `probe_failure` runs there instead."""
+        path = self.root / name
+        probe = ('print("ready", subprocess.check_output(\n'
+                 '     ["git", "rev-parse", "HEAD"], text=True).strip())'
+                 if probe_failure is None else f'{probe_failure}; sys.exit(1)')
         path.write_text(
-            f'#!{sys.executable}\nimport subprocess, sys\n'
+            f'#!{sys.executable}\nimport os, signal, subprocess, sys\n'
             f'with open({str(self.calls)!r}, "a") as f:\n'
             ' f.write(sys.argv[-1] + "\\n")\n'
             f'if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n'
-            ' print("ready", subprocess.check_output(\n'
-            '     ["git", "rev-parse", "HEAD"], text=True).strip())\n'
+            f' {probe}\n'
             f'else:\n {failure}\n sys.exit(1)\n')
         path.chmod(0o755)
         return str(path)
@@ -1148,9 +1156,12 @@ class ReviewerFallbackListTests(SweepTestCase):
         from holophyte.agents.agent_routes import routes
         from holophyte.loop.gates import InfraFailure
 
-        crashed = self.failing_reviewer('print("reviewer crashed")')
-        undecodable = self.failing_reviewer(
-            'sys.stdout.buffer.write(b"\\xff\\xfe bad bytes\\n")')
+        bad_bytes = 'sys.stdout.buffer.write(b"\\xff\\xfe bad bytes\\n")'
+        crashed = self.failing_reviewer('crashed-review',
+                                        'print("reviewer crashed")')
+        undecodable = self.failing_reviewer('undecodable-review', bad_bytes)
+        undecodable_probe = self.failing_reviewer('undecodable-probe', 'pass',
+                                                  probe_failure=bad_bytes)
         fallback_ran = [probes.REVIEW_PROBE_GOAL, 'judge']
         for name, config, ran in (
                 ('no fallback', '[agents]\n', []),
@@ -1159,7 +1170,10 @@ class ReviewerFallbackListTests(SweepTestCase):
                  f'[agents]\nreviewer_fallback = "{crashed}"\n', fallback_ran),
                 ('undecodable fallback',
                  f'[agents]\nreviewer_fallback = "{undecodable}"\n',
-                 fallback_ran)):
+                 fallback_ran),
+                ('undecodable probe',
+                 f'[agents]\nreviewer_fallback = "{undecodable_probe}"\n',
+                 [probes.REVIEW_PROBE_GOAL])):
             with self.subTest(name):
                 self.calls.unlink(missing_ok=True)
                 self.configure(config)
@@ -1171,6 +1185,46 @@ class ReviewerFallbackListTests(SweepTestCase):
                 self.assertEqual(self.calls.read_text().splitlines()
                                  if self.calls.exists() else [], ran)
                 self.assertEqual(routes(self.project).commands, {})
+
+
+    def test_a_failing_fallback_keeps_its_credential_out_of_the_record(self):
+        from holophyte.loop.gates import InfraFailure
+
+        token = 'synthetic-command-credential'
+        echoes = 'print("Quota exhausted for", sys.argv[1]); sys.stdout.flush()'
+        for name, failure in (
+                ('quota error', echoes),
+                ('killed by a signal',
+                 f'{echoes}; os.kill(os.getpid(), signal.SIGTERM)')):
+            with self.subTest(name):
+                reviewer = self.failing_reviewer(
+                    f'devin-review-{name.split()[0]}', failure)
+                self.configure_fallback(f'"{reviewer} {token}"')
+                run = self.a_run()
+                with self.refusing({'judge'}), \
+                        self.assertRaises(InfraFailure) as raised:
+                    self.review_run(run)
+                self.assertIn(self.REFUSAL_LINE, str(raised.exception))
+                self.assertNotIn(token, str(raised.exception))
+                self.assertNotIn(token, str(self.conn.execute(
+                    'SELECT summary, payload FROM runEvents').fetchall()))
+        self.assertEqual(len(self.conn.execute(
+            "SELECT 1 FROM runEvents WHERE kind='crash'").fetchall()), 1)
+
+    def test_a_refusal_after_an_outage_switch_runs_on_the_fallback_command(self):
+        from holophyte.agents.agent_routes import routes
+
+        claude = self.reviewer('claude-review')
+        self.configure(f'{ContainerReviewFallbackTests.PAIRS}'
+                       f'reviewer_fallback = "{claude}"\n')
+        run = self.a_run()
+        with self.refusing({'judge'}, down={'gpt-6-astra'}):
+            self.assertEqual(self.review_run(run), 'VERDICT: PASS')
+        self.assertEqual(self.reviews, ['judge', 'judge'])
+        self.assertEqual(self.calls.read_text().splitlines()[-1],
+                         'claude-review judge')
+        self.assertEqual(routes(self.project).commands, {'review': claude})
+        self.assertEqual(len(self.events(run, 'route_fallback')), 2)
 
 
 class FailedRouteLoopTests(LoopFixture):
