@@ -300,3 +300,27 @@ test("This week and Today's log each render once on the Overview", async () => {
   expect(screen.getAllByRole("heading", { name: "This week" })).toHaveLength(1);
   expect(screen.getAllByRole("complementary", { name: "Today" })).toHaveLength(1);
 });
+
+test("the Overview's header opens the now column above its first section, beside landed and the log starting at the grid's first row", async () => {
+  await mount("#/", fleet({ items: [blocked], runs: threeRuns }, { items: [] }));
+  const now = column("now");
+  const head = document.querySelector<HTMLElement>("[data-overview-head]")!;
+  expect(now.contains(head)).toBe(true);
+  const firstSection = within(now).getAllByRole("region")[0]!;
+  expect(firstSection.getAttribute("aria-label")).toBe("Needs you");
+  expect(head.compareDocumentPosition(firstSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const grid = now.parentElement!;
+  expect([column("landed").parentElement, column("log").parentElement]).toEqual([grid, grid]);
+  expect(classes(now)).toContain("row-start-1");
+  expect(classes(column("landed"))).toContain("min-[1680px]:row-start-1");
+  expect(classes(column("log"))).toContain("row-span-full");
+});
+
+test("before any host answers, the first-load line opens the now column above Running", async () => {
+  await mount("#/", () => new Promise<Response>(() => {}));
+  const now = column("now");
+  const asking = within(now).getAllByRole("status").find((line) => line.textContent?.startsWith("Asking"))!;
+  const running = within(now).getByRole("region", { name: "Running" });
+  expect(regionsIn(now)[0]).toBe("Running");
+  expect(asking.compareDocumentPosition(running) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
