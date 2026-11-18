@@ -66,7 +66,7 @@ export function ScoutStop({ base, project, scout, pass, actions, onSent }: {
           <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">
             {pass == null ? "Its lead and helpers stop now, and it writes no report." : `Pass ${pass} stops now. The report so far stays.`}
           </p>
-          <label htmlFor={reasonId} className="mt-4 block font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">
+          <label htmlFor={reasonId} className="mt-4 block font-sans text-[13px] font-semibold leading-none text-ink">
             Reason · saved with the scout
           </label>
           <textarea
@@ -75,7 +75,7 @@ export function ScoutStop({ base, project, scout, pass, actions, onSent }: {
             onChange={(event) => setReason(event.target.value)}
             rows={3}
             placeholder="Why stop it?"
-            className="mt-2 block w-full resize-y border border-rule bg-paper px-3 py-2.5 font-plex text-[14px] leading-[1.5] text-ink placeholder:text-ink-3"
+            className="field mt-2 block w-full resize-y leading-[1.5]"
           />
         </ConfirmDialog>
       )}

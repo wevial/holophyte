@@ -21,7 +21,7 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-test("a confirm's box is a rounded raised surface ringed in hair-2, its label sentence case without a rule, its heading at normal weight and width", () => {
+test("a confirm's box is a rounded raised surface ringed in hair-2, its label not uppercase and without a rule, its heading neither extra-bold nor stretched", () => {
   render(
     <ConfirmDialog label="Save · holophyte" heading="Save these changes?" confirm="Save" busyLabel="Saving…" busy={false} onCancel={() => {}} onConfirm={() => {}}>
       One change.
