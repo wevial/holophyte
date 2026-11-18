@@ -500,8 +500,13 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
   const menu = useRef<HTMLDivElement>(null);
   const [shift, setShift] = useState(0);
   const [above, setAbove] = useState(false);
+  const [reveals, setReveals] = useState(0);
+  useLayoutEffect(() => {
+    if (reveals > 0) menu.current?.scrollIntoView({ block: "nearest" });
+  }, [reveals]);
   useLayoutEffect(() => {
     if (!open) return;
+    const scroller = scrollParent(anchor.current!);
     const fit = () => {
       // Bounding rectangles are in zoomed viewport pixels, while `left` is in the menu's own CSS pixels.
       const { width, height } = menu.current!.getBoundingClientRect();
@@ -510,14 +515,19 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
       const over = left + width - (document.documentElement.getBoundingClientRect().right - MENU_EDGE);
       setShift(over > 0 ? -Math.min(over, Math.max(0, left - MENU_EDGE)) / scale : 0);
       const reach = height + MENU_GAP * scale + MENU_EDGE;
-      setAbove(bottom + reach > window.innerHeight && top - reach >= 0);
+      const pane = scroller.getBoundingClientRect();
+      const fitsBelow = bottom + reach <= Math.min(window.innerHeight, pane.bottom);
+      const fitsAbove = top - reach >= Math.max(0, pane.top);
+      setAbove(!fitsBelow && fitsAbove);
+      if (!fitsBelow && !fitsAbove) setReveals((count) => count + 1);
     };
     fit();
     window.addEventListener("resize", fit);
     const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
-    moves?.observe(anchor.current!);
-    moves?.observe(box.current!);
-    moves?.observe(scrollParent(anchor.current!));
+    for (let at: HTMLElement = anchor.current!; moves != null; at = at.parentElement!) {
+      moves.observe(at);
+      if (at === scroller) break;
+    }
     return () => {
       window.removeEventListener("resize", fit);
       moves?.disconnect();
@@ -535,7 +545,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
         </button>
         {open && (
           <div ref={menu} role="group" aria-label={`${label} range`} style={{ left: shift }}
-            className={`absolute ${above ? "bottom-full mb-1.5" : "top-full mt-1.5"} z-20 flex w-62 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card`}>
+            className={`absolute ${above ? "bottom-full mb-1.5" : "top-full mt-1.5"} z-20 flex w-62 scroll-my-2 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card`}>
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
               <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
               <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}

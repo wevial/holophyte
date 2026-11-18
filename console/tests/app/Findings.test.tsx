@@ -336,7 +336,7 @@ test("with Custom range open, the scrolling main resizing as its button moves ri
   }
 });
 
-test("with Custom range open, the range row growing as the button wraps to its own line places the dates menu again at its new left edge", async () => {
+test("with Custom range open, the range row or a block above it resizing as the button moves left places the dates menu again at the button's new left edge", async () => {
   const held = heldResizes();
   const viewport = document.documentElement.getBoundingClientRect;
   try {
@@ -348,11 +348,14 @@ test("with Custom range open, the range row growing as the button wraps to its o
     document.documentElement.getBoundingClientRect = rectAt(0, 720);
     Object.defineProperty(menu, "offsetWidth", { configurable: true, value: 248 });
     menu.getBoundingClientRect = rectAt(0, 248);
-    anchor.getBoundingClientRect = rectAt(600, 32);
-    held.resize(main);
-    anchor.getBoundingClientRect = rectAt(330, 32);
-    held.resize(anchor.parentElement!);
-    expect(330 + parseFloat(menu.style.left)).toBe(330);
+    for (const moved of [anchor.parentElement!, main.querySelector("[data-controls]")!.parentElement!]) {
+      anchor.getBoundingClientRect = rectAt(600, 32);
+      held.resize(main);
+      expect(parseFloat(menu.style.left)).toBeLessThan(0);
+      anchor.getBoundingClientRect = rectAt(330, 32);
+      held.resize(moved);
+      expect(parseFloat(menu.style.left)).toBe(0);
+    }
   } finally {
     document.documentElement.getBoundingClientRect = viewport;
     held.restore();

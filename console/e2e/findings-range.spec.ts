@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 for (const textSize of [110, 120]) {
   test(`at 375px and ${textSize}% text, Custom range opens its dates menu inside the viewport`, async ({ page }) => {
@@ -45,5 +45,31 @@ test("at 720x425 and 125% text, expanding the folded sidebar by shortcut with Cu
       const box = (await part.boundingBox())!;
       expect([box.x >= 0, box.y >= 0, box.x + box.width <= 720, box.y + box.height <= 425]).toEqual([true, true, true, true]);
     }
+  }).toPass({ timeout: 2000 });
+});
+
+const inside = async (part: Locator, area: { top: number; bottom: number; width: number }) => {
+  const box = (await part.boundingBox())!;
+  expect([box.x >= 0, box.y >= area.top, box.x + box.width <= area.width, box.y + box.height <= area.bottom]).toEqual([true, true, true, true]);
+};
+
+test("at 720x360 and 125% text, with Findings scrolled, expanding the sidebar under an open Custom range keeps the dates menu inside the scrolling pane", async ({ page }) => {
+  await page.setViewportSize({ width: 720, height: 360 });
+  await page.addInitScript(() => {
+    localStorage.setItem("holophyte.textSize", "125");
+    localStorage.setItem("holophyte.next.rail", "folded");
+  });
+  await page.goto("/#/findings");
+  await expect(page.locator("[data-count-line]")).toBeVisible();
+  const main = page.getByRole("main");
+  await main.evaluate((node) => node.scrollBy(0, 95));
+  await page.getByRole("button", { name: "Custom range" }).click();
+  const menu = page.getByRole("group", { name: "Range range" });
+  await expect(menu).toBeVisible();
+  await page.keyboard.press("Control+Backslash");
+  await expect(page.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
+  await expect(async () => {
+    const pane = (await main.boundingBox())!;
+    for (const part of [menu, menu.getByRole("button", { name: "Done" })]) await inside(part, { top: pane.y, bottom: Math.min(360, pane.y + pane.height), width: 720 });
   }).toPass({ timeout: 2000 });
 });
