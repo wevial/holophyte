@@ -68,11 +68,6 @@ def lotus(scheme):
     return {token: resolve(scope[token], scope) for token in LOTUS_TOKENS}
 
 
-def docs_scope(css, scheme):
-    own = f'[data-md-color-scheme="{scheme}"]'
-    return declarations(css, lambda selectors: own in selectors)
-
-
 class DocsThemeTests(unittest.TestCase):
     def setUp(self):
         self.mkdocs = (ROOT / "mkdocs.yml").read_text()
@@ -97,7 +92,8 @@ class DocsThemeTests(unittest.TestCase):
         sidebar = declarations(css, lambda selectors: SIDEBAR in selectors)
         for scheme in LOTUS_BLOCKS:
             expected = lotus(scheme)
-            scope = docs_scope(css, scheme)
+            own = f'[data-md-color-scheme="{scheme}"]'
+            scope = declarations(css, lambda selectors: own in selectors)
             with self.subTest(scheme=scheme):
                 for variable, token in SURFACES.items():
                     self.assertEqual(resolve(scope[variable], scope), expected[token],
