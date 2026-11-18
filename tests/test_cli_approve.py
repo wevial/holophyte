@@ -1114,6 +1114,37 @@ class SweptApproveCliTests(unittest.TestCase):
             self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
                              self.wip)
 
+    def test_a_tag_ending_in_the_branch_name_does_not_stand_in_for_it(self):
+        self.branch_with_wip()
+        bare = self.root / "origin.git"
+        git(self.root, "init", "--bare", "-q", str(bare))
+        git(self.repo, "push", "-q", str(bare),
+            f"{self.reviewed}:refs/tags/archive/refs/heads/{BRANCH}")
+        git(self.repo, "remote", "add", "origin", str(bare))
+        self.sweep(pull=PULL)
+
+        self.assertIn(f"origin's {BRANCH} is missing, so {PULL}",
+                      self.refused("--note", "ok"))
+
+    def test_an_origin_branch_deleted_after_the_push_refuses_naming_it(self):
+        self.branch_with_wip()
+        bare = self.origin("origin.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(bare))
+        hook = bare / "hooks" / "post-receive"
+        hook.write_text(f"#!/bin/sh\ngit update-ref -d refs/heads/{BRANCH}\n")
+        hook.chmod(0o755)
+        self.sweep(pull=PULL)
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn(f"origin's {BRANCH} is missing after the push",
+                      str(raised.exception))
+        self.assertEqual(subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet",
+             f"refs/heads/{BRANCH}"], cwd=bare).returncode, 1)
+        self.assertEqual(self.interventions(), [])
+
     def test_an_origin_a_rewind_would_not_reach_refuses_unpushed(self):
         """Behind R with a pull request open, or diverged from R though W
         merges it, origin could reach R only by publishing new commits."""

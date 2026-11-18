@@ -596,9 +596,11 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
     if rewinds[fetched]:
         after = _origin_tip(repo, "origin", head)
         if after != sha:
+            reads = "is missing" if after is None \
+                else f"still reads {after[:12]}"
             raise _StepFailed(
-                f"origin's {branch} still reads {after[:12]} after the push,"
-                " so the next claim would fetch the commits set aside")
+                f"origin's {branch} {reads} after the push, so the next"
+                " claim would not fetch the reviewed commit")
 
 
 def _origin_tip(repo, remote, head):
@@ -606,7 +608,11 @@ def _origin_tip(repo, remote, head):
     if listed.returncode != 0:
         raise _StepFailed(f"git ls-remote {remote} failed:"
                           f" {listed.stderr.strip()}")
-    return (listed.stdout.split() or [None])[0]
+    for line in listed.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        if ref == head:
+            return sha
+    return None
 
 
 def _needs_rewind(repo, branch, remote, sha, tip, pull):
