@@ -106,6 +106,7 @@ test("the page header counts the queue beside its one title, with no line naming
   const titles = screen.getAllByRole("heading", { level: 1 });
   expect(titles.map((title) => title.textContent)).toEqual(["Merge queue"]);
   expect(pageCount()).toMatch(/^4 queued · 1 building · clears ~\d\d:\d\d$/);
+  expect(titles[0]!.parentElement!.querySelector("[data-page-count]")).not.toBeNull();
   const page = screen.getByRole("region", { name: "Merge queue" });
   expect(page.textContent).toStartWith(`Merge queue${pageCount()}main4squash`);
 });
@@ -196,6 +197,8 @@ test("a project two daemons serve draws a lane per daemon and counts every queue
   expect(screen.getByRole("region", { name: "writer-host:7711" }).querySelector("header")!.textContent).toContain("main · squash");
   expect(screen.getAllByRole("list", { name: "relos merge queue" }).map((list) => list.querySelectorAll("[data-entry]").length)).toEqual([4, 2]);
   expect(document.querySelector("[data-no-queue]")).toBeNull();
+  const histories = screen.getAllByRole("region", { name: "Left the queue" });
+  expect(histories.map((history) => history.closest("[role=group]")!.getAttribute("aria-label"))).toEqual(["writer-host:7710", "writer-host:7711"]);
 });
 
 test("All projects keeps its zero counts beside the title when no repository has a queue", async () => {

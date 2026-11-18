@@ -68,7 +68,7 @@ function Lanes({ answers }: { answers: Answer[] }) {
   return (
     <Page queues={queues} counted>
       {lanes.map(({ name, project, key, queue, daemon }) => (
-        <div key={key} data-queue-lane className="flex flex-col gap-2">
+        <div key={key} role="group" aria-label={name} data-queue-lane className="flex flex-col gap-2">
           {queue.configured === true ? (
             <QueueBody queue={queue} project={project} daemon={daemon} label={name} lead={queue.branch} />
           ) : (

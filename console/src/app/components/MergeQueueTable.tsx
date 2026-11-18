@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { MergeQueue, MergeQueueEntry, MergeQueueLeft, MergeQueuePull, MergeQueueRun } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
@@ -10,8 +10,10 @@ import { Section } from "./Section";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
-const GRID = "grid grid-cols-[40px_60px_minmax(0,1fr)_128px_80px_60px_52px] gap-x-2.5";
-const ACTION_GRID = "grid grid-cols-[40px_60px_minmax(0,1fr)_128px_80px_60px_52px_140px] gap-x-2.5";
+const GRID = "grid grid-cols-[32px_52px_minmax(0,1fr)_116px_72px_48px_44px] gap-x-2.5";
+const ACTION_GRID = "grid grid-cols-[32px_52px_minmax(0,1fr)_116px_72px_48px_44px_132px] gap-x-2.5";
+const FITS_WIDE = 590;
+const FITS_WIDE_ACTIONS = 720;
 const gridFor = (daemon: QueueDaemon) => (daemon.actions ? ACTION_GRID : GRID);
 const NARROW_GRID = "grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-2.5";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
@@ -20,7 +22,27 @@ const DASH = "–";
 const HEADS = ["#", "PR", "Title", "State", "Checks", "Merges", "Added"];
 const RIGHT_HEADS = new Set(["Checks", "Merges", "Added"]);
 const DOT = <span className="text-ink-3">{" · "}</span>;
-const ENTRY_PAD = "pr-5 pl-[calc(10px+40px+10px+60px+10px)] max-[1023px]:pl-[calc(10px+28px+10px)] max-[720px]:px-2.5";
+const WIDE_PAD = "pr-5 pl-[calc(10px+32px+10px+52px+10px)]";
+const NARROW_PAD = "pr-5 pl-[calc(10px+28px+10px)] max-[720px]:px-2.5";
+
+/** Numbers, times and hashes in mono, the words around them in sans. */
+function MonoValues({ text }: { text: string }) {
+  return <>{text.split(/(\S*\d\S*)/).map((part, index) => (index % 2 === 1 ? <span key={index} className="font-mono text-[12px]">{part}</span> : part))}</>;
+}
+
+/** Whether the box is at least `min` wide; an unmeasured box defers to the viewport. */
+function useFits(min: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (box == null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([seen]) => setWidth(seen?.contentRect.width ?? 0));
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, fits: width === 0 || width >= min };
+}
 
 function PrNumber({ pr }: { pr: MergeQueuePull }) {
   return (
@@ -49,7 +71,7 @@ function EntryState({ entry }: { entry: MergeQueueEntry }) {
   const tone = building ? "wait" : "ink-2";
   return (
     <span data-entry-state className="inline-flex items-center gap-[5px] pt-[2px]">
-      <StateDot state={building ? "on_ci" : "queued"} tone={tone} hideWord />
+      <StateDot state={building ? "parked" : "queued"} tone={tone} label={building ? "checks running" : "queued"} hideWord />
       <span className={`font-sans text-[12.5px] leading-[1.3] ${TONE_TEXT[tone]}`}>{building ? "checks running" : "queued"}</span>
     </span>
   );
@@ -85,7 +107,7 @@ function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; no
                 )}
                 {check.workflow && <span className="ml-2 text-ink-3">{check.workflow}</span>}
               </span>
-              <span className={`whitespace-nowrap text-right font-sans ${look.state === "ready_to_merge" ? "text-ink-3" : TONE_TEXT[look.tone]}`}>{look.words}</span>
+              <span className={`whitespace-nowrap text-right font-sans ${look.state === "ready_to_merge" ? "text-ink-3" : TONE_TEXT[look.tone]}`}><MonoValues text={look.words} /></span>
             </li>
           );
         })}
@@ -99,7 +121,7 @@ export function EntryDetail({ entry, now, id, daemon, pad, links }: { entry: Mer
   const line = entryLine(entry, now);
   return (
     <div id={id} data-entry-detail className={`flex flex-col gap-4 pt-1 pb-4 ${pad}`}>
-      {line && <p className={QUIET}>{line}</p>}
+      {line && <p className={QUIET}><MonoValues text={line} /></p>}
       {entry.checks.runs.length > 0 && (
         <div className="grid grid-cols-2 gap-x-10 gap-y-5 max-[720px]:grid-cols-1">
           <CheckColumn title="Required" part={required} now={now} />
@@ -146,7 +168,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
           <span className="pt-[4px] font-mono text-[12.5px]"><PrNumber pr={entry.pr} /></span>
           <span className="flex min-w-0 flex-col gap-0.5">
             {titleText}
-            <span data-entry-sub className={QUIET}>{carrier}</span>
+            <span data-entry-sub className={`${QUIET} [overflow-wrap:anywhere]`}>{carrier}</span>
           </span>
           <EntryState entry={entry} />
           <span className={`${MONO} pt-[4px] text-right`}><ChecksDone entry={entry} /></span>
@@ -175,18 +197,19 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
           <EntryState entry={entry} />
         </div>
       )}
-      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} pad={ENTRY_PAD} />}
+      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} pad={wide ? WIDE_PAD : NARROW_PAD} />}
     </li>
   );
 }
 
 /** One queue under its name, its count and settings, a row each that opens onto its checks. */
 export function QueueTable({ queue, project, daemon, label, lead }: { queue: MergeQueue; project: string; daemon: QueueDaemon; label: string; lead?: string }) {
-  const wide = useTableWidth();
+  const { ref, fits } = useFits(daemon.actions ? FITS_WIDE_ACTIONS : FITS_WIDE);
+  const wide = useTableWidth() && fits;
   const words = [lead, configurationWords(queue.configuration)].filter(Boolean).join(" · ");
   return (
-    <div data-queue-table className="min-w-0">
-      <Section label={label} count={queue.entries.length} aside={<span title={words} className={`${QUIET} block max-w-[60vw] truncate`}>{words}</span>} empty="The queue is empty.">
+    <div ref={ref} data-queue-table className="min-w-0">
+      <Section label={label} count={queue.entries.length} aside={<span className={`${QUIET} [overflow-wrap:anywhere]`}>{words}</span>} empty="The queue is empty.">
         {wide && (
           <div data-queue-heads className={`${gridFor(daemon)} h-[30px] items-center border-b border-hair px-2.5 font-sans text-[12px] font-medium leading-none text-ink-3`}>
             {HEADS.map((head) => <span key={head} className={RIGHT_HEADS.has(head) ? "text-right" : undefined}>{head}</span>)}
@@ -218,7 +241,7 @@ function LeftRow({ row, project }: { row: MergeQueueLeft; project: string }) {
       </span>
       <span className="flex flex-col items-end gap-0.5 pt-[2px] text-right">
         <span data-left-outcome className={`inline-flex items-center gap-[5px] font-sans text-[12.5px] leading-[1.3] ${TONE_TEXT[tone]}`}>
-          <StateDot state={merged ? "merged" : "failed"} tone={tone} label={merged ? "merged" : "removed"} hideWord />
+          <StateDot state={merged ? "ready_to_merge" : "failed"} tone={tone} label={merged ? "merged" : "removed"} hideWord />
           {words}
         </span>
         <span data-left-at className={MONO}>{formatClock(row.at_ms)}</span>
