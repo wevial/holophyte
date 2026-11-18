@@ -9,6 +9,7 @@ import type { RunPage } from "../run";
 import { Btn } from "./Btn";
 import { ACTIONS_OFF_LINE, BUSY, detailLine } from "./CardActions";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { RequeueForm } from "./RequeueForm";
 
 const PAUSE = "Pause";
 const REQUEUE = "Requeue";
@@ -28,7 +29,8 @@ function labelsOf(page: Page, newest: boolean): string[] {
 
 /** Pause, Abort, Resume or Requeue for the Run page's run, as its state
  *  allows, each posted through `useAction()`; Abort first asks for a
- *  reason in a confirm. A refusal reads under the buttons. */
+ *  reason in a confirm and Requeue for a note in its form. A refusal reads
+ *  under the buttons, or in the open requeue form. */
 export function RunActions({ page, project }: { page: Page; project: string }) {
   const action = useAction();
   const deps = useContext(PollDepsContext);
@@ -36,9 +38,12 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const [aborting, setAborting] = useState(false);
   const [reason, setReason] = useState("");
   const [closing, setClosing] = useState(false);
+  const [requeueing, setRequeueing] = useState(false);
   const reasonId = useId();
   const opener = useRef<HTMLButtonElement>(null);
+  const requeueOpener = useRef<HTMLButtonElement>(null);
   const labels = labelsOf(page, ticket.isSuccess && ticket.data?.runs[0]?.run === page.detail.run.id);
+  if (requeueing && !page.actions) setRequeueing(false);
   if (labels.length === 0) return null;
   const { run } = page.detail;
   const pending = action.isPending ? action.variables?.label : undefined;
@@ -49,7 +54,10 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const press: Record<string, () => void> = {
     [PAUSE]: () => void post(PAUSE, "/actions/pause", { run: run.id, note: NOTE }, `Pause requested for run ${run.id}.`),
     [RESUME]: () => void post(RESUME, "/actions/resume", { ticket: run.ticket, note: NOTE }, `Resumed ${run.ticket}.`),
-    [REQUEUE]: () => void post(REQUEUE, ROUTES[REQUEUE]!, { ticket: run.ticket }, `Requeued ${run.ticket}.`),
+    [REQUEUE]: () => {
+      action.reset();
+      setRequeueing(true);
+    },
     [ABORT]: () => {
       action.reset();
       setReason("");
@@ -60,6 +68,15 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const keepRunning = () => {
     setAborting(false);
     opener.current?.focus();
+  };
+  const closeRequeue = () => {
+    const inForm = document.activeElement?.closest("[data-requeue-form]") != null;
+    setRequeueing(false);
+    if (inForm) requeueOpener.current?.focus();
+  };
+  const requeue = async (body: Record<string, unknown>) => {
+    const result = await post(REQUEUE, ROUTES[REQUEUE]!, body, `Requeued ${run.ticket}.`);
+    if (result.ok) setRequeueing(false);
   };
   const pr = run.pr_url == null ? null : prLabel(run.pr_url);
   const close = pr != null && closing;
@@ -77,7 +94,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
         {labels.map((label) => (
           <Btn
             key={label}
-            ref={label === ABORT ? opener : undefined}
+            ref={label === ABORT ? opener : label === REQUEUE ? requeueOpener : undefined}
             variant={label === PAUSE ? "quiet" : label === ABORT ? "danger" : "primary"}
             busy={pending === label}
             busyLabel={BUSY[label]}
@@ -89,7 +106,16 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           </Btn>
         ))}
       </div>
-      {refused != null && !aborting && (
+      {requeueing && (
+        <RequeueForm
+          ticket={run.ticket}
+          busy={pending === REQUEUE}
+          refused={refused}
+          onRequeue={(body) => void requeue(body)}
+          onCancel={closeRequeue}
+        />
+      )}
+      {refused != null && !aborting && !requeueing && (
         <p role="status" data-action-detail className={`m-0 text-bad ${detailLine}`}>
           {refused}
         </p>

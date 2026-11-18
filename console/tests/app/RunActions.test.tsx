@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { RunDetail, Status, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
@@ -30,14 +30,17 @@ const runs: Record<number, RunDetail> = {
 
 const liveRow = { ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 };
 
-/** `demo` live in run 12 with `actions` as given; `/runs/N` answers `runs`
- *  and every `POST /actions/...` goes to `post`. */
-async function mount(id: number, { actions = true, post }: { actions?: boolean; post?: Fetch } = {}) {
+let client: QueryClient | null = null;
+
+/** `demo` live in run 12 with `actions` as given, read again at each status
+ *  poll when it is an object; `/runs/N` answers `runs` and every
+ *  `POST /actions/...` goes to `post`. */
+async function mount(id: number, { actions = true, post }: { actions?: boolean | { on: boolean }; post?: Fetch } = {}) {
   window.location.hash = `#/runs/demo/${id}`;
   const polls = fleet({ items: [], runs: [liveRow, run(13, "DEMO-13")] }, { items: [] });
   const fake = fakeDeps(async (url, init) => {
     if (init?.method === "POST" && post != null) return post(url, init);
-    if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions });
+    if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions: typeof actions === "boolean" ? actions : actions.on });
     if (url === `${DEMO}/tickets/DEMO-40`) return Response.json({
       ...servedTicket,
       ticket: "DEMO-40",
@@ -54,8 +57,9 @@ async function mount(id: number, { actions = true, post }: { actions?: boolean; 
     return polls(url);
   });
   fake.clock.now = NOW;
+  client = consoleQueryClient();
   render(
-    <QueryClientProvider client={consoleQueryClient()}>
+    <QueryClientProvider client={client}>
       <ConsoleApp base={DEMO} pollDeps={fake.deps} />
     </QueryClientProvider>,
   );
@@ -66,6 +70,7 @@ const actionsBox = () => document.querySelector<HTMLElement>("[data-run-actions]
 const labels = () => [...(actionsBox()?.querySelectorAll("button") ?? [])].map((button) => button.textContent);
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const dialog = () => screen.getByRole("dialog", { name: "Abort run 12?" });
+const formOpen = () => document.querySelector("[data-requeue-form]") != null;
 const posted = (seen: { url: string; body: unknown }[]) => seen.map(({ url, body }) => ({ url, body }));
 
 async function press(name: string, scope: HTMLElement = actionsBox()!) {
@@ -204,18 +209,60 @@ test("navigating to a cached run closes Abort and requires a fresh reason for th
   expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 13, close: false, note: "reason for thirteen" } }]);
 });
 
-test("a failed run that is its chain's newest offers Requeue alone and shows a refusal under it; a merged run offers nothing", async () => {
-  const post = fakeFetch({ ok: false, detail: "DEMO-40 has a live run" });
-  await mount(40, { post: post.fetchImpl });
-  expect(labels()).toEqual(["Requeue"]);
+test("a failed run that is its chain's newest offers Requeue, whose form posts the same bodies and shows a refusal in it; a merged run offers nothing", async () => {
+  const bodiesFor = async (note: string, amend: boolean) => {
+    const post = fakeFetch({ ok: true, detail: "requeued" });
+    await mount(40, { post: post.fetchImpl });
+    expect(labels()).toEqual(["Requeue"]);
+    await press("Requeue");
+    const form = screen.getByRole("group", { name: "Requeue DEMO-40" });
+    expect(post.seen).toEqual([]);
+    await act(async () => void fireEvent.change(within(form).getByRole("textbox", { name: "Note" }), { target: { value: note } }));
+    if (amend) await act(async () => void fireEvent.click(within(form).getByRole("switch", { name: "Reviewers see this" })));
+    await press("Requeue", form);
+    cleanup();
+    return posted(post.seen);
+  };
+  const requeue = (body: object) => [{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-40", ...body } }];
+  expect(await bodiesFor("", false)).toEqual(requeue({}));
+  expect(await bodiesFor("retry after the fix", false)).toEqual(requeue({ note: "retry after the fix" }));
+  expect(await bodiesFor("retry after the fix", true)).toEqual(requeue({ amend: "retry after the fix" }));
+
+  const refused = fakeFetch({ ok: false, detail: "DEMO-40 has a live run" });
+  await mount(40, { post: refused.fetchImpl });
   await press("Requeue");
-  expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-40" } }]);
-  expect(actionsBox()!.querySelector("[data-action-detail]")?.textContent).toBe("DEMO-40 has a live run");
+  const form = screen.getByRole("group", { name: "Requeue DEMO-40" });
+  await press("Requeue", form);
+  expect(within(form).getByRole("status").textContent).toBe("DEMO-40 has a live run");
   expect(toast()).toBe("");
   cleanup();
   await mount(9);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("DEMO-9 title");
   expect(actionsBox()).toBeNull();
+});
+
+test("an open requeue form goes away when a status poll turns the host's actions off, and stays away when they come back", async () => {
+  const actions = { on: true };
+  const post = fakeFetch({ ok: true, detail: "requeued" });
+  await mount(40, { actions, post: post.fetchImpl });
+  await press("Requeue");
+  expect(formOpen()).toBe(true);
+  actions.on = false;
+  await act(async () => {
+    await client!.refetchQueries();
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(formOpen()).toBe(false);
+  actions.on = true;
+  await act(async () => {
+    await client!.refetchQueries();
+    await settle();
+  });
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(within(actionsBox()!).getByRole("button", { name: "Requeue" }).hasAttribute("disabled")).toBe(false);
+  expect(formOpen()).toBe(false);
+  expect(post.seen).toEqual([]);
 });
 
 test("on a host with actions off, Pause and Abort are drawn disabled and say how to turn actions on", async () => {
