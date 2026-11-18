@@ -19,6 +19,7 @@ from test_consolidate import (  # noqa: E402
 KEPT = "- src/app.py:3 [p1] load() returns None\n"
 DROPPED = "- src/db.py:7 [p1] the cache is never warmed\n"
 FRESH = finding("src/cli.py", 5, "an empty argv crashes", "reproduced")
+ADVERSARY_DROP = finding("src/db.py", 7, "the cache is never warmed", "traced")
 RULED = Reply("THREAD 1: FIX -- load() still breaks the criterion\n"
               "THREAD 2: DROP -- warming the cache is out of scope")
 
@@ -51,6 +52,18 @@ class DroppedFindingTests(ConsolidationFixture):
         self.assertIn("an empty argv crashes", second)
         self.assertNotIn("the cache is never warmed", second)
 
+
+    def test_a_dropped_adversary_finding_is_kept_from_the_fix_turn(self):
+        self.configure(ON)
+        fake, _ = self.loop(
+            Change("poetry.lock"), asked(KEPT), attack(ADVERSARY_DROP),
+            Consolidate(), Change("poetry.lock", "relocked\n"), asked(KEPT),
+            attack(ADVERSARY_DROP, FRESH), RULED, Consolidate(),
+            Change("src/app.py"), PASS)
+        goal = [turn for turn in fake.turns if turn.role == IMPLEMENT][2].goal
+        self.assertIn("load() still breaks the criterion", goal)
+        self.assertIn("an empty argv crashes", goal)
+        self.assertNotIn("the cache is never warmed", goal)
 
 if __name__ == "__main__":
     unittest.main()

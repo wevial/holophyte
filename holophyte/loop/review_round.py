@@ -214,9 +214,6 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         raise InfraFailure(f"{reason}; candidate preserved at {sha}",
                            "review_route")
     adversary.require_done(plan, attacked)
-    ruling = stuck_review.adjudicated(
-        project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
-        sha, ticket, criteria, earlier)
 
     unwitnessed = criteria_findings(verdict, criteria, wt,
                                     approved_range=approved, scope=scope)
@@ -224,12 +221,18 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed; treating as REQUEST_CHANGES")
     findings = unwitnessed + blocking + red + private
-    adversarial = consolidate.adversary_findings(conn, run_id, rnd) if plan else None
+    fixing = consolidate.fixing(decision, findings, ok, out)
+    ruling = fixing and stuck_review.adjudicated(
+        project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
+        sha, ticket, criteria, earlier) or None
+    adversarial = stuck_review.kept_findings(
+        consolidate.adversary_findings(conn, run_id, rnd) if plan else None,
+        ruling)
     handed = adversarial is not None and consolidate.handed_on(
         project, conn, run_id, provider, task_id, rnd,
         stuck_review.kept_findings(consolidate.primary_findings(
             verdict, decision, unwitnessed + red + private), ruling),
-        adversarial, consolidate.fixing(decision, findings, ok, out),
+        adversarial, fixing,
         partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
                 candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
                 run_id=run_id))
@@ -367,6 +370,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                        f"Round {rnd}: REQUEST_CHANGES, every finding settled by"
                        " the adjudicator -> review again", provider)
                 boundary(conn, run_id, "verifying", rnd=rnd + 1)
+                pending = {}
                 continue
             if ok and not unwitnessed and decision == "APPROVE":
                 if steer_pending(conn, run_id):

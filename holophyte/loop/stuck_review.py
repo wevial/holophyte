@@ -188,7 +188,7 @@ def settled(conn, run_id):
 
 
 def kept_findings(findings, ruling):
-    if ruling is None:
+    if ruling is None or findings is None:
         return findings
     return [finding for finding in findings
             if not isinstance(finding, dict)
