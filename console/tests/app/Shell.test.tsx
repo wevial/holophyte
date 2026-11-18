@@ -1015,7 +1015,7 @@ test("↓ twice then Enter opens that run's page and puts it first in Recent", a
   expect(titlesOf("Recent")[0]).toBe("run 411 · DEMO-74 Witness criterion for git tickets");
 });
 
-test("Run sweep asks for an inline confirm: Cancel returns to the list, Confirm posts once to the sweep route", async () => {
+test("Run sweep asks for an inline confirm naming its host, with Confirm only on the button: Cancel returns to the list, Confirm posts once to the sweep route", async () => {
   const posts: string[] = [];
   const polls = searchDaemons(posts);
   const host = (await Bun.file(new URL("host-status.json", SERVE)).json()) as Status;
@@ -1025,7 +1025,11 @@ test("Run sweep asks for an inline confirm: Cancel returns to the list, Confirm 
   fireEvent.click(optionsOf("Actions")[0]!);
   await flush();
   expect(within(palette()!).queryByRole("listbox")).toBeNull();
-  expect(within(palette()!).getByRole("heading", { name: "Run sweep" })).toBeTruthy();
+  const confirm = within(palette()!).getByRole("region", { name: "Run sweep" });
+  expect(within(confirm).getByRole("heading", { name: "Run sweep" })).toBeTruthy();
+  expect(within(confirm).getByText("on writer-host")).toBeTruthy();
+  expect(within(confirm).getAllByRole("button").map((button) => button.textContent)).toEqual(["Cancel", "Confirm"]);
+  expect(within(confirm).getAllByText("Confirm", { exact: false }).map((node) => node.closest("button")?.textContent ?? null)).toEqual(["Confirm"]);
   expect(posts).toEqual([]);
   fireEvent.click(within(palette()!).getByRole("button", { name: "Cancel" }));
   await flush();

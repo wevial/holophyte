@@ -250,23 +250,36 @@ function Check({ name, checked, mixed = false, onChange, children, head = false,
   );
 }
 
-function Section({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
-  const id = useId();
+/** A section's checked values and its writer, which keeps them in the section's order. */
+function useSection(section: FilterSection, search: PageSearch, write: (change: PageSearch) => void) {
   const checked = checkedOf(search, section.param);
-  const on = section.options.filter((option) => checked.includes(option.value));
-  const all = section.options.length > 0 && on.length === section.options.length;
   const set = (values: string[]) => {
     const kept = section.options.map((option) => option.value).filter((value) => values.includes(value));
     write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
   };
+  return { checked, set };
+}
+
+/** A section's heading as a box checking every option, mixed while some are. */
+function SectionHead({ id, section, checked, set }: { id: string; section: FilterSection; checked: string[]; set: (values: string[]) => void }) {
+  const on = section.options.filter((option) => checked.includes(option.value));
+  const all = section.options.length > 0 && on.length === section.options.length;
+  return (
+    <Check head name={section.label} checked={all} mixed={on.length > 0 && !all} disabled={section.options.length === 0}
+      onChange={() => set(all ? [] : section.options.map((option) => option.value))}>
+      <span id={id}>{section.label}</span>{" "}
+      {on.length > 0 && <span className="ml-auto font-mono text-[12px] font-normal text-ink-3">{on.length} of {section.options.length}</span>}
+    </Check>
+  );
+}
+
+function Section({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
+  const id = useId();
+  const { checked, set } = useSection(section, search, write);
   return (
     <fieldset aria-labelledby={id} className="m-0 min-w-0 border-rule px-4 py-2.5 not-first:border-t">
       <legend className="float-left w-full">
-        <Check head name={section.label} checked={all} mixed={on.length > 0 && !all} disabled={section.options.length === 0}
-          onChange={() => set(all ? [] : section.options.map((option) => option.value))}>
-          <span id={id}>{section.label}</span>{" "}
-          {on.length > 0 && <span className="ml-auto font-mono text-[12px] font-normal text-ink-3">{on.length} of {section.options.length}</span>}
-        </Check>
+        <SectionHead id={id} section={section} checked={checked} set={set} />
       </legend>
       {section.options.map((option) => (
         <Check key={option.value} name={option.label} checked={checked.includes(option.value)}
@@ -327,20 +340,18 @@ function MenuCheck({ type, name, checked, onChange, children, className = MENU_R
 
 function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
   const id = useId();
-  const checked = checkedOf(search, section.param);
-  const set = (values: string[]) => {
-    const kept = section.options.map((option) => option.value).filter((value) => values.includes(value));
-    write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
-  };
+  const { checked, set } = useSection(section, search, write);
   return (
     <fieldset aria-labelledby={id} className="m-0 min-w-0 border-0 p-0">
-      <legend id={id} className={`${MENU_HEAD} float-left w-full`}>{section.label}</legend>
+      <legend className="float-left w-full px-2 text-[12px] *:min-h-[26px] *:gap-2">
+        <SectionHead id={id} section={section} checked={checked} set={set} />
+      </legend>
       {section.options.map((option) => (
         <MenuCheck key={option.value} type="checkbox" name={option.label} checked={checked.includes(option.value)}
           onChange={() => set(checked.includes(option.value) ? checked.filter((value) => value !== option.value) : [...checked, option.value])}
           className={`${MENU_ROW} ${option.count === 0 ? "text-ink-3" : ""}`}>
           {option.colour && <i aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: option.colour }} />}
-          <span className={`min-w-0 truncate ${section.mono ? "font-mono text-[12px]" : ""}`}>{option.label}</span>{" "}
+          <span data-option-label className={`min-w-0 truncate ${section.mono ? "font-mono text-[12px]" : ""}`}>{option.label}</span>{" "}
           <span className="ml-auto font-mono text-[12px] font-normal tabular-nums text-ink-3">{option.count}</span>
         </MenuCheck>
       ))}
@@ -391,6 +402,50 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
   const { open, setOpen, box, button } = usePopover(hidden);
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
+  const sheet = useRef<HTMLDivElement>(null);
+  const shift = useRef(0);
+  const fit = useRef<((reveal: boolean) => void) | null>(null);
+  useLayoutEffect(() => {
+    if (!open || !icon) return;
+    const node = sheet.current!;
+    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit.current?.(true));
+    let pane: HTMLElement | null = null;
+    shift.current = 0;
+    // Size, stacking and offset are set on the node, not in state, as each is measured after the one before it lays out.
+    fit.current = (reveal) => {
+      const parent = scrollParent(node);
+      if (parent !== pane) {
+        pane = parent;
+        moves?.disconnect();
+        for (const watched of [button.current!, pane]) moves?.observe(watched);
+      }
+      if (node.offsetWidth === 0) return;
+      // offsetWidth is rounded, so a scale taken from it drifts and the width it sets flips between two values.
+      const scale = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? node.getBoundingClientRect().width / node.offsetWidth;
+      const view = shownPart(pane, scale);
+      // Trying two columns shortens the dialog, which would reset a reader's scroll inside it.
+      const scrolled = node.scrollTop;
+      node.style.maxWidth = `${Math.max(0, view.right - view.left - 2 * MENU_EDGE) / scale}px`;
+      node.style.maxHeight = `${Math.max(0, Math.min(MENU_HEIGHT, (view.bottom - view.top - 2 * MENU_EDGE) / scale))}px`;
+      node.removeAttribute("data-stacked");
+      if ([...node.querySelectorAll("[data-option-label]")].some((label) => label.scrollWidth > label.clientWidth)) node.setAttribute("data-stacked", "");
+      node.scrollTop = scrolled;
+      const { left, width } = node.getBoundingClientRect();
+      const from = left - shift.current * scale;
+      const over = from + width - (view.right - MENU_EDGE);
+      shift.current = (Math.max(view.left + MENU_EDGE, from - Math.max(0, over)) - from) / scale;
+      node.style.translate = `${shift.current}px 0`;
+      // Moving up would cover the trigger, so what passes the bottom is scrolled into view; a reader's own scroll after a pick is kept.
+      if (reveal) node.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    fit.current(true);
+    return () => {
+      fit.current = null;
+      moves?.disconnect();
+    };
+  }, [open, icon]);
+  // A pick sets its label in a heavier weight and new counts change widths, neither of which resizes what is observed.
+  useLayoutEffect(() => fit.current?.(false));
   return (
     <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
       {icon ? (
@@ -413,16 +468,18 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
         </button>
       )}
       {open && icon && (
-        <div role="dialog" aria-label={label}
-          className="absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] grid-cols-3 gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
-          <div>
-            {sorting && <MenuSorting sorting={sorting} />}
-            {extra}
-          </div>
-          <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2">
+        <div ref={sheet} role="dialog" aria-label={label}
+          className={`group/sheet absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] scroll-my-2 ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card data-stacked:grid-cols-1`}>
+          {(sorting || extra) && (
+            <div>
+              {sorting && <MenuSorting sorting={sorting} />}
+              {extra}
+            </div>
+          )}
+          <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 group-data-stacked/sheet:col-span-1 group-data-stacked/sheet:grid-cols-1 group-data-stacked/sheet:grid-rows-none [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2 group-data-stacked/sheet:[&>fieldset:nth-child(2)]:col-start-1 group-data-stacked/sheet:[&>fieldset:nth-child(2)]:row-span-1">
             {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
           </div>
-          <div className="col-span-3 mt-1.5 flex justify-end border-t border-hair pt-1.5">
+          <div className="col-span-full mt-1.5 flex justify-end border-t border-hair pt-1.5">
             <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
               className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
               Clear
@@ -464,6 +521,7 @@ export function PressedGroup<V extends string | number>({ label, options, value,
 
 const MENU_EDGE = 8;
 const MENU_GAP = 6;
+const MENU_HEIGHT = 560;
 
 function scrollParent(node: HTMLElement): HTMLElement {
   for (let at = node.parentElement; at != null; at = at.parentElement) {
