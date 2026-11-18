@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { destroyStages } from "../../vendor/spectra/core/stage";
 import * as caustics from "../../vendor/spectra/caustics";
 import * as haze from "../../vendor/spectra/haze";
 import * as lava from "../../vendor/spectra/lava";
@@ -52,6 +53,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
     try {
       drawing = mountEffect(effect, container, palette, motion);
     } catch {
+      destroyStages(container);
       container.querySelector("canvas")?.remove();
       setFallback(true);
       return;

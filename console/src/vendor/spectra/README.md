@@ -29,5 +29,7 @@ copy:
   drawing buffer changes, its quality governor rests while the frame is held,
   and its textures are capped to the GPU's limit, which a wide header band
   would exceed.
+- The stage records itself against its container, and `destroyStages`
+  destroys what a mount that threw after creating its stage left live.
 - Haze is trimmed to the `ember` palette the console overrides, and falls back
   when its shaders fail to compile.

@@ -651,3 +651,29 @@ test("Plume that fell back while moving draws again when the system turns on red
     media.mockRestore();
   }
 });
+
+test("an effect whose shaders fail to compile falls back and releases its WebGL context and canvas, for each of the four new effects", async () => {
+  let released = 0;
+  const failingGl = new Proxy({}, {
+    get: (_, name) => {
+      if (typeof name === "string" && /^[A-Z_0-9]+$/.test(name)) return name;
+      if (name === "getShaderParameter") return () => false;
+      if (name === "getExtension") return (extension: string) => (extension === "WEBGL_lose_context" ? { loseContext: () => { released += 1; } } : {});
+      return () => ({});
+    },
+  });
+  const context = spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(((kind: string) => (kind === "webgl2" ? failingGl : null)) as typeof HTMLCanvasElement.prototype.getContext);
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    const band = () => screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    for (const name of ["Caustics", "Plume", "Ribbons", "Lava"]) {
+      released = 0;
+      fireEvent.click(tile("Header", name));
+      expect([name, released, band().querySelectorAll("canvas").length, band().classList.contains("haze-fallback")]).toEqual([name, 1, 0, true]);
+    }
+  } finally {
+    cleanup();
+    context.mockRestore();
+  }
+});

@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 packages/core/src/stage.ts (MIT, see ../LICENSE), given a held option that keeps adaptive resolution off a still frame.
+// Vendored from wevial/spectra@d34e0f8 packages/core/src/stage.ts (MIT, see ../LICENSE), given a held option that keeps adaptive resolution off a still frame and destroyStages for a mount that threw.
 // Host plumbing every effect needs: a canvas filling its container, a WebGL2
 // context, DPR-capped sizing, mouse tracking in GL uv space, and a render loop
 // that pauses while the tab is hidden or the canvas is scrolled out of view.
@@ -43,6 +43,13 @@ export interface StageOptions {
   onResize?: () => void;
   /** True while the effect holds one still frame, whose frame times are the page's and must not shrink the drawing buffer. */
   held?: () => boolean;
+}
+
+const stagesIn = new WeakMap<HTMLElement, Set<Stage>>();
+
+/** Destroys every stage still live in `container`, such as one left by an effect whose mount threw after creating it. */
+export function destroyStages(container: HTMLElement): void {
+  stagesIn.get(container)?.forEach((stage) => stage.destroy());
 }
 
 /** Returns null when WebGL2 (or float targets, if asked) is unavailable. */
@@ -137,8 +144,11 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
       io.disconnect();
       gl.getExtension('WEBGL_lose_context')?.loseContext();
       canvas.remove();
+      stagesIn.get(container)?.delete(stage);
     },
   };
+  if (!stagesIn.has(container)) stagesIn.set(container, new Set());
+  stagesIn.get(container)!.add(stage);
 
   function tick(now: number) {
     rafId = 0;
