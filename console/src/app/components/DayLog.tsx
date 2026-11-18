@@ -190,10 +190,12 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
   const earlier = listed.length - shown.length;
   const keys = keysOf(shown);
   const rows = shown.length + (earlier > 0 ? 1 : 0);
+  const [stuck, setStuck] = useState(false);
   return (
     <aside aria-labelledby={preview ? undefined : heading} aria-label={preview ? "Today's log preview" : undefined}
+      onScroll={(event) => setStuck(event.currentTarget.scrollTop > 0)}
       className={`min-w-0 h-full overflow-y-auto [scrollbar-width:thin] day-log-scroll ${className}`}>
-      <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 bg-canvas py-1">
+      <div data-stuck={stuck || undefined} className={`sticky top-0 z-10 flex min-h-11 items-center gap-2 py-1 ${stuck ? "bg-canvas" : ""}`}>
         <Heading id={heading} className="mr-auto font-sans text-[14px] font-semibold leading-none text-ink">
           {preview ? "Today's log" : "Today"}
         </Heading>
