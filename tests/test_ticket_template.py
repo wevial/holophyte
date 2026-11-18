@@ -380,6 +380,14 @@ class CliTests(unittest.TestCase):
             [sys.executable, str(ROOT / "ticket_template.py"), *paths],
             capture_output=True, text=True)
 
+    def test_valid_file_exits_zero(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
+            f.write(FILLED)
+            f.flush()
+            r = self.run_cli(f.name)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK", r.stdout)
+
     def test_invalid_file_exits_nonzero_and_lists_problems(self):
         with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
             f.write(FILLED.replace("## Summary", "## Summaries"))
@@ -392,6 +400,8 @@ class CliTests(unittest.TestCase):
     def test_real_template_file_exits_nonzero(self):
         r = self.run_cli(str(ROOT / "holophyte/tickets/templates/ticketTemplate.md"))
         self.assertNotEqual(r.returncode, 0)
+        self.assertIn("INVALID", r.stdout)
+        self.assertIn("unfilled template placeholder in title", r.stdout)
 
     def test_no_args_usage_exit_two(self):
         r = self.run_cli()
