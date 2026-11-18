@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import getpass
 import json
 import os
@@ -368,10 +369,12 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
         raise SystemExit(
             f"[holo2] {identifier}: run {run_id} recorded branch {branch},"
             f" but the next claim resumes {claim.branch}; nothing approved")
-    with _set_aside(target, claim.wt, run_id, branch, sha,
-                    identifier) as (dropped, aside):
+    with _approval_lock(target, run_id, identifier), _set_aside(
+            target, claim.wt, run_id, branch, sha,
+            identifier) as (dropped, aside, unmoved):
         try:
-            store.approve_swept(conn, ticket_id, note, sha, run_id, rnd)
+            store.approve_swept(conn, ticket_id, note, sha, run_id, rnd,
+                                confirm=unmoved)
         except (store.ApproveRefused, ValueError, sqlite3.Error) as refused:
             raise SystemExit(f"[holo2] {refused}; nothing approved") from None
     print(f"[holo2] {identifier} approved at {sha}: run {run_id}, swept"
@@ -402,11 +405,12 @@ def _reviewed_commit(conn, run_id):
         verdict == "error") else []
     for kind, payload in conn.execute(
             "SELECT kind, payload FROM runEvents WHERE runId = ? AND kind IN"
-            " ('blast_radius', 'criteria') ORDER BY seq", (run_id,)):
+            " ('blast_radius', 'reviewed_commit', 'criteria') ORDER BY seq",
+            (run_id,)):
         payload = json.loads(payload or "{}")
         if payload.get("round") != rnd:
             continue
-        if kind == "blast_radius":
+        if kind != "criteria":
             sha = payload.get("sha")
         else:
             unmet = [f"{entry['id']} {entry['status']}"
@@ -436,6 +440,24 @@ class _StepFailed(Exception):
 
 
 @contextlib.contextmanager
+def _approval_lock(target, run_id, identifier):
+    common = _git(target.path, "rev-parse", "--git-common-dir")
+    if common.returncode != 0:
+        raise SystemExit(f"[holo2] {identifier}: git rev-parse failed:"
+                         f" {common.stderr.strip()}; nothing approved")
+    lock = Path(target.path, common.stdout.strip(),
+                f"holophyte-approve-{run_id}.lock")
+    with open(lock, "a") as held:
+        try:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit(
+                f"[holo2] {identifier}: another approval of run {run_id} is"
+                " in progress; nothing approved") from None
+        yield
+
+
+@contextlib.contextmanager
 def _set_aside(target, worktree, run_id, branch, sha, identifier):
     repo, refused = target.path, f"[holo2] {identifier}: "
     tip = _git(repo, "rev-parse", "--verify", "--quiet",
@@ -451,16 +473,9 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}branch {branch} is not checked out at {worktree},"
             " where the next claim resumes it; nothing approved")
-    status = _git(worktree, "status", "--porcelain",
-                  "--untracked-files=normal")
-    if status.returncode != 0:
-        raise SystemExit(f"{refused}git status failed in {worktree}:"
-                         f" {status.stderr.strip()}; nothing approved")
-    if status.stdout.strip():
-        raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
-                         f" changes on {branch}; nothing approved")
+    _require_clean(worktree, branch, refused)
     if tip == sha:
-        yield [], None
+        yield [], None, lambda: None
         return
     ref = f"{DROPPED_REF}{run_id}"
     kept = _git(repo, "rev-parse", "--verify", "--quiet", ref).stdout.strip()
@@ -478,7 +493,7 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
     try:
         _replace_worktree(target, undo, worktree, aside, branch, ref,
                           kept, sha, tip)
-        yield dropped, aside
+        yield dropped, aside, lambda: _unmoved(aside, tip)
     except BaseException as failed:
         stuck = _undo(undo)
         left = (f"; undoing it stopped at {stuck}, so {branch}, {worktree}"
@@ -490,6 +505,20 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
         if stuck:
             print(f"{refused}{left[2:]}", file=sys.stderr)
         raise
+
+
+def _require_clean(worktree, branch, refused):
+    if not worktree.is_dir():
+        raise SystemExit(f"{refused}the worktree {worktree} of {branch} is"
+                         " missing; nothing approved")
+    status = _git(worktree, "status", "--porcelain",
+                  "--untracked-files=normal")
+    if status.returncode != 0:
+        raise SystemExit(f"{refused}git status failed in {worktree}:"
+                         f" {status.stderr.strip()}; nothing approved")
+    if status.stdout.strip():
+        raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
+                         f" changes on {branch}; nothing approved")
 
 
 NO_REF = "0" * 40
@@ -513,6 +542,14 @@ def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
         ok, report = run_worktree_setup(target, worktree)
     if not ok:
         raise _StepFailed(f"worktree setup failed in {worktree}: {report}")
+    left = _git(worktree, "status", "--porcelain", "--untracked-files=normal")
+    if left.returncode != 0 or left.stdout.strip():
+        raise _StepFailed(
+            f"worktree setup left {worktree} unclean, which the next claim"
+            f" refuses as drift: {(left.stdout or left.stderr).strip()}")
+
+
+def _unmoved(aside, tip):
     moved = _git(aside, "rev-parse", "HEAD").stdout.strip()
     if moved != tip:
         raise _StepFailed(f"the worktree set aside at {aside} moved on to"

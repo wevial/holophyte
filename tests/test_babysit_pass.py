@@ -189,6 +189,34 @@ class MergeModeBabysitPassTests(cases.ConflictRefusalCases, MergeModeFixture):
         self.assertEqual(events[covering - 1][0], "phase_change")
         self.assertIn("-> reviewing: review of the fix at", events[covering - 1][1])
 
+    def test_a_swept_covering_review_is_approved_at_the_commit_it_judged(self):
+        import store
+        review = self.conflict_refusal(conflict=True)
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
+        self.loop(self.ratchet_work(), review, Idle(""),
+                  Commit("Resolve main", path="tests/test_file_sizes.py",
+                         body="branch's line\nmain's line\n"), REQUEST_CHANGES,
+                  provider=self.provider())
+        judged = self.git("rev-parse", BRANCH).strip()
+        with closing(store.open(str(self.db))) as conn:
+            (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
+            store.release(conn, run_id, "failed", "swept by the supervisor in"
+                          " phase reviewing: review_stuck",
+                          failure_kind="swept")
+        out = io.StringIO()
+
+        with self.assertRaises(SystemExit) as refused:
+            holophyte.cli.operator.approve(self.project, "KO-131", "ok",
+                                           out=out)
+        holophyte.cli.operator.approve(self.project, "KO-131", "ok", out=out,
+                                       force=True)
+
+        self.assertIn("C1 unwitnessed", str(refused.exception))
+        self.assertIn(f"approved at {judged}", out.getvalue())
+        self.assertEqual(
+            self.read("SELECT candidateSha, resumePhase FROM runs"),
+            [(judged, "merge_gate")])
+
     def test_a_candidate_behind_main_merges_main_and_verifies_before_merging(self):
         import test_babysitter
         self.configure('[merge]\nmode = "pr"\n')

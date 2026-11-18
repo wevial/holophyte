@@ -253,7 +253,8 @@ def swept_condition(conn, run_id):
     return matched[1]
 
 
-def approve_swept(conn, ticket_id, note, sha, run_id, judged_round):
+def approve_swept(conn, ticket_id, note, sha, run_id, judged_round,
+                  confirm=None):
     now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
@@ -287,6 +288,8 @@ def approve_swept(conn, ticket_id, note, sha, run_id, judged_round):
         conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
                      (ticket_id,))
         walk_ticket(conn, ticket_id, "ready")
+        if confirm is not None:
+            confirm()
 
 
 def babysit(conn, ticket_id, note, now=None, source="human", *,

@@ -14,9 +14,11 @@ Run: python3 -m unittest discover -s tests -p 'test_cli_*' -v
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import io
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -536,6 +538,7 @@ class SweptApproveCliTests(unittest.TestCase):
     cli = ApproveCliTests.cli
     interventions = ApproveCliTests.interventions
     ticket_row = ApproveCliTests.ticket_row
+    judged_by = "blast_radius"
 
     def commit(self, text, message):
         (self.wt / "work").write_text(text)
@@ -555,7 +558,7 @@ class SweptApproveCliTests(unittest.TestCase):
 
     def judged(self, rnd, sha, statuses):
         store.record_event(
-            self.conn, self.run, "blast_radius", f"round {rnd} blast radius",
+            self.conn, self.run, self.judged_by, f"round {rnd} judged",
             level="detail", payload=json.dumps(
                 {"round": rnd, "sha": sha, "tier": "low"}))
         if statuses is not None:
@@ -637,6 +640,37 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn(f"approved at {self.reviewed}", out)
         self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
                       out)
+
+    def test_a_covering_review_round_names_the_commit_approved(self):
+        self.judged_by = "reviewed_commit"
+        self.branch_with_wip()
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+
+    def test_an_approval_already_in_progress_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        lock = self.repo / ".git" / f"holophyte-approve-{self.run}.lock"
+
+        with open(lock, "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            self.assertIn("another approval", self.refused("--note", "ok"))
+
+    def test_a_deleted_worktree_is_refused_naming_it(self):
+        self.branch_with_wip()
+        self.sweep()
+        shutil.rmtree(self.wt)
+        store_before = list(self.conn.iterdump())
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("is missing", str(raised.exception))
+        self.assertEqual(list(self.conn.iterdump()), store_before)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
 
     def test_an_unwitnessed_criterion_refuses_unless_forced(self):
         self.branch_with_wip()
@@ -869,6 +903,24 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn("moved on to", why)
         self.assert_worker_commit_on_the_branch()
 
+    def test_a_worker_commit_during_the_release_is_kept(self):
+        self.branch_with_wip()
+        self.sweep()
+        real_release = store.approve_swept
+
+        def worker_commits_first(*args, **kwargs):
+            (self.aside() / "work").write_text("the worker's last edit\n")
+            git(self.aside(), "commit", "-qam", "the worker's last commit")
+            return real_release(*args, **kwargs)
+
+        with patch.object(store, "approve_swept", worker_commits_first), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("moved on to", str(raised.exception))
+        self.assert_worker_commit_on_the_branch()
+        self.assertEqual(self.ticket_row()[0], "in_flight")
+
     def test_a_failing_post_checkout_hook_does_not_stop_the_approval(self):
         self.branch_with_wip()
         hook = self.repo / ".git" / "hooks" / "post-checkout"
@@ -919,6 +971,13 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertEqual(subprocess.run(
             hooks_path, cwd=self.repo, capture_output=True, text=True
         ).stdout.strip(), "")
+
+    def test_a_setup_leaving_an_untracked_file_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.with_setup("echo generated > generated.txt")
+        self.sweep()
+
+        self.assertIn("generated.txt", self.refused("--note", "ok"))
 
     def test_a_failed_setup_restores_the_worktree(self):
         self.branch_with_wip()
