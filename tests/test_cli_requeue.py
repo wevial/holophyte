@@ -400,6 +400,23 @@ class RequeueAmendTests(RequeueTarget):
         self.assertIn(f"KO-1 requeued after run {self.run}", out.getvalue())
         self.assertIn(f"steer note {note_id}", out.getvalue())
 
+    def test_an_amended_requeue_keeps_the_open_branch_line_out_of_the_amendment(self):
+        url = "https://github.com/example/repo/pull/2177"
+        park_run(self.conn, self.run, "awaiting_merge_approval",
+                 "parked on its pull request", pr_url=url)
+        store.release(self.conn, self.run, "failed",
+                      "the babysit pass died", now=T0 + MINUTE)
+
+        with patch("getpass.getuser", return_value="caller"):
+            self.cli("--requeue", "KO-1", "--note", "contract fixed",
+                     "--amend", "DROP C1")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), [
+            "contract fixed\n\nThe failed run's branch is still open"
+            f" as {url}"])
+        self.assertEqual(self.amendments(), [("DROP C1", "caller")])
+
     def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
         self.fail_the_run()
         self.conn.commit()
