@@ -349,7 +349,7 @@ function useHistoryNav(bound: boolean) {
 
 const TITLE_BUTTON = `flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink ${APP_NO_DRAG}`;
 
-function HistoryButton({ name, shortcut, enabled, go, next = false }: { name: string; shortcut: string; enabled: boolean; go: () => void; next?: boolean }) {
+function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; shortcut: string; enabled: boolean; go: () => void; next?: boolean }) {
   return (
     <Tooltip delay={300} shortcut={shortcut}>
       <TooltipTrigger
