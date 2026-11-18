@@ -128,18 +128,21 @@ test("the Header group offers the five effects and None in order, all enabled wi
   expect(pressed("Header")).toEqual(["Lava"]);
 });
 
-/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options and destroys. */
+/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs and destroys. */
 function fakeEffects() {
   const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava };
   const live: string[] = [];
   const options: Record<string, { motion?: boolean }[]> = {};
+  const configs: Record<string, { motion?: boolean }[]> = {};
   const spies = Object.entries(modules).map(([name, module]) => spyOn(module, "mount").mockImplementation(((container: HTMLElement, given: { motion?: boolean } = {}) => {
     container.appendChild(document.createElement("canvas"));
     live.push(name);
     (options[name] ??= []).push({ ...given });
-    return { config: { ...given }, destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); } };
+    const config = { ...given };
+    (configs[name] ??= []).push(config);
+    return { config, destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); } };
   }) as never));
-  return { live, options, restore: () => spies.forEach((spy) => spy.mockRestore()) };
+  return { live, options, configs, restore: () => spies.forEach((spy) => spy.mockRestore()) };
 }
 
 test("in a dark theme the band mounts only the picked effect: Caustics, then Ribbons in its place, and None leaves no band", async () => {
@@ -171,6 +174,26 @@ test("with Motion off each of the five effects is mounted asking for a still fra
       fireEvent.click(tile("Header", name));
       expect([name, effects.live]).toEqual([name, [name]]);
       expect([name, effects.options[name]!.at(-1)!.motion]).toEqual([name, false]);
+    }
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("turning Motion off asks each of the five running effects for a still frame without remounting it", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    for (const name of ["Caustics", "Plume", "Ribbons", "Lava", "Haze"]) {
+      fireEvent.click(tile("Header", name));
+      const running = effects.configs[name]!.at(-1)!;
+      const mounts = effects.configs[name]!.length;
+      expect([name, running.motion]).toEqual([name, true]);
+      fireEvent.click(motion());
+      expect([name, effects.live, effects.configs[name]!.length, running.motion]).toEqual([name, [name], mounts, false]);
+      fireEvent.click(motion());
     }
   } finally {
     cleanup();
