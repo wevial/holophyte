@@ -30,8 +30,8 @@ test("a confirm's box is a rounded raised surface ringed in hair-2, its label se
   const box = screen.getByRole("dialog", { name: "Save these changes?" });
   expect(classes(box)).toEqual(expect.arrayContaining(["rounded-[12px]", "bg-raised"]));
   expect(classes(box).some((name) => name.startsWith("shadow-[0_0_0_1px_var(--hair-2)"))).toBe(true);
-  expect(classes(box)).not.toEqual(expect.arrayContaining(["border-rule"]));
-  expect(classes(box)).not.toEqual(expect.arrayContaining(["bg-paper"]));
+  expect(classes(box)).not.toContain("border-rule");
+  expect(classes(box)).not.toContain("bg-paper");
   const label = within(box).getByText("Save · holophyte");
   expect(classes(label)).not.toContain("uppercase");
   expect(classes(label).filter((name) => name.startsWith("after:"))).toEqual([]);
@@ -42,9 +42,9 @@ test("a confirm's box is a rounded raised surface ringed in hair-2, its label se
 
 test("the Abort confirm's reason is a field-styled textarea under a label that is not uppercase", async () => {
   window.location.hash = "#/runs/demo/12";
-  const polls = fleet({ items: [], runs: [{ ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 }] }, { items: [] });
+  const polls = fleet({ items: [], runs: [run(12, "DEMO-12")] }, { items: [] });
   const fake = fakeDeps(async (url) => {
-    if (url === `${DEMO}/runs/12`) return Response.json({ ...servedRun, run: { ...servedRun.run, id: 12, ticket: "DEMO-12", phase: "reviewing", pr_url: null } });
+    if (url === `${DEMO}/runs/12`) return Response.json({ ...servedRun, run: { ...servedRun.run, id: 12 } });
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions: true });
     return polls(url);
   });
