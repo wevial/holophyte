@@ -16,7 +16,13 @@ import holophyte.loop.pipeline
 import store
 from holophyte.babysit.maintainer_notes import HINT_PREFIX
 from holophyte.loop.stop import resume_paused
-from tests.fake_agent import APPROVE, PASS, REQUEST_CHANGES, Commit
+from tests.fake_agent import (
+    APPROVE,
+    PASS,
+    REQUEST_CHANGES,
+    REQUEST_CHANGES_AGAIN,
+    Commit,
+)
 from tests.test_steer import SteerFixture
 
 NOTE = "also log the port"
@@ -193,7 +199,8 @@ class DeliveryTests(LiveSteerFixture):
     def test_a_note_steered_in_the_last_fix_turn_is_carried_before_adjudication(self):
         fake, _ = self.loop(
             Commit("the thing", path="app.txt"), REQUEST_CHANGES,
-            Commit("the fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+            Commit("the fix", path="app.txt", body="fixed\n"),
+            REQUEST_CHANGES_AGAIN,
             Steering(self, Commit("the second fix", path="app.txt",
                                   body="fixed again\n"), "-n", NOTE),
             Commit("the steer", path="app.txt", body="steered\n"), PASS)
@@ -209,7 +216,7 @@ class DeliveryTests(LiveSteerFixture):
                      "-n", HINT),
             Commit("the steer", path="app.txt", body="steered\n"),
             REQUEST_CHANGES, Commit("the fix", path="app.txt", body="fixed\n"),
-            REQUEST_CHANGES,
+            REQUEST_CHANGES_AGAIN,
             Commit("the second fix", path="app.txt", body="fixed again\n"), PASS)
 
         steered = fake.turns[1]
@@ -225,7 +232,8 @@ class DeliveryTests(LiveSteerFixture):
     def test_a_note_steered_during_adjudication_is_carried_and_judged_again(self):
         fake, _ = self.loop(
             Commit("the thing", path="app.txt"), REQUEST_CHANGES,
-            Commit("the fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+            Commit("the fix", path="app.txt", body="fixed\n"),
+            REQUEST_CHANGES_AGAIN,
             Commit("the second fix", path="app.txt", body="fixed again\n"),
             Steering(self, PASS, "-n", NOTE),
             Commit("the steer", path="app.txt", body="steered\n"), PASS)
@@ -291,7 +299,8 @@ class UnsteeredTests(LiveSteerFixture):
         with no live steering, the temporary root and commit shas normalized."""
         fake, _ = self.loop(
             Commit("the thing", path="app.txt"), REQUEST_CHANGES,
-            Commit("the fix", path="app.txt", body="fixed\n"), REQUEST_CHANGES,
+            Commit("the fix", path="app.txt", body="fixed\n"),
+            REQUEST_CHANGES_AGAIN,
             Commit("the second fix", path="app.txt", body="fixed again\n"), PASS)
 
         root = str(self.target.parent)

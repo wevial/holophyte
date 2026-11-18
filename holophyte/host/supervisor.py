@@ -55,6 +55,7 @@ TIME_BOX = "time_box"
 REVIEW_STUCK = "review_stuck"
 CRITERION_STUCK = "criterion_stuck"
 CRITERION_STUCK_ROUNDS = 3
+REVIEW_ADJUDICATION = "review_adjudication"
 
 SWEEP_EVENT = "supervisor_sweep"
 
@@ -70,7 +71,10 @@ Outcome = collections.namedtuple("Outcome", ("trip", "acted", "phase"))
 
 
 def review_overlap(conn, run_id):
-    rounds = store.read.newest_ended_rounds(conn, run_id)
+    return overlap_of(store.read.newest_ended_rounds(conn, run_id))
+
+
+def overlap_of(rounds):
     if len(rounds) < 2:
         return None
     later, earlier = rounds[0].round, rounds[1].round
@@ -82,6 +86,20 @@ def review_overlap(conn, run_id):
         return None
     overlap = store.findings_overlap(earlier_findings, later_findings)
     return None if overlap is None else (earlier, later, overlap)
+
+
+def adjudicated_rounds(conn, run_id):
+    return [json.loads(payload)["round"] for (payload,) in conn.execute(
+        "SELECT payload FROM runEvents WHERE runId = ? AND kind = ?"
+        " ORDER BY seq", (run_id, REVIEW_ADJUDICATION))]
+
+
+def stuck_overlap(conn, run_id, threshold):
+    overlap = review_overlap(conn, run_id)
+    if (overlap is None or overlap[2] < threshold
+            or overlap[1] in adjudicated_rounds(conn, run_id)):
+        return None
+    return overlap
 
 
 CRITERION_LINE_RE = re.compile(r"CRITERION C\d+:\s*(.*)")
@@ -145,8 +163,8 @@ def _quoted_reason(reason):
 
 
 def review_trip(conn, run_id, overlap_threshold):
-    overlap = review_overlap(conn, run_id)
-    if overlap is not None and overlap[2] >= overlap_threshold:
+    overlap = stuck_overlap(conn, run_id, overlap_threshold)
+    if overlap is not None:
         earlier, later, shared = overlap
         return (REVIEW_STUCK,
                 f"rounds {earlier} and {later} share {shared:.2f} of"
@@ -181,9 +199,8 @@ def still_tripped(target, conn, trip, knobs=None):
                     run.reviewRoundCap or MAX_ROUNDS, knobs.budget_grace,
                     knobs.run_cap))
     if trip.condition == REVIEW_STUCK:
-        overlap = review_overlap(conn, trip.run_id)
-        return (overlap is not None
-                and overlap[2] >= knobs.review_overlap_threshold)
+        return stuck_overlap(conn, trip.run_id,
+                             knobs.review_overlap_threshold) is not None
     if trip.condition == CRITERION_STUCK:
         return criteria_stuck(conn, trip.run_id,
                               knobs.review_overlap_threshold) is not None

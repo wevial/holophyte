@@ -1,5 +1,5 @@
 import type { MergeQueue, MergeQueueCheck, MergeQueueConfiguration, MergeQueueEntry, MergeQueueRun } from "../lib/contract.gen";
-import { formatClock, formatDuration, formatSpan } from "../lib/format";
+import { formatDuration, formatSpan } from "../lib/format";
 import { phaseLabel } from "../lib/runs";
 import type { State, Tone } from "./state";
 
@@ -64,16 +64,6 @@ export function checkLook(check: MergeQueueCheck, now: number): { state: State; 
   if (check.conclusion === "skipped") return { state: "abandoned", tone: "ink-3", words: "skipped" };
   const took = check.started_ms == null || check.completed_ms == null ? "" : formatDuration(check.completed_ms - check.started_ms);
   return GOOD.has(check.conclusion ?? "") ? { state: "ready_to_merge", tone: "live", words: took } : { state: "failed", tone: "bad", words: took || (check.conclusion ?? "") };
-}
-
-/** The open row's line: its merge group, building since, added and merges at. */
-export function entryLine(entry: MergeQueueEntry, now: number): string {
-  return [
-    entry.group_sha == null ? null : `merge group ${entry.group_sha.slice(0, 7)}`,
-    entry.building_ms == null ? null : `building since ${formatClock(entry.building_ms)}`,
-    entry.enqueued_ms == null ? null : `added ${formatClock(entry.enqueued_ms)}${entry.pr.author ? ` by ${entry.pr.author}` : ""}`,
-    entry.estimated_s == null ? null : `merges ~${formatClock(now + entry.estimated_s * SECOND)}`,
-  ].filter((part) => part != null).join(" · ");
 }
 
 interface JumpCost {

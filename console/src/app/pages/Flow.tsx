@@ -3,7 +3,10 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import type { Flow } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
 import { BarChart, Change, LineChart, Sparkline, type TrendNumber } from "../components/FlowCharts";
+import { DropIcon } from "../components/icons";
 import { dayRangeLabel, usePopover } from "../components/ListFilters";
+import { PageHeader } from "../components/PageHeader";
+import { Picker } from "../components/Picker";
 import {
   BY_DESIGN,
   flowNumbers,
@@ -24,10 +27,11 @@ import { storeScope } from "../projects";
 import { useFlows, type FlowWindow } from "../queries";
 import { PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 
-const H2 = "font-sans text-[15px] font-semibold leading-[1.3] text-ink";
-const LABEL = "font-mono text-[11px] font-medium uppercase leading-[1.3] tracking-[0.1em] text-ink-3";
+const HEADING = "font-sans text-[13px] font-semibold text-ink";
+const H2 = `flex h-[30px] items-center border-b border-hair ${HEADING}`;
 const INSIDE_MIN = 8;
-const CONTROL = "min-h-11 min-w-48 cursor-pointer border border-rule bg-paper px-2.5 font-sans text-[13px] font-semibold text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
+const RAISED = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
+const MENU = "rounded-[9px] bg-raised shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]";
 
 const RANGES = [
   { value: "4w", label: "Last 4 weeks", weeks: 4 },
@@ -37,6 +41,7 @@ const RANGES = [
 ] as const;
 type FlowRange = (typeof RANGES)[number]["value"];
 const DEFAULT_RANGE: FlowRange = "6w";
+const ALL = "";
 const WEEKS_CAP = 26;
 
 export interface FlowSearch {
@@ -95,13 +100,15 @@ interface Trend {
 
 function Figure({ label, children, tone = "text-ink", trend, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; note?: string }) {
   return (
-    <div className="flex flex-col gap-2 px-4 py-4 not-first:border-l not-first:border-rule">
-      <dt className={LABEL}>{label}</dt>
-      <dd className="flex items-center gap-3">
-        <span data-number={label} className={`font-mono text-[26px] font-semibold leading-[1.15] ${tone}`}>{children}</span>
+    <div className={`flex min-w-0 flex-col gap-2 px-3.5 py-3 transition-colors duration-(--motion-colour) hover:bg-hover ${RAISED}`}>
+      <dt className="font-sans text-[12px] text-ink-3">{label}</dt>
+      <dd className="flex flex-col gap-2">
+        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span data-number={label} className={`font-sans text-[30px] font-[240] font-stretch-120% leading-none tracking-[-0.02em] ${tone}`}>{children}</span>
+          {trend && <Change number={trend.number} values={trend.values} />}
+        </span>
         {trend && <Sparkline values={trend.values} />}
       </dd>
-      {trend && <Change number={trend.number} values={trend.values} />}
       {note && <dd className="font-sans text-[12px] leading-[1.5] text-ink-3">{note}</dd>}
     </div>
   );
@@ -109,7 +116,7 @@ function Figure({ label, children, tone = "text-ink", trend, note }: { label: st
 
 function Numbers({ numbers, weekly }: { numbers: FlowNumbers; weekly: FlowWeekly }) {
   return (
-    <dl aria-label="Flow numbers" className="grid grid-cols-5 border border-rule bg-paper max-[960px]:grid-cols-2">
+    <dl aria-label="Flow numbers" className="grid grid-cols-5 gap-3 max-[960px]:grid-cols-2">
       <Figure label="Merged" trend={{ number: "merged", values: weekly.merged }}>{numbers.merged}</Figure>
       <Figure label="Waiting" tone="text-wait" trend={{ number: "waiting", values: weekly.waitingShare }}>
         {numbers.waitingShare == null ? "–" : `${numbers.waitingShare}%`}
@@ -132,7 +139,7 @@ function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: 
   return (
     <section aria-labelledby="flow-weeks" className="flex flex-col gap-3">
       <h2 id="flow-weeks" className={H2}>Week by week</h2>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-px border border-rule bg-rule">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-3">
         <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} tip={tips.merged} />
         <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} tip={tips.waiting} />
         {allProjects ? (
@@ -149,8 +156,8 @@ function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: 
 function TimeSplit({ numbers }: { numbers: FlowNumbers }) {
   return (
     <section aria-labelledby="flow-split" className="flex flex-col gap-3">
-      <header className="flex items-baseline justify-between gap-4">
-        <h2 id="flow-split" className={H2}>Where run time went</h2>
+      <header className="flex h-[30px] items-center gap-2.5 border-b border-hair">
+        <h2 id="flow-split" className={HEADING}>Where run time went</h2>
         <span className="font-mono text-[12px] text-ink-3">{Math.round(numbers.total)} run-hours</span>
       </header>
       <div data-split className="flex h-12 bg-paper-2">
@@ -188,12 +195,12 @@ function BiggestWaits({ waits }: { waits: FlowNumbers["waits"] }) {
             <span className="flex items-center justify-between gap-3 font-sans text-[13px] text-ink">
               <span className="flex items-center gap-2">
                 {WAIT_WORDS[group] ?? group}
-                {BY_DESIGN.has(group) && <span className="border border-rule px-1.5 font-mono text-[10.5px] text-ink-2">by design</span>}
+                {BY_DESIGN.has(group) && <span className="inline-flex h-5 items-center rounded-[5px] bg-selected px-[7px] font-sans text-[11.5px] font-semibold leading-none text-ink-2">by design</span>}
               </span>
               <span className="font-mono text-[12px] text-ink-2">{formatHours(hours)}</span>
             </span>
-            <span aria-hidden="true" className="block h-1 bg-paper-2">
-              <span className={`block h-full ${index === 0 ? "bg-need" : "bg-wait"}`} style={{ width: `${share(hours, top)}%` }} />
+            <span aria-hidden="true" className="block h-1 rounded-full bg-paper-2">
+              <span className={`block h-full rounded-full ${index === 0 ? "bg-need" : "bg-wait"}`} style={{ width: `${share(hours, top)}%` }} />
             </span>
           </li>
         ))}
@@ -208,32 +215,32 @@ interface ProjectFlow {
 }
 
 function ProjectsTable({ projects, scope, pick }: { projects: ProjectFlow[]; scope: string | undefined; pick: (name: string) => void }) {
-  const cell = "px-2 py-3 font-mono text-[13px] text-ink";
-  const head = `${LABEL} px-2 py-2 font-medium`;
+  const cell = "h-[34px] border-b border-hair pr-2.5 font-mono text-[12.5px] text-ink-2";
+  const head = "h-[30px] border-b border-hair pr-2.5 font-sans text-[12px] font-medium text-ink-3";
   return (
     <section aria-labelledby="flow-projects" className="flex flex-col gap-3">
       <h2 id="flow-projects" className={H2}>Projects side by side</h2>
-      <table className="w-full border-collapse">
+      <table className="w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-rule text-left">
+          <tr className="text-left">
             <th scope="col" className={head}>Project</th>
             <th scope="col" className={`${head} text-right`}>Merged</th>
-            <th scope="col" className={head}>Waiting</th>
+            <th scope="col" className={`${head} text-right`}>Waiting</th>
             <th scope="col" className={`${head} text-right`}>Rounds</th>
             <th scope="col" className={`${head} text-right`}>Reverted</th>
           </tr>
         </thead>
         <tbody>
           {projects.map(({ name, numbers }) => (
-            <tr key={name} aria-current={name === scope ? "true" : undefined} className="border-b border-rule-2 aria-[current]:bg-paper-2">
-              <th scope="row" className="px-2 py-3 text-left">
-                <button type="button" onClick={() => pick(name)} className="cursor-pointer font-sans text-[13px] font-semibold text-ink hover:text-act">{name}</button>
+            <tr key={name} aria-current={name === scope ? "true" : undefined} className="hover:bg-hover aria-[current]:not-hover:bg-selected">
+              <th scope="row" className="h-[34px] border-b border-hair pr-2.5 text-left">
+                <button type="button" onClick={() => pick(name)} className="cursor-pointer font-sans text-[13px] font-medium text-ink hover:text-act">{name}</button>
               </th>
               <td className={`${cell} text-right`}>{numbers.merged}</td>
               <td className={cell}>
-                <span className="flex items-center gap-2">
-                  <span aria-hidden="true" className="block h-1 w-full max-w-24 bg-paper-2">
-                    <span className="block h-full bg-wait" style={{ width: `${numbers.waitingShare ?? 0}%` }} />
+                <span className="flex items-center justify-end gap-2">
+                  <span aria-hidden="true" className="block h-1 w-full max-w-24 rounded-full bg-paper-2">
+                    <span className="block h-full rounded-full bg-wait" style={{ width: `${numbers.waitingShare ?? 0}%` }} />
                   </span>
                   <span className="w-10 text-right">{numbers.waitingShare == null ? "–" : `${numbers.waitingShare}%`}</span>
                 </span>
@@ -253,17 +260,26 @@ function ProjectsTable({ projects, scope, pick }: { projects: ProjectFlow[]; sco
 
 function Phases({ phases }: { phases: FlowNumbers["phases"] }) {
   return (
-    <details className="border-t border-rule pt-4">
-      <summary className={`${H2} cursor-pointer`}>Every phase, in hours</summary>
-      <dl className="mt-3 grid max-w-md grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 font-mono text-[12.5px]">
+    <details>
+      <summary className={`h-[30px] cursor-pointer border-b border-hair leading-[30px] ${HEADING}`}>Every phase, in hours</summary>
+      <dl className="mt-2 flex max-w-md flex-col">
         {phases.map(({ phase, hours }) => (
-          <div key={phase} className="contents">
-            <dt className="text-ink-2">{phase}</dt>
-            <dd className="text-right text-ink">{formatHours(hours)}</dd>
+          <div key={phase} className="flex h-7 items-center justify-between gap-6 font-sans text-[13px]">
+            <dt className="text-ink-3">{phase}</dt>
+            <dd className="font-mono text-[12.5px] text-ink">{formatHours(hours)}</dd>
           </div>
         ))}
       </dl>
     </details>
+  );
+}
+
+function CheckMark({ on }: { on: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
+      className={`ml-auto size-3.5 shrink-0 text-accent ${on ? "" : "invisible"}`}>
+      <path d="m3.5 8.5 3 3 6-7" />
+    </svg>
   );
 }
 
@@ -272,7 +288,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
   const [draft, setDraft] = useState({ from: "", to: "" });
   const custom = search.from != null && search.to != null;
   const preset = search.range ?? DEFAULT_RANGE;
-  const field = "min-h-11 w-40 border border-rule bg-paper px-2 font-mono text-[12.5px] text-ink focus:outline-2 focus:-outline-offset-1 focus:outline-focus";
+  const field = "h-[30px] w-36 min-w-0 rounded-button border-0 bg-selected px-2 font-mono text-[12.5px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
   const toggle = () => {
     setDraft({ from: search.from ?? "", to: search.to ?? "" });
     setOpen(!open);
@@ -283,31 +299,33 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
     if (endedRange(next.from || undefined, next.to || undefined)) choose({ range: undefined, from: next.from, to: next.to });
   };
   return (
-    <div ref={box} className="relative flex flex-col gap-1.5">
-      <span aria-hidden="true" className={LABEL}>Range</span>
+    <div ref={box} className="relative" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}>
       <button ref={button} type="button" aria-label="Range" aria-haspopup="true" aria-expanded={open} onClick={toggle}
-        className={`${CONTROL} inline-flex items-center justify-between gap-3 text-left`}>
+        className="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
         {custom ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === preset)!.label}
-        <svg aria-hidden="true" viewBox="0 0 10 6" width={10} height={6} fill="none" stroke="currentColor" strokeWidth={1.4}>
-          <path d="M1 1l4 4 4-4" />
-        </svg>
+        <span className="flex text-ink-3"><DropIcon /></span>
       </button>
       {open && (
-        <div role="group" aria-label="Range choices"
-          className="absolute top-full right-0 z-20 mt-1 flex w-72 flex-col gap-4 border border-rule bg-paper p-4 shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
+        <div role="group" aria-label="Range choices" className={`absolute top-full right-0 z-20 mt-1 flex w-[220px] flex-col gap-1 p-1 ${MENU}`}>
           <div className="flex flex-col">
-            {RANGES.map((each) => (
-              <button key={each.value} type="button" aria-pressed={!custom && preset === each.value}
-                onClick={() => {
-                  choose({ range: each.value === DEFAULT_RANGE ? undefined : each.value, from: undefined, to: undefined });
-                  close();
-                }}
-                className="min-h-11 cursor-pointer px-3 text-left font-sans text-[13px] font-semibold text-ink hover:bg-paper-2 aria-pressed:bg-ink aria-pressed:text-paper">
-                {each.label}
-              </button>
-            ))}
+            {RANGES.map((each) => {
+              const on = !custom && preset === each.value;
+              return (
+                <button key={each.value} type="button" aria-pressed={on}
+                  onClick={() => {
+                    choose({ range: each.value === DEFAULT_RANGE ? undefined : each.value, from: undefined, to: undefined });
+                    close();
+                  }}
+                  className="flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button px-2 text-left font-sans text-[13px] text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink">
+                  {each.label}
+                  <CheckMark on={on} />
+                </button>
+              );
+            })}
           </div>
-          <div className="flex flex-col gap-3 border-t border-rule pt-4 font-sans text-[13px] text-ink-2">
+          <div className="flex flex-col gap-1.5 border-t border-hair px-2 pt-2 pb-1.5 font-sans text-[12px] text-ink-3">
             <label className="flex items-center justify-between gap-3">
               From
               <input type="date" value={draft.from} max={draft.to || undefined} className={field} onChange={(event) => pickDay({ from: event.target.value })} />
@@ -316,7 +334,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
               To
               <input type="date" value={draft.to} min={draft.from || undefined} max={lastEndedDay()} className={field} onChange={(event) => pickDay({ to: event.target.value })} />
             </label>
-            <span className="text-[12px] leading-[1.5] text-ink-3">Whole weeks back from To, one to 26; To is a past day.</span>
+            <span className="leading-[1.5]">Whole weeks back from To, one to 26; To is a past day.</span>
           </div>
         </div>
       )}
@@ -341,6 +359,7 @@ export function FlowPage() {
   const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;
   const weekly = flowWeekly(scoped);
+  const span = flowSpan(scoped);
   const names = [...new Set(hosts.flatMap((host) => (host.project == null ? [] : [projectName(host.project)])))];
   const pick = (name: string | undefined) => {
     storeScope(name ?? null);
@@ -349,24 +368,17 @@ export function FlowPage() {
   const choose = (change: FlowSearch) => void navigate({ to: "/flow", search: (previous: ScopeSearch & FlowSearch) => ({ ...previous, ...change }) });
   return (
     <section aria-labelledby="page-title" className="flex max-w-[1180px] flex-col gap-8 px-8 pt-3.5 pb-10 max-[720px]:px-4">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1.5">
-          <h1 id="page-title" className="font-sans text-[20px] font-semibold leading-[1.25] text-ink">Flow</h1>
-          <p className="font-sans text-[13px] leading-[1.5] text-ink-2">{flowSpan(scoped) ?? " "}</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1.5">
-            <span className={LABEL}>Project</span>
-            <select value={project ?? ""} onChange={(event) => pick(event.target.value === "" ? undefined : event.target.value)} className={CONTROL}>
-              <option value="">All projects</option>
-              {names.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-          <RangeControl search={search} choose={choose} />
-        </div>
-      </header>
+      <PageHeader
+        title="Flow"
+        count={span == null ? undefined : { text: span }}
+        tools={
+          <>
+            <Picker label="Project" options={[{ value: ALL, label: "All projects" }, ...names.map((name) => ({ value: name, label: name }))]}
+              value={project ?? ALL} onPick={(value) => pick(value === ALL ? undefined : value)} />
+            <RangeControl search={search} choose={choose} />
+          </>
+        }
+      />
       {numbers && (
         <>
           <Numbers numbers={numbers} weekly={weekly} />

@@ -160,6 +160,7 @@
   --ok-ink: var(--green-11);
   --ask-ink: var(--gold-11);
   --ask-wash: var(--gold-4);
+  --ask-text: var(--gold-12);
   --fact-ok: var(--green-9);
   --fact-warn: var(--orange-9);
   --warn-ink: var(--orange-11);
@@ -470,6 +471,7 @@
   --ok-ink: var(--green-11);
   --ask-ink: var(--gold-11);
   --ask-wash: var(--gold-4);
+  --ask-text: var(--ask);
   --fact-ok: var(--green-9);
   --fact-warn: var(--orange-9);
   --warn-ink: var(--orange-11);
@@ -758,6 +760,7 @@
     --ok-ink: var(--green-11);
     --ask-ink: var(--gold-11);
     --ask-wash: var(--gold-4);
+    --ask-text: var(--ask);
     --fact-ok: var(--green-9);
     --fact-warn: var(--orange-9);
     --warn-ink: var(--orange-11);
@@ -949,6 +952,7 @@
   --color-ok-ink: var(--ok-ink);
   --color-ask-ink: var(--ask-ink);
   --color-ask-wash: var(--ask-wash);
+  --color-ask-text: var(--ask-text);
   --color-warn-ink: var(--warn-ink);
   --color-warn-wash: var(--warn-wash);
   --color-wait-wash: var(--wait-wash);

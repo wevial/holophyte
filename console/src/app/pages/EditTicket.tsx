@@ -5,8 +5,10 @@ import { editTicket } from "../../lib/boardWrites";
 import { formatAge, formatClock } from "../../lib/format";
 import { checkSummary, count } from "../checker";
 import { Btn } from "../components/Btn";
-import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { PageHeader } from "../components/PageHeader";
 import { useToast } from "../components/Toast";
+import { FoldChevron } from "../components/icons";
 import { useBoards, useReadiness } from "../queries";
 import { PollDepsContext } from "../scope";
 import { pickedBody, pickedSide, priorityPart, sectionParts, type Part, type Pick } from "../sectionPicks";
@@ -15,12 +17,16 @@ import { changedNames, composeEdit, hasHeader, hasMockup, loadEdit, otherText, r
 import { clampEstimate } from "../ticketForm";
 import { hostCards } from "../tickets";
 import { NotFound } from "./Placeholder";
-import { CRUMB_LINK } from "./runShared";
+import { CRUMB_LINK, FORM_CARD, SAVE_CARD } from "./runShared";
 
 const SETTLED = new Set(["merged", "abandoned"]);
 const COLUMN_WORDS: Record<string, string> = { ready: "Ready", backlog: "Backlog" };
 
-function Frame({ project, ticketKey, children }: { project: string; ticketKey: string; children?: ReactNode }) {
+function monoNumbers(line: string): ReactNode {
+  return line.split(/(\d\w*)/).map((part, index) => index % 2 ? <span key={index} className="font-mono text-[12.5px]">{part}</span> : part);
+}
+
+function Frame({ project, ticketKey, line, children }: { project: string; ticketKey: string; line?: string; children?: ReactNode }) {
   return (
     <div className="px-6 pb-8 pt-5 max-[720px]:px-4">
       <section aria-labelledby="page-title" className="mx-auto max-w-[1180px]">
@@ -29,7 +35,7 @@ function Frame({ project, ticketKey, children }: { project: string; ticketKey: s
           <Link to="/tickets" search={{ project }} className={CRUMB_LINK}>{project}</Link>{" / "}
           <Link to="/tickets/$project/$key" params={{ project, key: ticketKey }} search={{}} className={CRUMB_LINK}>{ticketKey}</Link>{" / edit"}
         </nav>
-        <h1 id="page-title" className="mt-5 text-[24px] font-semibold text-ink">Edit {ticketKey}</h1>
+        <div className="mt-5"><PageHeader title={`Edit ${ticketKey}`} count={line == null ? undefined : { text: monoNumbers(line) }} /></div>
         {children}
       </section>
     </div>
@@ -64,7 +70,7 @@ export function EditTicket() {
   const handed = useLocation({ select: location => handedDraft(location.state) });
   if (page.kind === "unknown_project") return <NotFound />;
   if (page.kind === "not_mirrored") {
-    return <Frame project={project} ticketKey={key}><p className="mt-6 font-mono text-[13px] text-ink-3">No host of {project} has mirrored {key}.</p></Frame>;
+    return <Frame project={project} ticketKey={key}><p className="mt-6 font-sans text-[14px] text-ink-3">No host of {project} has mirrored {key}.</p></Frame>;
   }
   if (page.kind === "loading" || board == null) return <Frame project={project} ticketKey={key}><p className="mt-6 text-ink-3">Loading {key}…</p></Frame>;
   const { ticket } = page;
@@ -74,7 +80,7 @@ export function EditTicket() {
   if (board.editable !== true || revision == null || settled) {
     return (
       <Frame project={project} ticketKey={key}>
-        <div className="mt-6 font-mono text-[13px] text-ink-2">
+        <div className="mt-6 font-sans text-[14px] text-ink-2">
           <p>{settled ? `${key} is ${ticket.status} and can no longer be edited.` : `${key} cannot be edited from the console: its board is on Linear, or its host has actions off.`}</p>
           <Link to="/tickets/$project/$key" params={{ project, key }} search={{}} className="mt-3 inline-block text-act underline">Back to {key}</Link>
         </div>
@@ -257,16 +263,16 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
     : [`revision ${read.revision}`, read.at != null && `saved ${formatAge(now - read.at)} ago${read.author ? ` by ${read.author}` : ""}`, read.column != null && COLUMN_WORDS[read.column]].filter(Boolean).join(" · ");
 
   return (
-    <Frame project={project} ticketKey={ticketKey}>
-      <p className="mt-1.5 border-b border-rule pb-[18px] font-mono text-[13px] text-ink-2">{line}</p>
+    <Frame project={project} ticketKey={ticketKey} line={line}>
       <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0 space-y-6">
         {parts && <ConflictBanner ticketKey={ticketKey} started={origin.revision} newer={loaded} parts={parts} picks={picks}
           onPick={(key, pick) => setPicks(previous => ({ ...previous, [key]: pick }))} onLoad={() => loadPicks(parts)} onTake={takeTheirs} />}
-        <div className="min-w-0 divide-y divide-rule-2 border border-rule bg-paper [&>div]:p-5">
-          <Field label="Project">
-            <select id="new-Project" className={`${INPUT} font-sans`} value={project} disabled><option value={project}>{project}</option></select>
-          </Field>
+        <div className={FORM_CARD}>
+          <div>
+            <p className="font-sans text-[13px] font-semibold text-ink">Project</p>
+            <p data-project className="mt-1.5 font-sans text-[14px] text-ink [overflow-wrap:anywhere]">{project}</p>
+          </div>
           {drawn("Title") && input("title", "Title", "The outcome, as the board card says it.")}
           {drawn("Summary") && input("summary", "Summary", "One or two sentences. Shown under the title on the card and in peek.")}
           {drawn("What / Why / How") && <div className="grid gap-5 min-[720px]:grid-cols-2">
@@ -326,9 +332,10 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
             changed={index => !same(fields.evidence[index], origin.fields.evidence[index])} />}
           {drawn("Implementation notes") && input("notes", "Implementation notes", "Files, helpers and constraints the implementer should know.", true)}
           {fields.others.length + removed.length > 0 && <div>
-            <details open={read.raw.size > 0 || removed.length > 0}>
-              <summary className="cursor-pointer font-mono text-[11px] font-medium uppercase tracking-[.12em] text-ink-2">
-                Other sections <span className="normal-case tracking-[.04em] text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
+            <details open={read.raw.size > 0 || removed.length > 0} className="group">
+              <summary className="flex h-[30px] min-w-0 cursor-pointer items-center gap-2.5 border-b border-hair font-sans text-[13px] font-semibold text-ink">
+                <span className="flex group-open:[&>svg]:rotate-90"><FoldChevron open={false} /></span>
+                <span className="shrink-0 whitespace-nowrap">Other sections</span><span className="min-w-0 truncate font-normal text-ink-3">{[...fields.others, ...removed].map(other => other.name).join(" · ")}</span>
               </summary>
               <div className="mt-4 space-y-5">
                 {fields.others.map((other, at) => <Field key={other.index} label={other.name} optional changed={other.text !== otherText(fields, at, origin.fields)}>
@@ -345,15 +352,14 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
         </div>
         <aside aria-label="Save revision" className="min-w-0">
           <CheckerPanel summary={checkSummary(check, true)} marks={checked} />
-          <div className="border border-rule bg-paper p-5">
+          <div className={SAVE_CARD}>
             <div className="flex flex-wrap gap-2">
               <Btn variant="primary" busy={busy} busyLabel="Saving…" disabled={!changes.length || blocks || parts != null} onClick={() => void save()}>Save revision {read.revision + 1}</Btn>
               <Btn disabled={busy || !changes.length} onClick={discard}>Discard</Btn>
             </div>
-            <p className="mt-3 font-mono text-[12px] text-ink-2">{parts ? "Resolve the newer revision first. Your edit is safe." : saveNote(changes, errors, blocks, ticketKey)}</p>
+            <p className="mt-3 font-sans text-[13px] text-ink-2">{parts ? "Resolve the newer revision first. Your edit is safe." : saveNote(changes, errors, blocks, ticketKey)}</p>
             {refusal.length > 0 && !parts && <ul role="alert" className="mt-4 space-y-2 text-[13px] text-bad [overflow-wrap:anywhere]">{refusal.map((problem, index) => <li key={index}>{problem}</li>)}</ul>}
           </div>
-          <p className="mt-4 font-mono text-[12px] text-ink-3">Saved as the next revision. Errors block a Ready ticket; a Backlog ticket saves as a draft.</p>
         </aside>
       </div>
     </Frame>

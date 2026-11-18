@@ -50,7 +50,7 @@ async function openFolded(page: Page, width: number, height: number, hash = "#/f
     localStorage.setItem("holophyte.next.rail", "folded");
   });
   await page.goto(`/${hash}`);
-  await expect(page.locator("[data-count-line]")).toBeVisible();
+  await expect(page.locator("[data-page-count]")).toBeVisible();
 }
 
 async function toggleSidebar(page: Page, name: "Expand sidebar" | "Collapse sidebar") {
@@ -83,7 +83,7 @@ test("with Custom range open on a 650px window and the sidebar expanded, widenin
   await page.setViewportSize({ width: 650, height: 360 });
   await page.addInitScript(() => localStorage.setItem("holophyte.textSize", "125"));
   await page.goto("/#/findings?from=2026-09-30&to=2026-09-30");
-  await expect(page.locator("[data-count-line]")).toBeVisible();
+  await expect(page.locator("[data-page-count]")).toBeVisible();
   await page.getByRole("button", { name: "Custom range" }).click();
   await page.setViewportSize({ width: 720, height: 360 });
   await page.getByRole("main").evaluate((node) => node.scrollBy(0, 15));
@@ -103,4 +103,120 @@ test("with classic scrollbars at 720x425 and 125% text, expanding the folded sid
   } finally {
     await browser.close();
   }
+});
+
+const SECTIONS = ["Severity", "Category", "Status"];
+
+async function openFilter(page: Page, width: number, height: number, textSize: number, folded: boolean) {
+  await page.setViewportSize({ width, height });
+  await page.addInitScript(([size, rail]) => {
+    localStorage.setItem("holophyte.textSize", size!);
+    if (rail != null) localStorage.setItem("holophyte.next.rail", rail);
+  }, [String(textSize), folded ? "folded" : null]);
+  await page.goto("/#/findings");
+  await expect(page.locator("[data-page-count]")).toBeVisible();
+  await expect(page.getByRole("button", { name: folded ? "Expand sidebar" : "Collapse sidebar" })).toBeVisible();
+  await page.getByRole("button", { name: /^Filter findings/ }).click();
+  return page.getByRole("dialog", { name: "Filter findings" });
+}
+
+/** The dialog's box and every option and heading label in its sections, each against the part of the scroll pane the reader sees, any label
+ *  cut short, any label whose ends are not hit-tested to it, as one scrolled out of the dialog is not, and the dialog over its own button. */
+async function cutOff(dialog: Locator) {
+  return dialog.evaluate((node, sections) => {
+    let pane: HTMLElement = node.parentElement!;
+    while (pane !== document.documentElement && !/auto|scroll/.test(getComputedStyle(pane).overflowX)) pane = pane.parentElement!;
+    const box = pane.getBoundingClientRect();
+    const scale = box.width / (pane.offsetWidth || 1);
+    const shown = pane === document.documentElement
+      ? { left: 0, top: 0, right: document.documentElement.clientWidth * scale, bottom: window.innerHeight }
+      : {
+          left: box.left + pane.clientLeft * scale, top: box.top + pane.clientTop * scale,
+          right: box.left + (pane.clientLeft + pane.clientWidth) * scale, bottom: box.top + (pane.clientTop + pane.clientHeight) * scale,
+        };
+    const outside = (part: Element) => {
+      const rect = part.getBoundingClientRect();
+      return rect.left < shown.left - 0.5 || rect.right > shown.right + 0.5 || rect.top < shown.top - 0.5 || rect.bottom > shown.bottom + 0.5;
+    };
+    const hit = (part: Element) => {
+      const rect = part.getBoundingClientRect();
+      const y = rect.top + rect.height / 2;
+      return [rect.left + 1, rect.right - 1].every((x) => part.contains(document.elementFromPoint(x, y)));
+    };
+    const cut: string[] = outside(node) ? ["dialog"] : [];
+    const trigger = node.parentElement!.querySelector("button[aria-haspopup]")!.getBoundingClientRect();
+    const sheet = node.getBoundingClientRect();
+    if (sheet.top < trigger.bottom && sheet.bottom > trigger.top && sheet.left < trigger.right && sheet.right > trigger.left) cut.push("button");
+    for (const name of sections) {
+      const group = [...node.querySelectorAll("fieldset")].find((each) => each.querySelector("legend")?.textContent?.startsWith(name))!;
+      for (const label of group.querySelectorAll("label")) {
+        const text = label.querySelector("[data-option-label]") ?? label;
+        if (outside(label) || !hit(text) || text.scrollWidth > text.clientWidth) cut.push(label.querySelector("input")!.getAttribute("aria-label")!);
+      }
+    }
+    return cut;
+  }, SECTIONS);
+}
+
+for (const [width, textSize] of [[720, 120], [740, 125]] as const) {
+  for (const height of [900, 600, 500]) {
+    for (const folded of [true, false]) {
+      test(`at ${width}x${height} and ${textSize}% text with the sidebar ${folded ? "folded" : "expanded"}, Filter findings opens inside the scroll pane with every label shown whole`, async ({ page }) => {
+        const dialog = await openFilter(page, width, height, textSize, folded);
+        await expect(dialog.getByRole("checkbox", { name: "must" })).toBeAttached();
+        await expect(async () => expect(await cutOff(dialog)).toEqual([])).toPass({ timeout: 2000 });
+      });
+    }
+  }
+}
+
+test("at 873x900 and 125% text with the sidebar expanded, picking Uncategorized in Filter findings keeps every label shown whole", async ({ page }) => {
+  const dialog = await openFilter(page, 873, 900, 125, false);
+  await dialog.getByText("Uncategorized", { exact: true }).click();
+  await expect(dialog.getByRole("checkbox", { name: "Uncategorized" })).toBeChecked();
+  await expect(async () => expect(await cutOff(dialog)).toEqual([])).toPass({ timeout: 2000 });
+});
+
+test("at 760x900 and 125% text with the sidebar expanded, an open Filter findings holds one width frame after frame", async ({ page }) => {
+  const dialog = await openFilter(page, 760, 900, 125, false);
+  await expect(dialog.getByRole("checkbox", { name: "must" })).toBeAttached();
+  const widths = await dialog.evaluate((node) => new Promise<number[]>((resolve) => {
+    const seen: number[] = [];
+    const sample = () => {
+      seen.push(node.getBoundingClientRect().width);
+      if (seen.length < 30) requestAnimationFrame(sample);
+      else resolve(seen);
+    };
+    requestAnimationFrame(sample);
+  }));
+  expect(new Set(widths).size).toBe(1);
+});
+
+test("at 740x600 and 125% text with the sidebar expanded, picking unclassified at the foot of a scrolled Runs filter keeps it scrolled there", async ({ page }) => {
+  await page.setViewportSize({ width: 740, height: 600 });
+  await page.addInitScript(() => localStorage.setItem("holophyte.textSize", "125"));
+  await page.goto("/#/runs");
+  await expect(page.locator("li[data-run]").first()).toBeVisible();
+  await page.getByRole("button", { name: /^Filter and sort/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Filter and sort" });
+  await expect(dialog.getByRole("checkbox", { name: "unclassified" })).toBeAttached();
+  const scrolled = await dialog.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+    return node.scrollTop;
+  });
+  expect(scrolled).toBeGreaterThan(0);
+  await dialog.getByText("unclassified", { exact: true }).click();
+  await expect(dialog.getByRole("checkbox", { name: "unclassified" })).toBeChecked();
+  expect(await dialog.evaluate((node) => node.scrollTop)).toBe(scrolled);
+  await expect(dialog.getByText("unclassified", { exact: true })).toBeInViewport({ ratio: 1 });
+});
+
+test("at 320px, Filter findings stacks Severity, Category and Status in one column with no label cut off", async ({ page }) => {
+  const dialog = await openFilter(page, 320, 800, 100, false);
+  await expect(async () => {
+    const boxes = await Promise.all(SECTIONS.map(async (name) => (await dialog.getByRole("group", { name }).boundingBox())!));
+    expect(boxes.map((box) => Math.round(box.x))).toEqual(boxes.map(() => Math.round(boxes[0]!.x)));
+    for (let at = 1; at < boxes.length; at += 1) expect(boxes[at]!.y).toBeGreaterThanOrEqual(boxes[at - 1]!.y + boxes[at - 1]!.height);
+    expect(await cutOff(dialog)).toEqual([]);
+  }).toPass({ timeout: 2000 });
 });

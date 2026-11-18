@@ -13,7 +13,7 @@ import type { Tone } from "../state";
 const FOCUS_RING = "[&:is(input,textarea):focus-visible]:!shadow-[0_0_0_2px_var(--wait)] [&:is(input,textarea)[aria-invalid=true]:focus-visible]:!shadow-[inset_0_0_0_1px_var(--bad),0_0_0_2px_var(--wait)]";
 export const INPUT = "field mt-2 w-full min-w-0";
 export const TICKET_INPUT = `field mt-1.5 w-full min-w-0 ${FOCUS_RING}`;
-const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
+export const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
 const ICON_BUTTON = "grid size-7 shrink-0 cursor-pointer place-items-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent motion-reduce:transition-none";
 type Message = { text: string; error: boolean; field: string };
 const CHECK_DELAY_MS = 600;
@@ -109,21 +109,11 @@ function FieldHead({ label, htmlFor, aside, changed }: { label: string; htmlFor?
   </div>;
 }
 
-const PROJECT = "Project";
-
-/** The Project control is restyled with its page, not with the shared fields. */
-function ProjectHead() {
-  return <div className="flex flex-wrap items-baseline gap-x-2">
-    <label htmlFor={`new-${PROJECT}`} className="font-['IBM_Plex_Sans'] text-[14px] font-semibold text-ink">{PROJECT}</label>
-    <span className="font-mono text-[10.5px] uppercase text-ink-3">Required</span>
-  </div>;
-}
-
 export function Field({ label, optional = false, hint, extra, messages = [], changed = false, children }: { label: string; optional?: boolean; hint?: string; extra?: string; messages?: Message[]; changed?: boolean; children: ReactNode }) {
   const aside = `${optional ? "Optional" : ""}${extra ?? ""}`.replace(/^ · /, "").trim();
   return (
     <div data-changed={changed || undefined} className="min-w-0">
-      {label === PROJECT && !optional ? <ProjectHead /> : <FieldHead label={label} htmlFor={`new-${label}`} aside={aside} changed={changed} />}
+      <FieldHead label={label} htmlFor={`new-${label}`} aside={aside} changed={changed} />
       {hint && <p className="mt-1 font-sans text-[13px] text-ink-3">{hint}</p>}
       {children}
       <Messages id={messagesId(label)} messages={messages} />

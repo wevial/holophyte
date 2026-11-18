@@ -10,9 +10,9 @@ function useMinWidth(px: number): boolean {
   return useSyncExternalStore(subscribe, () => window.matchMedia?.(media).matches ?? false);
 }
 
-/** Whether the window is at least 1100px wide, room for a table's column head. */
+/** Whether the window is at least 1024px wide, room for a table's column head. */
 export function useTableWidth(): boolean {
-  return useMinWidth(1100);
+  return useMinWidth(1024);
 }
 
 /** Whether the window is at least 1440px wide, room for the scout page's chat drawer. */
