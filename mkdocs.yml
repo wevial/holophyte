@@ -14,15 +14,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: teal
-      accent: teal
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: teal
-      accent: teal
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light
@@ -39,6 +39,9 @@ theme:
     - search.highlight
     - content.code.copy
     - content.action.edit
+
+extra_css:
+  - stylesheets/holophyte.css
 
 markdown_extensions:
   - admonition
