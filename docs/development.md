@@ -599,6 +599,12 @@ Each module, one line:
 - `holophyte/loop/review_round.py` — the review rounds: verify, the witness
   pre-check and its turns, review and a fix turn per round, up to the cap the
   candidate's size earns.
+- `holophyte/loop/stuck_review.py` — a review round that repeats the round
+  before at the stuck threshold, claimed in the transaction that records it
+  and put once a run to the adjudicator before consolidation and the fix
+  turn: `FIX` findings go to the fix turn with their reason, `DROP` rulings
+  leave it and become factory notes the next review reads, and a `HUMAN`,
+  missing or second ruling ends the run as `review_stuck`.
 - `holophyte/loop/test_removal.py` — the round's verify failed when a test
   file the ticket's In scope list does not name holds fewer tests than at the
   base.
