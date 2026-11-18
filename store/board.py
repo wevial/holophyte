@@ -176,7 +176,7 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 
 REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,64})")
-WHY = re.compile(r"\*\*Why:\s*\*\*\s*(.+)")
+WHY = re.compile(r"(?:\*\*Why:\s*\*\*|Why:)\s*(.+)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 
 
@@ -197,7 +197,8 @@ def reopen_reverted(conn, run_id, native=True):
             return None
         key, sha = named.groups()
         original = conn.execute(
-            "SELECT t.id, r.id FROM tickets t JOIN runs r ON r.ticketId = t.id"
+            "SELECT t.id, t.boardColumn, r.id FROM tickets t"
+            " JOIN runs r ON r.ticketId = t.id"
             " WHERE t.projectId = ? AND t.linearIdentifier = ?"
             " AND t.status = 'merged' AND r.outcome = 'merged'"
             " AND r.mergeSha <> ''"
@@ -207,7 +208,7 @@ def reopen_reverted(conn, run_id, native=True):
             (project_id, key, sha, sha, sha)).fetchone()
         if original is None:
             return None
-        ticket_id, merged_run = original
+        ticket_id, column, merged_run = original
         reason = (_filed_reason(conn, merged_run, revert_key)
                   or _written_reason(key, text))
         why = f": {reason}" if reason else ""
@@ -219,6 +220,10 @@ def reopen_reverted(conn, run_id, native=True):
                      f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
         conn.execute("UPDATE tickets SET status = 'ready' WHERE id = ?",
                      (ticket_id,))
+        if column == "backlog":
+            record_note(conn, ticket_id, "move", note, f"reverted:{run_id}",
+                        author="factory", now=now)
+            return key, note
         (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
                                    (ticket_id,)).fetchone()
         move_ticket(conn, project_id, key, "backlog", revision,
@@ -230,7 +235,8 @@ def _unfenced(text):
     fence, kept = None, []
     for line in text.splitlines():
         opened = FENCE.match(line)
-        if fence is None and opened:
+        if fence is None and opened and not (
+                opened[1][0] == "`" and "`" in line[opened.end():]):
             fence = opened[1]
         elif fence is not None:
             if opened and opened[1][0] == fence[0] \

@@ -20,6 +20,7 @@ from holophyte.board.provider import board_for  # noqa: E402
 from holophyte.loop import dispatch, pipeline  # noqa: E402
 from holophyte.loop.gates import RunFailure  # noqa: E402
 from holophyte.loop.runs import open_store  # noqa: E402
+from store.writes import set_board_state  # noqa: E402
 from tests import test_cli_revert as cli_revert  # noqa: E402
 
 REASON = r"broke the <header> band \n mid-word"
@@ -166,20 +167,47 @@ class RevertCloseTests(ConfigTestCase):
                                    " linearIdentifier = 'NAT-2'"),
                          [("merged",)])
 
-    def test_a_renamed_revert_ticket_with_no_filing_record_still_returns(self):
+    def test_a_hand_filed_revert_returns_its_ticket_with_the_written_why(self):
         self.file_revert()
         self.edit_revert("title = ?", "Put the header back")
+        self.edit_revert("body = replace(replace(body, ?, ''), ?, ?)",
+                         f"Undo NAT-1's merge: {REASON.replace('<', '&lt;')}",
+                         "**Why:** ", "Why: ")
         with contextlib.closing(open_store(self.project)) as conn:
             conn.execute("DELETE FROM interventions WHERE \"action\" = 'revert'")
             conn.commit()
         (body,) = self.read("SELECT body FROM tickets WHERE"
                             " linearIdentifier = 'NAT-3'")[0]
-        written = body.split("**Why:** ", 1)[1].splitlines()[0]
+        self.assertNotIn("Undo NAT-1's merge", body)
+        written = body.split("\nWhy: ", 1)[1].splitlines()[0]
         self.run_revert(self.merge_the_revert)
         state = self.key_state()
         self.assertEqual(state["ticket"], [("ready", "backlog", "Backlog")])
         self.assertIn(("move", f"Reverted by NAT-3: {written}"),
                       state["notes"])
+        self.assertTrue(any(kind == "reverted" and written in summary
+                            for kind, summary in state["events"]),
+                        state["events"])
+
+    def test_an_inline_code_span_does_not_open_a_fence(self):
+        self.file_revert()
+        self.edit_revert("body = replace(body, '## Summary\n', ?)",
+                         "## Summary\n\n```git revert``` undoes it.\n")
+        self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.key_state()["ticket"],
+                         [("ready", "backlog", "Backlog")])
+
+    def test_a_ticket_already_in_backlog_still_records_the_revert(self):
+        self.file_revert()
+        with contextlib.closing(open_store(self.project)) as conn:
+            set_board_state(conn, self.ticket_id(conn, "NAT-1"), "Backlog",
+                            "backlog")
+            conn.commit()
+        self.run_revert(self.merge_the_revert)
+        state = self.key_state()
+        self.assertEqual(state["ticket"], [("ready", "backlog", "Backlog")])
+        self.assertIn(("move", f"Reverted by NAT-3: {REASON}"), state["notes"])
+        self.assertIn("reverted", [kind for kind, _ in state["events"]])
 
     def test_a_sha256_reverts_marker_returns_its_ticket(self):
         self.file_revert()
