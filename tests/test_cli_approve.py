@@ -679,6 +679,68 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn("the rewind would overwrite work", self.refused("--note", "ok"))
         self.assertEqual((self.wt / "work").read_text(), "local only\n")
 
+    def test_an_ignored_non_ascii_file_the_rewind_would_overwrite_is_refused(
+            self):
+        self.branch_with_wip()
+        git(self.wt, "reset", "-q", "--hard", self.earlier)
+        (self.wt / "r\u00e9sum\u00e9").write_text("reviewed\n")
+        git(self.wt, "add", "r\u00e9sum\u00e9")
+        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
+        git(self.wt, "rm", "-q", "r\u00e9sum\u00e9")
+        (self.wt / ".gitignore").write_text("r\u00e9sum\u00e9\n")
+        git(self.wt, "add", ".gitignore")
+        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
+        (self.wt / "r\u00e9sum\u00e9").write_text("local only\n")
+        self.sweep()
+
+        self.assertIn("the rewind would overwrite r\u00e9sum\u00e9",
+                      self.refused("--note", "ok"))
+        self.assertEqual((self.wt / "r\u00e9sum\u00e9").read_text(),
+                         "local only\n")
+
+    def test_a_tracked_directory_replacing_a_reviewed_file_is_rewound(self):
+        self.branch_with_wip()
+        git(self.wt, "rm", "-q", "work")
+        (self.wt / "work").mkdir()
+        (self.wt / "work" / "part").write_text("half an edit\n")
+        git(self.wt, "add", "work")
+        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual((self.wt / "work").read_text(), "reviewed\n")
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_ref_update_git_rejects_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.sweep()
+        reflog = self.repo / ".git" / "logs" / "refs" / "heads" / BRANCH
+        reflog.chmod(0o444)
+        self.addCleanup(reflog.chmod, 0o644)
+
+        self.assertIn("cannot move the refs", self.refused("--note", "ok"))
+
+        reflog.chmod(0o644)
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_wip_file_the_rewind_cannot_remove_is_refused(self):
+        self.branch_with_wip()
+        (self.wt / "stuck").mkdir()
+        (self.wt / "stuck" / "new").write_text("wip only\n")
+        git(self.wt, "add", "stuck")
+        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
+        self.sweep()
+        (self.wt / "stuck").chmod(0o555)
+        self.addCleanup((self.wt / "stuck").chmod, 0o755)
+
+        self.assertIn("could not remove stuck/new",
+                      self.refused("--note", "ok"))
+
     def test_a_run_failed_on_verify_is_refused_as_before(self):
         self.branch_with_wip()
         self.sweep(reason="verify failed: exit 1", kind="verify")

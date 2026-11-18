@@ -467,19 +467,40 @@ def _rewind(worktree, updates, sha, tip):
     why = _moved_tree(worktree, sha, tip)
     _, error = lock.communicate("abort\n" if why else "commit\n")
     if lock.returncode != 0 and why is None:
+        _git(worktree, "read-tree", "-m", "-u", sha, tip)
         why = f"cannot move the refs: {error.strip()}"
     return why
 
 
+def _paths(worktree, command, *args):
+    listed = _git(worktree, "--literal-pathspecs", command, "-z",
+                  *args).stdout
+    return [path for path in listed.split("\0") if path]
+
+
+def _untracked(worktree, paths):
+    return _paths(worktree, "ls-files", "--others", "--", *paths) if (
+        paths) else []
+
+
 def _moved_tree(worktree, sha, tip):
-    added = _git(worktree, "diff", "--name-only", "--no-renames",
-                 "--diff-filter=A", tip, sha).stdout.splitlines()
-    present = [path for path in added if os.path.lexists(worktree / path)]
+    added, removed = (
+        _paths(worktree, "diff", "--name-only", "--no-renames",
+               f"--diff-filter={kind}", tip, sha) for kind in "AD")
+    present = [path for path in added if os.path.lexists(worktree / path)
+               and (os.path.islink(worktree / path)
+                    or not os.path.isdir(worktree / path)
+                    or _untracked(worktree, [path]))]
     if present:
         return f"the rewind would overwrite {', '.join(present)} in {worktree}"
     moved = _git(worktree, "read-tree", "-m", "-u", tip, sha)
     if moved.returncode != 0:
         return f"cannot check out {sha[:12]}: {moved.stderr.strip()}"
+    left = _untracked(worktree, removed)
+    if left:
+        _git(worktree, "update-index", "--add", "--", *left)
+        _git(worktree, "read-tree", "-m", "-u", sha, tip)
+        return f"the rewind could not remove {', '.join(left)} in {worktree}"
     if (_git(worktree, "diff-index", "--quiet", "--cached", sha).returncode
             or _git(worktree, "diff-files", "--quiet").returncode):
         _git(worktree, "read-tree", "-m", "-u", sha, tip)
