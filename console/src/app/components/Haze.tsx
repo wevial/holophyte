@@ -45,7 +45,8 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const dark = resolvedTheme === "dark";
   const palette = `${dark ? darkPick : lightPick}-${resolvedTheme}`;
   const { hazeStrength } = useHazeStrength();
-  const { motion } = useMotion();
+  const { motion, reduced } = useMotion();
+  const still = !motion || reduced;
   const { customThemes } = useCustomThemes();
 
   useEffect(() => {
@@ -85,8 +86,8 @@ export function Haze({ effect }: { effect: BandEffect }) {
 
   // A renderer that fell back under a slow moving frame gets another try at its one still frame.
   useEffect(() => {
-    if (!motion && !live.current) setAttempt((count) => count + 1);
-  }, [motion]);
+    if (still && !live.current) setAttempt((count) => count + 1);
+  }, [still]);
 
   return (
     <div

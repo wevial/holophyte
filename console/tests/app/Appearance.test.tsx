@@ -523,6 +523,16 @@ function effectBand(width: number, height: number, maxTexture: number, motion: b
   };
 }
 
+test("Plume in a 1440px header band keeps Spectra's cloud and offset texture sizes, its short edge times the band's aspect, where they fit the GPU", () => {
+  const band = effectBand(1440, 188, 8192, true);
+  try {
+    expect(band.record.textures).toContainEqual([Math.round((1024 * 1440) / 188), 1024]);
+    expect(band.record.textures).toContainEqual([Math.round((512 * 1440) / 188), 512]);
+  } finally {
+    band.restore();
+  }
+});
+
 test("Plume in a 3840px header band asks for no texture wider or taller than the GPU allows", () => {
   const band = effectBand(3840, 188, 8192, true);
   try {
@@ -563,6 +573,7 @@ test("Caustics, Ribbons, Lava and Haze with Motion off keep their one frame at i
       band.runFrames(1);
       const canvas = band.container.querySelector("canvas")!;
       const first = [band.record.canvasDraws, canvas.width, canvas.height];
+      expect([name, ...first]).toEqual([name, 1, 1440, 188]);
       band.runFrames(600, 50);
       expect([name, band.record.canvasDraws, canvas.width, canvas.height]).toEqual([name, ...first]);
     } finally {
@@ -585,5 +596,35 @@ test("Plume that fell back while moving draws again when Motion is turned off", 
   } finally {
     cleanup();
     effects.restore();
+  }
+});
+
+test("Plume that fell back while moving draws again when the system turns on reduced motion", async () => {
+  let reduced = false;
+  const listeners = new Set<() => void>();
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    get matches() { return query === "(prefers-reduced-motion: reduce)" && reduced; },
+    media: query,
+    addEventListener: (_type: string, listener: () => void) => { if (query === "(prefers-reduced-motion: reduce)") listeners.add(listener); },
+    removeEventListener: (_type: string, listener: () => void) => { listeners.delete(listener); },
+  }) as unknown as MediaQueryList);
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Plume"));
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    act(() => { band.querySelector("canvas")!.dispatchEvent(new Event("webglcontextlost")); });
+    expect(effects.live).toEqual([]);
+    act(() => {
+      reduced = true;
+      listeners.forEach((listener) => listener());
+    });
+    expect(motion().getAttribute("aria-checked")).toBe("false");
+    expect([effects.live, band.classList.contains("haze-fallback")]).toEqual([["Plume"], false]);
+  } finally {
+    cleanup();
+    effects.restore();
+    media.mockRestore();
   }
 });
