@@ -218,9 +218,10 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
   expect(card.querySelector("[data-time-box] .sr-only")?.textContent).toBe(" time box");
   expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
-  const foot = card.querySelector("[data-card-foot]")!;
-  expect(within(card).getByRole("heading").nextElementSibling).toBe(foot);
+  const foot = within(card).getByRole("heading").nextElementSibling!;
   expect(Array.from(foot.children, (part) => part.hasAttribute("data-state-line") || part.hasAttribute("data-time-box"))).toEqual([true, true]);
+  expect(foot.classList).toContain("flex");
+  expect(foot.classList).not.toContain("flex-col");
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
@@ -267,6 +268,8 @@ test("cards keep their need, done, backlog and plain looks, and no card title us
   const [need, done, backlog, plain] = looks;
   expect(need!.className).toContain("var(--need-edge)");
   expect(backlog!.className).toContain("border-dashed");
+  expect(backlog!.classList).toContain("bg-transparent");
+  expect(backlog!.classList).not.toContain("bg-raised");
   for (const card of [need!, done!, plain!]) expect(card.className).not.toContain("border-dashed");
   expect(plain!.className).not.toContain("var(--need-edge)");
   const inkOf = (card: Element) => Array.from(within(card as HTMLElement).getByRole("heading").classList).find((name) => name.startsWith("text-ink"));

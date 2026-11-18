@@ -34,21 +34,21 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
         event.preventDefault();
         onOpen(card);
       }}
-      className={`${GRID} min-h-[34px] px-4 py-1.5 font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-hover"}`}
+      className={`${GRID} min-h-[34px]! px-4 py-1.5 font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-hover"}`}
     >
-      <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${TONE_TEXT[tone]}`}>
+      <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${open ? "text-ink" : TONE_TEXT[tone]}`}>
         <StateDot state={COLUMN_HEADS[column].state} hideWord tone={tone} />
         {COLUMN_HEADS[column].label}
       </span>
-      <span data-cell="key" className="font-mono text-[12px] text-ink-3 tabular-nums">{card.key}</span>
+      <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>
       <span
         data-cell="title"
-        className={`min-w-0 truncate font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet ? "text-ink-2" : "text-ink"}`}
+        className={`min-w-0 truncate font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet && !open ? "text-ink-2" : "text-ink"}`}
       >
         <TitleText>{card.title}</TitleText>
       </span>
-      <span data-cell="stage" className={`truncate text-[12.5px] max-[820px]:hidden ${TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
-      <span data-cell="estimate" className="text-right font-mono text-[12px] text-ink-3 tabular-nums max-[820px]:hidden">
+      <span data-cell="stage" className={`truncate text-[12.5px] max-[820px]:hidden ${open ? "text-ink" : TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
+      <span data-cell="estimate" className={`text-right font-mono text-[12px] tabular-nums max-[820px]:hidden ${open ? "text-ink-2" : "text-ink-3"}`}>
         {card.timeBoxMs != null && (
           <>
             {formatAge(card.timeBoxMs)}
