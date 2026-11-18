@@ -64,9 +64,9 @@ const QUEUE: MergeQueue = {
 };
 const NO_QUEUE: MergeQueue = { ...served, now: NOW, configured: false, configuration: null, entries: [], left: [] };
 
-function queueFetch(relos: MergeQueue, holo: MergeQueue = NO_QUEUE, holoProject = "/srv/dev/holophyte", ops?: MergeQueue): Fetch {
+function queueFetch(relos: MergeQueue, holo: MergeQueue = NO_QUEUE, holoProject = "/srv/dev/holophyte", ops?: MergeQueue, actions = false): Fetch {
   const daemon = (project: string) => ({
-    status: { ...working, host: "writer-host", project },
+    status: { ...working, host: "writer-host", project, actions },
     attention: { level: "none", now: NOW, project, items: [] } as Attention,
   });
   const polls = peersFetch(RELOS, { [RELOS]: daemon("/srv/dev/relos"), [HOLO]: daemon(holoProject), ...(ops ? { [OPS]: daemon("/srv/dev/ops") } : {}) });
@@ -112,7 +112,7 @@ test("the page header counts the queue beside its one title, with no line naming
 });
 
 test("the queue is a section named by its branch with its count and settings, its column head and its entries in position order", async () => {
-  await mount("#/merge-queue?project=relos", queueFetch(QUEUE), 1024);
+  await mount("#/merge-queue?project=relos", queueFetch(QUEUE, NO_QUEUE, "/srv/dev/holophyte", undefined, true), 1024);
   const main = screen.getByRole("region", { name: "main" });
   expect(sectionCount(main)).toBe("4");
   const heading = main.querySelector("header")!.textContent!;
@@ -164,9 +164,9 @@ test("Left the queue lists the removals and merges newest first with their clock
   expect(sectionCount(left)).toBe("3");
   expect(left.querySelector("header")!.textContent).toContain("last 2h");
   const read = [...left.querySelectorAll("[data-left]")].map((row) => [
-    row.querySelector("[data-left-outcome]")!.textContent, row.querySelector("[data-left-at]")!.textContent,
+    row.querySelector("a[href*='/pull/']")!.textContent, row.querySelector("[data-left-outcome]")!.textContent, row.querySelector("[data-left-at]")!.textContent,
   ]);
-  expect(read).toEqual([["removed: e2e (2/4) failed", "15:38"], ["merged", "15:30"], ["merged", "14:58"]]);
+  expect(read).toEqual([["#2548", "removed: e2e (2/4) failed", "15:38"], ["#2546", "merged", "15:30"], ["#2544", "merged", "14:58"]]);
   cleanup();
 
   await mount("#/merge-queue?project=relos", queueFetch({ ...QUEUE, left: [] }));

@@ -1,8 +1,8 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { MergeQueue, MergeQueueEntry, MergeQueueLeft, MergeQueuePull, MergeQueueRun } from "../../lib/contract.gen";
 import { formatClock } from "../../lib/format";
-import { checkLook, configurationWords, entryLine, isBuilding, mergesIn, runWords, splitChecks, type CheckSplit } from "../mergeQueue";
+import { checkLook, configurationWords, isBuilding, mergesIn, runWords, splitChecks, type CheckSplit } from "../mergeQueue";
 import { keepScope } from "../scope";
 import { useTableWidth } from "../viewport";
 import { JumpToFront, RemoveFromQueue, type QueueDaemon } from "./QueueActions";
@@ -11,10 +11,7 @@ import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 const GRID = "grid grid-cols-[32px_52px_minmax(0,1fr)_116px_72px_48px_44px] gap-x-2.5";
-const ACTION_GRID = "grid grid-cols-[32px_52px_minmax(0,1fr)_116px_72px_48px_44px_132px] gap-x-2.5";
-const FITS_WIDE = 590;
-const FITS_WIDE_ACTIONS = 720;
-const gridFor = (daemon: QueueDaemon) => (daemon.actions ? ACTION_GRID : GRID);
+const SECOND = 1000;
 const NARROW_GRID = "grid grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-2.5";
 const MONO = "font-mono text-[12px] leading-[1.4] text-ink-3";
 const QUIET = "font-sans text-[12.5px] leading-[1.4] text-ink-3";
@@ -25,23 +22,23 @@ const DOT = <span className="text-ink-3">{" · "}</span>;
 const WIDE_PAD = "pr-5 pl-[calc(10px+32px+10px+52px+10px)]";
 const NARROW_PAD = "pr-5 pl-[calc(10px+28px+10px)] max-[720px]:px-2.5";
 
-/** Numbers, times and hashes in mono, the words around them in sans. */
-function MonoValues({ text }: { text: string }) {
-  return <>{text.split(/(\S*\d\S*)/).map((part, index) => (index % 2 === 1 ? <span key={index} className="font-mono text-[12px]">{part}</span> : part))}</>;
+/** A check's state words with its spans (`2m 00s`) in mono. */
+function SpanWords({ text }: { text: string }) {
+  return <>{text.split(/(\b\d+[hms]\b)/).map((part, index) => (index % 2 === 1 ? <span key={index} className="font-mono text-[12px]">{part}</span> : part))}</>;
 }
 
-/** Whether the box is at least `min` wide; an unmeasured box defers to the viewport. */
-function useFits(min: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    const box = ref.current;
-    if (box == null || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([seen]) => setWidth(seen?.contentRect.width ?? 0));
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, []);
-  return { ref, fits: width === 0 || width >= min };
+const Mono = ({ children }: { children: ReactNode }) => <span className="font-mono text-[12px]">{children}</span>;
+
+/** The open row's line: its merge group, building since, added and merges at. */
+function EntryFacts({ entry, now }: { entry: MergeQueueEntry; now: number }) {
+  const facts = [
+    entry.group_sha == null ? null : <>merge group <Mono>{entry.group_sha.slice(0, 7)}</Mono></>,
+    entry.building_ms == null ? null : <>building since <Mono>{formatClock(entry.building_ms)}</Mono></>,
+    entry.enqueued_ms == null ? null : <>added <Mono>{formatClock(entry.enqueued_ms)}</Mono>{entry.pr.author ? ` by ${entry.pr.author}` : ""}</>,
+    entry.estimated_s == null ? null : <>merges <Mono>~{formatClock(now + entry.estimated_s * SECOND)}</Mono></>,
+  ].filter((fact) => fact != null);
+  if (facts.length === 0) return null;
+  return <p data-entry-facts className={QUIET}>{facts.map((fact, index) => <span key={index}>{index > 0 && " · "}{fact}</span>)}</p>;
 }
 
 function PrNumber({ pr }: { pr: MergeQueuePull }) {
@@ -107,7 +104,7 @@ function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; no
                 )}
                 {check.workflow && <span className="ml-2 text-ink-3">{check.workflow}</span>}
               </span>
-              <span className={`whitespace-nowrap text-right font-sans ${look.state === "ready_to_merge" ? "text-ink-3" : TONE_TEXT[look.tone]}`}><MonoValues text={look.words} /></span>
+              <span className={`whitespace-nowrap text-right font-sans ${look.state === "ready_to_merge" ? "text-ink-3" : TONE_TEXT[look.tone]}`}><SpanWords text={look.words} /></span>
             </li>
           );
         })}
@@ -118,10 +115,9 @@ function CheckColumn({ title, part, now }: { title: string; part: CheckSplit; no
 
 export function EntryDetail({ entry, now, id, daemon, pad, links }: { entry: MergeQueueEntry; now: number; id: string; daemon: QueueDaemon; pad: string; links?: ReactNode }) {
   const { required, other } = splitChecks(entry.checks.runs);
-  const line = entryLine(entry, now);
   return (
     <div id={id} data-entry-detail className={`flex flex-col gap-4 pt-1 pb-4 ${pad}`}>
-      {line && <p className={QUIET}><MonoValues text={line} /></p>}
+      <EntryFacts entry={entry} now={now} />
       {entry.checks.runs.length > 0 && (
         <div className="grid grid-cols-2 gap-x-10 gap-y-5 max-[720px]:grid-cols-1">
           <CheckColumn title="Required" part={required} now={now} />
@@ -163,7 +159,7 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
   return (
     <li data-entry={entry.position} data-open={open || undefined} className="border-b border-hair hover:bg-hover data-open:bg-hover">
       {wide ? (
-        <div data-row className={`${gridFor(daemon)} items-start px-2.5 py-2`}>
+        <div data-row className={`${GRID} items-start px-2.5 py-2`}>
           {toggle}
           <span className="pt-[4px] font-mono text-[12.5px]"><PrNumber pr={entry.pr} /></span>
           <span className="flex min-w-0 flex-col gap-0.5">
@@ -174,7 +170,6 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
           <span className={`${MONO} pt-[4px] text-right`}><ChecksDone entry={entry} /></span>
           <span className={`${MONO} pt-[4px] text-right text-ink-2`}>{mergesIn(entry.estimated_s)}</span>
           <span className={`${MONO} pt-[4px] text-right`}>{added}</span>
-          {daemon.actions && <span className="justify-self-end">{jump}</span>}
         </div>
       ) : (
         <div data-row className={`${NARROW_GRID} px-2.5 py-2`}>
@@ -192,26 +187,32 @@ function EntryRow({ queue, entry, project, wide, daemon }: { queue: MergeQueue; 
               {DOT}
               <span className="whitespace-nowrap">added <span className="font-mono text-[12px]">{added}</span></span>
             </span>
-            {jump && <span className="pt-1">{jump}</span>}
           </span>
           <EntryState entry={entry} />
         </div>
       )}
-      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} pad={wide ? WIDE_PAD : NARROW_PAD} />}
+      {open && <EntryDetail entry={entry} now={queue.now} id={detailId} daemon={daemon} pad={wide ? WIDE_PAD : NARROW_PAD} links={jump} />}
     </li>
   );
 }
 
 /** One queue under its name, its count and settings, a row each that opens onto its checks. */
 export function QueueTable({ queue, project, daemon, label, lead }: { queue: MergeQueue; project: string; daemon: QueueDaemon; label: string; lead?: string }) {
-  const { ref, fits } = useFits(daemon.actions ? FITS_WIDE_ACTIONS : FITS_WIDE);
-  const wide = useTableWidth() && fits;
+  const wide = useTableWidth();
   const words = [lead, configurationWords(queue.configuration)].filter(Boolean).join(" · ");
+  const narrowWords = <p className={`${QUIET} hidden px-2.5 pt-1.5 max-[720px]:block`}>{words}</p>;
   return (
-    <div ref={ref} data-queue-table className="min-w-0">
-      <Section label={label} count={queue.entries.length} aside={<span className={`${QUIET} [overflow-wrap:anywhere]`}>{words}</span>} empty="The queue is empty.">
+    <div data-queue-table className="min-w-0">
+      <Section
+        label={label}
+        count={queue.entries.length}
+        aside={<span className={`${QUIET} max-[720px]:hidden`}>{words}</span>}
+        empty="The queue is empty."
+        footer={queue.entries.length === 0 ? narrowWords : undefined}
+      >
+        {narrowWords}
         {wide && (
-          <div data-queue-heads className={`${gridFor(daemon)} h-[30px] items-center border-b border-hair px-2.5 font-sans text-[12px] font-medium leading-none text-ink-3`}>
+          <div data-queue-heads className={`${GRID} h-[30px] items-center border-b border-hair px-2.5 font-sans text-[12px] font-medium leading-none text-ink-3`}>
             {HEADS.map((head) => <span key={head} className={RIGHT_HEADS.has(head) ? "text-right" : undefined}>{head}</span>)}
           </div>
         )}
