@@ -13,7 +13,7 @@ interface RangeKnob { kind: "range"; key: string; label: string; min: number; ma
 
 export interface ChoiceKnob { kind: "choice"; key: string; label: string; choices: readonly string[]; initial: string }
 
-export type Knob = RangeKnob | ChoiceKnob;
+type Knob = RangeKnob | ChoiceKnob;
 
 export const THEME = "theme";
 

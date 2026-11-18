@@ -22,9 +22,9 @@ const HAZE_EDGES = { fadeBottom: 0.9, fadeSide: 0.55 };
 
 const PALETTES = { haze: haze.PALETTES, caustics: caustics.PALETTES, lava: lava.PALETTES, ribbons: ribbons.PALETTES, hyphae: hyphae.PALETTES } as Record<Exclude<BandEffect, "plume">, Record<string, string[]>>;
 
+const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
 function themeColours(): ThemeColours {
-  const style = getComputedStyle(document.documentElement);
-  const token = (name: string) => style.getPropertyValue(name).trim();
   return { ground: token("--haze-ground"), back: token("--haze-back"), front: token("--haze-front"), accent: token("--accent") };
 }
 
@@ -44,8 +44,7 @@ function registerTheme(effect: BandEffect, pick: string): string {
 }
 
 function hazeIntensity(): number {
-  const style = getComputedStyle(document.documentElement);
-  return Number(style.getPropertyValue("--haze-strength").trim()) * Number(style.getPropertyValue("--haze-scale").trim() || 1);
+  return Number(token("--haze-strength")) * Number(token("--haze-scale") || 1);
 }
 
 function liveOptions(effect: BandEffect, values: Record<string, KnobValue>, pick: string): Record<string, KnobValue> {

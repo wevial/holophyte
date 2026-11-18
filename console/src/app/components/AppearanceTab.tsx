@@ -5,7 +5,7 @@ import {
   FADES, FULL, OPACITIES, resetAppearance, STRENGTHS, TEXT_SIZES, useCustomThemes, useDensity, useEffectSettings, useGrain, useHazeStrength, useHeaderEffect, useMotion, useReadingFont, useTextSize, useTheme,
   type BandEffect, type HeaderEffect, type ReadingFont,
 } from "../appearance";
-import { KNOBS, THEME, type Knob } from "../effectKnobs";
+import { KNOBS, THEME, type ChoiceKnob } from "../effectKnobs";
 import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
@@ -204,7 +204,7 @@ function KnobSlider({ label, value, range, onChange, unit = "" }: {
   );
 }
 
-function KnobChoice({ knob, value, onChange }: { knob: Extract<Knob, { kind: "choice" }>; value: string; onChange: (value: string) => void }) {
+function KnobChoice({ knob, value, onChange }: { knob: ChoiceKnob; value: string; onChange: (value: string) => void }) {
   return (
     <div className="grid min-h-11 grid-cols-[80px_minmax(0,1fr)] items-center gap-3 min-[1100px]:col-span-2">
       <span aria-hidden="true" className="text-[13px] text-ink-2">{knob.label}</span>
