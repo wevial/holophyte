@@ -284,7 +284,7 @@ test("defaults naming unlisted routes select the first listed, and a project wit
   expect(within(form()).getByText("No lead route on demo passed its probe.")).toBeTruthy();
 });
 
-test("a picked route no longer listed when New scout opens again falls back to the default in the picker, the disclosure and the launch", async () => {
+test("a picked route no longer listed when New scout opens again stays picked, so the Lead picker, the disclosure and the launch name the same route", async () => {
   const daemons: Daemons = { demo: [], launch: () => Response.json({ ok: true, detail: "scout 32 queued" }) };
   const { seen } = await openForm("#/scouts?project=demo", daemons);
   await fillForm(ASK);
@@ -292,11 +292,11 @@ test("a picked route no longer listed when New scout opens again falls back to t
   daemons.routes = { ...demoRoutes, leads: demoRoutes.leads.filter((route) => route.name !== "sol") };
   await click(screen.getByRole("button", { name: "New scout" }));
   expect(seen.filter((request) => request.url === `${DEMO}/scouts/routes`).length).toBeGreaterThan(1);
-  expect(picker("Lead").textContent).toBe("opus");
-  expect(disclosure().textContent).toBe("opus · luna ×2 · 10 min");
+  expect(picker("Lead").textContent).toBe("sol");
+  expect(disclosure().textContent).toBe("sol · luna ×2 · 10 min");
   await click(scoutButton());
   const posts = seen.filter((request) => request.method === "POST");
-  expect(posts.map((post) => post.body)).toEqual([{ ask: ASK, kind: "bug", lead: "opus", helper: "luna", swarm: 2, minutes: 10 }]);
+  expect(posts.map((post) => post.body)).toEqual([{ ask: ASK, kind: "bug", lead: "sol", helper: "luna", swarm: 2, minutes: 10 }]);
 });
 
 test("the disclosure label follows the picks, and a blank ask or too large a swarm disables Scout", async () => {

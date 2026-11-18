@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { ACTIONS_OFF } from "../../lib/actions";
 import { useAction } from "../actions";
 import { formatSettled } from "../../lib/format";
+import { Btn } from "../components/Btn";
+import { FactIcon } from "../components/icons";
 import { PageHeader } from "../components/PageHeader";
 import { EMPTY_DRAFT, prefilledDraft, ScoutLaunch } from "../components/ScoutLaunch";
-import { NewScoutButton, ScoutFilters, ScoutGroups, ScoutsBeside, ScoutsEmpty, ShowScoutList, useLaunchProjects } from "../components/ScoutsSidebar";
+import { EMPTY_LINE, NEW_SCOUT, PLUS, ScoutFilters, ScoutGroups, ScoutsBeside, ShowScoutList, useLaunchProjects } from "../components/ScoutsSidebar";
 import { StateDot } from "../components/StateDot";
 import { firstLine } from "../history";
 import type { ScopeSearch } from "../scope";
@@ -124,7 +127,19 @@ export function Scouts() {
       pane={pane}
     />
   );
-  const newScout = <NewScoutButton expanded={open} disabled={!canLaunch} onClick={() => (open ? close() : setOpen(true))} />;
+  const newScout = (
+    <Btn
+      variant="primary"
+      className={NEW_SCOUT}
+      expanded={open}
+      disabled={!canLaunch}
+      title={canLaunch ? undefined : ACTIONS_OFF}
+      onClick={() => (open ? close() : setOpen(true))}
+    >
+      {PLUS}
+      New scout
+    </Btn>
+  );
   const shown = launching ? undefined : rows[0];
   if (wide) {
     return (
@@ -148,7 +163,7 @@ export function Scouts() {
         </div>
       </div>
       {launching && form(false)}
-      {rows.length > 0 ? <ScoutTable groups={scoutGroups(rows)} /> : <ScoutsEmpty project={project} narrowed={narrowed} />}
+      {rows.length > 0 ? <ScoutTable groups={scoutGroups(rows)} /> : <p className={EMPTY_LINE}><FactIcon ok />{narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}</p>}
     </section>
   );
 }

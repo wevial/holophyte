@@ -220,10 +220,11 @@ test("the Kind picker opens on ArrowDown, picks with Enter and closes on Escape 
   expect(document.activeElement).toBe(picker("Kind"));
 });
 
-test("a search matching no scout reads No scouts match alone, on one line after an icon, and an empty scope still names its project", async () => {
+test("a search matching no scout reads No scouts match alone, in one paragraph after an icon, and an empty scope still names its project", async () => {
   await mount("#/scouts?q=nothing", scoutFetch(demo, writer));
   expect(screen.getAllByText("No scouts match")).toHaveLength(1);
   const line = screen.getByText("No scouts match");
+  expect(line.tagName).toBe("P");
   expect([...line.childNodes].map((node) => node.nodeName)).toEqual(["svg", "#text"]);
   expect(groups()).toEqual([]);
   expect(document.querySelector("[data-scout-table]")).toBeNull();

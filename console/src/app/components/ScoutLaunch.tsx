@@ -75,8 +75,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const routeOptions = (routes: ScoutRoute[]) => routes.map((route) => ({ value: route.name, label: route.name }));
-const listed = (routes: ScoutRoute[], name: string | null) => routes.some((route) => route.name === name);
+const routeOptions = (routes: ScoutRoute[], picked: string | null) => {
+  const names = routes.map((route) => route.name);
+  return (picked == null || names.includes(picked) ? names : [...names, picked]).map((name) => ({ value: name, label: name }));
+};
 const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 
 function RoutePicker({ id, label, routes, value, onPick }: { id: string; label: string; routes: ScoutRoute[]; value: string | null; onPick: (name: string) => void }) {
@@ -84,7 +86,7 @@ function RoutePicker({ id, label, routes, value, onPick }: { id: string; label: 
     <Field label={label}>
       {routes.length === 0
         ? <span className="font-sans text-[13px] leading-[30px] text-ink-3">none</span>
-        : <Picker id={id} label={label} passPress options={routeOptions(routes)} value={value ?? ""} onPick={onPick} />}
+        : <Picker id={id} label={label} passPress options={routeOptions(routes, value)} value={value ?? ""} onPick={onPick} />}
     </Field>
   );
 }
@@ -134,11 +136,7 @@ export function ScoutLaunch({ projects, action, draft, onDraft, onCancel, onLaun
   const { data: routes } = useScoutRoutes(project.base);
   const leads = routes?.leads ?? [];
   const helperRoutes = routes?.helpers ?? [];
-  const kept = draft.picks?.base === project.base ? draft.picks : null;
-  const defaults = routes ? defaultPicks(routes) : null;
-  const picks: ScoutPicks | null = kept && defaults
-    ? { ...kept, lead: listed(leads, kept.lead) ? kept.lead : defaults.lead, helper: listed(helperRoutes, kept.helper) ? kept.helper : defaults.helper }
-    : kept ?? defaults;
+  const picks: ScoutPicks | null = draft.picks?.base === project.base ? draft.picks : routes ? defaultPicks(routes) : null;
   const turns = routes?.defaults.helper_turns ?? 1;
   const swarm = picks ? wholeIn(picks.swarm, 1, turns) : null;
   const minutes = picks ? wholeIn(picks.minutes, 1) : null;

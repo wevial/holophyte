@@ -65,25 +65,13 @@ export function ScoutGroups({ groups, row }: { groups: ScoutGroup[]; row: (row: 
   );
 }
 
-export function ScoutsEmpty({ project, narrowed }: { project: string | undefined; narrowed: boolean }) {
-  return (
-    <p className="m-0 flex items-center gap-2 px-2.5 py-2.5 font-sans text-[13px] leading-[1.4] text-ink-3">
-      <FactIcon ok />
-      {narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}
-    </p>
-  );
-}
-
-export function NewScoutButton({ expanded, disabled, onClick }: { expanded: boolean; disabled: boolean; onClick: () => void }) {
-  return (
-    <Btn variant="primary" className="h-7! gap-1.5! rounded-[7px]! px-2.5! text-[12.5px]!" expanded={expanded} disabled={disabled} title={disabled ? ACTIONS_OFF : undefined} onClick={onClick}>
-      <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
-        <path d="M8 3.5v9M3.5 8h9" />
-      </svg>
-      New scout
-    </Btn>
-  );
-}
+export const EMPTY_LINE = "m-0 flex items-center gap-2 px-2.5 py-2.5 font-sans text-[13px] leading-[1.4] text-ink-3";
+export const NEW_SCOUT = "h-7! gap-1.5! rounded-[7px]! px-2.5! text-[12.5px]!";
+export const PLUS = (
+  <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
+    <path d="M8 3.5v9M3.5 8h9" />
+  </svg>
+);
 
 /** The projects New scout may launch on in the scope, and the scoped hosts. */
 export function useLaunchProjects(project: string | undefined) {
@@ -172,9 +160,13 @@ function NewScout({ project, current }: { project: string | undefined; current: 
   const { projects } = useLaunchProjects(project);
   const navigate = useNavigate();
   const of = current == null ? undefined : current.slice(0, current.lastIndexOf("/"));
+  const canLaunch = projects.length > 0;
   return (
-    <NewScoutButton expanded={false} disabled={projects.length === 0}
-      onClick={() => void navigate({ to: "/scouts", search: (previous: ScoutsSearch & ScopeSearch) => ({ ...keepList(previous), new: of }) })} />
+    <Btn variant="primary" className={NEW_SCOUT} expanded={false} disabled={!canLaunch} title={canLaunch ? undefined : ACTIONS_OFF}
+      onClick={() => void navigate({ to: "/scouts", search: (previous: ScoutsSearch & ScopeSearch) => ({ ...keepList(previous), new: of }) })}>
+      {PLUS}
+      New scout
+    </Btn>
   );
 }
 
@@ -217,7 +209,7 @@ export function ScoutsBeside({ search, current, newScout, children }: {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3.5">
             {rows.length === 0 ? (
-              <ScoutsEmpty project={project} narrowed={narrowed} />
+              <p className={EMPTY_LINE}><FactIcon ok />{narrowed ? "No scouts match" : `No scouts in ${project ?? "any project"}.`}</p>
             ) : (
               <ScoutGroups groups={scoutGroups(rows)}
                 row={(row) => <ScoutListItem key={`${row.base} ${row.id}`} row={row} current={scoutKey(row) === current} />} />
