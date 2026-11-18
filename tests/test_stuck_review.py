@@ -211,6 +211,18 @@ class StuckReviewTests(unittest.TestCase):
         self.assertIn("alpha drops the last order", self.fixes[1])
         self.assertNotIn("alpha also skips a total", self.fixes[1])
 
+    def test_a_fix_on_one_of_two_identical_findings_outranks_a_drop(self):
+        self.drive([review(ALPHA, ALPHA, GAMMA), review(ALPHA, ALPHA, GAMMA),
+                    review(DELTA)],
+                   "THREAD 1: FIX -- alpha blocks the criterion\n"
+                   "THREAD 2: DROP -- alpha was answered\n"
+                   "THREAD 3: FIX -- gamma blocks the criterion", cap=3,
+                   criteria=[])
+        self.assertEqual(self.roles(), ["review", "fix", "review", "adjudicate",
+                                        "fix", "review", "fix"])
+        self.assertIn("alpha drops the last order", self.fixes[1])
+        self.assertNotIn("alpha was answered", self.goals("review")[2])
+
     def test_a_drop_note_leaves_the_changed_file_in_scope_accounting(self):
         self.drive([review(ALPHA, STYLE), review(ALPHA, STYLE, GAMMA),
                     review(DELTA)],

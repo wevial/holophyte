@@ -190,10 +190,18 @@ def _note(conn, run_id, ticket_id, text):
         store.steer_notes.consume(conn, [note.id], run_id)
 
 
+def _dropped(ruled):
+    fixed = {_identity(finding) for finding, (word, _) in ruled
+             if word == "FIX"}
+    return {_identity(finding) for finding, (word, _) in ruled
+            if word == "DROP"} - fixed
+
+
 def _settle(conn, run_id, ruled):
     ticket_id = store.read.run_snapshot(conn, run_id).ticketId
+    dropped = _dropped(ruled)
     for finding, (word, reason) in ruled:
-        if word == "DROP":
+        if word == "DROP" and _identity(finding) in dropped:
             _note(conn, run_id, ticket_id,
                   f"{SETTLED} the finding {finding_line(finding)} -- the fix"
                   f" turn's answer stands: {reason} Do not raise it again as a"
@@ -240,8 +248,7 @@ def _item(finding):
 
 
 def _ruled(findings, ruled):
-    dropped = {_identity(finding) for finding, (word, _) in ruled
-               if word == "DROP"}
+    dropped = _dropped(ruled)
     fixes = "".join(f"- {_where(finding)}: FIX -- {reason}\n"
                     for finding, (word, reason) in ruled if word == "FIX")
     left = [finding for finding in findings if isinstance(finding, dict)
