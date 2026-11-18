@@ -32,6 +32,7 @@ import {
 const STATE_OPTIONS = STATE_FILTERS.map((state) => ({ value: state, label: FILTER_LABELS[state] }));
 
 const SMALL = "!h-7 !rounded-[7px] !px-2.5 !text-[12.5px]";
+const SMALL_QUIET = `${SMALL} ![--btn-face:transparent] ![--btn-edge:transparent] ![--btn-ink:var(--ink-2)] hover:![--btn-ink:var(--ink)]`;
 
 function PlusGlyph() {
   return (
@@ -42,9 +43,7 @@ function PlusGlyph() {
 }
 
 function ticketCount(total: number, inFlight: number, needYou: number, ready: number) {
-  const head = `${total} ${total === 1 ? "ticket" : "tickets"} · ${inFlight} in flight`;
-  const after = `${ready} ready`;
-  return needYou === 0 ? { text: `${head} · 0 need you`, after } : { text: head, need: `${needYou} need you`, after };
+  return { text: `${total} ${total === 1 ? "ticket" : "tickets"} · ${inFlight} in flight`, need: `${needYou} need you`, after: `${ready} ready` };
 }
 
 function findCard(columns: Record<ColumnId, TicketCard[]>, id: string | null): { card: TicketCard; column: ColumnId } | null {
@@ -122,7 +121,7 @@ export function Tickets() {
               <>
                 {view.project != null && (
                   <Btn
-                    className={SMALL}
+                    className={SMALL_QUIET}
                     onClick={() => {
                       storeScope(null);
                       void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: undefined }) });
@@ -148,7 +147,7 @@ export function Tickets() {
             <FilterSelect label="State" param="filter" allLabel="All states" options={STATE_OPTIONS} />
             <GroupBy modes={modes} mode={mode} onPick={pickGroup} />
             {mode !== "none" && (
-              <Btn className={`${SMALL} ml-auto`} onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}>
+              <Btn className={`${SMALL_QUIET} ml-auto`} onClick={() => setFolded(anyOpen ? new Set(lanes.map((lane) => lane.id)) : new Set())}>
                 {anyOpen ? "Collapse all lanes" : "Expand all lanes"}
               </Btn>
             )}
