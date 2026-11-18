@@ -78,39 +78,39 @@ export function Overview() {
   const logColumn = useRef<HTMLDivElement>(null);
   useHeightVariable(weekBars, logColumn, "--week-bars-height");
   return (
-    <div className="flex flex-col gap-10 pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:pl-[54px]">
-      <div className="flex min-w-0 max-w-[780px] flex-col gap-6">
-        {view.answered && (
-          <header data-overview-head className="flex flex-col gap-3 pt-4 pl-2.5">
-            <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
-              <h1 className="flex items-baseline gap-[14px] font-sans text-ink">
-                <span data-numeral className={`text-[64px] font-[220] font-stretch-125% leading-[0.9] tracking-[-0.03em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : running.length}</span>{" "}
-                <span className="text-[22px] font-normal font-stretch-112% leading-none tracking-[-0.01em]">{need > 0 ? "need you" : "running"}</span>
-              </h1>
-              <div data-glyph-counts className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <GlyphCount count={running.length} words="running" tone="live" icon={STATE_ICONS.running} />
-                <GlyphCount count={waiting.length} words="waiting on a pull request" tone="wait" icon={<PullRequestGlyph />} />
-                <GlyphCount count={view.queued.length} words="queued" tone="ink-2" icon={STATE_ICONS.queued} />
-                <GlyphCount count={merged.length} words="merged today" tone="live" icon={STATE_ICONS.merged} />
-              </div>
-            </div>
-            {need === 0 && (
-              <p className="flex items-center gap-2 font-sans text-[14px] text-ink-2">
-                <Glyph className="text-live">{STATE_ICONS.ready_to_merge}</Glyph>
-                Nothing needs you
-              </p>
-            )}
-          </header>
-        )}
-        {asking != null && tokenWanted(everyHost).length === 0 && <FirstLoad line={asking} />}
-        <Notices
-          stale={staleConsole(everyHost, origin)}
-          silent={silentHosts(view.hosts, view.now)}
-          lines={noticeLines(view.hosts, log.answers, view.now)}
-        />
-      </div>
+    <div className="pt-3.5 pr-8 pb-7 pl-8 min-[1200px]:pl-[54px]">
       <div className={COLUMNS}>
         <div data-overview-column="now" className="col-start-1 row-start-1 flex min-w-0 flex-col gap-10">
+          <div className="flex min-w-0 max-w-[780px] flex-col gap-6">
+            {view.answered && (
+              <header data-overview-head className="flex flex-col gap-3 pt-4 pl-2.5">
+                <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
+                  <h1 className="flex items-baseline gap-[14px] font-sans text-ink">
+                    <span data-numeral className={`text-[64px] font-[220] font-stretch-125% leading-[0.9] tracking-[-0.03em] ${need > 0 ? "text-need" : "text-act"}`}>{need > 0 ? need : running.length}</span>{" "}
+                    <span className="text-[22px] font-normal font-stretch-112% leading-none tracking-[-0.01em]">{need > 0 ? "need you" : "running"}</span>
+                  </h1>
+                  <div data-glyph-counts className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <GlyphCount count={running.length} words="running" tone="live" icon={STATE_ICONS.running} />
+                    <GlyphCount count={waiting.length} words="waiting on a pull request" tone="wait" icon={<PullRequestGlyph />} />
+                    <GlyphCount count={view.queued.length} words="queued" tone="ink-2" icon={STATE_ICONS.queued} />
+                    <GlyphCount count={merged.length} words="merged today" tone="live" icon={STATE_ICONS.merged} />
+                  </div>
+                </div>
+                {need === 0 && (
+                  <p className="flex items-center gap-2 font-sans text-[14px] text-ink-2">
+                    <Glyph className="text-live">{STATE_ICONS.ready_to_merge}</Glyph>
+                    Nothing needs you
+                  </p>
+                )}
+              </header>
+            )}
+            {asking != null && tokenWanted(everyHost).length === 0 && <FirstLoad line={asking} />}
+            <Notices
+              stale={staleConsole(everyHost, origin)}
+              silent={silentHosts(view.hosts, view.now)}
+              lines={noticeLines(view.hosts, log.answers, view.now)}
+            />
+          </div>
           {loaded && need > 0 && (
             <Section label="Needs you" count={need} empty="">
               <FocusCard entries={view.needs} open={opened.open} toggle={opened.toggle} hosts={view.hosts} now={view.now} />
@@ -146,11 +146,11 @@ export function Overview() {
               <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
             </Section>
           </div>
-          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-7 min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
+          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-3.5 min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
             <WeekBars rows={week} now={view.now} colours={colours} />
           </div>
         </div>
-        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-7 min-[1600px]:h-[calc(100vh-3.5rem)] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
+        <div ref={logColumn} data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-3.5 min-[1600px]:h-[calc(var(--panel-height)-2.625rem)] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
           <DayLog entries={log.entries} className="min-h-0 flex-1" />
         </div>
       </div>
