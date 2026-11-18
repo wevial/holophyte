@@ -1,6 +1,7 @@
 """Failed attempts need attention only until a newer attempt exists."""
 import io
 import sqlite3
+import subprocess
 import unittest
 from time import time
 from unittest.mock import patch
@@ -185,16 +186,10 @@ class FailedAttentionTests(ServeTestCase):
                     self.assertEqual(body["level"], "working")
                     self.assertEqual(body["items"], [])
 
-    def test_only_failure_remains_for_in_flight_and_ready(self):
-        self.mirror_state("Todo")
-        for status in ("in_flight", "ready"):
-            with self.subTest(status=status):
-                if status == "ready":
-                    store.requeue(self.conn, self.ticket.id, "retry later")
-                code, _, body = self.request("GET", "/attention")
-                self.assertEqual(code, 200)
-                self.assertEqual([item["run"] for item in body["items"]
-                                  if item["kind"] == "failed"], [self.run])
+    def failed_runs(self):
+        code, _, body = self.request("GET", "/attention")
+        self.assertEqual(code, 200)
+        return [item["run"] for item in body["items"] if item["kind"] == "failed"]
 
     def test_superseded_requeue_is_refused_without_writes(self):
         latest = self.retry()
@@ -215,6 +210,43 @@ class FailedAttentionTests(ServeTestCase):
                 self.assertEqual(self.conn.execute(
                     "SELECT COUNT(*) FROM interventions").fetchone()[0], count)
                 self.assertEqual(list(self.conn.iterdump()), before)
+
+
+class SweptFailureAttentionTests(ServeTestCase):
+    failed_runs = FailedAttentionTests.failed_runs
+
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "init", "-q", str(self.target)], check=True)
+        self.seed()
+        self.start()
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        self.ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
+
+    def sweep_silent_run(self, run, since):
+        for later, act in ((6 * MIN, False), (12 * MIN, True)):
+            holophyte.host.supervisor.sweep(self.project, self.conn,
+                                            since + later, act=act)
+        self.assertEqual(self.conn.execute(
+            "SELECT outcome, failureKind FROM runs WHERE id = ?",
+            (run,)).fetchone(), ("failed", "swept"))
+
+    def test_a_requeued_swept_failure_is_unlisted_until_its_next_run_fails(self):
+        self.sweep_silent_run(self.run, self.now)
+        self.assertEqual(self.failed_runs(), [self.run])
+        store.requeue(self.conn, self.ticket.id, "retry later")
+        self.assertEqual(store.read.ticket_by_id(self.conn, self.ticket.id).status,
+                         "ready")
+        self.assertEqual(self.failed_runs(), [])
+        store.tickets.transition(self.conn, self.ticket.id, "in_flight")
+        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        later = self.now + 20 * MIN
+        latest = store.claim(self.conn, project, self.ticket.id, now=later)
+        store.set_phase(self.conn, latest, "working", now=later)
+        store.heartbeat(self.conn, latest, now=later)
+        self.sweep_silent_run(latest, later)
+        self.assertEqual(self.failed_runs(), [latest])
 
 
 class TriagedFailureAttentionTests(ServeTestCase):
@@ -246,6 +278,7 @@ class StrandedAttentionTests(ServeTestCase):
     HOUR = 60 * MIN
     mirror_state = FailedAttentionTests.mirror_state
     retry = FailedAttentionTests.retry
+    failed_runs = FailedAttentionTests.failed_runs
 
     def setUp(self):
         super().setUp()
@@ -266,11 +299,6 @@ class StrandedAttentionTests(ServeTestCase):
                       now=self.now - 30 * self.HOUR)
         self.ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
         self.start()
-
-    def failed_runs(self):
-        code, _, body = self.request("GET", "/attention")
-        self.assertEqual(code, 200)
-        return [item["run"] for item in body["items"] if item["kind"] == "failed"]
 
     def test_a_stranded_failure_is_listed(self):
         self.assertEqual(self.failed_runs(), [self.run])
