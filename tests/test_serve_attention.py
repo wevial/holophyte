@@ -1,6 +1,7 @@
 """Failed attempts need attention only until a newer attempt exists."""
 import io
 import sqlite3
+import subprocess
 import unittest
 from time import time
 from unittest.mock import patch
@@ -190,20 +191,6 @@ class FailedAttentionTests(ServeTestCase):
         self.assertEqual(code, 200)
         return [item["run"] for item in body["items"] if item["kind"] == "failed"]
 
-    def test_a_requeued_failure_is_unlisted_until_its_next_run_fails(self):
-        self.mirror_state("Todo")
-        self.assertEqual(self.failed_runs(), [self.run])
-        store.requeue(self.conn, self.ticket.id, "retry later")
-        self.assertEqual(store.read.ticket_by_id(self.conn, self.ticket.id).status,
-                         "ready")
-        self.assertEqual(self.failed_runs(), [])
-        store.tickets.transition(self.conn, self.ticket.id, "in_flight")
-        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
-        latest = store.claim(self.conn, project, self.ticket.id, now=self.now)
-        store.release(self.conn, latest, "failed", reason="verify red again",
-                      now=self.now)
-        self.assertEqual(self.failed_runs(), [latest])
-
     def test_superseded_requeue_is_refused_without_writes(self):
         latest = self.retry()
         for ended in (False, True):
@@ -223,6 +210,43 @@ class FailedAttentionTests(ServeTestCase):
                 self.assertEqual(self.conn.execute(
                     "SELECT COUNT(*) FROM interventions").fetchone()[0], count)
                 self.assertEqual(list(self.conn.iterdump()), before)
+
+
+class SweptFailureAttentionTests(ServeTestCase):
+    failed_runs = FailedAttentionTests.failed_runs
+
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "init", "-q", str(self.target)], check=True)
+        self.seed()
+        self.start()
+        self.conn = store.open(str(self.db))
+        self.addCleanup(self.conn.close)
+        self.ticket = store.read.ticket_by_identifier(self.conn, "KO-7")
+
+    def sweep_silent_run(self, run, since):
+        for later, act in ((6 * MIN, False), (12 * MIN, True)):
+            holophyte.host.supervisor.sweep(self.project, self.conn,
+                                            since + later, act=act)
+        self.assertEqual(self.conn.execute(
+            "SELECT outcome, failureKind FROM runs WHERE id = ?",
+            (run,)).fetchone(), ("failed", "swept"))
+
+    def test_a_requeued_swept_failure_is_unlisted_until_its_next_run_fails(self):
+        self.sweep_silent_run(self.run, self.now)
+        self.assertEqual(self.failed_runs(), [self.run])
+        store.requeue(self.conn, self.ticket.id, "retry later")
+        self.assertEqual(store.read.ticket_by_id(self.conn, self.ticket.id).status,
+                         "ready")
+        self.assertEqual(self.failed_runs(), [])
+        store.tickets.transition(self.conn, self.ticket.id, "in_flight")
+        project = store.tickets.ensure_project(self.conn, "team-1", self.target)
+        later = self.now + 20 * MIN
+        latest = store.claim(self.conn, project, self.ticket.id, now=later)
+        store.set_phase(self.conn, latest, "working", now=later)
+        store.heartbeat(self.conn, latest, now=later)
+        self.sweep_silent_run(latest, later)
+        self.assertEqual(self.failed_runs(), [latest])
 
 
 class TriagedFailureAttentionTests(ServeTestCase):
