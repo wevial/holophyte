@@ -271,7 +271,7 @@ function EditForm({ project, ticketKey, base, loaded, cards, now, handed }: { pr
         <div className={FORM_CARD}>
           <div>
             <p className="font-sans text-[13px] font-semibold text-ink">Project</p>
-            <p data-project className="mt-1.5 font-sans text-[14px] text-ink">{project}</p>
+            <p data-project className="mt-1.5 font-sans text-[14px] text-ink [overflow-wrap:anywhere]">{project}</p>
           </div>
           {drawn("Title") && input("title", "Title", "The outcome, as the board card says it.")}
           {drawn("Summary") && input("summary", "Summary", "One or two sentences. Shown under the title on the card and in peek.")}
