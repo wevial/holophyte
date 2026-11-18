@@ -18,6 +18,7 @@ import fcntl
 import io
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -35,7 +36,7 @@ import holophyte.serve.serve_runs
 import store
 import store.read
 import store.tickets
-from holophyte.loop.branch_sync import _candidate_drift
+from holophyte.loop.branch_sync import _candidate_drift, _sync_branch_from_origin
 from holophyte.loop.runs import open_store
 from tests.fake_agent import Commit, Reply
 from tests.host_fixture import git
@@ -985,6 +986,39 @@ class SweptApproveCliTests(unittest.TestCase):
         self.sweep()
 
         self.assertIn("worktree setup failed", self.refused("--note", "ok"))
+
+    def test_a_setup_moving_the_branch_off_the_reviewed_commit_refuses(self):
+        self.branch_with_wip()
+        self.with_setup("git -c user.name=s -c user.email=s@t commit -q"
+                        " --allow-empty -m setup")
+        self.sweep()
+
+        message = self.refused("--note", "ok")
+
+        found = re.search(rf"left refs/heads/{BRANCH} at ([0-9a-f]{{12}})",
+                          message)
+        self.assertIsNotNone(found, message)
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%s",
+                             found[1]), "setup")
+        self.assertIn(f"not the reviewed commit {self.reviewed[:12]}",
+                      message)
+
+    def test_origin_holding_the_set_aside_commit_is_rewound(self):
+        self.branch_with_wip()
+        origin = self.root / "origin.git"
+        git(self.root, "init", "--bare", "-q", str(origin))
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "push", "-q", "origin", BRANCH)
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(git(origin, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.reviewed)
+        self.assertEqual(_sync_branch_from_origin(
+            None, None, None, None, None, BRANCH, self.wt), self.reviewed)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
 
     @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
     def test_an_undo_that_cannot_remove_the_fresh_worktree_stops(self):

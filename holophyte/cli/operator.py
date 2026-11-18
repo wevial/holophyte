@@ -474,26 +474,28 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
             f"{refused}branch {branch} is not checked out at {worktree},"
             " where the next claim resumes it; nothing approved")
     _require_clean(worktree, branch, refused)
-    if tip == sha:
-        yield [], None, lambda: None
-        return
-    ref = f"{DROPPED_REF}{run_id}"
+    ref, aside = f"{DROPPED_REF}{run_id}", None
     kept = _git(repo, "rev-parse", "--verify", "--quiet", ref).stdout.strip()
-    if kept and _git(repo, "merge-base", "--is-ancestor", kept,
-                     tip).returncode != 0:
-        raise SystemExit(
-            f"{refused}{ref} already holds {kept[:12]}, which {branch} does"
-            " not contain; nothing approved")
-    aside = worktree.with_name(f"{worktree.name}.dropped-{run_id}")
-    if os.path.lexists(aside):
-        raise SystemExit(f"{refused}{aside} already exists; nothing approved")
+    if tip != sha:
+        if kept and _git(repo, "merge-base", "--is-ancestor", kept,
+                         tip).returncode != 0:
+            raise SystemExit(
+                f"{refused}{ref} already holds {kept[:12]}, which {branch}"
+                " does not contain; nothing approved")
+        aside = worktree.with_name(f"{worktree.name}.dropped-{run_id}")
+        if os.path.lexists(aside):
+            raise SystemExit(f"{refused}{aside} already exists; nothing"
+                             " approved")
     dropped = _git(repo, "rev-list", "--abbrev-commit",
                    f"{sha}..{tip}").stdout.split()
     undo = []
     try:
-        _replace_worktree(target, undo, worktree, aside, branch, ref,
-                          kept, sha, tip)
-        yield dropped, aside, lambda: _unmoved(aside, tip)
+        if aside is not None:
+            _replace_worktree(target, undo, worktree, aside, branch, ref,
+                              kept, sha, tip)
+        _rewind_origin(undo, repo, branch, sha, tip)
+        yield dropped, aside, (lambda: None) if aside is None \
+            else lambda: _unmoved(aside, tip)
     except BaseException as failed:
         stuck = _undo(undo)
         left = (f"; undoing it stopped at {stuck}, so {branch}, {worktree}"
@@ -542,11 +544,49 @@ def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
         ok, report = run_worktree_setup(target, worktree)
     if not ok:
         raise _StepFailed(f"worktree setup failed in {worktree}: {report}")
+    _require_at_reviewed(repo, worktree, head, sha)
     left = _git(worktree, "status", "--porcelain", "--untracked-files=normal")
     if left.returncode != 0 or left.stdout.strip():
         raise _StepFailed(
             f"worktree setup left {worktree} unclean, which the next claim"
             f" refuses as drift: {(left.stdout or left.stderr).strip()}")
+
+
+def _require_at_reviewed(repo, worktree, head, sha):
+    at = _git(repo, "rev-parse", "--verify", "--quiet", head).stdout.strip()
+    checkout = _git(worktree, "rev-parse", "--verify", "--quiet", "HEAD"
+                    ).stdout.strip()
+    on = _git(worktree, "symbolic-ref", "--quiet", "HEAD").stdout.strip()
+    if at == checkout == sha and on == head:
+        return
+    if at and at != sha:
+        _git(repo, *NO_HOOKS, "update-ref", head, sha, at)
+    raise _StepFailed(
+        f"worktree setup left {head} at {at[:12] or 'nothing'} and"
+        f" {worktree} at {checkout[:12] or 'nothing'}"
+        f"{'' if on == head else ' off the branch'}, not the reviewed"
+        f" commit {sha[:12]}")
+
+
+def _rewind_origin(undo, repo, branch, sha, tip):
+    if "origin" not in _git(repo, "remote").stdout.split():
+        return
+    listed = _git(repo, "ls-remote", "origin", f"refs/heads/{branch}")
+    if listed.returncode != 0:
+        raise _StepFailed(f"git ls-remote origin failed:"
+                          f" {listed.stderr.strip()}")
+    remote = (listed.stdout.split() or [sha])[0]
+    if _git(repo, "merge-base", "--is-ancestor", remote, sha).returncode == 0:
+        return
+    if _git(repo, "merge-base", "--is-ancestor", remote, tip).returncode != 0:
+        raise _StepFailed(
+            f"origin's {branch} at {remote[:12]} holds commits the local"
+            f" branch at {tip[:12]} does not")
+    lease = f"--force-with-lease=refs/heads/{branch}:"
+    _step(undo, repo, ["push", "origin", "--no-verify", f"{lease}{remote}",
+                       f"{sha}:refs/heads/{branch}"],
+          ["push", "origin", "--no-verify", f"{lease}{sha}",
+           f"{remote}:refs/heads/{branch}"])
 
 
 def _unmoved(aside, tip):
