@@ -1,4 +1,7 @@
+import contextlib
+import fcntl
 import io
+import os
 import re
 import sys
 import tempfile
@@ -23,6 +26,18 @@ from holophyte.revert.settings import revert_config
 from holophyte.revert.ticket_text import revert_ticket
 
 FILED = re.compile(r"^\[holo2\] filed (\S+): ", re.MULTILINE)
+TURN_FILE = "revert.lock"
+
+
+@contextlib.contextmanager
+def revert_turn(target):
+    target.holo_dir.mkdir(parents=True, exist_ok=True)
+    fd = os.open(target.holo_dir / TURN_FILE, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
 
 
 def revert(target, board, key, reason, dry_run):
@@ -34,7 +49,8 @@ def revert(target, board, key, reason, dry_run):
     board = require_board(target, board)
     conn = open_store(target)
     try:
-        return _revert(target, conn, board, key, reason, dry_run)
+        with revert_turn(target):
+            return _revert(target, conn, board, key, reason, dry_run)
     except Refused as refused:
         raise SystemExit(f"[holo2] {refused}; nothing filed") from None
     finally:

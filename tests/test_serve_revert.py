@@ -13,6 +13,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -174,6 +175,7 @@ class RevertActionTests(ConfigTestCase):
 
         def rejected(target, path, state, board, out, priority):
             print("[holo2] fetch https://bot:hunter2@git.example.test/r.git"
+                  " and 'https://git.example.test/q.git?access_token=hunter3'"
                   " failed; ticket rejected", file=out)
             return 2
 
@@ -182,9 +184,47 @@ class RevertActionTests(ConfigTestCase):
 
         self.assertEqual(code, 500, reply)
         self.assertNotIn("hunter2", json.dumps(reply))
+        self.assertNotIn("hunter3", json.dumps(reply))
         self.assertIn("https://[redacted]@git.example.test/r.git",
                       reply["error"])
+        self.assertIn("https://git.example.test/q.git?[redacted]'",
+                      reply["error"])
         self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
+
+    def test_reverts_disabled_after_the_daemon_started_are_refused(self):
+        self.serve({"src/header.py": "broken\n"}, {"README.md": "later\n"})
+        config = self.project.config_path.read_text()
+        self.project.config_path.write_text(
+            config.replace("enabled = true", "enabled = false"))
+
+        code, reply = self.post({"key": "NAT-1", "reason": REASON})
+
+        self.assertEqual(code, 409, reply)
+        self.assertIs(reply["enabled"], False)
+        self.assertIn("[revert] enabled is not true", reply["refused"]["reason"])
+        self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",)])
+
+    def test_two_requests_at_once_file_one_revert(self):
+        self.serve({"src/header.py": "broken\n"}, {"README.md": "later\n"})
+        real = holophyte.revert.command.file_ticket
+
+        def slow(*args, **kwargs):
+            time.sleep(0.5)
+            return real(*args, **kwargs)
+
+        codes = []
+        def send():
+            codes.append(self.post({"key": "NAT-1", "reason": REASON})[0])
+
+        with patch.object(holophyte.revert.command, "file_ticket", slow):
+            senders = [threading.Thread(target=send) for _ in range(2)]
+            for sender in senders:
+                sender.start()
+            for sender in senders:
+                sender.join()
+
+        self.assertEqual(sorted(codes), [200, 409])
+        self.assertEqual(self.tickets(), [("NAT-1",), ("NAT-2",), ("NAT-3",)])
 
     def test_an_empty_reason_is_400_and_files_nothing(self):
         self.serve({"src/header.py": "broken\n"}, {"README.md": "later\n"})

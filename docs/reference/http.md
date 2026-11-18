@@ -1985,12 +1985,16 @@ on KEY's merged run, with the requester as actor:
 ```
 
 `key` is the new ticket. A refusal, with or without `dry_run`, is 409
-with `error` the reason, `paths` the refused paths, if any, and `refused`
-as above, and nothing is filed; a filing the board did not confirm is 500
-with `holo revert`'s lines in `error`. Both carry URLs with their
-credentials and the config's secrets redacted. A missing
-`key`, an empty `reason` or a `dry_run` that is not a boolean is 400; a
-project with no store is 503.
+with `error` the reason, `paths` the refused paths, if any, `enabled`,
+`dependents` empty and `refused` as above, and nothing is filed; filing
+with `[revert] enabled` false is such a refusal, with `enabled` false. A
+filing the board did not confirm is 500 with `holo revert`'s lines in
+`error`. Both carry URLs with their credentials and query strings, and the
+config's secrets, redacted. Each request reads the config afresh, and the
+checks and filing hold the project's revert lock, which `holo revert` also
+takes, so two requests for one merge file one ticket. A missing `key`, an
+empty `reason` or a `dry_run` that is not a boolean is 400; a project with
+no store is 503.
 
 ## `POST /actions/mark-ready`
 
