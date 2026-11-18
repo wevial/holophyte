@@ -235,6 +235,16 @@ test("an item's title opens New ticket with its draft and files nothing", async 
   expect(posts(seen)).toHaveLength(0);
 });
 
+test("picking the current project again on a handed draft keeps the draft", async () => {
+  const { fetch } = scoutFetch({ scout: done() });
+  await mount(fetch);
+  await click(within(rowOf("A3")).getByRole("link", { name: A3_TITLE }));
+  await click(screen.getByLabelText("Project", { selector: "button" }));
+  await click(within(screen.getByRole("listbox", { name: "Project" })).getByRole("option", { name: "demo" }));
+  expect(window.location.hash).toBe("#/tickets/demo/new");
+  expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe(A3_TITLE);
+});
+
 test("filing a handed draft from New ticket leaves the stored draft for the project as it was", async () => {
   const stored = JSON.stringify({ body: draft("A draft kept earlier"), priority: 2, savedAt: at(10, 0) });
   localStorage.setItem("holo.newTicket.demo", stored);

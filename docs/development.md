@@ -599,6 +599,12 @@ Each module, one line:
 - `holophyte/loop/review_round.py` — the review rounds: verify, the witness
   pre-check and its turns, review and a fix turn per round, up to the cap the
   candidate's size earns.
+- `holophyte/loop/stuck_review.py` — a review round that repeats the round
+  before at the stuck threshold, claimed in the transaction that records it
+  and put once a run to the adjudicator before consolidation and the fix
+  turn: `FIX` findings go to the fix turn with their reason, `DROP` rulings
+  leave it and become factory notes the next review reads, and a `HUMAN`,
+  missing or second ruling ends the run as `review_stuck`.
 - `holophyte/loop/test_removal.py` — the round's verify failed when a test
   file the ticket's In scope list does not name holds fewer tests than at the
   base.
@@ -1437,7 +1443,9 @@ ask and filtered by state and kind; `console/src/app/components/ListFilters.tsx`
 State and Kind pickers the Tickets and Scouts pages share, and the Search toggle, `FilterPopover` and `RangeButtons` of
 the Runs page, its third user; the Findings page's `RangeButtons` draws its range presets on the shared Segmented
 control of `console/src/app/components/Segmented.tsx`, a group of pressed buttons for a few fixed choices, beside a
-Custom range calendar button; `console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
+Custom range calendar button; `console/src/app/components/PageHeader.tsx` is the shared page header, a title row
+with the page's quiet count and its icon tools at the right over optional tabs, which Findings uses;
+`console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
 a filled button reading the current option that opens a listbox with arrow keys, Enter and Escape; and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
