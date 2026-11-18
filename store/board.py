@@ -1,13 +1,15 @@
 """store.board: filing, editing, moving and canceling a native board's tickets."""
 from __future__ import annotations
 
+import html
 import json
+import re
 import time
 
 from holophyte.tickets import ticket_criteria, ticket_template
 from holophyte.tickets.ticket_depends import rewrite_depends
 
-from . import RevisionMoved
+from . import RevisionMoved, record_event
 from .notes import record_note
 from .operate import abort, record_intervention, release
 from .revisions import record_board_fields
@@ -171,6 +173,50 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
         return _record_column(conn, ticket_id, column, "move",
                               note or f"Moved to {_BOARD_STATES[column]}.",
                               author, now)
+
+
+REVERTS = re.compile(r"^Reverts: (\S+) at ([0-9a-f]{7,40})$", re.MULTILINE)
+
+
+def reopen_reverted(conn, run_id, author="factory", now=None):
+    if now is None:
+        now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT r.outcome, r.mergeSha, t.projectId, t.linearIdentifier,"
+            " t.body FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " WHERE r.id = ?", (run_id,)).fetchone()
+        if row is None or row[0] != "merged":
+            return None
+        _, merge_sha, project_id, revert_key, text = row
+        sections = ticket_template.parse(text or "").sections
+        summary = sections.get("Summary", "")
+        named = REVERTS.search(summary)
+        if named is None:
+            return None
+        key, sha = named.groups()
+        original = conn.execute(
+            "SELECT t.id, r.id FROM tickets t JOIN runs r ON r.ticketId = t.id"
+            " WHERE t.projectId = ? AND t.linearIdentifier = ?"
+            " AND t.status = 'merged' AND r.outcome = 'merged'"
+            " AND (substr(?, 1, length(r.mergeSha)) = r.mergeSha"
+            "      OR substr(r.mergeSha, 1, length(?)) = ?)"
+            " ORDER BY r.id DESC LIMIT 1",
+            (project_id, key, sha, sha, sha)).fetchone()
+        if original is None:
+            return None
+        ticket_id, merged_run = original
+        reason = re.search(rf"^Undo {re.escape(key)}'s merge: (.+)$", summary,
+                           re.MULTILINE)
+        why = f": {html.unescape(reason[1])}" if reason else ""
+        note = f"Reverted by {revert_key}{why or '.'}"
+        record_event(conn, merged_run, "reverted",
+                     f"reverted by {revert_key}, merged at"
+                     f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
+        conn.execute("UPDATE tickets SET status = 'ready' WHERE id = ?",
+                     (ticket_id,))
+        _record_column(conn, ticket_id, "backlog", "move", note, author, now)
+    return ticket_id
 
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,

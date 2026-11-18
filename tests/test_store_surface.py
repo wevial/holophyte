@@ -304,10 +304,12 @@ class StoreSurfaceTests(unittest.TestCase):
                                                    "numbers",
                                                    "record_criteria"]),
                                  # KO-750: the native board's writers;
-                                 # KO-753: moves/cancels; HOLO-404: check reader.
+                                 # KO-753: moves/cancels; HOLO-404: check reader;
+                                 # HOLO-822: a merged revert reopens its ticket.
                                  (store.board, ["cancel_ticket", "check_ticket",
                                                 "edit_ticket",
                                                 "file_ticket", "move_ticket",
+                                                "reopen_reverted",
                                                 "resolve_dependencies",
                                                 "ticket_problems"]),
                                  # KO-457: persisted work boundaries and live read;

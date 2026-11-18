@@ -249,6 +249,7 @@ PINNED = {
 
     "holophyte/revert/__init__.py": 0,
     "holophyte/revert/checks.py": 1,
+    "holophyte/revert/close.py": 1,
     "holophyte/revert/command.py": 0,
     "holophyte/revert/settings.py": 0,
     "holophyte/revert/ticket_text.py": 0,

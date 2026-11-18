@@ -157,6 +157,11 @@ Each module, one line:
   and the dependents, and unless `--dry-run` files the ticket through
   `file_ticket()` in Todo at priority urgent and records a `revert`
   intervention on the merged run.
+- `holophyte/revert/close.py` — after a run merges, the ticket its Summary's
+  `Reverts: KEY at SHA` line names returns to Backlog through
+  `store.board.reopen_reverted()`, with a `Reverted by REVERT-KEY: REASON`
+  note and a `reverted` event on KEY's merged run, whose outcome and
+  `mergeSha` stay; a Linear board is set to Backlog too.
 - `holophyte/config/config_tables.py` — the per-table readers (KO-397): the
   `[supervisor]`, `[loop]`, `[board]`, `[merge]` and `[report]` tables with
   `CONSOLE_KEYS` and `split_address()`, the namedtuples and defaults they own.
