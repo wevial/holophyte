@@ -98,6 +98,7 @@ test("Table draws one row per ticket, Needs you then In flight, Ready, Backlog a
   await press("Table");
   const heads = document.querySelector("[data-table-heads]")!;
   expect(Array.from(heads.children, (head) => head.textContent)).toEqual(["Status", "Key", "Title", "Stage", "Est."]);
+  for (const element of [heads, ...heads.children]) expect(element.className).not.toMatch(/\buppercase\b|\btracking-/);
   expect(rowsIn().map(cells)).toEqual([
     ["Needs you", "DEMO-4", "DEMO-4 title", "question open 8h 02m", ""],
     ["Needs you", "DEMO-11", "DEMO-11 title", "failed · verify failed", ""],

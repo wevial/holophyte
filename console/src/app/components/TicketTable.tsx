@@ -34,23 +34,21 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
         event.preventDefault();
         onOpen(card);
       }}
-      className={`${GRID} min-h-[52px] px-5 py-2 font-mono text-[12px] leading-[1.3] text-ink-3 no-underline hover:bg-paper-2 ${
-        open ? "bg-paper-2 shadow-[inset_2px_0_0_var(--act)]" : ""
-      }`}
+      className={`${GRID} min-h-[34px] px-4 py-1.5 font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-hover"}`}
     >
-      <span data-cell="status" className={`inline-flex items-center gap-2 whitespace-nowrap font-medium ${TONE_TEXT[tone]}`}>
+      <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${TONE_TEXT[tone]}`}>
         <StateDot state={COLUMN_HEADS[column].state} hideWord tone={tone} />
         {COLUMN_HEADS[column].label}
       </span>
-      <span data-cell="key" className="text-ink-2 tabular-nums">{card.key}</span>
+      <span data-cell="key" className="font-mono text-[12px] text-ink-3 tabular-nums">{card.key}</span>
       <span
         data-cell="title"
-        className={`min-w-0 truncate font-read text-[15px] font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet ? "text-ink-2" : "text-ink"}`}
+        className={`min-w-0 truncate font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet ? "text-ink-2" : "text-ink"}`}
       >
         <TitleText>{card.title}</TitleText>
       </span>
-      <span data-cell="stage" className={`truncate max-[820px]:hidden ${TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
-      <span data-cell="estimate" className="text-right text-ink-2 tabular-nums max-[820px]:hidden">
+      <span data-cell="stage" className={`truncate text-[12.5px] max-[820px]:hidden ${TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
+      <span data-cell="estimate" className="text-right font-mono text-[12px] text-ink-3 tabular-nums max-[820px]:hidden">
         {card.timeBoxMs != null && (
           <>
             {formatAge(card.timeBoxMs)}
@@ -64,10 +62,10 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
 
 function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
-    <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "border border-rule-2 bg-paper" : ""}>
+    <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "" : "pb-1.5"}>
       {ROW_ORDER.flatMap((column) =>
         lane.columns[column].toSorted(byKey).map((card) => (
-          <li key={card.id} className="border-rule-2 not-first:border-t">
+          <li key={card.id} className="border-b border-hair last:border-b-0">
             <TicketRow card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
           </li>
         )),
@@ -94,7 +92,7 @@ export function TicketTable({
 }) {
   return (
     <div data-ticket-table>
-      <div data-table-heads className={`${GRID} min-h-9 px-[21px] font-mono text-[11px] font-medium uppercase leading-none tracking-[0.1em] text-ink-3 max-[820px]:hidden`}>
+      <div data-table-heads className={`${GRID} min-h-[30px] border-b border-hair px-4 text-[12px] font-medium leading-none text-ink-3 max-[820px]:hidden`}>
         <span>Status</span>
         <span>Key</span>
         <span>Title</span>

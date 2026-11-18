@@ -217,7 +217,9 @@ test("an in-flight card shows its key, time box, title and the run's phase and r
   const card = cardOf("DEMO-3");
   expect(card.querySelector("[data-time-box]")!.textContent).toBe("25m time box");
   expect(within(card).getByRole("heading").textContent).toBe("DEMO-3 title");
-  expect(within(card).getByRole("heading").classList).toContain("font-read");
+  const foot = card.querySelector("[data-card-foot]")!;
+  expect(within(card).getByRole("heading").nextElementSibling).toBe(foot);
+  expect(Array.from(foot.children, (part) => part.hasAttribute("data-state-line") || part.hasAttribute("data-time-box"))).toEqual([true, true]);
   expect(lineOf("DEMO-3").textContent).toBe("reviewing · round 2 of 3");
   expect(glyphOf("DEMO-3").getAttribute("aria-label")).toBe("running");
   expect(toneOf(glyphOf("DEMO-3"))).toBe("text-live");
@@ -256,23 +258,18 @@ test("a held host's ready card says it is held, and a merge of today says when i
   expect(cardOf("DEMO-10").querySelector("[data-time-box]")!.textContent).toBe("25m time box");
 });
 
-test("cards keep their column looks and use semibold reading titles for Ready, medium for done and backlog", async () => {
+test("cards keep their need, done, backlog and plain looks, and no card title uses the reading face", async () => {
   await mount("#/tickets?project=demo", fleet(demo).fetch);
   const looks = ["Needs you", "Done today", "Backlog", "Ready"].map((label) => cardsIn(label)[0]!);
   expect(looks.map((card) => card.getAttribute("data-look"))).toEqual(["need", "done", "backlog", "plain"]);
-  const [, done, backlog, plain] = looks;
-  expect(Array.from(within(plain!).getByRole("heading").classList)).toEqual(expect.arrayContaining([
-    "font-read", "font-semibold", "text-[15px]", "leading-[1.35]",
-  ]));
-  for (const card of [done!, backlog!]) {
-    expect(Array.from(within(card).getByRole("heading").classList)).toEqual(expect.arrayContaining([
-      "font-read", "font-medium", "text-[15px]", "leading-[1.35]",
-    ]));
-  }
+  for (const card of screen.getAllByRole("article")) expect(within(card).getByRole("heading").classList).not.toContain("font-read");
+  const [need, done, backlog, plain] = looks;
+  expect(need!.className).toContain("var(--need-edge)");
   expect(backlog!.className).toContain("border-dashed");
-  expect(done!.className).toContain("bg-live-wash");
-  expect(plain!.className).not.toContain("border-dashed");
-  expect(plain!.className).not.toContain("bg-live-wash");
+  for (const card of [need!, done!, plain!]) expect(card.className).not.toContain("border-dashed");
+  expect(plain!.className).not.toContain("var(--need-edge)");
+  const inkOf = (card: Element) => Array.from(within(card as HTMLElement).getByRole("heading").classList).find((name) => name.startsWith("text-ink"));
+  expect([done!, backlog!, plain!].map(inkOf)).toEqual(["text-ink-2", "text-ink-3", "text-ink"]);
 });
 
 const viewsFleet = () =>

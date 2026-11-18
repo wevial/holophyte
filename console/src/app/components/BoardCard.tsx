@@ -12,11 +12,13 @@ type Look = "need" | "done" | "backlog" | "plain";
 const LOOK_OF: Record<ColumnId, Look> = { needs_you: "need", done: "done", backlog: "backlog", ready: "plain", in_flight: "plain" };
 
 const LOOKS: Record<Look, { card: string; title: string }> = {
-  need: { card: "border-[color-mix(in_srgb,var(--need)_45%,var(--rule))] bg-card", title: "font-semibold text-ink" },
-  done: { card: "border-rule bg-live-wash", title: "font-medium text-ink-2" },
-  backlog: { card: "border-dashed border-rule bg-transparent", title: "font-medium text-ink-3" },
-  plain: { card: "border-rule bg-card", title: "font-semibold text-ink" },
+  need: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--need-edge)] hover:bg-hover", title: "text-ink" },
+  done: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--hair)] hover:bg-hover", title: "text-ink-2" },
+  backlog: { card: "border border-dashed border-hair-2 bg-transparent hover:bg-hover", title: "text-ink-3" },
+  plain: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--hair)] hover:bg-hover", title: "text-ink" },
 };
+
+const OPEN_RING = "shadow-[inset_0_0_0_1px_var(--accent),0_0_0_1px_var(--accent)]!";
 
 export const cardElementId = (card: Pick<TicketCard, "project" | "key">) => `card-${card.project}-${card.key}`;
 
@@ -56,26 +58,24 @@ export function BoardCard({
     >
       <article
         data-look={look}
-        className={`relative flex flex-col border px-4 pb-[15px] pt-3.5 ${LOOKS[look].card} ${
-          open ? "border-act! shadow-[0_0_0_1px_var(--act)]" : ""
-        }`}
+        className={`relative flex flex-col gap-2 rounded-[10px] px-3.5 py-3 transition-colors duration-(--motion-colour) ${LOOKS[look].card} ${open ? OPEN_RING : ""}`}
       >
-        <div className="flex items-center gap-2 font-mono text-[11px] font-medium leading-none text-ink-3 tabular-nums">
+        <p className="font-mono text-[12px] leading-none text-ink-3 tabular-nums">
           <span>{card.key}</span>
+        </p>
+        <h3 className={`break-words font-sans text-[13.5px] font-medium leading-[1.35] ${LOOKS[look].title}`}><TitleText>{card.title}</TitleText></h3>
+        <div data-card-foot className="flex min-w-0 items-center gap-2 text-[12px] leading-[1.3]">
+          <p data-state-line className="flex min-w-0 items-center gap-[5px]">
+            <StateDot state={state} hideWord tone={tone} />
+            <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[wordTone]}`}>{cardWord(card, now)}</span>
+          </p>
           {card.timeBoxMs != null && (
-            <span data-time-box className="ml-auto inline-grid h-5 min-w-5 place-items-center px-1 text-ink-2 shadow-[inset_0_0_0_1px_var(--rule)]">
-              <span>
-                {formatAge(card.timeBoxMs)}
-                <span className="sr-only"> time box</span>
-              </span>
+            <span data-time-box className="ml-auto shrink-0 font-mono text-ink-3 tabular-nums">
+              {formatAge(card.timeBoxMs)}
+              <span className="sr-only"> time box</span>
             </span>
           )}
         </div>
-        <h3 className={`mt-[9px] break-words font-read text-[15px] leading-[1.35] ${LOOKS[look].title}`}><TitleText>{card.title}</TitleText></h3>
-        <p data-state-line className="mt-3 flex min-w-0 items-center gap-[7px] font-mono text-[12px] leading-[1.3]">
-          <StateDot state={state} hideWord tone={tone} />
-          <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[wordTone]}`}>{cardWord(card, now)}</span>
-        </p>
       </article>
     </Link>
   );

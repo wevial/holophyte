@@ -105,6 +105,8 @@ test("Group by Project draws a lane per project in fleet order with its count, h
   expect(keysIn(demo, "Needs you")).toEqual(["DEMO-4"]);
   expect([metaOf(writer), needOf(writer)]).toEqual(["2 tickets", null]);
   expect(keysIn(writer, "In flight")).toEqual(["WRITER-2"]);
+  expect(headOf(demo).textContent).toBe("demo4 tickets · held1 need you");
+  for (const part of [headOf(demo), ...headOf(demo).querySelectorAll("*")]) expect(part.classList).not.toContain("font-mono");
   cleanup();
 
   await mount("#/tickets", projects);

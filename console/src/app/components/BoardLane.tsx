@@ -21,7 +21,7 @@ export interface LaneBodyProps {
   body: LaneBody;
 }
 
-const FLAT_CELL = "min-h-[520px] border border-rule-2 bg-paper p-2.5";
+const FLAT_CELL = "min-h-[520px]";
 
 export function LaneGrid({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
@@ -45,14 +45,14 @@ export function BoardLane({ lane, open, onToggle, children }: { lane: Lane; open
   if (lane.glyph == null) return children({ hidden: false, flat: true });
   const glyphTone = lane.glyph === "folder" ? (lane.held ? "text-wait" : "text-live") : "text-ink-2";
   return (
-    <section aria-label={lane.glyph === "story" ? plainTitle(lane.name) : lane.name} className="border border-rule-2 bg-paper">
-      <h2 className={`px-2 py-1 ${open ? "border-b border-rule-2" : ""}`}>
+    <section aria-label={lane.glyph === "story" ? plainTitle(lane.name) : lane.name} className="rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]">
+      <h2 className={`px-2 py-1 ${open ? "border-b border-hair" : ""}`}>
         <button
           type="button"
           aria-expanded={open}
           aria-controls={body}
           onClick={onToggle}
-          className="group flex min-h-11 w-full cursor-pointer items-center gap-2.5 px-2 text-left font-mono text-[13px] font-medium leading-[1.2] text-ink hover:bg-paper-2"
+          className="group flex min-h-11 w-full cursor-pointer items-center gap-2.5 px-2 rounded-md text-left font-sans text-[13px] font-semibold leading-[1.2] text-ink hover:bg-hover"
         >
           <FoldChevron open={open} />
           {lane.glyph === "folder" ? <FolderIcon className={glyphTone} /> : <StoryIcon className={glyphTone} />}
