@@ -39,6 +39,7 @@ HINT = Flag("--hint")
 WITHDRAW = Flag("--withdraw")
 FOREGROUND = Flag("--foreground")
 NOW = Flag("--now")
+AMEND = Flag("--amend", "TEXT")
 BACKLOG = Flag("--backlog", emits=("--state", "Backlog"))
 PRIORITY = Flag("--priority", "P")
 UPDATE = Flag("--update", "KEY")
@@ -100,7 +101,8 @@ COMMANDS = (
             note=REQUIRED, flags=(REVISION,),
             records=("abort", "abort_close", "close_out")),
     Command(("requeue",), "--requeue", "a failed ticket back in the queue",
-            takes=("KEY",), note=REQUIRED, flags=(FORCE,), records=("requeue",)),
+            takes=("KEY",), note=REQUIRED, flags=(FORCE, AMEND),
+            records=("requeue",)),
     Command(("approve",), "--approve", "release a run parked for merge approval",
             takes=("KEY",), note=OPTIONAL, flags=(FORCE,), records=("approve",)),
     Command(("babysit",), "--babysit", "look at a parked run's pull request again",
