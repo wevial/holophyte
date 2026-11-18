@@ -121,7 +121,7 @@ async function openFilter(page: Page, width: number, height: number, textSize: n
 }
 
 /** The dialog's box and every option and heading label in its sections, each against the part of the scroll pane the reader sees, any label
- *  cut short, and any label whose ends are not hit-tested to it, as one scrolled out of the dialog is not. */
+ *  cut short, any label whose ends are not hit-tested to it, as one scrolled out of the dialog is not, and the dialog over its own button. */
 async function cutOff(dialog: Locator) {
   return dialog.evaluate((node, sections) => {
     let pane: HTMLElement = node.parentElement!;
@@ -144,6 +144,9 @@ async function cutOff(dialog: Locator) {
       return [rect.left + 1, rect.right - 1].every((x) => part.contains(document.elementFromPoint(x, y)));
     };
     const cut: string[] = outside(node) ? ["dialog"] : [];
+    const trigger = node.parentElement!.querySelector("button[aria-haspopup]")!.getBoundingClientRect();
+    const sheet = node.getBoundingClientRect();
+    if (sheet.top < trigger.bottom && sheet.bottom > trigger.top && sheet.left < trigger.right && sheet.right > trigger.left) cut.push("button");
     for (const name of sections) {
       const group = [...node.querySelectorAll("fieldset")].find((each) => each.querySelector("legend")?.textContent?.startsWith(name))!;
       for (const label of group.querySelectorAll("label")) {
@@ -210,7 +213,6 @@ test("at 740x600 and 125% text with the sidebar expanded, picking unclassified a
 
 test("at 320px, Filter findings stacks Severity, Category and Status in one column with no label cut off", async ({ page }) => {
   const dialog = await openFilter(page, 320, 800, 100, false);
-  await dialog.evaluate((node) => node.scrollIntoView({ block: "nearest" }));
   await expect(async () => {
     const boxes = await Promise.all(SECTIONS.map(async (name) => (await dialog.getByRole("group", { name }).boundingBox())!));
     expect(boxes.map((box) => Math.round(box.x))).toEqual(boxes.map(() => Math.round(boxes[0]!.x)));

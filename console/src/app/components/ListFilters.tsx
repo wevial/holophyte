@@ -403,16 +403,16 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
   const sheet = useRef<HTMLDivElement>(null);
-  const shift = useRef({ x: 0, y: 0 });
-  const fit = useRef<(() => void) | null>(null);
+  const shift = useRef(0);
+  const fit = useRef<((reveal: boolean) => void) | null>(null);
   useLayoutEffect(() => {
     if (!open || !icon) return;
     const node = sheet.current!;
-    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit.current?.());
+    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit.current?.(true));
     let pane: HTMLElement | null = null;
-    shift.current = { x: 0, y: 0 };
+    shift.current = 0;
     // Size, stacking and offset are set on the node, not in state, as each is measured after the one before it lays out.
-    fit.current = () => {
+    fit.current = (reveal) => {
       const parent = scrollParent(node);
       if (parent !== pane) {
         pane = parent;
@@ -423,7 +423,6 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       // offsetWidth is rounded, so a scale taken from it drifts and the width it sets flips between two values.
       const scale = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? node.getBoundingClientRect().width / node.offsetWidth;
       const view = shownPart(pane, scale);
-      const inDocument = pane === document.documentElement;
       // Trying two columns shortens the dialog, which would reset a reader's scroll inside it.
       const scrolled = node.scrollTop;
       node.style.maxWidth = `${Math.max(0, view.right - view.left - 2 * MENU_EDGE) / scale}px`;
@@ -431,26 +430,22 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       node.removeAttribute("data-stacked");
       if ([...node.querySelectorAll("[data-option-label]")].some((label) => label.scrollWidth > label.clientWidth)) node.setAttribute("data-stacked", "");
       node.scrollTop = scrolled;
-      const { left, top, width, height } = node.getBoundingClientRect();
-      const fromX = left - shift.current.x * scale;
-      const overX = fromX + width - (view.right - MENU_EDGE);
-      const fromY = top - shift.current.y * scale;
-      // The document grows to hold the dialog, while a scrolling pane would hide what passes its bottom.
-      const overY = inDocument ? 0 : fromY + height - (view.bottom - MENU_EDGE);
-      shift.current = {
-        x: (Math.max(view.left + MENU_EDGE, fromX - Math.max(0, overX)) - fromX) / scale,
-        y: (Math.max(Math.min(fromY, view.top + MENU_EDGE), fromY - Math.max(0, overY)) - fromY) / scale,
-      };
-      node.style.translate = `${shift.current.x}px ${shift.current.y}px`;
+      const { left, width } = node.getBoundingClientRect();
+      const from = left - shift.current * scale;
+      const over = from + width - (view.right - MENU_EDGE);
+      shift.current = (Math.max(view.left + MENU_EDGE, from - Math.max(0, over)) - from) / scale;
+      node.style.translate = `${shift.current}px 0`;
+      // Moving up would cover the trigger, so what passes the bottom is scrolled into view; a reader's own scroll after a pick is kept.
+      if (reveal) node.scrollIntoView({ block: "nearest", inline: "nearest" });
     };
-    fit.current();
+    fit.current(true);
     return () => {
       fit.current = null;
       moves?.disconnect();
     };
   }, [open, icon]);
   // A pick sets its label in a heavier weight and new counts change widths, neither of which resizes what is observed.
-  useLayoutEffect(() => fit.current?.());
+  useLayoutEffect(() => fit.current?.(false));
   return (
     <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
       {icon ? (
@@ -474,7 +469,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       )}
       {open && icon && (
         <div ref={sheet} role="dialog" aria-label={label}
-          className={`group/sheet absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card data-stacked:grid-cols-1`}>
+          className={`group/sheet absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] scroll-my-2 ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card data-stacked:grid-cols-1`}>
           {(sorting || extra) && (
             <div>
               {sorting && <MenuSorting sorting={sorting} />}
