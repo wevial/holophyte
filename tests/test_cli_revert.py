@@ -57,9 +57,12 @@ class RevertCliTests(ConfigTestCase):
         return self.git("rev-parse", "HEAD")
 
     def project_with(self, config, key_files, later_files=None,
-                     key_outcome="merged"):
+                     key_outcome="merged", key_merge_commit=False,
+                     later_pushed=True):
         """A repository whose NAT-1 merge changed `key_files` and whose
-        NAT-2 merge after it changed `later_files`, both pushed to origin."""
+        NAT-2 merge after it changed `later_files`, pushed to origin unless
+        `later_pushed` is false; NAT-1's merge is a two-parent merge commit
+        with `key_merge_commit`."""
         self.locate(config)
         self.git("init", "-q", "-b", "main")
         self.commit({"tests/test_thing.py": "", "src/header.py": "header\n",
@@ -71,12 +74,22 @@ class RevertCliTests(ConfigTestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(holophyte.cli.entry.cli(
                     [str(self.target), "--file-ticket", str(path)]), 0)
-        self.key_sha = self.commit(key_files, "NAT-1: header")
-        self.later_sha = self.commit(later_files or {"README.md": "later\n"},
-                                     "NAT-2: footer")
+        if key_merge_commit:
+            self.git("checkout", "-q", "-b", "task")
+            self.commit(key_files, "NAT-1: header")
+            self.git("checkout", "-q", "main")
+            self.git("merge", "-q", "--no-ff", "-m", "Merge NAT-1", "task")
+            self.key_sha = self.git("rev-parse", "HEAD")
+        else:
+            self.key_sha = self.commit(key_files, "NAT-1: header")
         self.git("init", "-q", "--bare", str(self.root / "origin.git"))
         self.git("remote", "add", "origin", str(self.root / "origin.git"))
-        self.git("push", "-q", "origin", "main")
+        if not later_pushed:
+            self.git("push", "-q", "origin", "main")
+        self.later_sha = self.commit(later_files or {"README.md": "later\n"},
+                                     "NAT-2: footer")
+        if later_pushed:
+            self.git("push", "-q", "origin", "main")
         self.runs = {}
         with contextlib.closing(open_store(self.project)) as conn:
             (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
@@ -117,7 +130,7 @@ class RevertCliTests(ConfigTestCase):
                                     "src/footer.py": "broken\n"})
 
         code, out, err = self.holo("revert", "NAT-1",
-                                   "broke the header\n## In scope")
+                                   "broke the <header>\n## In scope")
 
         self.assertEqual(code, 0, err)
         self.assertIn("revert ticket NAT-3 filed", out)
@@ -134,7 +147,7 @@ class RevertCliTests(ConfigTestCase):
         self.assertIn(VERIFY, verify)
         self.assertEqual(self.reverts(),
                          [(self.runs["NAT-1"],
-                           "filed NAT-3: broke the header\n## In scope")])
+                           "filed NAT-3: broke the <header>\n## In scope")])
         filed = self.root / "filed.md"
         filed.write_text(text)
         with contextlib.redirect_stdout(io.StringIO()) as checked:
@@ -162,6 +175,30 @@ class RevertCliTests(ConfigTestCase):
         self.assertIn(dependent, out)
         self.assertIn("revert ticket NAT-3 filed", out)
 
+    def test_a_later_merge_on_local_main_not_yet_pushed_is_a_dependent(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n"},
+                          {"src/header.py": "fixed\n"}, later_pushed=False)
+
+        code, out, err = self.holo("revert", "NAT-1", "broke the header",
+                                   "--dry-run")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"dependent: NAT-2 {self.later_sha} src/header.py", out)
+
+    def test_a_merge_commit_revert_runs_against_its_first_parent(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n"},
+                          key_merge_commit=True)
+        self.assertEqual(self.holo("revert", "NAT-1", "broke the header")[0], 0)
+        ((text,),) = self.read(
+            "SELECT body FROM tickets WHERE linearIdentifier = 'NAT-3'")
+        command = text.split("**What:** Run `", 1)[1].split("`", 1)[0]
+
+        self.git(*command.split()[1:])
+
+        self.assertIn(f"This reverts commit {self.key_sha}",
+                      self.git("log", "-1", "--format=%B"))
+        self.assertEqual((self.target / "src/header.py").read_text(), "header\n")
+
     def test_an_unrelated_later_merge_prints_no_dependent(self):
         self.project_with(ENABLED, {"src/header.py": "broken\n"})
 
@@ -182,6 +219,17 @@ class RevertCliTests(ConfigTestCase):
         self.project_with(NATIVE, {"src/header.py": "broken\n"})
 
         self.assertIn("NAT-1: [revert] enabled is not true",
+                      self.refused("NAT-1", "broke the header"))
+        self.project.config_path.write_text("")
+        self.assertIn("NAT-1: [revert] enabled is not true",
+                      self.refused("NAT-1", "broke the header"))
+
+    def test_a_refuse_paths_character_class_refuses_a_matching_path(self):
+        self.project_with(
+            ENABLED + 'refuse_paths = ["db/changes/change_[0-9]*.py"]\n',
+            {"db/changes/change_2026.py": "op\n"})
+
+        self.assertIn("db/changes/change_2026.py",
                       self.refused("NAT-1", "broke the header"))
 
     def test_a_merge_touching_a_migrations_folder_is_refused(self):
@@ -206,6 +254,32 @@ class RevertCliTests(ConfigTestCase):
 
         self.assertIn("NAT-1: NAT-3 is its open revert ticket",
                       self.refused("NAT-1", "still broken"))
+
+    def test_a_filed_revert_the_store_has_not_mirrored_is_asked_of_the_board(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n"})
+        self.assertEqual(self.holo("revert", "NAT-1", "broke the header")[0], 0)
+        with contextlib.closing(sqlite3.connect(self.project.store_path)) as conn:
+            conn.execute("UPDATE tickets SET title = 'mirrored later', body = ''"
+                         " WHERE linearIdentifier = 'NAT-3'")
+            conn.commit()
+
+        self.assertIn("NAT-1: NAT-3 is its open revert ticket",
+                      self.refused("NAT-1", "still broken"))
+
+    def test_a_ticket_quoting_the_reverts_line_is_no_open_revert(self):
+        self.project_with(ENABLED, {"src/header.py": "broken\n"})
+        quoting = self.root / "Quote.md"
+        quoting.write_text(body("Audit").replace(
+            "## Summary\n\n", f"## Summary\n\nIt quotes `Reverts: NAT-1 at"
+                               f" {self.key_sha}`.\n\n", 1))
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(holophyte.cli.entry.cli(
+                [str(self.target), "--file-ticket", str(quoting)]), 0)
+
+        code, out, err = self.holo("revert", "NAT-1", "broke the header")
+
+        self.assertEqual(code, 0, err)
+        self.assertIn("revert ticket NAT-4 filed", out)
 
     def test_startup_refuses_refuse_paths_that_are_not_a_list_of_strings(self):
         for value in ('"**/migrations/**"', "[1]"):

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import store
 from holophyte.board.projection import file_ticket
+from holophyte.cli.board_verbs import require_board
 from holophyte.loop.runs import open_store
 from holophyte.revert.checks import (
     MAIN,
@@ -28,6 +29,7 @@ def revert(target, board, key, reason, dry_run):
                          f" {target.config_path}; nothing filed")
     if not target.store_path.exists():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
+    board = require_board(target, board)
     conn = open_store(target)
     try:
         return _revert(target, conn, board, key, reason, dry_run)
@@ -50,7 +52,7 @@ def _revert(target, conn, board, key, reason, dry_run):
                       " [revert] refuse_paths refuses; ship a forward fix"
                       " instead")
     say(f"touches no refused path: {', '.join(merge.files)}")
-    filed = open_revert(conn, merge)
+    filed = open_revert(conn, board, merge)
     if filed is not None:
         raise Refused(f"{key}: {filed} is its open revert ticket")
     say("no open revert ticket")

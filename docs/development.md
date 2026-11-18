@@ -141,12 +141,14 @@ Each module, one line:
   blast-radius path lists and the fan-in and packages thresholds.
 - `holophyte/revert/__init__.py` — the `revert` package; empty.
 - `holophyte/revert/settings.py` — the `[revert]` reader: `enabled` and the
-  `refuse_paths` globs, checked at startup with the other tables.
+  `refuse_paths` globs, each compiled, checked at startup with the other
+  tables.
 - `holophyte/revert/checks.py` — what a revert may undo: KEY's newest merged
   run and the files its merge commit changed against its first parent, the
-  refused-path globs, an open revert ticket in the store, and the dependents
-  (`git rev-list` after the merge on `origin/main` against the store's merged
-  runs, kept when they changed a file the merge changed).
+  refused-path globs, an open revert ticket (in the store, or one an earlier
+  revert filed that the board reports open), and the dependents (`git
+  rev-list` after the merge on `origin/main` and local `main` against the
+  store's merged runs, kept when they changed a file the merge changed).
 - `holophyte/revert/ticket_text.py` — the revert ticket's fixed text: its
   `Reverts: KEY at SHA` line, the `git revert` it asks for, the files as its
   scope and the original ticket's verify commands.

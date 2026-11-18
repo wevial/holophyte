@@ -1,4 +1,7 @@
 import collections
+import re
+
+from holophyte.revert.checks import glob_pattern
 
 DEFAULT_REFUSE_PATHS = ("**/migrations/**", "**/migrate/**", "**/*.sql",
                         "**/schema.prisma")
@@ -20,4 +23,10 @@ def revert_config(project):
             not isinstance(glob, str) or not glob.strip() for glob in globs):
         raise SystemExit(f"{where} refuse_paths must be a list of non-empty"
                          f" path globs (strings), got {globs!r}")
+    for glob in globs:
+        try:
+            glob_pattern(glob)
+        except re.error as bad:
+            raise SystemExit(f"{where} refuse_paths: {glob!r} is not a path"
+                             f" glob: {bad}") from None
     return RevertConfig(enabled=enabled, refuse_paths=tuple(globs))

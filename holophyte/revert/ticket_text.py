@@ -1,11 +1,12 @@
-from holophyte.revert.checks import dependent_lines
+from holophyte.revert.checks import dependent_lines, title_prefix
 from holophyte.tickets.ticket_template import MAX_IN_SCOPE
 
 ESTIMATE_MIN = 30
 
 
 def revert_ticket(merge, reason, found):
-    reason = " ".join(reason.split())
+    reason = " ".join(reason.split()).replace("<", "&lt;")
+    mainline = " -m 1" if merge.parents > 1 else ""
     quoted = [f"`{path}`" for path in merge.files]
     files = ", ".join(quoted)
     scope = ([f"- {path}" for path in quoted] if len(quoted) <= MAX_IN_SCOPE
@@ -16,7 +17,7 @@ def revert_ticket(merge, reason, found):
         f"estimate = {ESTIMATE_MIN}",
         "depends_on = []",
         "+++",
-        f"# [Revert] Undo {merge.key}: {merge.title}",
+        f"# {title_prefix(merge.key)}{merge.title}",
         "",
         "## Summary",
         "",
@@ -32,7 +33,8 @@ def revert_ticket(merge, reason, found):
         "",
         "## What / Why / How",
         "",
-        f"**What:** Run `git revert --no-edit {merge.sha}` in the task worktree and"
+        f"**What:** Run `git revert --no-edit{mainline} {merge.sha}` in the"
+        " task worktree and"
         " commit nothing else. If it conflicts, stop without resolving it"
         " and say so as an unmet criterion.",
         "",
