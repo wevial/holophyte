@@ -12,10 +12,10 @@ type Look = "need" | "done" | "backlog" | "plain";
 const LOOK_OF: Record<ColumnId, Look> = { needs_you: "need", done: "done", backlog: "backlog", ready: "plain", in_flight: "plain" };
 
 const LOOKS: Record<Look, { card: string; title: string }> = {
-  need: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--need-edge)] hover:bg-hover forced-colors:border", title: "text-ink" },
-  done: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--hair)] hover:bg-hover forced-colors:border", title: "text-ink-2" },
-  backlog: { card: "border border-dashed border-hair-2 bg-transparent hover:bg-hover", title: "text-ink-3" },
-  plain: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--hair)] hover:bg-hover forced-colors:border", title: "text-ink" },
+  need: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--need-edge)] hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))] forced-colors:border", title: "text-ink" },
+  done: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--hair)] hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))] forced-colors:border", title: "text-ink-2" },
+  backlog: { card: "border border-dashed border-hair-2 bg-transparent hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]", title: "text-ink-3" },
+  plain: { card: "bg-raised shadow-[inset_0_0_0_1px_var(--hair)] hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))] forced-colors:border", title: "text-ink" },
 };
 
 const OPEN_RING = "shadow-[inset_0_0_0_1px_var(--accent),0_0_0_1px_var(--accent)]! forced-colors:outline-2 forced-colors:outline-solid forced-colors:outline-[Highlight]";
@@ -40,7 +40,6 @@ export function BoardCard({
   const look = LOOK_OF[column];
   const state = cardState(card);
   const tone: Tone = look === "backlog" ? "ink-3" : STATES[state].tone;
-  const wordTone: Tone = look === "done" ? "ink-3" : tone;
   return (
     <Link
       id={cardElementId(card)}
@@ -67,7 +66,7 @@ export function BoardCard({
         <div className="flex min-w-0 items-center gap-2 text-[12px] leading-[1.45]">
           <p data-state-line className="flex min-w-0 items-center gap-[5px]">
             <StateDot state={state} hideWord tone={tone} />
-            <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[wordTone]}`}>{cardWord(card, now)}</span>
+            <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[tone]}`}>{cardWord(card, now)}</span>
           </p>
           {card.timeBoxMs != null && (
             <span data-time-box className="ml-auto shrink-0 font-mono text-ink-3 tabular-nums">

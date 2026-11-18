@@ -150,6 +150,10 @@ test("a lane's heading folds its grid, and the fold-all button folds every lane 
   expect(headOf(demo).getAttribute("aria-expanded")).toBe("false");
   expect((demo.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(true);
   expect((writer.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(false);
+  expect(headOf(demo).closest("[hidden]")).toBeNull();
+  fireEvent.click(headOf(demo));
+  await act(settle);
+  expect((demo.querySelector("[data-lane-grid]") as HTMLElement).hidden).toBe(false);
 
   await press("Collapse all lanes");
   expect(lanes().map((lane) => headOf(lane).getAttribute("aria-expanded"))).toEqual(["false", "false"]);
