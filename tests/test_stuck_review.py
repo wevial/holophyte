@@ -20,7 +20,13 @@ import store.steer_notes
 import store.tickets
 from holophyte.agents.review_workspace import configured_review
 from holophyte.host import supervisor
-from holophyte.loop import dispatch, review_round, runs, steering
+from holophyte.loop import (
+    dispatch,
+    review_round,
+    runs,
+    steering,
+    stuck_review,
+)
 from holophyte.loop.gates import InfraFailure
 from holophyte.serve.serve_findings import stop_kind
 from tests.test_store_board import body
@@ -257,6 +263,30 @@ class StuckReviewTests(unittest.TestCase):
         self.assertIn("already ruled on round 2", reason)
         self.assertIn("DROP -- beta is out of scope", reason)
 
+    def test_a_round_reviewed_again_after_a_resume_is_compared_with_the_one_before(
+            self):
+        def recorded(run_id, number, *paths):
+            store.record_review_round(
+                self.conn, run_id, number, "changes_requested", "route",
+                findings=[{"path": path, "line": 1, "severity": "p1",
+                           "message": f"- {path}:1 broken"} for path in paths],
+                started_at=number * 1000, ended_at=number * 1000 + 500)
+
+        recorded(self.run_id, 2, "a.py", "b.py")
+        recorded(self.run_id, 3, "a.py", "b.py", "c.py")
+        store.release(self.conn, self.run_id, "paused", "paused by the operator",
+                      resume_phase="reviewing")
+        store.walk_ticket(self.conn, self.ticket, "ready")
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        resumed = store.claim(self.conn, self.project_id, self.ticket)
+        recorded(resumed, 3, "a.py", "b.py", "c.py")
+
+        overlap, _, repeated = stuck_review.repeats(self.conn, resumed, 0.5)
+
+        self.assertEqual(overlap[:2], (2, 3))
+        self.assertEqual([finding["path"] for finding in repeated],
+                         ["a.py", "b.py"])
+
     def test_a_fresh_complaint_beside_a_repeated_one_is_not_ruled_on(self):
         self.drive([review(ALPHA, BETA), review(ALPHA, BETA, ALPHA_TOO),
                     review(DELTA)], FIX_DROP, cap=3)
@@ -265,8 +295,7 @@ class StuckReviewTests(unittest.TestCase):
         self.assertNotIn("alpha also skips a total", brief)
         self.assertIn("alpha also skips a total", self.fixes[1])
 
-    def test_dropped_scope_verify_and_unstructured_findings_leave_the_fix_turn(
-            self):
+    def test_dropped_scope_and_unstructured_findings_leave_the_fix_turn(self):
         scope = "SCOPE orders/style.py: tangent \u2014 unrelated restyle"
         loose = "Blocker: the export is incomplete."
         (self.wt / "orders/style.py").write_text("STYLE = 1\n")
@@ -274,16 +303,17 @@ class StuckReviewTests(unittest.TestCase):
         self.commit("restyle")
         self.drive([f"{scope}\n{loose}\n\nVERDICT: REQUEST_CHANGES"] * 2,
                    "THREAD 1: DROP -- settled by the ticket\n"
-                   "THREAD 2: DROP -- settled by the ticket\n"
-                   "THREAD 3: DROP -- settled by the ticket", cap=2,
+                   "THREAD 2: DROP -- settled by the ticket", cap=2,
                    verify="echo verify-broke; exit 3")
         (brief,) = self.goals("adjudicate")
-        for held in ("orders/style.py: tangent", "verify-broke", loose):
+        for held in ("orders/style.py: tangent", loose):
             self.assertIn(held, brief)
+        self.assertNotIn("THREAD 3", brief)
         handed = self.fixes[1]
-        for gone in ("orders/style.py: tangent", "verify-broke", loose):
+        for gone in ("orders/style.py: tangent", loose):
             self.assertNotIn(gone, handed)
         self.assertIn("CRITERION C1: unwitnessed", handed)
+        self.assertIn("verify-broke", handed)
 
     def stuck(self, reviews, ruling, fixes, cap=3):
         with patch("holophyte.loop.pipeline.run_task",

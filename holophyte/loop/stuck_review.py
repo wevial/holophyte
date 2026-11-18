@@ -49,19 +49,26 @@ def _identity(finding):
     return (*_key(finding), said(finding.get("message") or ""))
 
 
+def _factory_gate(finding):
+    return "title" in finding
+
+
 def _code(finding):
     return (isinstance(finding, dict) and finding.get("evidence_only") is not True
-            and _key(finding)[0] != store.CRITERIA_PATH)
+            and _key(finding)[0] != store.CRITERIA_PATH
+            and not _factory_gate(finding))
 
 
 def _newest_rounds(conn, run_id):
     runs = continued_runs(conn, run_id)
     marks = ", ".join("?" * len(runs))
-    return [store.read.EndedRound(round=number, findings=findings)
-            for number, findings in conn.execute(
-                "SELECT round, findings FROM reviewRounds WHERE endedAt IS NOT"
-                f" NULL AND runId IN ({marks}) ORDER BY round DESC, runId DESC"
-                " LIMIT 2", runs)]
+    newest = {}
+    for number, findings in conn.execute(
+            "SELECT round, findings FROM reviewRounds WHERE endedAt IS NOT NULL"
+            f" AND runId IN ({marks}) ORDER BY round DESC, runId DESC", runs):
+        newest.setdefault(number, store.read.EndedRound(round=number,
+                                                        findings=findings))
+    return list(newest.values())[:2]
 
 
 def _paired(later, earlier):

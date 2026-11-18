@@ -239,7 +239,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
     verdict = _with_report(
-        handed or stuck_review.without_dropped(verdict, primary, ruling),
+        handed or stuck_review.without_dropped(
+            verdict, stuck_review.kept_findings(consolidate.primary_findings(
+                verdict, decision, unwitnessed), ruling), ruling),
         red, out)
     verdict += ruling.fixes if ruling is not None else ""
     return leak_guard.with_findings(verdict, private), decision, findings
