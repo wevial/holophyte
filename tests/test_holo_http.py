@@ -520,6 +520,14 @@ class RefusalTests(HttpCase):
         self.assertIn("holo steer --withdraw has no HTTP route", completed.stderr)
         self.assertEqual(self.requests, [])
 
+    def test_requeue_amend_has_no_route_and_writes_nothing(self):
+        self.failed_run("HOLO-1")
+        completed = self.holo("requeue", "HOLO-1", "retry", "--amend",
+                              "DROP C9", "-p", "alpha")
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertIn("holo requeue --amend has no HTTP route", completed.stderr)
+        self.assertEqual(self.requests, [])
+
     def test_a_wrong_token_exits_one_naming_the_file_and_never_its_text(self):
         self.secret(self.token_file, WRONG)
         self.assertEqual(set(COVERED), set(HTTP_ROUTES))
