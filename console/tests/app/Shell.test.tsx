@@ -64,6 +64,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
   window.location.hash = "";
   happyDOM.setURL("about:blank");
   device.prefersColorScheme = "light";
@@ -491,9 +492,10 @@ test("in the macOS app the title bar alone drags the window, clears the traffic 
   for (const fold of [false, true]) {
     if (fold) fireEvent.click(toggle());
     for (const name of ["h-[30px]", "pl-[76px]", DRAG]) expect(titleBar().classList.contains(name)).toBe(true);
-    expect(childNames(titleBar())).toEqual([fold ? "Expand sidebar" : "Collapse sidebar", "holophyte"]);
-    expect(toggle().classList.contains(NO_DRAG)).toBe(true);
-    expect(homeLink().classList.contains(NO_DRAG)).toBe(true);
+    expect(childNames(titleBar())).toEqual([fold ? "Expand sidebar" : "Collapse sidebar", "holophyte", "Back", "Next"]);
+    for (const control of [toggle(), homeLink(), ...within(titleBar()).getAllByRole("button", { name: /^(Back|Next)$/ })]) {
+      expect(control.classList.contains(NO_DRAG)).toBe(true);
+    }
     const regions = Array.from(document.querySelectorAll<HTMLElement>("[class]")).filter((el) => el.classList.contains(DRAG));
     expect(regions).toEqual([titleBar()]);
     expect(screen.getByRole("main").querySelector('[aria-hidden="true"].h-0')).toBeNull();
@@ -501,12 +503,121 @@ test("in the macOS app the title bar alone drags the window, clears the traffic 
   expect(aside().classList.contains("min-[720px]:w-[56px]")).toBe(true);
 });
 
-test("in the macOS app the Settings menu keeps the drag title bar with no toggle and the home link in it", async () => {
+test("in the macOS app the Settings menu keeps the drag title bar with no toggle, the home link and Back and Next in it", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
   await mount("#/settings/general");
   expect(screen.queryByRole("button", { name: /^(Collapse|Expand) sidebar$/ })).toBeNull();
   expect(titleBar().classList.contains(DRAG)).toBe(true);
-  expect(childNames(titleBar())).toEqual(["holophyte"]);
+  expect(childNames(titleBar())).toEqual(["holophyte", "Back", "Next"]);
+});
+
+const historyButton = (name: "Back" | "Next") => within(titleBar()).getByRole<HTMLButtonElement>("button", { name });
+const page = () => [window.location.hash.split("?")[0], pages().filter((link) => link.getAttribute("aria-current") === "page").map((link) => link.textContent)];
+const OVERVIEW = ["#/", ["Overview"]];
+const TICKETS = ["#/tickets", ["Tickets"]];
+const openTickets = async () => {
+  fireEvent.click(pages().find((link) => link.textContent?.startsWith("Tickets"))!);
+  await act(settle);
+};
+const mountAt = async (hash: string) => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  window.history.replaceState(null, "");
+  sessionStorage.clear();
+  await mount(hash);
+};
+const settleHistory = async () => {
+  await act(settle);
+  await act(settle);
+};
+
+test("in the macOS app Back and Next follow the wordmark, disabled with nowhere to go, and step through the console's own navigation", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  expect(childNames(titleBar())).toEqual(["Collapse sidebar", "holophyte", "Back", "Next"]);
+  expect(historyButton("Back").disabled).toBe(true);
+  expect(historyButton("Next").disabled).toBe(true);
+
+  await openTickets();
+  expect(page()).toEqual(TICKETS);
+  expect(historyButton("Back").disabled).toBe(false);
+  expect(historyButton("Next").disabled).toBe(true);
+
+  fireEvent.click(historyButton("Back"));
+  await settleHistory();
+  expect(page()).toEqual(OVERVIEW);
+  expect(historyButton("Back").disabled).toBe(true);
+  expect(historyButton("Next").disabled).toBe(false);
+
+  fireEvent.click(historyButton("Next"));
+  await settleHistory();
+  expect(page()).toEqual(TICKETS);
+  expect(historyButton("Next").disabled).toBe(true);
+});
+
+test("in the macOS app, after going Back, a reload of the same window keeps Next enabled and it still returns to Tickets", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  await openTickets();
+  fireEvent.click(historyButton("Back"));
+  await settleHistory();
+  cleanup();
+
+  await mount("#/");
+  expect(page()).toEqual(OVERVIEW);
+  expect(historyButton("Next").disabled).toBe(false);
+  fireEvent.click(historyButton("Next"));
+  await settleHistory();
+  expect(page()).toEqual(TICKETS);
+});
+
+test("in the macOS app a reload that resets the entry's history state leaves Next disabled", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  await openTickets();
+  fireEvent.click(historyButton("Back"));
+  await settleHistory();
+  cleanup();
+
+  window.history.replaceState(null, "");
+  await mount("#/");
+  expect(page()).toEqual(OVERVIEW);
+  expect(historyButton("Next").disabled).toBe(true);
+});
+
+test("in the macOS app Back disables when the window's history length leaves no entry behind the current one", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  await openTickets();
+  fireEvent.click(pages().find((link) => link.textContent?.startsWith("Runs"))!);
+  await act(settle);
+  Object.defineProperty(window.history, "length", { configurable: true, get: () => 2 });
+  try {
+    fireEvent.click(historyButton("Back"));
+    await settleHistory();
+    expect(page()).toEqual(TICKETS);
+    expect(historyButton("Back").disabled).toBe(true);
+    expect(historyButton("Next").disabled).toBe(false);
+  } finally {
+    delete (window.history as { length?: number }).length;
+  }
+});
+
+test("in the macOS app Cmd with [ goes back and Cmd with ] goes forward", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  await openTickets();
+  fireEvent.keyDown(document, { key: "[", metaKey: true });
+  await settleHistory();
+  expect(page()).toEqual(OVERVIEW);
+  fireEvent.keyDown(document, { key: "]", metaKey: true });
+  await settleHistory();
+  expect(page()).toEqual(TICKETS);
+});
+
+test("in a browser the title bar holds no Back or Next", async () => {
+  await mountAt("#/");
+  await openTickets();
+  expect(childNames(titleBar())).toEqual(["Collapse sidebar", "holophyte"]);
 });
 
 test("in a browser nothing names a window drag region", async () => {

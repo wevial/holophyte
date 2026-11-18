@@ -247,6 +247,12 @@ PINNED = {
     "holophyte/questions.py": 1,
     "holophyte/redact.py": 14,
 
+    "holophyte/revert/__init__.py": 0,
+    "holophyte/revert/checks.py": 1,
+    "holophyte/revert/command.py": 0,
+    "holophyte/revert/settings.py": 0,
+    "holophyte/revert/ticket_text.py": 0,
+
     "holophyte/review/__init__.py": 0,
     "holophyte/review/adversary.py": 2,
     "holophyte/review/blast_radius.py": 1,

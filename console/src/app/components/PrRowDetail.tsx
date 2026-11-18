@@ -81,7 +81,7 @@ function MarkReady({ base, run, label }: { base: string; run: number; label: str
           onConfirm={() => void confirm()}
           refusal={action.data && !action.data.ok && <p role="alert" data-action-detail className="mt-3 break-words font-mono text-[12px] text-bad">{action.data.detail}</p>}
         >
-          <p className="mt-4 font-read text-[15px] leading-6 text-ink-2">Review bots and the full checks start on GitHub.</p>
+          <p className="mt-4 font-read text-[14px] leading-6 text-ink-2">Review bots and the full checks start on GitHub.</p>
         </ConfirmDialog>
       )}
     </>

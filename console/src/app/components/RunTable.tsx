@@ -162,7 +162,7 @@ export function RunTable({ rows, now, empty, label = "Runs, newest first", dock,
         {grouped ? (
           daysOf(rows, now).map((day) => (
             <section key={day.key} aria-labelledby={`${id}-${day.key}`}>
-              <h2 data-day className="m-0 flex h-8 items-center gap-2 rounded-card bg-raised px-2.5 font-sans text-[13px] font-semibold text-ink">
+              <h2 data-day className="m-0 flex h-8 items-center gap-2 rounded-card bg-hover px-2.5 shadow-[inset_0_0_0_1px_var(--hair)] font-sans text-[13px] font-semibold text-ink">
                 <span id={`${id}-${day.key}`}>{day.label}</span> <span className="font-mono text-[12px] font-normal tabular-nums text-ink-3">{day.rows.length}</span>
               </h2>
               <ol aria-labelledby={`${id}-${day.key}`} className="m-0 list-none p-0">{list(day.rows)}</ol>

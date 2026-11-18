@@ -13,6 +13,7 @@ import * as hyphae from "../../src/vendor/spectra/hyphae";
 import * as lava from "../../src/vendor/spectra/lava";
 import * as plume from "../../src/vendor/spectra/plume";
 import * as ribbons from "../../src/vendor/spectra/ribbons";
+import { LAVA_BOX } from "../../src/app/components/Haze";
 
 const ORIGIN = "http://writer-host:7710";
 const status = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
@@ -81,7 +82,7 @@ afterEach(() => {
   clearRoot();
 });
 
-test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and every slider reads 100%", async () => {
+test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and the Text, Grain and Haze strength sliders read 100%", async () => {
   await mount();
   expect(scheme("System").getAttribute("aria-checked")).toBe("true");
   expect(pressed("Light")).toEqual(["Lotus"]);
@@ -236,6 +237,150 @@ test("the Haze strength row shows only while Haze is picked", async () => {
   expect(screen.queryByRole("slider", { name: "Haze strength" })).toBeNull();
   fireEvent.click(tile("Header", "Haze"));
   expect(screen.getByRole("slider", { name: "Haze strength" })).toBeTruthy();
+});
+
+const band = () => screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+
+test("each effect keeps its own Fade: Lava at 40 leaves Haze at 70, and Lava's 40 returns when picked again and after a reload", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  fireEvent.change(slider("Fade"), { target: { value: "40" } });
+  fireEvent.click(tile("Header", "Haze"));
+  expect(slider("Fade").value).toBe("70");
+  fireEvent.click(tile("Header", "Lava"));
+  expect([slider("Fade").value, localStorage.getItem("holophyte.effects")]).toEqual(["40", JSON.stringify({ lava: { fade: 40 } })]);
+  await reload();
+  expect([pressed("Header"), slider("Fade").value]).toEqual([["Lava"], "40"]);
+});
+
+test("a Fade saved in another open tab survives this tab setting a different effect's Fade", async () => {
+  await mount();
+  const other = JSON.stringify({ lava: { fade: 40 } });
+  localStorage.setItem("holophyte.effects", other);
+  act(() => { window.dispatchEvent(new StorageEvent("storage", { key: "holophyte.effects", newValue: other })); });
+  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { fade: 40 }, haze: { fade: 20 } });
+});
+
+test("Fade at 0, 70 and 100 sets the band's fade to 0%, 70% and 100%, and None shows no Fade row", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Caustics"));
+    const fades = ["0", "70", "100"].map((value) => {
+      fireEvent.change(slider("Fade"), { target: { value } });
+      return band().style.getPropertyValue("--haze-fade");
+    });
+    expect(fades).toEqual(["0%", "70%", "100%"]);
+    fireEvent.click(tile("Header", "None"));
+    expect(screen.queryByRole("slider", { name: "Fade" })).toBeNull();
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("in a dark theme Lava draws in a box inside the band anchored at its top and LAVA_BOX, at least 1.6, times its height, and the other effects draw in the band itself", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    const box = band().querySelector("canvas")!.parentElement!;
+    expect(LAVA_BOX).toBeGreaterThanOrEqual(1.6);
+    expect([box === band(), band().contains(box), box.style.top, box.style.height]).toEqual([false, true, "0px", `${Math.round(LAVA_BOX * 100)}%`]);
+    const containers = ["Haze", "Caustics", "Plume", "Ribbons", "Hyphae"].map((name) => {
+      fireEvent.click(tile("Header", name));
+      return [name, band().querySelector("canvas")!.parentElement === band()];
+    });
+    expect(containers).toEqual(["Haze", "Caustics", "Plume", "Ribbons", "Hyphae"].map((name) => [name, true]));
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+const fades = () => {
+  fireEvent.click(tile("Header", "Lava"));
+  const lava = slider("Fade").value;
+  fireEvent.click(tile("Header", "Haze"));
+  return { lava, haze: slider("Fade").value };
+};
+
+async function reload() {
+  cleanup();
+  await mount();
+}
+
+test("Reset to default returns the saved fades of Lava and Haze to 70, also after a reload", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  fireEvent.change(slider("Fade"), { target: { value: "40" } });
+  fireEvent.click(tile("Header", "Haze"));
+  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { fade: 40 }, haze: { fade: 20 } });
+  await reload();
+  expect(fades()).toEqual({ lava: "40", haze: "20" });
+  fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+  expect([fades(), localStorage.getItem("holophyte.effects")]).toEqual([{ lava: "70", haze: "70" }, null]);
+  await reload();
+  expect(fades()).toEqual({ lava: "70", haze: "70" });
+});
+
+function refuseWrites() {
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  const full = { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) };
+  Object.defineProperty(globalThis, "localStorage", full);
+  return {
+    otherTab: (key: string, value: string) => {
+      real.setItem(key, value);
+      act(() => { window.dispatchEvent(new StorageEvent("storage", { key, newValue: value })); });
+    },
+    restore: () => {
+      Object.defineProperty(globalThis, "localStorage", storage);
+      fireEvent.click(screen.getByRole("button", { name: "Reset to default" }));
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    },
+  };
+}
+
+test("when storage refuses writes, setting Haze's Fade after passing through None keeps Lava's Fade from earlier in the session", async () => {
+  await mount();
+  const storage = refuseWrites();
+  try {
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    fireEvent.click(tile("Header", "None"));
+    fireEvent.click(tile("Header", "Haze"));
+    fireEvent.change(slider("Fade"), { target: { value: "20" } });
+    expect([fades(), localStorage.getItem("holophyte.effects")]).toEqual([{ lava: "40", haze: "20" }, null]);
+  } finally {
+    storage.restore();
+  }
+});
+
+test("when storage refuses this tab's write of Lava's Fade, another tab saving Haze's Fade keeps Lava's unsaved 40 and shows Haze's 20", async () => {
+  localStorage.setItem("holophyte.effects", JSON.stringify({ haze: { fade: 40 } }));
+  await mount();
+  const storage = refuseWrites();
+  try {
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    storage.otherTab("holophyte.effects", JSON.stringify({ haze: { fade: 20 } }));
+    expect(fades()).toEqual({ lava: "40", haze: "20" });
+  } finally {
+    storage.restore();
+  }
+});
+
+test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {
+  await mount();
+  fireEvent.click(scheme("Light"));
+  fireEvent.change(slider("Fade"), { target: { value: "0" } });
+  expect(band().style.getPropertyValue("--haze-fade")).toBe("");
 });
 
 test("under prefers-reduced-motion the Motion switch is off and disabled", async () => {
