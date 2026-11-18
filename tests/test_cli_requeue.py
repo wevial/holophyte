@@ -383,15 +383,22 @@ class RequeueAmendTests(RequeueTarget):
     def test_holo_requeue_amend_requeues_with_the_note_and_amends_with_the_text(self):
         self.fail_the_run()
 
+        out = io.StringIO()
         with patch.object(holophyte.cli.entry, "board_for", stub_board_for), \
-                patch("getpass.getuser", return_value="caller"):
-            self.holo("requeue", "KO-1", "contract fixed", "--amend",
-                      "ADD: Given an empty list, then nothing is worked")
+                patch("getpass.getuser", return_value="caller"), \
+                contextlib.redirect_stdout(out):
+            holo_cli.main(["requeue", "KO-1", "contract fixed", "--amend",
+                           "ADD: Given an empty list, then nothing is worked",
+                           "-p", str(self.repo)])
 
         self.assertEqual(self.status(), "ready")
         self.assertEqual(self.requeue_notes(), ["contract fixed"])
         self.assertEqual(self.amendments(), [
             ("ADD: Given an empty list, then nothing is worked", "caller")])
+        (note_id,) = [note.id for note in
+                      store.steer_notes.amendments(self.conn, self.ticket)]
+        self.assertIn(f"KO-1 requeued after run {self.run}", out.getvalue())
+        self.assertIn(f"steer note {note_id}", out.getvalue())
 
     def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
         self.fail_the_run()
