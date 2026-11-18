@@ -253,7 +253,7 @@ def swept_condition(conn, run_id):
     return matched[1]
 
 
-def approve_swept(conn, ticket_id, note, sha, run_id):
+def approve_swept(conn, ticket_id, note, sha, run_id, judged_round):
     now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute(
@@ -271,6 +271,14 @@ def approve_swept(conn, ticket_id, note, sha, run_id):
                 f"{identifier}: run {last_run_id} is not a run swept as"
                 " review_stuck or criterion_stuck awaiting approval;"
                 " nothing approved")
+        (newest,) = conn.execute(
+            "SELECT MAX(round) FROM reviewRounds WHERE runId = ?"
+            " AND endedAt IS NOT NULL", (run_id,)).fetchone()
+        if newest != judged_round:
+            raise ApproveRefused(
+                f"{identifier}: run {run_id}'s newest ended review round is"
+                f" {newest}, not round {judged_round}, whose commit was to be"
+                " approved; nothing approved")
         record_intervention(conn, last_run_id, "approve", note, now=now)
         conn.execute("UPDATE runs SET resumePhase = ?, candidateSha = ?,"
                      " approvedAt = ?, approvedBy = ? WHERE id = ?",

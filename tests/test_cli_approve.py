@@ -745,6 +745,37 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
                       out)
 
+    def test_an_untracked_file_refuses_though_status_hides_untracked(self):
+        self.branch_with_wip()
+        git(self.repo, "config", "status.showUntrackedFiles", "no")
+        (self.wt / "new_source.py").write_text("unsaved work\n")
+        self.sweep()
+
+        self.assertIn("holds uncommitted changes",
+                      self.refused("--note", "ok"))
+
+    def test_a_round_ended_after_the_judged_one_was_read_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        real_replace = holophyte.cli.operator._replace_worktree
+
+        def round_ends_meanwhile(*args):
+            real_replace(*args)
+            self.judged(3, self.wip, ("met", "met"))
+
+        with patch.object(holophyte.cli.operator, "_replace_worktree",
+                          round_ends_meanwhile), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("newest ended review round is 3, not round 2",
+                      str(raised.exception))
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
+        self.assertEqual(self.interventions(), [])
+        self.assertEqual(self.ticket_row()[0], "in_flight")
+
     def worker_commits(self, before, where):
         """Approve runs while the swept worker commits in `where()` just
         before the first git command whose arguments hold all of `before`."""

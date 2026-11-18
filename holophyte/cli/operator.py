@@ -371,7 +371,7 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
     with _set_aside(target, claim.wt, run_id, branch, sha,
                     identifier) as (dropped, aside):
         try:
-            store.approve_swept(conn, ticket_id, note, sha, run_id)
+            store.approve_swept(conn, ticket_id, note, sha, run_id, rnd)
         except (store.ApproveRefused, ValueError, sqlite3.Error) as refused:
             raise SystemExit(f"[holo2] {refused}; nothing approved") from None
     print(f"[holo2] {identifier} approved at {sha}: run {run_id}, swept"
@@ -440,7 +440,8 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}branch {branch} is not checked out at {worktree},"
             " where the next claim resumes it; nothing approved")
-    if sh(["git", "status", "--porcelain"], cwd=worktree):
+    if sh(["git", "status", "--porcelain", "--untracked-files=normal"],
+          cwd=worktree):
         raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
                          f" changes on {branch}; nothing approved")
     if tip == sha:
