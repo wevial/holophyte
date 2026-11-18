@@ -213,7 +213,7 @@ PINNED = {
     "holophyte/loop/steering.py": 1,
     "holophyte/loop/steer_cap.py": 1,
     "holophyte/loop/stop.py": 5,
-    "holophyte/loop/stuck_review.py": 7,
+    "holophyte/loop/stuck_review.py": 8,
     "holophyte/loop/witness_turns.py": 3,
     "holophyte/loop/retire.py": 1,
     "holophyte/loop/trim.py": 3,

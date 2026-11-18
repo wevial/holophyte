@@ -1,6 +1,5 @@
 """The review rounds: verify, review and one fix turn per round, up to the cap."""
 import json
-from contextlib import nullcontext
 from functools import partial
 from time import time
 
@@ -199,13 +198,12 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     red = _verify_findings(verify_cmd, ok, out)
     leak_guard.record(conn, run_id, leaks)
     private = leak_guard.review_findings(leaks)
-    with store.transaction(conn) if conn is not None else nullcontext():
-        record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
-                     ok, out,
-                     started_at=round_started, criteria=criteria, root=wt,
-                     prior_reply=first_reply, approved_range=approved, scope=scope,
-                     adversary=blocking + red + private)
-        stuck_review.claim(project, conn, run_id, rnd)
+    record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
+                 ok, out,
+                 started_at=round_started, criteria=criteria, root=wt,
+                 prior_reply=first_reply, approved_range=approved, scope=scope,
+                 adversary=blocking + red + private,
+                 then=partial(stuck_review.claim, project, conn, run_id, rnd))
     if decision == "REQUEST_CHANGES" and conn is not None:
         capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
@@ -228,18 +226,21 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     adversarial = stuck_review.kept_findings(
         consolidate.adversary_findings(conn, run_id, rnd) if plan else None,
         ruling)
+    primary = stuck_review.kept_findings(consolidate.primary_findings(
+        verdict, decision, unwitnessed + red + private), ruling)
     handed = adversarial is not None and consolidate.handed_on(
-        project, conn, run_id, provider, task_id, rnd,
-        stuck_review.kept_findings(consolidate.primary_findings(
-            verdict, decision, unwitnessed + red + private), ruling),
+        project, conn, run_id, provider, task_id, rnd, primary,
         adversarial, fixing,
         partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
                 candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
                 run_id=run_id))
     if ruling is not None and ruling.settled_all:
         return None, decision, findings
+    red, private = (stuck_review.kept_findings(red, ruling),
+                    stuck_review.kept_findings(private, ruling))
     verdict = _with_report(
-        handed or stuck_review.without_dropped(verdict, ruling), red, out)
+        handed or stuck_review.without_dropped(verdict, primary, ruling),
+        red, out)
     verdict += ruling.fixes if ruling is not None else ""
     return leak_guard.with_findings(verdict, private), decision, findings
 

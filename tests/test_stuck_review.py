@@ -18,6 +18,7 @@ import store.board
 import store.read
 import store.steer_notes
 import store.tickets
+from holophyte.agents.review_workspace import configured_review
 from holophyte.host import supervisor
 from holophyte.loop import dispatch, review_round, runs, steering
 from holophyte.loop.gates import InfraFailure
@@ -88,7 +89,8 @@ class StuckReviewTests(unittest.TestCase):
         self.git("-c", "user.name=t", "-c", "user.email=t@example.test",
                  "commit", "-q", "--allow-empty", "-m", message, cwd=cwd)
 
-    def drive(self, reviews, ruling, cap, criteria=CRITERIA, touched="export"):
+    def drive(self, reviews, ruling, cap, criteria=CRITERIA, touched="export",
+              verify="true", resume=None):
         reviews = list(reviews)
         record_round = review_round.record_round
         capture_review = review_round.capture_review
@@ -98,7 +100,7 @@ class StuckReviewTests(unittest.TestCase):
             if role == "adjudicate":
                 if isinstance(ruling, Exception):
                     raise ruling
-                return ruling
+                return ruling(cwd) if callable(ruling) else ruling
             return reviews.pop(0) if role == "review" else ""
 
         def watched(*args, **kwargs):
@@ -134,8 +136,8 @@ class StuckReviewTests(unittest.TestCase):
             head = self.git("rev-parse", "HEAD")
             return review_round._review_rounds(
                 PROJECT, self.conn, self.run_id, None, "NAT-1", "task/nat-1",
-                self.wt, 60, "main", head, TICKET, "true", [], criteria, 10,
-                cap)
+                self.wt, 60, "main", head, TICKET, verify, [], criteria, 10,
+                cap, resume=resume)
 
     def roles(self):
         return [role for role, _ in self.calls]
@@ -176,11 +178,11 @@ class StuckReviewTests(unittest.TestCase):
                     review(ALPHA, f"{BETA}\n{ACCOUNT}", GAMMA), review(DELTA)],
                    FIX_DROP, cap=3)
         handed = self.fixes[1]
-        self.assertIn(ALPHA, handed)
+        self.assertIn("- orders/export.py:1 alpha drops the last order", handed)
         self.assertIn("- orders/export.py:1: FIX -- alpha blocks the criterion",
                       handed)
-        self.assertIn(GAMMA, handed)
-        self.assertIn(ACCOUNT, handed)
+        self.assertIn("- orders/export.py:3 gamma skips a header", handed)
+        self.assertIn(ACCOUNT.replace("CRITERION 1", "CRITERION C1"), handed)
         self.assertNotIn("orders/legacy.py:2", handed)
         (note,) = store.steer_notes.chain_notes(self.conn, self.ticket, 0)
         self.assertEqual(note.author, "factory")
@@ -197,7 +199,7 @@ class StuckReviewTests(unittest.TestCase):
                    "THREAD 2: DROP -- the total is out of scope", cap=3)
         self.assertEqual(self.roles(), ["review", "fix", "review", "adjudicate",
                                         "fix", "review", "fix"])
-        self.assertIn(ALPHA, self.fixes[1])
+        self.assertIn("alpha drops the last order", self.fixes[1])
         self.assertNotIn("alpha also skips a total", self.fixes[1])
 
     def test_a_drop_note_leaves_the_changed_file_in_scope_accounting(self):
@@ -235,24 +237,53 @@ class StuckReviewTests(unittest.TestCase):
         self.drive([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)], FIX_DROP,
                    cap=2)
         store.release(self.conn, self.run_id, "paused", "paused by the operator",
-                      resume_phase="addressing")
+                      resume_phase="verifying")
         store.walk_ticket(self.conn, self.ticket, "ready")
         store.tickets.transition(self.conn, self.ticket, "in_flight")
         self.run_id = store.claim(self.conn, self.project_id, self.ticket)
         store.set_phase(self.conn, self.run_id, "working")
         self.calls = []
         with patch("holophyte.loop.pipeline.run_task", side_effect=lambda *a:
-                   self.drive([review(ALPHA, GAMMA), review(ALPHA, GAMMA)],
-                              FIX_DROP, cap=3)):
+                   self.drive([review(ALPHA, GAMMA)], FIX_DROP, cap=4,
+                              resume={"rnd": 3})):
             dispatch._dispatch(self.project, self.conn, self.run_id, None, {},
                                self.ticket, refresh=False)
         self.assertIn("beta is out of scope", self.goals("review")[0])
-        self.assertNotIn("adjudicate", self.roles())
+        self.assertEqual(self.roles(), ["review"])
         (reason,) = self.conn.execute(
             "SELECT outcomeReason FROM runs WHERE id = ?",
             (self.run_id,)).fetchone()
+        self.assertIn("rounds 2 and 3 share", reason)
         self.assertIn("already ruled on round 2", reason)
         self.assertIn("DROP -- beta is out of scope", reason)
+
+    def test_a_fresh_complaint_beside_a_repeated_one_is_not_ruled_on(self):
+        self.drive([review(ALPHA, BETA), review(ALPHA, BETA, ALPHA_TOO),
+                    review(DELTA)], FIX_DROP, cap=3)
+        (brief,) = self.goals("adjudicate")
+        self.assertNotIn("THREAD 3", brief)
+        self.assertNotIn("alpha also skips a total", brief)
+        self.assertIn("alpha also skips a total", self.fixes[1])
+
+    def test_dropped_scope_verify_and_unstructured_findings_leave_the_fix_turn(
+            self):
+        scope = "SCOPE orders/style.py: tangent \u2014 unrelated restyle"
+        loose = "Blocker: the export is incomplete."
+        (self.wt / "orders/style.py").write_text("STYLE = 1\n")
+        self.git("add", "orders")
+        self.commit("restyle")
+        self.drive([f"{scope}\n{loose}\n\nVERDICT: REQUEST_CHANGES"] * 2,
+                   "THREAD 1: DROP -- settled by the ticket\n"
+                   "THREAD 2: DROP -- settled by the ticket\n"
+                   "THREAD 3: DROP -- settled by the ticket", cap=2,
+                   verify="echo verify-broke; exit 3")
+        (brief,) = self.goals("adjudicate")
+        for held in ("orders/style.py: tangent", "verify-broke", loose):
+            self.assertIn(held, brief)
+        handed = self.fixes[1]
+        for gone in ("orders/style.py: tangent", "verify-broke", loose):
+            self.assertNotIn(gone, handed)
+        self.assertIn("CRITERION C1: unwitnessed", handed)
 
     def stuck(self, reviews, ruling, fixes, cap=3):
         with patch("holophyte.loop.pipeline.run_task",
@@ -326,6 +357,20 @@ class StuckReviewTests(unittest.TestCase):
                 output=b"THREAD 1: FIX -- alpha blocks the criterion\n"),
             fixes=1)
         self.assertIn("the adjudicator turn failed", reason)
+        self.assertIn("1 orders/export.py:1 FIX -- alpha blocks the criterion",
+                      reason)
+
+    def test_a_configured_adjudicator_that_times_out_keeps_its_printed_ruling(
+            self):
+        def stalls(cwd):
+            return configured_review(
+                ["sh", "-c", "printf 'THREAD 1: FIX -- alpha blocks the"
+                 " criterion\\n'; sleep 30"], cwd, 1, None, "adjudicate",
+                "stalling adjudicator")
+
+        reason = self.stuck([review(ALPHA, BETA), review(ALPHA, BETA, GAMMA)],
+                            stalls, fixes=1)
+        self.assertIn("the adjudicator turn failed: adjudicator timed out", reason)
         self.assertIn("1 orders/export.py:1 FIX -- alpha blocks the criterion",
                       reason)
 

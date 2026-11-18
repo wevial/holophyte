@@ -18,7 +18,7 @@ from holophyte.host.supervisor import (
     REVIEW_STUCK,
     SWEEP_EVENT,
     adjudicated_rounds,
-    review_overlap,
+    overlap_of,
 )
 from holophyte.loop.gates import InfraFailure, RunFailure
 from holophyte.loop.runs import heartbeat_while
@@ -27,12 +27,6 @@ from holophyte.redact import safe_print as print
 from holophyte.review.blast_radius import continued_runs
 from holophyte.review.consolidate import said
 from holophyte.review.findings import decode_findings, finding_line
-from holophyte.review.reply_parsing import (
-    CRITERION_LINE_RE,
-    SCOPE_LINE_RE,
-    finding_blocks,
-    parse_findings,
-)
 
 RULINGS = ("FIX", "DROP", "HUMAN")
 RULING_LINE_RE = thread_word_re(RULINGS, r"[ \t]")
@@ -60,16 +54,42 @@ def _code(finding):
             and _key(finding)[0] != store.CRITERIA_PATH)
 
 
+def _newest_rounds(conn, run_id):
+    runs = continued_runs(conn, run_id)
+    marks = ", ".join("?" * len(runs))
+    return [store.read.EndedRound(round=number, findings=findings)
+            for number, findings in conn.execute(
+                "SELECT round, findings FROM reviewRounds WHERE endedAt IS NOT"
+                f" NULL AND runId IN ({marks}) ORDER BY round DESC, runId DESC"
+                " LIMIT 2", runs)]
+
+
+def _paired(later, earlier):
+    """The later findings that repeat an earlier one, paired one to one."""
+    left = [_identity(finding) for finding in earlier if _code(finding)]
+    codes = [finding for finding in later if _code(finding)]
+    paired = set()
+    for n, finding in enumerate(codes):
+        if _identity(finding) in left:
+            left.remove(_identity(finding))
+            paired.add(n)
+    for n, finding in enumerate(codes):
+        key = _key(finding)
+        match = next((each for each in left if each[:3] == key), None)
+        if n not in paired and match is not None:
+            left.remove(match)
+            paired.add(n)
+    return [finding for n, finding in enumerate(codes) if n in paired]
+
+
 def repeats(conn, run_id, threshold):
     """The overlap, the newest round's findings and those it repeats, or None."""
-    overlap = review_overlap(conn, run_id)
+    rows = _newest_rounds(conn, run_id)
+    overlap = overlap_of(rows)
     if overlap is None or overlap[2] < threshold:
         return None
-    later, earlier = (decode_findings(row.findings) or []
-                      for row in store.read.newest_ended_rounds(conn, run_id))
-    seen = {_key(finding) for finding in earlier if _code(finding)}
-    repeated = [finding for finding in later
-                if _code(finding) and _key(finding) in seen]
+    later, earlier = (decode_findings(row.findings) or [] for row in rows)
+    repeated = _paired(later, earlier)
     return (overlap, later, repeated) if repeated else None
 
 
@@ -195,21 +215,21 @@ def kept_findings(findings, ruling):
             or _identity(finding) not in ruling.dropped]
 
 
-def _kept(block, dropped):
-    if not any(_identity(finding) in dropped
-               for finding in parse_findings(block)):
-        return block
-    return "\n".join(line for line in block.splitlines()
-                     if CRITERION_LINE_RE.match(line)
-                     or SCOPE_LINE_RE.match(line))
-
-
-def without_dropped(verdict, ruling):
-    """The reviewer's text less the DROP findings' blocks."""
+def without_dropped(verdict, kept, ruling):
+    """The reviewer's text, or its kept findings once a DROP leaves it."""
     if ruling is None or not ruling.dropped:
         return verdict
-    return "\n\n".join(_kept(block, ruling.dropped)
-                        for block in finding_blocks(verdict))
+    return ("The reviewer's findings, less those the adjudicator settled:\n\n"
+            + "\n\n".join(_item(finding) for finding in kept
+                           if isinstance(finding, dict)))
+
+
+def _item(finding):
+    message = VERDICT_LINE_RE.sub("", finding.get("message") or "").strip()
+    message = message.removeprefix("- ")
+    if message.startswith(_where(finding)):
+        return f"- {message}"
+    return f"- {_where(finding)} [{finding['severity']}] {message}"
 
 
 def _ruled(findings, ruled):
@@ -296,7 +316,8 @@ def _ask(project, conn, run_id, beat_s, wt, base_sha, sha, prompt):
             getattr(error, "output", None) or getattr(error, "stdout", None)))
         return _text(printed), (getattr(error, "reason", None) or str(error)
                                 or type(error).__name__)
-    return str(reply), failure_line(reply)
+    return (f"{reply}\n{getattr(reply, 'printed', '')}",
+            failure_line(reply))
 
 
 def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,

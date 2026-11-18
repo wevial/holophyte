@@ -71,7 +71,10 @@ Outcome = collections.namedtuple("Outcome", ("trip", "acted", "phase"))
 
 
 def review_overlap(conn, run_id):
-    rounds = store.read.newest_ended_rounds(conn, run_id)
+    return overlap_of(store.read.newest_ended_rounds(conn, run_id))
+
+
+def overlap_of(rounds):
     if len(rounds) < 2:
         return None
     later, earlier = rounds[0].round, rounds[1].round

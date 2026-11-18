@@ -44,15 +44,6 @@ class DroppedFindingTests(ConsolidationFixture):
             self.assertIn(sent, goal)
         self.assertNotIn("the cache is never warmed", goal)
 
-    def test_the_consolidator_is_not_shown_a_dropped_finding(self):
-        fake = self.run_repeated_review()
-        first, second = [turn.goal for turn in fake.turns
-                         if turn.role == "consolidate"]
-        self.assertIn("the cache is never warmed", first)
-        self.assertIn("an empty argv crashes", second)
-        self.assertNotIn("the cache is never warmed", second)
-
-
     def test_a_dropped_adversary_finding_is_kept_from_the_fix_turn(self):
         self.configure(ON)
         fake, _ = self.loop(

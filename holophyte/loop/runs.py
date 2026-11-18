@@ -1,6 +1,6 @@
 import json
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from functools import partial
 from pathlib import Path
 from time import time
@@ -207,7 +207,7 @@ def _ending_of(conn, run_id):
 def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                  started_at=None, criteria=(), root=None, route=None,
                  prior_reply="", structured_findings=None, approved_range=None,
-                 scope=(), adversary=()):
+                 scope=(), adversary=(), then=None):
     if conn is None:
         return
     criteria = numbered(conn, run_id, criteria)
@@ -244,11 +244,15 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
         results = ([{"source": "ticket", "command": verify_cmd,
                      "exitCode": 0 if ok else 1,
                      "output": out}] if verify_cmd else [])
-    store.record_review_round(conn, run_id, rnd, verdict,
-                              route or agent_route(target, role),
-                              findings=findings, verification_results=results,
-                              started_at=started_at,
-                              ended_at=int(time() * 1000))
+    with nullcontext() if then is None else store.transaction(conn):
+        store.record_review_round(conn, run_id, rnd, verdict,
+                                  route or agent_route(target, role),
+                                  findings=findings,
+                                  verification_results=results,
+                                  started_at=started_at,
+                                  ended_at=int(time() * 1000))
+        if then is not None:
+            then()
 
 
 def _record_criteria(conn, run_id, rnd, reply, criteria, root, approved_range):
