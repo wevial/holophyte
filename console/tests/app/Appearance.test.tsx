@@ -165,13 +165,14 @@ test("in a dark theme the band mounts only the picked effect: Caustics, then Rib
   }
 });
 
-test("in a dark theme Hyphae mounts alone in the band, and picking Lava destroys it", async () => {
+test("in a dark theme Hyphae mounts alone in the header band, and picking Lava destroys it", async () => {
   const effects = fakeEffects();
   try {
     await mount();
     fireEvent.click(scheme("Dark"));
     fireEvent.click(tile("Header", "Hyphae"));
-    expect(effects.live).toEqual(["Hyphae"]);
+    const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
+    expect([effects.live, band.querySelectorAll("canvas").length]).toEqual([["Hyphae"], 1]);
     fireEvent.click(tile("Header", "Lava"));
     expect([effects.live, effects.options.Hyphae]).toEqual([["Lava"], [{ motion: true }]]);
   } finally {
