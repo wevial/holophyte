@@ -8,7 +8,6 @@
   --lotus-ink-2: #4f4865;
   --lotus-ink-3: #655e7b;
   --lotus-accent: #5a4ebf;
-  --lotus-hair: color-mix(in srgb, var(--lotus-ink) 8%, transparent);
 }
 
 [data-md-color-scheme="slate"] {
@@ -19,11 +18,11 @@
   --lotus-ink-2: #b3adcc;
   --lotus-ink-3: #857fa2;
   --lotus-accent: #b9a3ff;
-  --lotus-hair: color-mix(in srgb, var(--lotus-ink) 8%, transparent);
 }
 
 [data-md-color-scheme="default"],
 [data-md-color-scheme="slate"] {
+  --lotus-hair: color-mix(in srgb, var(--lotus-ink) 8%, transparent);
   --md-default-bg-color: var(--lotus-canvas);
   --md-default-fg-color: var(--lotus-ink);
   --md-default-fg-color--light: var(--lotus-ink-2);
