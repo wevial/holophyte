@@ -64,6 +64,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  sessionStorage.clear();
   window.location.hash = "";
   happyDOM.setURL("about:blank");
   device.prefersColorScheme = "light";
@@ -521,6 +522,7 @@ const openTickets = async () => {
 const mountAt = async (hash: string) => {
   happyDOM.setURL(`${ORIGIN}/`);
   window.history.replaceState(null, "");
+  sessionStorage.clear();
   await mount(hash);
 };
 const settleHistory = async () => {
@@ -550,6 +552,22 @@ test("in the macOS app Back and Next follow the wordmark, disabled with nowhere 
   await settleHistory();
   expect(page()).toEqual(TICKETS);
   expect(historyButton("Next").disabled).toBe(true);
+});
+
+test("in the macOS app, after going Back, a reload of the same window keeps Next enabled and it still returns to Tickets", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  await openTickets();
+  fireEvent.click(historyButton("Back"));
+  await settleHistory();
+  cleanup();
+
+  await mount("#/");
+  expect(page()).toEqual(OVERVIEW);
+  expect(historyButton("Next").disabled).toBe(false);
+  fireEvent.click(historyButton("Next"));
+  await settleHistory();
+  expect(page()).toEqual(TICKETS);
 });
 
 test("in the macOS app Cmd with [ goes back and Cmd with ] goes forward", async () => {

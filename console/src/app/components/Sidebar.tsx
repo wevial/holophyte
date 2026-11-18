@@ -309,12 +309,32 @@ export function useSidebarFold(): SidebarFold {
   return { folded, foldable: !settingsMenu, fold };
 }
 
+const FURTHEST_KEY = "holophyte.history-furthest";
+
+function readFurthest(): number {
+  try {
+    return Number(sessionStorage.getItem(FURTHEST_KEY) ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeFurthest(furthest: number): void {
+  try {
+    sessionStorage.setItem(FURTHEST_KEY, String(furthest));
+  } catch {
+    // Storage may be disabled; Next still tracks this page's own navigation.
+  }
+}
+
 function useHistoryNav(bound: boolean) {
   const { history } = useRouter();
   const [reach, setReach] = useState(() => {
     const index = history.location.state.__TSR_index;
-    return { index, furthest: index };
+    return { index, furthest: Math.max(index, readFurthest()) };
   });
+
+  useEffect(() => writeFurthest(reach.furthest), [reach.furthest]);
 
   useEffect(
     () =>
