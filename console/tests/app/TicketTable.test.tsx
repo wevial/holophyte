@@ -133,9 +133,15 @@ test("compact density holds a Table row to 34 px, under its comfortable height a
   await press("Table");
   const utilities = await compile("@theme { --spacing: 0.25rem; } @tailwind utilities;", { base: import.meta.dir });
   const floors = declarations(utilities.build(Array.from(rowOf("DEMO-3").classList))).filter((entry) => entry.name === "min-height");
-  const compact = floors.filter((entry) => entry.path[0]!.startsWith(":root[data-density=compact] "));
-  const comfortable = floors.filter((entry) => !entry.path[0]!.startsWith(":root"));
-  expect(compact.map((entry) => entry.value)).toEqual(["34px !important"]);
+  const floorsUnder = (density: string | null) => {
+    const page = document.implementation.createHTMLDocument();
+    if (density != null) page.documentElement.setAttribute("data-density", density);
+    const row = page.body.appendChild(page.importNode(rowOf("DEMO-3"), true));
+    const named = (selector: string) => selector.replace(/\.((?:\\.|[\w-])+)/g, (_, name: string) => (row.classList.contains(name.replace(/\\(.)/g, "$1")) ? "*" : ":not(*)"));
+    return floors.filter((entry) => row.matches(named(entry.path.join(" "))));
+  };
+  const comfortable = floorsUnder(null);
+  expect(floorsUnder("compact").filter((entry) => !comfortable.includes(entry)).map((entry) => entry.value)).toEqual(["34px !important"]);
   expect(comfortable.map((entry) => parseFloat(entry.value))).toEqual([expect.any(Number)]);
   expect(parseFloat(comfortable[0]!.value)).toBeGreaterThan(34);
 });
