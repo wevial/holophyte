@@ -360,7 +360,8 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
             " approved, and --force --note TEXT approves it anyway")
     if unmet:
         note = f"forced past criteria: {', '.join(unmet)}; {note}"
-    branch = store.read.park_facts(conn, run_id).branch
+    park = store.read.park_facts(conn, run_id)
+    branch = park.branch
     (title,) = conn.execute("SELECT title FROM tickets WHERE id = ?",
                             (ticket_id,)).fetchone()
     claim = claimed_run(target, {"id": identifier, "title": title,
@@ -370,8 +371,8 @@ def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
             f"[holo2] {identifier}: run {run_id} recorded branch {branch},"
             f" but the next claim resumes {claim.branch}; nothing approved")
     with _approval_lock(target, run_id, identifier), _set_aside(
-            target, claim.wt, run_id, branch, sha,
-            identifier) as (dropped, aside, unmoved):
+            target, claim.wt, run_id, branch, sha, identifier,
+            park.pr_url) as (dropped, aside, unmoved):
         try:
             store.approve_swept(conn, ticket_id, note, sha, run_id, rnd,
                                 confirm=unmoved)
@@ -458,7 +459,7 @@ def _approval_lock(target, run_id, identifier):
 
 
 @contextlib.contextmanager
-def _set_aside(target, worktree, run_id, branch, sha, identifier):
+def _set_aside(target, worktree, run_id, branch, sha, identifier, pull):
     repo, refused = target.path, f"[holo2] {identifier}: "
     tip = _git(repo, "rev-parse", "--verify", "--quiet",
                f"refs/heads/{branch}").stdout.strip()
@@ -493,7 +494,7 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
         if aside is not None:
             _replace_worktree(target, undo, worktree, aside, branch, ref,
                               kept, sha, tip)
-        _rewind_origin(undo, repo, branch, sha, tip)
+        _rewind_origin(undo, repo, branch, sha, tip, pull)
         yield dropped, aside, (lambda: None) if aside is None \
             else lambda: _unmoved(aside, tip)
     except BaseException as failed:
@@ -537,7 +538,7 @@ def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
           lambda: _reattach(worktree, head, tip))
     _move_aside(undo, repo, worktree, aside)
     _step(undo, repo, ["update-ref", head, sha, tip],
-          ["update-ref", head, tip, sha])
+          ["update-ref", head, tip])
     _step(undo, repo, ["worktree", "add", "--quiet", str(worktree), branch],
           ["worktree", "remove", "--force", "--force", str(worktree)])
     with _without_repository_selectors():
@@ -559,8 +560,6 @@ def _require_at_reviewed(repo, worktree, head, sha):
     on = _git(worktree, "symbolic-ref", "--quiet", "HEAD").stdout.strip()
     if at == checkout == sha and on == head:
         return
-    if at and at != sha:
-        _git(repo, *NO_HOOKS, "update-ref", head, sha, at)
     raise _StepFailed(
         f"worktree setup left {head} at {at[:12] or 'nothing'} and"
         f" {worktree} at {checkout[:12] or 'nothing'}"
@@ -568,25 +567,61 @@ def _require_at_reviewed(repo, worktree, head, sha):
         f" commit {sha[:12]}")
 
 
-def _rewind_origin(undo, repo, branch, sha, tip):
+def _rewind_origin(undo, repo, branch, sha, tip, pull):
     if "origin" not in _git(repo, "remote").stdout.split():
         return
-    listed = _git(repo, "ls-remote", "origin", f"refs/heads/{branch}")
+    head = f"refs/heads/{branch}"
+    url = _git(repo, "remote", "get-url", "--push", "origin").stdout.strip()
+    fetched = _origin_tip(repo, "origin", head)
+    pushed = fetched if url in ("", _git(
+        repo, "remote", "get-url", "origin").stdout.strip()) \
+        else _origin_tip(repo, url, head)
+    rewinds = {remote: _needs_rewind(repo, branch, remote, sha, tip, pull)
+               for remote in (fetched, pushed)}
+    if rewinds[pushed]:
+        lease = f"--force-with-lease={head}:"
+        _step(undo, repo, ["push", "origin", "--no-verify",
+                           f"{lease}{pushed}", f"{sha}:{head}"],
+              ["push", "origin", "--no-verify", f"{lease}{sha}",
+               f"{pushed}:{head}"])
+    if rewinds[fetched]:
+        after = _origin_tip(repo, "origin", head)
+        if after != sha:
+            raise _StepFailed(
+                f"origin's {branch} still reads {after[:12]} after the push,"
+                " so the next claim would fetch the commits set aside")
+
+
+def _origin_tip(repo, remote, head):
+    listed = _git(repo, "ls-remote", remote, head)
     if listed.returncode != 0:
-        raise _StepFailed(f"git ls-remote origin failed:"
+        raise _StepFailed(f"git ls-remote {remote} failed:"
                           f" {listed.stderr.strip()}")
-    remote = (listed.stdout.split() or [sha])[0]
-    if _git(repo, "merge-base", "--is-ancestor", remote, sha).returncode == 0:
-        return
-    if _git(repo, "merge-base", "--is-ancestor", remote, tip).returncode != 0:
+    return (listed.stdout.split() or [None])[0]
+
+
+def _needs_rewind(repo, branch, remote, sha, tip, pull):
+    def descends(older, newer):
+        return _git(repo, "merge-base", "--is-ancestor", older,
+                    newer).returncode == 0
+
+    if remote == sha:
+        return False
+    if remote is not None and descends(sha, remote):
+        if descends(remote, tip):
+            return True
+    elif remote is None or descends(remote, sha):
+        if pull is None:
+            return False
+        where = "is missing" if remote is None \
+            else f"is at {remote[:12]}, behind it"
         raise _StepFailed(
-            f"origin's {branch} at {remote[:12]} holds commits the local"
-            f" branch at {tip[:12]} does not")
-    lease = f"--force-with-lease=refs/heads/{branch}:"
-    _step(undo, repo, ["push", "origin", "--no-verify", f"{lease}{remote}",
-                       f"{sha}:refs/heads/{branch}"],
-          ["push", "origin", "--no-verify", f"{lease}{sha}",
-           f"{remote}:refs/heads/{branch}"])
+            f"origin's {branch} {where}, so {pull} is not at the reviewed"
+            f" commit {sha[:12]} and only a push past the push checks"
+            " could take it there")
+    raise _StepFailed(
+        f"origin's {branch} at {remote[:12]} is neither the reviewed commit"
+        f" {sha[:12]}, behind it, nor one of the commits set aside after it")
 
 
 def _unmoved(aside, tip):

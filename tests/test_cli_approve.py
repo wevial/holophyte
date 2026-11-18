@@ -575,11 +575,14 @@ class SweptApproveCliTests(unittest.TestCase):
                        "message": "the same finding"}],
             started_at=T0 + rnd, ended_at=T0 + rnd)
 
-    def sweep(self, newest=("met", "met"), reason=STUCK, kind="swept"):
+    def sweep(self, newest=("met", "met"), reason=STUCK, kind="swept",
+              pull=None):
         """Round 2 judged R with `newest`; round 1 judged E with the
         opposite verdict, so reading any round but the newest shows."""
         self.claim()
         store.set_branch(self.conn, self.run, BRANCH)
+        if pull is not None:
+            store.set_pull_request(self.conn, self.run, pull)
         for phase in ("working", "verifying", "reviewing"):
             store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
         oldest = (("met", "met") if newest is None or "unwitnessed" in newest
@@ -1019,6 +1022,66 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertEqual(_sync_branch_from_origin(
             None, None, None, None, None, BRANCH, self.wt), self.reviewed)
         self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
+
+    def test_a_setup_deleting_the_branch_restores_it_and_the_worktree(self):
+        self.branch_with_wip()
+        self.with_setup(f"git checkout -q --detach && git branch -q -D {BRANCH}")
+        self.sweep()
+
+        self.assertIn(f"left refs/heads/{BRANCH} at nothing",
+                      self.refused("--note", "ok"))
+
+    def test_a_setup_committing_then_failing_restores_the_branch(self):
+        self.branch_with_wip()
+        self.with_setup("git -c user.name=s -c user.email=s@t commit -q"
+                        " --allow-empty -m setup && false")
+        self.sweep()
+
+        self.assertIn("worktree setup failed", self.refused("--note", "ok"))
+
+    def origin(self, name, sha):
+        bare = self.root / name
+        git(self.root, "init", "--bare", "-q", str(bare))
+        git(self.repo, "push", "-q", str(bare), f"{sha}:refs/heads/{BRANCH}")
+        return bare
+
+    def test_an_origin_fetched_from_elsewhere_than_the_push_refuses(self):
+        self.branch_with_wip()
+        fetched, pushed = (self.origin(name, self.wip)
+                           for name in ("fetch.git", "push.git"))
+        git(self.repo, "remote", "add", "origin", str(fetched))
+        git(self.repo, "remote", "set-url", "--push", "origin", str(pushed))
+        self.sweep(pull=PULL)
+
+        self.assertIn(f"still reads {self.wip[:12]} after the push",
+                      self.refused("--note", "ok"))
+        for bare in (fetched, pushed):
+            self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                             self.wip)
+
+    def test_an_origin_a_rewind_would_not_reach_refuses_unpushed(self):
+        """Behind R with a pull request open, or diverged from R though W
+        merges it, origin could reach R only by publishing new commits."""
+        self.branch_with_wip()
+        git(self.wt, "checkout", "-q", "-b", "side", self.earlier)
+        (self.wt / "side").write_text("a side commit\n")
+        git(self.wt, "add", "side")
+        git(self.wt, "commit", "-q", "-m", "diverged from R")
+        diverged = git(self.wt, "rev-parse", "HEAD")
+        git(self.wt, "checkout", "-q", BRANCH)
+        git(self.wt, "merge", "-q", "--no-edit", "side")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        bare = self.origin("origin.git", self.earlier)
+        git(self.repo, "remote", "add", "origin", str(bare))
+        self.sweep(pull=PULL)
+
+        for remote, why in ((self.earlier, f"behind it, so {PULL}"),
+                            (diverged, "is neither the reviewed commit")):
+            git(self.repo, "push", "-q", "--force", "origin",
+                f"{remote}:refs/heads/{BRANCH}")
+            self.assertIn(why, self.refused("--note", "ok"))
+            self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                             remote)
 
     @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
     def test_an_undo_that_cannot_remove_the_fresh_worktree_stops(self):
