@@ -74,7 +74,7 @@ class RevertActionTests(ConfigTestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(holophyte.cli.entry.cli(
                     [str(self.target), "--file-ticket", str(path)]), 0)
-        self.key_sha = self.commit(key_files, "NAT-1: header")
+        key_sha = self.commit(key_files, "NAT-1: header")
         self.later_sha = self.commit(later_files, "NAT-2: footer")
         self.git("init", "-q", "--bare", str(self.root / "origin.git"))
         self.git("remote", "add", "origin", str(self.root / "origin.git"))
@@ -82,7 +82,7 @@ class RevertActionTests(ConfigTestCase):
         self.runs = {}
         with contextlib.closing(open_store(self.project)) as conn:
             (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
-            for key, sha in (("NAT-1", self.key_sha), ("NAT-2", self.later_sha)):
+            for key, sha in (("NAT-1", key_sha), ("NAT-2", self.later_sha)):
                 (ticket_id,) = conn.execute(
                     "SELECT id FROM tickets WHERE linearIdentifier = ?",
                     (key,)).fetchone()

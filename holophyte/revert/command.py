@@ -51,8 +51,8 @@ def _revert(target, conn, board, key, reason, dry_run):
         say(f"dependent: {line}")
     if dry_run:
         say("dry run; nothing filed")
-        return 0
-    file_revert(target, conn, board, merge, reason, found, sys.stdout)
+    else:
+        file_revert(target, conn, board, merge, reason, found, sys.stdout)
     return 0
 
 
