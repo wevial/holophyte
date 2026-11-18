@@ -126,6 +126,9 @@ class ParseTests(unittest.TestCase):
     def setUp(self):
         self.t = tt.parse(FILLED)
 
+    def test_sections_in_template_order(self):
+        self.assertEqual(self.t.order, tt.SECTION_ORDER)
+
     def test_what_why_how(self):
         self.assertEqual(self.t.what,
                          "GET /orders.csv streams the current user's orders as CSV.")
@@ -377,6 +380,15 @@ class CliTests(unittest.TestCase):
             [sys.executable, str(ROOT / "ticket_template.py"), *paths],
             capture_output=True, text=True)
 
+    def test_invalid_file_exits_nonzero_and_lists_problems(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
+            f.write(FILLED.replace("## Summary", "## Summaries"))
+            f.flush()
+            r = self.run_cli(f.name)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("INVALID", r.stdout)
+        self.assertIn("missing section", r.stdout)
+
     def test_real_template_file_exits_nonzero(self):
         r = self.run_cli(str(ROOT / "holophyte/tickets/templates/ticketTemplate.md"))
         self.assertNotEqual(r.returncode, 0)
@@ -384,8 +396,8 @@ class CliTests(unittest.TestCase):
     def test_no_args_usage_exit_two(self):
         r = self.run_cli()
         self.assertEqual(r.returncode, 2)
-        self.assertIn("usage: python3 ticket_template.py [--repo PATH] TICKET.md",
-                      r.stderr)
+        self.assertIn("usage: python3 ticket_template.py [--repo PATH] TICKET.md "
+                      "[...]", r.stderr)
         self.assertEqual(r.stdout, "")
 
     def test_help_flags_print_usage_on_stdout_and_exit_zero(self):
@@ -394,7 +406,8 @@ class CliTests(unittest.TestCase):
                 r = self.run_cli(flag)
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 self.assertIn(
-                    "usage: python3 ticket_template.py [--repo PATH] TICKET.md",
+                    "usage: python3 ticket_template.py [--repo PATH] TICKET.md "
+                    "[...]",
                     r.stdout)
                 self.assertEqual(r.stderr, "")
 
@@ -976,6 +989,25 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(states=states):
                 self.assertEqual(tt.validate(tt.parse(
                     with_ui_change("none", states=states))), [])
+
+    def test_cli_rejects_test_output_evidence_with_repo(self):
+        state = "The route and hook test output for both flag states."
+        with tempfile.TemporaryDirectory() as tmp:
+            ticket = Path(tmp) / "ticket.md"
+            body = self.body([state]).replace(
+                "- Endpoint lives beside the other order routes.",
+                "- Use the existing route.").replace(
+                ".venv/bin/python -m unittest test_orders_export",
+                "python3 -m unittest discover -s tests -p 'test_ticket_template.py'")
+            ticket.write_text(body)
+            result = subprocess.run(
+                ["python3", "ticket_template.py", "--repo", ".", str(ticket)],
+                cwd=ROOT, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(state, result.stdout)
+        self.assertIn("Evidence lists UI states to screenshot or record; "
+                      "a test's result belongs in an acceptance criterion.",
+                      result.stdout)
 
     def test_marker_only_states_report_each_index(self):
         ticket = tt.parse(self.body([
