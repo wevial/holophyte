@@ -36,6 +36,7 @@ from holophyte.loop.pool_handoff import (  # noqa: F401
 )
 from holophyte.loop.reexec import reexec_self
 from holophyte.loop.runs import open_store
+from holophyte.pr.capture_files import checkout_of
 from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
 from store import operator_notes, steer_notes
@@ -391,7 +392,8 @@ def _set_aside(repo, worktree, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}branch {branch} at {tip[:12]} does not descend from"
             f" the reviewed commit {sha[:12]}; nothing approved")
-    if _checked_out(repo, branch) != worktree.resolve():
+    checked_out = checkout_of(repo, branch)
+    if checked_out is None or checked_out.resolve() != worktree.resolve():
         raise SystemExit(
             f"{refused}branch {branch} is not checked out at {worktree},"
             " where the next claim resumes it; nothing approved")
@@ -451,17 +453,6 @@ def _moved_tree(worktree, sha, tip):
             or _git(worktree, "diff-files", "--quiet").returncode):
         _git(worktree, "read-tree", "-m", "-u", sha, tip)
         return f"the worktree {worktree} changed while it was rewound"
-    return None
-
-
-def _checked_out(repo, branch):
-    path = None
-    for line in sh(["git", "worktree", "list", "--porcelain"],
-                   cwd=repo).splitlines():
-        if line.startswith("worktree "):
-            path = Path(line.removeprefix("worktree ")).resolve()
-        elif line == f"branch refs/heads/{branch}":
-            return path
     return None
 
 
