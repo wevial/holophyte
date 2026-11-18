@@ -12,7 +12,9 @@ OPEN_STATUSES = ("needs_spec", "ready", "in_flight", "blocked_on_deps",
 
 
 class Refused(Exception):
-    pass
+    def __init__(self, reason, paths=()):
+        super().__init__(reason)
+        self.paths = tuple(paths)
 
 
 class Merge(NamedTuple):

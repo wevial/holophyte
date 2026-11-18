@@ -1952,6 +1952,45 @@ and the reason in `detail`, and nothing is written. A missing `ticket`,
 or a `hint` or `now` that is not a boolean, is 400; a project with no
 store is 503.
 
+## `POST /actions/revert`
+
+Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
+behind its token. It does what `holo revert KEY REASON [--dry-run]` does:
+the same checks (`[revert] enabled`, KEY merged on `origin/main`, its merge
+touching no `[revert] refuse_paths` path, no revert of it already open),
+the same dependents and the same urgent Todo ticket. A preview's `enabled`
+says whether the project allows it.
+
+```json
+{"key": "KO-n", "reason": "broke the header", "dry_run": true}
+```
+
+`key` and `reason` are required; `dry_run` (default `false`) previews and
+files nothing:
+
+```json
+{"action": "revert", "recorded": null, "enabled": true, "refused": null,
+ "dependents": [{"key": "KO-m", "sha": "4f1c…", "paths": ["src/header.py"]}]}
+```
+
+`enabled` is `[revert] enabled`; with it false `refused` is null and
+`dependents` empty. `refused` is null, or `{"reason", "paths"}` naming the
+check that refuses and, for `refuse_paths`, the paths it refuses.
+`dependents` are the later merges that changed a file KEY's merge changed.
+Without `dry_run` it files the ticket and records a `revert` intervention
+on KEY's merged run, with the requester as actor:
+
+```json
+{"action": "revert", "recorded": 42, "key": "KO-p"}
+```
+
+`key` is the new ticket. Without `dry_run` a refusal is 409 with `error`
+the reason and `paths` the refused paths, if any, and nothing is filed; a
+filing the board did not confirm is 500 with `holo revert`'s lines in
+`error`. With `dry_run` a refusal is 200 with `refused` set. A missing
+`key`, an empty `reason` or a `dry_run` that is not a boolean is 400; a
+project with no store is 503.
+
 ## `POST /actions/mark-ready`
 
 Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),

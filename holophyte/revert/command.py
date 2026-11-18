@@ -46,6 +46,17 @@ def _revert(target, conn, board, key, reason, dry_run):
         print(f"[holo2] {key}: {line}")
 
     say("[revert] enabled")
+    merge, found = checked(target, conn, board, key, say)
+    for line in dependent_lines(found):
+        say(f"dependent: {line}")
+    if dry_run:
+        say("dry run; nothing filed")
+        return 0
+    file_revert(target, conn, board, merge, reason, found, sys.stdout)
+    return 0
+
+
+def checked(target, conn, board, key, say):
     unfetched = fetch_origin(target.path)
     if unfetched is not None:
         say(f"warning: git fetch origin failed, so {MAIN} is as last"
@@ -56,34 +67,27 @@ def _revert(target, conn, board, key, reason, dry_run):
     if refused:
         raise Refused(f"{key}: its merge touches {', '.join(refused)}, which"
                       " [revert] refuse_paths refuses; ship a forward fix"
-                      " instead")
+                      " instead", refused)
     say(f"touches no refused path: {', '.join(merge.files)}")
     filed = open_revert(conn, board, merge)
     if filed is not None:
         raise Refused(f"{key}: {filed} is its open revert ticket")
     say("no open revert ticket")
-    found = dependents(conn, target.path, merge)
-    for line in dependent_lines(found):
-        say(f"dependent: {line}")
-    if dry_run:
-        say("dry run; nothing filed")
-        return 0
-    return _file(target, conn, board, merge, revert_ticket(merge, reason, found),
-                 reason)
+    return merge, dependents(conn, target.path, merge)
 
 
-def _file(target, conn, board, merge, text, reason):
+def file_revert(target, conn, board, merge, reason, found, out):
     printed = io.StringIO()
     with tempfile.TemporaryDirectory() as scratch:
         path = Path(scratch) / f"revert-{merge.key}.md"
-        path.write_text(text)
+        path.write_text(revert_ticket(merge, reason, found))
         broken = None
         try:
             code = file_ticket(target, path, "Todo", board, out=printed,
                                priority="urgent")
         except Exception as raised:
             code, broken = 2, raised
-    sys.stdout.write(printed.getvalue())
+    out.write(printed.getvalue())
     filed = FILED.search(printed.getvalue())
     if filed is None:
         if broken is not None:
@@ -92,16 +96,17 @@ def _file(target, conn, board, merge, text, reason):
     store.record_intervention(conn, merge.run_id, "revert",
                               f"filed {filed[1]}: {reason}")
     if broken is not None:
-        print(f"[holo2] {filed[1]}: filed, then not confirmed: {broken}")
+        print(f"[holo2] {filed[1]}: filed, then not confirmed: {broken}",
+              file=out)
     label = board_config(target).label
     if code == 0 and label is not None:
         try:
             board.label_issue(board.fetch_task(filed[1])["issue_id"], label)
         except Exception as unlabeled:
             print(f"[holo2] {filed[1]}: filed, its label {label!r} not"
-                  f" confirmed added: {unlabeled}")
+                  f" confirmed added: {unlabeled}", file=out)
             code = 2
     if code != 0:
         raise SystemExit(code)
-    print(f"[holo2] {merge.key}: revert ticket {filed[1]} filed")
-    return 0
+    print(f"[holo2] {merge.key}: revert ticket {filed[1]} filed", file=out)
+    return filed[1]
