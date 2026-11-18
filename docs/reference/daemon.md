@@ -181,8 +181,8 @@ writes no amendment and adds no `steer_note`.
 A `ticket` the store never mirrored, or one the store refuses to requeue
 (a live run, a ticket not `in_flight`, a last run that did not fail, a
 ticket already relaunched twice against one failure since a human last
-acted on it), or an `amend` the steer store refuses, is 200 with `ok: false` and the refusal in `detail`; nothing
-is written. The relaunch refusal asks for a diagnosis: `"force": true`
+acted on it), or an `amend` the steer store refuses, is 200 with
+`ok: false` and the refusal in `detail`; nothing is written. The relaunch refusal asks for a diagnosis: `"force": true`
 with the diagnosis as the `note` requeues the ticket anyway, its note
 recorded as `forced past N relaunches: NOTE`. A body that is not a JSON
 object, one with no `ticket`, a `force` that is not a boolean, an
