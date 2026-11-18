@@ -33,6 +33,7 @@
   --shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.35);
   --haze: radial-gradient(36% 90% at 24% 0%, rgba(91, 74, 230, 0.36), transparent 70%),
     radial-gradient(28% 70% at 58% 0%, rgba(199, 126, 232, 0.22), transparent 70%);
+  --haze-ground: #0d0a15; --haze-back: #4b3fc4; --haze-front: #c77ee8; --haze-strength: 0.30;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -45,6 +46,7 @@
     --shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.35);
     --haze: radial-gradient(36% 90% at 24% 0%, rgba(91, 74, 230, 0.36), transparent 70%),
       radial-gradient(28% 70% at 58% 0%, rgba(199, 126, 232, 0.22), transparent 70%);
+    --haze-ground: #0d0a15; --haze-back: #4b3fc4; --haze-front: #c77ee8; --haze-strength: 0.30;
   }
 }
 
@@ -310,5 +312,6 @@ h2 { margin: 0 0 32px; font-size: 30px; line-height: 1.15; font-weight: 400; fon
   if (window.matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", label);
 })();
 </script>
+<script defer src="effect.js"></script>
 </body>
 </html>
