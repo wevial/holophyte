@@ -121,6 +121,9 @@ def _note_checks(parser, args):
     if args.requeue is not None and not (args.note or "").strip():
         parser.error("--requeue records why the ticket goes back in the "
                      "queue; say so with --note TEXT")
+    if args.revert is not None and not (args.note or "").strip():
+        parser.error("--revert records why the merge is undone; say so with"
+                     " --note TEXT")
     if args.repoint is not None and not (args.note or "").strip():
         parser.error("--repoint records why the candidate moved to a new "
                      "sha; say so with --note TEXT")
@@ -137,7 +140,8 @@ def _note_checks(parser, args):
     optional = args.approve or args.babysit or args.close or args.move \
         or args.file_ticket
     if args.note is not None and args.requeue is None \
-            and args.repoint is None and optional is None:
+            and args.repoint is None and args.revert is None \
+            and optional is None:
         parser.error("--note is what --requeue, --approve, --babysit, "
                      "--repoint, --close, --move and --file-ticket record; it "
                      "has nothing to annotate by itself")
@@ -198,9 +202,10 @@ def _modifier_checks(parser, args):
         parser.error("--import-store has only its dry run yet: add --dry-run "
                      "to see what it would move; applying the import is a "
                      "later ticket built on that report (after KO-595)")
-    if args.dry_run and args.import_store is None and not args.board_import:
-        parser.error("--dry-run says what --import-store or --board-import "
-                     "does; it has nothing to run by itself")
+    if args.dry_run and args.import_store is None and not args.board_import \
+            and args.revert is None:
+        parser.error("--dry-run says what --import-store, --board-import or "
+                     "--revert does; it has nothing to run by itself")
 
 
 def build_parser():
@@ -232,6 +237,12 @@ def build_parser():
         "--report", action="store_true",
         help="print the project store's estimate-vs-actual table and exit; "
              "reads only -- claims no ticket, cuts no worktree, calls nobody")
+    modes.add_argument(
+        "--revert", metavar="KEY-n",
+        help="file an urgent Todo ticket that reverts KEY's merge, after the "
+             "project's [revert] checks, and record a 'revert' intervention "
+             "on the merged run carrying --note; with --dry-run: print the "
+             "checks and the dependents and file nothing")
     modes.add_argument(
         "--requeue", metavar="KEY-n",
         help="put the ticket back in the queue after its run failed: records "
@@ -428,7 +439,8 @@ def build_parser():
         "--dry-run", action="store_true",
         help="with --import-store: report what the import would do and "
              "write nothing; required, as only the dry run exists yet; with "
-             "--board-import: print the same lines and write nothing")
+             "--board-import: print the same lines and write nothing; with "
+             "--revert: print its checks and dependents and file nothing")
     parser.add_argument(
         "--note", metavar="TEXT",
         help="with --hold or --release-hold: why admission changes; "

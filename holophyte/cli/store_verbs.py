@@ -57,9 +57,18 @@ def _store_verb(args, target, board):
         gap_layer(target, identifier, layer, args.note,
                   carried_by=args.carried_by, found_by=args.found_by)
         return True
+    return _merge_verb(args, target, board)
+
+
+def _merge_verb(args, target, board):
     if args.close is not None:
         close_ticket(target, args.close, args.landed, args.note,
                      provider=require_board(target, board))
+        return True
+    if args.revert is not None:
+        from holophyte.revert.command import revert
+        revert(target, require_board(target, board), args.revert, args.note,
+               dry_run=args.dry_run)
         return True
     if args.repoint is not None:
         identifier, sha = args.repoint

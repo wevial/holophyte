@@ -20,6 +20,7 @@ from holophyte.config.config_tables import (
 )
 from holophyte.config.review_settings import REVIEW_KEYS
 from holophyte.redact import register_values
+from holophyte.revert.settings import REVERT_KEYS
 from holophyte.review import review_runner
 from holophyte.tickets import ticket_template
 
@@ -93,6 +94,7 @@ KNOWN_KEYS["report"] = frozenset(REPORT_KEYS)
 KNOWN_KEYS["story"] = frozenset(STORY_KEYS)
 KNOWN_KEYS["trim"] = frozenset(TRIM_KEYS)
 KNOWN_KEYS["review"] = frozenset(REVIEW_KEYS)
+KNOWN_KEYS["revert"] = frozenset(REVERT_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["patrol"] = frozenset(PATROL_KEYS)
 KNOWN_KEYS["automations"] = frozenset(AUTOMATION_KEYS)
