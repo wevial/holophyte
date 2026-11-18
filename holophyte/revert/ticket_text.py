@@ -6,12 +6,10 @@ ESTIMATE_MIN = 30
 
 def revert_ticket(merge, reason, found):
     reason = " ".join(reason.split())
-    dependents = "; ".join(dependent_lines(found))
     quoted = [f"`{path}`" for path in merge.files]
     files = ", ".join(quoted)
     scope = ([f"- {path}" for path in quoted] if len(quoted) <= MAX_IN_SCOPE
              else [f"- {files}"])
-    verify = "\n".join(merge.verify)
     return "\n".join([
         "+++",
         'ui_change = "none"',
@@ -28,7 +26,7 @@ def revert_ticket(merge, reason, found):
         "",
         f"Files: {files}.",
         "",
-        f"Dependents: {dependents}.",
+        f"Dependents: {'; '.join(dependent_lines(found))}.",
         "",
         f"Reverts: {merge.key} at {merge.sha}",
         "",
@@ -60,7 +58,7 @@ def revert_ticket(merge, reason, found):
         "## Verify command(s)",
         "",
         "```",
-        verify,
+        "\n".join(merge.verify),
         "```",
         "",
         "## Implementation notes",

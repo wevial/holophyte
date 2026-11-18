@@ -101,7 +101,6 @@ def open_revert(conn, merge):
 
 def dependents(conn, repo, merge):
     _, listed = git(repo, "rev-list", "--reverse", f"{merge.sha}..{MAIN}")
-    later = listed.split()
     by_sha = {}
     for key, sha in conn.execute(
             "SELECT t.linearIdentifier, r.mergeSha FROM runs r"
@@ -113,7 +112,7 @@ def dependents(conn, repo, merge):
             by_sha[full] = key
     touched = set(merge.files)
     found = []
-    for sha in later:
+    for sha in listed.split():
         if sha not in by_sha:
             continue
         shared = tuple(path for path in changed_files(repo, sha)
