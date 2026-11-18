@@ -120,41 +120,74 @@ async function openFilter(page: Page, width: number, height: number, textSize: n
   return page.getByRole("dialog", { name: "Filter findings" });
 }
 
-/** The dialog's box and every option and heading label in its sections, each against the part of the scroll pane the reader sees, and any label cut short. */
-async function cutOff(dialog: Locator) {
-  return dialog.evaluate((node, sections) => {
+/** The dialog's box and every option and heading label in its sections, each against the part of the scroll pane the reader sees, and any label
+ *  cut short; `across` alone checks only sideways, else any label whose ends are not hit-tested to it, as one scrolled out of the dialog is not. */
+async function cutOff(dialog: Locator, across = false) {
+  return dialog.evaluate((node, [sections, sideways]) => {
     let pane: HTMLElement = node.parentElement!;
     while (pane !== document.documentElement && !/auto|scroll/.test(getComputedStyle(pane).overflowX)) pane = pane.parentElement!;
     const box = pane.getBoundingClientRect();
     const scale = box.width / (pane.offsetWidth || 1);
     const shown = pane === document.documentElement
-      ? { left: 0, right: document.documentElement.clientWidth * scale }
-      : { left: box.left + pane.clientLeft * scale, right: box.left + (pane.clientLeft + pane.clientWidth) * scale };
+      ? { left: 0, top: 0, right: document.documentElement.clientWidth * scale, bottom: window.innerHeight }
+      : {
+          left: box.left + pane.clientLeft * scale, top: box.top + pane.clientTop * scale,
+          right: box.left + (pane.clientLeft + pane.clientWidth) * scale, bottom: box.top + (pane.clientTop + pane.clientHeight) * scale,
+        };
     const outside = (part: Element) => {
       const rect = part.getBoundingClientRect();
-      return rect.left < shown.left - 0.5 || rect.right > shown.right + 0.5;
+      return rect.left < shown.left - 0.5 || rect.right > shown.right + 0.5 || (!sideways && (rect.top < shown.top - 0.5 || rect.bottom > shown.bottom + 0.5));
+    };
+    const hit = (part: Element) => {
+      const rect = part.getBoundingClientRect();
+      const y = rect.top + rect.height / 2;
+      return [rect.left + 1, rect.right - 1].every((x) => part.contains(document.elementFromPoint(x, y)));
     };
     const cut: string[] = outside(node) ? ["dialog"] : [];
     for (const name of sections) {
       const group = [...node.querySelectorAll("fieldset")].find((each) => each.querySelector("legend")?.textContent?.startsWith(name))!;
       for (const label of group.querySelectorAll("label")) {
         const text = label.querySelector("[data-option-label]") ?? label;
-        if (outside(label) || text.scrollWidth > text.clientWidth) cut.push(label.querySelector("input")!.getAttribute("aria-label")!);
+        if (outside(label) || (!sideways && !hit(text)) || text.scrollWidth > text.clientWidth) cut.push(label.querySelector("input")!.getAttribute("aria-label")!);
       }
     }
     return cut;
-  }, SECTIONS);
+  }, [SECTIONS, across] as const);
 }
 
 for (const [width, textSize] of [[720, 120], [740, 125]] as const) {
-  for (const folded of [true, false]) {
-    test(`at ${width}px and ${textSize}% text with the sidebar ${folded ? "folded" : "expanded"}, Filter findings opens inside the scroll pane with every label shown whole`, async ({ page }) => {
-      const dialog = await openFilter(page, width, 900, textSize, folded);
-      await expect(dialog.getByRole("checkbox", { name: "must" })).toBeAttached();
-      await expect(async () => expect(await cutOff(dialog)).toEqual([])).toPass({ timeout: 2000 });
-    });
+  for (const height of [900, 600]) {
+    for (const folded of [true, false]) {
+      test(`at ${width}x${height} and ${textSize}% text with the sidebar ${folded ? "folded" : "expanded"}, Filter findings opens inside the scroll pane with every label shown whole`, async ({ page }) => {
+        const dialog = await openFilter(page, width, height, textSize, folded);
+        await expect(dialog.getByRole("checkbox", { name: "must" })).toBeAttached();
+        await expect(async () => expect(await cutOff(dialog)).toEqual([])).toPass({ timeout: 2000 });
+      });
+    }
   }
 }
+
+test("at 873x900 and 125% text with the sidebar expanded, picking Uncategorized in Filter findings keeps every label shown whole", async ({ page }) => {
+  const dialog = await openFilter(page, 873, 900, 125, false);
+  await dialog.getByText("Uncategorized", { exact: true }).click();
+  await expect(dialog.getByRole("checkbox", { name: "Uncategorized" })).toBeChecked();
+  await expect(async () => expect(await cutOff(dialog)).toEqual([])).toPass({ timeout: 2000 });
+});
+
+test("at 760x900 and 125% text with the sidebar expanded, an open Filter findings holds one width frame after frame", async ({ page }) => {
+  const dialog = await openFilter(page, 760, 900, 125, false);
+  await expect(dialog.getByRole("checkbox", { name: "must" })).toBeAttached();
+  const widths = await dialog.evaluate((node) => new Promise<number[]>((resolve) => {
+    const seen: number[] = [];
+    const sample = () => {
+      seen.push(node.getBoundingClientRect().width);
+      if (seen.length < 30) requestAnimationFrame(sample);
+      else resolve(seen);
+    };
+    requestAnimationFrame(sample);
+  }));
+  expect(new Set(widths).size).toBe(1);
+});
 
 test("at 320px, Filter findings stacks Severity, Category and Status in one column with no label cut off", async ({ page }) => {
   const dialog = await openFilter(page, 320, 800, 100, false);
@@ -162,6 +195,6 @@ test("at 320px, Filter findings stacks Severity, Category and Status in one colu
     const boxes = await Promise.all(SECTIONS.map(async (name) => (await dialog.getByRole("group", { name }).boundingBox())!));
     expect(boxes.map((box) => Math.round(box.x))).toEqual(boxes.map(() => Math.round(boxes[0]!.x)));
     for (let at = 1; at < boxes.length; at += 1) expect(boxes[at]!.y).toBeGreaterThanOrEqual(boxes[at - 1]!.y + boxes[at - 1]!.height);
-    expect(await cutOff(dialog)).toEqual([]);
+    expect(await cutOff(dialog, true)).toEqual([]);
   }).toPass({ timeout: 2000 });
 });

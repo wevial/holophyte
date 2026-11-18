@@ -403,35 +403,46 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
   const sheet = useRef<HTMLDivElement>(null);
+  const shift = useRef(0);
+  const fit = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     if (!open || !icon) return;
     const node = sheet.current!;
-    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit());
+    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit.current?.());
     let pane: HTMLElement | null = null;
-    let shift = 0;
-    // Width, stacking and offset are set on the node, not in state, as each is measured after the one before it lays out.
-    const fit = () => {
+    shift.current = 0;
+    // Size, stacking and offset are set on the node, not in state, as each is measured after the one before it lays out.
+    fit.current = () => {
       const parent = scrollParent(node);
       if (parent !== pane) {
         pane = parent;
         moves?.disconnect();
-        for (const watched of [button.current!, node, pane]) moves?.observe(watched);
+        for (const watched of [button.current!, pane]) moves?.observe(watched);
       }
       if (node.offsetWidth === 0) return;
-      const scale = node.getBoundingClientRect().width / node.offsetWidth;
+      // offsetWidth is rounded, so a scale taken from it drifts and the width it sets flips between two values.
+      const scale = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? node.getBoundingClientRect().width / node.offsetWidth;
       const view = shownPart(pane, scale);
       node.style.maxWidth = `${Math.max(0, view.right - view.left - 2 * MENU_EDGE) / scale}px`;
       node.removeAttribute("data-stacked");
       if ([...node.querySelectorAll("[data-option-label]")].some((label) => label.scrollWidth > label.clientWidth)) node.setAttribute("data-stacked", "");
-      const { left, width } = node.getBoundingClientRect();
-      const from = left - shift * scale;
+      const { left, top, width } = node.getBoundingClientRect();
+      const from = left - shift.current * scale;
       const over = from + width - (view.right - MENU_EDGE);
-      shift = (Math.max(view.left + MENU_EDGE, from - Math.max(0, over)) - from) / scale;
-      node.style.translate = `${shift}px 0`;
+      shift.current = (Math.max(view.left + MENU_EDGE, from - Math.max(0, over)) - from) / scale;
+      node.style.translate = `${shift.current}px 0`;
+      // The document grows to hold the dialog, while a scrolling pane would hide what passes its bottom.
+      const room = pane === document.documentElement ? view.bottom - view.top - 2 * MENU_EDGE : view.bottom - MENU_EDGE - top;
+      node.style.maxHeight = `${Math.min(MENU_HEIGHT, Math.max(0, room) / scale)}px`;
     };
-    fit();
-    return () => moves?.disconnect();
+    fit.current();
+    return () => {
+      fit.current = null;
+      moves?.disconnect();
+    };
   }, [open, icon]);
+  // A pick sets its label in a heavier weight and new counts change widths, neither of which resizes what is observed.
+  useLayoutEffect(() => fit.current?.());
   return (
     <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
       {icon ? (
@@ -455,15 +466,17 @@ export function FilterPopover({ label, sections, hidden, sorting, extra, icon = 
       )}
       {open && icon && (
         <div ref={sheet} role="dialog" aria-label={label}
-          className="group/sheet absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] grid-cols-3 gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card data-stacked:grid-cols-1">
-          <div>
-            {sorting && <MenuSorting sorting={sorting} />}
-            {extra}
-          </div>
+          className={`group/sheet absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card data-stacked:grid-cols-1`}>
+          {(sorting || extra) && (
+            <div>
+              {sorting && <MenuSorting sorting={sorting} />}
+              {extra}
+            </div>
+          )}
           <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 group-data-stacked/sheet:col-span-1 group-data-stacked/sheet:grid-cols-1 group-data-stacked/sheet:grid-rows-none [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2 group-data-stacked/sheet:[&>fieldset:nth-child(2)]:col-start-1 group-data-stacked/sheet:[&>fieldset:nth-child(2)]:row-span-1">
             {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
           </div>
-          <div className="col-span-3 mt-1.5 flex justify-end border-t border-hair pt-1.5 group-data-stacked/sheet:col-span-1">
+          <div className="col-span-full mt-1.5 flex justify-end border-t border-hair pt-1.5">
             <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
               className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
               Clear
@@ -505,6 +518,7 @@ export function PressedGroup<V extends string | number>({ label, options, value,
 
 const MENU_EDGE = 8;
 const MENU_GAP = 6;
+const MENU_HEIGHT = 560;
 
 function scrollParent(node: HTMLElement): HTMLElement {
   for (let at = node.parentElement; at != null; at = at.parentElement) {
