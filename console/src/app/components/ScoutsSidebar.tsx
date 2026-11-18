@@ -52,9 +52,9 @@ export function ScoutGroups({ groups, row }: { groups: ScoutGroup[]; row: (row: 
     <ol aria-label="Scouts, newest first" className="m-0 flex list-none flex-col gap-5 p-0">
       {groups.map((group) => (
         <li key={`${group.base} ${group.project}`} data-scout-group>
-          <div className="flex h-[30px] items-center gap-2.5 border-b border-hair px-2.5">
-            <h2 className="font-sans text-[13px] font-semibold text-ink">{group.project}</h2>
-            <span data-count className="font-mono text-[12px] text-ink-3">{group.rows.length}</span>
+          <div className="flex min-h-[30px] items-baseline gap-2.5 border-b border-hair px-2.5 py-1.5">
+            <h2 className="min-w-0 font-sans text-[13px] font-semibold leading-[1.35] [overflow-wrap:anywhere] text-ink">{group.project}</h2>
+            <span data-count className="shrink-0 font-mono text-[12px] text-ink-3">{group.rows.length}</span>
           </div>
           <ol aria-label={`${group.project} scouts`} className="m-0 list-none p-0">
             {group.rows.map(row)}

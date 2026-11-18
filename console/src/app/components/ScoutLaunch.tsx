@@ -4,7 +4,7 @@ import type { useAction } from "../actions";
 import { aboutWords, defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks, type ScoutsSearch } from "../scouts";
 import { Btn } from "./Btn";
 import { FoldChevron } from "./icons";
-import { Picker } from "./Picker";
+import { Picker, type PickerOption } from "./Picker";
 import { CloseGlyph } from "./ScoutThread";
 import { Segmented } from "./Segmented";
 import { INPUT } from "./TicketFields";
@@ -75,9 +75,10 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const routeOptions = (routes: ScoutRoute[], picked: string | null) => {
+const routeOptions = (routes: ScoutRoute[], picked: string | null): PickerOption[] => {
   const names = routes.map((route) => route.name);
-  return (picked == null || names.includes(picked) ? names : [...names, picked]).map((name) => ({ value: name, label: name }));
+  const options = (picked == null || names.includes(picked) ? names : [...names, picked]).map((name) => ({ value: name, label: name }));
+  return picked == null ? [{ value: "", label: "–", disabled: true }, ...options] : options;
 };
 const CARD = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 

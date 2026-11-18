@@ -299,6 +299,24 @@ test("a picked route no longer listed when New scout opens again stays picked, s
   expect(posts.map((post) => post.body)).toEqual([{ ask: ASK, kind: "bug", lead: "sol", helper: "luna", swarm: 2, minutes: 10 }]);
 });
 
+test("a form kept with no helper picked shows no helper selected when a helper route appears, and Scout waits for one", async () => {
+  const daemons: Daemons = { demo: [], routes: { ...demoRoutes, helpers: [] } };
+  await openForm("#/scouts?project=demo", daemons);
+  await change(within(form()).getByLabelText("Ask"), ASK);
+  await click(disclosure());
+  await change(within(form()).getByLabelText("Minutes"), "10");
+  await click(within(form()).getByRole("button", { name: "Cancel" }));
+  daemons.routes = demoRoutes;
+  await click(screen.getByRole("button", { name: "New scout" }));
+  expect(disclosure().textContent).toBe("opus · – ×4 · 10 min");
+  expect((await listed("Helpers")).selected).toEqual(["–"]);
+  expect(picker("Helpers").textContent).toBe("–");
+  expect(scoutButton().hasAttribute("disabled")).toBe(true);
+  await choose("Helpers", "luna");
+  expect(disclosure().textContent).toBe("opus · luna ×4 · 10 min");
+  expect(scoutButton().hasAttribute("disabled")).toBe(false);
+});
+
 test("the disclosure label follows the picks, and a blank ask or too large a swarm disables Scout", async () => {
   await openForm("#/scouts?project=demo", { demo: [] });
   await fillForm(ASK);
