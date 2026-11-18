@@ -1023,6 +1023,33 @@ class SweptApproveCliTests(unittest.TestCase):
             None, None, None, None, None, BRANCH, self.wt), self.reviewed)
         self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
 
+    def test_an_origin_path_containing_a_space_is_rewound(self):
+        self.branch_with_wip()
+        origin = self.origin("an origin.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(origin))
+        self.sweep(pull=PULL)
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(git(origin, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.reviewed)
+
+    def test_the_rewind_publishes_no_tag_though_push_follows_tags(self):
+        self.branch_with_wip()
+        origin = self.origin("origin.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "config", "push.followTags", "true")
+        git(self.repo, "tag", "-a", "-m", "local", "local-only",
+            self.reviewed)
+        self.sweep(pull=PULL)
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertEqual(git(origin, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.reviewed)
+        self.assertEqual(git(origin, "tag", "--list"), "")
+
     def test_a_setup_deleting_the_branch_restores_it_and_the_worktree(self):
         self.branch_with_wip()
         self.with_setup(f"git checkout -q --detach && git branch -q -D {BRANCH}")

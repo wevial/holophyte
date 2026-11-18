@@ -576,7 +576,7 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
             f" the reviewed commit {sha[:12]}")
     head = f"refs/heads/{branch}"
     urls = _git(repo, "remote", "get-url", "--push", "--all", "origin"
-                ).stdout.split()
+                ).stdout.splitlines()
     if len(urls) > 1:
         raise _StepFailed(
             f"origin pushes to {len(urls)} URLs, and a rewind one of them"
@@ -590,10 +590,9 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
                for remote in (fetched, pushed)}
     if rewinds[pushed]:
         lease = f"--force-with-lease={head}:"
-        _step(undo, repo, ["push", "origin", "--no-verify",
-                           f"{lease}{pushed}", f"{sha}:{head}"],
-              ["push", "origin", "--no-verify", f"{lease}{sha}",
-               f"{pushed}:{head}"])
+        push = ["push", "origin", "--no-verify", "--no-follow-tags"]
+        _step(undo, repo, [*push, f"{lease}{pushed}", f"{sha}:{head}"],
+              [*push, f"{lease}{sha}", f"{pushed}:{head}"])
     if rewinds[fetched]:
         after = _origin_tip(repo, "origin", head)
         if after != sha:
