@@ -142,7 +142,7 @@ def requeue_action(project, body):
     if not isinstance(force, bool):
         return 400, {"error": "force must be true or false"}
     amend = body.get("amend")
-    if amend is not None and not isinstance(amend, str):
+    if "amend" in body and not isinstance(amend, str):
         return 400, {"error": "amend must be text"}
     if not isinstance(note, str) or not note.strip():
         if force:

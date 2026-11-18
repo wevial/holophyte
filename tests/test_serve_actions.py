@@ -354,14 +354,14 @@ class ActionsTests(UnitActionCases, ServeTestCase):
         code, _, refused = self.request(
             "POST", "/actions/requeue", self.BEARER,
             body={"ticket": "KO-2", "amend": "C1 names the exported columns"})
-        bad, _, typed = self.request(
-            "POST", "/actions/requeue", self.BEARER,
-            body={"ticket": "KO-2", "amend": ["C1"]})
+        typed = [self.request("POST", "/actions/requeue", self.BEARER,
+                              body={"ticket": "KO-2", "amend": amend})
+                 for amend in (["C1"], None)]
 
         self.assertEqual((code, refused["ok"]), (200, False), refused)
         self.assertIn("would read a steer", refused["detail"])
-        self.assertEqual(bad, 400)
-        self.assertIn("amend", typed["error"])
+        self.assertEqual([(bad, "amend" in reply["error"])
+                          for bad, _, reply in typed], [(400, True)] * 2)
         with store.open(str(self.db)) as conn:
             status = store.read.ticket_by_identifier(conn, "KO-2").status
             self.assertEqual(store.steer_notes.amendments(conn, ticket.id), [])
