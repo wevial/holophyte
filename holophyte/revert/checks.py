@@ -34,6 +34,11 @@ def git(repo, *args):
     return done.returncode, done.stdout
 
 
+def commit_sha(repo, ref):
+    code, full = git(repo, "rev-parse", "--verify", "-q", f"{ref}^{{commit}}")
+    return full.strip() if code == 0 else None
+
+
 def changed_files(repo, sha):
     _, line = git(repo, "rev-list", "--parents", "-n", "1", sha)
     parents = line.split()[1:]
@@ -59,12 +64,10 @@ def merged_run(conn, repo, key):
     if row is None:
         raise Refused(f"{key}: no run of it merged; nothing to revert")
     run_id, recorded = row
-    code, full = git(repo, "rev-parse", "--verify", "-q",
-                     f"{recorded}^{{commit}}")
-    if code != 0:
+    sha = commit_sha(repo, recorded)
+    if sha is None:
         raise Refused(f"{key}: its merge {recorded} is not a commit in"
                       f" {repo}; nothing to revert")
-    sha = full.strip()
     if git(repo, "merge-base", "--is-ancestor", sha, MAIN)[0] != 0:
         raise Refused(f"{key}: its merge {sha} is not on {MAIN}; nothing to"
                       " revert")
@@ -105,10 +108,9 @@ def dependents(conn, repo, merge):
             " JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.outcome = 'merged' AND r.mergeSha IS NOT NULL"
             " AND t.linearIdentifier != ? ORDER BY r.id", (merge.key,)):
-        code, full = git(repo, "rev-parse", "--verify", "-q",
-                         f"{sha}^{{commit}}")
-        if code == 0:
-            by_sha[full.strip()] = key
+        full = commit_sha(repo, sha)
+        if full is not None:
+            by_sha[full] = key
     touched = set(merge.files)
     found = []
     for sha in later:
