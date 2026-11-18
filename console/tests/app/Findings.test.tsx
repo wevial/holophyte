@@ -300,9 +300,10 @@ function heldLayout() {
     }
   } as unknown as typeof ResizeObserver;
   const frames = new Map<number, FrameRequestCallback>();
+  let lastFrame = 0;
   const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-    frames.set(frames.size + 1 + Math.max(0, ...frames.keys()), callback);
-    return Math.max(...frames.keys());
+    frames.set(++lastFrame, callback);
+    return lastFrame;
   });
   const caf = spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
   return {
