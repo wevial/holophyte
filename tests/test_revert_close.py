@@ -50,10 +50,8 @@ class RevertCloseTests(ConfigTestCase):
     def file_revert(self):
         self.project_with(cli_revert.ENABLED, {"src/header.py": "broken\n"})
         with contextlib.closing(open_store(self.project)) as conn:
-            (ticket_id,) = conn.execute(
-                "SELECT id FROM tickets WHERE linearIdentifier = 'NAT-1'"
-            ).fetchone()
-            store.tickets.transition(conn, ticket_id, "merged")
+            store.tickets.transition(conn, self.ticket_id(conn, "NAT-1"),
+                                     "merged")
         code, out, err = self.holo("revert", "NAT-1", REASON)
         self.assertEqual(code, 0, out + err)
         self.assertIn(f"Reverts: NAT-1 at {self.key_sha}",
@@ -63,9 +61,7 @@ class RevertCloseTests(ConfigTestCase):
     def run_revert(self, task, board=None):
         with contextlib.closing(open_store(self.project)) as conn:
             (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
-            (ticket_id,) = conn.execute(
-                "SELECT id FROM tickets WHERE linearIdentifier = 'NAT-3'"
-            ).fetchone()
+            ticket_id = self.ticket_id(conn, "NAT-3")
             run = store.claim(conn, project_id, ticket_id)
             store.tickets.transition(conn, ticket_id, "in_flight")
             store.set_phase(conn, run, "working")
