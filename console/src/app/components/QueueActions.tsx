@@ -2,7 +2,6 @@ import { Fragment, useState, type ReactNode } from "react";
 import type { MergeQueue, MergeQueueEntry } from "../../lib/contract.gen";
 import { useAction } from "../actions";
 import { jumpCost } from "../mergeQueue";
-import { ActionButton } from "./ActionButton";
 import { Btn } from "./Btn";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { detailLine } from "./CardActions";
@@ -84,10 +83,10 @@ export function JumpToFront({ queue, entry, daemon }: { queue: MergeQueue; entry
   };
   return (
     <>
-      <ActionButton onAct={async () => { action.reset(); setOpen(true); }}>
+      <Btn onClick={() => { action.reset(); setOpen(true); }}>
         <JumpIcon />
         {JUMP}
-      </ActionButton>
+      </Btn>
       {open && (
         <ConfirmDialog
           label={`Jump · ${daemon.project}`}
