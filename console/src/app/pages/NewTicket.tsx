@@ -6,7 +6,7 @@ import { formatClock } from "../../lib/format";
 import { projectName } from "../../lib/derive";
 import { checkSummary, fileNote } from "../checker";
 import { Btn } from "../components/Btn";
-import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, UiChangeField, useTicketCheck } from "../components/TicketFields";
+import { BlastRadiusField, CheckerPanel, checkMarks, CriteriaField, DependsField, EstimateField, EvidenceField, Field, INPUT, PriorityField, TICKET_INPUT, UiChangeField, useTicketCheck } from "../components/TicketFields";
 import { useToast } from "../components/Toast";
 import { switcherRows } from "../projects";
 import { useBoards, useReadiness } from "../queries";
@@ -176,8 +176,8 @@ export function NewTicket() {
       onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues(previous => ({ ...previous, [field]: event.target.value })),
     };
     return <Field label={label} hint={hint} optional={optional} messages={messagesOf(label)} extra={field === "verify" ? " · one a line, run as written" : undefined}>
-      {field === "title" ? <input {...props} {...marks(label, `${INPUT} font-sans text-[18px] font-semibold`)} /> :
-        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
+      {field === "title" ? <input {...props} {...marks(label, `${TICKET_INPUT} font-sans`)} /> :
+        <textarea {...props} rows={field === "summary" || field === "what" || field === "why" ? 2 : 3} {...marks(label, `${TICKET_INPUT} resize-y ${field === "verify" ? "font-mono" : "font-sans"}`)} />}
     </Field>;
   };
   const save = () => {
@@ -260,18 +260,18 @@ export function NewTicket() {
                 </div>
                 {uiChange === "major" && <>
                   <Field label="Mock-up link" extra=" for a UI change" hint="The design the implementer builds to and the reviewer compares against." messages={messagesOf("Mock-up link")}>
-                    <input id="new-Mock-up link" {...marks("Mock-up link", INPUT)} placeholder="https://…" value={mockupLink} onChange={event => setMockupLink(event.target.value)} />
+                    <input id="new-Mock-up link" {...marks("Mock-up link", TICKET_INPUT)} placeholder="https://…" value={mockupLink} onChange={event => setMockupLink(event.target.value)} />
                   </Field>
                   <div className="grid gap-5 min-[720px]:grid-cols-[200px_minmax(0,1fr)]">
                     <Field label="Approved on" messages={messagesOf("Approved on")}>
-                      <input id="new-Approved on" type="date" {...marks("Approved on", `${INPUT} font-mono`)} value={approved} onChange={event => setApproved(event.target.value)} />
+                      <input id="new-Approved on" type="date" {...marks("Approved on", `${TICKET_INPUT} font-mono`)} value={approved} onChange={event => setApproved(event.target.value)} />
                     </Field>
                     <Field label="What was approved" messages={messagesOf("What was approved")}>
-                      <input id="new-What was approved" {...marks("What was approved", `${INPUT} font-sans`)} value={approvedNote} onChange={event => setApprovedNote(event.target.value)} />
+                      <input id="new-What was approved" {...marks("What was approved", `${TICKET_INPUT} font-sans`)} value={approvedNote} onChange={event => setApprovedNote(event.target.value)} />
                     </Field>
                   </div>
                   <Field label="Boards" optional hint="One image link a line." messages={messagesOf("Boards")}>
-                    <textarea id="new-Boards" rows={3} {...marks("Boards", `${INPUT} font-mono`)} value={mockupBoards} onChange={event => setMockupBoards(event.target.value)} />
+                    <textarea id="new-Boards" rows={3} {...marks("Boards", `${TICKET_INPUT} font-mono`)} value={mockupBoards} onChange={event => setMockupBoards(event.target.value)} />
                   </Field>
                 </>}
               </div>
