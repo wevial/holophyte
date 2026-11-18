@@ -214,25 +214,51 @@ test("when a poll drops the open row's item the oldest remaining row opens", asy
   expect(openKeys()).toEqual(["A-1"]);
 });
 
-test("the need tint and edge sit on the open row's detail block alone, leaving its header row and every closed row untinted", async () => {
+test("an open row and its detail are one tinted surface: each li carries the tint and edge only while data-open, with no divider under its toggle", async () => {
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
   const tint = ["bg-(image:--need-tint)", "shadow-[inset_0_0_0_1px_var(--need-edge)]"];
-  const tinted = () => [...document.querySelectorAll<HTMLElement>("[class]")].filter((element) => tint.some((name) => element.className.split(/\s+/).some((cls) => cls.endsWith(name))));
-  expect(tinted()).toEqual([openDetail()]);
-  expect(openRow().dataset.waitRow).toBe("A-1");
+  const classes = (element: Element) => element.className.split(/\s+/);
+  const tintOf = (element: Element) => classes(element).filter((cls) => tint.some((name) => cls.endsWith(name)));
+  const tinted = () => [...document.querySelectorAll<HTMLElement>("[class]")].filter((element) => tintOf(element).length > 0).map((element) => element.dataset.waitRow ?? element.tagName);
   fireEvent.click(toggleOf("B-2"));
-  expect(tinted()).toEqual([openDetail()]);
-  expect(row("B-2").contains(openDetail())).toBe(true);
+  expect(tinted()).toEqual(["A-1", "B-2"]);
+  expect(tintOf(row("B-2"))).toEqual(tint.map((name) => `data-open:${name}`));
+  expect(row("B-2").hasAttribute("data-open")).toBe(true);
+  expect(row("A-1").hasAttribute("data-open")).toBe(false);
+  expect(classes(toggleOf("B-2")).filter((cls) => /(^|:)border-b/.test(cls))).toEqual([]);
+  expect(classes(openDetail()).filter((cls) => !cls.startsWith("[&") && /(^|:)(-?m[tbyxlr]?-|rounded|bg-|shadow-)/.test(cls))).toEqual([]);
   fireEvent.click(toggleOf("B-2"));
-  expect(tinted()).toEqual([]);
+  expect(waitRows().filter((li) => li.hasAttribute("data-open"))).toEqual([]);
+});
+
+test("the open detail's container grows its rows and fades over a transition that reduced motion turns off", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR)] }));
+  const panel = toggleOf("A-1").nextElementSibling as HTMLElement;
+  expect(panel.contains(openDetail())).toBe(true);
+  const classes = panel.className.split(/\s+/);
+  expect(classes).toEqual(expect.arrayContaining(["grid-rows-[0fr]", "group-data-open:grid-rows-[1fr]", "opacity-0", "group-data-open:opacity-100", "duration-200", "motion-reduce:transition-none"]));
+  expect(classes.filter((cls) => cls.startsWith("transition"))).toEqual(["transition-[grid-template-rows,opacity]"]);
+});
+
+test("a row closed while it is still expanding keeps its detail, inert, through its collapse and then drops it", async () => {
+  await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)] }));
+  const detailOf = () => document.getElementById(toggleOf("B-2").getAttribute("aria-controls")!);
+  fireEvent.click(toggleOf("B-2"));
+  fireEvent.click(toggleOf("B-2"));
+  expect(detailOf()).not.toBeNull();
+  expect((toggleOf("B-2").nextElementSibling as HTMLElement).inert).toBe(true);
+  await act(() => new Promise((resolve) => setTimeout(resolve, 170)));
+  expect(detailOf()).not.toBeNull();
+  await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
+  expect(detailOf()).toBeNull();
 });
 
 test("the open detail sits in its own row under the toggle and holds only its sentence and its actions, even when the run has events", async () => {
   const events = [{ at: NOW - MINUTE, kind: "review", summary: "round 1 changes requested" }];
   await mount(daemon({ items: [titled("A-1", 1, 3 * HOUR), titled("B-2", 2, 2 * HOUR)], actions: true, details: { 1: { ...detail, events } } }));
   const open = openDetail();
-  expect(open.parentElement).toBe(row("A-1"));
-  expect(open.previousElementSibling).toBe(toggleOf("A-1"));
+  expect(open.closest<HTMLElement>("li")).toBe(row("A-1"));
+  expect(toggleOf("A-1").nextElementSibling!.contains(open)).toBe(true);
   expect(open.children).toHaveLength(2);
   expect(open.children[0]!.textContent).toStartWith("Which way?");
   expect(open.children[1]!.hasAttribute("data-card-actions")).toBe(true);
@@ -391,6 +417,15 @@ test("the requeue form posts a typed note as note, or as amend with no note when
   };
   expect(await bodyFor(false)).toEqual([{ ticket: "DEMO-11", note: "the flaky test is fixed on main" }]);
   expect(await bodyFor(true)).toEqual([{ ticket: "DEMO-11", amend: "the flaky test is fixed on main" }]);
+});
+
+test("a row reopened while its detail is still collapsing opens without the requeue draft it closed on", async () => {
+  await mount(daemon({ items: [failedAt()], actions: true }));
+  await press(inDetail("Requeue"));
+  typeNote("the flaky test is fixed on main");
+  fireEvent.click(toggleOf("DEMO-11"));
+  fireEvent.click(toggleOf("DEMO-11"));
+  expect(requeueForm()).toBeNull();
 });
 
 test("Cancel, or Escape from the note, the card's Open run or the row's toggle, closes the requeue form and posts nothing", async () => {
