@@ -451,8 +451,12 @@ def _set_aside(target, worktree, run_id, branch, sha, identifier):
         raise SystemExit(
             f"{refused}branch {branch} is not checked out at {worktree},"
             " where the next claim resumes it; nothing approved")
-    if _git(worktree, "status", "--porcelain", "--untracked-files=normal"
-            ).stdout.strip():
+    status = _git(worktree, "status", "--porcelain",
+                  "--untracked-files=normal")
+    if status.returncode != 0:
+        raise SystemExit(f"{refused}git status failed in {worktree}:"
+                         f" {status.stderr.strip()}; nothing approved")
+    if status.stdout.strip():
         raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
                          f" changes on {branch}; nothing approved")
     if tip == sha:
@@ -505,13 +509,25 @@ def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
           ["update-ref", head, tip, sha])
     _step(undo, repo, ["worktree", "add", "--quiet", str(worktree), branch],
           ["worktree", "remove", "--force", "--force", str(worktree)])
-    ok, report = run_worktree_setup(target, worktree)
+    with _without_repository_selectors():
+        ok, report = run_worktree_setup(target, worktree)
     if not ok:
         raise _StepFailed(f"worktree setup failed in {worktree}: {report}")
     moved = _git(aside, "rev-parse", "HEAD").stdout.strip()
     if moved != tip:
         raise _StepFailed(f"the worktree set aside at {aside} moved on to"
                           f" {moved[:12]}")
+
+
+@contextlib.contextmanager
+def _without_repository_selectors():
+    kept = git_environment()
+    stripped = {key: os.environ.pop(key) for key in list(os.environ)
+                if key not in kept}
+    try:
+        yield
+    finally:
+        os.environ.update(stripped)
 
 
 def _reattach(worktree, head, tip):

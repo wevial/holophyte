@@ -784,6 +784,22 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn("holds uncommitted changes",
                       self.refused("--note", "ok"))
 
+    def test_a_failed_status_refuses_rather_than_reading_a_clean_tree(self):
+        self.branch_with_wip()
+        (self.wt / "work").write_text("unsaved work\n")
+        self.sweep()
+        git(self.repo, "config", "status.short", "invalid")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("git status failed", str(raised.exception))
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
+        self.assertEqual((self.wt / "work").read_text(), "unsaved work\n")
+        self.assertNotEqual(self.ticket_row()[0], "ready")
+
     def test_a_round_ended_after_the_judged_one_was_read_is_refused(self):
         self.branch_with_wip()
         self.sweep()
@@ -879,6 +895,30 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertEqual(
             Path((self.wt.parent / "setup-ran").read_text().strip()),
             self.wt.resolve())
+
+    def test_inherited_repository_selectors_do_not_redirect_the_setup(self):
+        self.branch_with_wip()
+        (self.wt / ".githooks").mkdir()
+        (self.wt / ".githooks" / "pre-commit").write_text("#!/bin/sh\n")
+        git(self.wt, "add", ".githooks")
+        git(self.wt, "commit", "-m", "hooks")
+        self.reviewed = git(self.wt, "rev-parse", "HEAD")
+        self.wip = self.commit("half an edit again\n",
+                               "WIP: implementer ended mid-edit")
+        self.sweep()
+
+        with patch.dict(os.environ, {"GIT_DIR": str(self.repo / ".git"),
+                                     "GIT_WORK_TREE": str(self.repo)}):
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        hooks_path = ["git", "config", "--worktree", "--get", "core.hooksPath"]
+        self.assertEqual(subprocess.run(
+            hooks_path, cwd=self.wt, capture_output=True, text=True
+        ).stdout.strip(), ".githooks")
+        self.assertEqual(subprocess.run(
+            hooks_path, cwd=self.repo, capture_output=True, text=True
+        ).stdout.strip(), "")
 
     def test_a_failed_setup_restores_the_worktree(self):
         self.branch_with_wip()
