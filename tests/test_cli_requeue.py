@@ -417,6 +417,7 @@ class RequeueAmendTests(RequeueTarget):
             f" as {url}"])
         self.assertEqual(self.amendments(), [("DROP C1", "caller")])
 
+    @unittest.skipIf(os.geteuid() == 0, "root writes a read-only file")
     def test_a_lease_cleanup_failure_writes_nothing_so_a_retry_lands(self):
         self.fail_the_run()
         self.conn.commit()
@@ -435,6 +436,20 @@ class RequeueAmendTests(RequeueTarget):
         self.cli("--requeue", "KO-1", "--note", "retry", "--amend", "DROP C1")
         self.assertEqual(self.status(), "ready")
         self.assertEqual([text for text, _ in self.amendments()], ["DROP C1"])
+
+    def test_an_amended_requeue_walks_an_aborted_ticket_to_ready(self):
+        store.abort(self.conn, self.run, "claimed before the body was fixed",
+                    now=T0 + MINUTE)
+        with self.assertRaises(holophyte.loop.stop.Aborted):
+            holophyte.loop.stop.end_aborted(self.conn, self.run)
+
+        with patch("getpass.getuser", return_value="caller"):
+            self.cli("--requeue", "KO-1", "--note", "body corrected",
+                     "--amend", "DROP C1")
+
+        self.assertEqual(self.status(), "ready")
+        self.assertEqual(self.requeue_notes(), ["body corrected"])
+        self.assertEqual(self.amendments(), [("DROP C1", "caller")])
 
     def test_a_refused_amendment_exits_one_naming_it_and_writes_nothing(self):
         self.fail_the_run()

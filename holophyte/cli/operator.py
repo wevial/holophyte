@@ -281,9 +281,19 @@ def _rehearse(conn, ticket_id, note, force, amend):
 
 def _requeue_writes(conn, ticket_id, note, force, amend):
     with store.transaction(conn):
-        steered = None if amend is None else steer_notes.steer(
-            conn, ticket_id, amend, getpass.getuser())
-        return store.requeue(conn, ticket_id, note, force=force), steered
+        parked = store.read.ticket_by_id(
+            conn, ticket_id).status == "blocked_on_operator"
+        steered = None if parked else _amend(conn, ticket_id, amend)
+        run_id = store.requeue(conn, ticket_id, note, force=force)
+        if parked:
+            steered = _amend(conn, ticket_id, amend)
+        return run_id, steered
+
+
+def _amend(conn, ticket_id, amend):
+    if amend is None:
+        return None
+    return steer_notes.steer(conn, ticket_id, amend, getpass.getuser())
 
 
 def _requeue_candidate(conn, ticket_id):
