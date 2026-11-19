@@ -422,8 +422,10 @@ def _reviewed_commit(conn, run_id):
 
 
 def _git(repo, *args):
+    env = {key: value for key, value in git_environment().items()
+           if not key.startswith(("GIT_TRACE", "GIT_CURL_VERBOSE"))}
     done = subprocess.run(["git", *args], cwd=repo, capture_output=True,
-                          text=True, errors="replace", env=git_environment())
+                          text=True, errors="replace", env=env)
     done.stderr = REMOTE_URL.sub("<url>", done.stderr)
     return done
 
@@ -527,7 +529,6 @@ def _require_clean(worktree, branch, refused):
                          f" changes on {branch}; nothing approved")
 
 
-NO_REF = "0" * 40
 REMOTE_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://.*")
 NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 
@@ -535,7 +536,7 @@ NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
 def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
                       tip):
     repo, head = target.path, f"refs/heads/{branch}"
-    _step(undo, repo, ["update-ref", ref, tip, kept or NO_REF],
+    _step(undo, repo, ["update-ref", ref, tip, kept or ""],
           ["update-ref", ref, kept, tip] if kept
           else ["update-ref", "-d", ref, tip])
     _step(undo, worktree, ["checkout", "--quiet", "--detach"],
@@ -595,6 +596,11 @@ def _rewind_origin(undo, repo, branch, sha, tip, pull):
                for remote in (fetched, pushed)}
     if rewinds[pushed]:
         _push_rewind(undo, repo, target, head, sha, pushed)
+        if target != "origin" and _origin_tip(
+                repo, url, head, "origin's push URL") != sha:
+            raise _StepFailed(
+                f"origin's push URL does not hold {branch} at the reviewed"
+                f" commit {sha[:12]} after the push")
     if rewinds[fetched]:
         after = _origin_tip(repo, "origin", head)
         if after != sha:
@@ -609,14 +615,11 @@ def _push_rewind(undo, repo, target, head, sha, pushed):
     push = ["push", "origin", "--no-verify", "--no-follow-tags"]
     lease = f"--force-with-lease={head}:"
 
-    landed = []
-
     def reverse():
         done = _git(repo, *NO_HOOKS, *push, f"{lease}{sha}", f"{pushed}:{head}")
         try:
-            restored = done.returncode == 0 or (
-                _origin_tip(repo, target, head) == pushed if any(landed)
-                else _origin_tip(repo, target, head) != sha)
+            restored = done.returncode == 0 or _origin_tip(
+                repo, target, head) == pushed
         except _StepFailed:
             restored = False
         return subprocess.CompletedProcess(
@@ -624,7 +627,6 @@ def _push_rewind(undo, repo, target, head, sha, pushed):
 
     undo.append(reverse)
     done = _git(repo, *NO_HOOKS, *push, f"{lease}{pushed}", f"{sha}:{head}")
-    landed.append(done.returncode == 0)
     if done.returncode != 0:
         raise _StepFailed(f"git push origin failed: {done.stderr.strip()}")
 

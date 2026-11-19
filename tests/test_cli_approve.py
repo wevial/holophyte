@@ -549,8 +549,8 @@ class SweptApproveCliTests(unittest.TestCase):
         git(self.wt, "commit", "-m", message)
         return git(self.wt, "rev-parse", "HEAD")
 
-    def branch_with_wip(self):
-        git(self.repo, "init", "-b", "main")
+    def branch_with_wip(self, *init):
+        git(self.repo, "init", "-b", "main", *init)
         git(self.repo, "commit", "--allow-empty", "-m", "base")
         self.wt = holophyte.config.project.worktree_path(self.target, BRANCH)
         git(self.repo, "worktree", "add", "-b", BRANCH, str(self.wt))
@@ -646,6 +646,37 @@ class SweptApproveCliTests(unittest.TestCase):
         self.assertIn(f"approved at {self.reviewed}", out)
         self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
                       out)
+
+    def test_a_sha256_repository_is_approved_at_its_reviewed_commit(self):
+        self.branch_with_wip("--object-format=sha256")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "non-blocking")
+
+        self.assertEqual(len(self.reviewed), 64)
+        self.assert_released_at_reviewed()
+
+    def test_a_sweep_during_terminal_adjudication_is_refused_unrewound(self):
+        """The adjudicator judges the fix after the last review, which no
+        event names, so the reviewed commit before it is not approved."""
+        self.branch_with_wip()
+        self.claim()
+        store.set_branch(self.conn, self.run, BRANCH)
+        for phase in ("working", "verifying", "reviewing"):
+            store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
+        self.judged(1, self.reviewed, ("met", "unwitnessed"))
+        store.set_phase(self.conn, self.run, "verifying",
+                        "verify before terminal adjudication")
+        store.set_phase(self.conn, self.run, "reviewing",
+                        "terminal adjudication")
+        store.record_review_round(self.conn, self.run, 2, "changes_requested",
+                                  "codex", started_at=T0 + 2, ended_at=T0 + 2)
+        store.release(self.conn, self.run, "failed", "swept by the supervisor"
+                      " in phase reviewing: criterion_stuck",
+                      now=T0 + 2 * MINUTE, failure_kind="swept")
+
+        self.assertIn("no ended review round of it names the commit",
+                      self.refused("--note", "ok", "--force"))
 
     def test_a_covering_review_round_names_the_commit_approved(self):
         self.judged_by = "reviewed_commit"
@@ -1092,12 +1123,14 @@ class SweptApproveCliTests(unittest.TestCase):
         """A loopback HTTP remote taking a token in the URL's query:
         `git http-backend` over `backend`, which serves fetches and refuses
         an anonymous push, or 403 for all. With `drop_push` it applies each
-        push and closes the connection before answering."""
+        push and closes the connection before answering. Git traces to
+        stderr, so a leak through its trace shows too."""
         server = http.server.ThreadingHTTPServer(
             ("127.0.0.1", 0), _GitHttp)
         server.backend, server.drop_push = backend, drop_push
-        loopback = patch.dict(os.environ, {"no_proxy": "127.0.0.1",
-                                           "NO_PROXY": "127.0.0.1"})
+        loopback = patch.dict(os.environ, {
+            "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1", "GIT_TRACE": "1",
+            "GIT_TRACE_CURL": "1", "GIT_CURL_VERBOSE": "1"})
         loopback.start()
         self.addCleanup(loopback.stop)
         threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -1150,14 +1183,8 @@ class SweptApproveCliTests(unittest.TestCase):
     def test_a_rewind_the_remote_moved_past_is_left_for_a_human(self):
         self.branch_with_wip()
         bare = self.origin("origin.git", self.wip)
-        later = git(self.repo, "commit-tree", f"{self.reviewed}^{{tree}}",
-                    "-p", self.reviewed, "-m", "pushed by another writer")
-        git(self.repo, "push", "-q", str(bare), f"{later}:refs/keep/later")
+        later = self.moved_on_by_hook(bare)
         git(self.repo, "remote", "add", "origin", str(bare))
-        hook = bare / "hooks" / "post-receive"
-        hook.write_text(f"#!/bin/sh\ngit update-ref refs/heads/{BRANCH}"
-                        f" {later}\n")
-        hook.chmod(0o755)
         self.sweep(pull=PULL)
 
         with self.assertRaises(SystemExit) as raised:
@@ -1167,6 +1194,48 @@ class SweptApproveCliTests(unittest.TestCase):
                       str(raised.exception))
         self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
                          later)
+        self.assertEqual(self.interventions(), [])
+
+    def moved_on_by_hook(self, bare):
+        later = git(self.repo, "commit-tree", f"{self.reviewed}^{{tree}}",
+                    "-p", self.reviewed, "-m", "pushed by another writer")
+        git(self.repo, "push", "-q", str(bare), f"{later}:refs/keep/later")
+        self.post_receive(bare, later)
+        return later
+
+    def post_receive(self, bare, sha):
+        hook = bare / "hooks" / "post-receive"
+        hook.write_text(f"#!/bin/sh\ngit update-ref refs/heads/{BRANCH}"
+                        f" {sha}\n")
+        hook.chmod(0o755)
+
+    def test_a_push_url_its_hook_moves_back_refuses(self):
+        self.branch_with_wip()
+        fetched = self.origin("fetch.git", self.reviewed)
+        pushed = self.origin("push.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(fetched))
+        git(self.repo, "remote", "set-url", "--push", "origin", str(pushed))
+        self.post_receive(pushed, self.wip)
+        self.sweep(pull=PULL)
+
+        self.assertIn("origin's push URL does not hold",
+                      self.refused("--note", "ok"))
+        self.assertEqual(git(pushed, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_a_lost_push_a_hook_moved_on_is_left_for_a_human(self):
+        self.branch_with_wip()
+        served = self.origin("served.git", self.wip)
+        self.moved_on_by_hook(served)
+        host = self.http_remote(served.parent, drop_push=True)
+        git(self.repo, "remote", "add", "origin", f"http://{host}/served.git")
+        self.sweep(pull=PULL)
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("undoing it stopped at git push origin",
+                      str(raised.exception))
         self.assertEqual(self.interventions(), [])
 
     def test_a_pull_request_with_no_origin_to_rewind_refuses(self):
