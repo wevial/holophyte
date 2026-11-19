@@ -3,17 +3,22 @@ import re
 
 import store
 import store.read
-from holophyte.babysit.description_review import description_findings
+from holophyte.babysit.description_review import (
+    LEAD,
+    description_findings,
+    hold_for_pr_text,
+    text_review,
+    without_description,
+    without_description_items,
+)
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, sweep_config
-from holophyte.review.reply_parsing import UNPARSED_PATH
+from holophyte.review.reply_parsing import UNPARSED_PATH, parse_findings
 
 ROUND_KIND = "covering_fix_round"
 ALLOWANCE_KIND = "review_fix_allowance"
 
-LEAD_RE = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
-                     r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
-                     r"[:\u2014-]?\s*)?(?:\*\*)?\s*", re.I)
+LEAD_RE = re.compile(LEAD, re.I)
 
 
 def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
@@ -34,9 +39,13 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         return fix_goal(pull, ticket, verdict, "Operator babysit note",
                         fix_note), None
+    described = description_findings(verdict, decision, unwitnessed)
+    if described:
+        return None, (f"{asked}; not merged. Review findings about the pull"
+                      " request description, left with the PR-text writer:\n"
+                      f"{text_review(conn, run_id, described)}")
     cap = merge_config(project).covering_fix_rounds
-    if not cap or conn is None or description_findings(verdict, decision,
-                                                       unwitnessed):
+    if not cap or conn is None:
         return None, asked + findings
     covering = _covering_findings(conn, run_id, rnd)
     threshold = sweep_config(project).review_overlap_threshold
@@ -59,9 +68,28 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
            f"Automatic fix round {made + 1} of {cap} after round {rnd} on"
            f" {pull.url}: the review of the fix at {sha} asked for new"
            " changes", provider)
-    return fix_goal(pull, ticket, verdict,
-                    f"Fix note from the review of the fix at {sha[:12]}",
-                    fix_note_of(covering)), None
+    return _code_goal(conn, run_id, pull, ticket, verdict,
+                      f"Fix note from the review of the fix at {sha[:12]}",
+                      fix_note_of(_code_findings(covering))), None
+
+
+def _code_goal(conn, run_id, pull, ticket, verdict, label, note):
+    verdict, described = without_description(verdict)
+    hold_for_pr_text(conn, run_id, described)
+    return fix_goal(pull, ticket, verdict, label, note)
+
+
+def _code_findings(findings):
+    code = []
+    for finding in findings:
+        message = str(finding.get("message", ""))
+        kept = without_description_items(message)
+        if kept == message:
+            code.append(finding)
+        elif kept.strip():
+            rest = {k: v for k, v in finding.items() if k not in ("path", "line")}
+            code.extend({**rest, **parsed} for parsed in parse_findings(kept))
+    return code
 
 
 def fix_goal(pull, ticket, verdict, label, note):
@@ -74,11 +102,11 @@ def fix_goal(pull, ticket, verdict, label, note):
 
 def repeat_overlap(conn, run_id, rnd, covering):
     """The most the covering round's findings share with any earlier round's."""
-    best = (0.0, None)
+    best, covering = (0.0, None), _code_findings(covering)
     for earlier in store.read.rounds_of(conn, run_id):
         if earlier.round >= rnd or earlier.endedAt is None:
             continue
-        findings = json.loads(earlier.findings)
+        findings = _code_findings(json.loads(earlier.findings))
         if store.findings_fingerprint(findings) == store.EMPTY_FINGERPRINT:
             continue
         shared = store.findings_overlap(findings, covering)

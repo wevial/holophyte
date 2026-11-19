@@ -14,7 +14,13 @@ from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park, reads_green
 from holophyte.babysit.covering_fix import fix_or_park
-from holophyte.babysit.description_review import TAG_BRIEF, fix_summary, rereviewed
+from holophyte.babysit.description_review import (
+    TAG_BRIEF,
+    fix_summary,
+    pending_text_review,
+    refreshed_or_held,
+    rereviewed,
+)
 from holophyte.babysit.main_side import verify_detached_main
 from holophyte.babysit.note_triage import triage_notes, untriaged
 from holophyte.babysit.pass_ends import (
@@ -536,7 +542,8 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
         answered = "\n".join(part for part in (fix_context, recovered) if part)
         answered = fix_summary(answered, wt, reviewed, sha)
         refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
-                        branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
+                        branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha,
+                        review=pending_text_review(conn, run_id))
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha,
                     pull, f"{_moved(sha, reviewed)}, and a human"
                     " says merge on the candidate as it stands"
@@ -561,8 +568,8 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                f"Reviewer verdict:\n{verdict}", provider)
         print(f"[holo2] the fix at {sha[:12]} is approved")
         answered = fix_summary(answered, wt, reviewed, sha)
-        refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
-                        branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha)
+        refreshed_or_held(project, conn, run_id, provider, task_id, branch, wt, sha,
+                          beat_s, pull, ticket, budget_min, answered)
         set_phase(conn, run_id, "merge_gate", f"babysitting {pull.url}")
         return sha
     ledger(conn, run_id, task_id, "round",

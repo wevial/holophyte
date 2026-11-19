@@ -3,6 +3,7 @@
 # prefix demo/, served at https://media.holophyte.ai/demo/).
 # Usage: scripts/landing_media.sh CAPTURE_DIR
 # CAPTURE_DIR is the capture output directory; the repository keeps no media.
+# The edge caches these paths: bump ?v= on the page's media URLs after replacing them.
 set -euo pipefail
 
 src=${1:?usage: scripts/landing_media.sh CAPTURE_DIR}
