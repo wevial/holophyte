@@ -43,16 +43,6 @@ interface Served {
   board: Board;
 }
 
-type BoardTicket = Board["columns"][number]["tickets"][number];
-
-const boardWith = (ticket: Partial<BoardTicket>, state: Board["columns"][number]["state"] = "backlog"): Board => ({
-  ...emptyBoard,
-  columns: [
-    ...emptyBoard.columns.filter((column) => column.state !== state),
-    { state, tickets: [{ ...servedBoard.columns.flatMap((each) => each.tickets)[0]!, ...ticket }] },
-  ],
-});
-
 /** DEMO serves `served` (by default merged run 9 of DEMO-9, shipped today,
  *  and an empty board), read afresh on every request, its status reporting
  *  `reverts`; each `POST /actions/revert` is kept and answered by `revert`. */
@@ -184,26 +174,37 @@ test("a run that is not its ticket's latest merge is refused before any preview,
   expect(fake.posted).toEqual([]);
 });
 
-test("a Done row whose ticket's merge is already reverted is refused before any preview", async () => {
-  const reverted = { ...ticketNine, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } };
-  const fake = daemon(true, undefined, { tickets: { "DEMO-9": reverted } });
-  writeView("table");
-  await mount("#/tickets", fake.fetchImpl);
-  await openMenu("More for DEMO-9");
-  await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Revert…" })));
-  for (let round = 0; round < 4; round += 1) await act(settle);
-  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
-  expect(dialog.querySelector("[data-revert-refusal]")?.textContent).toBe("DEMO-9's merge was already reverted by DEMO-50.");
-  expect(fake.posted).toEqual([]);
+test("a latest merge with no recorded sha is refused before any preview, naming the older merge the daemon would undo or that there is none", async () => {
+  const shaless = { ...runNine, run: { ...runNine.run, merge_sha: null } };
+  const refusal = () => screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent;
+  const only = daemon(true, undefined, { runs: { 9: shaless } });
+  await mount("#/runs/demo/9", only.fetchImpl);
+  await revertFromRunPage();
+  expect(refusal()).toBe("Run 9 recorded no merge sha, so there is no merge to revert. Ship a forward fix instead.");
+  cleanup();
+
+  const again = daemon(true, undefined, { runs: { 9: shaless }, tickets: { "DEMO-9": { ...ticketNine, runs: [...ticketNine.runs, { ...ticketNine.runs[0]!, run: 5 }] } } });
+  await mount("#/runs/demo/9", again.fetchImpl);
+  await revertFromRunPage();
+  expect(refusal()).toBe("Run 9 recorded no merge sha, so a revert would undo an older merge of DEMO-9. Ship a forward fix instead.");
+  expect([...only.posted, ...again.posted]).toEqual([]);
 });
 
-test("a latest merge with no recorded sha is refused before any preview, since the daemon would revert an older merge", async () => {
-  const fake = daemon(true, undefined, { runs: { 9: { ...runNine, run: { ...runNine.run, merge_sha: null } } } });
-  await mount("#/runs/demo/9", fake.fetchImpl);
-  await revertFromRunPage();
-  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
-  expect(dialog.querySelector("[data-revert-refusal]")?.textContent).toBe("Run 9 recorded no merge sha, so a revert would undo an older merge of DEMO-9. Ship a forward fix instead.");
-  expect(fake.posted).toEqual([]);
+test("a Done row reads its ticket when its menu opens: a reverted one disables Revert… naming the revert ticket, a newer unmerged attempt drops it", async () => {
+  const doneMenu = async (ticket: TicketDetail) => {
+    writeView("table");
+    await mount("#/tickets", daemon(true, undefined, { tickets: { "DEMO-9": ticket } }).fetchImpl);
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
+    for (let round = 0; round < 4; round += 1) await act(settle);
+    return screen.queryByRole("menuitem", { name: "Revert…" });
+  };
+  const item = await doneMenu({ ...ticketNine, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } });
+  expect(item?.getAttribute("aria-disabled")).toBe("true");
+  expect(document.getElementById(item!.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
+  cleanup();
+
+  const retried = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 12, outcome: "failed" }, ...ticketNine.runs] };
+  expect(await doneMenu(retried)).toBeNull();
 });
 
 test("a ticket that merged again after its preview files nothing and says why", async () => {
@@ -217,25 +218,6 @@ test("a ticket that merged again after its preview files nothing and says why", 
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent).toContain("a revert would undo run 11");
   expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
-});
-
-test("a Done row whose ticket is back on the board is disabled once reverted and offers no Revert for a newer attempt", async () => {
-  writeView("table");
-  await mount("#/tickets", daemon(true, undefined, { board: boardWith({ ticket: "DEMO-9", reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke it" } }) }).fetchImpl);
-  const done = screen.getAllByRole("button", { name: "More for DEMO-9" }).at(-1)!;
-  await act(async () => void fireEvent.click(done));
-  const item = screen.getByRole("menuitem", { name: "Revert…" });
-  expect(item.getAttribute("aria-disabled")).toBe("true");
-  expect(document.getElementById(item.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
-  cleanup();
-
-  writeView("table");
-  await mount("#/tickets", daemon(true, undefined, { board: boardWith({ ticket: "DEMO-9", reverted: null }, "in_flight") }).fetchImpl);
-  for (const button of screen.getAllByRole("button", { name: "More for DEMO-9" })) {
-    await act(async () => void fireEvent.click(button));
-    expect(screen.queryByRole("menuitem", { name: "Revert…" })).toBeNull();
-    await act(async () => void fireEvent.click(button));
-  }
 });
 
 test("a filing in flight holds the dialog open against Keep it and Esc", async () => {
@@ -278,12 +260,37 @@ test("a slow preview from one Done row does not open over the dialog of a row ch
   await mount("#/tickets", fake.fetchImpl);
   for (const key of ["DEMO-8", "DEMO-9"]) {
     await openMenu(`More for ${key}`);
+    for (let round = 0; round < 4; round += 1) await act(settle);
     await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Revert…" })));
     for (let round = 0; round < 4; round += 1) await act(settle);
   }
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(screen.getAllByRole("dialog").map((dialog) => dialog.querySelector("h2")?.textContent)).toEqual(["Revert DEMO-9?"]);
+});
+
+test("Copy link on a plain-HTTP origin copies the run's link through a selection and says so", async () => {
+  const secure = Object.getOwnPropertyDescriptor(window, "isSecureContext");
+  const exec = document.execCommand;
+  let copied = "";
+  Object.defineProperty(window, "isSecureContext", { value: false, configurable: true });
+  document.execCommand = ((command: string) => {
+    if (command !== "copy") return false;
+    copied = (document.activeElement as HTMLTextAreaElement).value;
+    return true;
+  }) as typeof document.execCommand;
+  try {
+    await mount("#/runs/demo/9", daemon(true).fetchImpl);
+    await openMenu("More for run 9");
+    await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Copy link" })));
+    for (let round = 0; round < 2; round += 1) await act(settle);
+    expect(copied).toBe(`${DEMO}/#/runs/demo/9`);
+    expect(document.querySelector("[data-toast]")?.textContent).toBe("Copied link.");
+  } finally {
+    document.execCommand = exec;
+    if (secure) Object.defineProperty(window, "isSecureContext", secure);
+    else delete (window as { isSecureContext?: boolean }).isSecureContext;
+  }
 });
 
 test("arrow keys move through the menu and Esc closes it, returning focus to its ⋯ button", async () => {

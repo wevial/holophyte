@@ -3,14 +3,14 @@ import { formatAge } from "../../lib/format";
 import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
 import { ACTIONS_OFF } from "../../lib/actions";
-import { useContext } from "react";
-import { useBoards } from "../queries";
+import { useContext, useState, type ReactNode } from "react";
+import { useTicket } from "../queries";
 import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
 import { cardElementId, modified, TicketGlyph } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
 import { TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
-import { MoreMenu, ROW_MENU } from "./MoreMenu";
+import { MoreMenu, ROW_MENU, type MenuItem } from "./MoreMenu";
 import { usePlaceItems, useRevertFlow } from "./Revert";
 
 const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "done"];
@@ -48,7 +48,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
       <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>
       <span
         data-cell="title"
-        className={`min-w-0 truncate font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet && !open ? "text-ink-2" : "text-ink"}`}
+        className={`min-w-0 truncate font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet && !open ? "text-ink-2 group-has-[[aria-expanded=true]]:text-ink" : "text-ink"}`}
       >
         <TitleText>{card.title}</TitleText>
       </span>
@@ -65,27 +65,43 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
   );
 }
 
-/** A row's ⋯ menu: Open ticket, Copy link, and Revert… for a done ticket of
- *  a project that reports `reverts`; a filed revert's status line reads
- *  under the row. A done ticket back on the board has a newer attempt, or
- *  was reverted, which disables Revert… naming the revert ticket. */
-function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
-  const host = useConsolePeers().hosts.find((each) => each.base === card.base);
-  const status = host?.status;
-  const board = useBoards(host == null ? [] : [host], useContext(PollDepsContext))[0]?.board;
-  const onBoard = board?.columns.flatMap((each) => each.tickets).find((each) => each.ticket === card.key);
-  const revertable = column === "done" && status?.reverts === true && (onBoard == null || onBoard.reverted != null);
-  const place = { project: card.project, ticket: card.key };
+/** A Done row's ⋯ menu where its project reports `reverts`: its ticket is
+ *  read once the menu first opens, holding Revert… disabled until then.
+ *  A reverted ticket's Revert… is disabled naming the revert ticket; a
+ *  ticket whose newest run did not merge offers none. */
+function DoneRowMenu({ card, actions, items }: { card: TicketCard; actions: boolean; items: MenuItem[] }) {
+  const [asked, setAsked] = useState(false);
+  const ticket = useTicket(card.base, card.key, useContext(PollDepsContext), asked);
+  const read = ticket.data;
+  const newest = read?.runs.reduce<number>((top, each) => Math.max(top, each.run), -1);
+  const merged = read == null || read.runs.find((each) => each.run === newest)?.outcome === "merged";
   const revert = useRevertFlow(
-    revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, reverted: onBoard?.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null,
-    usePlaceItems(place, place),
+    merged ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, reverted: read?.reverted, off: actions ? null : ACTIONS_OFF } : null,
+    items,
   );
+  const checking = ticket.isPending && asked;
+  const shown = revert.items.map((item) => (checking && item.label === "Revert…" ? { ...item, disabled: true, note: "Checking…" } : item));
+  return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpen={() => setAsked(true)} />;
+}
+
+function RowMenuFrame({ card, items, layer, onOpen }: { card: TicketCard; items: MenuItem[]; layer?: ReactNode; onOpen?: () => void }) {
   return (
     <>
-      <MoreMenu compact label={`More for ${card.key}`} items={revert.items} className={`${ROW_MENU} absolute top-2 right-3 [:root[data-density=compact]_&]:top-1`} />
-      <div className="px-4 pb-2 empty:hidden">{revert.layer}</div>
+      <MoreMenu compact label={`More for ${card.key}`} items={items} onOpen={onOpen} className={`${ROW_MENU} absolute top-2 right-3 [:root[data-density=compact]_&]:top-1`} />
+      <div className="px-4 pb-2 empty:hidden">{layer}</div>
     </>
   );
+}
+
+/** A row's ⋯ menu: Open ticket, Copy link, and on a Done row of a project
+ *  that reports `reverts`, Revert…; a filed revert's status line reads
+ *  under the row. */
+function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
+  const status = useConsolePeers().hosts.find((each) => each.base === card.base)?.status;
+  const place = { project: card.project, ticket: card.key };
+  const items = usePlaceItems(place, place);
+  if (column === "done" && status?.reverts === true) return <DoneRowMenu card={card} actions={status.actions === true} items={items} />;
+  return <RowMenuFrame card={card} items={items} />;
 }
 
 function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {

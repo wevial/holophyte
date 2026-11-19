@@ -1,8 +1,9 @@
 import { useContext, useId, useRef, useState, type ReactNode } from "react";
+import { useIsMutating } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { TicketDetail } from "../../lib/contract.gen";
 import type { HostRecord } from "../../lib/hosts";
-import { useBoardWrite, writeRefusal, type BoardWrite } from "../actions";
+import { boardWriteKey, useBoardWrite, writeRefusal, type BoardWrite } from "../actions";
 import type { ContractBodies } from "../fleet";
 import { useBoards } from "../queries";
 import { PollDepsContext } from "../scope";
@@ -38,7 +39,8 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditR
   const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
   const board = useBoards([host], deps)[0]?.board;
-  const write = useBoardWrite();
+  const write = useBoardWrite(boardWriteKey(host.base, ticketKey));
+  const writing = useIsMutating({ mutationKey: boardWriteKey(host.base, ticketKey) }) > 0;
   const [last, setLast] = useState<"backlog" | "ready" | "cancel" | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
@@ -52,7 +54,8 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditR
   const refused = writeRefusal(write.data, ticketKey);
 
   const at = { base: host.base, key: ticketKey, revision };
-  const post = (kind: "backlog" | "ready" | "cancel", body: BoardWrite) => {
+  const post = async (kind: "backlog" | "ready" | "cancel", body: BoardWrite) => {
+    if (writing) return null;
     setLast(kind);
     return write.mutateAsync(body);
   };
@@ -60,7 +63,7 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditR
     void post(target, { ...at, column: target, said: `Moved ${ticketKey} to ${target === "ready" ? "Ready" : "Backlog"}.` });
   const confirmCancel = async () => {
     const result = await post("cancel", { ...at, note: reason.trim(), said: `Cancelled ${ticketKey}.` });
-    if (result.ok) setCancelling(false);
+    if (result?.ok) setCancelling(false);
   };
   const keepIt = () => {
     setCancelling(false);
@@ -77,9 +80,9 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditR
     onEditRaw != null
       ? { label: "Edit", onSelect: () => onEditRaw(revision), disabled: editOpen }
       : { label: "Edit", onSelect: () => void navigate({ to: "/tickets/$project/$key/edit", params: { project, key: ticketKey }, search: {} }) },
-    ...(toBacklog ? [{ label: "Move to backlog", onSelect: () => move("backlog"), disabled: write.isPending }] : []),
-    ...(column === "backlog" ? [{ label: "Requeue", onSelect: () => move("ready"), disabled: write.isPending }] : []),
-    { label: "Cancel ticket", onSelect: openCancel, disabled: write.isPending },
+    ...(toBacklog ? [{ label: "Move to backlog", onSelect: () => move("backlog"), disabled: writing }] : []),
+    ...(column === "backlog" ? [{ label: "Requeue", onSelect: () => move("ready"), disabled: writing }] : []),
+    { label: "Cancel ticket", onSelect: openCancel, disabled: writing },
   ];
 
   return (
@@ -94,16 +97,16 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditR
         <Link to="/tickets/$project/$key/edit" params={{ project, key: ticketKey }} search={{}} className="btn" data-variant="quiet">Edit</Link>
       )}
       {toBacklog && (
-        <Btn busy={write.isPending && last === "backlog"} busyLabel="Moving…" disabled={write.isPending && last !== "backlog"} onClick={() => move("backlog")}>
+        <Btn busy={write.isPending && last === "backlog"} busyLabel="Moving…" disabled={writing && !(write.isPending && last === "backlog")} onClick={() => move("backlog")}>
           Move to backlog
         </Btn>
       )}
       {column === "backlog" && (
-        <Btn busy={write.isPending && last === "ready"} busyLabel="Requeuing…" disabled={write.isPending && last !== "ready"} onClick={() => move("ready")}>
+        <Btn busy={write.isPending && last === "ready"} busyLabel="Requeuing…" disabled={writing && !(write.isPending && last === "ready")} onClick={() => move("ready")}>
           Requeue
         </Btn>
       )}
-      <Btn ref={opener} variant="danger" disabled={write.isPending} onClick={openCancel}>
+      <Btn ref={opener} variant="danger" disabled={writing} onClick={openCancel}>
         Cancel ticket
       </Btn>
       </>

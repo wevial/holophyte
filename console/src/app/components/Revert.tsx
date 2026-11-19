@@ -26,6 +26,29 @@ interface RevertTarget {
 
 type Place = { project: string; run: number } | { project: string; ticket: string };
 
+/** Copies `text` through a selected, offscreen textarea: the Clipboard API
+ *  is absent on a plain-HTTP origin such as a private-network console. */
+function copyBySelection(text: string): boolean {
+  const back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.append(area);
+  area.focus();
+  area.select();
+  let done = false;
+  try {
+    done = document.execCommand("copy");
+  } catch {
+    done = false;
+  }
+  area.remove();
+  back?.focus();
+  return done;
+}
+
 const routeOf = (place: Place) =>
   "run" in place ? runPage(place.project, place.run) : ({ to: "/tickets/$project/$key", params: { project: place.project, key: place.ticket } } as const);
 
@@ -36,11 +59,8 @@ export function usePlaceItems(copy: Place, open?: Place): MenuItem[] {
   const toast = useToast();
   const copyLink = () => {
     const href = new URL(router.history.createHref(router.buildLocation({ ...routeOf(copy), search: {} }).href), window.location.href).href;
-    const copied = navigator.clipboard?.writeText(href) ?? Promise.reject(new Error("no clipboard"));
-    void copied.then(
-      () => toast("Copied link."),
-      () => toast(href),
-    );
+    const copied = window.isSecureContext && navigator.clipboard != null ? navigator.clipboard.writeText(href).then(() => true, () => copyBySelection(href)) : Promise.resolve(copyBySelection(href));
+    void copied.then((done) => toast(done ? "Copied link." : href));
   };
   const items: MenuItem[] = [{ label: "Copy link", onSelect: copyLink }];
   if (open != null) items.unshift({ label: "run" in open ? "Open run" : "Open ticket", onSelect: () => void navigate(routeOf(open)) });
@@ -67,7 +87,11 @@ async function checkTarget(on: RevertTarget, fetch: Fetch): Promise<Checked> {
     }
     if (ticket.reverted != null) return failure(`${on.ticket}'s merge was already reverted${ticket.reverted.by == null ? "" : ` by ${ticket.reverted.by}`}.`);
     const sha = (await fetchRoute(fetch, `${on.base}/runs/${latest}`, runDetailSchema)).run.merge_sha;
-    if (sha == null) return failure(`Run ${latest} recorded no merge sha, so a revert would undo an older merge of ${on.ticket}. Ship a forward fix instead.`);
+    if (sha == null) {
+      const older = ticket.runs.some((each) => each.outcome === "merged" && each.run !== latest);
+      const outcome = older ? `a revert would undo an older merge of ${on.ticket}` : "there is no merge to revert";
+      return failure(`Run ${latest} recorded no merge sha, so ${outcome}. Ship a forward fix instead.`);
+    }
     return { sha };
   } catch (failed) {
     return failure(failed instanceof Error ? failed.message : String(failed));

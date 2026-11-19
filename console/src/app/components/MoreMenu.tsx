@@ -27,14 +27,17 @@ function DotsIcon() {
   );
 }
 
-/** A ⋯ button named `label` opening a menu of `items`, under the button or
- *  above it where the viewport has no room below: arrow keys, Home and End
+/** A ⋯ button named `label` opening a menu of `items`, under the button,
+ *  above it where the viewport has no room below, else held inside the
+ *  viewport and scrolling where it is taller; `onOpen` hears each opening: arrow keys, Home and End
  *  move between them, Esc or a choice closes it and returns focus to the
  *  button. A pointer opens it with no item focused, keys with the first or
  *  last. Its clicks never reach the row it sits in; `compact` is a row's
  *  smaller unedged button. */
-export function MoreMenu({ label, items, className = "", compact = false }: { label: string; items: MenuItem[]; className?: string; compact?: boolean }) {
-  const [at, setAt] = useState<{ top: number; right: number; above: number } | null>(null);
+export function MoreMenu({ label, items, className = "", compact = false, onOpen }: {
+  label: string; items: MenuItem[]; className?: string; compact?: boolean; onOpen?: () => void;
+}) {
+  const [at, setAt] = useState<{ top: number; right: number; above: number; placed?: boolean; maxHeight?: number } | null>(null);
   const [focusOn, setFocusOn] = useState<"menu" | "first" | "last">("menu");
   const id = useId();
   const wrap = useRef<HTMLDivElement>(null);
@@ -45,8 +48,10 @@ export function MoreMenu({ label, items, className = "", compact = false }: { la
 
   useLayoutEffect(() => {
     const box = menu.current?.getBoundingClientRect();
-    if (at == null || box == null || box.bottom <= window.innerHeight - 8 || at.above - box.height < 8) return;
-    setAt({ ...at, top: at.above - box.height });
+    if (at == null || at.placed || box == null || box.bottom <= window.innerHeight - 8) return;
+    const room = window.innerHeight - 16;
+    if (at.above - box.height >= 8) setAt({ ...at, placed: true, top: at.above - box.height });
+    else setAt({ ...at, placed: true, top: Math.max(8, room + 8 - box.height), maxHeight: box.height > room ? room : undefined });
   }, [at]);
 
   useEffect(() => {
@@ -71,6 +76,7 @@ export function MoreMenu({ label, items, className = "", compact = false }: { la
   const show = (focus: "menu" | "first" | "last") => {
     const box = button.current!.getBoundingClientRect();
     setFocusOn(focus);
+    onOpen?.();
     setAt({ top: box.bottom + 6, right: Math.max(8, window.innerWidth - box.right), above: box.top - 6 });
   };
   const close = () => {
@@ -126,8 +132,8 @@ export function MoreMenu({ label, items, className = "", compact = false }: { la
           aria-label={label}
           tabIndex={-1}
           onKeyDown={onMenuKey}
-          style={{ top: at.top, right: at.right }}
-          className="fixed z-50 flex min-w-[180px] flex-col rounded-[9px] bg-raised p-1 text-left outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
+          style={{ top: at.top, right: at.right, maxHeight: at.maxHeight }}
+          className="fixed z-50 flex min-w-[180px] flex-col overflow-y-auto rounded-[9px] bg-raised p-1 text-left outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
         >
           {items.map((item) => {
             const noteId = `${id}-${item.label}`;

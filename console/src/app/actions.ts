@@ -57,14 +57,19 @@ export function useAction() {
  *  `column`, or a cancel with the reason `note`. */
 export type BoardWrite = { base: string; key: string; revision: number; said: string } & ({ column: "ready" | "backlog" } | { note: string });
 
+/** The mutation key every board write to ticket `key` at `base` shares, so
+ *  each control drawing that ticket's moves sees one in flight. */
+export const boardWriteKey = (base: string, key: string) => ["board-write", base, key] as const;
+
 /** A move or cancel as a mutation resolving to the daemon's `WriteResult`.
  *  An `ok` answer says its sentence and, like a 409, re-reads the fleet and
  *  every route query of `base`; nothing is retried. */
-export function useBoardWrite() {
+export function useBoardWrite(mutationKey?: readonly unknown[]) {
   const deps = useContext(PollDepsContext);
   const client = useQueryClient();
   const toast = useToast();
   return useMutation({
+    mutationKey,
     mutationFn: (write: BoardWrite) =>
       "column" in write
         ? moveTicket(write.base, write.key, write.revision, write.column, deps.fetch)

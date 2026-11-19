@@ -185,3 +185,17 @@ test("the ⋯ menu carries the header's moves: a Ready ticket's Move to backlog 
   await mount("DEMO-1");
   expect(await menuItems("DEMO-1")).toEqual(["Steer", "Scout", "Edit", "Requeue", "Cancel ticket", "Copy link"]);
 });
+
+test("a move in flight from the header disables the same move in the ⋯ menu, so only one is posted", async () => {
+  let release = () => {};
+  const write = fakeFetch({ ticket: "DEMO-2", revision: 4 }, new Promise<void>((done) => (release = done)));
+  await mount("DEMO-2", { write: write.fetchImpl });
+  await press("Move to backlog");
+  await menuItems("DEMO-2");
+  const item = screen.getByRole("menuitem", { name: "Move to backlog" });
+  expect(item.getAttribute("aria-disabled")).toBe("true");
+  await act(async () => void fireEvent.click(item));
+  expect(write.seen).toHaveLength(1);
+  await act(async () => release());
+  for (let round = 0; round < 4; round += 1) await act(settle);
+});
