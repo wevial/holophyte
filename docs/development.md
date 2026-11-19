@@ -320,12 +320,11 @@ Each module, one line:
 - `holophyte/review/reply_parsing.py` — reviewer output as structured findings,
   witness checks and a verdict.
 - `holophyte/review/json_reply.py` — the review reply as schema-checked JSON:
-  the `review_reply.schema.json` path the Codex reviewer's `--output-schema`
-  names (the review container stages a copy in the reviewer home for Codex's
-  `--output-schema` and Claude's `--json-schema`), the brief that describes its fields, the rendering of a valid reply
-  into the line format `holophyte/review/reply_parsing.py` reads (a reply that fails the
-  schema is parsed as text), and the `review_reply_format` run event naming
-  which format each review round used.
+  the `review_reply.schema.json` path, the brief that describes its fields,
+  the rendering of a valid reply into the line format
+  `holophyte/review/reply_parsing.py` reads (a reply that fails the schema is
+  parsed as text), and the `review_reply_format` run event naming which format
+  each review round used.
 - `holophyte/review/citations.py` — near-miss witness citations: the classes
   that define a cited test, the dotted-module file, and whether an approved
   test is unchanged at the candidate.
