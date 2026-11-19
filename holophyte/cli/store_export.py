@@ -10,8 +10,6 @@ import store.read
 from holophyte.config.serve_settings import serve_config
 
 REDACTION_VERSION = 1
-PRIVATE = "[private]"
-SECRET = "[secret]"
 SECRETS = (
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:.*?"
                r"-----END [A-Z ]*PRIVATE KEY-----|.*)", re.S),
@@ -37,9 +35,9 @@ class Redactor:
 
     def text(self, value):
         for pattern in self.private:
-            value = pattern.sub(PRIVATE, value)
+            value = pattern.sub("[private]", value)
         for pattern in SECRETS:
-            value = pattern.sub(SECRET, value)
+            value = pattern.sub("[secret]", value)
         return value
 
     def tree(self, value):
