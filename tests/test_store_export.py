@@ -206,6 +206,16 @@ class StoreExportTests(unittest.TestCase):
         manifest = json.loads((self.out / "manifest.json").read_text())
         self.assertEqual(manifest["since"], SECOND)
 
+    def test_a_since_beyond_the_stores_integer_range_is_a_usage_error(self):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr, \
+                self.assertRaises(SystemExit) as refused:
+            self.export("--since", str(2**63))
+        self.assertEqual(refused.exception.code, 2)
+        self.assertIn("64-bit integer range", stderr.getvalue())
+        self.assertFalse(self.out.exists())
+        self.export("--since", str(2**63 - 1))
+        self.assertEqual(lines(self.out / "factory_runs.jsonl"), [])
+
     def test_without_since_a_run_started_before_the_epoch_is_kept(self):
         conn = store.open(str(self.store_path))
         early = store.claim(conn, self.project_id, self.ticket, now=-1)
@@ -367,6 +377,8 @@ class StoreExportTests(unittest.TestCase):
             "UPDATE runEvents SET summary = ? WHERE runId = ?",
             ("Authorization: Bearer mF_a.Bcf-X.JqM; sent Bearer mFabCDef;"
              ' Authorization: Bearer "abc123def456"; bearer \'qq\';'
+             ' Authorization: Bearer "abc123\\"def456"; sent Bearer Bearer'
+             " mFabCDef; Authorization: Bearer Bearer mFabCDef;"
              " pallbearer kept", run))
         conn.commit()
         conn.close()
@@ -374,7 +386,10 @@ class StoreExportTests(unittest.TestCase):
         (note,) = [e for e in lines(self.out / "factory_events.jsonl")
                    if e["run_id"] == run]
         self.assertEqual(note["summary"], "[secret]; sent [secret]; [secret];"
+                                          " [secret]; [secret]; sent [secret];"
                                           " [secret]; pallbearer kept")
+        self.assertNotIn("def456", note["summary"])
+        self.assertNotIn("mFabCDef", note["summary"])
 
     def test_an_event_kind_matching_a_private_pattern_is_redacted(self):
         conn = store.open(str(self.store_path))

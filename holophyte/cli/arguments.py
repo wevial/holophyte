@@ -22,6 +22,17 @@ def serve_address(text):
     return text
 
 
+def epoch_ms(text):
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from None
+    if not -2**63 <= value < 2**63:
+        raise argparse.ArgumentTypeError(
+            f"{text} is outside the store's 64-bit integer range")
+    return value
+
+
 def _file_ticket_only(parser, args):
     if args.file_ticket is None:
         if args.update is not None and args.file_story is None:
@@ -379,7 +390,7 @@ def build_parser():
              "less the [patrol] ignore list, or one `nothing to do` line; "
              "reads only")
     parser.add_argument(
-        "--since", metavar="MS", type=int,
+        "--since", metavar="MS", type=epoch_ms,
         help="with --export-store: only runs started at or after this "
              "epoch-millisecond time, with their events and sessions")
     parser.add_argument("--json", action="store_true",

@@ -15,7 +15,7 @@ import store.read
 from holophyte.config.serve_settings import serve_config
 
 REDACTION_VERSION = 1
-TOKEN = r"(?:\"[^\"\n]*\"|'[^'\n]*'|[\w.~+/=-]+)"
+TOKEN = r"(?:\"(?:[^\"\\\n]|\\.)*\"?|'(?:[^'\\\n]|\\.)*'?|[\w.~+/=-]+)"
 SECRETS = (
     re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----(?:.*?"
                r"-----END [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|.*)", re.S),
@@ -89,8 +89,10 @@ class Redactor:
         yield from private
         for text in (value, "".join(masked)):
             for pattern in SECRETS:
-                for match in pattern.finditer(text):
+                match = pattern.search(text)
+                while match:
                     yield match.start(), match.end(), True
+                    match = pattern.search(text, match.start() + 1)
 
     def text(self, value):
         value = value.encode("utf-8", "replace").decode("utf-8")
