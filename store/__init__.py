@@ -629,6 +629,7 @@ from .tickets import (  # noqa: E402,F401 - re-export after `_json_list`
     register_project,
     render_state_graph,
     render_state_graph_section,
+    reopen_merged,
     set_admission,
     transition,
     walk_ticket,

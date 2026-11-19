@@ -4,6 +4,47 @@
   "description": "GET /history",
   "$ref": "#/$defs/History",
   "$defs": {
+    "Reverted": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "sha",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
     "HistoryRow": {
       "type": "object",
       "properties": {
@@ -201,6 +242,16 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reverted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reverted"
             },
             {
               "type": "null"

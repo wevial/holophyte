@@ -46,6 +46,8 @@ from store.run_reads import (  # noqa: F401
     park_facts,
     recent_failed_runs,
     recent_runs,
+    reverted_runs,
+    reverted_tickets,
     round_caps,
     run_chains,
     run_counts,

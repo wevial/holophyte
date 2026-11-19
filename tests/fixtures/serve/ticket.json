@@ -76,6 +76,7 @@
       "withdrawn": false
     }
   ],
+  "reverted": null,
   "criteria": [
     {
       "id": "C1",

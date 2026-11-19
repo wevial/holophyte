@@ -97,3 +97,9 @@ class PrecheckCriterion(TypedDict):
 class Precheck(TypedDict):
     sha: str
     criteria: list[PrecheckCriterion]
+
+
+class Reverted(TypedDict):
+    by: str | None
+    sha: str | None
+    reason: str | None

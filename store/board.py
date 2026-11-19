@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
+from holophyte.revert.checks import FILED_NOTE
 from holophyte.tickets import ticket_criteria, ticket_template
 from holophyte.tickets.ticket_depends import rewrite_depends
 
-from . import RevisionMoved
+from . import RevisionMoved, record_event
 from .notes import record_note
 from .operate import abort, record_intervention, release
 from .revisions import record_board_fields
@@ -18,7 +20,7 @@ from .stories import (
     abandon_story,
     story,
 )
-from .tickets import mirror_ticket, transition, walk_ticket
+from .tickets import mirror_ticket, reopen_merged, transition, walk_ticket
 from .writes import set_board_state
 
 _BOARD_STATES = {"backlog": "Backlog", "ready": "Ready", "canceled": "Canceled"}
@@ -149,19 +151,24 @@ def edit_ticket(conn, project_id, identifier, text, expected_revision,
 
 
 def move_ticket(conn, project_id, identifier, column, expected_revision,
-                author="cli", note=None, now=None):
+                author="cli", note=None, now=None, reverted_by=None):
     """A live run on a ticket moved to Backlog continues."""
     if column not in ("ready", "backlog"):
         raise ValueError(f"a ticket moves to ready or backlog, not {column!r}")
+    reverted = reverted_by is not None
+    if reverted and column != "backlog":
+        raise ValueError("a reverted ticket returns to backlog")
     if now is None:
         now = int(time.time() * 1000)
     repo = _repo_path(conn, project_id)
     with _transaction(conn):
         ticket_id, status, _run, text = _open_ticket(
-            conn, project_id, identifier, expected_revision)
+            conn, project_id, identifier, expected_revision, closed=reverted)
+        if reverted:
+            reopen_merged(conn, ticket_id)
         (current,) = conn.execute("SELECT boardColumn FROM tickets"
                                   " WHERE id = ?", (ticket_id,)).fetchone()
-        if current == column:
+        if current == column and not reverted:
             raise FilingRefused([f"{identifier} is already in {column} at"
                                  f" status {status}; nothing changed"])
         if column == "ready":
@@ -170,7 +177,157 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
                 raise FilingRefused(problems)
         return _record_column(conn, ticket_id, column, "move",
                               note or f"Moved to {_BOARD_STATES[column]}.",
-                              author, now)
+                              author, now,
+                              reverted and f"reverted:{reverted_by}")
+
+
+REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,64})")
+WHY = re.compile(r"(?:\*\*Why:\s*\*\*|Why:)\s*(.+)")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+TICKS = re.compile(r"`+")
+INLINE_OPENER = re.compile(r"`+|<!--")
+COMMENT_BLOCK = re.compile(r" {0,3}<!--")
+HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
+RULE = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*")
+SETEXT = re.compile(r" {0,3}(?:=+|-+)[ \t]*")
+
+
+def reopen_reverted(conn, run_id, native=True):
+    now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT r.outcome, r.mergeSha, t.projectId, t.linearIdentifier,"
+            " COALESCE((SELECT v.body FROM ticketRevisions v WHERE"
+            " v.ticketId = r.ticketId AND v.revision = r.revision), t.body)"
+            " FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " WHERE r.id = ?", (run_id,)).fetchone()
+        if row is None or row[0] != "merged":
+            return None
+        _, merge_sha, project_id, revert_key, text = row
+        sections = ticket_template.parse(text).sections
+        named = next(filter(None, map(
+            REVERTS.fullmatch, _live(sections.get("Summary", "")))), None)
+        if named is None:
+            return None
+        key, sha = named.groups()
+        original = conn.execute(
+            "SELECT t.revision, r.id FROM tickets t"
+            " JOIN runs r ON r.ticketId = t.id"
+            " WHERE t.projectId = ? AND t.linearIdentifier = ?"
+            " AND t.status = 'merged' AND r.outcome = 'merged'"
+            " AND r.mergeSha <> ''"
+            " AND (substr(?, 1, length(r.mergeSha)) = r.mergeSha"
+            "      OR substr(r.mergeSha, 1, length(?)) = ?)"
+            " ORDER BY r.id DESC LIMIT 1",
+            (project_id, key, sha, sha, sha)).fetchone()
+        if original is None:
+            return None
+        revision, merged_run = original
+        reason = (_filed_reason(conn, merged_run, revert_key)
+                  or _written_reason(key, sections))
+        why = f": {reason}" if reason else ""
+        note = f"Reverted by {revert_key}{why or '.'}"
+        if not native:
+            return key, note
+        record_event(conn, merged_run, "reverted",
+                     f"reverted by {revert_key} (merge sha:"
+                     f" {merge_sha or 'null'}){why}", now=now)
+    move_ticket(conn, project_id, key, "backlog", revision, author="factory",
+                note=note, now=now, reverted_by=run_id)
+    return key, note
+
+
+def _live(text):
+    live, paragraph = [], []
+    for line in _blocks(text) + [""]:
+        indent = len(line.expandtabs(4)) - len(line.lstrip(" \t"))
+        underline = paragraph and SETEXT.fullmatch(line)
+        if line.strip() and (paragraph or indent <= 3) and not underline \
+                and not HEADING.match(line) and not RULE.fullmatch(line):
+            paragraph.append(line)
+            continue
+        if not underline:
+            live += _prose(paragraph)
+        paragraph = []
+    return live
+
+
+def _blocks(text):
+    fence, comment, kept = None, False, []
+    for line in text.splitlines():
+        opened = FENCE.fullmatch(line)
+        if comment:
+            comment = "-->" not in line
+        elif fence is not None:
+            if opened and opened[1][0] == fence[0] \
+                    and len(opened[1]) >= len(fence) and not opened[2].strip():
+                fence = None
+        elif opened and not (opened[1][0] == "`" and "`" in opened[2]):
+            fence = opened[1]
+        elif COMMENT_BLOCK.match(line):
+            comment = "-->" not in line[line.index("<!--") + 4:]
+        else:
+            kept.append(line)
+            continue
+        kept.append("")
+    return kept
+
+
+def _prose(lines):
+    joined = "\n".join(lines)
+    code, comments = _inline_spans(joined)
+    live, at = [], 0
+    for line in lines:
+        start = at + len(line) - len(line.lstrip(" \t"))
+        if not any(a <= start < b for a, b in code):
+            live.append("".join(
+                char for i, char in enumerate(line, at)
+                if not any(a <= i < b for a, b in comments)).strip())
+        at += len(line) + 1
+    return live
+
+
+def _inline_spans(joined):
+    code, comments, at = [], [], 0
+    while opener := INLINE_OPENER.search(joined, at):
+        before = joined[:opener.start()]
+        escaped = (len(before) - len(before.rstrip("\\"))) % 2
+        if opener[0] == "<!--":
+            close = joined.find("-->", opener.end())
+            if escaped or close < 0:
+                at = opener.end()
+                continue
+            comments.append((opener.start(), close + 3))
+            at = close + 3
+            continue
+        ticks = len(opener[0]) - escaped
+        close = next((run for run in TICKS.finditer(joined, opener.end())
+                      if len(run[0]) == ticks), None)
+        if not ticks or close is None:
+            at = opener.end()
+            continue
+        code.append((opener.start() + escaped, close.end()))
+        at = close.end()
+    return code, comments
+
+
+def _filed_reason(conn, merged_run, revert_key):
+    for (filed,) in conn.execute(
+            "SELECT note FROM interventions WHERE runId = ?"
+            " AND \"action\" = 'revert' ORDER BY id DESC", (merged_run,)):
+        named = FILED_NOTE.match(filed or "")
+        if named and named[1] == revert_key:
+            return filed[named.end():]
+    return None
+
+
+def _written_reason(key, sections):
+    undo = re.compile(rf"Undo {re.escape(key)}'s merge: (.+)")
+    for section, pattern in (("Summary", undo), ("What / Why / How", WHY)):
+        for line in _live(sections.get(section, "")):
+            if written := pattern.fullmatch(line):
+                return written[1]
+    return None
 
 
 def cancel_ticket(conn, project_id, identifier, expected_revision, note,
@@ -313,7 +470,8 @@ def _parked_on_pull_request(conn, ticket_id):
         " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone() is not None
 
 
-def _open_ticket(conn, project_id, identifier, expected_revision):
+def _open_ticket(conn, project_id, identifier, expected_revision,
+                 closed=False):
     row = conn.execute(
         "SELECT id, revision, boardColumn, status, activeRunId, body"
         " FROM tickets WHERE projectId = ? AND linearIdentifier = ?",
@@ -323,6 +481,8 @@ def _open_ticket(conn, project_id, identifier, expected_revision):
     ticket_id, revision, column, status, run_id, text = row
     if revision != expected_revision:
         raise RevisionMoved(identifier, expected_revision, revision)
+    if closed:
+        return ticket_id, status, run_id, text or ""
     if column == "canceled":
         raise FilingRefused([f"{identifier} is canceled"])
     if status in ("merged", "abandoned"):
@@ -330,10 +490,11 @@ def _open_ticket(conn, project_id, identifier, expected_revision):
     return ticket_id, status, run_id, text or ""
 
 
-def _record_column(conn, ticket_id, column, kind, text, author, now):
+def _record_column(conn, ticket_id, column, kind, text, author, now,
+                   dedup_key=None):
     set_board_state(conn, ticket_id, _BOARD_STATES[column], column)
     revision = record_board_fields(conn, ticket_id, author, now)
-    record_note(conn, ticket_id, kind, text, f"{kind}:{revision}",
+    record_note(conn, ticket_id, kind, text, dedup_key or f"{kind}:{revision}",
                 author=author, now=now)
     return revision
 

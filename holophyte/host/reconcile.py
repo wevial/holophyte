@@ -17,6 +17,7 @@ from holophyte.config.config_tables import merge_config
 from holophyte.config.project import worktree_path
 from holophyte.host import ci_wake
 from holophyte.pr import pr_activity, pr_status
+from holophyte.revert.close import close_reverted
 from holophyte.review.findings import refresh_findings
 from holophyte.story import story_claim
 
@@ -544,6 +545,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
         store.set_question(conn, ticket.id, None)
         store.tickets.walk_ticket(conn, ticket.id, "merged")
     mirror_push(conn, ticket.id, provider)
+    close_reverted(conn, run_id, provider)
     from holophyte.babysit.queue_eject import unlabel_ended_run
     unlabel_ended_run(target, conn, run_id)
     cleanup = "no local branch recorded"
