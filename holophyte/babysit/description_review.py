@@ -18,18 +18,22 @@ LEAD = (r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
         r"[:\u2014-]?\s*)?(?:\*\*)?\s*")
 
 DESCRIPTION_SUBJECT_RE = re.compile(
-    LEAD + rf"(?:\[\s*(?:{'|'.join(FINDING_CATEGORIES)})\s*\]\s*(?:\*\*)?\s*)?"
+    r"(?!\s*>)" + LEAD
+    + rf"(?:\[\s*(?:{'|'.join(FINDING_CATEGORIES)})\s*\]\s*(?:\*\*)?\s*)?"
     r'(?:(?:p[0-3]|nit|blocker|major|minor)\b)?[^\w(\n]*[(\[]?[`*\s]*'
     r'path:\s*"PR description"', re.I)
 
 PR_TEXT_REVIEW_KIND = "pr_text_review"
 
 CONTINUATION_RE = re.compile(
-    r"^\s+(?!\s)(?!(?:[-*+\u2022>]|\d+[.)])\s|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker"
-    r"|major|minor|critical|high|medium|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]"
-    r"|\b[\w-]+\.[a-z]\w{0,5}\b|\w\(|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
+    r"^\s+(?!\s)(?:(?:[-*+\u2022]|\d+[.)])\s+(?!\s)|(?!(?:[-*+\u2022]|\d+[.)])\s))"
+    r"(?!>|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker|major|minor|critical|high|medium"
+    r"|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]|\b[\w-]+\.[a-z]\w{0,5}\b|\w\("
+    r"|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
 
-VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
+QUOTE_RE = re.compile(r"^\s*>")
+
+VERDICT_LINE_RE = re.compile(r"^\s*(?:\*\*|__)?VERDICT:.*$", re.M)
 
 HEADING_WORDS = (r"(?:(?:review|open|remaining|description)\s+)?"
                  r"(?:findings|blockers|issues|comments|notes|problems)"
@@ -104,8 +108,9 @@ def _blocker_items(verdict):
 def _items(lines):
     groups, after_blank = [], True
     for index, (line, fenced) in enumerate(zip(lines, closed_fence_flags(lines))):
-        joins = fenced or not line.strip() or not after_blank and (
-            CONTINUATION_RE.match(line) and not DESCRIPTION_SUBJECT_RE.match(line))
+        joins = (fenced or QUOTE_RE.match(line) or not line.strip()
+                 or not after_blank and CONTINUATION_RE.match(line)
+                 and not DESCRIPTION_SUBJECT_RE.match(line))
         if groups and joins:
             groups[-1].append(index)
         else:

@@ -121,8 +121,15 @@ class DescriptionFindingsTests(unittest.TestCase):
                     f"{TAGGED}\n{code}{TAIL}", "REQUEST_CHANGES", []), [])
 
     def test_a_wrapped_tagged_bullet_is_one_description_finding(self):
+        for wrapped in (WRAPPED, NESTED):
+            with self.subTest(wrapped=wrapped):
+                self.assertEqual(description_findings(
+                    f"{wrapped}{TAIL}", "REQUEST_CHANGES", []), [wrapped])
+
+    def test_a_bold_verdict_marker_is_not_a_blocker(self):
         self.assertEqual(description_findings(
-            f"{WRAPPED}{TAIL}", "REQUEST_CHANGES", []), [WRAPPED])
+            f"{TAGGED}\nCRITERION 1: met — tests/test_thing.py::test_it_works"
+            "\n**VERDICT: REQUEST_CHANGES**", "REQUEST_CHANGES", []), [TAGGED])
 
 
 DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
@@ -132,6 +139,12 @@ STANDALONE = 'P2: path: "PR description" — the Changes table misstates the men
 CATEGORIZED = ('- [p2] [correctness] path: "PR description" — the Changes table'
                ' misstates the menu')
 TABLE_FAULT = "the row menu drops the revert item"
+NESTED = ('- [P2] path: "PR description" — the Changes table misstates the menu:\n'
+          '  - it lists the revert item twice\n'
+          '  - it omits the undo glyph')
+LINKED = ('P2: path: "PR description" — it links [the guide](docs/guide.md) for'
+          ' the Changes table')
+TABLE_PATH = "console/src/app/components/TicketTable.tsx"
 TABLE = ('- [P1] path: "console/src/app/components/TicketTable.tsx" — the row'
          ' menu drops the revert item')
 PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
@@ -222,6 +235,11 @@ class MixedRoundTests(unittest.TestCase):
     def fix_note(self, goal):
         return goal.partition("\n\nFix note from")[2]
 
+    def fix_note_line(self, goal, path):
+        (line,) = [line for line in self.fix_note(goal).splitlines()
+                   if line.startswith(f"- Fix {path}")]
+        return line
+
     def refreshed_reviews(self):
         return [call.kwargs["review"] for call in self.refresh.call_args_list]
 
@@ -229,8 +247,8 @@ class MixedRoundTests(unittest.TestCase):
         self.review_fix(f"{TABLE}\n{described}{REJECT}")
 
         (goal,) = self.goals
-        self.assertIn(TABLE_FAULT, self.reviewer_findings(goal))
-        self.assertIn(TABLE_FAULT, self.fix_note(goal))
+        self.assertIn(TABLE, self.reviewer_findings(goal))
+        self.assertIn(TABLE_FAULT, self.fix_note_line(goal, TABLE_PATH))
         self.assertNotIn("PR description", goal)
         self.assertNotIn("Changes table", goal)
         self.assertEqual(self.refreshed_reviews(), [described])
@@ -244,6 +262,10 @@ class MixedRoundTests(unittest.TestCase):
 
     def test_an_unbulleted_description_finding_after_a_code_bullet_is_split(self):
         self.assert_split(STANDALONE)
+
+    def test_a_linked_description_finding_leaves_the_code_path(self):
+        self.assert_split(LINKED)
+        self.assertNotIn("docs/guide.md", self.goals[0])
 
     def test_a_categorized_description_finding_is_split(self):
         self.assert_split(CATEGORIZED)
@@ -285,6 +307,13 @@ class MixedRoundTests(unittest.TestCase):
         self.assertIn("sample reply", self.reviewer_findings(goal))
         self.assertEqual(self.refreshed_reviews(), [""])
 
+    def test_a_quoted_example_of_the_tag_stays_with_its_code_blocker(self):
+        self.review_fix(f'{TABLE}\n> - path: "PR description" — sample reply{REJECT}')
+
+        (goal,) = self.goals
+        self.assertIn("sample reply", self.reviewer_findings(goal))
+        self.assertEqual(self.refreshed_reviews(), [""])
+
     def test_an_all_code_round_sends_every_blocker_to_the_implementer(self):
         code = f"{TABLE}\n- [P2] path: \"holophyte/menu.py\" — revert is unguarded"
         self.assertEqual(description_findings(
@@ -293,9 +322,10 @@ class MixedRoundTests(unittest.TestCase):
         self.review_fix(f"{code}{REJECT}")
 
         (goal,) = self.goals
-        for fault in (TABLE_FAULT, "revert is unguarded"):
-            self.assertIn(fault, self.reviewer_findings(goal))
-            self.assertIn(fault, self.fix_note(goal))
+        self.assertIn(code, self.reviewer_findings(goal))
+        self.assertIn(TABLE_FAULT, self.fix_note_line(goal, TABLE_PATH))
+        self.assertIn("revert is unguarded",
+                      self.fix_note_line(goal, "holophyte/menu.py"))
         self.assertEqual(self.refreshed_reviews(), [""])
 
 

@@ -12,7 +12,7 @@ from holophyte.babysit.description_review import (
 )
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, sweep_config
-from holophyte.review.reply_parsing import UNPARSED_PATH
+from holophyte.review.reply_parsing import UNPARSED_PATH, parse_findings
 
 ROUND_KIND = "covering_fix_round"
 ALLOWANCE_KIND = "review_fix_allowance"
@@ -77,9 +77,12 @@ def _code_goal(conn, run_id, pull, ticket, verdict, label, note):
 def _code_findings(findings):
     code = []
     for finding in findings:
-        message = without_description_items(str(finding.get("message", "")))
-        if message.strip():
-            code.append(dict(finding, message=message))
+        message = str(finding.get("message", ""))
+        kept = without_description_items(message)
+        if kept == message:
+            code.append(finding)
+        elif kept.strip():
+            code.extend(parse_findings(kept))
     return code
 
 
