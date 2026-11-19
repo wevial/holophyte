@@ -299,6 +299,14 @@ class ConfiguredCommandTests(unittest.TestCase):
         self.assertEqual(self.launched("review", "wrapper exec --review"),
                          ["exec", "--review", "review the candidate"])
 
+    def test_a_non_codex_command_naming_its_own_schema_gets_the_line_brief(self):
+        command = "wrapper exec --output-schema wrapper.json"
+        self.assertEqual(self.launched("review", command),
+                         ["exec", "--output-schema", "wrapper.json",
+                          "review the candidate"])
+        self.assertEqual(reply_brief(brief_project(
+            self, {"reviewer": command}), "LINES"), "LINES")
+
 
 class DispatchedBriefTests(SweepTestCase):
     """Turns go through the real dispatcher: the container launch is
@@ -613,6 +621,23 @@ class ReplyFormatTests(unittest.TestCase):
                           for finding in parse_findings(reply)],
                          [("src/app.py", 3)])
         self.assertEqual(self.formats(), [{"format": "markdown", "round": 2}])
+
+    def test_a_retry_asks_each_route_for_the_reply_its_brief_describes(self):
+        prompts = []
+
+        def run_agent(target, role, prompt, *args, **kwargs):
+            prompts.append(prompt)
+            return AgentOutput("I could not decide.", "codex exec")
+        goal = "Review.\n" + reply_brief(brief_project(self, {}), "LINES")
+        _review_reply(None, goal, "wt", "base", "sha", self.conn, self.run,
+                      run_agent=run_agent, review_round=2)
+        retry = prompts[1]
+        self.assertEqual(str(retry), retry.schema_text)
+        self.assertIn("one JSON object", retry.schema_text)
+        self.assertNotIn("VERDICT:", retry.schema_text)
+        self.assertTrue(retry.line_text.startswith("Review.\nLINES"))
+        self.assertTrue(retry.line_text.endswith(
+            "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, and nothing after it."))
 
     def test_a_review_briefed_in_lines_of_its_own_records_no_format(self):
         reply, decision, _ = self.review(MARKDOWN, prompt="Review. End with "

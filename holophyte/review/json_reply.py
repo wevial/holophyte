@@ -54,6 +54,15 @@ REPLY_BRIEF = (
     "verdict line or a refuted-findings section, give it as that field "
     "instead. With REQUEST_CHANGES, list only concrete blockers in findings.")
 
+LINE_RETRY = ("\n\nYour previous reply had no clean terminal verdict. "
+              "Your reply must end with exactly one line, "
+              "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, "
+              "and nothing after it.")
+
+SCHEMA_RETRY = ("\n\nYour previous reply had no clean terminal verdict. "
+                "Your reply must be one JSON object that the output schema "
+                "accepts, with verdict APPROVE or REQUEST_CHANGES.")
+
 
 class SchemaBrief(str):
     def __new__(cls, text, line_text, schema_text):
@@ -69,6 +78,17 @@ class SchemaBrief(str):
     def __radd__(self, head):
         return SchemaBrief(head + str(self), head + self.line_text,
                            head + self.schema_text)
+
+    def extended(self, line_more, schema_more):
+        more = schema_more if str(self) == self.schema_text else line_more
+        return SchemaBrief(str(self) + more, self.line_text + line_more,
+                           self.schema_text + schema_more)
+
+
+def retry_brief(prompt):
+    if isinstance(prompt, SchemaBrief):
+        return prompt.extended(LINE_RETRY, SCHEMA_RETRY)
+    return prompt + LINE_RETRY
 
 
 def reply_brief(project, line_format, schema_tail=""):
@@ -89,7 +109,7 @@ def route_brief(project, goal, command=None):
 def schema_command(command):
     from holophyte.agents.harness import Codex
 
-    return "--output-schema" in Codex.schemed_command(shlex.split(command))
+    return Codex.exec_command(shlex.split(command)) is not None
 
 
 def schema_enforced(project):

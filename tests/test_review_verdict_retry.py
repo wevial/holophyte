@@ -22,7 +22,7 @@ class ReviewVerdictRetryTests(LoopFixture):
         reviews = [t for t in fake.turns if t.role == "review"]
         self.assertEqual(len(reviews), 2)
         self.assertTrue(reviews[1].goal.startswith(reviews[0].goal))
-        self.assertIn("nothing after it", reviews[1].goal)
+        self.assertIn("no clean terminal verdict", reviews[1].goal)
         ((verdict, findings),) = self.read(
             "SELECT verdict, findings FROM reviewRounds")
         self.assertEqual(verdict, "pass")

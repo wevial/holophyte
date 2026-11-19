@@ -164,13 +164,21 @@ class Codex(Adapter):
 
     @staticmethod
     def schemed_command(argv):
-        if not argv or Path(argv[0]).name != Codex.name:
+        found = Codex.exec_command(argv)
+        if found is None:
             return argv
+        kept, at = found
+        return [*kept[:at + 1], *Codex.reply_schema("reviewer"), *kept[at + 1:]]
+
+    @staticmethod
+    def exec_command(argv):
+        if not argv or Path(argv[0]).name != Codex.name:
+            return None
         kept = Codex.unschemed(argv)
         at = Codex.subcommand_at(kept)
         if at is None or kept[at] not in ("exec", "e"):
-            return argv
-        return [*kept[:at + 1], *Codex.reply_schema("reviewer"), *kept[at + 1:]]
+            return None
+        return kept, at
 
     @staticmethod
     def subcommand_at(argv):
