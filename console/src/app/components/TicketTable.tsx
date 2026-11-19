@@ -22,8 +22,8 @@ const GRID = "grid grid-cols-[132px_96px_minmax(0,1fr)_220px_40px] items-center 
 
 const columnTone = (column: ColumnId): Tone => (column === "needs_you" ? "need" : STATES[COLUMN_HEADS[column].state].tone);
 
-/** With its ⋯ menu open a Done row names its project beside the title and
- *  ends on its merge time, its estimate dropped. */
+/** With its ⋯ menu open a Done row shows its glyph alone, names its project
+ *  beside the title and ends on its muted merge time, its estimate dropped. */
 function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
   card: TicketCard; column: ColumnId; now: number; open: boolean; menuOpen: boolean; onOpen: (card: TicketCard) => void;
 }) {
@@ -50,7 +50,7 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
     >
       <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${open ? "text-ink" : TONE_TEXT[tone]}`}>
         <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} />
-        {COLUMN_HEADS[column].label}
+        <span className={merged ? "sr-only" : undefined}>{COLUMN_HEADS[column].label}</span>
       </span>
       <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>
       <span
@@ -67,7 +67,7 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
           </span>
         )}
       </span>
-      <span data-cell="stage" className={`truncate text-[12.5px] max-[820px]:hidden ${merged ? "col-span-2 text-right" : ""} ${open ? "text-ink" : TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
+      <span data-cell="stage" className={`truncate text-[12.5px] ${merged ? "col-span-2 text-right text-ink-3 max-[820px]:col-span-1" : `max-[820px]:hidden ${open ? "text-ink" : TONE_TEXT[STATES[cardState(card)].tone]}`}`}>{cardWord(card, now)}</span>
       {!merged && (
         <span data-cell="estimate" className={`text-right font-mono text-[12px] tabular-nums max-[820px]:hidden ${open ? "text-ink-2" : "text-ink-3"}`}>
           {card.timeBoxMs != null && (

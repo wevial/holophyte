@@ -106,6 +106,25 @@ async function checkTarget(on: RevertTarget, fetch: Fetch): Promise<Checked> {
 /** Every row's previews share one count, so only the newest asked opens. */
 let newestPreview = 0;
 
+const holdsModal = (node: Node) =>
+  node instanceof Element && (node.matches('[aria-modal="true"]') || node.querySelector('[aria-modal="true"]') != null);
+
+/** Whether a modal opened while `work` ran, even one closed again by its end. */
+async function watchModals<T>(work: () => Promise<T>): Promise<{ value: T; interrupted: boolean }> {
+  let interrupted = document.querySelector('[aria-modal="true"]') != null;
+  const observer = new MutationObserver((records) => {
+    if (records.some((record) => [...record.addedNodes].some(holdsModal))) interrupted = true;
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  try {
+    const value = await work();
+    if (observer.takeRecords().some((record) => [...record.addedNodes].some(holdsModal))) interrupted = true;
+    return { value, interrupted };
+  } finally {
+    observer.disconnect();
+  }
+}
+
 function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" | "failed" }> }) {
   return (
     <div data-revert-refusal className="mt-3 rounded-[6px] bg-[color-mix(in_srgb,var(--bad)_10%,var(--raised))] px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--bad)_41.5%,var(--raised))]">
@@ -226,10 +245,13 @@ export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): {
     setFiled(null);
     setPreviewing(true);
     const asked = ++newestPreview;
-    const checked = await checkTarget(on, deps.fetch);
-    const answer = "refusal" in checked ? checked.refusal : await previewRevert(on.base, on.ticket, deps.fetch);
+    const { value, interrupted } = await watchModals(async () => {
+      const checked = await checkTarget(on, deps.fetch);
+      return { checked, answer: "refusal" in checked ? checked.refusal : await previewRevert(on.base, on.ticket, deps.fetch) };
+    });
+    const { checked, answer } = value;
     setPreviewing(false);
-    if (asked !== newestPreview || document.querySelector('[aria-modal="true"]') != null) return;
+    if (asked !== newestPreview || interrupted || document.querySelector('[aria-modal="true"]') != null) return;
     setOpen({ target: on, sha: "sha" in checked ? checked.sha : null, answer, opener });
   };
   const close = () => {
