@@ -293,7 +293,9 @@ export function useTicketBoard(): TicketBoard {
       cards.push(card);
     }
   }
+  const listed = new Set(cards.map((card) => card.id));
   for (const row of merged) {
+    if (listed.has(cardId(row.daemon ?? "", row.ticket))) continue;
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
       park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,

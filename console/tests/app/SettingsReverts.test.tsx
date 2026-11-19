@@ -48,6 +48,7 @@ test("General shows a Reverts switch, off with no [revert] table, and a Never re
   expect(reverts.getAttribute("aria-checked")).toBe("false");
   const never = within(row("revert.refuse_paths")).getByRole("textbox", { name: "Never revert" }) as HTMLTextAreaElement;
   expect(never.value).toBe("**/migrations/**\n**/migrate/**\n**/*.sql\n**/schema.prisma");
+  expect(never.getAttribute("rows")).toBe("4");
 });
 
 test("saving a turned-on Reverts switch and an edited Never revert list writes revert.enabled and revert.refuse_paths", async () => {

@@ -128,7 +128,8 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
         </Link>
       </span>
       <span data-title className="flex min-w-0 items-baseline gap-2 max-[760px]:col-span-3 max-[760px]:col-start-2 max-[760px]:mb-1">
-        <span className="truncate font-read text-[14px] font-medium leading-[1.3]"><TitleText>{row.title}</TitleText></span>
+        <span className={`truncate font-read text-[14px] font-medium leading-[1.3] ${row.reverted == null ? "" : "text-ink-2"}`}><TitleText>{row.title}</TitleText></span>
+        {row.reverted != null && <span data-reverted className="shrink-0 font-mono text-[11.5px] text-ink-3 min-[760px]:@min-[600px]:hidden">reverted</span>}
         {row.resumed_as != null && <span className="shrink-0 font-mono text-[11.5px] text-ink-3"><ResumedAs row={row} /></span>}
       </span>
       <span className={`${WIDE} flex min-w-0 items-center gap-2 font-sans text-[13px] text-ink-2 min-[760px]:@max-[780px]:hidden`}>

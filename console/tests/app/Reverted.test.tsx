@@ -6,7 +6,7 @@ import { writeView } from "../../src/app/components/ViewToggle";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, settle } from "../harness";
-import { DEMO, fleet, MINUTE, NOW, SERVE } from "./needsFleet";
+import { DEMO, fleet, merged, MINUTE, NOW, SERVE } from "./needsFleet";
 
 const servedRun = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
@@ -34,9 +34,9 @@ const board = (state: Board["columns"][number]["state"]): Board => ({
 
 /** DEMO answers its history with merged runs 7 (reverted by `REVERTED`)
  *  and 8 (not reverted), run 7's page, DEMO-7's ticket, and a board listing
- *  DEMO-7, reverted, in `column`. */
+ *  DEMO-7, reverted, in `column`; run 7's merge is shipped today. */
 function daemon(column: Board["columns"][number]["state"] = "backlog") {
-  const polls = fleet({ items: [] }, { items: [] });
+  const polls = fleet({ items: [], shipped: [merged(7, "DEMO-7", ENDED)] }, { items: [] });
   return async (url: string) => {
     if (url === `${DEMO}/runs/7`) return Response.json(runSeven);
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticketSeven);
@@ -81,6 +81,10 @@ test("on Runs a reverted run's row shows the undo glyph and the word reverted, a
   const reverted = document.querySelector<HTMLElement>('li[data-run="7"]')!;
   expect(within(reverted).getByRole("img", { name: "merged 11:30 · reverted by HOLO-9" }).getAttribute("data-state")).toBe("reverted");
   expect(reverted.querySelector("[data-pr]")?.textContent).toBe("reverted");
+  const narrow = reverted.querySelector("[data-title] [data-reverted]")!;
+  expect(narrow.textContent).toBe("reverted");
+  expect(narrow.classList.contains("min-[760px]:@min-[600px]:hidden")).toBe(true);
+  expect(reverted.querySelector("[data-title] > span")!.classList.contains("text-ink-2")).toBe(true);
   const kept = document.querySelector<HTMLElement>('li[data-run="8"]')!;
   expect(kept.querySelector('[data-state="merged"]')).not.toBeNull();
   expect(kept.querySelector('[data-state="reverted"]')).toBeNull();
@@ -93,6 +97,7 @@ test("on Tickets a reverted ticket's row reads reverted · Backlog beside the un
   const status = document.querySelector<HTMLElement>('[data-row][data-column="backlog"] [data-cell="status"]')!;
   expect(status.textContent).toBe("reverted · Backlog");
   expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
+  expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["backlog"]);
 });
 
 test("a reverted run's page says it merged then was reverted by the revert ticket, linked, with the reason", async () => {

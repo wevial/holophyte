@@ -61,6 +61,7 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
   const [view, setView] = useState(readPathView);
   const showTree = treeable && tree != null && view === "tree" && Array.isArray(value);
   const changed = draft !== undefined;
+  const listText = lines ?? (Array.isArray(value) ? value.join("\n") : "");
   const seat = field.table === "agents" && ["implementer", "reviewer", "adjudicator"].includes(field.key) ? field.key : null;
   const route = seat ? status?.active_routes?.[seat] : undefined;
   const label = seat ? status?.route_labels?.[seat] : undefined;
@@ -110,7 +111,7 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
           </div> : field.kind === "boolean" ? <button type="button" role="switch" aria-label={field.label} aria-checked={value === true} disabled={disabled} onClick={() => onChange(!value, original)}
             className="switch"><span aria-hidden="true" /></button>
             : showTree ? <PathTree tree={tree} value={value} label={field.label} onChange={(next) => onChange(next, original)} />
-            : field.kind === "lines" ? <textarea aria-label={field.label} rows={3} value={lines ?? (Array.isArray(value) ? value.join("\n") : "")} onBlur={() => setLines(null)} onChange={(event) => {
+            : field.kind === "lines" ? <textarea aria-label={field.label} rows={Math.min(8, Math.max(3, listText.split("\n").length))} value={listText} onBlur={() => setLines(null)} onChange={(event) => {
               setLines(event.target.value);
               onChange(event.target.value.split("\n").filter((line) => line.trim() !== ""), original);
             }} className={FIELD_CLASS} />
