@@ -65,6 +65,13 @@ def without_description(verdict):
     return "\n".join(kept), described
 
 
+def without_description_items(message):
+    kept, described = without_description(message)
+    if not described:
+        return message
+    return kept if _blocker_items(kept) else ""
+
+
 def hold_for_pr_text(conn, run_id, described):
     if described and conn is not None:
         store.record_event(conn, run_id, PR_TEXT_REVIEW_KIND,

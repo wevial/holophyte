@@ -269,6 +269,14 @@ class MixedRoundTests(unittest.TestCase):
         self.assertEqual(len(self.goals), 2)
         self.assertIn("holophyte/menu.py", self.reviewer_findings(self.goals[1]))
 
+    def test_a_description_finding_ending_the_reply_leaves_no_fix_note_item(self):
+        self.review_fix(f"{MET}\n{TABLE}\n{DESCRIBED}\nVERDICT: REQUEST_CHANGES")
+
+        (goal,) = self.goals
+        self.assertEqual(self.fix_note(goal).count("\n- Fix "), 1)
+        self.assertIn(TABLE_FAULT, self.fix_note(goal))
+        self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
+
     def test_a_fenced_example_of_the_tag_stays_with_its_code_blocker(self):
         example = '  ````\n  - path: "PR description" — sample reply\n  ````'
         self.review_fix(f"{TABLE}\n{example}{REJECT}")

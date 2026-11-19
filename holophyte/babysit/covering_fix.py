@@ -8,6 +8,7 @@ from holophyte.babysit.description_review import (
     description_findings,
     hold_for_pr_text,
     without_description,
+    without_description_items,
 )
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, sweep_config
@@ -76,7 +77,7 @@ def _code_goal(conn, run_id, pull, ticket, verdict, label, note):
 def _code_findings(findings):
     code = []
     for finding in findings:
-        message = without_description(str(finding.get("message", "")))[0]
+        message = without_description_items(str(finding.get("message", "")))
         if message.strip():
             code.append(dict(finding, message=message))
     return code
