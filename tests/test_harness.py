@@ -235,7 +235,7 @@ class CodexTableTests(TableReviewCase):
 
     def dispatch(self, role, goal, review_round=1):
         if role == "review":
-            goal = holophyte.review.json_reply.SchemaBrief(goal, goal)
+            goal = holophyte.review.json_reply.SchemaBrief(goal, goal, goal)
         return super().dispatch(role, goal, review_round)
 
     def assert_fresh_turn_in_a_candidate_checkout(self, call, goal,

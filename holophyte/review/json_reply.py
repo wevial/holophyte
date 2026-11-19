@@ -56,10 +56,10 @@ REPLY_BRIEF = (
 
 
 class SchemaBrief(str):
-    def __new__(cls, text, line_text, schema_text=None):
+    def __new__(cls, text, line_text, schema_text):
         brief = super().__new__(cls, text)
         brief.line_text = line_text
-        brief.schema_text = text if schema_text is None else schema_text
+        brief.schema_text = schema_text
         return brief
 
     def __add__(self, more):
