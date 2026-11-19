@@ -18,11 +18,14 @@ const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "do
 
 const byKey = (a: TicketCard, b: TicketCard) => a.key.localeCompare(b.key, undefined, { numeric: true });
 
-const GRID = "grid grid-cols-[132px_96px_minmax(0,1fr)_220px_40px] items-center gap-4 pl-4 pr-14 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
+const GRID_FRAME = "grid items-center gap-4 pl-4 pr-14 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
+const GRID = `${GRID_FRAME} grid-cols-[132px_96px_minmax(0,1fr)_220px_40px]`;
+const GLYPH_GRID = `${GRID_FRAME} grid-cols-[auto_96px_minmax(0,1fr)_220px_40px]`;
 
 const columnTone = (column: ColumnId): Tone => (column === "needs_you" ? "need" : STATES[COLUMN_HEADS[column].state].tone);
 
-/** With its ⋯ menu open a Done row shows its glyph alone, names its project
+/** With its ⋯ menu open a Done row shows its glyph alone, its key close
+ *  beside it, names its project
  *  beside the title and ends on its muted merge time, its estimate dropped. */
 function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
   card: TicketCard; column: ColumnId; now: number; open: boolean; menuOpen: boolean; onOpen: (card: TicketCard) => void;
@@ -46,9 +49,9 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
         event.preventDefault();
         onOpen(card);
       }}
-      className={`${GRID} min-h-[42px] py-2 [:root[data-density=compact]_&]:min-h-[34px]! [:root[data-density=compact]_&]:py-1.5! font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
+      className={`${merged ? GLYPH_GRID : GRID} min-h-[42px] py-2 [:root[data-density=compact]_&]:min-h-[34px]! [:root[data-density=compact]_&]:py-1.5! font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
     >
-      <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${open ? "text-ink" : TONE_TEXT[tone]}`}>
+      <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${merged ? "-mr-2 max-[820px]:mr-0" : ""} ${open ? "text-ink" : TONE_TEXT[tone]}`}>
         <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} />
         <span className={merged ? "sr-only" : undefined}>{COLUMN_HEADS[column].label}</span>
       </span>
