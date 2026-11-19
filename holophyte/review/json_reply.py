@@ -56,29 +56,34 @@ REPLY_BRIEF = (
 
 
 class SchemaBrief(str):
-    def __new__(cls, text, line_text):
+    def __new__(cls, text, line_text, schema_text=None):
         brief = super().__new__(cls, text)
         brief.line_text = line_text
+        brief.schema_text = text if schema_text is None else schema_text
         return brief
 
     def __add__(self, more):
-        return SchemaBrief(str(self) + more, self.line_text + more)
+        return SchemaBrief(str(self) + more, self.line_text + more,
+                           self.schema_text + more)
 
     def __radd__(self, head):
-        return SchemaBrief(head + str(self), head + self.line_text)
+        return SchemaBrief(head + str(self), head + self.line_text,
+                           head + self.schema_text)
 
 
 def reply_brief(project, line_format, schema_tail=""):
-    if not schema_enforced(project):
-        return line_format
-    return SchemaBrief(REPLY_BRIEF + schema_tail, line_format)
+    schema_text = REPLY_BRIEF + schema_tail
+    text = schema_text if schema_enforced(project) else line_format
+    return SchemaBrief(text, line_format, schema_text)
 
 
 def route_brief(project, goal, command=None):
     if not isinstance(goal, SchemaBrief):
         return goal
     schemed = schema_command(command) if command else schema_enforced(project)
-    return goal if schemed else goal.line_text
+    if not schemed:
+        return goal.line_text
+    return SchemaBrief(goal.schema_text, goal.line_text, goal.schema_text)
 
 
 def schema_command(command):

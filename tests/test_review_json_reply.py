@@ -351,6 +351,43 @@ class DispatchedBriefTests(SweepTestCase):
         self.assertEqual(launched, [(f"Review.\n{REPLY_BRIEF}", True)])
         self.assertEqual(self.sent(), ["Review.\nLINES"])
 
+    def recording_cli(self, name, reply):
+        cli = self.root / f"{name}-bin" / name
+        cli.parent.mkdir()
+        cli.write_text(
+            f"#!{sys.executable}\nimport json, subprocess, sys\n"
+            f"with open({str(self.root / name)!r}, 'a') as f:\n"
+            " f.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+            f"if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n"
+            " print('ready', subprocess.check_output(\n"
+            "     ['git', 'rev-parse', 'HEAD'], text=True).strip())\n"
+            f"else:\n print({reply!r})\n")
+        cli.chmod(0o755)
+        return cli
+
+    def received(self, name):
+        return [argv for argv in map(json.loads, (
+            self.root / name).read_text().splitlines())
+                if argv[-1] != probes.REVIEW_PROBE_GOAL]
+
+    def test_a_codex_fallback_after_a_markdown_route_gets_the_schema(self):
+        claude = self.recording_cli("claude", json.dumps(
+            {"type": "result", "is_error": True,
+             "result": "You've hit your limit \u00b7 resets tomorrow"}))
+        codex = self.recording_cli("codex", "VERDICT: APPROVE")
+        self.configure(f'[agents]\nreviewer = "{claude} -p --output-format json"\n'
+                       f'reviewer_fallback = "{codex} exec -m gpt-6-astra"\n')
+        goal = "Review.\n" + reply_brief(self.project, "LINES")
+        with contextlib.redirect_stdout(io.StringIO()):
+            roles.agent(self.project, "review", goal, self.target,
+                        base_sha=self.sha, candidate_sha=self.sha,
+                        conn=self.conn, run_id=self.a_run())
+        [[*_, sent]] = self.received("claude")
+        self.assertEqual(sent, "Review.\nLINES")
+        [argv] = self.received("codex")
+        self.assertEqual(named_schema(argv), json.loads(SCHEMA_FILE.read_text()))
+        self.assertEqual(argv[-1], f"Review.\n{REPLY_BRIEF}")
+
     def test_a_refusal_fallback_command_gets_the_line_brief(self):
         goal = "Review.\n" + reply_brief(self.project, "LINES")
         roles._agent(self.project, "review", goal, self.target,
@@ -556,10 +593,12 @@ class ReplyFormatTests(unittest.TestCase):
                                      verification_commands=["true"])
         self.run = store.claim(self.conn, project, ticket)
 
-    def review(self, answer):
+    def review(self, answer, prompt=None):
         def run_agent(*args, **kwargs):
             return AgentOutput(answer, "codex exec")
-        return _review_reply(None, "review", "wt", "base", "sha", self.conn,
+        if prompt is None:
+            prompt = "Review.\n" + reply_brief(brief_project(self, {}), "LINES")
+        return _review_reply(None, prompt, "wt", "base", "sha", self.conn,
                              self.run, run_agent=run_agent, review_round=2)
 
     def formats(self):
@@ -574,6 +613,12 @@ class ReplyFormatTests(unittest.TestCase):
                           for finding in parse_findings(reply)],
                          [("src/app.py", 3)])
         self.assertEqual(self.formats(), [{"format": "markdown", "round": 2}])
+
+    def test_a_review_briefed_in_lines_of_its_own_records_no_format(self):
+        reply, decision, _ = self.review(MARKDOWN, prompt="Review. End with "
+                                         "VERDICT: APPROVE or REQUEST_CHANGES.")
+        self.assertEqual((reply, decision), (MARKDOWN, "REQUEST_CHANGES"))
+        self.assertEqual(self.formats(), [])
 
     def test_a_schema_valid_reply_is_rendered_and_recorded_as_json(self):
         for trailer in ("", "\ntokens used\n1,234\n"):
