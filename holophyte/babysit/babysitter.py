@@ -18,6 +18,7 @@ from holophyte.babysit.description_review import (
     TAG_BRIEF,
     fix_summary,
     pending_text_review,
+    refreshed_or_held,
     rereviewed,
 )
 from holophyte.babysit.main_side import verify_detached_main
@@ -567,9 +568,8 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
                f"Reviewer verdict:\n{verdict}", provider)
         print(f"[holo2] the fix at {sha[:12]} is approved")
         answered = fix_summary(answered, wt, reviewed, sha)
-        refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
-                        branch, ticket, beat_s, wt, budget_min, pull, answered, sha=sha,
-                        review=pending_text_review(conn, run_id))
+        refreshed_or_held(project, conn, run_id, provider, task_id, branch, wt, sha,
+                          beat_s, pull, ticket, budget_min, answered)
         set_phase(conn, run_id, "merge_gate", f"babysitting {pull.url}")
         return sha
     ledger(conn, run_id, task_id, "round",

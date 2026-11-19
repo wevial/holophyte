@@ -136,6 +136,21 @@ def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
     return rewrote
 
 
+def refreshed_or_held(project, conn, run_id, provider, task_id, branch, wt, sha,
+                      beat_s, pull, ticket, budget_min, answered):
+    from holophyte.pr.pullrequest import _park_on_pr, refresh_pr_text
+
+    review = pending_text_review(conn, run_id)
+    if refresh_pr_text(project, conn, run_id, task_id, ticket.splitlines()[0],
+                       branch, ticket, beat_s, wt, budget_min, pull, answered,
+                       sha=sha, review=review) or not review:
+        return
+    _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
+                "the fix is approved, but the PR-text writer refused to rewrite"
+                " the description, so these review findings about it are"
+                f" undelivered:\n{review}", ())
+
+
 def fix_summary(answered, wt, reviewed, sha):
     if answered:
         return answered

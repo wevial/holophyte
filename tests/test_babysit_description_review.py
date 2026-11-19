@@ -18,11 +18,13 @@ import holophyte.loop.implement  # noqa: E402
 import holophyte.loop.review_round  # noqa: E402
 import holophyte.pr.pullrequest  # noqa: E402
 import store  # noqa: E402
+import store.read  # noqa: E402
 import store.tickets  # noqa: E402
 from holophyte.babysit import babysitter  # noqa: E402
 from holophyte.babysit.description_review import (  # noqa: E402
     description_findings,
 )
+from holophyte.loop.gates import MergeParked  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
 from holophyte.pr import github  # noqa: E402
 from holophyte.pr.github import PullRequest  # noqa: E402
@@ -200,7 +202,7 @@ class MixedRoundTests(unittest.TestCase):
         self.git("commit", "-qm", message)
         return self.git("rev-parse", "HEAD")
 
-    def review_fix(self, *rejections, fix_note=None):
+    def review_fix(self, *rejections, fix_note=None, refreshed=True):
         replies, self.goals = [*rejections, APPROVE], []
 
         def reviewer(target, role, goal, *args, **kwargs):
@@ -218,7 +220,8 @@ class MixedRoundTests(unittest.TestCase):
               patch.object(github, "rest", return_value={"body": "Menu."}),
               patch.object(github, "edit_pr_body"),
               patch.object(holophyte.pr.pullrequest,
-                           "refresh_pr_text") as self.refresh,
+                           "refresh_pr_text",
+                           return_value=refreshed) as self.refresh,
               patch.object(babysitter, "_post")):
             babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
@@ -333,6 +336,22 @@ class MixedRoundTests(unittest.TestCase):
         self.assertIn("revert is unguarded",
                       self.fix_note_line(goal, "holophyte/menu.py"))
         self.assertEqual(self.refreshed_reviews(), [""])
+
+    def phase(self):
+        return store.read.run_snapshot(self.conn, self.run_id).phase
+
+    def test_a_refused_rewrite_with_pending_findings_holds_the_approved_fix(self):
+        with self.assertRaises(MergeParked) as parked:
+            self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}", refreshed=False)
+
+        self.assertIn("refused to rewrite the description", str(parked.exception))
+        self.assertEqual(self.phase(), "awaiting_merge_approval")
+        self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
+
+    def test_a_refused_rewrite_with_nothing_pending_still_reaches_the_gate(self):
+        self.review_fix(f"{TABLE}{REJECT}", refreshed=False)
+
+        self.assertEqual(self.phase(), "merge_gate")
 
 
 if __name__ == "__main__":
