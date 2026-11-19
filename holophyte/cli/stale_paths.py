@@ -4,6 +4,7 @@ import functools
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 
 from holophyte.config.config_tables import merge_config
@@ -37,6 +38,20 @@ def _refuse_pattern(entry):
 def _refuse_match(entry, path):
     pattern = _refuse_pattern(entry)
     return pattern is not None and pattern.fullmatch(path)
+
+
+MAX_BACKTRACKING_STARS = 3
+MATCH_BUDGET_S = 2.0
+
+
+class MatchBudgetSpent(Exception):
+    pass
+
+
+def backtracking_stars(glob):
+    tail_free = glob.removesuffix("/**")
+    return sum(1 for run in re.findall(r"\\.|\*+", tail_free)
+               if run.startswith("*"))
 
 
 PATH_MATCHERS = {
@@ -106,9 +121,18 @@ def path_matches(project, key, entries):
     if main is None:
         return None
     _, ref, sha, files = main
+    deadline = time.monotonic() + MATCH_BUDGET_S
+
+    def count(entry):
+        found = 0
+        for path in files:
+            if time.monotonic() > deadline:
+                raise MatchBudgetSpent(
+                    f"counting the entries' matches ran past {MATCH_BUDGET_S:g}s")
+            found += bool(match(entry, path))
+        return found
     return {"ref": ref, "sha": sha[:12],
-            "matches": [{"entry": entry,
-                         "count": sum(1 for path in files if match(entry, path))}
+            "matches": [{"entry": entry, "count": count(entry)}
                         for entry in entries]}
 
 

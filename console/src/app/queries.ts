@@ -55,6 +55,7 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
+import type { ContractBodies } from "./fleet";
 import { PollDepsContext, scopedHosts } from "./scope";
 import { mergedRows, newestFirst, shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow, ShippedWireRow } from "../lib/types";
@@ -498,6 +499,46 @@ async function shippedSince(fetch: Fetch, base: string, since: number): Promise<
     if (page.next_before == null || oldest == null || oldest.ended_ms < since) return rows;
     before = page.next_before;
   }
+}
+
+/** `base`'s merges that are their ticket's latest and were reverted, paged
+ *  back to the ledger's end; null when the daemon lacks the route. */
+async function revertedLatest(fetch: Fetch, base: string): Promise<ShippedWireRow[] | null> {
+  const seen = new Set<string>();
+  const rows: ShippedWireRow[] = [];
+  let before: number | undefined;
+  for (;;) {
+    const page = await routeOrNone(fetch, shippedUrl(base, WEEK_PAGE, before), shippedSchema);
+    if (page == null) return before == null ? null : rows;
+    for (const row of page.rows) {
+      if (!seen.has(row.ticket) && row.reverted != null) rows.push(row);
+      seen.add(row.ticket);
+    }
+    if (page.next_before == null || page.rows.length === 0) return rows;
+    before = page.next_before;
+  }
+}
+
+const REVERTED_INTERVAL_MS = 5 * 60_000;
+
+/** Every host reporting `reverts` on: its reverted merges that are their
+ *  ticket's latest, from any page of `/shipped`; a host whose read failed
+ *  adds none. */
+export function useRevertedMerges(hosts: HostRecord<ContractBodies>[], fetch: Fetch): ShippedRow[] {
+  const asked = hosts.filter((host) => host.status?.reverts === true);
+  const path = shippedUrl("", WEEK_PAGE);
+  const results = useQueries({
+    queries: asked.map((host) => ({
+      queryKey: [...routeKey(host.base, path), "reverted"],
+      queryFn: () => revertedLatest(fetch, host.base),
+      refetchInterval: REVERTED_INTERVAL_MS,
+      staleTime: REVERTED_INTERVAL_MS,
+    })),
+  });
+  return asked.flatMap((host, index) => {
+    const data = results[index]?.data;
+    return data ? mergedRows(tagRows(host, data)) : [];
+  });
 }
 
 /** Every status-answering host's merges since local Monday's midnight

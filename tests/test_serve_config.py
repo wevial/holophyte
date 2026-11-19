@@ -959,6 +959,22 @@ class PathMatchesTests(TrackedMainTestCase):
         self.assertEqual([item["count"] for item in body["matches"]],
                          [3, 1, 0, 0])
 
+    def test_a_refuse_glob_past_three_backtracking_wildcards_is_400(self):
+        code, _, body = self.counts(
+            "revert.refuse_paths", "**/console/**/*.ts", "*a*a*a*.ts")
+        self.assertEqual(code, 400)
+        self.assertIn("at most 3", body["error"])
+        code, _, body = self.counts(
+            "revert.refuse_paths", "**/console/**/*.ts", "console/**")
+        self.assertEqual(code, 200)
+        self.assertEqual([item["count"] for item in body["matches"]], [3, 3])
+
+    def test_counting_past_the_match_budget_is_400(self):
+        with patch("holophyte.cli.stale_paths.MATCH_BUDGET_S", -1):
+            code, _, body = self.counts("revert.refuse_paths", "**/*.ts")
+        self.assertEqual(code, 400)
+        self.assertIn("ran past", body["error"])
+
     def test_an_unknown_key_or_an_oversized_ask_is_400(self):
         for key, entries in (("merge.mode", ["x"]),
                              ("merge.ui_paths", ["x"] * 101),

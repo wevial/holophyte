@@ -24,6 +24,7 @@ const runSeven: RunDetail = {
   ...servedRun,
   run: { ...servedRun.run, id: 7, ticket: "DEMO-7", title: "Page the ledger", phase: "done", outcome: "merged", merge_sha: "4f2a91c0ffee",
     started_ms: ENDED - 34 * MINUTE, ended_ms: ENDED, verify_ms: 4 * MINUTE, pr_url: "https://github.com/acme/demo/pull/1071", reverted: REVERTED },
+  events: [...servedRun.events, { at: ENDED - 10 * MINUTE, kind: "verification", summary: "Mechanical verification passed" }],
 };
 const ticketSeven: TicketDetail = { ...servedTicket, ticket: "DEMO-7", title: "Page the ledger", status: "backlog", reverted: REVERTED };
 const listed = servedBoard.columns.flatMap((column) => column.tickets)[0]!;
@@ -133,6 +134,40 @@ test("on Tickets a merge reverted on an earlier day and missing from the board l
   expect(status.textContent).toBe("reverted");
 });
 
+/** `daemon(null, ...)` reporting `reverts` on and shipping the first 50 of
+ *  `recent` on its page of 50, and on its pages of 200 `recent`, then
+ *  `older` reached with `before` the last recent id. */
+function pagedDaemon(recent: ShippedRow[], older: ShippedRow[]) {
+  const answer = daemon(null, recent.slice(0, 50));
+  const last = recent.at(-1)!.id;
+  return async (url: string) => {
+    if (url === `${DEMO}/status`) return Response.json({ ...((await (await answer(url)).json()) as object), reverts: true });
+    if (url === `${DEMO}/shipped?limit=200`) return Response.json({ rows: recent, next_before: last, limit: 200 });
+    if (url === `${DEMO}/shipped?limit=200&before=${last}`) return Response.json({ rows: older, next_before: null, limit: 200 });
+    return answer(url);
+  };
+}
+
+const DAY = 24 * 60 * MINUTE;
+const newerMerges = Array.from({ length: 50 }, (_, index) => merged(100 + index, `DEMO-${100 + index}`, NOW - 2 * DAY - index * MINUTE));
+
+test("on Tickets a reverted merge older than the first /shipped page and missing from the board lists one row with the undo glyph and the word reverted", async () => {
+  writeView("table");
+  await mount("#/tickets", pagedDaemon(newerMerges, [{ ...revertedMerge, ended_ms: NOW - 3 * DAY }]));
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
+  expect(rows).toHaveLength(1);
+  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
+  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
+  expect(status.textContent).toBe("reverted");
+});
+
+test("on Tickets a reverted merge whose ticket merged again past the first /shipped page lists no reverted row", async () => {
+  writeView("table");
+  const again = merged(200, "DEMO-7", NOW - 2 * DAY - 60 * MINUTE);
+  await mount("#/tickets", pagedDaemon([...newerMerges, again], [{ ...revertedMerge, ended_ms: NOW - 3 * DAY }]));
+  expect(document.querySelectorAll("[data-row]")).toHaveLength(0);
+});
+
 test("on Tickets a reverted merge ending the same millisecond as an older merge of its ticket lists only the reverted row", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null, [merged(5, "DEMO-7", ENDED), revertedMerge]));
@@ -178,8 +213,8 @@ test("a reverted run's page sums the settled run under its verdict in place of t
   expect(within(summary).getByRole("link", { name: "#1071" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/1071");
 });
 
-test("a reverted run's summary leaves verify out when the run recorded no verification time", async () => {
-  await mount("#/runs/demo/7", daemon(undefined, undefined, undefined, { ...runSeven, run: { ...runSeven.run, verify_ms: 0 } }));
+test("a reverted run's summary leaves verify out when the run recorded no verification, though it spent verify time", async () => {
+  await mount("#/runs/demo/7", daemon(undefined, undefined, undefined, { ...runSeven, events: servedRun.events }));
   expect(document.querySelector<HTMLElement>("[data-run-summary]")!.textContent).toBe("#1071review 1 round34 min");
 });
 

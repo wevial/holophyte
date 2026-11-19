@@ -16,7 +16,14 @@ from urllib.parse import parse_qs
 import store.read
 from holophyte.admission import project_of
 from holophyte.agents.probes import probe_implementer
-from holophyte.cli.stale_paths import PATH_MATCHERS, path_matches, tracked_tree
+from holophyte.cli.stale_paths import (
+    MAX_BACKTRACKING_STARS,
+    PATH_MATCHERS,
+    MatchBudgetSpent,
+    backtracking_stars,
+    path_matches,
+    tracked_tree,
+)
 from holophyte.config.checks import check_document
 from holophyte.config.reader import KNOWN_KEYS
 from holophyte.redact import RedactionError, redact, restore, spans
@@ -87,7 +94,15 @@ def config_path_matches(project, query):
         return 400, {"error": f"at most {MAX_PATH_ENTRIES} entries"}
     if any(len(entry) > MAX_PATH_ENTRY for entry in entries):
         return 400, {"error": f"an entry is at most {MAX_PATH_ENTRY} characters"}
-    found = path_matches(project, keys[0], entries)
+    if keys[0] == "revert.refuse_paths" and any(
+            backtracking_stars(entry) > MAX_BACKTRACKING_STARS
+            for entry in entries):
+        return 400, {"error": f"a glob has at most {MAX_BACKTRACKING_STARS}"
+                              " `*` or `**` wildcards besides a trailing `/**`"}
+    try:
+        found = path_matches(project, keys[0], entries)
+    except MatchBudgetSpent as spent:
+        return 400, {"error": str(spent)}
     if found is None:
         return 503, {"error": "the project has no readable main"}
     return 200, found

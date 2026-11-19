@@ -1543,8 +1543,10 @@ commit, cached per commit; no checkout is touched.
 
 The route opens with `GET /config` (`[serve] config_edit = true`, 404
 otherwise) and answers to the same bearer. An unknown `key`, more than
-100 entries or an entry over 512 characters is 400 with an `error`; a
-project with no readable main is 503.
+100 entries, an entry over 512 characters, a `revert.refuse_paths` entry
+with more than 3 `*` or `**` wildcards besides a trailing `/**`, or a count
+that runs past 2 seconds is 400 with an `error`; a project with no
+readable main is 503.
 
 ## `GET /config/tracked-tree`
 
