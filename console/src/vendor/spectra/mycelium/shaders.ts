@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@256aa26 cursors/mycelium/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 cursors/mycelium/src/shaders.ts (MIT, see ../LICENSE).
 import { NOISE } from '../core/glsl';
 
 // Physarum-style transport network (Jeff Jones, 2010). Agents walk a scent

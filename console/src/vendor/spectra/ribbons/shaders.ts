@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/ribbons/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/ribbons/src/shaders.ts (MIT, see ../LICENSE).
 import { NOISE, COLOR, GRAIN } from '../core/glsl';
 import { MAX_RIBBONS, MAX_TAPS } from './params';
 

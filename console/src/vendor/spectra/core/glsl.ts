@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 packages/core/src/glsl.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 packages/core/src/glsl.ts (MIT, see ../LICENSE).
 // GLSL chunks shared by effects. Interpolate into a shader source with ${...}.
 
 /** hash12, hash32, value noise, and 4-octave fbm. */
@@ -74,13 +74,42 @@ vec2 smoke(vec2 n, float t) {
 `;
 
 /**
+ * overPage(srgb): the output fragment for a final color drawn over black.
+ * Opaque by default. On a transparent stage (`setTransparent`) it is
+ * premultiplied with alpha from the light at the pixel, its brightest
+ * channel: unlit pixels let the page through, and over a black page the
+ * result is exactly `srgb`, so a dark page looks the same and a light one is
+ * tinted by the colors. GRAIN includes this chunk.
+ */
+export const TRANSPARENT = /* glsl */ `
+uniform float uTransparent;  // 1 on a transparent stage
+
+vec4 overPage(vec3 srgb) {
+  vec3 c = clamp(srgb, 0.0, 1.0);
+  return vec4(c, uTransparent > 0.5 ? max(max(c.r, c.g), c.b) : 1.0);
+}
+`;
+
+/**
+ * Sets TRANSPARENT's uniform on the program in use: on when the context has
+ * an alpha channel, which only a `transparent` stage asks for. `setGrain`
+ * calls it.
+ */
+export function setTransparent(gl: WebGL2RenderingContext, uniforms: Record<string, WebGLUniformLocation | null>) {
+  gl.uniform1f(uniforms.uTransparent, gl.getContextAttributes()?.alpha ? 1 : 0);
+}
+
+/**
  * filmGrain(col): film grain plus output encoding. Linear color in, the
- * final sRGB fragment out. The grain is a per-pixel hash added in linear
- * light, weighted toward the darks; two patterns crossfade (see `setGrain`)
- * so it morphs instead of flickering. A static sub-LSB dither keeps dark
- * gradients from banding even with grain off. Needs NOISE and COLOR.
+ * final fragment out through `overPage`, so drawn over black. The grain is a
+ * per-pixel hash added in linear light, weighted toward the darks; two
+ * patterns crossfade (see `setGrain`) so it morphs instead of flickering. A
+ * static sub-LSB dither keeps dark gradients from banding even with grain
+ * off. On a transparent stage the grain is light like the rest, so it reads
+ * on a dark page and vanishes into a light one. Needs NOISE and COLOR.
  */
 export const GRAIN = /* glsl */ `
+${TRANSPARENT}
 uniform float uGrain;       // strength; the shaders FilmGrain scale
 uniform vec2 uGrainSeeds;   // the two grain patterns being crossfaded
 uniform float uGrainMix;    // 0..1 from the first to the second
@@ -93,19 +122,21 @@ vec4 filmGrain(vec3 col) {
   float n = mix(n0, n1, k) / sqrt(k * k + (1.0 - k) * (1.0 - k));
   float l = clamp(dot(col, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
   col += n * (1.0 - l) * (1.0 - l) * uGrain * 0.1;
-  return vec4(toSrgb(col) + (hash12(gl_FragCoord.xy + 71.0) - 0.5) / 255.0, 1.0);
+  return overPage(toSrgb(col) + (hash12(gl_FragCoord.xy + 71.0) - 0.5) / 255.0);
 }
 `;
 
 /**
- * Sets GRAIN's uniforms on the program in use. `clock` counts grain periods:
- * the pattern crossfades into the next one as it advances by 1.
+ * Sets GRAIN's uniforms on the program in use, TRANSPARENT's included.
+ * `clock` counts grain periods: the pattern crossfades into the next one as
+ * it advances by 1.
  */
 export function setGrain(gl: WebGL2RenderingContext, uniforms: Record<string, WebGLUniformLocation | null>, strength: number, clock: number) {
   const g = Math.floor(clock);
   gl.uniform1f(uniforms.uGrain, strength);
   gl.uniform2f(uniforms.uGrainSeeds, g % 256, (g + 1) % 256);
   gl.uniform1f(uniforms.uGrainMix, clock - g);
+  setTransparent(gl, uniforms);
 }
 
 /**

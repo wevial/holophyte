@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.d.ts (MIT, see ../LICENSE), given a motion option and advance().
+// Vendored from wevial/spectra@4d4c754 cursors/nebula/src/index.d.ts (MIT, see ../LICENSE), given a motion option and advance().
 export interface NebulaConfig {
   simResolution: number;
   offsetResolution: number;

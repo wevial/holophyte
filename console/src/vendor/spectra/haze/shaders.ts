@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@75ae266 backgrounds/haze/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/haze/src/shaders.ts (MIT, see ../LICENSE), given a transparent output whose alpha is the smoke's coverage or the grain's light above the base.
 import { NOISE, COLOR, SMOKE, GRAIN, RAINBOW } from '../core/glsl';
 
 // Pass 1, half resolution: coverage of the two smoke bands in r and g, and
@@ -112,5 +112,11 @@ void main() {
   col *= 1.0 - dot(c, c) * 0.25;
 
   fragColor = filmGrain(col);
+  // Transparent: the alpha is the smoke's coverage, raised where grain lights a pixel above the base,
+  // and the base is taken out, so a page of the base's color shows the opaque frame.
+  float cover = (1.0 - (1.0 - g.x) * (1.0 - g.y)) * keep;
+  vec3 above = (fragColor.rgb - uBase) / max(1.0 - uBase, 1e-3);
+  float alpha = clamp(max(cover, max(max(above.r, above.g), above.b)), 0.0, 1.0);
+  if (uTransparent > 0.5) fragColor = vec4(clamp(fragColor.rgb - uBase * (1.0 - alpha), 0.0, alpha), alpha);
 }
 `;

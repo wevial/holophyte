@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/perf.js (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 cursors/nebula/src/perf.js (MIT, see ../LICENSE).
 // FPS governor: walks down a quality ladder when frame times sag, back up
 // when there's headroom. Tiers trade cloud detail first (the dominant cost),
 // then sim resolution, then output resolution. Past the last tier the page

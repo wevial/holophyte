@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/plume/src/index.ts (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@4d4c754 backgrounds/plume/src/index.ts (MIT, see ../LICENSE), given a motion option.
 // Plume background — the nebula's gas dragged like wet paint. It's the
 // nebula cursor without the cursor: a few invisible wanderers pull lanes
 // through its fluid sim, so the gas swirls, thins and piles up at the edges,
@@ -21,6 +21,11 @@ export interface PlumeOptions {
   speed?: number;
   /** Ground color under the paint, hex. Default the palette's. */
   ground?: string;
+  /**
+   * Draw over the page instead of the ground: glowing palettes tint it with
+   * their light, ink palettes lay their ink on it. Fixed at mount. Default false.
+   */
+  transparent?: boolean;
   /** Lock a quality tier, 0–3 (4 = static fallback). */
   tier?: number;
   /** Log the quality governor's decisions. */

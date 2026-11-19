@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/paints.js (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 cursors/nebula/src/paints.js (MIT, see ../LICENSE).
 // Palettes for the paint look. The gas has three hues (blue fringes, purple
 // middles, pink cores) plus hot white-pink at its densest; the paint look
 // swaps each for an ink, in that order, over a ground. A paint with `glow`

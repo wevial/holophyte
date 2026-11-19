@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/caustics/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/caustics/src/shaders.ts (MIT, see ../LICENSE).
 import { NOISE, COLOR, GRAIN } from '../core/glsl';
 
 export const WAVES = 9;
