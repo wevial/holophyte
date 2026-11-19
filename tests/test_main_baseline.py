@@ -469,6 +469,8 @@ class BaselineInTheLoop(LoopFixture):
 
     def setUp(self):
         super().setUp()
+        self.enterContext(patch.dict(os.environ,
+                                     {"PYTHONDONTWRITEBYTECODE": "1"}))
         (self.target / ".gitignore").write_text("__pycache__/\n")
         (self.target / "app.py").write_text(OLD)
         self.git("add", "-A")
