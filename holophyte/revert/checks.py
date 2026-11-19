@@ -119,24 +119,81 @@ def class_members(members):
     return POSIX_CLASS.sub(posix, escaped.replace("\\[:", "[:"))
 
 
-def glob_part(part):
-    tokens = {"**/": "(?:.*/)?", "/**": "/.*", "**": ".*", "*": "[^/]*",
-              "?": "[^/]"}
+def any_char(_char):
+    return True
+
+
+def not_slash(char):
+    return char != "/"
+
+
+def glob_steps(part):
+    tokens = {"**/": [("dirs", any_char)], "/**": [("one", "/".__eq__),
+                                                   ("star", any_char)],
+              "**": [("star", any_char)], "*": [("star", not_slash)],
+              "?": [("one", not_slash)]}
     if part in tokens:
         return tokens[part]
-    if part.startswith("[") and part.endswith("]") and len(part) > 2:
-        negated = part[1] in "!^"
+    negated = part[1:2] in ("!", "^")
+    if part.startswith("[") and part.endswith("]") and len(part) > 2 + negated:
         members = class_members(part[1 + negated:-1])
-        return f"(?!/)[{'^' if negated else ''}{members}]"
+        member = re.compile(f"(?!/)[{'^' if negated else ''}{members}]",
+                            re.DOTALL)
+        return [("one", lambda char: member.fullmatch(char) is not None)]
     if part.startswith("\\") and len(part) == 2:
-        return re.escape(part[1])
-    return re.escape(part)
+        return [("one", part[1].__eq__)]
+    return [("one", char.__eq__) for char in part]
+
+
+class Glob:
+    def __init__(self, steps):
+        self.moves, self.skips = [[]], [[]]
+        for kind, test in steps:
+            here = len(self.moves) - 1
+            if kind == "dirs":
+                inside = self.node()
+                self.moves[here].append((test, inside))
+                self.moves[inside].append((test, inside))
+            after = self.node()
+            if kind == "one":
+                self.moves[here].append((test, after))
+            elif kind == "star":
+                self.moves[here].append((test, here))
+                self.skips[here].append(after)
+            else:
+                self.skips[here].append(after)
+                for start in (here, inside):
+                    self.moves[start].append(("/".__eq__, after))
+
+    def node(self):
+        self.moves.append([])
+        self.skips.append([])
+        return len(self.moves) - 1
+
+    def closure(self, states):
+        pending = list(states)
+        while pending:
+            for after in self.skips[pending.pop()]:
+                if after not in states:
+                    states.add(after)
+                    pending.append(after)
+        return states
+
+    def fullmatch(self, path):
+        states = self.closure({0})
+        for char in path:
+            states = self.closure({after for state in states
+                                   for test, after in self.moves[state]
+                                   if test(char)})
+            if not states:
+                return False
+        return len(self.moves) - 1 in states
 
 
 def glob_pattern(glob):
     parts = re.split(r"(\\.|\*\*/|/\*\*$|\*\*|\*|\?"
                      r"|\[!?\]?(?:\[:[a-z]+:\]|[^\]/])*\])", glob)
-    return re.compile("".join(glob_part(part) for part in parts), re.DOTALL)
+    return Glob([step for part in parts for step in glob_steps(part)])
 
 
 def refused_paths(files, globs):

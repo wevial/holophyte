@@ -36,7 +36,7 @@ def _refuse_pattern(entry):
 
 def _refuse_match(entry, path):
     pattern = _refuse_pattern(entry)
-    return pattern is not None and pattern.fullmatch(path) is not None
+    return pattern is not None and pattern.fullmatch(path)
 
 
 PATH_MATCHERS = {

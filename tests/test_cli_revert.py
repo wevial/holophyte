@@ -417,3 +417,15 @@ class RevertCliTests(ConfigTestCase):
                     holophyte.cli.entry.cli([str(self.target)])
                 self.assertIn("[revert] refuse_paths must be a list",
                               str(raised.exception.code))
+
+
+class RefusePathsMatchTimeTests(ConfigTestCase):
+    def test_a_many_star_glob_against_a_long_near_miss_settles_promptly(self):
+        probe = ("from holophyte.revert.checks import refused_paths\n"
+                 "path = 'a' * 48 + '.ts'\n"
+                 "print(refused_paths([path], ['*a' * 24 + 'b']),"
+                 " refused_paths([path], ['*a' * 24 + '.ts']) == [path])\n")
+        done = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                              text=True, timeout=20,
+                              cwd=Path(__file__).resolve().parent.parent)
+        self.assertEqual(done.stdout.split(), ["[]", "True"], done.stderr)
