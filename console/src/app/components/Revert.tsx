@@ -1,10 +1,10 @@
 import { useContext, useId, useState, type ReactNode } from "react";
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
-import type { Reverted } from "../../lib/contract.gen";
+import { runDetailSchema, type Reverted } from "../../lib/contract.gen";
+import type { Fetch } from "../../lib/poll";
 import { shortSha } from "../../lib/shipped";
 import { previewRevert, useRevert, type RevertAnswer } from "../actions";
 import { fetchRoute, ticketQuery } from "../queries";
-import { runDetailSchema } from "../../lib/contract.gen";
 import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -67,7 +67,6 @@ export function usePlaceItems(copy: Place, open?: Place): MenuItem[] {
   return items;
 }
 
-type Fetch = Parameters<typeof ticketQuery>[2];
 type Checked = { refusal: Extract<RevertAnswer, { kind: "failed" }> } | { sha: string };
 
 const failure = (reason: string): Checked => ({ refusal: { kind: "failed", reason } });

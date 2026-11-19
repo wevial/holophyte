@@ -123,6 +123,16 @@ export function TicketPage() {
   const steering = steeringKey === `${project}/${key}`;
   const { view, editing } = body?.at === `${project}/${key}` ? body : { view: "fields" as const, editing: null };
   const showBody = (next: { view: BodyView; editing: number | null }) => setBody({ at: `${project}/${key}`, ...next });
+  const toggleSteer = () => setSteeringKey(steering ? null : `${project}/${key}`);
+  const moveProps = {
+    project,
+    ticketKey: key,
+    ticket,
+    host: page.host,
+    liveRun: page.liveRun,
+    onEditRaw: view === "markdown" ? (revision: number) => showBody({ view, editing: revision }) : undefined,
+    editOpen: editing != null,
+  };
   return (
     <Page project={project} ticketKey={key}>
       <div>
@@ -133,32 +143,17 @@ export function TicketPage() {
           <div className="flex items-start gap-2">
             <div data-ticket-actions className="flex flex-wrap gap-2">
               {!SETTLED.has(ticket.status) && (
-                <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={() => setSteeringKey(steering ? null : `${project}/${key}`)}>
+                <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={toggleSteer}>
                   Steer
                 </Btn>
               )}
               <ScoutThis target={scoutOf(project, key, actionsOn)} />
-              <TicketMoves
-                key={`${project}/${key}`}
-                project={project}
-                ticketKey={key}
-                ticket={ticket}
-                host={page.host}
-                liveRun={page.liveRun}
-                onEditRaw={view === "markdown" ? (revision) => showBody({ view, editing: revision }) : undefined}
-                editOpen={editing != null}
-              />
+              <TicketMoves key={`${project}/${key}`} {...moveProps} />
             </div>
             <div className="flex flex-col items-end gap-2">
               <TicketMoves
                 key={`menu ${project}/${key}`}
-                project={project}
-                ticketKey={key}
-                ticket={ticket}
-                host={page.host}
-                liveRun={page.liveRun}
-                onEditRaw={view === "markdown" ? (revision) => showBody({ view, editing: revision }) : undefined}
-                editOpen={editing != null}
+                {...moveProps}
                 menu={(moves) => (
                   <TicketMenu
                     project={project}
@@ -167,7 +162,7 @@ export function TicketPage() {
                     base={page.host.base}
                     reverts={page.host.status?.reverts === true}
                     actions={actionsOn}
-                    onSteer={() => setSteeringKey(steering ? null : `${project}/${key}`)}
+                    onSteer={toggleSteer}
                     moves={moves}
                   />
                 )}
