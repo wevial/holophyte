@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 import store  # noqa: E402
 from holophyte.agents.agent_output import AgentOutput  # noqa: E402
 from holophyte.agents.harness import ADAPTERS, Seat  # noqa: E402
+from holophyte.babysit.description_review import without_description  # noqa: E402
 from holophyte.review.json_reply import read_reply  # noqa: E402
 from holophyte.review.reply_parsing import (  # noqa: E402
     FINDING_CATEGORIES,
@@ -135,6 +136,13 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertTrue(described["path"].startswith("(unparsed):"))
         self.assertIn('path: "PR description"', described["message"])
         self.assertIn("retry the diff does not add", described["message"])
+
+    def test_without_description_takes_only_the_description_finding(self):
+        kept, described = without_description(self.text)
+        self.assertEqual(described, ['- path: "PR description" [p2] The summary'
+                                     ' promises a retry the diff does not add.'])
+        self.assertEqual([finding["path"] for finding in parse_findings(kept)],
+                         ["src/app.py"])
 
     def test_criteria_follow_ups_and_verdict_read_from_the_rendering(self):
         self.assertEqual([(match["n"], match["status"])
