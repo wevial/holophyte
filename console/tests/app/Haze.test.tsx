@@ -89,7 +89,7 @@ const TOKENS = `:root { --haze-ground: ${LIGHT.ground}; --haze-back: ${LIGHT.bac
 const EFFECTS = { haze, caustics, plume, ribbons, lava, hyphae };
 type Given = { transparent?: boolean; palette?: string };
 
-/** Replaces each vendored mount with one that adds a canvas and records the options it was given and the live config it returned, or throws when `throwing`. */
+/** Replaces each vendored mount with one that records the options it was given, then throws when `throwing` or adds a canvas and records the live config it returned. */
 function fakeMounts({ throwing = false } = {}) {
   const given: Record<string, Given[]> = {};
   const configs: Record<string, Given[]> = {};
@@ -97,9 +97,9 @@ function fakeMounts({ throwing = false } = {}) {
   tokens.textContent = TOKENS;
   document.head.appendChild(tokens);
   const spies = Object.entries(EFFECTS).map(([name, module]) => spyOn(module, "mount").mockImplementation(((container: HTMLElement, options: Given = {}) => {
+    (given[name] ??= []).push({ ...options });
     if (throwing) throw new Error("no WebGL2");
     container.appendChild(document.createElement("canvas"));
-    (given[name] ??= []).push({ ...options });
     const config = { ...options };
     (configs[name] ??= []).push(config);
     return { config, destroy: () => container.querySelector("canvas")?.remove() };
@@ -151,19 +151,21 @@ test("each of the six effects mounts over the page in a dark theme and in a ligh
   }
 });
 
-test("switching a dark page under Lava to light and back keeps the one mount, its live palette following each theme, and never shows the fallback", async () => {
+test("switching a dark page under Lava to light and back keeps its one mount and canvas, its live palette following each theme, and never shows the fallback", async () => {
   const mounts = fakeMounts();
   try {
     stored("dark", "lava");
     await mount();
+    const canvas = band().querySelector("canvas");
     const livePalette = () => lava.PALETTES[mounts.configs.lava![0]!.palette as keyof typeof lava.PALETTES];
-    const seen: unknown[][] = [[livePalette(), hasFallback()]];
+    const state = () => [livePalette(), hasFallback(), canvas !== null && band().contains(canvas)];
+    const seen: unknown[][] = [state()];
     act(() => chooseTheme("Dawn"));
-    seen.push([livePalette(), hasFallback()]);
+    seen.push(state());
     act(() => chooseTheme("Night"));
-    seen.push([livePalette(), hasFallback()]);
+    seen.push(state());
     const colours = (theme: typeof LIGHT) => [theme.ground, theme.back, theme.front];
-    expect(seen).toEqual([[colours(DARK), false], [colours(LIGHT), false], [colours(DARK), false]]);
+    expect(seen).toEqual([[colours(DARK), false, true], [colours(LIGHT), false, true], [colours(DARK), false, true]]);
     expect(mounts.given.lava).toHaveLength(1);
   } finally {
     cleanup();
@@ -171,12 +173,12 @@ test("switching a dark page under Lava to light and back keeps the one mount, it
   }
 });
 
-test("a light theme whose effect mount throws shows the fallback gradient", async () => {
+test("a light theme whose Haze mount throws tries it once and shows the fallback gradient", async () => {
   const mounts = fakeMounts({ throwing: true });
   try {
     stored("light", "haze");
     await mount();
-    expect([hasFallback(), band().querySelector("canvas")]).toEqual([true, null]);
+    expect([mounts.given.haze?.length, hasFallback(), band().querySelector("canvas")]).toEqual([1, true, null]);
   } finally {
     cleanup();
     mounts.restore();

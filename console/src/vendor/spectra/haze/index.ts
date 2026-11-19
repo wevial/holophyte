@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@4d4c754 backgrounds/haze/src/index.ts (MIT, see ../LICENSE), given a motion option and a fallback when its shaders fail.
+// Vendored from wevial/spectra@4d4c754 backgrounds/haze/src/index.ts (MIT, see ../LICENSE), given a motion option, a fallback when its shaders fail, and a transparent base it blends from.
 // Haze background — an ambient smoky glow, after the AgentMail console header.
 // Two soft bands of smoke lean across a near-black base, bent by a slow wave
 // and billowed by domain-warped noise, under live film grain, fading out
@@ -145,7 +145,6 @@ export function mount(container: HTMLElement, { transparent = false, ...opts }: 
     const rainbow = config.palette === 'rainbow';
     const colors = rainbow ? [RAINBOW_BASE, RAINBOW_BASE, RAINBOW_BASE] : PALETTES[config.palette] ?? PALETTES.ember;
     const [base, mid, high] = colors.map(hexToRgb);
-    if (transparent) base.fill(0); // the page is the base
     const w = canvas.clientWidth || 1;
     const h = canvas.clientHeight || 1;
     // One unit: the height, but at most a quarter of the longer side.
@@ -166,6 +165,7 @@ export function mount(container: HTMLElement, { transparent = false, ...opts }: 
     u = composite.uniforms;
     gl.uniform1i(u.uGlow, light!.attach(0));
     gl.uniform3fv(u.uBase, base);
+    gl.uniform3fv(u.uPage, transparent ? base : [0, 0, 0]);
     gl.uniform3fv(u.uMid, mid);
     gl.uniform3fv(u.uHigh, high);
     gl.uniform1f(u.uIntensity, config.intensity);

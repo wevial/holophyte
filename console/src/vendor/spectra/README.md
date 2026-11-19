@@ -44,3 +44,6 @@ copy:
   palette there, and Haze falls back when its shaders fail to compile. Haze
   adds its `haze-fallback` class itself rather than through the stage's
   `fallback` option.
+- Transparent Haze keeps its palette's base in the blend and draws over it
+  through `overPage`'s `uPage`, so its lit smoke keeps the opaque frame's
+  colors on a page of that base.
