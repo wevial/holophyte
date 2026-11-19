@@ -72,6 +72,7 @@ from holophyte.serve.serve_merge import (
 )
 from holophyte.serve.serve_merge_queue import MERGE_QUEUE_PATH, merge_queue
 from holophyte.serve.serve_queue_actions import QUEUE_ACTIONS
+from holophyte.serve.serve_revert import REVERT_ACTION, revert_action
 from holophyte.serve.serve_runs import (
     RUN_FILES_PATH,
     RUN_LEDGER_PATH,
@@ -430,6 +431,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                 body.get("author", "maintainer"))
         if action == "steer":
             return steer_action(project, body)
+        if action == REVERT_ACTION:
+            return revert_action(project, body)
         if action == "mark-ready":
             return mark_ready_action(project, body)
         if action == REQUEUE_ACTION:

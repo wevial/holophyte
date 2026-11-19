@@ -1952,6 +1952,51 @@ and the reason in `detail`, and nothing is written. A missing `ticket`,
 or a `hint` or `now` that is not a boolean, is 400; a project with no
 store is 503.
 
+## `POST /actions/revert`
+
+Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
+behind its token. It does what `holo revert KEY REASON [--dry-run]` does:
+the same checks (`[revert] enabled`, KEY merged on `origin/main`, its merge
+touching no `[revert] refuse_paths` path, no revert of it already open),
+the same dependents and the same urgent Todo ticket.
+
+```json
+{"key": "KO-n", "reason": "broke the header", "dry_run": true}
+```
+
+`key` and `reason` are required; `dry_run` (default `false`) previews and
+files nothing:
+
+```json
+{"action": "revert", "recorded": null, "enabled": true, "refused": null,
+ "dependents": [{"key": "KO-m", "sha": "4f1c…", "paths": ["src/header.py"]}]}
+```
+
+`enabled` is `[revert] enabled`, true in a 200. `refused` is null in a
+200; a check that refuses
+answers 409, its body carrying `refused` as `{"reason", "paths"}`, naming
+the check and, for `refuse_paths`, the paths it refuses.
+`dependents` are the later merges that changed a file KEY's merge changed.
+Without `dry_run` it files the ticket and records a `revert` intervention
+on KEY's merged run, with the requester as actor:
+
+```json
+{"action": "revert", "recorded": 42, "key": "KO-p"}
+```
+
+`key` is the new ticket. A refusal, with or without `dry_run`, is 409
+with `error` the reason, `paths` the refused paths, if any, `enabled`,
+`dependents` empty and `refused` as above, and nothing is filed;
+`[revert] enabled` false is such a refusal, with `enabled` false. A
+filing the board did not confirm is 500 with `holo revert`'s lines in
+`error`. Both carry URLs with their credentials and query strings, and the
+config's secrets, redacted. The checks and filing hold the project's
+revert lock, which `holo revert` also takes, and read the config afresh
+once they hold it, so two requests for one merge file one ticket and a
+policy changed while a request waits applies to it. A missing `key`, an
+empty `reason` or a `dry_run` that is not a boolean is 400; a project with
+no store is 503.
+
 ## `POST /actions/mark-ready`
 
 Opened by `[serve] actions = true` ([The daemon's actions](daemon.md)),
