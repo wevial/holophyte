@@ -79,6 +79,7 @@ JSON Schema per route, generated from `holophyte/serve/contract.py`.
   "thresholds": {"heartbeat_stale_ms": 300000, "strikes": 2, "run_cap": 3.0},
   "actions": false,
   "config_edit": false,
+  "reverts": false,
   "colour": "auto",
   "runs": [
     {"id": 52, "ticket": "KO-219", "ticket_url": "https://linear.app/example/issue/KO-219",
@@ -180,7 +181,9 @@ is none.
 console draws its action buttons disabled while it is `false`.
 `config_edit` is whether `[serve] config_edit = true` opened `GET /config`
 and `PUT /config`; the console's settings sheet is read-only, naming the
-key, while it is `false`. `colour` is the project's `[console] colour`
+key, while it is `false`. `reverts` is whether the project's `[revert]
+enabled` is true, false when it has no `[revert]` table; an older daemon
+leaves it out. `colour` is the project's `[console] colour`
 (`auto`, `violet`, `teal`, `green` or `blue`), `auto` when unset, read
 from the file on each request so a saved colour shows on the next poll;
 an older daemon leaves it out. `route_labels` names what each seat is configured
@@ -369,7 +372,8 @@ UI and its required-reason form are covered by HOLO-403.
    "heartbeat_age_ms": 12000, "rounds": 1,
    "max_rounds": 2, "findings": 2, "merge_sha": null, "commit_url": null,
    "additions": 120, "deletions": 14, "resumed_as": null,
-   "implementer": "claude opus", "pr_url": null, "host": "writer-1"},
+   "implementer": "claude opus", "pr_url": null, "host": "writer-1",
+   "reverted": null},
   {"id": 225, "ticket": "KO-255", "ticket_url": null,
    "title": "Ledger: fold resolutions", "attempt": 1, "phase": "failed",
    "outcome": "failed", "outcome_reason": "verify failed: ruff check .",
@@ -379,7 +383,8 @@ UI and its required-reason form are covered by HOLO-403.
    "heartbeat_age_ms": null, "rounds": 0,
    "max_rounds": 2, "findings": 0, "merge_sha": null, "commit_url": null,
    "additions": null, "deletions": null, "resumed_as": null,
-   "implementer": null, "pr_url": null, "host": "writer-1"}
+   "implementer": null, "pr_url": null, "host": "writer-1",
+   "reverted": null}
 ], "since": 1788393600000, "until": null, "limit": 200, "offset": 0,
  "sort": "started", "order": "desc",
  "truncated": false, "total": 2,
@@ -426,9 +431,10 @@ of the same ticket after it, whether or not that run is in the answer (null
 for a paused run with no later run, and for every run not paused); and
 `pr_url` and `host`, as `/shipped` spells them; and `implementer`, the
 `label` in the payload of the run's newest `implementer_profile` event (null
-when it has none, as every run before those events began reads). An older
-daemon omits `findings`, `merge_sha`, `commit_url`, `additions`, `deletions`,
-`resumed_as` and `implementer`.
+when it has none, as every run before those events began reads); and
+`reverted`, as `/runs/N` serves it. An older daemon omits `findings`,
+`merge_sha`, `commit_url`, `additions`, `deletions`, `resumed_as`,
+`implementer` and `reverted`.
 
 Optional parameters page, sort and narrow the list; without any of them the
 route answers as above. A row is served only when it matches every one
@@ -540,7 +546,9 @@ an integer or is later than the daemon's clock, is 400 with an `error`.
          "pr_url": "https://github.com/example/repo/pull/2170",
          "work_started_ms": null, "verify_started_ms": null,
          "approved_at": 1788451561675, "approved_by": "operator",
-         "max_rounds": 2},
+         "max_rounds": 2,
+         "reverted": {"by": "KO-231", "sha": "9be0c2d4a7f1e3b5c6d8e0f2a4b6c8d0e2f4a6b8",
+                      "reason": "broke the header band"}},
  "rounds": [
   {"round": 1, "started_ms": 1788450761675, "ended_ms": 1788450941675,
    "verdict": "changes_requested", "reviewer_model": "reviewer-model",
@@ -649,6 +657,11 @@ ended. `approved_at` (epoch milliseconds) and `approved_by` (the
 operator's login) record the approval (`--approve`) that released a
 parked candidate to merge; both are null for a run no one approved, and a
 `--requeue` clears them.
+`reverted` is set when a merged revert ticket undid the run's merge, read
+from the run's newest `reverted` event: `by` the revert ticket's key, `sha`
+the revert's merge sha and `reason` the reason recorded with it (null when
+none was). It is null when nothing reverted the run, and the run keeps its
+`merged` outcome and `merge_sha` either way; an older daemon leaves it out.
 `events` is the `narrative` level of the run's event stream, oldest
 first; `detail` events and their payloads are not served. An `N` that is
 not an integer is 400; an integer with no run behind it is 404 carrying
@@ -1362,13 +1375,15 @@ view, Linear's columns without a call to Linear.
   {"state": "blocked_on_deps", "tickets": [
     {"ticket": "KO-n", "title": "…", "time_box_ms": 1500000, "run": null,
      "question": null, "waits_on": ["KO-m"], "mirrored_ms": 1788449000000,
-     "column": "ready", "priority": 2, "labels": ["ui"], "revision": 3}]},
+     "column": "ready", "priority": 2, "labels": ["ui"], "revision": 3,
+     "reverted": null}]},
   {"state": "ready", "tickets": []},
   {"state": "blocked_on_operator", "tickets": []},
   {"state": "in_flight", "tickets": [
     {"ticket": "KO-m", "title": "…", "time_box_ms": 1500000, "run": 52,
      "question": null, "waits_on": [], "mirrored_ms": 1788449000000,
-     "column": null, "priority": null, "labels": [], "revision": 1}]}
+     "column": null, "priority": null, "labels": [], "revision": 1,
+     "reverted": null}]}
 ], "stories": [
   {"ticket": "KO-k", "title": "…", "children": ["KO-m", "KO-n", "KO-p"],
    "merged": 1, "total": 3}
@@ -1389,6 +1404,9 @@ ticket. `column` (`backlog`, `ready`, `canceled`, null when the board
 named none), `priority` (null when none), `labels` and `revision` are the
 ticket's board-owned fields as the store holds them; `revision` is the one
 a revision-checked edit sends as `If-Match`, 0 when none is recorded.
+`reverted` is the `reverted` value `/runs/N` serves for the ticket's latest
+merged run, null when it has none or nothing reverted it, so a ticket
+merged again after a revert reads null; an older daemon leaves it out.
 `stories` is one entry per story whose parent ticket is neither merged
 nor abandoned, in the parent's identifier order and empty when there are
 none: the parent's `ticket` and `title`, its child tickets' identifiers
@@ -1569,7 +1587,8 @@ console shows when the operator opens a ticket without leaving for Linear.
              "read_ms": 1788449200000, "withdrawn": false},
             {"id": 3, "kind": "amendment", "note": "…",
              "author": "maintainer", "at": 1788400000000, "run": null,
-             "read_by": null, "read_ms": null, "withdrawn": false}]}
+             "read_by": null, "read_ms": null, "withdrawn": false}],
+ "reverted": null}
 ```
 
 `ticket` is the identifier as the store mirrors it; `status` is the
@@ -1592,8 +1611,9 @@ run of the ticket, newest attempt first, each with its phase, outcome
 `amendment` or `hint`, `run` the run it was sent to (null when none was in
 flight), `read_by` and `read_ms` the run that read it and when (null while
 unread), and `withdrawn` whether a later `holo steer --withdraw` withdrew
-it, which only an amendment can be. An identifier
-the store has never mirrored is 404 with an empty object, like an absent
+it, which only an amendment can be. `reverted` is as `/board` serves it,
+from the ticket's latest merged run; an older daemon leaves it out. An
+identifier the store has never mirrored is 404 with an empty object, like an absent
 run. The endpoint reads the store's mirror and nothing more; it never
 calls the provider.
 

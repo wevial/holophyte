@@ -158,12 +158,13 @@ def history(project, query, now=None):
                                              query=wanted)
         counts = store.read.run_counts(conn, since, until, wanted)
         caps = served_round_caps(conn, project, [run.id for run in runs])
+        reverted = store.read.reverted_runs(conn, [run.id for run in runs])
     finally:
         conn.close()
     origin = (origin_web_url(project) if any(run.mergeSha for run in runs)
               else None)
-    return 200, {"rows": [history_row(project, run, now, caps[run.id], origin)
-                          for run in runs],
+    return 200, {"rows": [history_row(project, run, now, caps[run.id], origin,
+                                      reverted[run.id]) for run in runs],
                  "since": since, "until": until, "limit": limit,
                  "offset": wanted.offset, "sort": wanted.sort,
                  "order": wanted.order,
@@ -172,7 +173,7 @@ def history(project, query, now=None):
                  "implementers": list(counts["implementer"]), "now": now}
 
 
-def history_row(project, run, now, max_rounds, origin):
+def history_row(project, run, now, max_rounds, origin, reverted):
     live = run.endedAt is None
     return {"id": run.id, "ticket": run.linearIdentifier,
             "ticket_url": run.ticketUrl, "title": run.title,
@@ -194,7 +195,8 @@ def history_row(project, run, now, max_rounds, origin):
             "deletions": run.prSeenDeletions,
             "resumed_as": run.resumedAs,
             "implementer": run.implementer,
-            "pr_url": run.prUrl, "host": json_host(project, run.host)}
+            "pr_url": run.prUrl, "host": json_host(project, run.host),
+            "reverted": reverted}
 
 
 def parse_weeks(query):

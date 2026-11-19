@@ -23,6 +23,7 @@ from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.config.serve_settings import console_colour, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
+from holophyte.revert.settings import revert_config
 from holophyte.review.criterion_ids import with_numbers
 from holophyte.scout.brief import scout_title
 from holophyte.serve.serve_levers import paused_item
@@ -105,6 +106,7 @@ def status(project, now=None, started_ms=None, beat_stale_ms=None):
                        "strikes": knobs.stale_strikes, "run_cap": knobs.run_cap},
         "actions": serve_config(project).actions,
         "config_edit": serve_config(project).config_edit,
+        "reverts": revert_config(project).enabled,
         "colour": saved_colour(project),
         "runs": [{"id": run.id, "ticket": run.linearIdentifier,
                   "ticket_url": run.ticketUrl,
@@ -325,6 +327,8 @@ def board(project, now=None, editable=False):
     try:
         tickets = store.read.open_tickets(conn)
         stories = store.read.open_stories(conn)
+        reverted = store.read.reverted_tickets(
+            conn, [ticket.id for ticket in tickets])
     finally:
         conn.close()
     native = board_mode(project).kind == "native"
@@ -341,7 +345,7 @@ def board(project, now=None, editable=False):
             "waits_on": list(ticket.waitsOn),
             "mirrored_ms": ticket.mirroredAt, "column": ticket.boardColumn,
             "priority": ticket.priority, "labels": list(ticket.labels),
-            "revision": ticket.revision})
+            "revision": ticket.revision, "reverted": reverted[ticket.id]})
     return 200, {"columns": [{"state": state, "tickets": columns[state]}
                              for state in states],
                  "stories": [story_json(story) for story in stories],
@@ -422,6 +426,8 @@ def ticket_detail(project, identifier):
             ticket.acceptanceCriteria, store.criteria.numbers(conn, ticket.id)))
         steered = ([] if ticket is None
                    else chain_notes(conn, ticket.id, 0)[::-1])
+        reverted = (None if ticket is None else store.read.reverted_tickets(
+            conn, [ticket.id])[ticket.id])
     finally:
         conn.close()
     if ticket is None:
@@ -453,7 +459,8 @@ def ticket_detail(project, identifier):
                              "author": n.author, "at": n.at, "run": n.run_id,
                              "read_by": n.consumed_by,
                              "read_ms": n.consumed_at,
-                             "withdrawn": n.withdrawn} for n in steered]}
+                             "withdrawn": n.withdrawn} for n in steered],
+                 "reverted": reverted}
 
 
 def revision_json(revision):

@@ -169,6 +169,7 @@ export const statusSchema = z.looseObject({
   thresholds: thresholdsSchema,
   actions: z.boolean().optional(),
   config_edit: z.boolean(),
+  reverts: z.boolean().optional(),
   colour: z.enum(["auto", "violet", "teal", "green", "blue"]).optional(),
   runs: z.array(statusRunSchema),
   queued: z.array(queuedTicketSchema),
@@ -428,6 +429,13 @@ export const prefsSchema = z.looseObject({
 });
 export type Prefs = z.infer<typeof prefsSchema>;
 
+export const revertedSchema = z.looseObject({
+  by: z.string().nullable(),
+  sha: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+export type Reverted = z.infer<typeof revertedSchema>;
+
 export const runDetailRunSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),
@@ -457,6 +465,7 @@ export const runDetailRunSchema = z.looseObject({
   approved_at: z.int().nullable(),
   approved_by: z.string().nullable(),
   max_rounds: z.int(),
+  reverted: revertedSchema.nullable().optional(),
 });
 export type RunDetailRun = z.infer<typeof runDetailRunSchema>;
 
@@ -804,6 +813,7 @@ export const historyRowSchema = z.looseObject({
   implementer: z.string().nullable().optional(),
   pr_url: z.string().nullable(),
   host: z.string().nullable(),
+  reverted: revertedSchema.nullable().optional(),
 });
 export type HistoryRow = z.infer<typeof historyRowSchema>;
 
@@ -1020,6 +1030,7 @@ export const boardTicketSchema = z.looseObject({
   priority: z.int().nullable(),
   labels: z.array(z.string()),
   revision: z.int(),
+  reverted: revertedSchema.nullable().optional(),
 });
 export type BoardTicket = z.infer<typeof boardTicketSchema>;
 
@@ -1133,6 +1144,7 @@ export const ticketDetailSchema = z.looseObject({
   notes: z.array(ticketNoteSchema),
   runs: z.array(ticketRunSchema),
   steers: z.array(ticketSteerSchema),
+  reverted: revertedSchema.nullable().optional(),
 });
 export type TicketDetail = z.infer<typeof ticketDetailSchema>;
 

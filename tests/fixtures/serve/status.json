@@ -90,6 +90,7 @@
   },
   "actions": false,
   "config_edit": false,
+  "reverts": false,
   "colour": "auto",
   "runs": [
     {

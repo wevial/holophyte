@@ -855,6 +855,9 @@
         "config_edit": {
           "type": "boolean"
         },
+        "reverts": {
+          "type": "boolean"
+        },
         "colour": {
           "enum": [
             "auto",

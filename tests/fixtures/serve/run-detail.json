@@ -27,7 +27,8 @@
     "verify_started_ms": null,
     "approved_at": null,
     "approved_by": null,
-    "max_rounds": 2
+    "max_rounds": 2,
+    "reverted": null
   },
   "rounds": [
     {
