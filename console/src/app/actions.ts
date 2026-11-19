@@ -136,6 +136,7 @@ async function postRevert(base: string, body: Record<string, unknown>, fetchImpl
   const refused = typeof record.refused === "object" && record.refused != null ? (record.refused as Record<string, unknown>) : null;
   if (refused != null && typeof refused.reason === "string") return { kind: "refused", reason: refused.reason, paths: strings(refused.paths) };
   if (!answered.ok) return { kind: "failed", reason: posted.detail };
+  if (answer !== record) return { kind: "failed", reason: "the daemon's reply could not be read" };
   if (body.dry_run === true) return { kind: "preview", dependents: dependentsOf(record.dependents) };
   return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "failed", reason: "the daemon named no revert ticket" };
 }

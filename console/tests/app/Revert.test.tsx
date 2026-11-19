@@ -309,6 +309,26 @@ test("arrow keys move through the menu and Esc closes it, returning focus to its
   expect(document.activeElement).toBe(button);
 });
 
+test("a scroll inside an open menu keeps it open, and a page scroll closes it", async () => {
+  await mount("#/runs/demo/9", daemon(true).fetchImpl);
+  await openMenu("More for run 9");
+  await act(async () => void fireEvent.scroll(screen.getByRole("menu", { name: "More for run 9" })));
+  expect(screen.queryByRole("menu")).not.toBeNull();
+  await act(async () => void fireEvent.scroll(document));
+  expect(screen.queryByRole("menu")).toBeNull();
+});
+
+test("a preview answered 200 with a body that is not JSON offers no filing and posts nothing more", async () => {
+  const fake = daemon(true, () => new Response("<html>proxy</html>", { status: 200 }));
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+
+  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  expect(within(dialog).queryByText("Nothing merged since touches these files")).toBeNull();
+  expect(within(dialog).getAllByRole("button").map((button) => button.textContent)).toEqual(["Close"]);
+  expect(fake.posted).toHaveLength(1);
+});
+
 test("Revert… previews, lists the later merge, and files the revert with the typed reason, naming the new ticket", async () => {
   const fake = daemon(true, (body) =>
     body.dry_run === true

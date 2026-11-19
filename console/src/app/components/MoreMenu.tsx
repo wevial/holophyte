@@ -63,13 +63,16 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
       if (!wrap.current?.contains(event.target as Node)) setAt(null);
     };
     const away = () => setAt(null);
+    const scrolled = (event: Event) => {
+      if (!menu.current?.contains(event.target as Node)) setAt(null);
+    };
     document.addEventListener("pointerdown", outside, true);
     window.addEventListener("resize", away);
-    window.addEventListener("scroll", away, true);
+    window.addEventListener("scroll", scrolled, true);
     return () => {
       document.removeEventListener("pointerdown", outside, true);
       window.removeEventListener("resize", away);
-      window.removeEventListener("scroll", away, true);
+      window.removeEventListener("scroll", scrolled, true);
     };
   }, [open, focusOn]);
 
