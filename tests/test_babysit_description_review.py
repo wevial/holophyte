@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -108,8 +109,14 @@ class DescriptionFindingsTests(unittest.TestCase):
                 self.assertEqual(description_findings(
                     f"{line}{TAIL}", "REQUEST_CHANGES", []), [line])
 
+    def test_a_wrapped_tagged_bullet_is_one_description_finding(self):
+        self.assertEqual(description_findings(
+            f"{WRAPPED}{TAIL}", "REQUEST_CHANGES", []), [WRAPPED])
+
 
 DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
+WRAPPED = ('- [P2] path: "PR description" — the Changes table misstates\n'
+           '  the menu it lists for a reverted run')
 TABLE = ('- [P1] path: "console/src/app/components/TicketTable.tsx" — the row'
          ' menu drops the revert item')
 PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
@@ -168,8 +175,8 @@ class MixedRoundTests(unittest.TestCase):
         self.git("commit", "-qm", message)
         return self.git("rev-parse", "HEAD")
 
-    def review_fix(self, rejection):
-        replies, self.goals = [rejection, APPROVE], []
+    def review_fix(self, *rejections, fix_note=None):
+        replies, self.goals = [*rejections, APPROVE], []
 
         def reviewer(target, role, goal, *args, **kwargs):
             return replies.pop(0)
@@ -177,7 +184,7 @@ class MixedRoundTests(unittest.TestCase):
         def fixer(project, conn, run_id, beat_s, wt, budget_min, goal, *args,
                   **kwargs):
             self.goals.append(goal)
-            self.commit("fix")
+            self.commit(f"fix {len(self.goals)}")
             return "Restored the revert item.", False
 
         with (patch.object(holophyte.loop.review_round, "agent", reviewer),
@@ -191,19 +198,59 @@ class MixedRoundTests(unittest.TestCase):
             babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, None, 30, PULL, TICKET, "true", (),
-                [CRITERION], budget_min=10)
+                [CRITERION], fix_note=fix_note, budget_min=10)
 
-    def reviewer_findings(self):
+    def reviewer_findings(self, goal):
+        findings = goal.partition("\n\nReviewer findings:\n")[2]
+        return re.split(r"\n\n(?:Fix note from|Operator babysit note)", findings)[0]
+
+    def refreshed_reviews(self):
+        return [call.kwargs["review"] for call in self.refresh.call_args_list]
+
+    def assert_split(self, described):
+        self.review_fix(f"{TABLE}\n{described}{REJECT}")
+
         (goal,) = self.goals
-        return goal.partition("Reviewer findings:")[2]
+        self.assertIn("TicketTable.tsx", self.reviewer_findings(goal))
+        self.assertNotIn("PR description", goal)
+        self.assertNotIn("Changes table", goal)
+        self.assertEqual(self.refreshed_reviews(), [described])
 
     def test_a_mixed_round_sends_the_description_finding_to_the_pr_text(self):
-        self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}")
+        self.assert_split(DESCRIBED)
 
-        self.assertIn("TicketTable.tsx", self.reviewer_findings())
-        self.assertNotIn("PR description", self.reviewer_findings())
-        self.assertNotIn("Changes table", self.reviewer_findings())
-        self.assertEqual(self.refresh.call_args.kwargs["review"], DESCRIBED)
+    def test_a_wrapped_description_finding_leaves_the_fix_goal_whole(self):
+        self.assert_split(WRAPPED)
+        self.assertNotIn("reverted run", self.goals[0])
+
+    def test_a_mixed_round_under_an_operator_note_keeps_the_split(self):
+        self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}",
+                        fix_note="restore the revert item")
+
+        (goal,) = self.goals
+        self.assertIn("restore the revert item", goal)
+        self.assertIn("TicketTable.tsx", self.reviewer_findings(goal))
+        self.assertNotIn("PR description", goal)
+        self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
+
+    def test_a_repeated_description_finding_does_not_make_a_round_a_repeat(self):
+        self.project.config_path.write_text(
+            '[merge]\nmode = "pr"\napprove = "auto"\ncovering_fix_rounds = 2\n')
+        again = DESCRIBED.replace("Changes table", "Summary")
+        menu = '- [P1] path: "holophyte/menu.py" — revert is unguarded'
+        self.review_fix(f"{TABLE}\n{DESCRIBED}\n{again}{REJECT}",
+                        f"{menu}\n{DESCRIBED}\n{again}{REJECT}")
+
+        self.assertEqual(len(self.goals), 2)
+        self.assertIn("holophyte/menu.py", self.reviewer_findings(self.goals[1]))
+
+    def test_a_fenced_example_of_the_tag_stays_with_its_code_blocker(self):
+        example = '  ```\n  - path: "PR description" — sample reply\n  ```'
+        self.review_fix(f"{TABLE}\n{example}{REJECT}")
+
+        (goal,) = self.goals
+        self.assertIn("sample reply", self.reviewer_findings(goal))
+        self.assertEqual(self.refreshed_reviews(), [""])
 
     def test_an_all_code_round_sends_every_blocker_to_the_implementer(self):
         code = f"{TABLE}\n- [P2] path: \"holophyte/menu.py\" — revert is unguarded"
@@ -212,9 +259,10 @@ class MixedRoundTests(unittest.TestCase):
 
         self.review_fix(f"{code}{REJECT}")
 
-        self.assertIn("TicketTable.tsx", self.reviewer_findings())
-        self.assertIn("holophyte/menu.py", self.reviewer_findings())
-        self.assertEqual(self.refresh.call_args.kwargs["review"], "")
+        (goal,) = self.goals
+        self.assertIn("TicketTable.tsx", self.reviewer_findings(goal))
+        self.assertIn("holophyte/menu.py", self.reviewer_findings(goal))
+        self.assertEqual(self.refreshed_reviews(), [""])
 
 
 if __name__ == "__main__":

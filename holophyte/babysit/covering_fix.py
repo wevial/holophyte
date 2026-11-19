@@ -36,8 +36,8 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
         ledger(conn, run_id, task_id, "round",
                f"Babysit review fix allowance after round {rnd}: one fix and"
                " recorded re-review, even if reviewRoundCap is spent.", provider)
-        return fix_goal(pull, ticket, verdict, "Operator babysit note",
-                        fix_note), None
+        return _code_goal(conn, run_id, pull, ticket, verdict,
+                          "Operator babysit note", fix_note), None
     cap = merge_config(project).covering_fix_rounds
     if not cap or conn is None or description_findings(verdict, decision,
                                                        unwitnessed):
@@ -63,13 +63,20 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
            f"Automatic fix round {made + 1} of {cap} after round {rnd} on"
            f" {pull.url}: the review of the fix at {sha} asked for new"
            " changes", provider)
+    return _code_goal(conn, run_id, pull, ticket, verdict,
+                      f"Fix note from the review of the fix at {sha[:12]}",
+                      fix_note_of(_code_findings(covering))), None
+
+
+def _code_goal(conn, run_id, pull, ticket, verdict, label, note):
     verdict, described = without_description(verdict)
     hold_for_pr_text(conn, run_id, described)
-    code = [finding for finding in covering if not DESCRIPTION_SUBJECT_RE.match(
+    return fix_goal(pull, ticket, verdict, label, note)
+
+
+def _code_findings(findings):
+    return [finding for finding in findings if not DESCRIPTION_SUBJECT_RE.match(
         str(finding.get("message", "")))]
-    return fix_goal(pull, ticket, verdict,
-                    f"Fix note from the review of the fix at {sha[:12]}",
-                    fix_note_of(code)), None
 
 
 def fix_goal(pull, ticket, verdict, label, note):
@@ -82,11 +89,11 @@ def fix_goal(pull, ticket, verdict, label, note):
 
 def repeat_overlap(conn, run_id, rnd, covering):
     """The most the covering round's findings share with any earlier round's."""
-    best = (0.0, None)
+    best, covering = (0.0, None), _code_findings(covering)
     for earlier in store.read.rounds_of(conn, run_id):
         if earlier.round >= rnd or earlier.endedAt is None:
             continue
-        findings = json.loads(earlier.findings)
+        findings = _code_findings(json.loads(earlier.findings))
         if store.findings_fingerprint(findings) == store.EMPTY_FINGERPRINT:
             continue
         shared = store.findings_overlap(findings, covering)

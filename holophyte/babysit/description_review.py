@@ -21,6 +21,13 @@ DESCRIPTION_SUBJECT_RE = re.compile(
 
 PR_TEXT_REVIEW_KIND = "pr_text_review"
 
+FENCE_RE = re.compile(r"^\s*(?:```|~~~)")
+
+CONTINUATION_RE = re.compile(
+    r"^\s+(?!(?:[-*+]|\d+[.)])\s|(?:\*\*)?[\[(]?\s*(?:p[0-3]|nit|blocker|major"
+    r"|minor)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]|\b[\w-]+\.[a-z]\w{0,5}\b)).*\S",
+    re.I)
+
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
 HEADING_WORDS = (r"(?:(?:review|open|remaining|description)\s+)?"
@@ -40,21 +47,25 @@ def description_findings(verdict, decision, unwitnessed):
     """The blockers, when every one of them is about the PR description."""
     if decision != "REQUEST_CHANGES" or unwitnessed:
         return []
-    findings = _blocker_lines(verdict)
-    if findings and all(DESCRIPTION_SUBJECT_RE.match(line) for line in findings):
+    findings = _blocker_items(verdict)
+    if findings and all(DESCRIPTION_SUBJECT_RE.match(item) for item in findings):
         return findings
     return []
 
 
 def without_description(verdict):
-    described = [line for line in _blocker_lines(verdict)
-                 if DESCRIPTION_SUBJECT_RE.match(line)]
-    kept = [line for line in verdict.splitlines() if line.strip() not in described]
+    described = [item for item in _blocker_items(verdict)
+                 if DESCRIPTION_SUBJECT_RE.match(item)]
+    heads = {item.splitlines()[0] for item in described}
+    lines = verdict.splitlines()
+    kept = [line for group in _items(lines)
+            if lines[group[0]].strip() not in heads
+            for line in (lines[i] for i in group)]
     return "\n".join(kept), described
 
 
 def hold_for_pr_text(conn, run_id, described):
-    if described:
+    if described and conn is not None:
         store.record_event(conn, run_id, PR_TEXT_REVIEW_KIND,
                            "\n".join(described), level="detail")
 
@@ -72,11 +83,27 @@ def pending_text_review(conn, run_id):
     return "\n".join(pending)
 
 
-def _blocker_lines(verdict):
+def _blocker_items(verdict):
     reply = without_criteria(without_refuted(verdict))
     for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
         reply = pattern.sub("", reply)
-    return [line.strip() for line in reply.splitlines() if line.strip()]
+    lines = reply.splitlines()
+    return ["\n".join([lines[group[0]].strip()]
+                      + [lines[i].rstrip() for i in group[1:] if lines[i].strip()])
+            for group in _items(lines) if lines[group[0]].strip()]
+
+
+def _items(lines):
+    groups, fenced = [], False
+    for index, line in enumerate(lines):
+        fence = FENCE_RE.match(line) is not None
+        if groups and (fenced or fence or not line.strip()
+                       or CONTINUATION_RE.match(line)):
+            groups[-1].append(index)
+        else:
+            groups.append([index])
+        fenced ^= fence
+    return groups
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
