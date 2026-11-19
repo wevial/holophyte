@@ -17,11 +17,12 @@ interface Handle {
 }
 
 const LAVA_RESETTLE_S = 3;
+const RESETTLE_AFTER_MS = 250;
 
 /** A held frame shows no motion, so a knob that only changes how the simulation moves re-runs it for the frame. */
 function resettle(effect: BandEffect, drawing: Handle, changed: (key: string) => boolean): void {
   if (effect === "lava" && changed("heat")) drawing.advance?.(LAVA_RESETTLE_S);
-  if (effect === "hyphae" && (changed("appetite") || changed("food"))) drawing.reset?.();
+  if (effect === "hyphae" && ["appetite", "food", "seed"].some(changed)) drawing.reset?.();
 }
 
 export const LAVA_BOX = 4.73;
@@ -79,6 +80,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const { customThemes } = useCustomThemes();
   const { values } = useEffectSettings(effect);
   const applied = useRef(values);
+  const resettling = useRef<ReturnType<typeof setTimeout>>(undefined);
   const knobs = JSON.stringify(values);
   const tall = effect === "lava";
 
@@ -118,10 +120,22 @@ export function Haze({ effect }: { effect: BandEffect }) {
   useEffect(() => {
     if (!live.current) return;
     Object.assign(live.current.config, liveOptions(effect, values, palette), { motion });
-    const before = applied.current;
-    applied.current = values;
-    if (still) resettle(effect, live.current, (key) => before[key] !== values[key]);
+    clearTimeout(resettling.current);
+    if (!still) {
+      applied.current = values;
+      return;
+    }
+    const drawing = live.current;
+    // A slider drag sends a burst of values; the simulation re-runs once, for the last.
+    resettling.current = setTimeout(() => {
+      if (live.current !== drawing) return;
+      const before = applied.current;
+      applied.current = values;
+      resettle(effect, drawing, (key) => before[key] !== values[key]);
+    }, RESETTLE_AFTER_MS);
   }, [palette, motion, customThemes, knobs]);
+
+  useEffect(() => () => clearTimeout(resettling.current), []);
 
   // A renderer that fell back under a slow moving frame gets another try at its one still frame.
   useEffect(() => {

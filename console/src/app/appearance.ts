@@ -126,6 +126,7 @@ type UnsavedValues = Map<BandEffect, Map<string, KnobValue | null>>;
 
 let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
 let unsavedValues: UnsavedValues = new Map();
+let unmovedHazeStrength: number | null = null;
 let effectSettingsShown: [EffectSettings, UnsavedValues, EffectSettings] = [{}, unsavedValues, {}];
 
 function readStoredEffectSettings(): EffectSettings {
@@ -162,6 +163,7 @@ function writeEffectSettings(settings: EffectSettings): void {
   const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
   if (writeStored(EFFECTS_KEY, raw)) {
     unsavedValues = new Map();
+    unmovedHazeStrength = null;
     writeStored(HAZE_STRENGTH_KEY, null);
     return;
   }
@@ -198,6 +200,7 @@ function moveSavedHazeStrength(): void {
     if (inRange(strength, STRENGTHS) && strength !== FULL && settings.haze?.strength === undefined
       && !writeStored(EFFECTS_KEY, JSON.stringify({ ...settings, haze: { ...settings.haze, strength } }))) {
       unsavedValues = new Map([["haze", new Map([["strength", strength]])]]);
+      unmovedHazeStrength = strength;
       return;
     }
     localStorage.removeItem(HAZE_STRENGTH_KEY);
@@ -207,6 +210,16 @@ function moveSavedHazeStrength(): void {
 }
 
 moveSavedHazeStrength();
+
+function dropMovedHazeStrength(): void {
+  if (unmovedHazeStrength === null || localStorage.getItem(HAZE_STRENGTH_KEY) !== null) return;
+  const haze = new Map(unsavedValues.get("haze"));
+  if (haze.get("strength") === unmovedHazeStrength) haze.delete("strength");
+  unmovedHazeStrength = null;
+  unsavedValues = new Map(unsavedValues);
+  if (haze.size) unsavedValues.set("haze", haze);
+  else unsavedValues.delete("haze");
+}
 
 function readMotion(fallback = true): boolean {
   try {
@@ -352,7 +365,12 @@ export function applyCustomPick(): void {
 systemDark.subscribe(applyCustomPick);
 
 window.addEventListener("storage", (event) => {
-  if (event.key !== EFFECTS_KEY && event.key !== null) return;
+  if (event.key !== EFFECTS_KEY && event.key !== HAZE_STRENGTH_KEY && event.key !== null) return;
+  try {
+    dropMovedHazeStrength();
+  } catch {
+    return;
+  }
   effectSettingsStore.reload();
   applyHazeStrength(readHazeStrength());
 });

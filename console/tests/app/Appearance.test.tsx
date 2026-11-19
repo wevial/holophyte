@@ -168,7 +168,12 @@ function fakeEffects() {
     const config = { ...given };
     (configs[name] ??= []).push(config);
     return {
-      config, advance: (seconds: number) => handleCalls.push(`${name} advance ${seconds > 0}`), reset: () => handleCalls.push(`${name} reset`),
+      config,
+      advance: (seconds: number) => handleCalls.push(`${name} advance${seconds > 0 ? "" : " nothing"} heat ${(config as { heat?: number }).heat}`),
+      reset: () => {
+        const { appetite, food, seed } = config as Record<string, number>;
+        handleCalls.push(`${name} reset appetite ${appetite} food ${food} seed ${seed}`);
+      },
       destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); },
     };
   }) as never));
@@ -382,22 +387,33 @@ test("Heat 2 and Palette magma reach mounted Lava's live config without a remoun
   }
 });
 
-test("with Motion off, Lava's Heat runs the held lamp forward and Hyphae's Appetite and Patches bloom a fresh colony, while Speed and moving frames do neither", async () => {
+const idle = () => act(() => new Promise((done) => setTimeout(done, 300)));
+
+test("with Motion off, a settled burst of Lava Heat runs the held lamp forward once at the last Heat, and Hyphae's Appetite, Patches and Seed bloom a fresh colony from the new values, while Speed and moving frames do neither", async () => {
   const effects = fakeEffects();
   try {
     await mount();
     fireEvent.click(scheme("Dark"));
     fireEvent.click(tile("Header", "Lava"));
     fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    await idle();
     expect(effects.handleCalls).toEqual([]);
     fireEvent.click(motion());
-    fireEvent.change(knob("Heat"), { target: { value: "2.5" } });
+    for (const value of ["2.5", "2.6", "2.7"]) fireEvent.change(knob("Heat"), { target: { value } });
+    await idle();
     fireEvent.change(knob("Speed"), { target: { value: "2" } });
+    await idle();
     fireEvent.click(tile("Header", "Hyphae"));
     fireEvent.change(knob("Appetite"), { target: { value: "1" } });
     fireEvent.change(knob("Patches"), { target: { value: "3" } });
+    await idle();
+    fireEvent.change(knob("Seed"), { target: { value: "7" } });
+    await idle();
     fireEvent.change(knob("Speed"), { target: { value: "2" } });
-    expect([effects.configs.Lava!.length, effects.configs.Hyphae!.length, effects.handleCalls]).toEqual([1, 1, ["Lava advance true", "Hyphae reset", "Hyphae reset"]]);
+    await idle();
+    expect([effects.configs.Lava!.length, effects.configs.Hyphae!.length, effects.handleCalls]).toEqual([1, 1, [
+      "Lava advance heat 2.7", "Hyphae reset appetite 1 food 3 seed 0", "Hyphae reset appetite 1 food 3 seed 7",
+    ]]);
   } finally {
     cleanup();
     effects.restore();
@@ -561,6 +577,24 @@ test("a Haze strength of 150 saved under the old key still shows 150 when storag
     expect([appearance.readHazeStrength(), real.getItem("holophyte.effects")]).toEqual([150, null]);
     appearance.resetAppearance();
     expect([appearance.readHazeStrength(), real.getItem("holophyte.hazeStrength")]).toEqual([100, null]);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", storage);
+  }
+});
+
+test("a Haze strength of 150 left under the old key by a full store gives way to 175 saved in another tab that retired the key", async () => {
+  localStorage.setItem("holophyte.hazeStrength", "150");
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  Object.defineProperty(globalThis, "localStorage", { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) });
+  try {
+    const freshInstance = "../../src/app/appearance.ts?retired";
+    const appearance: typeof import("../../src/app/appearance") = await import(freshInstance);
+    expect(appearance.readHazeStrength()).toBe(150);
+    real.setItem("holophyte.effects", JSON.stringify({ haze: { strength: 175 } }));
+    real.removeItem("holophyte.hazeStrength");
+    window.dispatchEvent(new StorageEvent("storage", { key: "holophyte.effects" }));
+    expect(appearance.readHazeStrength()).toBe(175);
   } finally {
     Object.defineProperty(globalThis, "localStorage", storage);
   }
