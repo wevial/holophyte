@@ -1,4 +1,4 @@
-import { useContext, useId, useRef, useState } from "react";
+import { useContext, useId, useRef, useState, type ReactNode } from "react";
 import { ROUTES } from "../../lib/actions";
 import { ABORT, RESUME } from "../../lib/attention";
 import { prLabel } from "../../lib/shipped";
@@ -9,6 +9,7 @@ import type { RunPage } from "../run";
 import { Btn } from "./Btn";
 import { ACTIONS_OFF_LINE, BUSY, detailLine } from "./CardActions";
 import { ConfirmDialog } from "./ConfirmDialog";
+import type { MenuItem } from "./MoreMenu";
 import { RequeueForm } from "./RequeueForm";
 
 const PAUSE = "Pause";
@@ -30,8 +31,9 @@ function labelsOf(page: Page, newest: boolean): string[] {
 /** Pause, Abort, Resume or Requeue for the Run page's run, as its state
  *  allows, each posted through `useAction()`; Abort first asks for a
  *  reason in a confirm and Requeue for a note in its form. A refusal reads
- *  under the buttons, or in the open requeue form. */
-export function RunActions({ page, project }: { page: Page; project: string }) {
+ *  under the buttons, or in the open requeue form. `after` follows the
+ *  buttons, then `menu` drawn with the same actions as menu items. */
+export function RunActions({ page, project, after, menu }: { page: Page; project: string; after?: ReactNode; menu: (items: MenuItem[]) => ReactNode }) {
   const action = useAction();
   const deps = useContext(PollDepsContext);
   const ticket = useTicket(page.base, page.detail.run.ticket, deps);
@@ -44,7 +46,6 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
   const requeueOpener = useRef<HTMLButtonElement>(null);
   const labels = labelsOf(page, ticket.isSuccess && ticket.data?.runs[0]?.run === page.detail.run.id);
   if (requeueing && !page.actions) setRequeueing(false);
-  if (labels.length === 0) return null;
   const { run } = page.detail;
   const pending = action.isPending ? action.variables?.label : undefined;
   const refused = action.data != null && !action.data.ok ? action.data.detail : null;
@@ -85,10 +86,18 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
     const result = await post(ABORT, ROUTES[ABORT]!, { run: run.id, close, note: reason.trim() }, said);
     if (result.ok) setAborting(false);
   };
+  const items: MenuItem[] = labels.map((label) => ({
+    label,
+    onSelect: press[label]!,
+    disabled: !page.actions || pending != null,
+    note: page.actions ? undefined : ACTIONS_OFF_LINE,
+  }));
   const branch = run.branch == null ? "Its branch" : `The branch ${run.branch}`;
   const kept = close ? `${branch} is kept, ${pr} is closed` : pr == null ? `${branch} is kept` : `${branch} and ${pr} are kept`;
 
   return (
+    <>
+    {labels.length > 0 && (
     <div data-run-actions className="flex shrink-0 flex-col items-end gap-2">
       <div className="flex flex-wrap justify-end gap-2">
         {labels.map((label) => (
@@ -163,5 +172,9 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
         </ConfirmDialog>
       )}
     </div>
+    )}
+    {after}
+    {menu(items)}
+    </>
   );
 }

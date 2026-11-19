@@ -10,6 +10,9 @@ import { keepScope, useConsolePeers } from "../scope";
 import type { State } from "../state";
 import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
+import { ACTIONS_OFF } from "../../lib/actions";
+import { MoreMenu, ROW_MENU } from "./MoreMenu";
+import { usePlaceItems, useRevertFlow } from "./Revert";
 
 const GRID = "grid items-center gap-x-3 max-[760px]:grid-cols-[22px_auto_auto_minmax(0,1fr)_auto] max-[760px]:gap-x-1.5";
 const DAY_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_48px_60px] min-[760px]:@max-[780px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_44px_44px_48px_60px] min-[760px]:@max-[600px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_48px_60px]";
@@ -88,7 +91,17 @@ function LoopGlyph() {
   );
 }
 
+/** Open run, Copy link, and Revert… for a merged run of a project that
+ *  reports `reverts`. */
+function useRunRowMenu(row: RunRow) {
+  const status = useConsolePeers().hosts.find((host) => host.base === row.base)?.status;
+  const revertable = row.state === "merged" && status?.reverts === true;
+  const place = { project: row.project, run: row.id };
+  return useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, reverted: row.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null, usePlaceItems(place, place));
+}
+
 function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; colour: string | undefined; grouped: boolean }) {
+  const menu = useRunRowMenu(row);
   const start = clock(row.started_ms, now);
   const shownStart = grouped ? formatClock(row.started_ms) : start;
   const need = NEEDS_YOU.has(row.state);
@@ -97,7 +110,7 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
       data-row
       data-run={row.id}
       data-need={need ? "" : undefined}
-      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} relative min-h-8 border-b border-rule-2 px-2.5 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover max-[760px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
+      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} group relative min-h-8 border-b border-rule-2 pl-2.5 pr-11 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)] max-[760px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
       <span className="inline-flex max-[760px]:row-span-2"><StateGlyph row={row} /></span>
       <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} ${NARROW_LINK} no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
@@ -127,6 +140,8 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
       <span data-pr className={`${MONO} ${ROOMY}`}>{prNumber(row.pr_url)}</span>
       <span className={`${MONO} ${UNDER_TITLE} whitespace-nowrap max-[760px]:col-start-3 max-[760px]:before:content-['·_']`}>{shownStart}</span>
       <span className={`${MONO} whitespace-nowrap text-right max-[760px]:col-start-5 max-[760px]:row-span-2 max-[760px]:row-start-1`}>{formatSettled(row.elapsed_ms)}</span>
+      <MoreMenu compact label={`More for run ${row.id}`} items={menu.items} className={`${ROW_MENU} absolute top-0 right-1.5 z-[2] flex h-8 items-center`} />
+      <div className="col-span-full pb-1.5 empty:hidden">{menu.layer}</div>
     </li>
   );
 }

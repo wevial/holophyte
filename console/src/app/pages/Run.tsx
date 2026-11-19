@@ -3,6 +3,8 @@ import { Link, useParams } from "@tanstack/react-router";
 import { Markdown } from "../components/Markdown";
 import { TicketLink } from "../components/TicketLink";
 import { RunActions } from "../components/RunActions";
+import { MoreMenu, type MenuItem } from "../components/MoreMenu";
+import { usePlaceItems, useRevertFlow } from "../components/Revert";
 import { leadParagraph } from "../../lib/ticket";
 import { AgentCompose } from "../components/AgentCompose";
 import { AgentPanel } from "../components/AgentPanel";
@@ -13,7 +15,8 @@ import { RunDetails } from "../components/RunDetails";
 import { ACTIONS_OFF_LINE } from "../components/CardActions";
 import { RunFacts, TimeBox } from "../components/RunFacts";
 import { FoldChevron } from "../components/icons";
-import { ScoutThis } from "../components/ScoutThis";
+import { ScoutThis, useScoutThis } from "../components/ScoutThis";
+import type { ScoutTarget } from "../scouts";
 import { RunStepper } from "../components/RunStepper";
 import { StateDot } from "../components/StateDot";
 import { TitleText } from "../components/TitleText";
@@ -75,6 +78,33 @@ function Verdict({ sentence, run, merged }: { sentence: string; run: RunDetail["
   );
 }
 
+/** A failed run's Scout target. */
+const scoutOf = (page: Extract<RunPageFacts, { kind: "run" }>, project: string): ScoutTarget => {
+  const { run } = page.detail;
+  return { project, about: `run:${run.id}`, kind: "bug", ask: `Why did run ${run.id} of ${run.ticket} fail?`, off: page.actions ? null : ACTIONS_OFF_LINE };
+};
+
+/** The header's ⋯ menu: the run's `actions`, Scout for a failed run, Open
+ *  ticket, Copy link, and Revert… for a merged run of a project that
+ *  reports `reverts`. */
+function RunMenu({ page, project, actions }: { page: Extract<RunPageFacts, { kind: "run" }>; project: string; actions: MenuItem[] }) {
+  const { run } = page.detail;
+  const scout = scoutOf(page, project);
+  const openScout = useScoutThis(scout);
+  const scoutItems: MenuItem[] = run.outcome === "failed" ? [{ label: "Scout", onSelect: openScout, disabled: scout.off != null, note: scout.off ?? undefined }] : [];
+  const revertable = run.outcome === "merged" && page.host.status?.reverts === true;
+  const revert = useRevertFlow(
+    revertable ? { base: page.host.base, project, ticket: run.ticket, run: run.id, reverted: run.reverted, off: page.actions ? null : ACTIONS_OFF_LINE } : null,
+    [...actions, ...scoutItems, ...usePlaceItems({ project, run: run.id }, { project, ticket: run.ticket })],
+  );
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <MoreMenu label={`More for run ${run.id}`} items={revert.items} />
+      {revert.layer}
+    </div>
+  );
+}
+
 export function RunPage() {
   const { project, run: param } = useParams({ from: "/runs/$project/$run" });
   const id = /^\d+$/.test(param) ? Number(param) : null;
@@ -101,12 +131,13 @@ export function RunPage() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <h1 className="m-0 font-sans text-[24px] font-semibold leading-[1.25] tracking-[-.015em] text-ink [text-wrap:balance]"><TitleText>{run.title}</TitleText></h1>
           <div className="flex flex-wrap items-start justify-end gap-2">
-            <RunActions key={`${page.base}/${run.id}`} page={page} project={project} />
-            {run.outcome === "failed" && (
-              <ScoutThis
-                target={{ project, about: `run:${run.id}`, kind: "bug", ask: `Why did run ${run.id} of ${run.ticket} fail?`, off: page.actions ? null : ACTIONS_OFF_LINE }}
-              />
-            )}
+            <RunActions
+              key={`${page.base}/${run.id}`}
+              page={page}
+              project={project}
+              after={run.outcome === "failed" && <ScoutThis target={scoutOf(page, project)} />}
+              menu={(actions) => <RunMenu page={page} project={project} actions={actions} />}
+            />
           </div>
         </div>
         <div data-run-verdict className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">

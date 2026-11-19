@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext } from "react";
 import { actionBase, postAction, type ActionResult } from "../lib/actions";
+import type { Fetch } from "../lib/poll";
 import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
 import { putConfig, type ConfigWrite } from "../lib/config";
 import { useToast } from "./components/Toast";
@@ -56,14 +57,19 @@ export function useAction() {
  *  `column`, or a cancel with the reason `note`. */
 export type BoardWrite = { base: string; key: string; revision: number; said: string } & ({ column: "ready" | "backlog" } | { note: string });
 
+/** The mutation key every board write to ticket `key` at `base` shares, so
+ *  each control drawing that ticket's moves sees one in flight. */
+export const boardWriteKey = (base: string, key: string) => ["board-write", base, key] as const;
+
 /** A move or cancel as a mutation resolving to the daemon's `WriteResult`.
  *  An `ok` answer says its sentence and, like a 409, re-reads the fleet and
  *  every route query of `base`; nothing is retried. */
-export function useBoardWrite() {
+export function useBoardWrite(mutationKey?: readonly unknown[]) {
   const deps = useContext(PollDepsContext);
   const client = useQueryClient();
   const toast = useToast();
   return useMutation({
+    mutationKey,
     mutationFn: (write: BoardWrite) =>
       "column" in write
         ? moveTicket(write.base, write.key, write.revision, write.column, deps.fetch)
@@ -82,4 +88,83 @@ export function writeRefusal(result: WriteResult | undefined, key: string): stri
   if (result == null || result.ok) return null;
   if ("conflict" in result) return [`${key} changed since this page read it. It is read again; try once more.`];
   return "problems" in result ? result.problems : [result.error];
+}
+
+/** One later merge that changed a file the reverted merge changed. */
+interface RevertDependent {
+  key: string;
+  sha: string;
+  paths: string[];
+}
+
+/** What `POST /actions/revert` answered: a preview's dependents, the filed
+ *  ticket's key, a check's refusal with the refused paths, or a request
+ *  that failed for another reason. */
+export type RevertAnswer =
+  | { kind: "preview"; dependents: RevertDependent[] }
+  | { kind: "filed"; ticket: string }
+  | { kind: "refused"; reason: string; paths: string[] }
+  | { kind: "failed"; reason: string };
+
+/** The daemon wants a reason on a preview too; it records none for it. */
+const PREVIEW_REASON = "preview";
+
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((each): each is string => typeof each === "string") : []);
+
+const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((each) => typeof each === "string");
+
+const isDependent = (each: unknown): each is RevertDependent =>
+  typeof each === "object" && each != null && typeof (each as RevertDependent).key === "string" && typeof (each as RevertDependent).sha === "string" && isStrings((each as RevertDependent).paths);
+
+/** A preview's dependents when `record` is a whole allowed preview, else null. */
+function previewOf(record: Record<string, unknown>): RevertDependent[] | null {
+  const { enabled, refused, dependents } = record;
+  if (enabled !== true || refused !== null || !Array.isArray(dependents) || !dependents.every(isDependent)) return null;
+  return dependents.map(({ key, sha, paths }) => ({ key, sha, paths }));
+}
+
+/** `POST /actions/revert` through `postAction()`, decoding the reply it
+ *  hands back from the fetch it was given: `postAction()` keeps only `ok`
+ *  and `detail`, and a revert's reply carries neither. */
+async function postRevert(base: string, body: Record<string, unknown>, fetchImpl: Fetch): Promise<RevertAnswer> {
+  let reply: Response | null = null;
+  const keep: Fetch = async (url, init) => {
+    const response = await fetchImpl(url, init);
+    reply = response.clone();
+    return response;
+  };
+  const posted = await postAction(base, "/actions/revert", body, keep);
+  const answered = reply as Response | null;
+  if (answered == null) return { kind: "failed", reason: posted.detail };
+  const answer: unknown = await answered.json().catch(() => null);
+  const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
+  const refused = typeof record.refused === "object" && record.refused != null ? (record.refused as Record<string, unknown>) : null;
+  if (refused != null && typeof refused.reason === "string") return { kind: "refused", reason: refused.reason, paths: strings(refused.paths) };
+  if (!answered.ok) return { kind: "failed", reason: posted.detail };
+  if (answer !== record) return { kind: "failed", reason: "the daemon's reply could not be read" };
+  if (body.dry_run === true) {
+    const dependents = previewOf(record);
+    return dependents == null ? { kind: "failed", reason: "the daemon's preview could not be read" } : { kind: "preview", dependents };
+  }
+  return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "failed", reason: "the daemon named no revert ticket" };
+}
+
+/** The `dry_run` preview of reverting `key` at `base`; it files nothing. */
+export function previewRevert(base: string, key: string, fetchImpl: Fetch): Promise<RevertAnswer> {
+  return postRevert(base, { key, reason: PREVIEW_REASON, dry_run: true }, fetchImpl);
+}
+
+/** Filing the revert of `key` at `base` for `reason` as a mutation; a filed
+ *  revert re-reads the fleet and `base`'s route queries. */
+export function useRevert() {
+  const deps = useContext(PollDepsContext);
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ base, key, reason }: { base: string; key: string; reason: string }) => postRevert(base, { key, reason }, deps.fetch),
+    onSuccess: (answer, { base }) => {
+      if (answer.kind !== "filed") return;
+      void client.invalidateQueries({ queryKey: ["fleet"] });
+      void client.invalidateQueries({ queryKey: ["route", base] });
+    },
+  });
 }

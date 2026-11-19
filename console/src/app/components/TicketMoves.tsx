@@ -1,13 +1,15 @@
-import { useContext, useId, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useContext, useId, useRef, useState, type ReactNode } from "react";
+import { useIsMutating } from "@tanstack/react-query";
+import { Link, useNavigate } from "@tanstack/react-router";
 import type { TicketDetail } from "../../lib/contract.gen";
 import type { HostRecord } from "../../lib/hosts";
-import { useBoardWrite, writeRefusal, type BoardWrite } from "../actions";
+import { boardWriteKey, useBoardWrite, writeRefusal, type BoardWrite } from "../actions";
 import type { ContractBodies } from "../fleet";
 import { useBoards } from "../queries";
 import { PollDepsContext } from "../scope";
 import { Btn } from "./Btn";
 import { ConfirmDialog } from "./ConfirmDialog";
+import type { MenuItem } from "./MoreMenu";
 
 const SETTLED = new Set(["merged", "abandoned"]);
 
@@ -28,27 +30,34 @@ function Refusal({ lines, className }: { lines: string[] | null; className: stri
  *  while `host`'s `/board` takes writes, each posted at the revision the
  *  page read: the ticket's current one, else its board card's. Edit is a
  *  link to the Edit page, or, given `onEditRaw`, a button that opens the
- *  raw editor at that revision, disabled while `editOpen`. */
-export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditRaw, editOpen }: {
+ *  raw editor at that revision, disabled while `editOpen`. Given `menu`, it
+ *  draws `menu` with the same moves as menu items in place of the buttons.
+ *  Every instance for one ticket disables its moves while any of them has
+ *  a write in flight, so the buttons and the menu post a move once. */
+export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditRaw, editOpen, menu }: {
   project: string; ticketKey: string; ticket: TicketDetail; host: HostRecord<ContractBodies>; liveRun: number | null;
-  onEditRaw?: (revision: number) => void; editOpen: boolean;
+  onEditRaw?: (revision: number) => void; editOpen: boolean; menu?: (items: MenuItem[]) => ReactNode;
 }) {
+  const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
   const board = useBoards([host], deps)[0]?.board;
-  const write = useBoardWrite();
+  const write = useBoardWrite(boardWriteKey(host.base, ticketKey));
+  const writing = useIsMutating({ mutationKey: boardWriteKey(host.base, ticketKey) }) > 0;
   const [last, setLast] = useState<"backlog" | "ready" | "cancel" | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const reasonId = useId();
   const opener = useRef<HTMLButtonElement>(null);
+  const menuOpener = useRef<HTMLElement | null>(null);
   const card = board?.columns.flatMap((column) => column.tickets).find((each) => each.ticket === ticketKey);
   const revision = ticket.current?.revision ?? card?.revision ?? null;
-  if (board?.editable !== true || revision == null || SETTLED.has(ticket.status)) return null;
+  if (board?.editable !== true || revision == null || SETTLED.has(ticket.status)) return menu?.([]) ?? null;
   const column = ticket.current?.column ?? card?.column ?? null;
   const refused = writeRefusal(write.data, ticketKey);
 
   const at = { base: host.base, key: ticketKey, revision };
-  const post = (kind: "backlog" | "ready" | "cancel", body: BoardWrite) => {
+  const post = async (kind: "backlog" | "ready" | "cancel", body: BoardWrite) => {
+    if (writing) return null;
     setLast(kind);
     return write.mutateAsync(body);
   };
@@ -56,38 +65,54 @@ export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditR
     void post(target, { ...at, column: target, said: `Moved ${ticketKey} to ${target === "ready" ? "Ready" : "Backlog"}.` });
   const confirmCancel = async () => {
     const result = await post("cancel", { ...at, note: reason.trim(), said: `Cancelled ${ticketKey}.` });
-    if (result.ok) setCancelling(false);
+    if (result?.ok) setCancelling(false);
   };
   const keepIt = () => {
     setCancelling(false);
-    opener.current?.focus();
+    (opener.current ?? menuOpener.current)?.focus();
   };
   const openCancel = () => {
+    menuOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     write.reset();
     setReason("");
     setCancelling(true);
   };
+  const toBacklog = ticket.run == null && column !== "backlog";
+  const items: MenuItem[] = [
+    onEditRaw != null
+      ? { label: "Edit", onSelect: () => onEditRaw(revision), disabled: editOpen }
+      : { label: "Edit", onSelect: () => void navigate({ to: "/tickets/$project/$key/edit", params: { project, key: ticketKey }, search: {} }) },
+    ...(toBacklog ? [{ label: "Move to backlog", onSelect: () => move("backlog"), disabled: writing }] : []),
+    ...(column === "backlog" ? [{ label: "Requeue", onSelect: () => move("ready"), disabled: writing }] : []),
+    { label: "Cancel ticket", onSelect: openCancel, disabled: writing },
+  ];
 
   return (
     <>
+      {menu != null ? (
+        menu(items)
+      ) : (
+      <>
       {onEditRaw != null ? (
         <Btn disabled={editOpen} onClick={() => onEditRaw(revision)}>Edit</Btn>
       ) : (
         <Link to="/tickets/$project/$key/edit" params={{ project, key: ticketKey }} search={{}} className="btn" data-variant="quiet">Edit</Link>
       )}
-      {ticket.run == null && column !== "backlog" && (
-        <Btn busy={write.isPending && last === "backlog"} busyLabel="Moving…" disabled={write.isPending && last !== "backlog"} onClick={() => move("backlog")}>
+      {toBacklog && (
+        <Btn busy={write.isPending && last === "backlog"} busyLabel="Moving…" disabled={writing && !(write.isPending && last === "backlog")} onClick={() => move("backlog")}>
           Move to backlog
         </Btn>
       )}
       {column === "backlog" && (
-        <Btn busy={write.isPending && last === "ready"} busyLabel="Requeuing…" disabled={write.isPending && last !== "ready"} onClick={() => move("ready")}>
+        <Btn busy={write.isPending && last === "ready"} busyLabel="Requeuing…" disabled={writing && !(write.isPending && last === "ready")} onClick={() => move("ready")}>
           Requeue
         </Btn>
       )}
-      <Btn ref={opener} variant="danger" disabled={write.isPending} onClick={openCancel}>
+      <Btn ref={opener} variant="danger" disabled={writing} onClick={openCancel}>
         Cancel ticket
       </Btn>
+      </>
+      )}
       {!cancelling && last !== "cancel" && <Refusal lines={refused} className="basis-full [contain:inline-size]" />}
       {cancelling && (
         <ConfirmDialog
