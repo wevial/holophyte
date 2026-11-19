@@ -58,7 +58,7 @@ export function ConfirmDialog({
     if (document.activeElement == null || document.activeElement === document.body) cancel.current?.focus();
   }, [confirm != null, confirmDisabled, busy, cancelDisabled]);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--scrim)_84%,transparent)] p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[light-dark(color-mix(in_srgb,var(--scrim)_84%,transparent),rgba(3,0,8,0.62))] p-4">
       <section
         ref={box}
         role="dialog"

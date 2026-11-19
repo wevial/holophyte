@@ -154,6 +154,17 @@ test("a ticket whose latest run merged ends its Ticket page menu and its Tickets
   expect(await openMenu("More for DEMO-9")).toEqual(["Open ticket", "Copy link", "Revert…"]);
 });
 
+test("a Done row with its menu open names its project beside the title and ends on its merge time, with no estimate", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon(true).fetchImpl);
+  const row = document.querySelector<HTMLElement>('[data-row][data-column="done"]')!;
+  expect(row.querySelector('[data-cell="estimate"]')).not.toBeNull();
+  await openMenu("More for DEMO-9");
+  expect(row.querySelector('[data-cell="title"] [data-cell="project"]')?.textContent).toBe("demo");
+  expect([...row.children].map((cell) => cell.getAttribute("data-cell"))).toEqual(["status", "key", "title", "stage"]);
+  expect(row.querySelector('[data-cell="stage"]')?.textContent).toMatch(/^merged /);
+});
+
 test("a reverted run's Revert… is disabled, names its revert ticket, and posts nothing when pressed", async () => {
   const reverted = { ...runNine, run: { ...runNine.run, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } } };
   const fake = daemon(true, undefined, { runs: { 9: reverted } });
@@ -393,6 +404,25 @@ test("a slow preview from one Done row does not open over the dialog of a row ch
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(screen.getAllByRole("dialog").map((dialog) => dialog.querySelector("h2")?.textContent)).toEqual(["Revert DEMO-9?"]);
+});
+
+test("a preview answered after Raw log opened leaves Raw log the only dialog, and one Esc closes it", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const fake = daemon(true, async () => {
+    await held;
+    return Response.json(PREVIEW);
+  });
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Raw log/ })));
+  await act(async () => release());
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  const dialogs = screen.getAllByRole("dialog");
+  expect(dialogs).toHaveLength(1);
+  expect(dialogs[0]!.textContent).toContain("Raw log · run 9");
+  await act(async () => void fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" }));
+  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
 });
 
 test("Copy link on a plain-HTTP origin copies the run's link through a selection and says so", async () => {

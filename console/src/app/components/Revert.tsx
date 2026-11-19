@@ -229,7 +229,7 @@ export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): {
     const checked = await checkTarget(on, deps.fetch);
     const answer = "refusal" in checked ? checked.refusal : await previewRevert(on.base, on.ticket, deps.fetch);
     setPreviewing(false);
-    if (asked !== newestPreview) return;
+    if (asked !== newestPreview || document.querySelector('[aria-modal="true"]') != null) return;
     setOpen({ target: on, sha: "sha" in checked ? checked.sha : null, answer, opener });
   };
   const close = () => {

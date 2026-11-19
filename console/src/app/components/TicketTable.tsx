@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
+import { projectColours } from "../dayLog";
 import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
 import { ACTIONS_OFF } from "../../lib/actions";
@@ -21,9 +22,15 @@ const GRID = "grid grid-cols-[132px_96px_minmax(0,1fr)_220px_40px] items-center 
 
 const columnTone = (column: ColumnId): Tone => (column === "needs_you" ? "need" : STATES[COLUMN_HEADS[column].state].tone);
 
-function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; column: ColumnId; now: number; open: boolean; onOpen: (card: TicketCard) => void }) {
+/** With its ⋯ menu open a Done row names its project beside the title and
+ *  ends on its merge time, its estimate dropped. */
+function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
+  card: TicketCard; column: ColumnId; now: number; open: boolean; menuOpen: boolean; onOpen: (card: TicketCard) => void;
+}) {
   const tone = columnTone(column);
   const quiet = column === "backlog" || column === "done";
+  const merged = menuOpen && column === "done";
+  const colour = projectColours(useConsolePeers().hosts).get(card.project);
   return (
     <Link
       data-row
@@ -48,19 +55,29 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
       <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>
       <span
         data-cell="title"
-        className={`min-w-0 truncate font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet && !open ? "text-ink-2 group-has-[[aria-expanded=true]]:text-ink" : "text-ink"}`}
+        className={`flex min-w-0 items-center gap-4 font-medium leading-[1.35] max-[820px]:col-span-full max-[820px]:row-start-2 max-[820px]:whitespace-normal ${quiet && !open ? "text-ink-2 group-has-[[aria-expanded=true]]:text-ink" : "text-ink"}`}
       >
-        <TitleText>{card.title}</TitleText>
-      </span>
-      <span data-cell="stage" className={`truncate text-[12.5px] max-[820px]:hidden ${open ? "text-ink" : TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
-      <span data-cell="estimate" className={`text-right font-mono text-[12px] tabular-nums max-[820px]:hidden ${open ? "text-ink-2" : "text-ink-3"}`}>
-        {card.timeBoxMs != null && (
-          <>
-            {formatAge(card.timeBoxMs)}
-            <span className="sr-only"> time box</span>
-          </>
+        <span className="min-w-0 truncate max-[820px]:whitespace-normal">
+          <TitleText>{card.title}</TitleText>
+        </span>
+        {merged && (
+          <span data-cell="project" className="ml-auto inline-flex shrink-0 items-center gap-2 font-normal text-ink-2">
+            <span aria-hidden="true" className="size-1.5 rounded-full" style={{ background: colour ?? "var(--ink-3)" }} />
+            {card.project}
+          </span>
         )}
       </span>
+      <span data-cell="stage" className={`truncate text-[12.5px] max-[820px]:hidden ${merged ? "col-span-2 text-right" : ""} ${open ? "text-ink" : TONE_TEXT[STATES[cardState(card)].tone]}`}>{cardWord(card, now)}</span>
+      {!merged && (
+        <span data-cell="estimate" className={`text-right font-mono text-[12px] tabular-nums max-[820px]:hidden ${open ? "text-ink-2" : "text-ink-3"}`}>
+          {card.timeBoxMs != null && (
+            <>
+              {formatAge(card.timeBoxMs)}
+              <span className="sr-only"> time box</span>
+            </>
+          )}
+        </span>
+      )}
     </Link>
   );
 }
@@ -70,7 +87,9 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
  *  Revert… disabled until that read answers; any row offers it once the read
  *  finds its newest run merged. A reverted ticket's Revert… is disabled naming
  *  the revert ticket; a ticket whose newest run did not merge offers none. */
-function MergedRowMenu({ card, column, actions, items }: { card: TicketCard; column: ColumnId; actions: boolean; items: MenuItem[] }) {
+function MergedRowMenu({ card, column, actions, items, onOpenChange }: {
+  card: TicketCard; column: ColumnId; actions: boolean; items: MenuItem[]; onOpenChange: (open: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   const ticket = useTicket(card.base, card.key, useContext(PollDepsContext), open);
   const read = ticket.data;
@@ -82,7 +101,10 @@ function MergedRowMenu({ card, column, actions, items }: { card: TicketCard; col
   );
   const unread = ticket.isPending ? "Checking…" : read == null ? `Couldn't read ${card.key}` : null;
   const shown = revert.items.map((item) => (unread != null && item.label === "Revert…" ? { ...item, disabled: true, note: unread } : item));
-  return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpenChange={setOpen} />;
+  return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpenChange={(now) => {
+    setOpen(now);
+    onOpenChange(now);
+  }} />;
 }
 
 function RowMenuFrame({ card, items, layer, onOpenChange }: { card: TicketCard; items: MenuItem[]; layer?: ReactNode; onOpenChange?: (open: boolean) => void }) {
@@ -97,26 +119,31 @@ function RowMenuFrame({ card, items, layer, onOpenChange }: { card: TicketCard; 
 /** A row's ⋯ menu: Open ticket, Copy link, and in a project that reports
  *  `reverts`, Revert… once its ticket's newest run merged; a filed revert's
  *  status line reads under the row. */
-function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
+function TicketRowMenu({ card, column, onOpenChange }: { card: TicketCard; column: ColumnId; onOpenChange: (open: boolean) => void }) {
   const status = useConsolePeers().hosts.find((each) => each.base === card.base)?.status;
   const place = { project: card.project, ticket: card.key };
   const items = usePlaceItems(place, place);
   if (status?.reverts === true) {
-    return <MergedRowMenu card={card} column={column} actions={status.actions === true} items={items} />;
+    return <MergedRowMenu card={card} column={column} actions={status.actions === true} items={items} onOpenChange={onOpenChange} />;
   }
-  return <RowMenuFrame card={card} items={items} />;
+  return <RowMenuFrame card={card} items={items} onOpenChange={onOpenChange} />;
+}
+
+function TicketItem({ card, column, now, open, onOpen }: { card: TicketCard; column: ColumnId; now: number; open: boolean; onOpen: (card: TicketCard) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <li className="group relative border-b border-hair last:border-b-0 has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)]">
+      <TicketRow card={card} column={column} now={now} open={open} menuOpen={menuOpen} onOpen={onOpen} />
+      <TicketRowMenu card={card} column={column} onOpenChange={setMenuOpen} />
+    </li>
+  );
 }
 
 function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
     <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "" : "pb-1.5"}>
       {ROW_ORDER.flatMap((column) =>
-        lane.columns[column].toSorted(byKey).map((card) => (
-          <li key={card.id} className="group relative border-b border-hair last:border-b-0 has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)]">
-            <TicketRow card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
-            <TicketRowMenu card={card} column={column} />
-          </li>
-        )),
+        lane.columns[column].toSorted(byKey).map((card) => <TicketItem key={card.id} card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />),
       )}
     </ul>
   );
