@@ -26,21 +26,21 @@ const runSeven: RunDetail = {
 };
 const ticketSeven: TicketDetail = { ...servedTicket, ticket: "DEMO-7", title: "Page the ledger", status: "backlog", reverted: REVERTED };
 const listed = servedBoard.columns.flatMap((column) => column.tickets)[0]!;
-const board = (reverted: Reverted | null): Board => ({
+const board = (state: Board["columns"][number]["state"]): Board => ({
   ...servedBoard,
   stories: [],
-  columns: [{ state: "backlog", tickets: [{ ...listed, ticket: "DEMO-7", title: "Page the ledger", run: 7, reverted }] }],
+  columns: [{ state, tickets: [{ ...listed, ticket: "DEMO-7", title: "Page the ledger", run: 7, reverted: REVERTED }] }],
 });
 
 /** DEMO answers its history with merged runs 7 (reverted by `REVERTED`)
  *  and 8 (not reverted), run 7's page, DEMO-7's ticket, and a board listing
- *  DEMO-7 in Backlog with `boardReverted`. */
-function daemon(boardReverted: Reverted | null = REVERTED) {
+ *  DEMO-7, reverted, in `column`. */
+function daemon(column: Board["columns"][number]["state"] = "backlog") {
   const polls = fleet({ items: [] }, { items: [] });
   return async (url: string) => {
     if (url === `${DEMO}/runs/7`) return Response.json(runSeven);
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticketSeven);
-    if (url === `${DEMO}/board`) return Response.json(board(boardReverted));
+    if (url === `${DEMO}/board`) return Response.json(board(column));
     if (url.startsWith(`${DEMO}/history?`)) {
       return Response.json({
         rows: [historyRow(8, "DEMO-8", null), historyRow(7, "DEMO-7", REVERTED)], since: 0, until: null, limit: 200, offset: 0, truncated: false, total: 2,
@@ -95,14 +95,6 @@ test("on Tickets a reverted ticket's row reads reverted · Backlog beside the un
   expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
 });
 
-test("on Tickets a Backlog row whose board entry is not reverted reads Backlog alone", async () => {
-  writeView("table");
-  await mount("#/tickets", daemon(null));
-  const status = document.querySelector<HTMLElement>('[data-row][data-column="backlog"] [data-cell="status"]')!;
-  expect(status.textContent).toBe("Backlog");
-  expect(status.querySelector('[data-state="reverted"]')).toBeNull();
-});
-
 test("a reverted run's page says it merged then was reverted by the revert ticket, linked, with the reason", async () => {
   await mount("#/runs/demo/7", daemon());
   const verdict = document.querySelector<HTMLElement>("[data-run-verdict]")!;
@@ -111,9 +103,16 @@ test("a reverted run's page says it merged then was reverted by the revert ticke
   expect(within(verdict).getByRole("img", { name: "reverted" })).toBeTruthy();
 });
 
-test("a reverted ticket's page board line names the revert ticket and the reason", async () => {
+test("a reverted ticket's page names the revert ticket and the reason in place of its Backlog column", async () => {
   await mount("#/tickets/demo/DEMO-7", daemon());
-  const line = screen.getByRole("status", { name: "Board" });
+  const line = screen.getByRole("status", { name: "Revert" });
   expect(line.textContent).toBe("reverted by HOLO-9: “broke the header”");
   expect(within(line).getByRole("link", { name: "HOLO-9" }).getAttribute("href")).toBe("/#/tickets/demo/HOLO-9");
+  expect(screen.queryByRole("status", { name: "Board" })).toBeNull();
+});
+
+test("a reverted ticket claimed again keeps its board column beside the revert on its page", async () => {
+  await mount("#/tickets/demo/DEMO-7", daemon("in_flight"));
+  expect(screen.getByRole("status", { name: "Revert" }).textContent).toBe("reverted by HOLO-9: “broke the header”");
+  expect(screen.getByRole("status", { name: "Board" }).textContent).toMatch(/^In flight/);
 });

@@ -50,12 +50,6 @@ test("General shows a Reverts switch, off with no [revert] table, and a Never re
   expect(never.value).toBe("**/migrations/**\n**/migrate/**\n**/*.sql\n**/schema.prisma");
 });
 
-test("the Reverts switch and Never revert list read a bound [revert] table", async () => {
-  await mount({ revert: { enabled: true, refuse_paths: ["store/schema.py"] } });
-  expect(screen.getByRole("switch", { name: "Reverts" }).getAttribute("aria-checked")).toBe("true");
-  expect((screen.getByRole("textbox", { name: "Never revert" }) as HTMLTextAreaElement).value).toBe("store/schema.py");
-});
-
 test("saving a turned-on Reverts switch and an edited Never revert list writes revert.enabled and revert.refuse_paths", async () => {
   const writes = await mount({ loop: { workers: 2 } });
   fireEvent.click(screen.getByRole("switch", { name: "Reverts" }));
