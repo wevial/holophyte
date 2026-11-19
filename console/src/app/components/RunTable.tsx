@@ -96,10 +96,8 @@ function LoopGlyph() {
 function useRunRowMenu(row: RunRow) {
   const status = useConsolePeers().hosts.find((host) => host.base === row.base)?.status;
   const revertable = row.state === "merged" && status?.reverts === true;
-  const revert = useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, sha: row.merge_sha, reverted: row.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null);
   const place = { project: row.project, run: row.id };
-  const items = usePlaceItems(place, place);
-  return { items: revert.item == null ? items : [...items, revert.item], layer: revert.layer };
+  return useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, sha: row.merge_sha, reverted: row.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null, usePlaceItems(place, place));
 }
 
 function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; colour: string | undefined; grouped: boolean }) {

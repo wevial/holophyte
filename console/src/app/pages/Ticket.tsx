@@ -73,11 +73,10 @@ const SETTLED = new Set(["merged", "abandoned"]);
 function TicketMenu({ project, ticketKey, ticket, base, reverts, actions }: { project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean; actions: boolean }) {
   const latest = ticket.runs[0];
   const revertable = reverts && latest?.outcome === "merged";
-  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted, off: actions ? null : ACTIONS_OFF } : null);
-  const items = usePlaceItems({ project, ticket: ticketKey });
+  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted, off: actions ? null : ACTIONS_OFF } : null, usePlaceItems({ project, ticket: ticketKey }));
   return (
     <div className="flex flex-col items-end gap-2">
-      <MoreMenu label={`More for ${ticketKey}`} items={revert.item == null ? items : [...items, revert.item]} />
+      <MoreMenu label={`More for ${ticketKey}`} items={revert.items} />
       {revert.layer}
     </div>
   );

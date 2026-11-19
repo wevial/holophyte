@@ -72,18 +72,14 @@ function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId })
   const status = useConsolePeers().hosts.find((host) => host.base === card.base)?.status;
   const revertable = column === "done" && status?.reverts === true;
   const detail = useTicket(card.base, card.key, useContext(PollDepsContext), revertable).data;
+  const place = { project: card.project, ticket: card.key };
   const revert = useRevertFlow(
     revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, reverted: detail?.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null,
+    usePlaceItems(place, place),
   );
-  const place = { project: card.project, ticket: card.key };
-  const items = usePlaceItems(place, place);
   return (
     <>
-      <MoreMenu
-        label={`More for ${card.key}`}
-        items={revert.item == null ? items : [...items, revert.item]}
-        className={`${ROW_MENU} absolute top-[5px] right-3 [:root[data-density=compact]_&]:top-px`}
-      />
+      <MoreMenu label={`More for ${card.key}`} items={revert.items} className={`${ROW_MENU} absolute top-[5px] right-3 [:root[data-density=compact]_&]:top-px`} />
       <div className="px-4 pb-2 empty:hidden">{revert.layer}</div>
     </>
   );

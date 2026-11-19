@@ -148,10 +148,10 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
   );
 }
 
-/** Revert… for `target`, null when it is null, and what it opens: the
- *  confirm after a preview, and once filed a status line naming the new
+/** `items` then Revert… for `target` unless it is null, and what it opens:
+ *  the confirm after a preview, and once filed a status line naming the new
  *  ticket. Disabled once `reverted`, naming the revert ticket. */
-export function useRevertFlow(target: RevertTarget | null): { item: MenuItem | null; layer: ReactNode } {
+export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): { items: MenuItem[]; layer: ReactNode } {
   const deps = useContext(PollDepsContext);
   const [previewing, setPreviewing] = useState(false);
   const [open, setOpen] = useState<{ target: RevertTarget; answer: RevertAnswer; opener: HTMLElement | null } | null>(null);
@@ -169,17 +169,20 @@ export function useRevertFlow(target: RevertTarget | null): { item: MenuItem | n
     setOpen(null);
   };
   const reverted = target?.reverted;
-  const item: MenuItem | null =
+  const all: MenuItem[] =
     target == null
-      ? null
-      : {
-          label: "Revert…",
-          danger: true,
-          divided: true,
-          disabled: reverted != null || target.off != null || previewing,
-          note: reverted != null ? (reverted.by == null ? "Reverted" : `Reverted by ${reverted.by}`) : (target.off ?? undefined),
-          onSelect: () => void start(target),
-        };
+      ? items
+      : [
+          ...items,
+          {
+            label: "Revert…",
+            danger: true,
+            divided: true,
+            disabled: reverted != null || target.off != null || previewing,
+            note: reverted != null ? (reverted.by == null ? "Reverted" : `Reverted by ${reverted.by}`) : (target.off ?? undefined),
+            onSelect: () => void start(target),
+          },
+        ];
   const layer = (
     <>
       {open != null && (
@@ -204,5 +207,5 @@ export function useRevertFlow(target: RevertTarget | null): { item: MenuItem | n
       )}
     </>
   );
-  return { item, layer };
+  return { items: all, layer };
 }
