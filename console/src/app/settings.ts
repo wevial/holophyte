@@ -84,6 +84,16 @@ export const SETTINGS_FIELDS: readonly SettingsField[] = [
     options: [{ value: "auto", label: "Auto" }, { value: "human", label: "Human" }],
   },
   {
+    tab: "general", table: "revert", key: "enabled", label: "Reverts",
+    help: "Lets a merged change be undone by an urgent revert ticket, verified and reviewed like any other.",
+    default: false, kind: "boolean",
+  },
+  {
+    tab: "general", table: "revert", key: "refuse_paths", label: "Never revert",
+    help: "A merge that changed a matching path is never reverted; ship a forward fix instead. One glob per line.",
+    default: ["**/migrations/**", "**/migrate/**", "**/*.sql", "**/schema.prisma"], kind: "lines",
+  },
+  {
     tab: "general", table: "loop", key: "workers", label: "Workers",
     help: "Tickets this project runs at once on {host}.",
     default: 1, kind: "number", numeric: "integer", min: 1,

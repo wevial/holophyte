@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { needsYouEntries, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
-import type { Board, BoardColumn, StatusRun } from "../lib/contract.gen";
+import type { Board, BoardColumn, Reverted, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatAge, formatClock, formatDuration } from "../lib/format";
 import { hostItems, type HostRecord } from "../lib/hosts";
@@ -47,6 +47,8 @@ export interface TicketCard {
   timeBoxMs: number | null;
   waitsOn: string[];
   endedMs: number | null;
+  /** The revert that undid the ticket's merge, from its `/board` row. */
+  reverted: Reverted | null;
   /** The daemon's clock less the browser's, as of its last answer. */
   skewMs: number;
 }
@@ -267,6 +269,7 @@ export function hostCards(host: HostRecord<ContractBodies>, board: Board, readin
       timeBoxMs: ticket.time_box_ms,
       waitsOn: ticket.waits_on,
       endedMs: null,
+      reverted: ticket.reverted ?? null,
       skewMs,
     })),
   );
@@ -293,7 +296,7 @@ export function useTicketBoard(): TicketBoard {
   for (const row of merged) {
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
-      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
+      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);
     cards.push(card);

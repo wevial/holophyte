@@ -18,12 +18,12 @@ import { FoldChevron } from "../components/icons";
 import { ScoutThis, useScoutThis } from "../components/ScoutThis";
 import type { ScoutTarget } from "../scouts";
 import { RunStepper } from "../components/RunStepper";
-import { StateDot } from "../components/StateDot";
+import { RevertedGlyph, StateDot } from "../components/StateDot";
 import { TitleText } from "../components/TitleText";
 import { useRunTurns, useTicket } from "../queries";
 import { stepperOf, useRunPage, type RunPage as RunPageFacts } from "../run";
-import { PollDepsContext } from "../scope";
-import type { RunDetail } from "../../lib/contract.gen";
+import { keepScope, PollDepsContext } from "../scope";
+import type { Reverted, RunDetail } from "../../lib/contract.gen";
 import { commitLink, shortSha } from "../../lib/shipped";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
@@ -78,6 +78,24 @@ function Verdict({ sentence, run, merged }: { sentence: string; run: RunDetail["
   );
 }
 
+/** A reverted merge's sentence: its short sha linking to its commit, the
+ *  revert ticket linking to its page, and the revert's reason. */
+function RevertedVerdict({ run, reverted, project }: { run: RunDetail["run"]; reverted: Reverted; project: string }) {
+  const sha = shortSha(run.merge_sha);
+  return (
+    <>
+      <Verdict sentence={sha ? `Merged into main as ${sha}` : "Merged into main"} run={run} merged />, then reverted
+      {reverted.by != null && (
+        <>
+          {" by "}
+          <Link to="/tickets/$project/$key" params={{ project, key: reverted.by }} search={keepScope} className="text-act underline underline-offset-2 hover:text-ink">{reverted.by}</Link>
+        </>
+      )}
+      {reverted.reason ? <>: “{reverted.reason}”</> : "."}
+    </>
+  );
+}
+
 /** A failed run's Scout target. */
 const scoutOf = (page: Extract<RunPageFacts, { kind: "run" }>, project: string): ScoutTarget => {
   const { run } = page.detail;
@@ -116,6 +134,7 @@ export function RunPage() {
   if (page.kind === "loading") return <Page label={label}><Loading /></Page>;
   const { run } = page.detail;
   const merged = page.state === "merged";
+  const reverted = merged ? run.reverted : null;
   return (
     <Page label={label}>
       <header>
@@ -142,10 +161,10 @@ export function RunPage() {
         </div>
         <div data-run-verdict className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
           <span className="flex">
-            <StateDot state={page.state} hideWord />
+            {reverted == null ? <StateDot state={page.state} hideWord /> : <RevertedGlyph />}
           </span>
           <p role="status" className="m-0 max-w-[64ch] font-sans text-[15px] leading-[1.45] text-ink">
-            <Verdict sentence={page.sentence} run={run} merged={merged} />
+            {reverted == null ? <Verdict sentence={page.sentence} run={run} merged={merged} /> : <RevertedVerdict run={run} reverted={reverted} project={project} />}
           </p>
           {page.agentMs != null && <TimeBox agentMs={page.agentMs} boxMs={page.boxMs} />}
         </div>
