@@ -2,17 +2,19 @@ import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
 import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
-import { keepScope } from "../scope";
+import { keepScope, useConsolePeers } from "../scope";
 import { cardElementId, modified, TicketGlyph } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
 import { TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
+import { MoreMenu, ROW_MENU } from "./MoreMenu";
+import { usePlaceItems, useRevertFlow } from "./Revert";
 
 const ROW_ORDER: ColumnId[] = ["needs_you", "in_flight", "ready", "backlog", "done"];
 
 const byKey = (a: TicketCard, b: TicketCard) => a.key.localeCompare(b.key, undefined, { numeric: true });
 
-const GRID = "grid grid-cols-[132px_96px_minmax(0,1fr)_220px_40px] items-center gap-4 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
+const GRID = "grid grid-cols-[132px_96px_minmax(0,1fr)_220px_40px] items-center gap-4 pl-4 pr-14 max-[820px]:grid-cols-[auto_auto_minmax(0,1fr)]";
 
 const columnTone = (column: ColumnId): Tone => (column === "needs_you" ? "need" : STATES[COLUMN_HEADS[column].state].tone);
 
@@ -34,7 +36,7 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
         event.preventDefault();
         onOpen(card);
       }}
-      className={`${GRID} min-h-[42px] px-4 py-2 [:root[data-density=compact]_&]:min-h-[34px]! [:root[data-density=compact]_&]:py-1.5! font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
+      className={`${GRID} min-h-[42px] py-2 [:root[data-density=compact]_&]:min-h-[34px]! [:root[data-density=compact]_&]:py-1.5! font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
     >
       <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${open ? "text-ink" : TONE_TEXT[tone]}`}>
         <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} />
@@ -60,13 +62,35 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
   );
 }
 
+/** A row's ⋯ menu: Open ticket, Copy link, and Revert… for a done ticket of
+ *  a project that reports `reverts`; a filed revert's status line reads
+ *  under the row. */
+function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
+  const status = useConsolePeers().hosts.find((host) => host.base === card.base)?.status;
+  const revertable = column === "done" && status?.reverts === true;
+  const revert = useRevertFlow(revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId } : null);
+  const place = { project: card.project, ticket: card.key };
+  const items = usePlaceItems(place, place);
+  return (
+    <>
+      <MoreMenu
+        label={`More for ${card.key}`}
+        items={revert.item == null ? items : [...items, revert.item]}
+        className={`${ROW_MENU} absolute top-[5px] right-3 [:root[data-density=compact]_&]:top-px`}
+      />
+      <div className="px-4 pb-2 empty:hidden">{revert.layer}</div>
+    </>
+  );
+}
+
 function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
   return (
     <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "" : "pb-1.5"}>
       {ROW_ORDER.flatMap((column) =>
         lane.columns[column].toSorted(byKey).map((card) => (
-          <li key={card.id} className="border-b border-hair last:border-b-0">
+          <li key={card.id} className="group relative border-b border-hair last:border-b-0">
             <TicketRow card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
+            <TicketRowMenu card={card} column={column} />
           </li>
         )),
       )}
@@ -92,7 +116,7 @@ export function TicketTable({
 }) {
   return (
     <div data-ticket-table>
-      <div data-table-heads className={`${GRID} min-h-[30px] border-b border-hair px-4 text-[12px] font-medium leading-none text-ink-3 max-[820px]:hidden`}>
+      <div data-table-heads className={`${GRID} min-h-[30px] border-b border-hair text-[12px] font-medium leading-none text-ink-3 max-[820px]:hidden`}>
         <span>Status</span>
         <span>Key</span>
         <span>Title</span>

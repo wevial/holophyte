@@ -5,6 +5,8 @@ import { criteriaRows } from "../../lib/criteria";
 import { formatAge, formatClock } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
 import { Btn } from "../components/Btn";
+import { MoreMenu } from "../components/MoreMenu";
+import { usePlaceItems, useRevertFlow } from "../components/Revert";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot, TONE_TEXT } from "../components/StateDot";
 import { ScoutThis } from "../components/ScoutThis";
@@ -19,6 +21,7 @@ import { TitleText } from "../components/TitleText";
 import { runPage } from "../run";
 import { STATES } from "../state";
 import { useTicketPage, type BoardChip } from "../ticket";
+import type { TicketDetail } from "../../lib/contract.gen";
 import { NotFound } from "./Placeholder";
 import { CRUMB_LINK } from "./runShared";
 
@@ -65,6 +68,21 @@ function filedAt(at: number, now: number): string {
 
 const SETTLED = new Set(["merged", "abandoned"]);
 
+/** The header's ⋯ menu: Copy link, and Revert… when the ticket's latest run
+ *  merged in a project that reports `reverts`. */
+function TicketMenu({ project, ticketKey, ticket, base, reverts }: { project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean }) {
+  const latest = ticket.runs[0];
+  const revertable = reverts && latest?.outcome === "merged";
+  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted } : null);
+  const items = usePlaceItems({ project, ticket: ticketKey });
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <MoreMenu label={`More for ${ticketKey}`} items={revert.item == null ? items : [...items, revert.item]} />
+      {revert.layer}
+    </div>
+  );
+}
+
 export function TicketPage() {
   const { project, key } = useParams({ from: "/tickets/$project/$key" });
   const page = useTicketPage(project, key);
@@ -100,23 +118,26 @@ export function TicketPage() {
           <h1 className="m-0 flex-[1_1_420px] font-sans text-[20px] font-semibold leading-[1.25] tracking-[-.005em] text-ink">
             <TitleText>{ticket.title}</TitleText>
           </h1>
-          <div data-ticket-actions className="flex flex-wrap gap-2">
-            {!SETTLED.has(ticket.status) && (
-              <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={() => setSteeringKey(steering ? null : `${project}/${key}`)}>
-                Steer
-              </Btn>
-            )}
-            <ScoutThis target={{ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actionsOn ? null : ACTIONS_OFF }} />
-            <TicketMoves
-              key={`${project}/${key}`}
-              project={project}
-              ticketKey={key}
-              ticket={ticket}
-              host={page.host}
-              liveRun={page.liveRun}
-              onEditRaw={view === "markdown" ? (revision) => showBody({ view, editing: revision }) : undefined}
-              editOpen={editing != null}
-            />
+          <div className="flex items-start gap-2">
+            <div data-ticket-actions className="flex flex-wrap gap-2">
+              {!SETTLED.has(ticket.status) && (
+                <Btn variant="primary" expanded={steering && actionsOn} disabled={!actionsOn} title={actionsOn ? undefined : ACTIONS_OFF} onClick={() => setSteeringKey(steering ? null : `${project}/${key}`)}>
+                  Steer
+                </Btn>
+              )}
+              <ScoutThis target={{ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actionsOn ? null : ACTIONS_OFF }} />
+              <TicketMoves
+                key={`${project}/${key}`}
+                project={project}
+                ticketKey={key}
+                ticket={ticket}
+                host={page.host}
+                liveRun={page.liveRun}
+                onEditRaw={view === "markdown" ? (revision) => showBody({ view, editing: revision }) : undefined}
+                editOpen={editing != null}
+              />
+            </div>
+            <TicketMenu key={`menu ${project}/${key}`} project={project} ticketKey={key} ticket={ticket} base={page.host.base} reverts={page.host.status?.reverts === true} />
           </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} project={project} />}

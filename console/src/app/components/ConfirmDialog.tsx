@@ -7,7 +7,8 @@ import { trap } from "./trap";
  *  button (`cancelLabel`) and Tab stays inside, Esc or that button calls
  *  `onCancel`, and the `confirm` button (`primary` unless `confirmVariant`)
  *  calls `onConfirm` unless `confirmDisabled`, showing `busyLabel` while
- *  `busy`; `refusal` reads under the buttons. */
+ *  `busy`; with no `confirm` only the cancel button shows. `refusal` reads
+ *  under the buttons. */
 export function ConfirmDialog({
   label,
   ariaLabel,
@@ -15,7 +16,7 @@ export function ConfirmDialog({
   heading,
   confirm,
   busyLabel,
-  busy,
+  busy = false,
   onConfirm,
   onCancel,
   cancelLabel = "Cancel",
@@ -28,10 +29,10 @@ export function ConfirmDialog({
   ariaLabel?: string;
   labelClassName?: string;
   heading: string;
-  confirm: string;
-  busyLabel: string;
-  busy: boolean;
-  onConfirm: () => void;
+  confirm?: string;
+  busyLabel?: string;
+  busy?: boolean;
+  onConfirm?: () => void;
   onCancel: () => void;
   cancelLabel?: string;
   confirmVariant?: "primary" | "danger-fill";
@@ -71,9 +72,11 @@ export function ConfirmDialog({
           <Btn ref={cancel} onClick={onCancel}>
             {cancelLabel}
           </Btn>
-          <Btn variant={confirmVariant} disabled={confirmDisabled} busy={busy} busyLabel={busyLabel} onClick={onConfirm}>
-            {confirm}
-          </Btn>
+          {confirm != null && (
+            <Btn variant={confirmVariant} disabled={confirmDisabled} busy={busy} busyLabel={busyLabel} onClick={onConfirm}>
+              {confirm}
+            </Btn>
+          )}
         </div>
         {refusal}
       </section>

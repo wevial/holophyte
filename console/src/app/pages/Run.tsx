@@ -3,6 +3,8 @@ import { Link, useParams } from "@tanstack/react-router";
 import { Markdown } from "../components/Markdown";
 import { TicketLink } from "../components/TicketLink";
 import { RunActions } from "../components/RunActions";
+import { MoreMenu } from "../components/MoreMenu";
+import { usePlaceItems, useRevertFlow } from "../components/Revert";
 import { leadParagraph } from "../../lib/ticket";
 import { AgentCompose } from "../components/AgentCompose";
 import { AgentPanel } from "../components/AgentPanel";
@@ -75,6 +77,21 @@ function Verdict({ sentence, run, merged }: { sentence: string; run: RunDetail["
   );
 }
 
+/** The header's ⋯ menu: Open ticket, Copy link, and Revert… for a merged
+ *  run of a project that reports `reverts`. */
+function RunMenu({ page, project }: { page: Extract<RunPageFacts, { kind: "run" }>; project: string }) {
+  const { run } = page.detail;
+  const revertable = run.outcome === "merged" && page.host.status?.reverts === true;
+  const revert = useRevertFlow(revertable ? { base: page.host.base, project, ticket: run.ticket, run: run.id, sha: run.merge_sha, reverted: run.reverted } : null);
+  const items = usePlaceItems({ project, run: run.id }, { project, ticket: run.ticket });
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <MoreMenu label={`More for run ${run.id}`} items={revert.item == null ? items : [...items, revert.item]} />
+      {revert.layer}
+    </div>
+  );
+}
+
 export function RunPage() {
   const { project, run: param } = useParams({ from: "/runs/$project/$run" });
   const id = /^\d+$/.test(param) ? Number(param) : null;
@@ -107,6 +124,7 @@ export function RunPage() {
                 target={{ project, about: `run:${run.id}`, kind: "bug", ask: `Why did run ${run.id} of ${run.ticket} fail?`, off: page.actions ? null : ACTIONS_OFF_LINE }}
               />
             )}
+            <RunMenu key={`menu ${page.base}/${run.id}`} page={page} project={project} />
           </div>
         </div>
         <div data-run-verdict className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">

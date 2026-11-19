@@ -1,6 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext } from "react";
 import { actionBase, postAction, type ActionResult } from "../lib/actions";
+import { addressOf } from "../lib/hosts";
+import type { Fetch } from "../lib/poll";
+import { withToken } from "../lib/token";
 import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
 import { putConfig, type ConfigWrite } from "../lib/config";
 import { useToast } from "./components/Toast";
@@ -82,4 +85,75 @@ export function writeRefusal(result: WriteResult | undefined, key: string): stri
   if (result == null || result.ok) return null;
   if ("conflict" in result) return [`${key} changed since this page read it. It is read again; try once more.`];
   return "problems" in result ? result.problems : [result.error];
+}
+
+/** One later merge that changed a file the reverted merge changed. */
+export interface RevertDependent {
+  key: string;
+  sha: string;
+  paths: string[];
+}
+
+/** What `POST /actions/revert` answered: a preview's dependents, the filed
+ *  ticket's key, or why nothing was filed, with the refused paths. */
+export type RevertAnswer =
+  | { kind: "preview"; dependents: RevertDependent[] }
+  | { kind: "filed"; ticket: string }
+  | { kind: "refused"; reason: string; paths: string[] };
+
+/** The daemon wants a reason on a preview too; it records none for it. */
+const PREVIEW_REASON = "preview";
+
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((each): each is string => typeof each === "string") : []);
+
+function dependentsOf(value: unknown): RevertDependent[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((each: Record<string, unknown> | null) =>
+    each != null && typeof each.key === "string" ? [{ key: each.key, sha: typeof each.sha === "string" ? each.sha : "", paths: strings(each.paths) }] : [],
+  );
+}
+
+async function postRevert(base: string, body: Record<string, unknown>, fetchImpl: Fetch): Promise<RevertAnswer> {
+  const url = `${base}/actions/revert`;
+  const init = withToken(addressOf(base), {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  let response: Response;
+  try {
+    response = await fetchImpl(url, init);
+  } catch (failure) {
+    return { kind: "refused", reason: failure instanceof Error ? failure.message : String(failure), paths: [] };
+  }
+  const answer: unknown = await response.json().catch(() => null);
+  const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
+  const refused = typeof record.refused === "object" && record.refused != null ? (record.refused as Record<string, unknown>) : null;
+  if (refused != null && typeof refused.reason === "string") return { kind: "refused", reason: refused.reason, paths: strings(refused.paths) };
+  if (!response.ok) {
+    const error = typeof record.error === "string" ? record.error : "";
+    return { kind: "refused", reason: `${url} answered ${response.status}${error ? `: ${error}` : ""}`, paths: [] };
+  }
+  if (body.dry_run === true) return { kind: "preview", dependents: dependentsOf(record.dependents) };
+  return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "refused", reason: "the daemon named no revert ticket", paths: [] };
+}
+
+/** The `dry_run` preview of reverting `key` at `base`; it files nothing. */
+export function previewRevert(base: string, key: string, fetchImpl: Fetch): Promise<RevertAnswer> {
+  return postRevert(base, { key, reason: PREVIEW_REASON, dry_run: true }, fetchImpl);
+}
+
+/** Filing the revert of `key` at `base` for `reason` as a mutation; a filed
+ *  revert re-reads the fleet and `base`'s route queries. */
+export function useRevert() {
+  const deps = useContext(PollDepsContext);
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ base, key, reason }: { base: string; key: string; reason: string }) => postRevert(base, { key, reason }, deps.fetch),
+    onSuccess: (answer, { base }) => {
+      if (answer.kind !== "filed") return;
+      void client.invalidateQueries({ queryKey: ["fleet"] });
+      void client.invalidateQueries({ queryKey: ["route", base] });
+    },
+  });
 }
