@@ -169,7 +169,7 @@ function fakeEffects() {
     (configs[name] ??= []).push(config);
     return {
       config,
-      advance: (seconds: number) => handleCalls.push(`${name} advance${seconds > 0 ? "" : " nothing"} heat ${(config as { heat?: number }).heat}`),
+      advance: (seconds: number) => handleCalls.push(`${name} advance${seconds > 0 ? "" : " nothing"}${name === "Lava" ? ` heat ${(config as { heat?: number }).heat}` : ""}`),
       reset: () => {
         const { appetite, food, seed } = config as Record<string, number>;
         handleCalls.push(`${name} reset appetite ${appetite} food ${food} seed ${seed}`);
@@ -389,7 +389,7 @@ test("Heat 2 and Palette magma reach mounted Lava's live config without a remoun
 
 const idle = () => act(() => new Promise((done) => setTimeout(done, 300)));
 
-test("with Motion off, a settled burst of Lava Heat runs the held lamp forward once at the last Heat, and Hyphae's Appetite, Patches and Seed bloom a fresh colony from the new values, while Speed and moving frames do neither", async () => {
+test("with Motion off, a settled burst of Lava Heat runs the held lamp forward once at the last Heat, Plume's Currents run its held cloud forward, and Hyphae's Appetite, Patches and Seed bloom a fresh colony from the new values, while Speed and moving frames do neither", async () => {
   const effects = fakeEffects();
   try {
     await mount();
@@ -403,6 +403,9 @@ test("with Motion off, a settled burst of Lava Heat runs the held lamp forward o
     await idle();
     fireEvent.change(knob("Speed"), { target: { value: "2" } });
     await idle();
+    fireEvent.click(tile("Header", "Plume"));
+    fireEvent.change(knob("Currents"), { target: { value: "2" } });
+    await idle();
     fireEvent.click(tile("Header", "Hyphae"));
     fireEvent.change(knob("Appetite"), { target: { value: "1" } });
     fireEvent.change(knob("Patches"), { target: { value: "3" } });
@@ -412,11 +415,37 @@ test("with Motion off, a settled burst of Lava Heat runs the held lamp forward o
     fireEvent.change(knob("Speed"), { target: { value: "2" } });
     await idle();
     expect([effects.configs.Lava!.length, effects.configs.Hyphae!.length, effects.handleCalls]).toEqual([1, 1, [
-      "Lava advance heat 2.7", "Hyphae reset appetite 1 food 3 seed 0", "Hyphae reset appetite 1 food 3 seed 7",
+      "Lava advance heat 2.7", "Plume advance", "Hyphae reset appetite 1 food 3 seed 0", "Hyphae reset appetite 1 food 3 seed 7",
     ]]);
   } finally {
     cleanup();
     effects.restore();
+  }
+});
+
+test("a held Lava Heat change still pending when reduced motion turns off does not run the moving lamp forward", async () => {
+  let reduced = true;
+  const listeners = new Set<() => void>();
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    get matches() { return query === "(prefers-reduced-motion: reduce)" && reduced; },
+    media: query,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }) as unknown as MediaQueryList);
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    reduced = false;
+    act(() => listeners.forEach((listener) => listener()));
+    await idle();
+    expect(effects.handleCalls).toEqual([]);
+  } finally {
+    cleanup();
+    effects.restore();
+    media.mockRestore();
   }
 });
 
@@ -452,6 +481,25 @@ test("Reset in Lava's section returns its Heat, Fade and Opacity to their defaul
   expect([knob("Heat").value, knob("Fade").value, knob("Opacity").value, reset().disabled]).toEqual([String(lava.DEFAULTS.heat), "70", "100", true]);
   fireEvent.click(tile("Header", "Caustics"));
   expect(knob("Speed").value).toBe("1");
+});
+
+test("Reset in Lava's section keeps Caustics' Speed 1 that another tab saved before its storage event arrived", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  fireEvent.change(knob("Heat"), { target: { value: "2" } });
+  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { heat: 2 }, caustics: { speed: 1 } }));
+  fireEvent.click(customize().getByRole("button", { name: "Reset" }));
+  expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ caustics: { speed: 1 } });
+  fireEvent.click(tile("Header", "Caustics"));
+  expect(knob("Speed").value).toBe("1");
+});
+
+test("Haze's Strength scales only Haze's band: at 0 Haze's band carries a haze scale of 0 and Lava's band, picked next, a scale of 1", async () => {
+  await mount();
+  fireEvent.change(knob("Strength"), { target: { value: "0" } });
+  expect(band().style.getPropertyValue("--haze-scale")).toBe("0");
+  fireEvent.click(tile("Header", "Lava"));
+  expect(band().style.getPropertyValue("--haze-scale")).toBe("1");
 });
 
 test("a stored Lava heat of 9 and a stored knob named bogus are ignored: Lava mounts with Spectra's default heat and no bogus option", async () => {

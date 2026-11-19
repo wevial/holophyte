@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.d.ts (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.d.ts (MIT, see ../LICENSE), given a motion option and advance().
 export interface NebulaConfig {
   simResolution: number;
   offsetResolution: number;
@@ -39,4 +39,4 @@ export function mount(
     /** false freezes the cloud on one frame, as reduced motion does. */
     motion?: boolean;
   },
-): { config: NebulaConfig; destroy(): void };
+): { config: NebulaConfig; advance(seconds: number): void; destroy(): void };

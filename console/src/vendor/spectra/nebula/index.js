@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.js (MIT, see ../LICENSE), given a motion option that also holds one frame.
+// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.js (MIT, see ../LICENSE), given a motion option that also holds one frame, and advance().
 // Nebula cursor — a WebGL2 nebula you can part with the mouse.
 // The pointer bends a displacement field (a local radial shove plus a soft
 // drag wake through a fluid sim); the cloud always heals back to its untouched
@@ -35,7 +35,7 @@ export function mount(container, opts = {}) {
   });
   if (!stage) {
     fallback();
-    return { config: { ...CONFIG }, destroy() {} };
+    return { config: { ...CONFIG }, advance() {}, destroy() {} };
   }
   const { gl, pointer, reducedMotion } = stage;
 
@@ -58,7 +58,7 @@ export function mount(container, opts = {}) {
       fallback();
     },
   });
-  if (governor.tier >= TIERS.length) return { config: { ...CONFIG }, destroy() {} };
+  if (governor.tier >= TIERS.length) return { config: { ...CONFIG }, advance() {}, destroy() {} };
 
   stage.dprCap = TIERS[governor.tier].dpr;
   stage.resize();
@@ -83,6 +83,27 @@ export function mount(container, opts = {}) {
   /** @type {({ x: number, y: number } | undefined)[]} */
   const wanderers = [];
   let drawn = '';
+  const ADVANCE_DT = 1 / 60;
+
+  // Currents: wanderers on slow Lissajous paths drag the gas along
+  // behind them, wide and soft, so it swirls and heals on its own.
+  function stir() {
+    const currents = fluid.config.currents;
+    if (currents > 0) {
+      const t = time * fluid.config.speed;
+      for (let i = 0; i < WANDERERS; i++) {
+        const a = t * 0.11 + i * 2.1, b = t * 0.07 + i * 1.3;
+        const x = 0.5 + 0.42 * Math.sin(a) * Math.cos(b * 0.6);
+        const y = 0.5 + 0.38 * Math.sin(b + i);
+        const w = wanderers[i];
+        if (w) {
+          const f = fluid.config.splatForce * 3 * currents;
+          fluid.splat('velocity', x, y, (x - w.x) * f, (y - w.y) * f, 0.006, 0);
+        }
+        wanderers[i] = { x, y };
+      }
+    }
+  }
 
   stage.start((dt, rawDt) => {
     const frozen = reducedMotion.matches || !fluid.config.motion;
@@ -107,23 +128,7 @@ export function mount(container, opts = {}) {
         const f = fluid.config.splatForce * 0.5;
         fluid.splat('velocity', pointer.x, pointer.y, pointer.dx * f, pointer.dy * f, 0.0015, 0);
       }
-      // Currents: wanderers on slow Lissajous paths drag the gas along
-      // behind them, wide and soft, so it swirls and heals on its own.
-      const currents = fluid.config.currents;
-      if (currents > 0) {
-        const t = time * fluid.config.speed;
-        for (let i = 0; i < WANDERERS; i++) {
-          const a = t * 0.11 + i * 2.1, b = t * 0.07 + i * 1.3;
-          const x = 0.5 + 0.42 * Math.sin(a) * Math.cos(b * 0.6);
-          const y = 0.5 + 0.38 * Math.sin(b + i);
-          const w = wanderers[i];
-          if (w) {
-            const f = fluid.config.splatForce * 3 * currents;
-            fluid.splat('velocity', x, y, (x - w.x) * f, (y - w.y) * f, 0.006, 0);
-          }
-          wanderers[i] = { x, y };
-        }
-      }
+      stir();
       fluid.step(dt);
     } else {
       // One still frame: redraw only when the cloud, the config or the drawing buffer changes.
@@ -156,6 +161,15 @@ export function mount(container, opts = {}) {
   return {
     /** Live tuning: velocityDissipation, offsetDecay, splatForce, speed, currents, look, paint, ground, motion. */
     config: fluid.config,
+    /** Runs the currents for `seconds` unseen, so a held frame shows how they move the cloud. */
+    advance(seconds) {
+      for (let run = 0; run < seconds; run += ADVANCE_DT) {
+        time += ADVANCE_DT;
+        stir();
+        fluid.step(ADVANCE_DT);
+      }
+      drawn = '';
+    },
     destroy: () => stage.destroy(),
   };
 }

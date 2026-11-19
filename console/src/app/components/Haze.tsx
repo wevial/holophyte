@@ -17,11 +17,13 @@ interface Handle {
 }
 
 const LAVA_RESETTLE_S = 3;
+const PLUME_RESETTLE_S = 2;
 const RESETTLE_AFTER_MS = 250;
 
 /** A held frame shows no motion, so a knob that only changes how the simulation moves re-runs it for the frame. */
 function resettle(effect: BandEffect, drawing: Handle, changed: (key: string) => boolean): void {
   if (effect === "lava" && changed("heat")) drawing.advance?.(LAVA_RESETTLE_S);
+  if (effect === "plume" && changed("currents")) drawing.advance?.(PLUME_RESETTLE_S);
   if (effect === "hyphae" && ["appetite", "food", "seed"].some(changed)) drawing.reset?.();
 }
 
@@ -133,7 +135,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
       applied.current = values;
       resettle(effect, drawing, (key) => before[key] !== values[key]);
     }, RESETTLE_AFTER_MS);
-  }, [palette, motion, customThemes, knobs]);
+  }, [palette, motion, still, customThemes, knobs]);
 
   useEffect(() => () => clearTimeout(resettling.current), []);
 
@@ -147,7 +149,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
       ref={band}
       aria-hidden="true"
       data-haze=""
-      style={{ ...(dark && { "--haze-fade": `${values.fade}%` }), opacity: Number(values.opacity) / 100 } as CSSProperties}
+      style={{ ...(dark && { "--haze-fade": `${values.fade}%` }), "--haze-scale": effect === "haze" ? Number(values.strength) / 100 : 1, opacity: Number(values.opacity) / 100 } as CSSProperties}
       className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
     >
       {/* Lava pools its wax at the bottom of its box, so the box runs past the band's clipped edge. */}

@@ -160,7 +160,7 @@ function EffectRow() {
             );
           })}
         </div>
-        <label className="flex min-h-11 items-center gap-2.5 pl-3 text-[13px] text-ink-2">
+        <label className="flex min-h-11 items-center gap-2.5 pr-[3px] pl-[22px] text-[13px] text-ink-2">
           <Switch aria-label="Motion" checked={motion && !reduced} disabled={reduced} onCheckedChange={setMotion} className="switch">
             <SwitchThumb />
           </Switch>
@@ -169,7 +169,7 @@ function EffectRow() {
         </label>
         {effect !== "none" && (
           <button type="button" aria-expanded={open} aria-controls={shown ? section : undefined} onClick={toggle}
-            className={`mt-1 flex h-9 items-center gap-2 rounded-button px-3 text-[13px] font-medium ${open ? "bg-selected text-ink" : "text-ink-2 hover:text-ink"}`}>
+            className={`mt-1 flex h-9 items-center gap-2 rounded-button px-2.5 text-[13px] font-medium ${open ? "bg-selected text-ink" : "text-ink-2 hover:text-ink"}`}>
             <KnobsGlyph />Customize<ChevronGlyph up={open} />
           </button>
         )}
@@ -208,10 +208,10 @@ function KnobChoice({ knob, value, onChange }: { knob: ChoiceKnob; value: string
   return (
     <div className="grid min-h-[38px] grid-cols-[77px_minmax(0,1fr)] items-center gap-3 min-[1100px]:col-span-2">
       <span aria-hidden="true" className="text-[13px] text-ink-2">{knob.label}</span>
-      <div role="group" aria-label={knob.label} className="flex h-[38px] min-w-0 items-stretch gap-0.5 overflow-x-auto rounded-[7px] bg-paper-2 p-[3px] shadow-[inset_0_0_0_1px_var(--hair)]">
+      <div role="group" aria-label={knob.label} className="flex h-[38px] min-w-0 items-stretch gap-1 overflow-x-auto rounded-[7px] bg-paper-2 p-[3px] shadow-[inset_0_0_0_1px_var(--hair)]">
         {knob.choices.map((choice) => (
           <button key={choice} type="button" aria-pressed={choice === value} onClick={() => onChange(choice)}
-            className="shrink-0 rounded-[5px] px-2.5 font-sans text-[13.5px] text-ink-3 transition-colors hover:text-ink aria-pressed:bg-canvas aria-pressed:font-medium aria-pressed:text-ink aria-pressed:shadow-[inset_0_1px_2px_rgb(0_0_0/0.35)]">
+            className="shrink-0 rounded-[5px] px-2.5 font-sans text-[15px] text-ink-3 transition-colors hover:text-ink aria-pressed:bg-canvas aria-pressed:font-medium aria-pressed:text-ink aria-pressed:shadow-[inset_0_1px_2px_rgb(0_0_0/0.35)]">
             {choice === THEME ? "Theme" : choice}
           </button>
         ))}
@@ -247,8 +247,8 @@ function SliderRow({ id, icon, title, label, value, range, onChange, pillFirst =
   id: string; icon: ReactNode; title: string; label: string; value: number; range: typeof STRENGTHS; onChange: (value: number) => void; pillFirst?: boolean; initial?: number;
 }) {
   const slider = <input type="range" aria-label={label} min={range.min} max={range.max} step={range.step} value={value}
-    onChange={(event) => onChange(Number(event.currentTarget.value))} className={`h-11 min-w-0 accent-act ${pillFirst ? "w-[72px] shrink-0" : "flex-1"}`} />;
-  const pill = <output aria-label={`${label} value`} className={`rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2 ${pillFirst ? "min-w-0 flex-1" : "min-w-[56px]"}`}>{value}%</output>;
+    onChange={(event) => onChange(Number(event.currentTarget.value))} className="h-11 min-w-0 flex-1 accent-act" />;
+  const pill = <output aria-label={`${label} value`} className={`rounded-pill border border-rule bg-paper-2 px-2 py-0.5 text-center font-mono text-[12px] text-ink-2 ${pillFirst ? "w-[52px] shrink-0" : "min-w-[56px]"}`}>{value}%</output>;
   return (
     <Row id={id} icon={icon} title={title} reset={value !== initial && <RowReset label={`Reset ${label.toLowerCase()}`} onReset={() => onChange(initial)} />}>
       <div className={`flex items-center gap-4 ${pillFirst ? "max-w-[460px]" : "max-w-[520px]"}`}>

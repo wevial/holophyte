@@ -36,7 +36,9 @@ copy:
 - Nebula's still frame draws once and holds until its cloud, config or
   drawing buffer changes, its quality governor rests while the frame is held,
   and its textures are capped to the GPU's limit, which a wide header band
-  would exceed.
+  would exceed. Its `advance()` runs the currents unseen for a held frame.
+- Hyphae's held regrowth after `reset()` leaves the last drawn frame on the
+  canvas until the new colony is grown.
 - The stage records itself against its container, and `destroyStages`
   destroys what a mount that threw after creating its stage left live.
 - Haze's `PALETTES` is typed open, so the console can register its theme

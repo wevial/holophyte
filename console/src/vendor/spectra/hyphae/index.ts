@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@256aa26 backgrounds/hyphae/src/index.ts (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@256aa26 backgrounds/hyphae/src/index.ts (MIT, see ../LICENSE), given a motion option and a held regrowth that keeps its last frame.
 // Hyphae background — the mycelium network without the cursor. A glowing
 // fungal web on near-black grows toward invisible nutrient patches that
 // drift, swell and fade on their own: veins reach and thicken where there's
@@ -166,6 +166,7 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
   let grainClock = 0;
   let sporeDue = 0; // seconds of spores owed
   let drawn = '';
+  let shown = false;
 
   function reset() {
     sized = '';
@@ -197,6 +198,7 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
   onResize = () => {
     if (field && makeTargets()) warm = WARM_STEPS;
     drawn = '';
+    shown = false;
   };
 
   function blurPass(src: FBO, dst: FBO, taps: ReturnType<typeof gaussianTaps>, dx: number, dy: number) {
@@ -287,7 +289,8 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
 
     let steps: number;
     let elapsed: number; // seconds of colony life this frame
-    if (reducedMotion.matches || !config.motion) {
+    const held = reducedMotion.matches || !config.motion;
+    if (held) {
       // Fast-forward the colony unseen, food and spores included, then hold one still frame.
       steps = Math.min(warm, WARM_RATE);
       elapsed = steps / 60;
@@ -320,6 +323,8 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
       agents!.swap();
     }
     simulate(steps);
+    // A held colony regrowing unseen leaves its last frame on the canvas rather than a blank ground.
+    if (held && warm && shown) return;
 
     seedProg.use();
     setShade(seedProg);
@@ -347,6 +352,7 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
     gl.uniform2f(u.uSplit, Math.cos(ang) * PRISM_SPLIT / field!.width, Math.sin(ang) * PRISM_SPLIT / field!.height);
     setGrain(gl, u, config.grain, grainClock);
     blit(null);
+    shown = reveal > 0;
   }
 
   reset();

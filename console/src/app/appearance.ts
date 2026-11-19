@@ -421,13 +421,13 @@ function knobDefaults(effect: BandEffect): EffectEntry {
   return { fade: DEFAULT_FADE, opacity: FULL, ...(effect === "haze" && { strength: FULL }), ...Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, knob.initial])) };
 }
 
-/** An effect's Fade, Opacity and knobs over their defaults, with Haze's Strength; only values off their default are saved. */
+/** An effect's Fade, Opacity and knobs over their defaults, with Haze's Strength; only values off their default are saved, over what storage holds now. */
 export function useEffectSettings(effect: BandEffect) {
   const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
   const defaults = knobDefaults(effect);
   const saved = settings[effect];
   const set = (key: string, value: KnobValue) => {
-    const next = { ...effectSettingsStore.getSnapshot() };
+    const next = { ...readEffectSettings(effectSettingsStore.getSnapshot()) };
     const entry = { ...next[effect], [key]: value };
     if (value === defaults[key]) delete entry[key];
     if (Object.keys(entry).length) next[effect] = entry;
@@ -436,7 +436,7 @@ export function useEffectSettings(effect: BandEffect) {
   };
   const changed = Object.entries(saved ?? {}).some(([key, value]) => value !== defaults[key]);
   const reset = () => {
-    const next = { ...effectSettingsStore.getSnapshot() };
+    const next = { ...readEffectSettings(effectSettingsStore.getSnapshot()) };
     delete next[effect];
     effectSettingsStore.set(next);
   };
