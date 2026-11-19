@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/lava/src/fluid.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/lava/src/fluid.ts (MIT, see ../LICENSE).
 // The lamp's physics: a two-fluid simulation on the GPU (see shaders.ts for
 // each pass). Wax and liquid share one velocity field; the wax is a
 // fraction φ that the flow carries, kept crisp by a conservative sharpening

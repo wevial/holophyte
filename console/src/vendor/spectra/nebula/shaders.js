@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/shaders.js (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 cursors/nebula/src/shaders.js (MIT, see ../LICENSE).
 import { COLOR, GRAIN, RAINBOW } from '../core/glsl';
 
 // All GLSL lives here as template literals so the app runs without a bundler or fetch.
@@ -319,8 +319,9 @@ float starLayer(vec2 uv, float cells, float density) {
 // Paint: the gas's hue picks an ink, its strength is coverage. The hue is
 // read back from the gas color: red rises from blue fringes (0.25) through
 // purple (0.57) to pink cores (1), and the hot cores add green. Dust lanes
-// read as darker streaks in the paint.
-vec3 paint(vec4 dye) {
+// read as darker streaks in the paint. Premultiplied: on a transparent
+// stage the page is the ground, and alpha is how much ink and dust hide it.
+vec4 paint(vec4 dye) {
   float m = max(max(dye.r, dye.g), dye.b);
   vec3 n = dye.rgb / max(m, 1e-4);
   float toMid = smoothstep(0.25, 0.57, n.r);
@@ -329,8 +330,9 @@ vec3 paint(vec4 dye) {
   vec3 pigment = mix(mix(uInk[0], uInk[1], toMid), uInk[2], toCore);
   pigment = mix(pigment, uInk[3], hot);
   float cover = 1.0 - exp(-m * 2.6);
-  vec3 col = mix(uGround, pigment, cover);
-  return col * (1.0 - dye.a * 0.35);
+  float dust = 1.0 - dye.a * 0.35;
+  if (uTransparent > 0.5) return vec4(pigment * cover * dust, 1.0 - (1.0 - cover) * dust);
+  return vec4(mix(uGround, pigment, cover) * dust, 1.0);
 }
 
 // Glow: the gas emitted as light over a dark ground. Its color is the inks
@@ -391,8 +393,9 @@ void main() {
     return;
   }
   if (uPaint > 0.5) {
-    vec3 col = paint(texture(uDye, vUv));
-    outColor = vec4(col + (hash12(gl_FragCoord.xy + fract(uTime) * 61.7) - 0.5) / 255.0 * 2.0, 1.0);
+    vec4 col = paint(texture(uDye, vUv));
+    float dither = (hash12(gl_FragCoord.xy + fract(uTime) * 61.7) - 0.5) / 255.0 * 2.0;
+    outColor = vec4(clamp(col.rgb + dither, 0.0, col.a), col.a);
     return;
   }
   vec3 col = skyColor(vUv.y);

@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@256aa26 backgrounds/hyphae/src/index.ts (MIT, see ../LICENSE), given a motion option and a held regrowth that keeps its last frame.
+// Vendored from wevial/spectra@4d4c754 backgrounds/hyphae/src/index.ts (MIT, see ../LICENSE), given a motion option and a held regrowth that keeps its last frame.
 // Hyphae background — the mycelium network without the cursor. A glowing
 // fungal web on near-black grows toward invisible nutrient patches that
 // drift, swell and fade on their own: veins reach and thicken where there's
@@ -8,6 +8,7 @@
 import { Program, VERTEX, makeBlit, createFBO, createDoubleFBO } from '../core/gl';
 import { createStage } from '../core/stage';
 import { setGrain } from '../core/glsl';
+import { random } from '../core/random';
 import type { FBO, DoubleFBO } from '../core/gl';
 import { AGENT_STEP, DEPOSIT_VERT, DIFFUSE } from '../mycelium/shaders';
 import { AGENT_INIT, FOOD, SPORE, DEPOSIT_FRAG, SEED, BLUR, COMPOSITE } from './shaders';
@@ -91,13 +92,26 @@ const WIDE_SIGMA = 4;
  * Without WebGL2 + float targets the container gets the `hyphae-fallback`
  * class instead.
  */
-export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}): HyphaeHandle {
+export interface HyphaeOptions extends Partial<HyphaeConfig> {
+  /**
+   * Steps to grow the colony unseen before it settles into real time,
+   * WARM_RATE a frame, then appear at once without the fade: a host that
+   * keeps the effect hidden that long can open on a grown network.
+   */
+  warm?: number;
+  /**
+   * Draw over the page instead of the palette's ground: unlit areas are see-through and
+   * the light tints whatever is behind the canvas. Fixed at mount. Default false.
+   */
+  transparent?: boolean;
+}
+
+export function mount(container: HTMLElement, { warm: ahead = 0, transparent = false, ...opts }: HyphaeOptions = {}): HyphaeHandle {
   const config: HyphaeConfig = { ...DEFAULTS, ...opts };
 
   let onResize = () => {};
-  const stage = createStage(container, { floatTargets: true, held: () => !config.motion, onResize: () => onResize() });
+  const stage = createStage(container, { fallback: 'hyphae-fallback', floatTargets: true, held: () => !config.motion, transparent, onResize: () => onResize() });
   if (!stage) {
-    container.classList.add('hyphae-fallback');
     return { config, reset() {}, destroy() {} };
   }
   const { gl, canvas, reducedMotion } = stage;
@@ -176,10 +190,10 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
     side = Math.max(16, Math.ceil(Math.sqrt(f.width * f.height * density)));
     agents?.dispose();
     agents = createDoubleFBO(gl, side, side, gl.RGBA32F, gl.RGBA, gl.FLOAT, gl.NEAREST);
-    const clusters = seedClusters(Math.random, 4);
+    const clusters = seedClusters(random, 4);
     init.use();
     gl.uniform1f(init.uniforms.uAspect, f.width / f.height);
-    gl.uniform1f(init.uniforms.uSeed, Math.random() * 1000);
+    gl.uniform1f(init.uniforms.uSeed, random() * 1000);
     gl.uniform1i(init.uniforms.uClusters, clusters.count);
     gl.uniform4fv(init.uniforms['uCluster[0]'], clusters.data);
     blit(agents.read);
@@ -299,6 +313,12 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
       const key = JSON.stringify(config);
       if (!steps && key === drawn) return;
       drawn = warm ? '' : key;
+    } else if (ahead > 0) {
+      warm = 0;
+      steps = Math.min(ahead, WARM_RATE);
+      elapsed = steps / 60 / Math.max(config.speed, 0.01);
+      ahead -= steps;
+      reveal = ahead ? 0 : 1;
     } else {
       warm = 0;
       elapsed = dt;
@@ -345,7 +365,7 @@ export function mount(container: HTMLElement, opts: Partial<HyphaeConfig> = {}):
     gl.uniform1i(u.uWide, wide!.attach(4));
     gl.uniform1f(u.uGlow, config.glow);
     gl.uniform1f(u.uBright, 1 - Math.pow(1 - reveal, 3));
-    gl.uniform3fv(u.uGround, colors[0]);
+    gl.uniform3fv(u.uGround, transparent ? [0, 0, 0] : colors[0]); // transparent: the page is the ground
     // Prism: the split turns slowly, so strands at every angle get their turn to fan out.
     const ang = 0.7 + time * 0.012;
     gl.uniform1f(u.uPrism, config.palette === 'prism' ? 1 : 0);

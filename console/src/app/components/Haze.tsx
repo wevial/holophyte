@@ -64,8 +64,8 @@ function liveOptions(effect: BandEffect, values: Record<string, KnobValue>, pick
 }
 
 function mountEffect(effect: BandEffect, container: HTMLElement, options: Record<string, KnobValue>, motion: boolean): Handle {
-  if (effect === "haze") return haze.mount(container, { ...HAZE_TUNING, ...HAZE_EDGES, ...options, motion });
-  return SPECTRA[effect].mount(container, { ...options, motion } as never);
+  if (effect === "haze") return haze.mount(container, { ...HAZE_TUNING, ...HAZE_EDGES, ...options, motion, transparent: true });
+  return SPECTRA[effect].mount(container, { ...options, motion, transparent: true } as never);
 }
 
 export function Haze({ effect }: { effect: BandEffect }) {
@@ -75,8 +75,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const [fallback, setFallback] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const { resolvedTheme, lightPick, darkPick } = useTheme();
-  const dark = resolvedTheme === "dark";
-  const palette = `${dark ? darkPick : lightPick}-${resolvedTheme}`;
+  const palette = `${resolvedTheme === "dark" ? darkPick : lightPick}-${resolvedTheme}`;
   const { motion, reduced } = useMotion();
   const still = !motion || reduced;
   const { customThemes } = useCustomThemes();
@@ -87,7 +86,6 @@ export function Haze({ effect }: { effect: BandEffect }) {
   const tall = effect === "lava";
 
   useEffect(() => {
-    if (!dark) return;
     const container = (tall ? floored : band).current!;
     let drawing: Handle;
     try {
@@ -118,7 +116,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
       live.current = null;
       drawing.destroy();
     };
-  }, [dark, effect, attempt]);
+  }, [effect, attempt]);
 
   useEffect(() => {
     if (!live.current) return;
@@ -150,8 +148,8 @@ export function Haze({ effect }: { effect: BandEffect }) {
       ref={band}
       aria-hidden="true"
       data-haze=""
-      style={{ ...(dark && { "--haze-fade": `${values.fade}%` }), "--haze-scale": effect === "haze" ? Number(values.strength) / 100 : 1, opacity: Number(values.opacity) / 100 } as CSSProperties}
-      className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${!dark || fallback ? " haze-fallback" : ""}`}
+      style={{ "--haze-fade": `${values.fade}%`, "--haze-scale": effect === "haze" ? Number(values.strength) / 100 : 1, opacity: Number(values.opacity) / 100 } as CSSProperties}
+      className={`haze-band absolute inset-x-0 top-0 -z-10 h-[188px] overflow-hidden${fallback ? " haze-fallback" : ""}`}
     >
       {/* Lava pools its wax at the bottom of its box, so the box runs past the band's clipped edge. */}
       {tall && <div ref={floored} style={{ position: "absolute", insetInline: 0, top: 0, height: `${Math.round(LAVA_BOX * 100)}%` }} />}

@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@256aa26 backgrounds/hyphae/src/params.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/hyphae/src/params.ts (MIT, see ../LICENSE).
 // Pure parameter math for the hyphae background, kept out of the GL code so
 // it can be tested.
 

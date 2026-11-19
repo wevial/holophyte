@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/index.js (MIT, see ../LICENSE), given a motion option that also holds one frame, and advance().
+// Vendored from wevial/spectra@4d4c754 cursors/nebula/src/index.js (MIT, see ../LICENSE), given a motion option that also holds one frame, and advance().
 // Nebula cursor — a WebGL2 nebula you can part with the mouse.
 // The pointer bends a displacement field (a local radial shove plus a soft
 // drag wake through a fluid sim); the cloud always heals back to its untouched
@@ -8,7 +8,8 @@
 
 import { Program, makeBlit } from '../core/gl';
 import { createStage } from '../core/stage';
-import { setGrain } from '../core/glsl';
+import { setGrain, setTransparent } from '../core/glsl';
+import { random } from '../core/random';
 import { VERTEX, COMPOSITE } from './shaders.js';
 import { FluidSim, CONFIG } from './fluid.js';
 import { Governor, TIERS } from './perf.js';
@@ -20,8 +21,10 @@ export { CONFIG, PAINTS };
  * Mount the nebula into `container` (which should be positioned and sized).
  * Without WebGL2 + float targets the container gets the `nebula-fallback`
  * class instead, for a static CSS gradient.
+ * `transparent` draws the paint looks over the page instead of their ground
+ * (fixed at mount); the space look stays opaque.
  * @param {HTMLElement} container
- * @param {{ tier?: number, debug?: boolean, cursor?: boolean, currents?: number, speed?: number, look?: 'space' | 'paint', paint?: string, ground?: string, motion?: boolean }} [opts]
+ * @param {{ tier?: number, debug?: boolean, cursor?: boolean, currents?: number, speed?: number, look?: 'space' | 'paint', paint?: string, ground?: string, motion?: boolean, transparent?: boolean }} [opts]
  */
 export function mount(container, opts = {}) {
   const cursor = opts.cursor ?? true;
@@ -29,8 +32,10 @@ export function mount(container, opts = {}) {
 
   const stage = createStage(container, {
     floatTargets: true,
+    fallback: 'nebula-fallback',
     // Nebula's own governor trades detail as well as resolution (perf.js).
     adaptive: false,
+    transparent: opts.transparent,
     onResize: () => fluid?.resize(),
   });
   if (!stage) {
@@ -120,9 +125,9 @@ export function mount(container, opts = {}) {
       if (cursor && pointer.active && speed > 0) {
         const part = Math.min(speed * 2.8, 0.09);
         for (let i = 0; i < 3; i++) {
-          const jx = (Math.random() - 0.5) * 0.016;
-          const jy = (Math.random() - 0.5) * 0.016;
-          const rad = 0.0028 * (0.5 + Math.random());
+          const jx = (random() - 0.5) * 0.016;
+          const jy = (random() - 0.5) * 0.016;
+          const rad = 0.0028 * (0.5 + random());
           fluid.splat('offset', pointer.x + jx, pointer.y + jy, part * 0.35, 0, rad, 1);
         }
         const f = fluid.config.splatForce * 0.5;
@@ -149,11 +154,13 @@ export function mount(container, opts = {}) {
     const glow = painted && paint.glow ? GLOWS.indexOf(paint.glow) + 1 : 0;
     gl.uniform1f(composite.uniforms.uGlow, glow);
     if (glow) setGrain(gl, composite.uniforms, 0.04, time / 2.5);
+    else setTransparent(gl, composite.uniforms);
     if (fluid.config.paint !== paintName) {
       paintName = fluid.config.paint;
       fluid.config.ground = paint.ground;
     }
-    gl.uniform3fv(composite.uniforms.uGround, hex(fluid.config.ground));
+    // A glow over black, or ink over the page: either way a transparent stage has no ground.
+    gl.uniform3fv(composite.uniforms.uGround, opts.transparent ? [0, 0, 0] : hex(fluid.config.ground));
     gl.uniform3fv(composite.uniforms['uInk[0]'], paint.inks.flatMap(hex));
     blit(null);
   });
