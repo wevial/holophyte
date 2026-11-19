@@ -84,12 +84,12 @@ function daemon(
 
 const PREVIEW = { action: "revert", recorded: null, enabled: true, refused: null, dependents: [] };
 
-async function mount(hash: string, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
+async function mount(hash: string, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>, client = consoleQueryClient()) {
   window.location.hash = hash;
   const fake = fakeDeps(fetchImpl);
   fake.clock.now = NOW;
   render(
-    <QueryClientProvider client={consoleQueryClient()}>
+    <QueryClientProvider client={client}>
       <ConsoleApp base={DEMO} pollDeps={fake.deps} />
     </QueryClientProvider>,
   );
@@ -339,6 +339,28 @@ test("a Done row whose ticket read fails keeps Revert… disabled and saying so"
   const item = screen.getByRole("menuitem", { name: "Revert…" });
   expect(item.getAttribute("aria-disabled")).toBe("true");
   expect(document.getElementById(item.getAttribute("aria-describedby")!)?.textContent).toBe("Couldn't read DEMO-9");
+});
+
+test("a row's Revert… read once disables again while its ticket is read afresh and after that read fails", async () => {
+  writeView("table");
+  const fake = daemon(true);
+  const client = consoleQueryClient();
+  let held: { promise: Promise<Response>; reject: (failure: Error) => void } | null = null;
+  await mount("#/tickets", async (url, init) => (url === `${DEMO}/tickets/DEMO-9` && held != null ? held.promise : fake.fetchImpl(url, init)), client);
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
+  for (let round = 0; round < 6; round += 1) await act(settle);
+  const revert = () => screen.getByRole("menuitem", { name: "Revert…" });
+  const note = () => document.getElementById(revert().getAttribute("aria-describedby") ?? "")?.textContent;
+  expect(revert().getAttribute("aria-disabled")).not.toBe("true");
+  held = Promise.withResolvers<Response>();
+  await act(async () => void client.invalidateQueries({ queryKey: ["route", DEMO, "/tickets/DEMO-9"] }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(revert().getAttribute("aria-disabled")).toBe("true");
+  expect(note()).toBe("Checking…");
+  held.reject(new Error("daemon gone"));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(revert().getAttribute("aria-disabled")).toBe("true");
+  expect(note()).toBe("Couldn't read DEMO-9");
 });
 
 test("a File revert refused on its recheck moves focus from the vanished button to Close", async () => {

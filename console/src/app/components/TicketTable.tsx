@@ -83,9 +83,9 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
 }
 
 /** A row's ⋯ menu where its project reports `reverts`: its ticket is read
- *  while the menu is open, whatever column the row sits in. A Done row holds
- *  Revert… disabled until that read answers; any row offers it once the read
- *  finds its newest run merged. A reverted ticket's Revert… is disabled naming
+ *  while the menu is open, whatever column the row sits in. Revert… stays
+ *  disabled while that read is fetching or has failed, even over an earlier
+ *  answer; any row offers it once the read finds its newest run merged. A reverted ticket's Revert… is disabled naming
  *  the revert ticket; a ticket whose newest run did not merge offers none. */
 function MergedRowMenu({ card, column, actions, items, onOpenChange }: {
   card: TicketCard; column: ColumnId; actions: boolean; items: MenuItem[]; onOpenChange: (open: boolean) => void;
@@ -99,7 +99,7 @@ function MergedRowMenu({ card, column, actions, items, onOpenChange }: {
     merged ? { base: card.base, project: card.project, ticket: card.key, run: newest ?? card.runId, newest: true, reverted: read?.reverted, off: actions ? null : ACTIONS_OFF } : null,
     items,
   );
-  const unread = ticket.isPending ? "Checking…" : read == null ? `Couldn't read ${card.key}` : null;
+  const unread = ticket.isPending || ticket.isFetching ? "Checking…" : ticket.isError || read == null ? `Couldn't read ${card.key}` : null;
   const shown = revert.items.map((item) => (unread != null && item.label === "Revert…" ? { ...item, disabled: true, note: unread } : item));
   return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpenChange={(now) => {
     setOpen(now);
