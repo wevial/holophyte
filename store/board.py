@@ -236,7 +236,9 @@ def reopen_reverted(conn, run_id, native=True):
 
 def _live(text):
     live, paragraph = [], []
-    for line in _unfenced(text) + [""]:
+    uncommented = ticket_template.COMMENT_RE.sub(
+        lambda comment: "\n" * comment[0].count("\n"), text)
+    for line in _unfenced(uncommented) + [""]:
         if line.strip():
             paragraph.append(line)
             continue
@@ -265,12 +267,13 @@ def _outside_code_spans(lines):
     joined = "\n".join(lines)
     runs, spans, i = list(TICKS.finditer(joined)), [], 0
     while i < len(runs):
+        start, ticks = _opener(joined, runs[i])
         close = next((j for j in range(i + 1, len(runs))
-                      if len(runs[j][0]) == len(runs[i][0])), None)
-        if close is None:
+                      if len(runs[j][0]) == ticks), None)
+        if not ticks or close is None:
             i += 1
             continue
-        spans.append((runs[i].start(), runs[close].end()))
+        spans.append((start, runs[close].end()))
         i = close + 1
     live, at, prose = [], 0, False
     for line in lines:
@@ -281,6 +284,12 @@ def _outside_code_spans(lines):
             live.append(line.strip())
         at += len(line) + 1
     return live
+
+
+def _opener(joined, run):
+    before = joined[:run.start()]
+    escaped = (len(before) - len(before.rstrip("\\"))) % 2
+    return run.start() + escaped, len(run[0]) - escaped
 
 
 def _filed_reason(conn, merged_run, revert_key):

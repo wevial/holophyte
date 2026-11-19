@@ -274,6 +274,41 @@ class RevertCloseTests(ConfigTestCase):
     def test_a_marker_inside_a_multiline_code_span_reopens_nothing(self):
         self.assert_hidden_marker_reopens_nothing("See `the line\n{}\n` here.")
 
+    def comment_in_revert(self, summary):
+        """Filing refuses a commented Summary, so the claimed body is written
+        directly."""
+        with contextlib.closing(open_store(self.project)) as conn:
+            ticket_id = self.ticket_id(conn, "NAT-3")
+            body, revision = conn.execute(
+                "SELECT body, revision FROM tickets WHERE id = ?",
+                (ticket_id,)).fetchone()
+            body = body.replace(f"Reverts: NAT-1 at {self.key_sha}", summary)
+            conn.execute("UPDATE ticketRevisions SET body = ? WHERE"
+                         " ticketId = ? AND revision = ?",
+                         (body, ticket_id, revision))
+            conn.execute("UPDATE tickets SET body = ? WHERE id = ?",
+                         (body, ticket_id))
+            conn.commit()
+
+    def test_a_marker_inside_an_html_comment_reopens_nothing(self):
+        self.file_revert()
+        before = self.key_state()
+        self.comment_in_revert(f"<!--\nReverts: NAT-1 at {self.key_sha}\n-->")
+        self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.key_state(), before)
+
+    def test_a_marker_after_an_html_comment_is_still_live(self):
+        self.file_revert()
+        self.comment_in_revert(f"<!-- filed by hand -->\nReverts: NAT-1 at"
+                               f" {self.key_sha}")
+        self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.key_state()["ticket"],
+                         [("ready", "backlog", "Backlog")])
+
+    def test_an_escaped_backtick_does_not_open_a_code_span(self):
+        self.assert_hidden_marker_reopens_nothing(
+            "Use \\` literally; `example\n{}\n`")
+
     def test_a_fence_line_with_inner_text_does_not_close_the_fence(self):
         self.assert_hidden_marker_reopens_nothing("~~~\n~~~ ~~~\n{}\n~~~")
 
