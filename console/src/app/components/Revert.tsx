@@ -47,10 +47,6 @@ export function usePlaceItems(copy: Place, open?: Place): MenuItem[] {
   return items;
 }
 
-function Code({ children }: { children: ReactNode }) {
-  return <code className="font-mono text-[12.5px]">{children}</code>;
-}
-
 function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" | "failed" }> }) {
   return (
     <div data-revert-refusal className="mt-3 rounded-[6px] bg-bad-wash px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_var(--bad)]">
@@ -60,7 +56,7 @@ function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" |
           {answer.paths.map((path, index) => (
             <span key={path}>
               {index > 0 && ", "}
-              <Code>{path}</Code>
+              <code className="font-mono text-[12.5px]">{path}</code>
             </span>
           ))}
           , which this project never reverts. Ship a forward fix instead.
