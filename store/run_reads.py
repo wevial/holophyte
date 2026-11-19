@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, fields
 from time import time
 
@@ -756,6 +757,45 @@ def last_event_at(conn, run_ids):
         f" WHERE runId IN ({', '.join('?' * len(run_ids))}) GROUP BY runId",
         run_ids).fetchall()
     return {**dict.fromkeys(run_ids), **dict(rows)}
+
+
+REVERTED_SUMMARY = re.compile(
+    r"reverted by (\S+) \(merge sha: (\S+)\)(?:: (.*))?", re.DOTALL)
+
+
+def _reverted(summary):
+    named = REVERTED_SUMMARY.fullmatch(summary)
+    if named is None:
+        return {"by": None, "sha": None, "reason": summary}
+    by, sha, reason = named.groups()
+    return {"by": by, "sha": None if sha == "null" else sha,
+            "reason": reason}
+
+
+def reverted_runs(conn, run_ids):
+    run_ids = tuple(run_ids)
+    if not run_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT runId, summary FROM runEvents WHERE kind = 'reverted'"
+        f" AND runId IN ({', '.join('?' * len(run_ids))})"
+        " ORDER BY runId, seq", run_ids).fetchall()
+    return {**dict.fromkeys(run_ids),
+            **{run_id: _reverted(summary) for run_id, summary in rows}}
+
+
+def reverted_tickets(conn, ticket_ids):
+    ticket_ids = tuple(ticket_ids)
+    if not ticket_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT r.ticketId, e.summary FROM runs r"
+        " JOIN runEvents e ON e.runId = r.id AND e.kind = 'reverted'"
+        " WHERE r.id IN (SELECT MAX(id) FROM runs WHERE outcome = 'merged'"
+        f" AND ticketId IN ({', '.join('?' * len(ticket_ids))})"
+        " GROUP BY ticketId) ORDER BY r.id, e.seq", ticket_ids).fetchall()
+    return {**dict.fromkeys(ticket_ids),
+            **{ticket_id: _reverted(summary) for ticket_id, summary in rows}}
 
 
 @dataclass(frozen=True)

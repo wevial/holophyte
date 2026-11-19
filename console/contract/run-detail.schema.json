@@ -4,6 +4,47 @@
   "description": "GET /runs/N",
   "$ref": "#/$defs/RunDetail",
   "$defs": {
+    "Reverted": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "sha",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
     "RunDetailRun": {
       "type": "object",
       "properties": {
@@ -230,6 +271,16 @@
         },
         "max_rounds": {
           "type": "integer"
+        },
+        "reverted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reverted"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

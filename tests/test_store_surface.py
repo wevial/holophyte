@@ -352,6 +352,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-331: `/history`'s
                                                     # open and recent runs.
                                                     "recent_runs",
+                                                    # HOLO-834: the revert a
+                                                    # run and a ticket carry.
+                                                    "reverted_runs",
+                                                    "reverted_tickets",
                                                     # HOLO-466: the review cap
                                                     # a ticket's runs recorded.
                                                     "round_caps",

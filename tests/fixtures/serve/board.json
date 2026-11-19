@@ -15,7 +15,8 @@
           "column": null,
           "priority": null,
           "labels": [],
-          "revision": 1
+          "revision": 1,
+          "reverted": null
         }
       ]
     },
@@ -38,7 +39,8 @@
           "column": null,
           "priority": null,
           "labels": [],
-          "revision": 1
+          "revision": 1,
+          "reverted": null
         }
       ]
     },
@@ -57,7 +59,8 @@
           "column": null,
           "priority": null,
           "labels": [],
-          "revision": 1
+          "revision": 1,
+          "reverted": null
         }
       ]
     },
@@ -76,7 +79,8 @@
           "column": null,
           "priority": null,
           "labels": [],
-          "revision": 1
+          "revision": 1,
+          "reverted": null
         },
         {
           "ticket": "KO-8",
@@ -90,7 +94,8 @@
           "column": null,
           "priority": null,
           "labels": [],
-          "revision": 1
+          "revision": 1,
+          "reverted": null
         }
       ]
     }

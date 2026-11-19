@@ -306,6 +306,47 @@
       ],
       "additionalProperties": true
     },
+    "Reverted": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "sha",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
     "TicketDetail": {
       "type": "object",
       "properties": {
@@ -418,6 +459,16 @@
           "items": {
             "$ref": "#/$defs/TicketSteer"
           }
+        },
+        "reverted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reverted"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

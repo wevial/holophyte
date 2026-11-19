@@ -629,7 +629,7 @@ class TicketTests(ServeTestCase):
             "current": revision, "claimed": revision,
             "revisions": [{"revision": 1, "at": self.now - 5 * MIN,
                            "author": "board"}],
-            "notes": [], "steers": []})
+            "notes": [], "steers": [], "reverted": None})
 
     def test_an_identifier_never_mirrored_is_404_with_an_empty_object(self):
         self.seed_ticket()
@@ -1039,13 +1039,15 @@ class BoardTests(ServeTestCase):
              "run": None, "question": None,
              "waits_on": ["KO-2", "issue-never-seen"],
              "mirrored_ms": self.now - 5 * MIN,
-             "column": None, "priority": None, "labels": [], "revision": 1}])
+             "column": None, "priority": None, "labels": [], "revision": 1,
+             "reverted": None}])
         self.assertEqual(by_state["in_flight"], [
             {"ticket": "KO-5", "ticket_url": None,
              "title": "ticket 5", "time_box_ms": 25 * MIN,
              "run": self.run, "question": None, "waits_on": [],
              "mirrored_ms": self.now - 5 * MIN,
-             "column": None, "priority": None, "labels": [], "revision": 1}])
+             "column": None, "priority": None, "labels": [], "revision": 1,
+             "reverted": None}])
         self.assertEqual(by_state["blocked_on_operator"][0]["question"],
                          "Which branch is canonical?")
         self.assertIsNone(by_state["needs_spec"][0]["run"])

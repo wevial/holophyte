@@ -286,6 +286,7 @@ def run_detail(project, run_id, now=None):
         steered = chain_notes(conn, run.ticketId, chain["started_ms"])
         criteria = chain_criteria(judgements)
         precheck = served_precheck(store.read.witness_prechecks(conn, run.id))
+        reverted = store.read.reverted_runs(conn, [run.id])[run.id]
     finally:
         conn.close()
     live = run.endedAt is None
@@ -310,7 +311,8 @@ def run_detail(project, run_id, now=None):
                 "pr_url": run.prUrl, "work_started_ms": run.workStartedAt,
                 "verify_started_ms": run.verifyStartedAt,
                 "approved_at": run.approvedAt, "approved_by": run.approvedBy,
-                "max_rounds": chain["runs"][-1]["max_rounds"]},
+                "max_rounds": chain["runs"][-1]["max_rounds"],
+                "reverted": reverted},
         "rounds": rounds,
         "findings": advisories(events),
         "events": [{"at": e.at, "kind": e.kind, "summary": e.summary}

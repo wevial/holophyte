@@ -13,7 +13,7 @@ from holophyte.serve.contract_routes import (
     SeatProbes,
 )
 from holophyte.serve.contract_routes import RouteProbe as RouteProbe
-from holophyte.serve.contract_run import Precheck, Round
+from holophyte.serve.contract_run import Precheck, Reverted, Round
 from holophyte.serve.contract_search import Search
 from holophyte.serve.serve_history import Flow
 from holophyte.serve.serve_merge_queue import MergeQueue
@@ -117,6 +117,7 @@ class Status(TypedDict):
     thresholds: Thresholds
     actions: NotRequired[bool]
     config_edit: bool
+    reverts: NotRequired[bool]
     colour: NotRequired[Literal["auto", "violet", "teal", "green", "blue"]]
     runs: list[StatusRun]
     queued: list[QueuedTicket]
@@ -376,6 +377,7 @@ class RunDetailRun(TypedDict):
     approved_at: int | None
     approved_by: str | None
     max_rounds: int
+    reverted: NotRequired[Reverted | None]
 
 
 class AdvisoryFinding(TypedDict):
@@ -598,6 +600,7 @@ class HistoryRow(TypedDict):
     implementer: NotRequired[str | None]
     pr_url: str | None
     host: str | None
+    reverted: NotRequired[Reverted | None]
 
 
 class HistoryStateCounts(TypedDict):
@@ -748,6 +751,7 @@ class BoardTicket(TypedDict):
     priority: int | None
     labels: list[str]
     revision: int
+    reverted: NotRequired[Reverted | None]
 
 
 class BoardColumn(TypedDict):
@@ -848,6 +852,7 @@ class TicketDetail(TypedDict):
     notes: list[TicketNote]
     runs: list[TicketRun]
     steers: list[TicketSteer]
+    reverted: NotRequired[Reverted | None]
 
 
 class TicketSearch(TypedDict):
