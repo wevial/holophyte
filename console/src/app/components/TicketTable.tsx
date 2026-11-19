@@ -94,7 +94,7 @@ function RowMenuFrame({ card, items, layer, onOpenChange }: { card: TicketCard; 
   );
 }
 
-const mayHoldMerge = (card: TicketCard, column: ColumnId) => column === "done" || ((column === "backlog" || column === "ready") && card.runId != null);
+const MAY_HOLD_MERGE: ReadonlySet<ColumnId> = new Set(["done", "backlog", "ready"]);
 
 /** A row's ⋯ menu: Open ticket, Copy link, and on a row that may hold a
  *  merge in a project that reports `reverts`, Revert…; a filed revert's
@@ -103,7 +103,7 @@ function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId })
   const status = useConsolePeers().hosts.find((each) => each.base === card.base)?.status;
   const place = { project: card.project, ticket: card.key };
   const items = usePlaceItems(place, place);
-  if (mayHoldMerge(card, column) && status?.reverts === true) {
+  if (MAY_HOLD_MERGE.has(column) && status?.reverts === true) {
     return <MergedRowMenu card={card} column={column} actions={status.actions === true} items={items} />;
   }
   return <RowMenuFrame card={card} items={items} />;

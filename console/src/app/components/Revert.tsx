@@ -102,7 +102,7 @@ let newestPreview = 0;
 
 function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" | "failed" }> }) {
   return (
-    <div data-revert-refusal className="mt-3 rounded-[6px] bg-[color-mix(in_oklab,var(--bad)_9%,var(--raised))] px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--bad)_42%,var(--raised))]">
+    <div data-revert-refusal className="mt-3 rounded-[6px] bg-[color-mix(in_srgb,var(--bad)_10%,var(--raised))] px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--bad)_41.5%,var(--raised))]">
       {answer.kind === "refused" && answer.paths.length > 0 ? (
         <>
           It changed{" "}
@@ -177,11 +177,11 @@ function RevertDialog({ target, sha: merge, first, onClose, onFiled }: {
       <p className="m-0 mt-2 font-sans text-[14px] leading-[1.5] text-ink-2">
         Files an urgent ticket that reverts {sha === "" ? "its merge" : sha}. It goes through verify and review and merges by this project's rule. {target.ticket} returns to Backlog when it does.
       </p>
-      <h3 className="m-0 mt-4 font-sans text-[13px] font-semibold leading-none text-ink">Merged since, same files</h3>
+      <h3 className="m-0 mt-5 font-sans text-[13px] font-semibold leading-none text-ink">Merged since, same files</h3>
       {answer.dependents.length === 0 ? (
-        <p className="m-0 mt-2.5 font-sans text-[13px] leading-[1.45] text-ink-3">Nothing merged since touches these files</p>
+        <p className="m-0 mt-3.5 font-sans text-[13px] leading-[1.45] text-ink-3">Nothing merged since touches these files</p>
       ) : (
-        <ul aria-label="Merged since, same files" className="m-0 mt-2.5 flex max-h-[min(220px,28vh)] list-none flex-col gap-1.5 overflow-y-auto p-0">
+        <ul aria-label="Merged since, same files" className="m-0 mt-3.5 flex max-h-[min(220px,28vh)] list-none flex-col gap-1.5 overflow-y-auto p-0">
           {answer.dependents.map((dependent) => (
             <li key={`${dependent.key} ${dependent.sha}`} data-dependent className="flex flex-wrap gap-x-2.5 font-mono text-[12.5px] leading-[1.45] text-ink-2">
               <span className="font-semibold text-ink">{dependent.key}</span>
@@ -191,7 +191,7 @@ function RevertDialog({ target, sha: merge, first, onClose, onFiled }: {
           ))}
         </ul>
       )}
-      <label htmlFor={reasonId} className="mt-4 block font-sans text-[13px] font-semibold leading-none text-ink">
+      <label htmlFor={reasonId} className="mt-5 block font-sans text-[13px] font-semibold leading-none text-ink">
         Reason
       </label>
       <textarea

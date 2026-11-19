@@ -13,7 +13,7 @@ export interface MenuItem {
 
 /** A row's ⋯ menu shows while the row (a `group`) is hovered or holds
  *  focus, while the menu is open, and always where nothing can hover. */
-export const ROW_MENU = "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 [@media(hover:none)]:opacity-100";
+export const ROW_MENU = "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 has-[[aria-expanded=true]]:z-50 has-[[aria-expanded=true]]:opacity-100 [@media(hover:none)]:opacity-100";
 
 const TRIGGER = "inline-flex items-center justify-center rounded-button text-ink-2 hover:bg-hover hover:text-ink aria-expanded:bg-selected aria-expanded:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
 
@@ -39,7 +39,8 @@ function DotsIcon() {
 export function MoreMenu({ label, items, className = "", compact = false, onOpenChange }: {
   label: string; items: MenuItem[]; className?: string; compact?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
-  const [at, setAt] = useState<{ top: number; right: number; above: number; below: number; side: number; placed?: boolean; maxHeight?: number } | null>(null);
+  // Positions are kept in zoomed viewport pixels, as rectangles report them; `scale` turns them into the menu's own CSS pixels.
+  const [at, setAt] = useState<{ top: number; right: number; above: number; below: number; side: number; scale: number; placed?: boolean; maxHeight?: number } | null>(null);
   const [focusOn, setFocusOn] = useState<"menu" | "first" | "last">("menu");
   const id = useId();
   const wrap = useRef<HTMLDivElement>(null);
@@ -61,9 +62,10 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
     else setAt({ ...at, placed: true, right, top: Math.max(8, room + 8 - box.height), maxHeight: box.height > room ? room : undefined });
   }, [at]);
 
+  const shape = items.map((item) => `${item.label}|${item.note ?? ""}|${item.disabled === true}`).join("\n");
   useLayoutEffect(() => {
     setAt((now) => (now == null ? now : { ...now, top: now.below, right: now.side, maxHeight: undefined, placed: false }));
-  }, [items.length]);
+  }, [shape]);
 
   useEffect(() => {
     onOpenChange?.(open);
@@ -97,9 +99,12 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
 
   const show = (focus: "menu" | "first" | "last") => {
     const box = button.current!.getBoundingClientRect();
+    const width = button.current!.offsetWidth;
+    const gap = compact ? 3 : 6;
     setFocusOn(focus);
     const side = Math.max(8, window.innerWidth - box.right);
-    setAt({ top: box.bottom + 6, right: side, above: box.top - 6, below: box.bottom + 6, side });
+    const scale = width > 0 && box.width > 0 ? box.width / width : 1;
+    setAt({ top: box.bottom + gap * scale, right: side, above: box.top - gap * scale, below: box.bottom + gap * scale, side, scale });
   };
   const close = () => {
     setAt(null);
@@ -154,7 +159,7 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
           aria-label={label}
           tabIndex={-1}
           onKeyDown={onMenuKey}
-          style={{ top: at.top, right: at.right, maxHeight: at.maxHeight }}
+          style={{ top: at.top / at.scale, right: at.right / at.scale, maxHeight: at.maxHeight == null ? undefined : at.maxHeight / at.scale }}
           className="fixed z-50 flex min-w-[180px] flex-col overflow-y-auto rounded-[9px] bg-raised p-1 text-left outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
         >
           {items.map((item) => {
@@ -169,7 +174,7 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
                   aria-disabled={item.disabled || undefined}
                   aria-describedby={item.note != null ? noteId : undefined}
                   onClick={() => choose(item)}
-                  className={`flex min-h-[30px] w-full items-center rounded-button px-2.5 py-1.5 text-left font-sans text-[13px] leading-[1.25] outline-none focus:bg-hover aria-disabled:cursor-default aria-disabled:opacity-60 ${
+                  className={`flex min-h-[32px] w-full items-center rounded-button px-2.5 py-1.5 text-left font-sans text-[13px] leading-[1.25] outline-none focus:bg-hover aria-disabled:cursor-default aria-disabled:opacity-60 ${
                     item.danger ? "text-bad" : "text-ink"
                   } ${item.disabled ? "" : "hover:bg-hover"}`}
                 >

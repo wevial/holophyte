@@ -215,7 +215,7 @@ test("a Done row reads its ticket only once its menu opens: a reverted one disab
 
 test("a Backlog row whose latest run merged and was reverted ends its menu with Revert… disabled, naming the revert ticket", async () => {
   const reverted = { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" };
-  const card = { ...servedBoard.columns.find((column) => column.tickets.length > 0)!.tickets[0]!, ticket: "DEMO-9", title: "Page the ledger", run: 9, reverted };
+  const card = { ...servedBoard.columns.find((column) => column.tickets.length > 0)!.tickets[0]!, ticket: "DEMO-9", title: "Page the ledger", run: null, reverted };
   const board: Board = { ...emptyBoard, columns: [...emptyBoard.columns, { ...emptyBoard.columns[0]!, state: "backlog", tickets: [card] }] };
   writeView("table");
   const fake = daemon(true, undefined, { board, tickets: { "DEMO-9": { ...ticketNine, status: "backlog", reverted } } }, []);
