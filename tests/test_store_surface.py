@@ -113,6 +113,8 @@ EXPECTED = [
     "is_gate_conflict",
     "render_state_graph",
     "render_state_graph_section",
+    # HOLO-822: a merged revert reopens its original, off the §3 walk graph.
+    "reopen_merged",
     "resume",
     "run_contract",
     "run_phase",

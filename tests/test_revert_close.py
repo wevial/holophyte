@@ -13,7 +13,6 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
-from loop_fixture import MergeModeFixture, StubProvider  # noqa: E402
 from phase_fixture import advance_phase, finish_run  # noqa: E402
 
 import store  # noqa: E402
@@ -26,6 +25,7 @@ from store.writes import set_board_state  # noqa: E402
 from tests import test_cli_revert as cli_revert  # noqa: E402
 from tests import test_pullrequest_parked as parked  # noqa: E402
 
+PULL_URL = "https://github.com/example/repo/pull/7"
 REASON = r"broke the <header> band \n mid-word"
 
 
@@ -215,6 +215,62 @@ class RevertCloseTests(ConfigTestCase):
         self.assertIn(("move", f"Reverted by NAT-3: {REASON}"), state["notes"])
         self.assertIn("reverted", [kind for kind, _ in state["events"]])
 
+    def test_a_canceled_original_still_returns_to_backlog(self):
+        self.file_revert()
+        with contextlib.closing(open_store(self.project)) as conn:
+            set_board_state(conn, self.ticket_id(conn, "NAT-1"), "Canceled",
+                            "canceled")
+            conn.commit()
+        self.run_revert(self.merge_the_revert)
+        state = self.key_state()
+        self.assertEqual(state["ticket"], [("ready", "backlog", "Backlog")])
+        self.assertIn(("move", f"Reverted by NAT-3: {REASON}"), state["notes"])
+
+    def test_a_refused_move_keeps_the_reverted_event_and_warns(self):
+        self.file_revert()
+
+        def refuse(*_args):
+            raise store.board.FilingRefused(["the board refused the move"])
+
+        with patch.object(store.board, "_record_column", refuse):
+            run = self.run_revert(self.merge_the_revert)
+        state = self.key_state()
+        self.assertEqual(state["ticket"], [("merged", "ready", None)])
+        self.assertIn("reverted", [kind for kind, _ in state["events"]])
+        self.assertTrue(any("the board refused the move" in summary
+                            for (summary,) in self.read(
+                                "SELECT summary FROM runEvents WHERE runId = ?"
+                                " AND kind = 'warning'", run)))
+
+    def test_a_github_merge_without_its_sha_lands_and_reopens_the_original(self):
+        self.file_revert()
+        with contextlib.closing(open_store(self.project)) as conn:
+            (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
+            ticket_id = self.ticket_id(conn, "NAT-3")
+            run = store.claim(conn, project_id, ticket_id)
+            store.tickets.transition(conn, ticket_id, "in_flight")
+            store.set_phase(conn, run, "working")
+            advance_phase(conn, run, "merge_gate")
+            store.park(conn, run, "awaiting_merge_approval", pr_url=PULL_URL)
+            store.walk_ticket(conn, ticket_id, "blocked_on_operator")
+            set_board_state(conn, ticket_id, "Canceled", "canceled")
+            conn.commit()
+            parked.ParkedPullRequestTests.fake_client(
+                self, dict(parked.ParkedPullRequestTests.MERGED_PULL,
+                           mergeCommit=None))
+            with contextlib.redirect_stdout(io.StringIO()):
+                verdict = reconcile._ask_before_cancel(
+                    self.project, conn, board_for(self.project), ticket_id)
+        self.assertEqual(verdict, "landed")
+        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"
+                                   " WHERE id = ?", run), [("merged", None)])
+        state = self.key_state()
+        self.assertEqual(state["ticket"], [("ready", "backlog", "Backlog")])
+        (reverted,) = [summary for kind, summary in state["events"]
+                       if kind == "reverted"]
+        self.assertIn("NAT-3", reverted)
+        self.assertIn("sha: null", reverted)
+
     def test_a_sha256_reverts_marker_returns_its_ticket(self):
         self.file_revert()
         long_sha = "ab" * 32
@@ -324,27 +380,3 @@ class RevertCloseTests(ConfigTestCase):
         return conn.execute("SELECT id FROM tickets WHERE"
                             " linearIdentifier = ?", (key,)).fetchone()[0]
 
-
-class UnnamedGithubMergeTests(MergeModeFixture):
-    parked_on_pr = parked.ParkedPullRequestTests.parked_on_pr
-    fake_client = parked.ParkedPullRequestTests.fake_client
-
-    def reconcile(self):
-        conn = store.open(self.db)
-        self.addCleanup(conn.close)
-        with contextlib.redirect_stdout(io.StringIO()):
-            reconcile._reconcile_pull_requests(
-                self.project, conn,
-                conn.execute("SELECT id FROM projects").fetchone()[0],
-                StubProvider())
-
-    def test_a_merge_without_its_commit_yet_lands_once_github_names_it(self):
-        self.parked_on_pr()
-        merged = parked.ParkedPullRequestTests.MERGED_PULL
-        self.fake_client(dict(merged, mergeCommit=None), merged)
-        self.reconcile()
-        self.assertEqual(self.read("SELECT phase, outcome FROM runs"),
-                         [("awaiting_merge_approval", None)])
-        self.reconcile()
-        self.assertEqual(self.read("SELECT outcome, mergeSha FROM runs"),
-                         [("merged", self.MERGE_SHA)])

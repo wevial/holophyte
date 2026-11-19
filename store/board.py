@@ -20,7 +20,7 @@ from .stories import (
     abandon_story,
     story,
 )
-from .tickets import mirror_ticket, transition, walk_ticket
+from .tickets import mirror_ticket, reopen_merged, transition, walk_ticket
 from .writes import set_board_state
 
 _BOARD_STATES = {"backlog": "Backlog", "ready": "Ready", "canceled": "Canceled"}
@@ -205,7 +205,7 @@ def reopen_reverted(conn, run_id, native=True):
             return None
         key, sha = named.groups()
         original = conn.execute(
-            "SELECT t.id, t.boardColumn, r.id FROM tickets t"
+            "SELECT t.id, r.id FROM tickets t"
             " JOIN runs r ON r.ticketId = t.id"
             " WHERE t.projectId = ? AND t.linearIdentifier = ?"
             " AND t.status = 'merged' AND r.outcome = 'merged'"
@@ -216,7 +216,7 @@ def reopen_reverted(conn, run_id, native=True):
             (project_id, key, sha, sha, sha)).fetchone()
         if original is None:
             return None
-        ticket_id, column, merged_run = original
+        ticket_id, merged_run = original
         reason = (_filed_reason(conn, merged_run, revert_key)
                   or _written_reason(key, sections))
         why = f": {reason}" if reason else ""
@@ -224,18 +224,18 @@ def reopen_reverted(conn, run_id, native=True):
         if not native:
             return key, note
         record_event(conn, merged_run, "reverted",
-                     f"reverted by {revert_key}, merged at"
-                     f" {merge_sha or 'an unrecorded sha'}{why}", now=now)
-        conn.execute("UPDATE tickets SET status = 'ready' WHERE id = ?",
-                     (ticket_id,))
+                     f"reverted by {revert_key} (merge sha:"
+                     f" {merge_sha or 'null'}){why}", now=now)
+    with _transaction(conn):
+        reopen_merged(conn, ticket_id)
+        (column,) = conn.execute("SELECT boardColumn FROM tickets WHERE id = ?",
+                                 (ticket_id,)).fetchone()
         if column == "backlog":
             record_note(conn, ticket_id, "move", note, f"reverted:{run_id}",
                         author="factory", now=now)
-            return key, note
-        (revision,) = conn.execute("SELECT revision FROM tickets WHERE id = ?",
-                                   (ticket_id,)).fetchone()
-        move_ticket(conn, project_id, key, "backlog", revision,
-                    author="factory", note=note, now=now)
+        else:
+            _record_column(conn, ticket_id, "backlog", "move", note,
+                           "factory", now)
     return key, note
 
 
