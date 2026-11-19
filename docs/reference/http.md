@@ -660,7 +660,8 @@ parked candidate to merge; both are null for a run no one approved, and a
 `reverted` is set when a merged revert ticket undid the run's merge, read
 from the run's newest `reverted` event: `by` the revert ticket's key, `sha`
 the revert's merge sha and `reason` the reason recorded with it (null when
-none was). It is null when nothing reverted the run, and the run keeps its
+none was); an event whose summary names no key and sha serves `by` and `sha`
+null and the whole summary as `reason`. It is null when nothing reverted the run, and the run keeps its
 `merged` outcome and `merge_sha` either way; an older daemon leaves it out.
 `events` is the `narrative` level of the run's event stream, oldest
 first; `detail` events and their payloads are not served. An `N` that is
