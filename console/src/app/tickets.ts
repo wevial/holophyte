@@ -296,11 +296,16 @@ export function useTicketBoard(): TicketBoard {
     }
   }
   const listed = new Set(cards.map((card) => card.id));
-  const shipped = new Set(merged.filter((row) => row.reverted == null).map((row) => cardId(row.daemon ?? "", row.ticket)));
+  const latest = new Map<string, (typeof merged)[number]>();
+  for (const row of merged) {
+    const key = cardId(row.daemon ?? "", row.ticket);
+    const held = latest.get(key);
+    if (held == null || row.ended_ms > held.ended_ms || (row.ended_ms === held.ended_ms && row.reverted == null)) latest.set(key, row);
+  }
+  const undone = new Set(merged.filter((row) => row.reverted != null).map((row) => cardId(row.daemon ?? "", row.ticket)));
   for (const row of merged) {
     const listedAs = cardId(row.daemon ?? "", row.ticket);
-    if (listed.has(listedAs) || (row.reverted != null && shipped.has(listedAs))) continue;
-    if (row.reverted != null) listed.add(listedAs);
+    if (listed.has(listedAs) || (undone.has(listedAs) && latest.get(listedAs) !== row)) continue;
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
       park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: row.reverted ?? null, skewMs: 0,

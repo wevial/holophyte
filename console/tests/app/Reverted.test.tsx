@@ -122,6 +122,16 @@ test("on Tickets a reverted ticket merged again lists only the new merge", async
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.querySelector('[data-cell="stage"]')?.textContent)).toEqual(["merged 11:40"]);
 });
 
+test("on Tickets a merge reverted after an earlier merge the same day lists only the reverted row", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon(null, [revertedMerge, merged(12, "DEMO-7", ENDED - 10 * MINUTE)]));
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
+  expect(rows).toHaveLength(1);
+  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
+  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
+  expect(status.textContent).toBe("reverted");
+});
+
 test("a reverted run's page says it merged then was reverted by the revert ticket, linked, with the reason", async () => {
   await mount("#/runs/demo/7", daemon());
   const verdict = document.querySelector<HTMLElement>("[data-run-verdict]")!;
