@@ -17,7 +17,7 @@ export function ConfirmDialog({
   heading,
   confirm,
   busyLabel,
-  busy = false,
+  busy,
   onConfirm,
   onCancel,
   cancelLabel = "Cancel",
