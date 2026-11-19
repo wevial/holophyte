@@ -389,6 +389,24 @@ test("Enter on the ⋯ button opens the menu with its first item focused", async
   expect(document.activeElement?.textContent).toBe("Open ticket");
 });
 
+test("holding Enter or Space that opened the menu chooses no item, and a fresh Enter chooses the focused one", async () => {
+  await mount("#/runs/demo/9?project=demo", daemon(true).fetchImpl);
+  const button = screen.getByRole("button", { name: "More for run 9" });
+  await act(async () => void fireEvent.keyDown(button, { key: "Enter" }));
+  const item = screen.getByRole("menuitem", { name: "Open ticket" });
+  let browserMayActivate = true;
+  await act(async () => void (browserMayActivate = fireEvent.keyDown(item, { key: "Enter", repeat: true })));
+  expect(browserMayActivate).toBe(false);
+  await act(async () => void (browserMayActivate = fireEvent.keyUp(item, { key: " " })));
+  expect(browserMayActivate).toBe(false);
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(screen.queryByRole("menu")).not.toBeNull();
+  expect(window.location.hash).toBe("#/runs/demo/9?project=demo");
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Enter" }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-9?project=demo");
+});
+
 test("a scroll inside an open menu keeps it open, and a page scroll closes it", async () => {
   await mount("#/runs/demo/9", daemon(true).fetchImpl);
   await openMenu("More for run 9");

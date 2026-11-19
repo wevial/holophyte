@@ -34,8 +34,10 @@ function DotsIcon() {
  *  close. Arrow keys, Home and End move between items; Esc or a choice
  *  closes it and returns focus to the button, and focus lost with an item
  *  that left goes to the menu. A pointer opens it with no item focused,
- *  keys with the first or last. Its clicks never reach the row it sits
- *  in; `compact` is a row's smaller unedged button. */
+ *  keys with the first or last; an item is chosen by a pointer or a fresh
+ *  Enter or Space, never by the held key that opened the menu. Its clicks
+ *  never reach the row it sits in; `compact` is a row's smaller unedged
+ *  button. */
 export function MoreMenu({ label, items, className = "", compact = false, onOpenChange }: {
   label: string; items: MenuItem[]; className?: string; compact?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
@@ -131,6 +133,9 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
       close();
     } else if (event.key === "Tab") {
       setAt(null);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!event.repeat && now >= 0) choose(items[now]!);
     } else if (event.key in step) {
       event.preventDefault();
       all[(step[event.key]! + all.length) % all.length]?.focus();
@@ -160,6 +165,7 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
           aria-label={label}
           tabIndex={-1}
           onKeyDown={onMenuKey}
+          onKeyUp={(event) => (event.key === "Enter" || event.key === " ") && event.preventDefault()}
           style={{ top: at.top / at.scale, right: at.right / at.scale, maxHeight: at.maxHeight == null ? undefined : at.maxHeight / at.scale }}
           className="fixed z-50 flex min-w-[180px] flex-col overflow-y-auto rounded-[9px] bg-raised p-1 text-left outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
         >
