@@ -351,7 +351,9 @@ class RevertCloseTests(ConfigTestCase):
         before = self.key_state()
         self.edit_revert((f"Reverts: NAT-1 at {self.key_sha}",
                           hidden.format(f"Reverts: NAT-1 at {self.key_sha}")))
-        self.run_revert(self.merge_the_revert)
+        run = self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.read("SELECT outcome FROM runs WHERE id = ?",
+                                   run), [("merged",)])
         self.assertEqual(self.key_state(), before)
 
     def test_a_marker_inside_a_multiline_code_span_reopens_nothing(self):
