@@ -288,15 +288,19 @@ class StoreExportTests(unittest.TestCase):
         self.assertFalse((self.out / "factory_runs.jsonl").is_symlink())
         self.assertEqual(len(lines(self.out / "factory_runs.jsonl")), 2)
 
-    def test_a_rerun_keeps_an_existing_files_mode(self):
+    def test_a_rerun_keeps_existing_data_and_manifest_modes(self):
         self.out.mkdir()
         sessions = self.out / "agent_sessions.jsonl"
         sessions.write_text("")
         sessions.chmod(0o600)
+        manifest = self.out / "manifest.json"
+        manifest.write_text("{}\n")
+        manifest.chmod(0o600)
         mask = os.umask(0o022)
         self.addCleanup(os.umask, mask)
         self.export()
         self.assertEqual(sessions.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(manifest.stat().st_mode & 0o777, 0o600)
         self.assertEqual(
             (self.out / "factory_runs.jsonl").stat().st_mode & 0o777, 0o644)
 

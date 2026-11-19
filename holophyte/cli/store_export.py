@@ -155,8 +155,11 @@ def records(conn, project_id, project, redactor, since):
     return {RUNS: runs, EVENTS: events, SESSIONS: sessions}
 
 
-def _staged(path, text, mask):
-    mode = path.stat().st_mode & 0o777 if path.is_file() else 0o666 & ~mask
+def _mode(path, mask):
+    return path.stat().st_mode & 0o777 if path.is_file() else 0o666 & ~mask
+
+
+def _staged(path, text, mode):
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".export-")
     try:
         os.fchmod(handle, mode)
@@ -179,11 +182,11 @@ def _refuse_the_store(directory, store_path):
                              f" {store_path}; nothing was written")
 
 
-def _replace(directory, texts, mask):
+def _replace(directory, texts, modes):
     staged = {}
     try:
         for name, text in texts.items():
-            staged[name] = _staged(directory / name, text, mask)
+            staged[name] = _staged(directory / name, text, modes[name])
         for name in list(staged):
             os.replace(staged[name], directory / name)
             del staged[name]
@@ -195,9 +198,10 @@ def _replace(directory, texts, mask):
 def _publish(directory, texts, manifest):
     mask = os.umask(0)
     os.umask(mask)
+    modes = {name: _mode(directory / name, mask) for name in (*texts, MANIFEST)}
     (directory / MANIFEST).unlink(missing_ok=True)
-    _replace(directory, texts, mask)
-    _replace(directory, {MANIFEST: manifest()}, mask)
+    _replace(directory, texts, modes)
+    _replace(directory, {MANIFEST: manifest()}, modes)
 
 
 @contextlib.contextmanager
