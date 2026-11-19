@@ -6,14 +6,7 @@ from holophyte.agents.agent_output import AgentOutput
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
 
-JSON_FORMAT = "json"
-MARKDOWN_FORMAT = "markdown"
-FORMAT_EVENT = "review_reply_format"
-
 TARGET_FIELD = "target"
-DESCRIPTION_SUBJECT = 'path: "PR description"'
-STATUS_WORDS = {"met": "met", "not_met": "not met", "unwitnessed": "unwitnessed"}
-CRITERION_NUMBER_RE = re.compile(r"\d+")
 
 TYPES = {"object": dict, "array": list, "string": str, "integer": int,
          "null": type(None)}
@@ -38,10 +31,6 @@ REPLY_BRIEF = (
     "Where these instructions ask for a CRITERION, SCOPE, FOLLOW_UP or "
     "VERDICT line, give it as that field instead. With REQUEST_CHANGES, list "
     "only concrete blockers in findings; a refuted finding is left out.")
-
-
-def schema():
-    return json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
 
 
 def reply_brief(project, line_format, schema_tail=""):
@@ -83,12 +72,13 @@ def reply_object(reply):
             starts.append(offset + indent)
         offset += len(line)
     decoder = json.JSONDecoder()
+    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
     for start in reversed(starts):
         try:
             value = decoder.raw_decode(reply, start)[0]
         except ValueError:
             continue
-        if valid(value, schema()):
+        if valid(value, schema):
             return value
     return None
 
@@ -104,16 +94,16 @@ def place(path, line):
 def finding_line(finding):
     severity, message = finding["severity"], one_line(finding["message"])
     if finding[TARGET_FIELD] == "description":
-        return f"- {DESCRIPTION_SUBJECT} [{severity}] {message}"
+        return f'- path: "PR description" [{severity}] {message}'
     where = place(one_line(finding["path"]), finding["line"])
     tags = f"[{severity}] [{finding['category']}] {message}"
     return f"- {where} {tags}" if where else f"- {tags}"
 
 
 def criterion_line(criterion):
-    number = CRITERION_NUMBER_RE.search(criterion["id"])
+    number = re.search(r"\d+", criterion["id"])
     label = f"C{int(number[0])}" if number else one_line(criterion["id"])
-    line = (f"CRITERION {label}: {STATUS_WORDS[criterion['status']]} \u2014 "
+    line = (f"CRITERION {label}: {criterion['status'].replace('_', ' ')} \u2014 "
             f"{one_line(criterion['reason'])}")
     witness = one_line(criterion["witness"])
     return f"{line}; witness: {witness}" if witness else line
@@ -143,19 +133,19 @@ def rendered(value):
 def read_reply(reply):
     value = reply_object(reply)
     if value is None:
-        return reply, MARKDOWN_FORMAT
+        return reply, "markdown"
     text = rendered(value)
     if isinstance(reply, AgentOutput):
         text = AgentOutput(text, reply.command)
         text.__dict__.update(reply.__dict__)
-    return text, JSON_FORMAT
+    return text, "json"
 
 
 def record_format(conn, run_id, reply_format, review_round):
     if conn is None or run_id is None:
         return
     import store
-    store.record_event(conn, run_id, FORMAT_EVENT,
+    store.record_event(conn, run_id, "review_reply_format",
                        f"review reply format: {reply_format}", level="detail",
                        payload=json.dumps({"format": reply_format,
                                            "round": review_round}))
