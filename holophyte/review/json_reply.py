@@ -59,7 +59,7 @@ def schema_enforced(project):
 
 
 def valid(value, rule):
-    kinds = rule.get("type", [])
+    kinds = rule["type"]
     kinds = [kinds] if isinstance(kinds, str) else kinds
     if not any(isinstance(value, TYPES[kind]) and not isinstance(value, bool)
                for kind in kinds):
