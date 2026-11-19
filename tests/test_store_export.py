@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,24 +39,37 @@ class StoreExportTests(unittest.TestCase):
         self.addCleanup(home.stop)
         state = holophyte.config.project.state_dir(self.target)
         state.mkdir(parents=True)
-        (state / "config.toml").write_text(
-            "[merge]\nprivate_patterns = ['corp-internal\\.example']\n")
+        self.config = state / "config.toml"
+        self.private(r"corp-internal\.example")
         self.out = root / "export"
-        conn = store.open(str(state / "store.db"))
-        project = store.tickets.ensure_project(conn, "team-1", str(self.target))
-        ticket = store.tickets.mirror_ticket(
-            conn, project, linear_issue_id="issue-7", linear_identifier="KO-7",
+        self.store_path = state / "store.db"
+        conn = store.open(str(self.store_path))
+        project_id = self.project_id = store.tickets.ensure_project(
+            conn, "team-1", str(self.target))
+        ticket = self.ticket = store.tickets.mirror_ticket(
+            conn, project_id, linear_issue_id="issue-7", linear_identifier="KO-7",
             title="ticket")
-        self.first = store.claim(conn, project, ticket, now=FIRST)
+        self.first = store.claim(conn, project_id, ticket, now=FIRST)
         store.record_event(conn, self.first, "note", LEAKY, now=FIRST + 1)
         finish_run(conn, self.first, "failed", now=FIRST + 2)
-        self.second = store.claim(conn, project, ticket, now=SECOND)
+        self.second = store.claim(conn, project_id, ticket, now=SECOND)
         store.record_agent_session(conn, self.second, "sess-impl", "implement",
                                    "claude")
         store.record_agent_session(conn, self.second, "sess-rev", "review",
                                    "codex")
         finish_run(conn, self.second, "merged", now=SECOND + 5)
+        other = store.tickets.ensure_project(conn, "team-2", str(root / "other"))
+        foreign = store.tickets.mirror_ticket(
+            conn, other, linear_issue_id="issue-9", linear_identifier="ZZ-9",
+            title="another project's ticket")
+        self.foreign = store.claim(conn, other, foreign, now=SECOND + 10)
+        store.record_event(conn, self.foreign, "note", "other project",
+                           now=SECOND + 11)
         conn.close()
+
+    def private(self, *patterns):
+        listed = ", ".join(f"'{pattern}'" for pattern in patterns)
+        self.config.write_text(f"[merge]\nprivate_patterns = [{listed}]\n")
 
     def export(self, *flags):
         with contextlib.redirect_stdout(io.StringIO()):
@@ -95,8 +109,13 @@ class StoreExportTests(unittest.TestCase):
             self.assertLessEqual(
                 {"run_id", "seq", "at", "kind", "summary", "payload"}, set(event))
         keys = [(e["run_id"], e["seq"]) for e in events]
-        self.assertEqual(len(keys), len(set(keys)))
-        self.assertEqual(keys, sorted(keys))
+        conn = sqlite3.connect(self.store_path)
+        stored = conn.execute(
+            "SELECT runId, seq FROM runEvents WHERE runId IN (?, ?)",
+            (self.first, self.second)).fetchall()
+        conn.close()
+        self.assertEqual(keys, sorted(stored))
+        self.assertIn("agent_session", [e["kind"] for e in events])
         (note,) = [e for e in events if e["kind"] == "note"]
         self.assertEqual(note["summary"],
                          "deploy to vault.[private] with [secret]")
@@ -130,6 +149,47 @@ class StoreExportTests(unittest.TestCase):
             self.out / "factory_events.jsonl")}, {self.second})
         manifest = json.loads((self.out / "manifest.json").read_text())
         self.assertEqual(manifest["since"], SECOND)
+
+    def test_a_shared_store_exports_only_the_selected_projects_runs(self):
+        self.export()
+        exported = {r["run_id"] for r in lines(self.out / "factory_runs.jsonl")}
+        self.assertEqual(exported, {self.first, self.second})
+        self.assertNotIn(self.foreign, {e["run_id"] for e in lines(
+            self.out / "factory_events.jsonl")})
+
+    def test_an_output_symlink_is_replaced_not_written_through(self):
+        self.out.mkdir()
+        before = self.store_path.read_bytes()
+        (self.out / "factory_runs.jsonl").symlink_to(self.store_path)
+        (self.out / "manifest.json").symlink_to(self.store_path)
+        self.export()
+        self.assertEqual(self.store_path.read_bytes(), before)
+        self.assertFalse((self.out / "factory_runs.jsonl").is_symlink())
+        self.assertEqual(len(lines(self.out / "factory_runs.jsonl")), 2)
+
+    def test_a_private_match_overlapping_a_credential_still_hides_it(self):
+        conn = store.open(str(self.store_path))
+        run = store.claim(conn, self.project_id, self.ticket, now=SECOND + 20)
+        store.record_event(
+            conn, run, "note", "Authorization: Bearer zyx987wvu654;"
+            " BEARER qrs321tuv098\nhost: lab-7", now=SECOND + 21)
+        conn.close()
+        self.private("Authorization: Bearer", "^host: lab-[0-9]+$")
+        self.export()
+        (note,) = [e for e in lines(self.out / "factory_events.jsonl")
+                   if e["run_id"] == run]
+        self.assertEqual(note["summary"], "[secret]; [secret]\n[private]")
+
+    def test_patterns_keep_session_ids_and_redact_the_project_name(self):
+        self.private("session_[a-z]+", "^repo$")
+        self.export()
+        sessions = lines(self.out / "agent_sessions.jsonl")
+        self.assertEqual([s["session_id"] for s in sessions],
+                         ["sess-impl", "sess-rev"])
+        self.assertEqual({r["project"] for r in lines(
+            self.out / "factory_runs.jsonl")}, {"[private]"})
+        manifest = json.loads((self.out / "manifest.json").read_text())
+        self.assertEqual(manifest["project"], "[private]")
 
 
 if __name__ == "__main__":
