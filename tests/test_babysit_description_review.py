@@ -115,16 +115,16 @@ class DescriptionFindingsTests(unittest.TestCase):
                      "\n  The parser raises an error on an empty config.",
                      "  **Code**\n  The retry loop never exits.",
                      "  load() crashes on empty input.",
-                     "  High: the retry loop never exits."):
+                     "  High: the retry loop never exits.",
+                     "  - The retry loop never stops on an empty queue.",
+                     "\n> holophyte/worker.py:40 still swallows the error."):
             with self.subTest(code=code):
                 self.assertEqual(description_findings(
                     f"{TAGGED}\n{code}{TAIL}", "REQUEST_CHANGES", []), [])
 
     def test_a_wrapped_tagged_bullet_is_one_description_finding(self):
-        for wrapped in (WRAPPED, NESTED):
-            with self.subTest(wrapped=wrapped):
-                self.assertEqual(description_findings(
-                    f"{wrapped}{TAIL}", "REQUEST_CHANGES", []), [wrapped])
+        self.assertEqual(description_findings(
+            f"{WRAPPED}{TAIL}", "REQUEST_CHANGES", []), [WRAPPED])
 
     def test_a_bold_verdict_marker_is_not_a_blocker(self):
         self.assertEqual(description_findings(
@@ -139,9 +139,6 @@ STANDALONE = 'P2: path: "PR description" — the Changes table misstates the men
 CATEGORIZED = ('- [p2] [correctness] path: "PR description" — the Changes table'
                ' misstates the menu')
 TABLE_FAULT = "the row menu drops the revert item"
-NESTED = ('- [P2] path: "PR description" — the Changes table misstates the menu:\n'
-          '  - it lists the revert item twice\n'
-          '  - it omits the undo glyph')
 LINKED = ('P2: path: "PR description" — it links [the guide](docs/guide.md) for'
           ' the Changes table')
 TABLE_PATH = "console/src/app/components/TicketTable.tsx"
@@ -306,6 +303,15 @@ class MixedRoundTests(unittest.TestCase):
         (goal,) = self.goals
         self.assertIn("sample reply", self.reviewer_findings(goal))
         self.assertEqual(self.refreshed_reviews(), [""])
+
+    def test_an_evidence_reply_is_not_turned_into_fix_note_items(self):
+        unanswered = ('- [P1] path: "holophyte/old.py" — the old loop never exits'
+                      f"\n{DESCRIBED}")
+        self.review_fix(unanswered, f"{TABLE}\n{DESCRIBED}{REJECT}")
+
+        (goal,) = self.goals
+        self.assertIn(TABLE_FAULT, self.fix_note_line(goal, TABLE_PATH))
+        self.assertNotIn("holophyte/old.py", self.fix_note(goal))
 
     def test_a_quoted_example_of_the_tag_stays_with_its_code_blocker(self):
         self.review_fix(f'{TABLE}\n> - path: "PR description" — sample reply{REJECT}')

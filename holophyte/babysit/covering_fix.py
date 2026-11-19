@@ -82,7 +82,7 @@ def _code_findings(findings):
         if kept == message:
             code.append(finding)
         elif kept.strip():
-            code.extend(parse_findings(kept))
+            code.extend({**finding, **parsed} for parsed in parse_findings(kept))
     return code
 
 

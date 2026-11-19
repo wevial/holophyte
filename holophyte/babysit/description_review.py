@@ -26,12 +26,9 @@ DESCRIPTION_SUBJECT_RE = re.compile(
 PR_TEXT_REVIEW_KIND = "pr_text_review"
 
 CONTINUATION_RE = re.compile(
-    r"^\s+(?!\s)(?:(?:[-*+\u2022]|\d+[.)])\s+(?!\s)|(?!(?:[-*+\u2022]|\d+[.)])\s))"
-    r"(?!>|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker|major|minor|critical|high|medium"
-    r"|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]|\b[\w-]+\.[a-z]\w{0,5}\b|\w\("
-    r"|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
-
-QUOTE_RE = re.compile(r"^\s*>")
+    r"^\s+(?!\s)(?!(?:[-*+\u2022>]|\d+[.)])\s|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker"
+    r"|major|minor|critical|high|medium|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]"
+    r"|\b[\w-]+\.[a-z]\w{0,5}\b|\w\(|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
 
 VERDICT_LINE_RE = re.compile(r"^\s*(?:\*\*|__)?VERDICT:.*$", re.M)
 
@@ -108,7 +105,7 @@ def _blocker_items(verdict):
 def _items(lines):
     groups, after_blank = [], True
     for index, (line, fenced) in enumerate(zip(lines, closed_fence_flags(lines))):
-        joins = (fenced or QUOTE_RE.match(line) or not line.strip()
+        joins = (fenced or not line.strip()
                  or not after_blank and CONTINUATION_RE.match(line)
                  and not DESCRIPTION_SUBJECT_RE.match(line))
         if groups and joins:
