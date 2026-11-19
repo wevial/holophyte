@@ -179,6 +179,8 @@ REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,64})")
 WHY = re.compile(r"(?:\*\*Why:\s*\*\*|Why:)\s*(.+)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 TICKS = re.compile(r"`+")
+INLINE_OPENER = re.compile(r"`+|<!--")
+COMMENT_BLOCK = re.compile(r" {0,3}<!--")
 
 
 def reopen_reverted(conn, run_id, native=True):
@@ -236,60 +238,74 @@ def reopen_reverted(conn, run_id, native=True):
 
 def _live(text):
     live, paragraph = [], []
-    uncommented = ticket_template.COMMENT_RE.sub(
-        lambda comment: "\n" * comment[0].count("\n"), text)
-    for line in _unfenced(uncommented) + [""]:
+    for line in _blocks(text) + [""]:
         if line.strip():
             paragraph.append(line)
             continue
-        live += _outside_code_spans(paragraph)
+        live += _prose(paragraph)
         paragraph = []
     return live
 
 
-def _unfenced(text):
-    fence, kept = None, []
+def _blocks(text):
+    fence, comment, kept = None, False, []
     for line in text.splitlines():
         opened = FENCE.fullmatch(line)
-        if fence is not None:
+        if comment:
+            comment = "-->" not in line
+        elif fence is not None:
             if opened and opened[1][0] == fence[0] \
                     and len(opened[1]) >= len(fence) and not opened[2].strip():
                 fence = None
         elif opened and not (opened[1][0] == "`" and "`" in opened[2]):
             fence = opened[1]
-            kept.append("")
+        elif COMMENT_BLOCK.match(line):
+            comment = "-->" not in line[line.index("<!--") + 4:]
         else:
             kept.append(line)
+            continue
+        kept.append("")
     return kept
 
 
-def _outside_code_spans(lines):
+def _prose(lines):
     joined = "\n".join(lines)
-    runs, spans, i = list(TICKS.finditer(joined)), [], 0
-    while i < len(runs):
-        start, ticks = _opener(joined, runs[i])
-        close = next((j for j in range(i + 1, len(runs))
-                      if len(runs[j][0]) == ticks), None)
-        if not ticks or close is None:
-            i += 1
-            continue
-        spans.append((start, runs[close].end()))
-        i = close + 1
+    code, comments = _inline_spans(joined)
     live, at, prose = [], 0, False
     for line in lines:
         start = at + len(line) - len(line.lstrip(" \t"))
         indent = len(line.expandtabs(4)) - len(line.lstrip(" \t"))
         prose = prose or indent <= 3
-        if prose and not any(a <= start < b for a, b in spans):
-            live.append(line.strip())
+        if prose and not any(a <= start < b for a, b in code):
+            live.append("".join(
+                char for i, char in enumerate(line, at)
+                if not any(a <= i < b for a, b in comments)).strip())
         at += len(line) + 1
     return live
 
 
-def _opener(joined, run):
-    before = joined[:run.start()]
-    escaped = (len(before) - len(before.rstrip("\\"))) % 2
-    return run.start() + escaped, len(run[0]) - escaped
+def _inline_spans(joined):
+    code, comments, at = [], [], 0
+    while opener := INLINE_OPENER.search(joined, at):
+        before = joined[:opener.start()]
+        escaped = (len(before) - len(before.rstrip("\\"))) % 2
+        if opener[0] == "<!--":
+            close = joined.find("-->", opener.end())
+            if escaped or close < 0:
+                at = opener.end()
+                continue
+            comments.append((opener.start(), close + 3))
+            at = close + 3
+            continue
+        ticks = len(opener[0]) - escaped
+        close = next((run for run in TICKS.finditer(joined, opener.end())
+                      if len(run[0]) == ticks), None)
+        if not ticks or close is None:
+            at = opener.end()
+            continue
+        code.append((opener.start() + escaped, close.end()))
+        at = close.end()
+    return code, comments
 
 
 def _filed_reason(conn, merged_run, revert_key):
