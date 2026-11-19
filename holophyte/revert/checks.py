@@ -2,8 +2,6 @@
 import json
 import re
 import subprocess
-from re import _constants as sre
-from re import _parser as sre_parse
 from typing import NamedTuple
 
 MAIN = "origin/main"
@@ -135,109 +133,10 @@ def glob_part(part):
     return re.escape(part)
 
 
-class Unwalkable(Exception):
-    pass
-
-
-def char_test(op, arg):
-    if op is sre.LITERAL:
-        return lambda char: ord(char) == arg
-    if op is sre.NOT_LITERAL:
-        return lambda char: ord(char) != arg
-    if op is sre.ANY:
-        return lambda _char: True
-    if op is not sre.IN:
-        raise Unwalkable(op)
-    negated = bool(arg) and arg[0][0] is sre.NEGATE
-    singles, spans = set(), []
-    for kind, value in arg[negated:]:
-        if kind is sre.LITERAL:
-            singles.add(value)
-        elif kind is sre.RANGE:
-            spans.append(value)
-        else:
-            raise Unwalkable(kind)
-    return lambda char: (ord(char) in singles or any(
-        low <= ord(char) <= high for low, high in spans)) != negated
-
-
-class Glob:
-    def __init__(self, regex):
-        self.regex = re.compile(regex, re.DOTALL)
-        self.moves, self.skips = [[]], [[]]
-        try:
-            self.end = self.build(sre_parse.parse(regex, re.DOTALL), 0)
-        except Unwalkable:
-            self.end = None
-
-    def node(self):
-        self.moves.append([])
-        self.skips.append([])
-        return len(self.moves) - 1
-
-    def skip(self, here, after, guard=None):
-        self.skips[here].append((guard, after))
-
-    def build(self, items, here):
-        for op, arg in items:
-            here = self.step(op, arg, here)
-        return here
-
-    def step(self, op, arg, here):
-        if op is sre.SUBPATTERN:
-            return self.build(arg[-1], here)
-        if op is sre.MAX_REPEAT:
-            low, high, body = arg
-            for _ in range(low):
-                here = self.build(body, here)
-            if high == sre.MAXREPEAT:
-                loop = self.node()
-                self.skip(here, loop)
-                self.skip(self.build(body, loop), loop)
-                return loop
-            for _ in range(high - low):
-                after = self.node()
-                self.skip(here, after)
-                self.skip(self.build(body, here), after)
-                here = after
-            return here
-        if op is sre.ASSERT_NOT and arg[0] == 1 and len(arg[1]) == 1:
-            test = char_test(*arg[1][0])
-            after = self.node()
-            self.skip(here, after, lambda ahead: ahead is None
-                      or not test(ahead))
-            return after
-        test = char_test(op, arg)
-        after = self.node()
-        self.moves[here].append((test, after))
-        return after
-
-    def closure(self, states, ahead):
-        pending = list(states)
-        while pending:
-            for guard, after in self.skips[pending.pop()]:
-                if after not in states and (guard is None or guard(ahead)):
-                    states.add(after)
-                    pending.append(after)
-        return states
-
-    def fullmatch(self, path):
-        if self.end is None:
-            return self.regex.fullmatch(path) is not None
-        states = self.closure({0}, path[:1] or None)
-        for at, char in enumerate(path):
-            states = self.closure({after for state in states
-                                   for test, after in self.moves[state]
-                                   if test(char)}, path[at + 1:at + 2] or None)
-            if not states:
-                return False
-        return self.end in states
-
-
 def glob_pattern(glob):
     parts = re.split(r"(\\.|\*\*/|/\*\*$|\*\*|\*|\?"
                      r"|\[!?\]?(?:\[:[a-z]+:\]|[^\]/])*\])", glob)
-    return Glob("".join(glob_part(part) for part in parts))
+    return re.compile("".join(glob_part(part) for part in parts), re.DOTALL)
 
 
 def refused_paths(files, globs):

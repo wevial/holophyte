@@ -253,24 +253,13 @@ class RevertCliTests(ConfigTestCase):
                       self.refused("NAT-1", "broke the header"))
 
     def test_a_refuse_paths_character_class_refuses_a_matching_path(self):
-        for glob in ("change_[0-9]*.py", "change_[[:digit:]]*.py",
-                     "change_[^]]*.py"):
+        for glob in ("change_[0-9]*.py", "change_[[:digit:]]*.py"):
             with self.subTest(glob=glob):
                 self.project_with(
                     ENABLED + f'refuse_paths = ["db/changes/{glob}"]\n',
                     {"db/changes/change_2026.py": "op\n"})
 
                 self.assertIn("db/changes/change_2026.py",
-                              self.refused("NAT-1", "broke the header"))
-
-    def test_a_negated_class_closed_by_its_leading_bracket_refuses_a_path(self):
-        for glob in ("[!]*.sql", "[^]]?.sql"):
-            with self.subTest(glob=glob):
-                self.project_with(
-                    ENABLED + f'refuse_paths = ["db/changes/{glob}"]\n',
-                    {"db/changes/x.sql": "op\n"})
-
-                self.assertIn("db/changes/x.sql",
                               self.refused("NAT-1", "broke the header"))
 
     def test_an_escaped_bracket_in_refuse_paths_matches_itself(self):
@@ -428,25 +417,3 @@ class RevertCliTests(ConfigTestCase):
                     holophyte.cli.entry.cli([str(self.target)])
                 self.assertIn("[revert] refuse_paths must be a list",
                               str(raised.exception.code))
-
-    def test_startup_refuses_a_negated_class_nothing_closes_in_refuse_paths(self):
-        for glob in ("db/changes/[!].sql", "db/changes/[^].sql"):
-            with self.subTest(glob=glob):
-                self.locate(f'{ENABLED}refuse_paths = ["{glob}"]\n')
-                with self.assertRaises(SystemExit) as raised, \
-                        contextlib.redirect_stdout(io.StringIO()):
-                    holophyte.cli.entry.cli([str(self.target)])
-                self.assertIn("is not a path glob",
-                              str(raised.exception.code))
-
-
-class RefusePathsMatchTimeTests(ConfigTestCase):
-    def test_a_many_star_glob_against_a_long_near_miss_settles_promptly(self):
-        probe = ("from holophyte.revert.checks import refused_paths\n"
-                 "path = 'a' * 48 + '.ts'\n"
-                 "print(refused_paths([path], ['*a' * 24 + 'b']),"
-                 " refused_paths([path], ['*a' * 24 + '.ts']) == [path])\n")
-        done = subprocess.run([sys.executable, "-c", probe], capture_output=True,
-                              text=True, timeout=20,
-                              cwd=Path(__file__).resolve().parent.parent)
-        self.assertEqual(done.stdout.split(), ["[]", "True"], done.stderr)

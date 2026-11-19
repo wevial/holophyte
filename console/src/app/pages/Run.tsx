@@ -84,9 +84,11 @@ function Verdict({ sentence, run, merged }: { sentence: string; run: RunDetail["
  *  revert ticket linking to its page, and the revert's reason. */
 function RevertedVerdict({ run, reverted, project }: { run: RunDetail["run"]; reverted: Reverted; project: string }) {
   const sha = shortSha(run.merge_sha);
+  const href = commitLink(run);
+  const shown = href == null ? <span className="font-mono text-[13px]">{sha}</span> : <a href={href} target="_blank" rel="noreferrer" className="font-mono text-[13px] text-inherit no-underline border-b border-rule-2 hover:border-ink-3">{sha}</a>;
   return (
     <>
-      <Verdict sentence={sha ? `Merged into main as ${sha}` : "Merged into main"} run={run} merged />, then reverted
+      Merged into main{sha && <> as {shown}</>}, then reverted
       {reverted.by != null && (
         <>
           {" by "}
@@ -104,7 +106,8 @@ const MINUTE = 60_000;
 const settledMinutes = (ms: number) => ms >= MINUTE && ms < 60 * MINUTE ? `${Math.floor(ms / MINUTE)} min` : formatSettled(ms);
 
 /** A reverted merge's settled run: every stage finished as one unlabeled
- *  bar, then its pull request, review rounds, verify and duration. */
+ *  bar, then its pull request, review rounds, verify and duration. A merged
+ *  run only merges past a passing verify, so a recorded verify passed. */
 function RevertedSummary({ detail }: { detail: RunDetail }) {
   const { run, rounds } = detail;
   return (
@@ -115,7 +118,7 @@ function RevertedSummary({ detail }: { detail: RunDetail }) {
       <p className="mt-4 flex flex-wrap gap-x-[18px] gap-y-1">
         {run.pr_url != null && <a href={run.pr_url} target="_blank" rel="noreferrer" className={`${SUMMARY_FACT} no-underline hover:text-ink`}>{prNumber(run.pr_url)}</a>}
         <span className={SUMMARY_FACT}>review <b className="font-semibold text-ink-2">{rounds.length} {rounds.length === 1 ? "round" : "rounds"}</b></span>
-        <span className={SUMMARY_FACT}>verify <b className="font-semibold text-ink-2">passed</b></span>
+        {run.verify_ms != null && <span className={SUMMARY_FACT}>verify <b className="font-semibold text-ink-2">passed</b></span>}
         {run.ended_ms != null && <span className={SUMMARY_FACT}>{settledMinutes(run.ended_ms - run.started_ms)}</span>}
       </p>
     </div>

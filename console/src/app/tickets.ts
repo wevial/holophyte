@@ -47,7 +47,7 @@ export interface TicketCard {
   timeBoxMs: number | null;
   waitsOn: string[];
   endedMs: number | null;
-  /** The revert that undid the ticket's merge, from its `/board` row. */
+  /** The revert that undid the ticket's merge, from its `/board` or `/shipped` row. */
   reverted: Reverted | null;
   /** The daemon's clock less the browser's, as of its last answer. */
   skewMs: number;
@@ -63,7 +63,8 @@ const BY_STATE: Record<TicketCard["state"], ColumnId> = {
   merged: "done",
 };
 
-export function boardColumn(card: Pick<TicketCard, "state" | "need">): ColumnId {
+export function boardColumn(card: Pick<TicketCard, "state" | "need" | "reverted">): ColumnId {
+  if (card.state === "merged" && card.reverted != null) return "backlog";
   return card.need != null && card.state !== "merged" ? "needs_you" : BY_STATE[card.state];
 }
 
@@ -93,7 +94,7 @@ export function validateTicketsSearch({ filter, q }: Record<string, unknown>): T
 
 /** The state a card is listed under: its column, with Backlog split into
  *  Needs spec and the rest. */
-export function ticketView(card: Pick<TicketCard, "state" | "need">): TicketFilter {
+export function ticketView(card: Pick<TicketCard, "state" | "need" | "reverted">): TicketFilter {
   const column = boardColumn(card);
   if (column !== "backlog") return column;
   return card.state === "needs_spec" ? "needs_spec" : "backlog";
@@ -152,6 +153,7 @@ export function cardWord(card: TicketCard, now: number): string {
       if (card.state === "needs_spec") return "needs a spec";
       return card.waitsOn.length === 0 ? STATES.todo.word : `blocked by ${card.waitsOn.join(", ")}`;
     case "merged":
+      if (card.reverted != null) return "reverted";
       return card.endedMs == null ? "merged" : `merged ${formatClock(card.endedMs)}`;
     default:
       return STATES[state].word;
@@ -294,11 +296,14 @@ export function useTicketBoard(): TicketBoard {
     }
   }
   const listed = new Set(cards.map((card) => card.id));
+  const shipped = new Set(merged.filter((row) => row.reverted == null).map((row) => cardId(row.daemon ?? "", row.ticket)));
   for (const row of merged) {
-    if (row.reverted != null || listed.has(cardId(row.daemon ?? "", row.ticket))) continue;
+    const listedAs = cardId(row.daemon ?? "", row.ticket);
+    if (listed.has(listedAs) || (row.reverted != null && shipped.has(listedAs))) continue;
+    if (row.reverted != null) listed.add(listedAs);
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
-      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,
+      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: row.reverted ?? null, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);
     cards.push(card);

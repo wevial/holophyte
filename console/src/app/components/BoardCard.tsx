@@ -4,7 +4,7 @@ import { formatAge } from "../../lib/format";
 import { STATES, type State, type Tone } from "../state";
 import { cardState, cardWord, type ColumnId, type TicketCard } from "../tickets";
 import { keepScope } from "../scope";
-import { STATE_ICONS, StateDot, TONE_TEXT } from "./StateDot";
+import { RevertedGlyph, STATE_ICONS, StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 
 type Look = "need" | "done" | "backlog" | "plain";
@@ -76,7 +76,7 @@ export function BoardCard({
         <h3 className={`break-words font-sans text-[13.5px] font-medium leading-[1.35] ${LOOKS[look].title}`}><TitleText>{card.title}</TitleText></h3>
         <div className="flex min-w-0 items-center gap-2 text-[12px] leading-[1.45]">
           <p data-state-line className="flex min-w-0 items-center gap-[5px]">
-            <TicketGlyph state={state} tone={tone} />
+            {state === "merged" && card.reverted != null ? <RevertedGlyph /> : <TicketGlyph state={state} tone={tone} />}
             <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[tone]}`}>{cardWord(card, now)}</span>
           </p>
           {card.timeBoxMs != null && (

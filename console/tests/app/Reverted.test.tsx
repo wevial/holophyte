@@ -23,7 +23,7 @@ const historyRow = (id: number, ticket: string, reverted: Reverted | null): Hist
 const runSeven: RunDetail = {
   ...servedRun,
   run: { ...servedRun.run, id: 7, ticket: "DEMO-7", title: "Page the ledger", phase: "done", outcome: "merged", merge_sha: "4f2a91c0ffee",
-    started_ms: ENDED - 34 * MINUTE, ended_ms: ENDED, pr_url: "https://github.com/acme/demo/pull/1071", reverted: REVERTED },
+    started_ms: ENDED - 34 * MINUTE, ended_ms: ENDED, verify_ms: 4 * MINUTE, pr_url: "https://github.com/acme/demo/pull/1071", reverted: REVERTED },
 };
 const ticketSeven: TicketDetail = { ...servedTicket, ticket: "DEMO-7", title: "Page the ledger", status: "backlog", reverted: REVERTED };
 const listed = servedBoard.columns.flatMap((column) => column.tickets)[0]!;
@@ -39,10 +39,10 @@ const revertedMerge = { ...merged(7, "DEMO-7", ENDED), reverted: REVERTED };
  *  listing DEMO-7, reverted, in `column` (off the board when null); it
  *  ships today the merges of `shipped`, run 7's reverted one by default,
  *  and answers DEMO-7 as `ticket`. */
-function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped: ShippedRow[] = [revertedMerge], ticket: TicketDetail = ticketSeven) {
+function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped: ShippedRow[] = [revertedMerge], ticket: TicketDetail = ticketSeven, run: RunDetail = runSeven) {
   const polls = fleet({ items: [], shipped }, { items: [] });
   return async (url: string) => {
-    if (url === `${DEMO}/runs/7`) return Response.json(runSeven);
+    if (url === `${DEMO}/runs/7`) return Response.json(run);
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticket);
     if (url === `${DEMO}/board`) return Response.json(board(column));
     if (url.startsWith(`${DEMO}/history?`)) {
@@ -104,12 +104,20 @@ test("on Tickets a reverted ticket's row reads reverted · Backlog beside the un
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["backlog"]);
 });
 
-test("on Tickets a reverted merge leaves Done today: cancelled after its revert it lists no row, merged again it lists only the new merge", async () => {
+test("on Tickets a reverted merge missing from the board lists one row with the undo glyph and the word reverted, outside Done today", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null));
-  expect(document.querySelectorAll("[data-row]")).toHaveLength(0);
-  cleanup();
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
+  expect(rows).toHaveLength(1);
+  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
+  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
+  expect(status.textContent).toBe("reverted");
+  expect(rows[0]!.getAttribute("data-column")).not.toBe("done");
+  expect(rows[0]!.querySelector('[data-state="merged"]')).toBeNull();
+});
 
+test("on Tickets a reverted ticket merged again lists only the new merge", async () => {
+  writeView("table");
   await mount("#/tickets", daemon(null, [merged(12, "DEMO-7", ENDED + 10 * MINUTE), revertedMerge]));
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.querySelector('[data-cell="stage"]')?.textContent)).toEqual(["merged 11:40"]);
 });
@@ -120,6 +128,7 @@ test("a reverted run's page says it merged then was reverted by the revert ticke
   expect(within(verdict).getByRole("status").textContent).toBe("Merged into main as 4f2a91c, then reverted by HOLO-9: “broke the header”");
   expect(within(verdict).getByRole("link", { name: "HOLO-9" }).getAttribute("href")).toBe("/#/tickets/demo/HOLO-9");
   expect(within(verdict).getByRole("img", { name: "reverted" })).toBeTruthy();
+  expect(within(verdict).getByText("4f2a91c").classList.contains("font-mono")).toBe(true);
 });
 
 test("a reverted run's page sums the settled run under its verdict in place of the time meter, stepper and agent facts", async () => {
@@ -131,6 +140,11 @@ test("a reverted run's page sums the settled run under its verdict in place of t
   expect(summary.querySelectorAll("[data-stage-done]")).toHaveLength(5);
   expect(summary.textContent).toBe("#1071review 1 roundverify passed34 min");
   expect(within(summary).getByRole("link", { name: "#1071" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/1071");
+});
+
+test("a reverted run's summary leaves verify out when the run recorded no verification", async () => {
+  await mount("#/runs/demo/7", daemon(undefined, undefined, undefined, { ...runSeven, run: { ...runSeven.run, verify_ms: null } }));
+  expect(document.querySelector<HTMLElement>("[data-run-summary]")!.textContent).toBe("#1071review 1 round34 min");
 });
 
 test("a reverted ticket's page names the revert ticket and the reason in place of its Backlog column", async () => {

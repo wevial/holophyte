@@ -53,7 +53,7 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
     >
       <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${merged ? "-mr-2 max-[820px]:mr-0" : ""} ${open ? "text-ink" : TONE_TEXT[tone]}`}>
         {card.reverted == null ? <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} /> : <RevertedGlyph />}
-        <span className={merged ? "sr-only" : undefined}>{card.reverted == null ? COLUMN_HEADS[column].label : `reverted · ${COLUMN_HEADS[column].label}`}</span>
+        <span className={merged ? "sr-only" : undefined}>{card.reverted == null ? COLUMN_HEADS[column].label : card.state === "merged" ? "reverted" : `reverted · ${COLUMN_HEADS[column].label}`}</span>
       </span>
       <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>
       <span
