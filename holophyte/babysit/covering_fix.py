@@ -82,7 +82,8 @@ def _code_findings(findings):
         if kept == message:
             code.append(finding)
         elif kept.strip():
-            code.extend({**finding, **parsed} for parsed in parse_findings(kept))
+            rest = {k: v for k, v in finding.items() if k not in ("path", "line")}
+            code.extend({**rest, **parsed} for parsed in parse_findings(kept))
     return code
 
 

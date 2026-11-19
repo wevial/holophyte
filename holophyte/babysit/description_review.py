@@ -19,7 +19,7 @@ LEAD = (r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
 DESCRIPTION_SUBJECT_RE = re.compile(
     r"(?!\s*>)" + LEAD
     + rf"(?:\[\s*(?:{'|'.join(FINDING_CATEGORIES)})\s*\]\s*(?:\*\*)?\s*)?"
-    r'(?:(?:p[0-3]|nit|blocker|major|minor)\b)?[^\w(\n]*[(\[]?[`*\s]*'
+    r'(?:(?:p[0-3]|nit|blocker|major|minor)\b)?[^\w(>\n]*[(\[]?[`*\s]*'
     r'path:\s*"PR description"', re.I)
 
 PR_TEXT_REVIEW_KIND = "pr_text_review"
@@ -28,6 +28,10 @@ CONTINUATION_RE = re.compile(
     r"^\s+(?!\s)(?!(?:[-*+\u2022>]|\d+[.)])\s|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker"
     r"|major|minor|critical|high|medium|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]"
     r"|\b[\w-]+\.[a-z]\w{0,5}\b|\w\(|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
+
+MID_SENTENCE_RE = re.compile(r"[\w,]$")
+
+WRAPPED_WORD_RE = re.compile(r"^\s+[a-z]+ ")
 
 VERDICT_LINE_RE = re.compile(r"^\s*(?:\*\*|__)?VERDICT:.*$", re.M)
 
@@ -106,14 +110,20 @@ def _items(lines):
     groups, after_blank = [], True
     for index, (line, fenced) in enumerate(zip(lines, closed_fence_flags(lines))):
         joins = (fenced or not line.strip()
-                 or not after_blank and CONTINUATION_RE.match(line)
-                 and not DESCRIPTION_SUBJECT_RE.match(line))
+                 or not after_blank and _continues(lines[index - 1], line))
         if groups and joins:
             groups[-1].append(index)
         else:
             groups.append([index])
         after_blank = not fenced and not line.strip()
     return groups
+
+
+def _continues(previous, line):
+    if DESCRIPTION_SUBJECT_RE.match(line):
+        return False
+    return bool(CONTINUATION_RE.match(line) or MID_SENTENCE_RE.search(previous)
+                and WRAPPED_WORD_RE.match(line))
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
@@ -152,6 +162,7 @@ def refreshed_or_held(project, conn, run_id, provider, task_id, branch, wt, sha,
 
 
 def fix_summary(answered, wt, reviewed, sha):
+    answered = without_description(answered)[0].strip()
     if answered:
         return answered
     base = reviewed or main_merge_base(wt, sha)

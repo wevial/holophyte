@@ -26,7 +26,7 @@ from holophyte.babysit.description_review import (  # noqa: E402
 )
 from holophyte.loop.gates import MergeParked  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
-from holophyte.pr import github, pr_status  # noqa: E402
+from holophyte.pr import github, pr_activity, pr_status  # noqa: E402
 from holophyte.pr.github import PullRequest  # noqa: E402
 
 TAGGED = '- Blocker (path: "PR description" -- it promises a handshake).'
@@ -128,6 +128,12 @@ class DescriptionFindingsTests(unittest.TestCase):
         self.assertEqual(description_findings(
             f"{WRAPPED}{TAIL}", "REQUEST_CHANGES", []), [WRAPPED])
 
+    def test_a_quoted_tag_inside_a_list_item_is_a_code_finding(self):
+        quoted = ('- > path: "PR description" — sample reviewer reply\n'
+                  "  shows the reply parser wrongly accepts this sample")
+        self.assertEqual(description_findings(
+            f"{quoted}{TAIL}", "REQUEST_CHANGES", []), [])
+
     def test_a_bold_verdict_marker_is_not_a_blocker(self):
         self.assertEqual(description_findings(
             f"{TAGGED}\nCRITERION 1: met — tests/test_thing.py::test_it_works"
@@ -137,11 +143,14 @@ class DescriptionFindingsTests(unittest.TestCase):
 DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
 WRAPPED = ('- [P2] path: "PR description" — the Changes table misstates\n'
            '  the `Revert` item it lists for a reverted run')
+WRAPPED_FILE = ('- [P2] path: "PR description" — the Changes table incorrectly'
+                ' says\n  that TicketTable.tsx still shows Revert on reverted'
+                ' tickets')
 STANDALONE = 'P2: path: "PR description" — the Changes table misstates the menu'
 CATEGORIZED = ('- [p2] [correctness] path: "PR description" — the Changes table'
                ' misstates the menu')
 TABLE_FAULT = "the row menu drops the revert item"
-LINKED = ('P2: path: "PR description" — it links [the guide](docs/guide.md) for'
+LINKED = ('P2: path: "PR description" — it links [the guide](docs/guide.md:25) for'
           ' the Changes table')
 TABLE_PATH = "console/src/app/components/TicketTable.tsx"
 TABLE = ('- [P1] path: "console/src/app/components/TicketTable.tsx" — the row'
@@ -155,8 +164,8 @@ REJECT = f"{MET}\nVERDICT: REQUEST_CHANGES"
 
 
 class MixedRoundTests(unittest.TestCase):
-    """A real covering review round on a real store and worktree; only the
-    agents and GitHub are faked."""
+    """A real covering review round and PR-text rewrite on a real store and
+    worktree; only the agents and GitHub are faked."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -206,7 +215,7 @@ class MixedRoundTests(unittest.TestCase):
         return self.git("rev-parse", "HEAD")
 
     def review_fix(self, *rejections, fix_note=None, refreshed=True):
-        replies, self.goals = [*rejections, APPROVE], []
+        replies, self.goals, self.writes = [*rejections, APPROVE], [], []
 
         def reviewer(target, role, goal, *args, **kwargs):
             return replies.pop(0)
@@ -217,16 +226,20 @@ class MixedRoundTests(unittest.TestCase):
             self.commit(f"fix {len(self.goals)}")
             return "Restored the revert item.", False
 
+        def writer(project, conn, run_id, beat_s, wt, budget_min, goal, *,
+                   role, **kwargs):
+            self.assertEqual(role, "write")
+            self.writes.append(goal)
+            return ("Restores the revert item." if refreshed else ""), False
+
         with (patch.object(holophyte.loop.review_round, "agent", reviewer),
               patch.object(holophyte.loop.implement, "_transport_timed", fixer),
+              patch.object(holophyte.loop.implement, "_timed", writer),
               patch.object(github, "push_branch"),
               patch.object(github, "rest", return_value={"body": "Menu."}),
               patch.object(github, "edit_pr_body"),
               patch.object(pr_status, "pull_status",
                            side_effect=OSError("no GitHub in tests")),
-              patch.object(holophyte.pr.pullrequest,
-                           "refresh_pr_text",
-                           return_value=refreshed) as self.refresh,
               patch.object(babysitter, "_post")):
             babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
@@ -246,7 +259,13 @@ class MixedRoundTests(unittest.TestCase):
         return line
 
     def refreshed_reviews(self):
-        return [call.kwargs["review"] for call in self.refresh.call_args_list]
+        return [goal.partition("the review says the description is wrong:\n\n")[2]
+                .partition("\n\nRewrite the description")[0]
+                for goal in self.writes]
+
+    def answered(self, write):
+        return write.partition("what this fix answered.")[2].partition(
+            "\n\nthe review says the description is wrong")[0]
 
     def assert_split(self, described):
         self.review_fix(f"{TABLE}\n{described}{REJECT}")
@@ -261,16 +280,26 @@ class MixedRoundTests(unittest.TestCase):
     def test_a_mixed_round_sends_the_description_finding_to_the_pr_text(self):
         self.assert_split(DESCRIBED)
 
+        (write,) = self.writes
+        self.assertEqual(self.answered(write).count("Changes table"), 0)
+        self.assertEqual(pr_activity.latest(self.conn, self.run_id, "pr_text_sha"),
+                         self.git("rev-parse", "HEAD"))
+
     def test_a_wrapped_description_finding_leaves_the_fix_goal_whole(self):
         self.assert_split(WRAPPED)
         self.assertNotIn("reverted run", self.goals[0])
 
+    def test_a_description_finding_wrapped_across_a_file_name_stays_whole(self):
+        self.assert_split(WRAPPED_FILE)
+        self.assertNotIn("reverted tickets", self.goals[0])
+
     def test_an_unbulleted_description_finding_after_a_code_bullet_is_split(self):
         self.assert_split(STANDALONE)
 
-    def test_a_linked_description_finding_leaves_the_code_path(self):
+    def test_a_linked_description_finding_leaves_the_code_path_and_line(self):
         self.assert_split(LINKED)
         self.assertNotIn("docs/guide.md", self.goals[0])
+        self.assertIn(f"- Fix {TABLE_PATH} \u2014", self.fix_note(self.goals[0]))
 
     def test_a_categorized_description_finding_is_split(self):
         self.assert_split(CATEGORIZED)
