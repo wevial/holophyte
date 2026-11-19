@@ -69,6 +69,9 @@ class Adapter:
     def mcp_flags(self, server):
         raise ValueError(f"harness {self.name!r} takes no MCP server")
 
+    def unschemed(self, argv):
+        return argv
+
 
 class Claude(Adapter):
     name = "claude"
@@ -153,6 +156,13 @@ class Codex(Adapter):
     @staticmethod
     def reply_schema(role):
         return ["--output-schema", str(SCHEMA_FILE)] if role == "reviewer" else []
+
+    @staticmethod
+    def unschemed(argv):
+        if "--output-schema" not in argv:
+            return argv
+        at = argv.index("--output-schema")
+        return argv[:at] + argv[at + 2:]
 
     @staticmethod
     def mcp_flags(server):
@@ -298,14 +308,15 @@ class Seat:
     binary: str
     options: dict
     role: str
+    reply_schema: bool = True
 
     @property
     def name(self):
         return self.adapter.name
 
     def turn(self, goal, server=None):
-        return self.served(self.adapter.turn(self.binary, self.options,
-                                             self.role), server) + [goal]
+        return self.served(self.schemed(self.adapter.turn(
+            self.binary, self.options, self.role)), server) + [goal]
 
     def probe(self):
         return self.adapter.probe(self.binary, self.options)
@@ -314,8 +325,11 @@ class Seat:
         return self.adapter.session(argv)
 
     def resume(self, session, server=None):
-        return self.served(self.adapter.resume(self.binary, self.options,
-                                               session, self.role), server)
+        return self.served(self.schemed(self.adapter.resume(
+            self.binary, self.options, session, self.role)), server)
+
+    def schemed(self, argv):
+        return argv if self.reply_schema else self.adapter.unschemed(argv)
 
     def served(self, argv, server):
         if server is None:

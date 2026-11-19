@@ -279,6 +279,7 @@ def probe_configured_review(project, role, fallback, goal, cmd, clone, cap):
     seat = harness_seat(project, role, fallback=fallback)
     if seat is None:
         return run_capped(cmd, clone, cap)
+    seat = replace(seat, reply_schema=False)
     env = {key: value for key, value in os.environ.items()
            if key != "HOLOPHYTE_REVIEW_RESUME"}
     with review_scratch(clone) as scratch:
