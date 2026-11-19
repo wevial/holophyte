@@ -4,7 +4,11 @@ from pathlib import Path
 
 from holophyte.agents.agent_output import AgentOutput
 from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN
-from holophyte.review.reply_parsing import UNPARSED_PATH, parse_findings
+from holophyte.review.reply_parsing import (
+    UNPARSED_PATH,
+    WORKSPACE_PREFIXES,
+    parse_findings,
+)
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
 
@@ -105,17 +109,20 @@ def reply_object(reply):
     return None
 
 
-def one_line(text):
-    return " ".join((text or "").split())
-
-
 def kept_line(text):
     return LINE_BREAK_RE.sub(" ", text or "").strip()
 
 
+def candidate_path(path):
+    for prefix in WORKSPACE_PREFIXES:
+        if path.startswith(prefix):
+            return path[len(prefix):]
+    return path
+
+
 def message_line(text):
     return MD_LINK_RE.sub(
-        lambda link: link[1] or f"{link[2]} ({link[3]})", one_line(text))
+        lambda link: link[1] or f"{link[2]} ({link[3]})", kept_line(text))
 
 
 def place(path, line):
@@ -130,7 +137,7 @@ def finding_line(finding):
         if parsed_place(rendered_line)[0].startswith(f"{UNPARSED_PATH}:"):
             return rendered_line
         return f"{tagged} {UNPLACED} {message}"
-    path, line = kept_line(finding["path"]), finding["line"]
+    path, line = candidate_path(kept_line(finding["path"])), finding["line"]
     where = place(path, line)
     tags = f"[{severity}] [{finding['category']}] {message}"
     if not where:
@@ -149,9 +156,9 @@ def parsed_place(rendered_line):
 
 def criterion_line(criterion):
     number = re.search(r"\d+", criterion["id"])
-    label = f"C{int(number[0])}" if number else one_line(criterion["id"])
+    label = f"C{int(number[0])}" if number else kept_line(criterion["id"])
     status = criterion["status"].replace("_", " ")
-    reason, witness = one_line(criterion["reason"]), kept_line(criterion["witness"])
+    reason, witness = kept_line(criterion["reason"]), kept_line(criterion["witness"])
     if status == "met" and not (reason or witness):
         status, reason = "unwitnessed", UNNAMED_WITNESS
     line = f"CRITERION {label}: {status} \u2014 {reason or NO_REASON}"
@@ -159,22 +166,23 @@ def criterion_line(criterion):
 
 
 def follow_up_line(follow_up):
-    line = f"FOLLOW_UP({follow_up['kind']}): {one_line(follow_up['text'])}"
+    line = f"FOLLOW_UP({follow_up['kind']}): {kept_line(follow_up['text'])}"
     if follow_up["path"]:
-        line += f" @ {place(kept_line(follow_up['path']), follow_up['line'])}"
+        path = candidate_path(kept_line(follow_up["path"]))
+        line += f" @ {place(path, follow_up['line'])}"
     return line
 
 
 def scope_line(entry):
     return (f"SCOPE `{kept_line(entry['path'])}`: {entry['status']} \u2014 "
-            f"{one_line(entry['reason'])}")
+            f"{kept_line(entry['reason'])}")
 
 
 def refuted_lines(refuted):
     if not refuted:
         return []
     notes = [f"- {message_line(entry['finding'])} \u2014 "
-             f"{one_line(entry['reason'])}" for entry in refuted]
+             f"{kept_line(entry['reason'])}" for entry in refuted]
     return [REFUTED_OPEN, *notes, REFUTED_CLOSE]
 
 

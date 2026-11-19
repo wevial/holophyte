@@ -283,6 +283,29 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertEqual((parsed["path"], parsed["line"]), ("src/app.py", 12))
         self.assertIn("`handlers[0](event)` on an empty", parsed["message"])
 
+    def test_a_candidate_absolute_path_keeps_its_location(self):
+        finding = dict(REPLY["findings"][0],
+                       path="/home/reviewer/candidate/src/app.py",
+                       message="load() calls\n`handlers[0](event)` on an empty list")
+        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+        [parsed] = parse_findings(text)
+        self.assertEqual((parsed["path"], parsed["line"]), ("src/app.py", 12))
+
+    def test_a_candidate_absolute_follow_up_path_is_cited_from_the_root(self):
+        follow_up = dict(REPLY["follow_ups"][0],
+                         path="/workspace/tests/test_app.py")
+        text, _ = read_reply(json.dumps(dict(REPLY, follow_ups=[follow_up])))
+        self.assertEqual(follow_up_lines(text),
+                         ["FOLLOW_UP(guardrail): Pin the blank-line case"
+                          " @ tests/test_app.py:40"])
+
+    def test_a_message_keeps_the_spacing_inside_its_quoted_code(self):
+        finding = dict(REPLY["findings"][0],
+                       message='load() splits on\n`"user  id"` and loses a column')
+        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+        [parsed] = parse_findings(text)
+        self.assertIn('splits on `"user  id"` and', parsed["message"])
+
     def test_a_location_the_line_format_cannot_carry_is_not_moved(self):
         for path in ("LICENSE", "docs/Release Notes.md", "app/[id]/page.tsx"):
             with self.subTest(path=path):
@@ -322,6 +345,14 @@ class RenderedReplyTests(unittest.TestCase):
         [account] = criterion_accounts(text)
         self.assertTrue(account["note"].endswith(witness))
         self.assertEqual(criteria_findings(text, (), scope=(entry["path"],)), [])
+
+    def test_a_witness_cited_in_the_reason_keeps_its_inner_spaces(self):
+        witness = 'console/view.test.ts::"shows  both lines"'
+        criterion = dict(REPLY["criteria"][0], reason=f"covered by {witness}",
+                         witness=witness)
+        text, _ = read_reply(json.dumps(dict(REPLY, criteria=[criterion])))
+        [account] = criterion_accounts(text)
+        self.assertEqual(account["note"].count(witness), 2)
 
     def test_a_met_criterion_naming_nothing_is_unwitnessed(self):
         criterion = dict(REPLY["criteria"][0], reason=" ", witness=None)
