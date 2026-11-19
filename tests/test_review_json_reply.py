@@ -292,6 +292,36 @@ class RenderedReplyTests(unittest.TestCase):
                 [parsed] = parse_findings(text)
                 self.assertTrue(parsed["path"].startswith("(unparsed):"))
                 self.assertIn(f"{path}:12", parsed["message"])
+                self.assertEqual(parsed["category"], "correctness")
+
+    def test_a_message_citation_never_becomes_a_finding_location(self):
+        cited = "see docs/development.md:272"
+        for label, finding in (
+                ("description", dict(REPLY["findings"][1], message=cited)),
+                ("no path", dict(REPLY["findings"][0], path=None, line=None,
+                                 message=cited))):
+            with self.subTest(finding=label):
+                text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+                [parsed] = parse_findings(text)
+                self.assertTrue(parsed["path"].startswith("(unparsed):"))
+                self.assertIn(cited, parsed["message"])
+
+    def test_a_pathless_code_finding_is_not_taken_for_a_description_one(self):
+        finding = dict(REPLY["findings"][0], path=None, line=None,
+                       message='path: "PR description" is quoted by load()')
+        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+        self.assertEqual(without_description(text)[1], [])
+
+    def test_witness_names_and_scope_paths_keep_their_inner_spaces(self):
+        witness = 'console/view.test.ts::"shows  both lines"'
+        criterion = dict(REPLY["criteria"][0], witness=witness)
+        entry = {"path": "docs/Release  Notes.md", "status": "needed",
+                 "reason": "the guide\nnames it"}
+        text, _ = read_reply(json.dumps(dict(REPLY, criteria=[criterion],
+                                             scope=[entry])))
+        [account] = criterion_accounts(text)
+        self.assertTrue(account["note"].endswith(witness))
+        self.assertEqual(criteria_findings(text, (), scope=(entry["path"],)), [])
 
     def test_a_met_criterion_naming_nothing_is_unwitnessed(self):
         criterion = dict(REPLY["criteria"][0], reason=" ", witness=None)

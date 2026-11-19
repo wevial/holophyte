@@ -4,6 +4,7 @@ from pathlib import Path
 
 from holophyte.agents.agent_output import AgentOutput
 from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN
+from holophyte.review.reply_parsing import UNPARSED_PATH, parse_findings
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
 
@@ -12,6 +13,10 @@ TARGET_FIELD = "target"
 TOKEN_COUNT_TAIL_RE = re.compile(r"\s*(?:tokens used\s+[\d,]+\s*)?")
 
 MD_LINK_RE = re.compile(r"(`[^`]*`)|\[([^\]\n]*)\]\(([^)\s]+)\)")
+
+LINE_BREAK_RE = re.compile(r"[ \t]*[\r\n\v\f\x1c-\x1e\x85\u2028\u2029]+[ \t]*")
+
+UNPLACED = "[unplaced](#)"
 
 NO_REASON = "(no reason given)"
 
@@ -104,6 +109,10 @@ def one_line(text):
     return " ".join((text or "").split())
 
 
+def kept_line(text):
+    return LINE_BREAK_RE.sub(" ", text or "").strip()
+
+
 def message_line(text):
     return MD_LINK_RE.sub(
         lambda link: link[1] or f"{link[2]} ({link[3]})", one_line(text))
@@ -116,31 +125,33 @@ def place(path, line):
 def finding_line(finding):
     severity, message = finding["severity"], message_line(finding["message"])
     if finding[TARGET_FIELD] == "description":
-        return f'- path: "PR description" [{severity}] {message}'
-    path, line = one_line(finding["path"]), finding["line"]
+        tagged = f'- path: "PR description" [{severity}]'
+        rendered_line = f"{tagged} {message}"
+        if parsed_place(rendered_line)[0].startswith(f"{UNPARSED_PATH}:"):
+            return rendered_line
+        return f"{tagged} {UNPLACED} {message}"
+    path, line = kept_line(finding["path"]), finding["line"]
     where = place(path, line)
     tags = f"[{severity}] [{finding['category']}] {message}"
     if not where:
-        return f"- {tags}"
+        return f"- {UNPLACED} {tags}"
+    expected = (path, line if line is not None and line > 0 else None, severity)
     for rendered_line in (f"- {where} {tags}", f"- [{where}]({where}) {tags}"):
-        if located(rendered_line, path, line):
+        if parsed_place(rendered_line) == expected:
             return rendered_line
-    return f"- [location](#) {where} {tags}"
+    return f"- {UNPLACED} {tags} (at {where})"
 
 
-def located(rendered_line, path, line):
-    from holophyte.review.reply_parsing import parse_findings
-
+def parsed_place(rendered_line):
     [parsed] = parse_findings(rendered_line)
-    expected = line if line is not None and line > 0 else None
-    return (parsed["path"], parsed.get("line")) == (path, expected)
+    return parsed["path"], parsed.get("line"), parsed["severity"]
 
 
 def criterion_line(criterion):
     number = re.search(r"\d+", criterion["id"])
     label = f"C{int(number[0])}" if number else one_line(criterion["id"])
     status = criterion["status"].replace("_", " ")
-    reason, witness = one_line(criterion["reason"]), one_line(criterion["witness"])
+    reason, witness = one_line(criterion["reason"]), kept_line(criterion["witness"])
     if status == "met" and not (reason or witness):
         status, reason = "unwitnessed", UNNAMED_WITNESS
     line = f"CRITERION {label}: {status} \u2014 {reason or NO_REASON}"
@@ -150,12 +161,12 @@ def criterion_line(criterion):
 def follow_up_line(follow_up):
     line = f"FOLLOW_UP({follow_up['kind']}): {one_line(follow_up['text'])}"
     if follow_up["path"]:
-        line += f" @ {place(one_line(follow_up['path']), follow_up['line'])}"
+        line += f" @ {place(kept_line(follow_up['path']), follow_up['line'])}"
     return line
 
 
 def scope_line(entry):
-    return (f"SCOPE `{one_line(entry['path'])}`: {entry['status']} \u2014 "
+    return (f"SCOPE `{kept_line(entry['path'])}`: {entry['status']} \u2014 "
             f"{one_line(entry['reason'])}")
 
 
