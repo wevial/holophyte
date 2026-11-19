@@ -127,7 +127,11 @@ class DescriptionFindingsTests(unittest.TestCase):
 
 DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
 WRAPPED = ('- [P2] path: "PR description" — the Changes table misstates\n'
-           '  the menu it lists for a reverted run')
+           '  the `Revert` item it lists for a reverted run')
+STANDALONE = 'P2: path: "PR description" — the Changes table misstates the menu'
+CATEGORIZED = ('- [p2] [correctness] path: "PR description" — the Changes table'
+               ' misstates the menu')
+TABLE_FAULT = "the row menu drops the revert item"
 TABLE = ('- [P1] path: "console/src/app/components/TicketTable.tsx" — the row'
          ' menu drops the revert item')
 PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
@@ -215,6 +219,9 @@ class MixedRoundTests(unittest.TestCase):
         findings = goal.partition("\n\nReviewer findings:\n")[2]
         return re.split(r"\n\n(?:Fix note from|Operator babysit note)", findings)[0]
 
+    def fix_note(self, goal):
+        return goal.partition("\n\nFix note from")[2]
+
     def refreshed_reviews(self):
         return [call.kwargs["review"] for call in self.refresh.call_args_list]
 
@@ -222,7 +229,8 @@ class MixedRoundTests(unittest.TestCase):
         self.review_fix(f"{TABLE}\n{described}{REJECT}")
 
         (goal,) = self.goals
-        self.assertIn("TicketTable.tsx", self.reviewer_findings(goal))
+        self.assertIn(TABLE_FAULT, self.reviewer_findings(goal))
+        self.assertIn(TABLE_FAULT, self.fix_note(goal))
         self.assertNotIn("PR description", goal)
         self.assertNotIn("Changes table", goal)
         self.assertEqual(self.refreshed_reviews(), [described])
@@ -234,13 +242,19 @@ class MixedRoundTests(unittest.TestCase):
         self.assert_split(WRAPPED)
         self.assertNotIn("reverted run", self.goals[0])
 
+    def test_an_unbulleted_description_finding_after_a_code_bullet_is_split(self):
+        self.assert_split(STANDALONE)
+
+    def test_a_categorized_description_finding_is_split(self):
+        self.assert_split(CATEGORIZED)
+
     def test_a_mixed_round_under_an_operator_note_keeps_the_split(self):
         self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}",
                         fix_note="restore the revert item")
 
         (goal,) = self.goals
         self.assertIn("restore the revert item", goal)
-        self.assertIn("TicketTable.tsx", self.reviewer_findings(goal))
+        self.assertIn(TABLE_FAULT, self.reviewer_findings(goal))
         self.assertNotIn("PR description", goal)
         self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
 
@@ -256,7 +270,7 @@ class MixedRoundTests(unittest.TestCase):
         self.assertIn("holophyte/menu.py", self.reviewer_findings(self.goals[1]))
 
     def test_a_fenced_example_of_the_tag_stays_with_its_code_blocker(self):
-        example = '  ```\n  - path: "PR description" — sample reply\n  ```'
+        example = '  ````\n  - path: "PR description" — sample reply\n  ````'
         self.review_fix(f"{TABLE}\n{example}{REJECT}")
 
         (goal,) = self.goals
@@ -271,8 +285,9 @@ class MixedRoundTests(unittest.TestCase):
         self.review_fix(f"{code}{REJECT}")
 
         (goal,) = self.goals
-        self.assertIn("TicketTable.tsx", self.reviewer_findings(goal))
-        self.assertIn("holophyte/menu.py", self.reviewer_findings(goal))
+        for fault in (TABLE_FAULT, "revert is unguarded"):
+            self.assertIn(fault, self.reviewer_findings(goal))
+            self.assertIn(fault, self.fix_note(goal))
         self.assertEqual(self.refreshed_reviews(), [""])
 
 

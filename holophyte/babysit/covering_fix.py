@@ -4,7 +4,6 @@ import re
 import store
 import store.read
 from holophyte.babysit.description_review import (
-    DESCRIPTION_SUBJECT_RE,
     LEAD,
     description_findings,
     hold_for_pr_text,
@@ -75,8 +74,12 @@ def _code_goal(conn, run_id, pull, ticket, verdict, label, note):
 
 
 def _code_findings(findings):
-    return [finding for finding in findings if not DESCRIPTION_SUBJECT_RE.match(
-        str(finding.get("message", "")))]
+    code = []
+    for finding in findings:
+        message = without_description(str(finding.get("message", "")))[0]
+        if message.strip():
+            code.append(dict(finding, message=message))
+    return code
 
 
 def fix_goal(pull, ticket, verdict, label, note):

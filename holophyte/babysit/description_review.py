@@ -6,7 +6,9 @@ from holophyte.board.projection import ledger
 from holophyte.loop.gates import sh
 from holophyte.review.briefs import main_merge_base
 from holophyte.review.reply_parsing import (
+    FINDING_CATEGORIES,
     SCOPE_LINE_RE,
+    closed_fence_flags,
     without_criteria,
     without_refuted,
 )
@@ -16,19 +18,16 @@ LEAD = (r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
         r"[:\u2014-]?\s*)?(?:\*\*)?\s*")
 
 DESCRIPTION_SUBJECT_RE = re.compile(
-    LEAD + r'(?:(?:p[0-3]|nit|blocker|major|minor)\b)?[^\w(\n]*[(\[]?[`*\s]*'
+    LEAD + rf"(?:\[\s*(?:{'|'.join(FINDING_CATEGORIES)})\s*\]\s*(?:\*\*)?\s*)?"
+    r'(?:(?:p[0-3]|nit|blocker|major|minor)\b)?[^\w(\n]*[(\[]?[`*\s]*'
     r'path:\s*"PR description"', re.I)
 
 PR_TEXT_REVIEW_KIND = "pr_text_review"
 
-FENCE_OPEN_RE = re.compile(r"^\s*(?:```|~~~)[\w+-]*\s*$")
-
-FENCE_CLOSE_RE = re.compile(r"^\s*(?:```|~~~)\s*$")
-
 CONTINUATION_RE = re.compile(
     r"^\s+(?!\s)(?!(?:[-*+\u2022>]|\d+[.)])\s|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker"
     r"|major|minor|critical|high|medium|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]"
-    r"|\b[\w-]+\.[a-z]\w{0,5}\b|\w\(|`|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
+    r"|\b[\w-]+\.[a-z]\w{0,5}\b|\w\(|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
@@ -96,33 +95,16 @@ def _blocker_items(verdict):
 
 
 def _items(lines):
-    openers = _fence_openers(lines)
-    groups, fenced, after_blank = [], False, True
-    for index, line in enumerate(lines):
-        if fenced:
-            groups[-1].append(index)
-            fenced = not FENCE_CLOSE_RE.match(line)
-            continue
-        fenced = index in openers
-        joins = not line.strip() or not after_blank and (
-            fenced or CONTINUATION_RE.match(line))
+    groups, after_blank = [], True
+    for index, (line, fenced) in enumerate(zip(lines, closed_fence_flags(lines))):
+        joins = fenced or not line.strip() or not after_blank and (
+            CONTINUATION_RE.match(line) and not DESCRIPTION_SUBJECT_RE.match(line))
         if groups and joins:
             groups[-1].append(index)
         else:
             groups.append([index])
-        after_blank = not line.strip()
+        after_blank = not fenced and not line.strip()
     return groups
-
-
-def _fence_openers(lines):
-    openers, opener = set(), None
-    for index, line in enumerate(lines):
-        if opener is None and FENCE_OPEN_RE.match(line):
-            opener = index
-        elif opener is not None and FENCE_CLOSE_RE.match(line):
-            openers.add(opener)
-            opener = None
-    return openers
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
