@@ -59,8 +59,9 @@ class StoreExportTests(unittest.TestCase):
 
     def export(self, *flags):
         with contextlib.redirect_stdout(io.StringIO()):
-            holo_cli.main(["store", "export", str(self.out), *flags,
-                           "-p", str(self.target)])
+            status = holo_cli.main(["store", "export", str(self.out), *flags,
+                                    "-p", str(self.target)])
+        self.assertIn(status, (None, 0), "sys.exit(status) is not a success")
 
     def test_runs_and_agent_sessions_carry_their_fields(self):
         self.export()

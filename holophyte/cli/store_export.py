@@ -132,4 +132,3 @@ def export(target, directory, since):
         json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     print(f"[holo2] exported {len(files[RUNS])} runs, {len(files[EVENTS])}"
           f" events and {len(files[SESSIONS])} agent sessions to {directory}")
-    return manifest
