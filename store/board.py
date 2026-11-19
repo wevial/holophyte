@@ -272,11 +272,12 @@ def _outside_code_spans(lines):
             continue
         spans.append((runs[i].start(), runs[close].end()))
         i = close + 1
-    live, at = [], 0
+    live, at, prose = [], 0, False
     for line in lines:
-        indent = len(line) - len(line.lstrip(" "))
-        start = at + indent
-        if indent <= 3 and not any(a <= start < b for a, b in spans):
+        start = at + len(line) - len(line.lstrip(" \t"))
+        indent = len(line.expandtabs(4)) - len(line.lstrip(" \t"))
+        prose = prose or indent <= 3
+        if prose and not any(a <= start < b for a, b in spans):
             live.append(line.strip())
         at += len(line) + 1
     return live

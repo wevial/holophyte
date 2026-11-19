@@ -252,6 +252,17 @@ class RevertCloseTests(ConfigTestCase):
         self.assertEqual(self.key_state()["ticket"],
                          [("ready", "backlog", "Backlog")])
 
+    def test_a_marker_continuing_a_paragraph_is_live_however_indented(self):
+        self.file_revert()
+        self.edit_revert((f"Reverts: NAT-1 at {self.key_sha}",
+                          f"The revert:\n    Reverts: NAT-1 at {self.key_sha}"))
+        self.run_revert(self.merge_the_revert)
+        self.assertEqual(self.key_state()["ticket"],
+                         [("ready", "backlog", "Backlog")])
+
+    def test_a_tab_indented_marker_is_code_and_reopens_nothing(self):
+        self.assert_hidden_marker_reopens_nothing("\t{}")
+
     def assert_hidden_marker_reopens_nothing(self, hidden):
         self.file_revert()
         before = self.key_state()
