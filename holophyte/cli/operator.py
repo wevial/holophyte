@@ -1,6 +1,11 @@
+import contextlib
+import fcntl
 import getpass
 import json
 import os
+import re
+import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -23,7 +28,8 @@ from holophyte.host.reconcile import (
 )
 from holophyte.host.startup import banner
 from holophyte.host.supervisor import linear_budget_low, supervisor_liveness_line
-from holophyte.loop.claim import _claim_next
+from holophyte.isolation.isolation_git import git_environment
+from holophyte.loop.claim import _claim_next, claimed_run
 from holophyte.loop.claim_store import BOARD_DOWN, announce, store_mode, sync_board
 from holophyte.loop.gates import sh
 from holophyte.loop.implementer_profile import run_view
@@ -35,11 +41,12 @@ from holophyte.loop.pool_handoff import (  # noqa: F401
 )
 from holophyte.loop.reexec import reexec_self
 from holophyte.loop.runs import open_store
+from holophyte.loop.task_worktree import run_worktree_setup
 from holophyte.pr.merge_ready import PARKED_PHASE, readiness
 from holophyte.review.findings import commit_findings
 from store import operator_notes, steer_notes
 from store.gap_layers import record_gap_layer
-from store.operate import acting_as, author_actor
+from store.operate import acting_as, author_actor, swept_condition
 
 BABYSIT_DEFAULT_NOTE = "sent back to the babysitter"
 
@@ -313,6 +320,10 @@ def approve(target, identifier, note, out=None, force=False):
     try:
         ticket_id = _ticket_by_identifier(target, conn, identifier)
         parked_run = store.read.ticket_by_id(conn, ticket_id).lastRunId
+        condition = swept_condition(conn, parked_run)
+        if condition is not None:
+            return _approve_swept(target, conn, identifier, ticket_id,
+                                  parked_run, condition, note, force, out)
         if _parked_at_pull_request(conn, parked_run) \
                 and merge_config(target).approve == "human":
             ready = readiness(target, parked_run)
@@ -333,6 +344,411 @@ def approve(target, identifier, note, out=None, force=False):
               file=out)
     finally:
         conn.close()
+
+
+def _approve_swept(target, conn, identifier, ticket_id, run_id, condition,
+                   note, force, out):
+    rnd, sha, unmet = _reviewed_commit(conn, run_id)
+    if sha is None:
+        raise SystemExit(
+            f"[holo2] {identifier}: run {run_id} was swept {condition} but no"
+            " ended review round of it names the commit it judged; nothing"
+            " approved")
+    if unmet and not force:
+        raise SystemExit(
+            f"[holo2] {identifier}: run {run_id} was swept {condition} and"
+            f" its review round {rnd} left {', '.join(unmet)}; nothing"
+            " approved, and --force --note TEXT approves it anyway")
+    if unmet:
+        note = f"forced past criteria: {', '.join(unmet)}; {note}"
+    park = store.read.park_facts(conn, run_id)
+    branch = park.branch
+    (title,) = conn.execute("SELECT title FROM tickets WHERE id = ?",
+                            (ticket_id,)).fetchone()
+    claim = claimed_run(target, {"id": identifier, "title": title,
+                                 "budget_min": 0})
+    if branch != claim.branch:
+        raise SystemExit(
+            f"[holo2] {identifier}: run {run_id} recorded branch {branch},"
+            f" but the next claim resumes {claim.branch}; nothing approved")
+    with _approval_lock(target, run_id, identifier), _set_aside(
+            target, claim.wt, run_id, branch, sha, identifier,
+            park.pr_url) as (dropped, aside, unmoved):
+        try:
+            store.approve_swept(conn, ticket_id, note, sha, run_id, rnd,
+                                confirm=unmoved)
+        except (store.ApproveRefused, ValueError, sqlite3.Error) as refused:
+            raise SystemExit(f"[holo2] {refused}; nothing approved") from None
+    print(f"[holo2] {identifier} approved at {sha}: run {run_id}, swept"
+          f" {condition}, released at the commit its review round {rnd}"
+          " judged and the ticket is ready; the loop's next claim resumes"
+          " that candidate at the merge gate", file=out)
+    if dropped:
+        print(f"[holo2] set aside {len(dropped)} later commit(s) of {branch}"
+              f" under {DROPPED_REF}{run_id}: {', '.join(dropped)}", file=out)
+    if aside:
+        print(f"[holo2] the worktree that held them, with its local files,"
+              f" moved to {aside}; {sha[:12]} checked out fresh at"
+              f" {claim.wt}", file=out)
+
+
+DROPPED_REF = "refs/holophyte/dropped/"
+
+
+def _reviewed_commit(conn, run_id):
+    rounds = store.read.newest_ended_rounds(conn, run_id, 1)
+    if not rounds:
+        return None, None, []
+    rnd, sha = rounds[0].round, None
+    (verdict,) = conn.execute(
+        "SELECT verdict FROM reviewRounds WHERE runId = ? AND round = ?",
+        (run_id, rnd)).fetchone()
+    unmet = ["no criterion judged (the review errored)"] if (
+        verdict == "error") else []
+    for kind, payload in conn.execute(
+            "SELECT kind, payload FROM runEvents WHERE runId = ? AND kind IN"
+            " ('blast_radius', 'reviewed_commit', 'criteria') ORDER BY seq",
+            (run_id,)):
+        payload = json.loads(payload or "{}")
+        if payload.get("round") != rnd:
+            continue
+        if kind != "criteria":
+            sha = payload.get("sha")
+        else:
+            unmet = [f"{entry['id']} {entry['status']}"
+                     for entry in payload.get("criteria", [])
+                     if entry.get("status") != "met"]
+    return rnd, sha, unmet
+
+
+def _git(repo, *args):
+    env = {key: value for key, value in git_environment().items()
+           if not key.startswith(("GIT_TRACE", "GIT_CURL_VERBOSE"))}
+    done = subprocess.run(["git", *args], cwd=repo, capture_output=True,
+                          text=True, errors="replace", env=env)
+    done.stderr = REMOTE_URL.sub("<url>", done.stderr)
+    return done
+
+
+def _checkout_of(repo, branch):
+    worktree = None
+    for line in _git(repo, "worktree", "list", "--porcelain"
+                     ).stdout.splitlines():
+        if line.startswith("worktree "):
+            worktree = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{branch}":
+            return worktree
+    return None
+
+
+class _StepFailed(Exception):
+    pass
+
+
+@contextlib.contextmanager
+def _approval_lock(target, run_id, identifier):
+    common = _git(target.path, "rev-parse", "--git-common-dir")
+    if common.returncode != 0:
+        raise SystemExit(f"[holo2] {identifier}: git rev-parse failed:"
+                         f" {common.stderr.strip()}; nothing approved")
+    lock = Path(target.path, common.stdout.strip(),
+                f"holophyte-approve-{run_id}.lock")
+    with open(lock, "a") as held:
+        try:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit(
+                f"[holo2] {identifier}: another approval of run {run_id} is"
+                " in progress; nothing approved") from None
+        yield
+
+
+@contextlib.contextmanager
+def _set_aside(target, worktree, run_id, branch, sha, identifier, pull):
+    repo, refused = target.path, f"[holo2] {identifier}: "
+    tip = _git(repo, "rev-parse", "--verify", "--quiet",
+               f"refs/heads/{branch}").stdout.strip()
+    if not tip:
+        raise SystemExit(f"{refused}branch {branch} is gone; nothing approved")
+    if _git(repo, "merge-base", "--is-ancestor", sha, tip).returncode != 0:
+        raise SystemExit(
+            f"{refused}branch {branch} at {tip[:12]} does not descend from"
+            f" the reviewed commit {sha[:12]}; nothing approved")
+    checked_out = _checkout_of(repo, branch)
+    if checked_out is None or checked_out.resolve() != worktree.resolve():
+        raise SystemExit(
+            f"{refused}branch {branch} is not checked out at {worktree},"
+            " where the next claim resumes it; nothing approved")
+    _require_clean(worktree, branch, refused)
+    ref, aside = f"{DROPPED_REF}{run_id}", None
+    kept = _git(repo, "rev-parse", "--verify", "--quiet", ref).stdout.strip()
+    if tip != sha:
+        if kept and _git(repo, "merge-base", "--is-ancestor", kept,
+                         tip).returncode != 0:
+            raise SystemExit(
+                f"{refused}{ref} already holds {kept[:12]}, which {branch}"
+                " does not contain; nothing approved")
+        aside = worktree.with_name(f"{worktree.name}.dropped-{run_id}")
+        if os.path.lexists(aside):
+            raise SystemExit(f"{refused}{aside} already exists; nothing"
+                             " approved")
+    dropped = _git(repo, "rev-list", "--abbrev-commit",
+                   f"{sha}..{tip}").stdout.split()
+    undo = []
+    try:
+        if aside is not None:
+            _replace_worktree(target, undo, worktree, aside, branch, ref,
+                              kept, sha, tip)
+        _rewind_origin(undo, repo, branch, sha, tip, pull)
+        yield dropped, aside, (lambda: None) if aside is None \
+            else lambda: _unmoved(aside, tip)
+    except BaseException as failed:
+        stuck = _undo(undo)
+        left = (f"; undoing it stopped at {stuck}, so {branch}, {worktree}"
+                f" and {aside} need a human" if stuck
+                else f"; {branch} left at {tip[:12]}")
+        if isinstance(failed, _StepFailed):
+            raise SystemExit(f"{refused}{failed}{left}; nothing approved"
+                             ) from None
+        if stuck:
+            print(f"{refused}{left[2:]}", file=sys.stderr)
+        raise
+
+
+def _require_clean(worktree, branch, refused):
+    if not worktree.is_dir():
+        raise SystemExit(f"{refused}the worktree {worktree} of {branch} is"
+                         " missing; nothing approved")
+    status = _git(worktree, "status", "--porcelain",
+                  "--untracked-files=normal")
+    if status.returncode != 0:
+        raise SystemExit(f"{refused}git status failed in {worktree}:"
+                         f" {status.stderr.strip()}; nothing approved")
+    if status.stdout.strip():
+        raise SystemExit(f"{refused}the worktree {worktree} holds uncommitted"
+                         f" changes on {branch}; nothing approved")
+
+
+REMOTE_URL = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://.*")
+NO_HOOKS = ("-c", "core.hooksPath=/dev/null")
+
+
+def _replace_worktree(target, undo, worktree, aside, branch, ref, kept, sha,
+                      tip):
+    repo, head = target.path, f"refs/heads/{branch}"
+    _step(undo, repo, ["update-ref", ref, tip, kept or ""],
+          ["update-ref", ref, kept, tip] if kept
+          else ["update-ref", "-d", ref, tip])
+    _step(undo, worktree, ["checkout", "--quiet", "--detach"],
+          lambda: _reattach(worktree, head, tip))
+    _move_aside(undo, repo, worktree, aside)
+    _step(undo, repo, ["update-ref", head, sha, tip],
+          ["update-ref", head, tip])
+    _step(undo, repo, ["worktree", "add", "--quiet", str(worktree), branch],
+          ["worktree", "remove", "--force", "--force", str(worktree)])
+    with _without_repository_selectors():
+        ok, report = run_worktree_setup(target, worktree)
+    if not ok:
+        raise _StepFailed(f"worktree setup failed in {worktree}: {report}")
+    _require_at_reviewed(repo, worktree, head, sha)
+    left = _git(worktree, "status", "--porcelain", "--untracked-files=normal")
+    if left.returncode != 0 or left.stdout.strip():
+        raise _StepFailed(
+            f"worktree setup left {worktree} unclean, which the next claim"
+            f" refuses as drift: {(left.stdout or left.stderr).strip()}")
+
+
+def _require_at_reviewed(repo, worktree, head, sha):
+    at = _git(repo, "rev-parse", "--verify", "--quiet", head).stdout.strip()
+    checkout = _git(worktree, "rev-parse", "--verify", "--quiet", "HEAD"
+                    ).stdout.strip()
+    on = _git(worktree, "symbolic-ref", "--quiet", "HEAD").stdout.strip()
+    if at == checkout == sha and on == head:
+        return
+    raise _StepFailed(
+        f"worktree setup left {head} at {at[:12] or 'nothing'} and"
+        f" {worktree} at {checkout[:12] or 'nothing'}"
+        f"{'' if on == head else ' off the branch'}, not the reviewed"
+        f" commit {sha[:12]}")
+
+
+def _rewind_origin(undo, repo, branch, sha, tip, pull):
+    if "origin" not in _git(repo, "remote").stdout.split():
+        if pull is None:
+            return
+        raise _StepFailed(
+            f"no origin remote holds {branch}, so {pull} cannot be moved to"
+            f" the reviewed commit {sha[:12]}")
+    head = f"refs/heads/{branch}"
+    urls = _git(repo, "remote", "get-url", "--push", "--all", "origin"
+                ).stdout.splitlines()
+    if len(urls) > 1:
+        raise _StepFailed(
+            f"origin pushes to {len(urls)} URLs, and a rewind one of them"
+            " rejects could not be undone on the others")
+    url = urls[0] if urls else ""
+    target = "origin" if url in ("", _git(
+        repo, "remote", "get-url", "origin").stdout.strip()) else url
+    fetched = _origin_tip(repo, "origin", head)
+    pushed = fetched if target == "origin" \
+        else _origin_tip(repo, url, head, "origin's push URL")
+    rewinds = {remote: _needs_rewind(repo, branch, remote, sha, tip, pull)
+               for remote in (fetched, pushed)}
+    if rewinds[pushed]:
+        _push_rewind(undo, repo, target, head, sha, pushed)
+        if target != "origin" and _origin_tip(
+                repo, url, head, "origin's push URL") != sha:
+            raise _StepFailed(
+                f"origin's push URL does not hold {branch} at the reviewed"
+                f" commit {sha[:12]} after the push")
+    if rewinds[fetched]:
+        after = _origin_tip(repo, "origin", head)
+        if after != sha:
+            reads = "is missing" if after is None \
+                else f"still reads {after[:12]}"
+            raise _StepFailed(
+                f"origin's {branch} {reads} after the push, so the next"
+                " claim would not fetch the reviewed commit")
+
+
+def _push_rewind(undo, repo, target, head, sha, pushed):
+    push = ["push", "origin", "--no-verify", "--no-follow-tags"]
+    lease = f"--force-with-lease={head}:"
+
+    def reverse():
+        done = _git(repo, *NO_HOOKS, *push, f"{lease}{sha}", f"{pushed}:{head}")
+        try:
+            restored = done.returncode == 0 or _origin_tip(
+                repo, target, head) == pushed
+        except _StepFailed:
+            restored = False
+        return subprocess.CompletedProcess(
+            done.args, 0 if restored else done.returncode, "", done.stderr)
+
+    undo.append(reverse)
+    done = _git(repo, *NO_HOOKS, *push, f"{lease}{pushed}", f"{sha}:{head}")
+    if done.returncode != 0:
+        raise _StepFailed(f"git push origin failed: {done.stderr.strip()}")
+
+
+def _origin_tip(repo, remote, head, label="origin"):
+    listed = _git(repo, "ls-remote", remote, head)
+    if listed.returncode != 0:
+        raise _StepFailed(f"git ls-remote of {label} failed:"
+                          f" {listed.stderr.strip()}")
+    for line in listed.stdout.splitlines():
+        sha, _, ref = line.partition("\t")
+        if ref == head:
+            return sha
+    return None
+
+
+def _needs_rewind(repo, branch, remote, sha, tip, pull):
+    def descends(older, newer):
+        return _git(repo, "merge-base", "--is-ancestor", older,
+                    newer).returncode == 0
+
+    if remote == sha:
+        return False
+    if remote is not None and descends(sha, remote):
+        if descends(remote, tip):
+            return True
+    elif remote is None or descends(remote, sha):
+        if pull is None:
+            return False
+        where = "is missing" if remote is None \
+            else f"is at {remote[:12]}, behind it"
+        raise _StepFailed(
+            f"origin's {branch} {where}, so {pull} is not at the reviewed"
+            f" commit {sha[:12]} and only a push past the push checks"
+            " could take it there")
+    raise _StepFailed(
+        f"origin's {branch} at {remote[:12]} is neither the reviewed commit"
+        f" {sha[:12]}, behind it, nor one of the commits set aside after it")
+
+
+def _unmoved(aside, tip):
+    moved = _git(aside, "rev-parse", "HEAD").stdout.strip()
+    if moved != tip:
+        raise _StepFailed(f"the worktree set aside at {aside} moved on to"
+                          f" {moved[:12]}")
+
+
+@contextlib.contextmanager
+def _without_repository_selectors():
+    kept = git_environment()
+    stripped = {key: os.environ.pop(key) for key in list(os.environ)
+                if key not in kept}
+    try:
+        yield
+    finally:
+        os.environ.update(stripped)
+
+
+def _reattach(worktree, head, tip):
+    if not os.path.isdir(worktree):
+        return subprocess.CompletedProcess([], 1, "", f"{worktree} is missing")
+    moved = _git(worktree, "rev-parse", "HEAD").stdout.strip()
+    if moved != _git(worktree, "rev-parse", head).stdout.strip():
+        landed = _git(worktree, *NO_HOOKS, "update-ref", head, moved, tip)
+        if landed.returncode != 0:
+            return landed
+    return _git(worktree, *NO_HOOKS, "symbolic-ref", "HEAD", head)
+
+
+def _move_aside(undo, repo, worktree, aside):
+    try:
+        _step(undo, repo, ["worktree", "move", str(worktree), str(aside)],
+              lambda: _move_back(repo, aside, worktree))
+    except _StepFailed as failed:
+        if os.path.lexists(worktree) or not os.path.lexists(aside):
+            raise
+        try:
+            os.rename(aside, worktree)
+        except OSError as stuck:
+            raise _StepFailed(f"{failed}; moving {aside} back to {worktree}"
+                              f" failed ({stuck}), so {aside} needs repair"
+                              ) from None
+        if not _registered(repo, worktree):
+            raise _StepFailed(f"{failed}; {worktree} is back in place but"
+                              " git no longer registers it, so it needs"
+                              " repair") from None
+        raise
+
+
+def _registered(repo, worktree):
+    listed = {Path(line[len("worktree "):]).resolve() for line in _git(
+        repo, "worktree", "list", "--porcelain").stdout.splitlines()
+        if line.startswith("worktree ")}
+    top = _git(worktree, "rev-parse", "--show-toplevel").stdout.strip()
+    return worktree.resolve() in listed and bool(top) \
+        and Path(top).resolve() == worktree.resolve()
+
+
+def _move_back(repo, aside, worktree):
+    if os.path.lexists(worktree):
+        return subprocess.CompletedProcess(
+            [], 1, "", f"{worktree} still exists")
+    return _git(repo, *NO_HOOKS, "worktree", "move", str(aside),
+                str(worktree))
+
+
+def _step(undo, cwd, argv, reverse):
+    done = _git(cwd, *NO_HOOKS, *argv)
+    if done.returncode != 0:
+        raise _StepFailed(f"git {argv[0]} {argv[1]} failed:"
+                          f" {done.stderr.strip()}")
+    undo.append(reverse if callable(reverse)
+                else lambda: _git(cwd, *NO_HOOKS, *reverse))
+
+
+def _undo(undo):
+    for reverse in reversed(undo):
+        done = reverse()
+        if done.returncode != 0:
+            return f"git {' '.join(done.args[3:5])}: {done.stderr.strip()}" \
+                if done.args else done.stderr
+    return None
 
 
 def _parked_at_pull_request(conn, run_id):

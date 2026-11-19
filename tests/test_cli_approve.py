@@ -14,23 +14,36 @@ Run: python3 -m unittest discover -s tests -p 'test_cli_*' -v
 from __future__ import annotations
 
 import contextlib
+import fcntl
+import http.server
 import io
+import json
 import os
+import re
+import shutil
+import sqlite3
+import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import holophyte.cli.arguments
 import holophyte.cli.entry
+import holophyte.cli.operator
 import holophyte.cli.report
 import holophyte.config.project
 import holophyte.serve.serve_runs
 import store
 import store.read
 import store.tickets
+from holophyte.loop.branch_sync import _candidate_drift, _sync_branch_from_origin
 from holophyte.loop.runs import open_store
+from tests.fake_agent import Commit, Reply
 from tests.host_fixture import git
+from tests.loop_fixture import BRANCH as LOOP_BRANCH
+from tests.loop_fixture import LoopFixture, StubProvider, a_task
 from tests.phase_fixture import finish_run, park_run
 from tests.test_serve_merge import FakeGithub, review_rule
 
@@ -510,6 +523,961 @@ class ApproveCliTests(unittest.TestCase):
             self.cli("--approve", "KO-1", "--note", "  ")
         self.assertEqual(raised.exception.code, 2)
         self.assertEqual(self.interventions(), [])
+
+
+
+STUCK = ("swept by the supervisor in phase reviewing: review_stuck (rounds 1"
+         " and 2 share 0.90 of their findings (0.8 threshold)); branch and"
+         " worktree preserved for a human")
+
+
+class SweptApproveCliTests(unittest.TestCase):
+    """A run the supervisor swept with its branch checked out where the next
+    claim resumes it: an earlier candidate E judged by round 1, the
+    candidate R judged by round 2, then a WIP commit W no round judged."""
+
+    setUp = ApproveCliTests.setUp
+    claim = ApproveCliTests.claim
+    cli = ApproveCliTests.cli
+    interventions = ApproveCliTests.interventions
+    ticket_row = ApproveCliTests.ticket_row
+    judged_by = "blast_radius"
+
+    def commit(self, text, message):
+        (self.wt / "work").write_text(text)
+        git(self.wt, "add", "work")
+        git(self.wt, "commit", "-m", message)
+        return git(self.wt, "rev-parse", "HEAD")
+
+    def branch_with_wip(self, *init):
+        git(self.repo, "init", "-b", "main", *init)
+        git(self.repo, "commit", "--allow-empty", "-m", "base")
+        self.wt = holophyte.config.project.worktree_path(self.target, BRANCH)
+        git(self.repo, "worktree", "add", "-b", BRANCH, str(self.wt))
+        self.earlier = self.commit("first try\n", "an earlier candidate")
+        self.reviewed = self.commit("reviewed\n", "the reviewed candidate")
+        self.wip = self.commit("half an edit\n",
+                               "WIP: implementer ended mid-edit")
+
+    def judged(self, rnd, sha, statuses):
+        store.record_event(
+            self.conn, self.run, self.judged_by, f"round {rnd} judged",
+            level="detail", payload=json.dumps(
+                {"round": rnd, "sha": sha, "tier": "low"}))
+        if statuses is not None:
+            store.record_event(
+                self.conn, self.run, "criteria", f"review round {rnd}",
+                level="detail", payload=json.dumps({"round": rnd, "criteria": [
+                    {"id": f"C{n}", "n": n, "status": status, "text": "t"}
+                    for n, status in enumerate(statuses, 1)]}))
+        store.record_review_round(
+            self.conn, self.run, rnd,
+            "error" if statuses is None else "changes_requested", "codex",
+            findings=[{"path": "work", "line": 1, "severity": "p1",
+                       "message": "the same finding"}],
+            started_at=T0 + rnd, ended_at=T0 + rnd)
+
+    def sweep(self, newest=("met", "met"), reason=STUCK, kind="swept",
+              pull=None):
+        """Round 2 judged R with `newest`; round 1 judged E with the
+        opposite verdict, so reading any round but the newest shows."""
+        self.claim()
+        store.set_branch(self.conn, self.run, BRANCH)
+        if pull is not None:
+            store.set_pull_request(self.conn, self.run, pull)
+        for phase in ("working", "verifying", "reviewing"):
+            store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
+        oldest = (("met", "met") if newest is None or "unwitnessed" in newest
+                  else ("met", "unwitnessed"))
+        self.judged(1, self.earlier, oldest)
+        self.judged(2, self.reviewed, newest)
+        store.release(self.conn, self.run, "failed", reason,
+                      now=T0 + 2 * MINUTE, failure_kind=kind)
+
+    def ref(self, name):
+        return subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", name], cwd=self.repo,
+            capture_output=True, text=True).stdout.strip() or None
+
+    def refused(self, *args):
+        """The command exits non-zero and neither the store nor a ref changes."""
+        store_before, tip = list(self.conn.iterdump()), self.ref(
+            f"refs/heads/{BRANCH}")
+        worktree_before = self.worktree_state()
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", *args)
+        self.assertNotEqual(raised.exception.code, 0)
+        self.assertEqual(list(self.conn.iterdump()), store_before)
+        self.assertEqual(self.worktree_state(), worktree_before)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), tip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
+        return str(raised.exception)
+
+    def aside(self):
+        return self.wt.with_name(f"{self.wt.name}.dropped-{self.run}")
+
+    def worktree_state(self):
+        """What the worktree's HEAD names, its index and its status."""
+        return (git(self.wt, "symbolic-ref", "HEAD"),
+                git(self.wt, "rev-parse", "HEAD"),
+                git(self.wt, "ls-files", "--stage"),
+                git(self.wt, "status", "--porcelain", "--ignored"))
+
+    def assert_released_at_reviewed(self):
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
+        self.assertEqual(self.ref(f"refs/holophyte/dropped/{self.run}"),
+                         self.wip)
+        self.assertEqual(self.ticket_row(), ("ready", None, self.run))
+        self.assertTrue(store.tickets.pickable(self.conn, self.ticket))
+        carried = store.read.approved_candidate(self.conn, self.ticket, -1)
+        self.assertEqual((carried.run_id, carried.sha, carried.approved),
+                         (self.run, self.reviewed, True))
+        self.assertIsNone(_candidate_drift(self.wt, BRANCH, carried.sha))
+
+    def test_a_stuck_run_is_approved_at_its_newest_reviewed_commit(self):
+        self.branch_with_wip()
+        self.sweep()
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(self.interventions(), [(self.run, "approve")])
+        self.assertIn(f"approved at {self.reviewed}", out)
+        self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
+                      out)
+
+    def test_a_sha256_repository_is_approved_at_its_reviewed_commit(self):
+        self.branch_with_wip("--object-format=sha256")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "non-blocking")
+
+        self.assertEqual(len(self.reviewed), 64)
+        self.assert_released_at_reviewed()
+
+    def test_a_sweep_during_terminal_adjudication_is_refused_unrewound(self):
+        """The adjudicator judges the fix after the last review, which no
+        event names, so the reviewed commit before it is not approved."""
+        self.branch_with_wip()
+        self.claim()
+        store.set_branch(self.conn, self.run, BRANCH)
+        for phase in ("working", "verifying", "reviewing"):
+            store.set_phase(self.conn, self.run, phase, now=T0 + MINUTE)
+        self.judged(1, self.reviewed, ("met", "unwitnessed"))
+        store.set_phase(self.conn, self.run, "verifying",
+                        "verify before terminal adjudication")
+        store.set_phase(self.conn, self.run, "reviewing",
+                        "terminal adjudication")
+        store.record_review_round(self.conn, self.run, 2, "changes_requested",
+                                  "codex", started_at=T0 + 2, ended_at=T0 + 2)
+        store.release(self.conn, self.run, "failed", "swept by the supervisor"
+                      " in phase reviewing: criterion_stuck",
+                      now=T0 + 2 * MINUTE, failure_kind="swept")
+
+        self.assertIn("no ended review round of it names the commit",
+                      self.refused("--note", "ok", "--force"))
+
+    def test_a_covering_review_round_names_the_commit_approved(self):
+        self.judged_by = "reviewed_commit"
+        self.branch_with_wip()
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+
+    def test_an_approval_already_in_progress_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        lock = self.repo / ".git" / f"holophyte-approve-{self.run}.lock"
+
+        with open(lock, "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            self.assertIn("another approval", self.refused("--note", "ok"))
+
+    def test_a_deleted_worktree_is_refused_naming_it(self):
+        self.branch_with_wip()
+        self.sweep()
+        shutil.rmtree(self.wt)
+        store_before = list(self.conn.iterdump())
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("is missing", str(raised.exception))
+        self.assertEqual(list(self.conn.iterdump()), store_before)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+
+    def test_an_unwitnessed_criterion_refuses_unless_forced(self):
+        self.branch_with_wip()
+        self.sweep(newest=("met", "unwitnessed"))
+
+        self.assertIn("left C2 unwitnessed",
+                      self.refused("--note", "non-blocking"))
+
+        self.cli("--approve", "KO-1", "--force", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+        (summary,) = self.conn.execute(
+            "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+            " 'intervention'", (self.run,)).fetchone()
+        self.assertEqual(summary, "human approve: forced past criteria:"
+                                  " C2 unwitnessed; non-blocking")
+
+    def test_a_newest_round_whose_review_errored_refuses_unless_forced(self):
+        self.branch_with_wip()
+        self.sweep(newest=None)
+
+        self.assertIn("no criterion judged", self.refused("--note", "ok"))
+
+        self.cli("--approve", "KO-1", "--force", "--note", "non-blocking")
+
+        self.assert_released_at_reviewed()
+
+    def test_a_branch_not_descending_from_the_reviewed_commit_is_refused(self):
+        self.branch_with_wip()
+        git(self.wt, "reset", "--hard", "main")
+        git(self.wt, "commit", "--allow-empty", "-m", "rewritten")
+        self.sweep()
+
+        self.assertIn("does not descend from the reviewed commit",
+                      self.refused("--note", "ok"))
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_ref_update_git_rejects_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.sweep()
+        reflog = self.repo / ".git" / "logs" / "refs" / "heads" / BRANCH
+        reflog.chmod(0o444)
+        self.addCleanup(reflog.chmod, 0o644)
+
+        self.assertIn(f"git update-ref refs/heads/{BRANCH} failed",
+                      self.refused("--note", "ok"))
+
+        reflog.chmod(0o644)
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_dropped_ref_git_cannot_log_leaves_the_branch_at_its_tip(self):
+        self.branch_with_wip()
+        self.sweep()
+        reflog = (self.repo / ".git" / "logs" / "refs" / "holophyte"
+                  / "dropped" / str(self.run))
+        reflog.parent.mkdir(parents=True)
+        reflog.write_text("")
+        reflog.chmod(0o444)
+        self.addCleanup(reflog.chmod, 0o644)
+
+        self.assertIn(f"git update-ref refs/holophyte/dropped/{self.run} failed",
+                      self.refused("--note", "ok"))
+
+    def test_an_ignored_local_file_moves_aside_with_the_old_worktree(self):
+        self.branch_with_wip()
+        (self.repo / ".git" / "info" / "exclude").write_text("local.cache\n")
+        (self.wt / "local.cache").write_text("local only\n")
+        self.sweep()
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual((self.wt / "work").read_text(), "reviewed\n")
+        self.assertFalse((self.wt / "local.cache").exists())
+        self.assertEqual((self.aside() / "local.cache").read_text(),
+                         "local only\n")
+        self.assertEqual(git(self.aside(), "rev-parse", "HEAD"), self.wip)
+        self.assertIn(f"moved to {self.aside()}", out)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_a_move_git_fails_after_renaming_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.sweep()
+        registration = Path(git(self.wt, "rev-parse", "--absolute-git-dir")
+                            ) / "gitdir"
+        registration.chmod(0o444)
+        self.addCleanup(registration.chmod, 0o644)
+
+        self.assertIn("git worktree move failed",
+                      self.refused("--note", "ok"))
+
+        registration.chmod(0o644)
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
+
+    def test_inherited_repository_selectors_do_not_redirect_the_git_steps(self):
+        self.branch_with_wip()
+        self.sweep()
+        main_checkout = (git(self.repo, "symbolic-ref", "HEAD"),
+                         git(self.repo, "rev-parse", "HEAD"))
+
+        with patch.dict(os.environ, {"GIT_DIR": str(self.repo / ".git"),
+                                     "GIT_WORK_TREE": str(self.repo)}):
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual((git(self.repo, "symbolic-ref", "HEAD"),
+                          git(self.repo, "rev-parse", "HEAD")), main_checkout)
+
+    def test_a_worktree_with_an_initialized_submodule_is_refused(self):
+        dependency = self.root / "dependency"
+        git(self.root, "init", "-b", "main", str(dependency))
+        git(dependency, "commit", "--allow-empty", "-m", "dependency")
+        self.branch_with_wip()
+        git(self.wt, "-c", "protocol.file.allow=always", "submodule", "add",
+            "-q", str(dependency), "deps")
+        git(self.wt, "commit", "-m", "WIP: implementer ended mid-edit")
+        self.sweep()
+
+        self.assertIn("git worktree move failed", self.refused("--note", "ok"))
+        self.assertTrue((self.wt / "deps" / ".git").exists())
+
+    def test_a_store_that_rejects_the_release_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.sweep()
+        with patch.object(store, "approve_swept", side_effect=
+                          sqlite3.OperationalError(
+                              "attempt to write a readonly database")):
+            self.assertIn("readonly database", self.refused("--note", "ok"))
+
+        out, _ = self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertIn(f"refs/holophyte/dropped/{self.run}: {self.wip[:7]}",
+                      out)
+
+    def test_an_untracked_file_refuses_though_status_hides_untracked(self):
+        self.branch_with_wip()
+        git(self.repo, "config", "status.showUntrackedFiles", "no")
+        (self.wt / "new_source.py").write_text("unsaved work\n")
+        self.sweep()
+
+        self.assertIn("holds uncommitted changes",
+                      self.refused("--note", "ok"))
+
+    def test_a_failed_status_refuses_rather_than_reading_a_clean_tree(self):
+        self.branch_with_wip()
+        (self.wt / "work").write_text("unsaved work\n")
+        self.sweep()
+        git(self.repo, "config", "status.short", "invalid")
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("git status failed", str(raised.exception))
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
+        self.assertEqual((self.wt / "work").read_text(), "unsaved work\n")
+        self.assertNotEqual(self.ticket_row()[0], "ready")
+
+    def test_a_round_ended_after_the_judged_one_was_read_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        real_replace = holophyte.cli.operator._replace_worktree
+
+        def round_ends_meanwhile(*args):
+            real_replace(*args)
+            self.judged(3, self.wip, ("met", "met"))
+
+        with patch.object(holophyte.cli.operator, "_replace_worktree",
+                          round_ends_meanwhile), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("newest ended review round is 3, not round 2",
+                      str(raised.exception))
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.wip)
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
+        self.assertEqual(self.interventions(), [])
+        self.assertEqual(self.ticket_row()[0], "in_flight")
+
+    def worker_commits(self, before, where):
+        """Approve runs while the swept worker commits in `where()` just
+        before the first git command whose arguments hold all of `before`."""
+        real_git, done = holophyte.cli.operator._git, []
+
+        def worker_commits_first(cwd, *args):
+            if set(before) <= set(args) and not done:
+                done.append(True)
+                (where() / "work").write_text("the worker's last edit\n")
+                git(where(), "commit", "-qam", "the worker's last commit")
+            return real_git(cwd, *args)
+
+        with patch.object(holophyte.cli.operator, "_git",
+                          worker_commits_first), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+        return str(raised.exception)
+
+    def assert_worker_commit_on_the_branch(self):
+        self.assertEqual(git(self.wt, "symbolic-ref", "HEAD"),
+                         f"refs/heads/{BRANCH}")
+        self.assertEqual(git(self.wt, "log", "-1", "--format=%s", BRANCH),
+                         "the worker's last commit")
+        self.assertEqual(git(self.wt, "status", "--porcelain"), "")
+        self.assertIsNone(self.ref(f"refs/holophyte/dropped/{self.run}"))
+        self.assertFalse(self.aside().exists())
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_worker_commit_before_the_detach_is_kept(self):
+        self.branch_with_wip()
+        self.sweep()
+
+        why = self.worker_commits(["checkout"], lambda: self.wt)
+
+        self.assertIn(f"git update-ref refs/heads/{BRANCH} failed", why)
+        self.assert_worker_commit_on_the_branch()
+
+    def test_a_worker_commit_after_the_detach_is_kept(self):
+        self.branch_with_wip()
+        self.sweep()
+
+        why = self.worker_commits(["update-ref", f"refs/heads/{BRANCH}"],
+                                  self.aside)
+
+        self.assertIn("moved on to", why)
+        self.assert_worker_commit_on_the_branch()
+
+    def test_a_worker_commit_during_the_release_is_kept(self):
+        self.branch_with_wip()
+        self.sweep()
+        real_release = store.approve_swept
+
+        def worker_commits_first(*args, **kwargs):
+            (self.aside() / "work").write_text("the worker's last edit\n")
+            git(self.aside(), "commit", "-qam", "the worker's last commit")
+            return real_release(*args, **kwargs)
+
+        with patch.object(store, "approve_swept", worker_commits_first), \
+                self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("moved on to", str(raised.exception))
+        self.assert_worker_commit_on_the_branch()
+        self.assertEqual(self.ticket_row()[0], "in_flight")
+
+    def test_a_failing_post_checkout_hook_does_not_stop_the_approval(self):
+        self.branch_with_wip()
+        hook = self.repo / ".git" / "hooks" / "post-checkout"
+        hook.write_text("#!/bin/sh\nexit 1\n")
+        hook.chmod(0o755)
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+
+    def with_setup(self, command):
+        with self.target.config_path.open("a") as config:
+            config.write(f"[worktree]\nsetup = [{json.dumps(command)}]\n")
+
+    def test_the_fresh_worktree_runs_the_project_setup(self):
+        self.branch_with_wip()
+        self.with_setup("pwd > ../setup-ran")
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(
+            Path((self.wt.parent / "setup-ran").read_text().strip()),
+            self.wt.resolve())
+
+    def test_inherited_repository_selectors_do_not_redirect_the_setup(self):
+        self.branch_with_wip()
+        (self.wt / ".githooks").mkdir()
+        (self.wt / ".githooks" / "pre-commit").write_text("#!/bin/sh\n")
+        git(self.wt, "add", ".githooks")
+        git(self.wt, "commit", "-m", "hooks")
+        self.reviewed = git(self.wt, "rev-parse", "HEAD")
+        self.wip = self.commit("half an edit again\n",
+                               "WIP: implementer ended mid-edit")
+        self.sweep()
+
+        with patch.dict(os.environ, {"GIT_DIR": str(self.repo / ".git"),
+                                     "GIT_WORK_TREE": str(self.repo)}):
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        hooks_path = ["git", "config", "--worktree", "--get", "core.hooksPath"]
+        self.assertEqual(subprocess.run(
+            hooks_path, cwd=self.wt, capture_output=True, text=True
+        ).stdout.strip(), ".githooks")
+        self.assertEqual(subprocess.run(
+            hooks_path, cwd=self.repo, capture_output=True, text=True
+        ).stdout.strip(), "")
+
+    def test_a_setup_leaving_an_untracked_file_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.with_setup("echo generated > generated.txt")
+        self.sweep()
+
+        self.assertIn("generated.txt", self.refused("--note", "ok"))
+
+    def test_a_failed_setup_restores_the_worktree(self):
+        self.branch_with_wip()
+        self.with_setup("false")
+        self.sweep()
+
+        self.assertIn("worktree setup failed", self.refused("--note", "ok"))
+
+    def test_a_setup_moving_the_branch_off_the_reviewed_commit_refuses(self):
+        self.branch_with_wip()
+        self.with_setup("git -c user.name=s -c user.email=s@t commit -q"
+                        " --allow-empty -m setup")
+        self.sweep()
+
+        message = self.refused("--note", "ok")
+
+        found = re.search(rf"left refs/heads/{BRANCH} at ([0-9a-f]{{12}})",
+                          message)
+        self.assertIsNotNone(found, message)
+        self.assertEqual(git(self.repo, "log", "-1", "--format=%s",
+                             found[1]), "setup")
+        self.assertIn(f"not the reviewed commit {self.reviewed[:12]}",
+                      message)
+
+    def test_origin_holding_the_set_aside_commit_is_rewound(self):
+        self.branch_with_wip()
+        origin = self.root / "origin.git"
+        git(self.root, "init", "--bare", "-q", str(origin))
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "push", "-q", "origin", BRANCH)
+        self.sweep()
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(git(origin, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.reviewed)
+        self.assertEqual(_sync_branch_from_origin(
+            None, None, None, None, None, BRANCH, self.wt), self.reviewed)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
+
+    def test_an_origin_path_containing_a_space_is_rewound(self):
+        self.branch_with_wip()
+        origin = self.origin("an origin.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(origin))
+        self.sweep(pull=PULL)
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assert_released_at_reviewed()
+        self.assertEqual(git(origin, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.reviewed)
+
+    def test_the_rewind_publishes_no_tag_though_push_follows_tags(self):
+        self.branch_with_wip()
+        origin = self.origin("origin.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(origin))
+        git(self.repo, "config", "push.followTags", "true")
+        git(self.repo, "tag", "-a", "-m", "local", "local-only",
+            self.reviewed)
+        self.sweep(pull=PULL)
+
+        self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertEqual(git(origin, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.reviewed)
+        self.assertEqual(git(origin, "tag", "--list"), "")
+
+    def test_a_setup_deleting_the_branch_restores_it_and_the_worktree(self):
+        self.branch_with_wip()
+        self.with_setup(f"git checkout -q --detach && git branch -q -D {BRANCH}")
+        self.sweep()
+
+        self.assertIn(f"left refs/heads/{BRANCH} at nothing",
+                      self.refused("--note", "ok"))
+
+    def test_a_setup_committing_then_failing_restores_the_branch(self):
+        self.branch_with_wip()
+        self.with_setup("git -c user.name=s -c user.email=s@t commit -q"
+                        " --allow-empty -m setup && false")
+        self.sweep()
+
+        self.assertIn("worktree setup failed", self.refused("--note", "ok"))
+
+    def origin(self, name, sha):
+        bare = self.root / name
+        git(self.root, "init", "--bare", "-q", str(bare))
+        git(self.repo, "push", "-q", str(bare), f"{sha}:refs/heads/{BRANCH}")
+        return bare
+
+    def test_an_origin_fetched_from_elsewhere_than_the_push_refuses(self):
+        self.branch_with_wip()
+        fetched, pushed = (self.origin(name, self.wip)
+                           for name in ("fetch.git", "push.git"))
+        git(self.repo, "remote", "add", "origin", str(fetched))
+        git(self.repo, "remote", "set-url", "--push", "origin", str(pushed))
+        self.sweep(pull=PULL)
+
+        self.assertIn(f"still reads {self.wip[:12]} after the push",
+                      self.refused("--note", "ok"))
+        for bare in (fetched, pushed):
+            self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                             self.wip)
+
+    def http_remote(self, backend, drop_push=False):
+        """A loopback HTTP remote taking a token in the URL's query:
+        `git http-backend` over `backend`, which serves fetches and refuses
+        an anonymous push, or 403 for all. With `drop_push` it applies each
+        push and closes the connection before answering. Git traces to
+        stderr, so a leak through its trace shows too."""
+        server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 0), _GitHttp)
+        server.backend, server.drop_push = backend, drop_push
+        loopback = patch.dict(os.environ, {
+            "no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1", "GIT_TRACE": "1",
+            "GIT_TRACE_CURL": "1", "GIT_CURL_VERBOSE": "1"})
+        loopback.start()
+        self.addCleanup(loopback.stop)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"127.0.0.1:{server.server_address[1]}"
+
+    def test_a_refused_push_url_probe_prints_no_token(self):
+        self.branch_with_wip()
+        git(self.repo, "remote", "add", "origin",
+            str(self.origin("origin.git", self.wip)))
+        host = self.http_remote(None)
+        git(self.repo, "remote", "set-url", "--push", "origin",
+            f"http://{host}/repo.git?ref='main'&access_token=s3cret-token")
+        self.sweep(pull=PULL)
+
+        message = self.refused("--note", "ok")
+
+        self.assertIn("git ls-remote of origin's push URL failed", message)
+        self.assertNotIn("s3cret-token", message)
+
+    def test_a_rejected_rewind_push_prints_no_token(self):
+        self.branch_with_wip()
+        git(self.repo, "remote", "add", "origin",
+            str(self.origin("origin.git", self.wip)))
+        served = self.origin("served.git", self.wip)
+        host = self.http_remote(served.parent)
+        git(self.repo, "remote", "set-url", "--push", "origin",
+            f"http://{host}/served.git?ref='main'&access_token=s3cret-token")
+        self.sweep(pull=PULL)
+
+        message = self.refused("--note", "ok")
+
+        self.assertIn("git push origin failed", message)
+        self.assertNotIn("s3cret-token", message)
+        self.assertEqual(git(served, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_a_push_lost_after_it_landed_is_pushed_back(self):
+        self.branch_with_wip()
+        served = self.origin("served.git", self.wip)
+        host = self.http_remote(served.parent, drop_push=True)
+        git(self.repo, "remote", "add", "origin", f"http://{host}/served.git")
+        self.sweep(pull=PULL)
+
+        self.assertIn("git push origin failed", self.refused("--note", "ok"))
+        self.assertEqual(git(served, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_a_rewind_the_remote_moved_past_is_left_for_a_human(self):
+        self.branch_with_wip()
+        bare = self.origin("origin.git", self.wip)
+        later = self.moved_on_by_hook(bare)
+        git(self.repo, "remote", "add", "origin", str(bare))
+        self.sweep(pull=PULL)
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("undoing it stopped at git push origin",
+                      str(raised.exception))
+        self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                         later)
+        self.assertEqual(self.interventions(), [])
+
+    def moved_on_by_hook(self, bare):
+        later = git(self.repo, "commit-tree", f"{self.reviewed}^{{tree}}",
+                    "-p", self.reviewed, "-m", "pushed by another writer")
+        git(self.repo, "push", "-q", str(bare), f"{later}:refs/keep/later")
+        self.post_receive(bare, later)
+        return later
+
+    def post_receive(self, bare, sha):
+        hook = bare / "hooks" / "post-receive"
+        hook.write_text(f"#!/bin/sh\ngit update-ref refs/heads/{BRANCH}"
+                        f" {sha}\n")
+        hook.chmod(0o755)
+
+    def test_a_push_url_its_hook_moves_back_refuses(self):
+        self.branch_with_wip()
+        fetched = self.origin("fetch.git", self.reviewed)
+        pushed = self.origin("push.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(fetched))
+        git(self.repo, "remote", "set-url", "--push", "origin", str(pushed))
+        self.post_receive(pushed, self.wip)
+        self.sweep(pull=PULL)
+
+        self.assertIn("origin's push URL does not hold",
+                      self.refused("--note", "ok"))
+        self.assertEqual(git(pushed, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_a_lost_push_a_hook_moved_on_is_left_for_a_human(self):
+        self.branch_with_wip()
+        served = self.origin("served.git", self.wip)
+        self.moved_on_by_hook(served)
+        host = self.http_remote(served.parent, drop_push=True)
+        git(self.repo, "remote", "add", "origin", f"http://{host}/served.git")
+        self.sweep(pull=PULL)
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("undoing it stopped at git push origin",
+                      str(raised.exception))
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_pull_request_with_no_origin_to_rewind_refuses(self):
+        self.branch_with_wip()
+        renamed = self.origin("upstream.git", self.wip)
+        git(self.repo, "remote", "add", "upstream", str(renamed))
+        self.sweep(pull=PULL)
+
+        self.assertIn(f"no origin remote holds {BRANCH}, so {PULL}",
+                      self.refused("--note", "ok"))
+        self.assertEqual(git(renamed, "rev-parse", f"refs/heads/{BRANCH}"),
+                         self.wip)
+
+    def test_an_origin_pushing_to_two_urls_refuses_before_pushing(self):
+        self.branch_with_wip()
+        first, second = (self.origin(name, self.wip)
+                         for name in ("first.git", "second.git"))
+        git(self.repo, "remote", "add", "origin", str(first))
+        for bare in (first, second):
+            git(self.repo, "remote", "set-url", "--add", "--push", "origin",
+                str(bare))
+        git(self.root, "--git-dir", str(second), "config",
+            "receive.denyNonFastForwards", "true")
+        self.sweep(pull=PULL)
+
+        self.assertIn("origin pushes to 2 URLs", self.refused("--note", "ok"))
+        for bare in (first, second):
+            self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                             self.wip)
+
+    def test_a_tag_ending_in_the_branch_name_does_not_stand_in_for_it(self):
+        self.branch_with_wip()
+        bare = self.root / "origin.git"
+        git(self.root, "init", "--bare", "-q", str(bare))
+        git(self.repo, "push", "-q", str(bare),
+            f"{self.reviewed}:refs/tags/archive/refs/heads/{BRANCH}")
+        git(self.repo, "remote", "add", "origin", str(bare))
+        self.sweep(pull=PULL)
+
+        self.assertIn(f"origin's {BRANCH} is missing, so {PULL}",
+                      self.refused("--note", "ok"))
+
+    def test_an_origin_branch_deleted_after_the_push_refuses_naming_it(self):
+        self.branch_with_wip()
+        bare = self.origin("origin.git", self.wip)
+        git(self.repo, "remote", "add", "origin", str(bare))
+        hook = bare / "hooks" / "post-receive"
+        hook.write_text(f"#!/bin/sh\ngit update-ref -d refs/heads/{BRANCH}\n")
+        hook.chmod(0o755)
+        self.sweep(pull=PULL)
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn(f"origin's {BRANCH} is missing after the push",
+                      str(raised.exception))
+        self.assertEqual(subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet",
+             f"refs/heads/{BRANCH}"], cwd=bare).returncode, 1)
+        self.assertEqual(self.interventions(), [])
+
+    def test_an_origin_a_rewind_would_not_reach_refuses_unpushed(self):
+        """Behind R with a pull request open, or diverged from R though W
+        merges it, origin could reach R only by publishing new commits."""
+        self.branch_with_wip()
+        git(self.wt, "checkout", "-q", "-b", "side", self.earlier)
+        (self.wt / "side").write_text("a side commit\n")
+        git(self.wt, "add", "side")
+        git(self.wt, "commit", "-q", "-m", "diverged from R")
+        diverged = git(self.wt, "rev-parse", "HEAD")
+        git(self.wt, "checkout", "-q", BRANCH)
+        git(self.wt, "merge", "-q", "--no-edit", "side")
+        self.wip = git(self.wt, "rev-parse", "HEAD")
+        bare = self.origin("origin.git", self.earlier)
+        git(self.repo, "remote", "add", "origin", str(bare))
+        self.sweep(pull=PULL)
+
+        for remote, why in ((self.earlier, f"behind it, so {PULL}"),
+                            (diverged, "is neither the reviewed commit")):
+            git(self.repo, "push", "-q", "--force", "origin",
+                f"{remote}:refs/heads/{BRANCH}")
+            self.assertIn(why, self.refused("--note", "ok"))
+            self.assertEqual(git(bare, "rev-parse", f"refs/heads/{BRANCH}"),
+                             remote)
+
+    @unittest.skipIf(os.geteuid() == 0, "root ignores file modes")
+    def test_an_undo_that_cannot_remove_the_fresh_worktree_stops(self):
+        self.branch_with_wip()
+        self.with_setup("mkdir -p cache/pkg && touch cache/pkg/f && chmod 555 cache/pkg"
+                        " && false")
+        self.sweep()
+        self.addCleanup(lambda: (self.wt / "cache" / "pkg").exists()
+                        and (self.wt / "cache" / "pkg").chmod(0o755))
+
+        with self.assertRaises(SystemExit) as raised:
+            self.cli("--approve", "KO-1", "--note", "ok")
+
+        self.assertIn("undoing it stopped at git worktree remove",
+                      str(raised.exception))
+        self.assertEqual(git(self.aside(), "rev-parse", "HEAD"), self.wip)
+        self.assertEqual(self.ref(f"refs/heads/{BRANCH}"), self.reviewed)
+        self.assertEqual(self.interventions(), [])
+
+    def test_a_run_failed_on_verify_is_refused_as_before(self):
+        self.branch_with_wip()
+        self.sweep(reason="verify failed: exit 1", kind="verify")
+
+        self.assertIn("KO-1 is in_flight, not blocked_on_operator",
+                      self.refused("--note", "ok"))
+
+    def test_a_stale_lock_on_the_dropped_ref_refuses_and_a_retry_approves(self):
+        self.branch_with_wip()
+        self.sweep()
+        lock = self.repo / ".git" / "refs" / "holophyte" / "dropped" / (
+            f"{self.run}.lock")
+        lock.parent.mkdir(parents=True)
+        lock.write_text("")
+
+        self.assertIn(f"git update-ref refs/holophyte/dropped/{self.run} failed",
+                      self.refused("--note", "ok"))
+
+        lock.unlink()
+        self.cli("--approve", "KO-1", "--note", "ok")
+        self.assert_released_at_reviewed()
+
+    def test_a_ticket_renamed_since_the_run_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        self.conn.execute("UPDATE tickets SET title = 'a renamed ticket'"
+                          " WHERE id = ?", (self.ticket,))
+        self.conn.commit()
+
+        self.assertIn("the next claim resumes task/ko-1-a-renamed-ticket",
+                      self.refused("--note", "ok"))
+
+    def test_a_ticket_in_the_backlog_column_is_refused(self):
+        self.branch_with_wip()
+        self.sweep()
+        self.conn.execute("UPDATE tickets SET boardState = 'Icebox',"
+                          " boardColumn = 'backlog' WHERE id = ?",
+                          (self.ticket,))
+        self.conn.commit()
+
+        self.assertIn("not blocked_on_operator", self.refused("--note", "ok"))
+
+
+MET_BUT_CHANGES = Reply(
+    "Blocker: the scripted change is incomplete.\n"
+    "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+    "VERDICT: REQUEST_CHANGES")
+
+
+class _GitHttp(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        self.serve(b"")
+
+    def do_POST(self):
+        self.serve(self.rfile.read(int(self.headers["Content-Length"] or 0)))
+
+    def serve(self, body):
+        if self.server.backend is None:
+            self.send_error(403)
+            return
+        path, _, query = self.path.partition("?")
+        token, _, rest = query.partition("/")
+        if rest:
+            path, _, query = f"{path}/{rest}".replace("&", "?", 1
+                                                      ).partition("?")
+        cgi = subprocess.run(
+            ["git", "http-backend"], input=body, capture_output=True,
+            env={"PATH": os.environ["PATH"], "GIT_HTTP_EXPORT_ALL": "1",
+                 "GIT_PROJECT_ROOT": str(self.server.backend),
+                 "PATH_INFO": path, "QUERY_STRING": query,
+                 "REQUEST_METHOD": self.command,
+                 "CONTENT_TYPE": self.headers["Content-Type"] or "",
+                 "CONTENT_LENGTH": str(len(body)),
+                 **({"REMOTE_USER": "bot"} if self.server.drop_push else {})})
+        if self.server.drop_push and path.endswith("/git-receive-pack"):
+            self.close_connection = True
+            return
+        head, _, payload = cgi.stdout.partition(b"\r\n\r\n")
+        headers = [line.split(":", 1) for line in head.decode().splitlines()]
+        status = dict((k.lower(), v.strip()) for k, v in headers).get(
+            "status", "200")
+        self.send_response(int(status.split()[0]))
+        for key, value in headers:
+            if key.lower() != "status":
+                self.send_header(key, value.strip())
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+class SweptApproveLoopTests(LoopFixture):
+    """The real loop reviews a candidate, the supervisor's sweep fails the
+    run while its fix turn commits WIP, and after approve the next claim
+    takes the reviewed candidate through the merge gate."""
+
+    def sweep_during_the_fix_turn(self):
+        db = self.db
+
+        class SweptFix(Commit):
+            def play(self, cwd, turn):
+                conn = store.open(str(db))
+                try:
+                    (run_id,) = conn.execute("SELECT id FROM runs").fetchone()
+                    store.release(
+                        conn, run_id, "failed",
+                        STUCK.replace("phase reviewing", "phase addressing"),
+                        failure_kind="swept")
+                finally:
+                    conn.close()
+                return super().play(cwd, turn)
+
+        self.loop(Commit("the reviewed work"), MET_BUT_CHANGES,
+                  SweptFix("WIP: implementer ended mid-edit"))
+
+    def test_the_next_claim_merges_the_reviewed_commit_without_the_wip(self):
+        self.sweep_during_the_fix_turn()
+        reviewed = self.git("rev-parse", f"{LOOP_BRANCH}~1").strip()
+        wip = self.git("rev-parse", LOOP_BRANCH).strip()
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "swept")])
+        out = io.StringIO()
+        holophyte.cli.operator.approve(self.project, "KO-131", "non-blocking",
+                                       out=out)
+        self.assertIn(f"approved at {reviewed}", out.getvalue())
+
+        fake, _ = self.loop(provider=StubProvider(a_task()))
+
+        self.assertEqual(fake.roles, [])
+        self.assertIn("the reviewed work", self.subjects())
+        self.assertNotIn("WIP: implementer ended mid-edit", self.subjects())
+        self.assertEqual(
+            self.git("rev-parse", "refs/holophyte/dropped/1").strip(), wip)
+        self.assertEqual(
+            self.read("SELECT id, outcome FROM runs ORDER BY id"),
+            [(1, "failed"), (2, "merged")])
+        self.assertEqual(self.read("SELECT status FROM tickets"),
+                         [("merged",)])
 
 
 if __name__ == "__main__":

@@ -466,6 +466,11 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
             "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
             "If REQUEST_CHANGES, list only concrete blockers.", wt,
             base_sha, sha, conn, run_id, run_agent=agent)
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "reviewed_commit",
+                           f"review round {rnd} judged {sha[:12]}",
+                           level="detail",
+                           payload=json.dumps({"round": rnd, "sha": sha}))
     record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out, started_at=round_started, criteria=criteria,
                  root=wt, prior_reply=first_reply,
