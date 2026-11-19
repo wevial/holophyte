@@ -23,6 +23,7 @@ from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.config.serve_settings import console_colour, serve_config
 from holophyte.host.supervisor import SWEEPABLE_PHASES
 from holophyte.pr.pr_status import PR_URL_RE, THREADS_PAGE
+from holophyte.revert.settings import revert_config
 from holophyte.review.criterion_ids import with_numbers
 from holophyte.scout.brief import scout_title
 from holophyte.serve.serve_levers import paused_item
@@ -53,11 +54,9 @@ def saved_colour(project):
 
 def saved_reverts(project):
     try:
-        table = dataclasses.replace(project, _config=None).config().get(
-            "revert", {})
+        return revert_config(dataclasses.replace(project, _config=None)).enabled
     except SystemExit:
         return False
-    return isinstance(table, dict) and table.get("enabled") is True
 
 
 def status(project, now=None, started_ms=None, beat_stale_ms=None):

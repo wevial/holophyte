@@ -128,8 +128,9 @@ class RevertedResponseTests(ConfigTestCase):
         self.project_with(cli_revert.ENABLED, {"src/header.py": "broken\n"})
         port = self.serve(self.target)
         self.assertIs(self.get(port, "/status")["reverts"], True)
-        for config in (cli_revert.NATIVE, cli_revert.NATIVE
-                       + '[revert]\nenabled = false\nrefuse_paths = [""]\n'):
+        for config in (cli_revert.NATIVE, *(
+                cli_revert.NATIVE + f'[revert]\nenabled = {enabled}\n'
+                'refuse_paths = [""]\n' for enabled in ("false", "true"))):
             with self.subTest(config=config):
                 self.project.config_path.write_text(config)
                 self.assertIs(self.get(port, "/status")["reverts"], False)

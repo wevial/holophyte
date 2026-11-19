@@ -183,8 +183,9 @@ console draws its action buttons disabled while it is `false`.
 and `PUT /config`; the console's settings sheet is read-only, naming the
 key, while it is `false`. `reverts` is whether the project's `[revert]
 enabled` is true, false when it has no `[revert]` table, read from the file
-on each request as `colour` is; its other `[revert]` keys are not checked
-here; an older daemon leaves it out. `colour` is the project's `[console] colour`
+on each request as `colour` is, and false while the table is one `POST
+/actions/revert` would refuse (an invalid `refuse_paths`, say); an older
+daemon leaves it out. `colour` is the project's `[console] colour`
 (`auto`, `violet`, `teal`, `green` or `blue`), `auto` when unset, read
 from the file on each request so a saved colour shows on the next poll;
 an older daemon leaves it out. `route_labels` names what each seat is configured
