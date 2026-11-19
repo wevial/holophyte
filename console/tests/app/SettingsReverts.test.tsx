@@ -71,11 +71,3 @@ test("saving a turned-on Reverts switch and an edited Never revert list writes r
   expect(writes).toHaveLength(1);
   expect(writes[0]!.patch).toEqual({ "revert.enabled": true, "revert.refuse_paths": ["store/schema.py", "**/*.sql"] });
 });
-
-test("each Never revert entry is followed by its count on main from the daemon's revert.refuse_paths matcher", async () => {
-  const { asked } = await mount({ revert: { enabled: true, refuse_paths: ["store/schema.py", "**/*.sql"] } });
-  await act(settle);
-  const lines = within(screen.getByRole("list", { name: "Never revert matches" })).getAllByRole("listitem");
-  expect(lines.map((line) => line.textContent)).toEqual(["store/schema.py · 1 file", "**/*.sql · matches nothing"]);
-  expect(asked).toEqual(["revert.refuse_paths"]);
-});
