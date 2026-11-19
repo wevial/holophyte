@@ -23,6 +23,8 @@ const range = (key: string, label: string, min: number, max: number, step: numbe
 const palette = (names: string[], key = "palette"): ChoiceKnob =>
   ({ kind: "choice", key, label: "Palette", choices: [THEME, ...names], initial: THEME });
 
+const named = (palettes: object): string[] => Object.keys(palettes).filter((name) => !name.includes(":"));
+
 const seed = (initial: number) => range("seed", "Seed", 0, 100, 1, initial);
 
 export const HAZE_TUNING = { ...haze.DEFAULTS, warp: 0.4, grain: 0.05, speed: 0.8 };
@@ -31,7 +33,7 @@ const PLUME_CURRENTS = 1;
 
 export const KNOBS: Record<BandEffect, readonly Knob[]> = {
   haze: [
-    palette([...Object.keys(haze.PALETTES), "rainbow"]),
+    palette([...named(haze.PALETTES), "rainbow"]),
     range("scale", "Size", 0.3, 3, 0.05, HAZE_TUNING.scale),
     range("warp", "Smokiness", 0, 1.5, 0.05, HAZE_TUNING.warp),
     range("speed", "Speed", 0, 5, 0.05, HAZE_TUNING.speed),
@@ -39,7 +41,7 @@ export const KNOBS: Record<BandEffect, readonly Knob[]> = {
     seed(HAZE_TUNING.seed),
   ],
   caustics: [
-    palette(Object.keys(caustics.PALETTES)),
+    palette(named(caustics.PALETTES)),
     range("depth", "Depth", 0.1, 1.2, 0.01, caustics.DEFAULTS.depth),
     range("scale", "Size", 0.3, 3, 0.05, caustics.DEFAULTS.scale),
     range("speed", "Speed", 0, 2, 0.01, caustics.DEFAULTS.speed),
@@ -48,12 +50,12 @@ export const KNOBS: Record<BandEffect, readonly Knob[]> = {
     seed(caustics.DEFAULTS.seed),
   ],
   plume: [
-    palette(Object.keys(plume.PAINTS), "paint"),
+    palette(named(plume.PAINTS), "paint"),
     range("currents", "Currents", 0, 4, 0.05, PLUME_CURRENTS),
     range("speed", "Speed", 0, 5, 0.05, NEBULA.speed),
   ],
   ribbons: [
-    palette(Object.keys(ribbons.PALETTES)),
+    palette(named(ribbons.PALETTES)),
     range("count", "Count", 1, 6, 1, ribbons.DEFAULTS.count),
     range("amplitude", "Amplitude", 0, 0.8, 0.01, ribbons.DEFAULTS.amplitude),
     { kind: "choice", key: "placement", label: "Placement", choices: ["center", "full", "fill"], initial: ribbons.DEFAULTS.placement },
@@ -62,7 +64,7 @@ export const KNOBS: Record<BandEffect, readonly Knob[]> = {
     seed(ribbons.DEFAULTS.seed),
   ],
   lava: [
-    palette(["rainbow", "thermal", ...Object.keys(lava.PALETTES)]),
+    palette(["rainbow", "thermal", ...named(lava.PALETTES)]),
     range("amount", "Wax", 0.05, 0.35, 0.01, lava.DEFAULTS.amount),
     range("heat", "Heat", 0, 3, 0.05, lava.DEFAULTS.heat),
     range("speed", "Speed", 0, 5, 0.05, lava.DEFAULTS.speed),
@@ -70,7 +72,7 @@ export const KNOBS: Record<BandEffect, readonly Knob[]> = {
     seed(lava.DEFAULTS.seed),
   ],
   hyphae: [
-    palette(Object.keys(hyphae.PALETTES)),
+    palette(named(hyphae.PALETTES)),
     range("food", "Patches", 1, 8, 1, hyphae.DEFAULTS.food),
     range("appetite", "Appetite", 0, 3, 0.05, hyphae.DEFAULTS.appetite),
     range("speed", "Speed", 0, 4, 0.05, hyphae.DEFAULTS.speed),
