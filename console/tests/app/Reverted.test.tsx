@@ -104,6 +104,12 @@ test("on Tickets a reverted ticket's row reads reverted · Backlog beside the un
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["backlog"]);
 });
 
+test("on Tickets a reverted Backlog ticket whose /shipped merge lacks the revert lists only its Backlog row", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon("backlog", [merged(7, "DEMO-7", ENDED)]));
+  expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["backlog"]);
+});
+
 test("on Tickets a reverted merge whose ticket is off the board lists no row, as for a ticket cancelled after its revert", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null));

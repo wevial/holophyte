@@ -295,13 +295,15 @@ export function useTicketBoard(): TicketBoard {
       cards.push(card);
     }
   }
+  const undone = new Set(cards.filter((card) => card.reverted != null).map((card) => card.id));
   const latest = new Map<string, (typeof merged)[number]>();
   for (const row of merged) {
     const key = cardId(row.daemon ?? "", row.ticket);
     if (!latest.has(key)) latest.set(key, row);
   }
   for (const row of merged) {
-    if (row.reverted != null || latest.get(cardId(row.daemon ?? "", row.ticket))?.reverted != null) continue;
+    const key = cardId(row.daemon ?? "", row.ticket);
+    if (row.reverted != null || undone.has(key) || latest.get(key)?.reverted != null) continue;
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
       park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,
