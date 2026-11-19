@@ -45,6 +45,7 @@ copy:
   adds its `haze-fallback` class itself rather than through the stage's
   `fallback` option.
 - Transparent Haze keeps its palette's base in the blend and takes its alpha
-  from the smoke's coverage, with the base taken out of the color: its lit
-  smoke keeps the opaque frame's colors on a page of that base, and unlit
-  pixels, grain and vignette included, let any page through.
+  from the smoke's coverage, raised where grain lights a pixel above the
+  base, with the base taken out of the color: its lit smoke and grain keep
+  the opaque frame's colors on a page of that base, and pixels at or below
+  the base, vignette included, let any page through.
