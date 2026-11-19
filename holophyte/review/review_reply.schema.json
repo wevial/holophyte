@@ -1,7 +1,8 @@
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["verdict", "criteria", "findings", "follow_ups", "scope"],
+  "required": ["verdict", "criteria", "findings", "follow_ups", "scope",
+               "refuted"],
   "properties": {
     "verdict": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES"]},
     "criteria": {
@@ -61,6 +62,18 @@
         "properties": {
           "path": {"type": "string"},
           "status": {"type": "string", "enum": ["needed", "tangent"]},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "refuted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding", "reason"],
+        "properties": {
+          "finding": {"type": "string"},
           "reason": {"type": "string"}
         }
       }

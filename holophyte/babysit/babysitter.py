@@ -471,7 +471,7 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
                           "your reply with exactly one line:\nVERDICT: APPROVE"
                           "  or  VERDICT: REQUEST_CHANGES\nIf REQUEST_CHANGES, "
                           "list only concrete blockers."), wt,
-            base_sha, sha, conn, run_id, run_agent=agent)
+            base_sha, sha, conn, run_id, run_agent=agent, reply_round=rnd)
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "reviewed_commit",
                            f"review round {rnd} judged {sha[:12]}",

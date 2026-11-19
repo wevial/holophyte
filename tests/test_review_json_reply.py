@@ -15,7 +15,10 @@ sys.path.insert(0, str(ROOT))
 import store  # noqa: E402
 from holophyte.agents.agent_output import AgentOutput  # noqa: E402
 from holophyte.agents.harness import ADAPTERS, Seat  # noqa: E402
-from holophyte.babysit.description_review import without_description  # noqa: E402
+from holophyte.babysit.description_review import (  # noqa: E402
+    description_findings,
+    without_description,
+)
 from holophyte.review.json_reply import read_reply  # noqa: E402
 from holophyte.review.reply_parsing import (  # noqa: E402
     FINDING_CATEGORIES,
@@ -48,6 +51,7 @@ REPLY = {
          "path": "tests/test_app.py", "line": 40},
     ],
     "scope": [],
+    "refuted": [],
 }
 
 CODEX_TRANSCRIPT = ("session id: 0199\n--------\nuser\nReview the candidate.\n"
@@ -144,6 +148,37 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertEqual([finding["path"] for finding in parse_findings(kept)],
                          ["src/app.py"])
 
+    def test_a_linked_citation_in_a_message_keeps_the_finding_location(self):
+        finding = dict(REPLY["findings"][0], message=(
+            "see [the regression test](tests/test_app.py:40)"))
+        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+        [parsed] = parse_findings(text)
+        self.assertEqual((parsed["path"], parsed["line"]), ("src/app.py", 12))
+        self.assertIn("tests/test_app.py:40", parsed["message"])
+
+    def test_a_lone_finding_parses_as_its_markdown_twin_does(self):
+        reply = dict(REPLY, criteria=[], follow_ups=[],
+                     findings=[REPLY["findings"][0]])
+        text, _ = read_reply(json.dumps(reply))
+        twin = ("- src/app.py:12 [p1] [correctness] load() indexes the first"
+                " row of an empty list.\n\nVERDICT: REQUEST_CHANGES")
+        self.assertEqual(parse_findings(text), parse_findings(twin))
+
+    def test_refuted_findings_are_kept_as_notes_not_blockers(self):
+        refuted = [{"finding": "src/app.py:30 leaks a handle",
+                    "reason": "the with block closes it"}]
+        text, _ = read_reply(json.dumps(dict(REPLY, refuted=refuted)))
+        self.assertIn("the with block closes it", text)
+        self.assertEqual([finding["path"] for finding in parse_findings(text)],
+                         [finding["path"] for finding in parse_findings(self.text)])
+
+    def test_a_follow_up_does_not_hide_a_description_only_blocker(self):
+        reply = dict(REPLY, findings=[REPLY["findings"][1]])
+        text, _ = read_reply(json.dumps(reply))
+        self.assertEqual(description_findings(text, "REQUEST_CHANGES", []),
+                         ['- path: "PR description" [p2] The summary promises'
+                          ' a retry the diff does not add.'])
+
     def test_criteria_follow_ups_and_verdict_read_from_the_rendering(self):
         self.assertEqual([(match["n"], match["status"])
                           for match in criterion_accounts(self.text)],
@@ -209,6 +244,15 @@ class ReplyFormatTests(unittest.TestCase):
                 self.assertEqual(decision, "REQUEST_CHANGES")
                 self.assertEqual(self.formats()[-1],
                                  {"format": "json", "round": 2})
+
+    def test_a_quoted_json_example_does_not_override_a_markdown_verdict(self):
+        example = json.dumps(dict(REPLY, verdict="APPROVE", findings=[],
+                                  criteria=[]))
+        answer = ("- src/app.py:3 [p1] [correctness] the brief's example reads"
+                  f"\n\n```json\n{example}\n```\n\nVERDICT: REQUEST_CHANGES")
+        reply, decision, _ = self.review(answer)
+        self.assertEqual((reply, decision), (answer, "REQUEST_CHANGES"))
+        self.assertEqual(self.formats(), [{"format": "markdown", "round": 2}])
 
     def test_json_off_the_schema_is_left_to_the_line_parser(self):
         for broken in (dict(REPLY, verdict="LGTM"),

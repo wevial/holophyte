@@ -13,3 +13,6 @@ holo = "holophyte.holo.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["holophyte*", "store*"]
+
+[tool.setuptools.package-data]
+"holophyte.review" = ["*.schema.json"]

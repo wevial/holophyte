@@ -765,7 +765,7 @@ def _scope_findings(reply, scope):
 
 
 def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
-                  run_agent=None, review_round=None):
+                  run_agent=None, review_round=None, reply_round=None):
     from holophyte.agents.roles import agent
     from holophyte.board.projection import comment_body
     from holophyte.review.json_reply import read_reply, record_format
@@ -791,7 +791,8 @@ def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
                        "Your reply must end with exactly one line, "
                        "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, "
                        "and nothing after it.")
-    record_format(conn, run_id, reply_format, review_round)
+    record_format(conn, run_id, reply_format,
+                  review_round if reply_round is None else reply_round)
     return reply, decision, first_reply
 
 

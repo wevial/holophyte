@@ -3,10 +3,15 @@ import re
 from pathlib import Path
 
 from holophyte.agents.agent_output import AgentOutput
+from holophyte.review.briefs import REFUTED_CLOSE, REFUTED_OPEN
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
 
 TARGET_FIELD = "target"
+
+TOKEN_COUNT_TAIL_RE = re.compile(r"\s*(?:tokens used\s+[\d,]+\s*)?")
+
+MD_LINK_RE = re.compile(r"\[([^\]\n]*)\]\(([^)\s]+)\)")
 
 TYPES = {"object": dict, "array": list, "string": str, "integer": int,
          "null": type(None)}
@@ -28,9 +33,11 @@ REPLY_BRIEF = (
     "and line it concerns, or null.\n"
     "- scope: one entry per changed file the ticket does not name, with "
     "path, status (needed or tangent) and reason; empty when none is listed.\n"
+    "- refuted: each finding a verification refuted, with finding and the "
+    "reason it did not hold; empty when none was.\n"
     "Where these instructions ask for a CRITERION, SCOPE, FOLLOW_UP or "
-    "VERDICT line, give it as that field instead. With REQUEST_CHANGES, list "
-    "only concrete blockers in findings; a refuted finding is left out.")
+    "VERDICT line or a refuted-findings section, give it as that field "
+    "instead. With REQUEST_CHANGES, list only concrete blockers in findings.")
 
 
 def reply_brief(project, line_format, schema_tail=""):
@@ -72,14 +79,15 @@ def reply_object(reply):
             starts.append(offset + indent)
         offset += len(line)
     decoder = json.JSONDecoder()
-    schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
     for start in reversed(starts):
         try:
-            value = decoder.raw_decode(reply, start)[0]
+            value, end = decoder.raw_decode(reply, start)
         except ValueError:
             continue
-        if valid(value, schema):
-            return value
+        if TOKEN_COUNT_TAIL_RE.fullmatch(reply, end) is None:
+            continue
+        schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
+        return value if valid(value, schema) else None
     return None
 
 
@@ -87,12 +95,16 @@ def one_line(text):
     return " ".join((text or "").split())
 
 
+def message_line(text):
+    return MD_LINK_RE.sub(r"\1 (\2)", one_line(text))
+
+
 def place(path, line):
     return f"{path}:{line}" if path and line is not None and line > 0 else path
 
 
 def finding_line(finding):
-    severity, message = finding["severity"], one_line(finding["message"])
+    severity, message = finding["severity"], message_line(finding["message"])
     if finding[TARGET_FIELD] == "description":
         return f'- path: "PR description" [{severity}] {message}'
     where = place(one_line(finding["path"]), finding["line"])
@@ -121,10 +133,20 @@ def scope_line(entry):
             f"{one_line(entry['reason'])}")
 
 
+def refuted_lines(refuted):
+    if not refuted:
+        return []
+    notes = [f"- {message_line(entry['finding'])} \u2014 "
+             f"{one_line(entry['reason'])}" for entry in refuted]
+    return [REFUTED_OPEN, *notes, REFUTED_CLOSE]
+
+
 def rendered(value):
-    lines = [*map(finding_line, value["findings"]),
+    findings = [*map(finding_line, value["findings"])]
+    lines = [*findings, *([""] if findings else []),
              *map(follow_up_line, value["follow_ups"]),
              *map(scope_line, value["scope"]),
+             *refuted_lines(value["refuted"]),
              *map(criterion_line, value["criteria"]),
              f"VERDICT: {value['verdict']}"]
     return "\n".join(lines)
