@@ -31,7 +31,9 @@ function Refusal({ lines, className }: { lines: string[] | null; className: stri
  *  page read: the ticket's current one, else its board card's. Edit is a
  *  link to the Edit page, or, given `onEditRaw`, a button that opens the
  *  raw editor at that revision, disabled while `editOpen`. Given `menu`, it
- *  draws `menu` with the same moves as menu items in place of the buttons. */
+ *  draws `menu` with the same moves as menu items in place of the buttons.
+ *  Every instance for one ticket disables its moves while any of them has
+ *  a write in flight, so the buttons and the menu post a move once. */
 export function TicketMoves({ project, ticketKey, ticket, host, liveRun, onEditRaw, editOpen, menu }: {
   project: string; ticketKey: string; ticket: TicketDetail; host: HostRecord<ContractBodies>; liveRun: number | null;
   onEditRaw?: (revision: number) => void; editOpen: boolean; menu?: (items: MenuItem[]) => ReactNode;
