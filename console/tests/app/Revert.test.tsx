@@ -6,7 +6,7 @@ import { writeView } from "../../src/app/components/ViewToggle";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
 import { fakeDeps, settle } from "../harness";
-import { DEMO, fleet, merged, MINUTE, NOW, SERVE } from "./needsFleet";
+import { blocked, DEMO, fleet, merged, MINUTE, NOW, SERVE } from "./needsFleet";
 
 const servedRun = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
@@ -45,18 +45,19 @@ interface Served {
 
 /** DEMO serves `served` (by default merged run 9 of DEMO-9, shipped today,
  *  and an empty board), read afresh on every request, its status reporting
- *  `reverts`; each `POST /actions/revert` is kept and answered by `revert`,
- *  and each ticket read is kept by key. */
+ *  `reverts`, with `needs` its Needs you entries; each `POST /actions/revert`
+ *  is kept and answered by `revert`, and each ticket read is kept by key. */
 function daemon(
   reverts: boolean,
   revert: (body: Record<string, unknown>) => Response | Promise<Response> = () => new Response(null, { status: 500 }),
   served: Partial<Served> = {},
   shipped = [merged(9, "DEMO-9", ENDED)],
+  needs: (typeof blocked)[] = [],
 ) {
   const posted: Posted[] = [];
   const ticketReads: string[] = [];
   const state: Served = { runs: { 9: runNine }, tickets: { "DEMO-9": ticketNine }, board: emptyBoard, ...served };
-  const polls = fleet({ items: [], shipped }, { items: [] });
+  const polls = fleet({ items: needs, shipped }, { items: [] });
   const fetchImpl = async (url: string, init?: RequestInit) => {
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -213,20 +214,31 @@ test("a Done row reads its ticket only once its menu opens: a reverted one disab
   expect(await doneMenu(retried)).toBeNull();
 });
 
-test("a Backlog row whose latest run merged and was reverted ends its menu with Revert… disabled, naming the revert ticket", async () => {
+test("a Backlog row and a Needs you row whose latest run merged and was reverted end their menu with Revert… disabled, naming the revert ticket", async () => {
   const reverted = { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" };
   const card = { ...servedBoard.columns.find((column) => column.tickets.length > 0)!.tickets[0]!, ticket: "DEMO-9", title: "Page the ledger", run: null, reverted };
   const board: Board = { ...emptyBoard, columns: [...emptyBoard.columns, { ...emptyBoard.columns[0]!, state: "backlog", tickets: [card] }] };
-  writeView("table");
-  const fake = daemon(true, undefined, { board, tickets: { "DEMO-9": { ...ticketNine, status: "backlog", reverted } } }, []);
-  await mount("#/tickets", fake.fetchImpl);
-  expect(document.querySelector("[data-row]")?.getAttribute("data-column")).toBe("backlog");
-  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
-  for (let round = 0; round < 4; round += 1) await act(settle);
-  const items = within(screen.getByRole("menu", { name: "More for DEMO-9" })).getAllByRole("menuitem");
-  expect(items.map((item) => item.textContent)).toEqual(["Open ticket", "Copy link", "Revert…"]);
-  expect(items.at(-1)!.getAttribute("aria-disabled")).toBe("true");
-  expect(document.getElementById(items.at(-1)!.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
+  for (const [column, needs] of [["backlog", []], ["needs_you", [{ ...blocked, ticket: "DEMO-9", run: 9 }]]] as const) {
+    writeView("table");
+    const fake = daemon(true, undefined, { board, tickets: { "DEMO-9": { ...ticketNine, status: "backlog", reverted } } }, [], [...needs]);
+    await mount("#/tickets", fake.fetchImpl);
+    expect(document.querySelector("[data-row]")?.getAttribute("data-column")).toBe(column);
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
+    for (let round = 0; round < 4; round += 1) await act(settle);
+    const items = within(screen.getByRole("menu", { name: "More for DEMO-9" })).getAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual(["Open ticket", "Copy link", "Revert…"]);
+    expect(items.at(-1)!.getAttribute("aria-disabled")).toBe("true");
+    expect(document.getElementById(items.at(-1)!.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
+    cleanup();
+  }
+});
+
+test("Open ticket from a project-scoped Run page keeps the project scope", async () => {
+  await mount("#/runs/demo/9?project=demo", daemon(true).fetchImpl);
+  await openMenu("More for run 9");
+  await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Open ticket" })));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/tickets/demo/DEMO-9?project=demo");
 });
 
 test("Esc still returns focus to ⋯ after the focused Revert… leaves a Done row's menu once its ticket shows a newer unmerged attempt", async () => {

@@ -6,7 +6,7 @@ import { shortSha } from "../../lib/shipped";
 import { previewRevert, useRevert, type RevertAnswer } from "../actions";
 import { fetchRoute, ticketQuery } from "../queries";
 import { runPage } from "../run";
-import { PollDepsContext } from "../scope";
+import { keepScope, PollDepsContext } from "../scope";
 import { ConfirmDialog } from "./ConfirmDialog";
 import type { MenuItem } from "./MoreMenu";
 import { useToast } from "./Toast";
@@ -50,7 +50,7 @@ function copyBySelection(text: string): boolean {
 }
 
 const routeOf = (place: Place) =>
-  "run" in place ? runPage(place.project, place.run) : ({ to: "/tickets/$project/$key", params: { project: place.project, key: place.ticket } } as const);
+  "run" in place ? runPage(place.project, place.run) : ({ to: "/tickets/$project/$key", params: { project: place.project, key: place.ticket }, search: keepScope } as const);
 
 /** Open ticket or Open run for `open` when given, then Copy link to `copy`. */
 export function usePlaceItems(copy: Place, open?: Place): MenuItem[] {

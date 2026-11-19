@@ -65,8 +65,8 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
   );
 }
 
-/** The ⋯ menu of a row that may hold a merge, where its project reports
- *  `reverts`: its ticket is read while the menu is open. A Done row holds
+/** A row's ⋯ menu where its project reports `reverts`: its ticket is read
+ *  while the menu is open, whatever column the row sits in. A Done row holds
  *  Revert… disabled until then; another row offers it once the read finds
  *  its newest run merged. A reverted ticket's Revert… is disabled naming
  *  the revert ticket; a ticket whose newest run did not merge offers none. */
@@ -94,16 +94,14 @@ function RowMenuFrame({ card, items, layer, onOpenChange }: { card: TicketCard; 
   );
 }
 
-const MAY_HOLD_MERGE: ReadonlySet<ColumnId> = new Set(["done", "backlog", "ready"]);
-
-/** A row's ⋯ menu: Open ticket, Copy link, and on a row that may hold a
- *  merge in a project that reports `reverts`, Revert…; a filed revert's
+/** A row's ⋯ menu: Open ticket, Copy link, and in a project that reports
+ *  `reverts`, Revert… once its ticket's newest run merged; a filed revert's
  *  status line reads under the row. */
 function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
   const status = useConsolePeers().hosts.find((each) => each.base === card.base)?.status;
   const place = { project: card.project, ticket: card.key };
   const items = usePlaceItems(place, place);
-  if (MAY_HOLD_MERGE.has(column) && status?.reverts === true) {
+  if (status?.reverts === true) {
     return <MergedRowMenu card={card} column={column} actions={status.actions === true} items={items} />;
   }
   return <RowMenuFrame card={card} items={items} />;
