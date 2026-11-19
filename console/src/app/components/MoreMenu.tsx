@@ -119,7 +119,7 @@ export function MoreMenu({ label, items, className = "" }: { label: string; item
           {items.map((item) => {
             const noteId = `${id}-${item.label}`;
             return (
-              <div key={item.label}>
+              <div key={item.label} role="none">
                 {item.divided && <div role="separator" className="mx-1 my-1 h-px bg-hair-2" />}
                 <button
                   type="button"
@@ -135,7 +135,7 @@ export function MoreMenu({ label, items, className = "" }: { label: string; item
                   {item.label}
                 </button>
                 {item.note != null && (
-                  <p id={noteId} className="m-0 px-2.5 pb-1.5 font-sans text-[12px] leading-[1.3] text-ink-3">
+                  <p id={noteId} aria-hidden="true" className="m-0 px-2.5 pb-1.5 font-sans text-[12px] leading-[1.3] text-ink-3">
                     {item.note}
                   </p>
                 )}

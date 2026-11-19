@@ -82,7 +82,7 @@ function Verdict({ sentence, run, merged }: { sentence: string; run: RunDetail["
 function RunMenu({ page, project }: { page: Extract<RunPageFacts, { kind: "run" }>; project: string }) {
   const { run } = page.detail;
   const revertable = run.outcome === "merged" && page.host.status?.reverts === true;
-  const revert = useRevertFlow(revertable ? { base: page.host.base, project, ticket: run.ticket, run: run.id, sha: run.merge_sha, reverted: run.reverted } : null);
+  const revert = useRevertFlow(revertable ? { base: page.host.base, project, ticket: run.ticket, run: run.id, sha: run.merge_sha, reverted: run.reverted, off: page.actions ? null : ACTIONS_OFF_LINE } : null);
   const items = usePlaceItems({ project, run: run.id }, { project, ticket: run.ticket });
   return (
     <div className="flex flex-col items-end gap-2">

@@ -10,6 +10,7 @@ import { keepScope, useConsolePeers } from "../scope";
 import type { State } from "../state";
 import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
+import { ACTIONS_OFF } from "../../lib/actions";
 import { MoreMenu, ROW_MENU } from "./MoreMenu";
 import { usePlaceItems, useRevertFlow } from "./Revert";
 
@@ -95,7 +96,7 @@ function LoopGlyph() {
 function useRunRowMenu(row: RunRow) {
   const status = useConsolePeers().hosts.find((host) => host.base === row.base)?.status;
   const revertable = row.state === "merged" && status?.reverts === true;
-  const revert = useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, sha: row.merge_sha, reverted: row.reverted } : null);
+  const revert = useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, sha: row.merge_sha, reverted: row.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null);
   const place = { project: row.project, run: row.id };
   const items = usePlaceItems(place, place);
   return { items: revert.item == null ? items : [...items, revert.item], layer: revert.layer };

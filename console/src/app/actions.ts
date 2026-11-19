@@ -95,11 +95,13 @@ export interface RevertDependent {
 }
 
 /** What `POST /actions/revert` answered: a preview's dependents, the filed
- *  ticket's key, or why nothing was filed, with the refused paths. */
+ *  ticket's key, a check's refusal with the refused paths, or a request
+ *  that failed for another reason. */
 export type RevertAnswer =
   | { kind: "preview"; dependents: RevertDependent[] }
   | { kind: "filed"; ticket: string }
-  | { kind: "refused"; reason: string; paths: string[] };
+  | { kind: "refused"; reason: string; paths: string[] }
+  | { kind: "failed"; reason: string };
 
 /** The daemon wants a reason on a preview too; it records none for it. */
 const PREVIEW_REASON = "preview";
@@ -124,7 +126,7 @@ async function postRevert(base: string, body: Record<string, unknown>, fetchImpl
   try {
     response = await fetchImpl(url, init);
   } catch (failure) {
-    return { kind: "refused", reason: failure instanceof Error ? failure.message : String(failure), paths: [] };
+    return { kind: "failed", reason: failure instanceof Error ? failure.message : String(failure) };
   }
   const answer: unknown = await response.json().catch(() => null);
   const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
@@ -132,10 +134,10 @@ async function postRevert(base: string, body: Record<string, unknown>, fetchImpl
   if (refused != null && typeof refused.reason === "string") return { kind: "refused", reason: refused.reason, paths: strings(refused.paths) };
   if (!response.ok) {
     const error = typeof record.error === "string" ? record.error : "";
-    return { kind: "refused", reason: `${url} answered ${response.status}${error ? `: ${error}` : ""}`, paths: [] };
+    return { kind: "failed", reason: `${url} answered ${response.status}${error ? `: ${error}` : ""}` };
   }
   if (body.dry_run === true) return { kind: "preview", dependents: dependentsOf(record.dependents) };
-  return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "refused", reason: "the daemon named no revert ticket", paths: [] };
+  return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "failed", reason: "the daemon named no revert ticket" };
 }
 
 /** The `dry_run` preview of reverting `key` at `base`; it files nothing. */

@@ -39,7 +39,7 @@ interface Posted {
 
 /** DEMO serves merged run 9 of DEMO-9 on every read, its status reporting
  *  `reverts`; each `POST /actions/revert` is kept and answered by `revert`. */
-function daemon(reverts: boolean, revert: (body: Record<string, unknown>) => Response = () => new Response(null, { status: 500 })) {
+function daemon(reverts: boolean, revert: (body: Record<string, unknown>) => Response = () => new Response(null, { status: 500 }), run: RunDetail = runNine) {
   const posted: Posted[] = [];
   const polls = fleet({ items: [], shipped: [merged(9, "DEMO-9", ENDED)] }, { items: [] });
   const fetchImpl = async (url: string, init?: RequestInit) => {
@@ -49,7 +49,7 @@ function daemon(reverts: boolean, revert: (body: Record<string, unknown>) => Res
       return revert(body);
     }
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions: true, reverts });
-    if (url === `${DEMO}/runs/9`) return Response.json(runNine);
+    if (url === `${DEMO}/runs/9`) return Response.json(run);
     if (url === `${DEMO}/tickets/DEMO-9`) return Response.json(ticketNine);
     if (url === `${DEMO}/board`) return Response.json(emptyBoard);
     if (url.startsWith(`${DEMO}/history?`)) {
@@ -131,6 +131,20 @@ test("a ticket whose latest run merged ends its Ticket page menu and its Tickets
   writeView("table");
   await mount("#/tickets", fake.fetchImpl);
   expect(await openMenu("More for DEMO-9")).toEqual(["Open ticket", "Copy link", "Revert…"]);
+});
+
+test("a reverted run's Revert… is disabled, names its revert ticket, and posts nothing when pressed", async () => {
+  const reverted = { ...runNine, run: { ...runNine.run, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } } };
+  const fake = daemon(true, undefined, reverted);
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await openMenu("More for run 9");
+  const item = screen.getByRole("menuitem", { name: "Revert…" });
+  expect(item.getAttribute("aria-disabled")).toBe("true");
+  expect(document.getElementById(item.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
+  await act(async () => void fireEvent.click(item));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(fake.posted).toEqual([]);
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("arrow keys move through the menu and Esc closes it, returning focus to its ⋯ button", async () => {

@@ -70,10 +70,10 @@ const SETTLED = new Set(["merged", "abandoned"]);
 
 /** The header's ⋯ menu: Copy link, and Revert… when the ticket's latest run
  *  merged in a project that reports `reverts`. */
-function TicketMenu({ project, ticketKey, ticket, base, reverts }: { project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean }) {
+function TicketMenu({ project, ticketKey, ticket, base, reverts, actions }: { project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean; actions: boolean }) {
   const latest = ticket.runs[0];
   const revertable = reverts && latest?.outcome === "merged";
-  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted } : null);
+  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted, off: actions ? null : ACTIONS_OFF } : null);
   const items = usePlaceItems({ project, ticket: ticketKey });
   return (
     <div className="flex flex-col items-end gap-2">
@@ -137,7 +137,7 @@ export function TicketPage() {
                 editOpen={editing != null}
               />
             </div>
-            <TicketMenu key={`menu ${project}/${key}`} project={project} ticketKey={key} ticket={ticket} base={page.host.base} reverts={page.host.status?.reverts === true} />
+            <TicketMenu key={`menu ${project}/${key}`} project={project} ticketKey={key} ticket={ticket} base={page.host.base} reverts={page.host.status?.reverts === true} actions={actionsOn} />
           </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} project={project} />}

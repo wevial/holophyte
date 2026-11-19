@@ -12,7 +12,8 @@ import { useToast } from "./Toast";
 import { detailLine } from "./CardActions";
 
 /** A merged ticket of a project whose status reports `reverts`, its merged
- *  `run`, its merge `sha` when known, and its `reverted` once reverted. */
+ *  `run`, its merge `sha` when known, its `reverted` once reverted, and
+ *  `off` saying why its daemon takes no actions. */
 export interface RevertTarget {
   base: string;
   project: string;
@@ -20,6 +21,7 @@ export interface RevertTarget {
   run: number | null;
   sha?: string | null;
   reverted?: Reverted | null;
+  off?: string | null;
 }
 
 type Place = { project: string; run: number } | { project: string; ticket: string };
@@ -49,10 +51,10 @@ function Code({ children }: { children: ReactNode }) {
   return <code className="font-mono text-[12.5px]">{children}</code>;
 }
 
-function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" }> }) {
+function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" | "failed" }> }) {
   return (
     <div data-revert-refusal className="mt-3 rounded-[6px] bg-bad-wash px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_var(--bad)]">
-      {answer.paths.length > 0 ? (
+      {answer.kind === "refused" && answer.paths.length > 0 ? (
         <>
           It changed{" "}
           {answer.paths.map((path, index) => (
@@ -75,6 +77,7 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
   const file = useRevert();
   const [answer, setAnswer] = useState(first);
   const [reason, setReason] = useState("");
+  const [failed, setFailed] = useState<string | null>(null);
   const reasonId = useId();
   const read = useRun(target.sha == null && answer.kind === "preview" ? target.base : null, target.run, deps);
   const sha = shortSha(target.sha ?? read.data?.run.merge_sha ?? null);
@@ -82,14 +85,15 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
   if (answer.kind !== "preview") {
     return (
       <ConfirmDialog label={label} heading={`${target.ticket} can't be reverted`} cancelLabel="Close" onCancel={onClose}>
-        {answer.kind === "refused" && <Refusal answer={answer} />}
+        {answer.kind !== "filed" && <Refusal answer={answer} />}
       </ConfirmDialog>
     );
   }
   const send = async () => {
     const filed = await file.mutateAsync({ base: target.base, key: target.ticket, reason: reason.trim() });
+    setFailed(filed.kind === "failed" ? filed.reason : null);
     if (filed.kind === "filed") onFiled(filed.ticket);
-    else setAnswer(filed);
+    else if (filed.kind === "refused") setAnswer(filed);
   };
   return (
     <ConfirmDialog
@@ -103,6 +107,13 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
       confirmDisabled={reason.trim() === ""}
       onConfirm={() => void send()}
       onCancel={onClose}
+      refusal={
+        failed != null && (
+          <p role="alert" className={`mt-3 text-bad ${detailLine}`}>
+            {failed}
+          </p>
+        )
+      }
     >
       <p className="m-0 mt-2 font-sans text-[14px] leading-[1.5] text-ink-2">
         Files an urgent ticket that reverts {sha === "" ? "its merge" : sha}. It goes through verify and review and merges by this project's rule. {target.ticket} returns to Backlog when it does.
@@ -165,8 +176,8 @@ export function useRevertFlow(target: RevertTarget | null): { item: MenuItem | n
           label: "Revert…",
           danger: true,
           divided: true,
-          disabled: reverted != null || previewing,
-          note: reverted == null ? undefined : reverted.by == null ? "Reverted" : `Reverted by ${reverted.by}`,
+          disabled: reverted != null || target.off != null || previewing,
+          note: reverted != null ? (reverted.by == null ? "Reverted" : `Reverted by ${reverted.by}`) : (target.off ?? undefined),
           onSelect: () => void start(target),
         };
   const layer = (
