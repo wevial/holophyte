@@ -26,19 +26,22 @@ const runSeven: RunDetail = {
 };
 const ticketSeven: TicketDetail = { ...servedTicket, ticket: "DEMO-7", title: "Page the ledger", status: "backlog", reverted: REVERTED };
 const listed = servedBoard.columns.flatMap((column) => column.tickets)[0]!;
-const board = (state: Board["columns"][number]["state"]): Board => ({
+const board = (state: Board["columns"][number]["state"] | null): Board => ({
   ...servedBoard,
   stories: [],
-  columns: [{ state, tickets: [{ ...listed, ticket: "DEMO-7", title: "Page the ledger", run: 7, reverted: REVERTED }] }],
+  columns: state == null ? [] : [{ state, tickets: [{ ...listed, ticket: "DEMO-7", title: "Page the ledger", run: 7, reverted: REVERTED }] }],
 });
+const runTwelve: RunDetail = { ...servedRun, run: { ...runSeven.run, id: 12, merge_sha: "9b8a7c6d5e4f", ended_ms: ENDED + 10 * MINUTE, reverted: null } };
 
 /** DEMO answers its history with merged runs 7 (reverted by `REVERTED`)
- *  and 8 (not reverted), run 7's page, DEMO-7's ticket, and a board listing
- *  DEMO-7, reverted, in `column`; run 7's merge is shipped today. */
-function daemon(column: Board["columns"][number]["state"] = "backlog") {
-  const polls = fleet({ items: [], shipped: [merged(7, "DEMO-7", ENDED)] }, { items: [] });
+ *  and 8 (not reverted), runs 7 and 12's pages, DEMO-7's ticket, and a
+ *  board listing DEMO-7, reverted, in `column` (off the board when null);
+ *  it ships today the merges of `shipped`, run 7's by default. */
+function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped = [merged(7, "DEMO-7", ENDED)]) {
+  const polls = fleet({ items: [], shipped }, { items: [] });
   return async (url: string) => {
     if (url === `${DEMO}/runs/7`) return Response.json(runSeven);
+    if (url === `${DEMO}/runs/12`) return Response.json(runTwelve);
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticketSeven);
     if (url === `${DEMO}/board`) return Response.json(board(column));
     if (url.startsWith(`${DEMO}/history?`)) {
@@ -98,6 +101,16 @@ test("on Tickets a reverted ticket's row reads reverted · Backlog beside the un
   expect(status.textContent).toBe("reverted · Backlog");
   expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["backlog"]);
+});
+
+test("on Tickets a reverted merge leaves Done today: cancelled after its revert it lists no row, merged again it lists only the new merge", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon(null));
+  expect(document.querySelectorAll("[data-row]")).toHaveLength(0);
+  cleanup();
+
+  await mount("#/tickets", daemon(null, [merged(12, "DEMO-7", ENDED + 10 * MINUTE), merged(7, "DEMO-7", ENDED)]));
+  expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["done"]);
 });
 
 test("a reverted run's page says it merged then was reverted by the revert ticket, linked, with the reason", async () => {

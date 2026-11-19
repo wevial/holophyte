@@ -16,7 +16,7 @@ export type ConfigValues = Record<string, Record<string, unknown>>;
 export const UNBOUND_NOTE = "Edit in Raw TOML";
 
 /** The path-list settings `GET /config/path-matches` counts, each by its own matcher. */
-export const PATH_LIST_KEYS: ReadonlySet<string> = new Set(["merge.ui_paths", "review.high_paths", "review.medium_paths", "worktree.setup.inputs"]);
+export const PATH_LIST_KEYS: ReadonlySet<string> = new Set(["merge.ui_paths", "review.high_paths", "review.medium_paths", "worktree.setup.inputs", "revert.refuse_paths"]);
 
 export const PATH_MATCH_DEBOUNCE_MS = 300;
 

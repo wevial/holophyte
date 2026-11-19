@@ -13,7 +13,8 @@ const R1 = "3f9a2c1" + "a".repeat(57);
 const working = await Bun.file(new URL("../../../tests/fixtures/serve/status.json", import.meta.url)).json() as Status;
 
 /** Settings, General of a daemon whose config.toml reads `values`; each
- *  `PUT /config` body is kept. */
+ *  `PUT /config` body is kept, and each path-match ask by its key. Main
+ *  tracks one file matching `store/schema.py` and none matching other entries. */
 async function mount(values: ConfigValues) {
   const config: ConfigBody = {
     text: "", values, path: "/srv/demo/config.toml", applies: "next loop start", revision: R1,
@@ -22,7 +23,13 @@ async function mount(values: ConfigValues) {
   const status: Status = { ...working, project: "/srv/demo", host: "writer-host", runs: [], config_edit: true, actions: true };
   const poll = peersFetch(ORIGIN, { [ORIGIN]: { status, attention: { ...NO_ATTENTION, project: status.project } } });
   const writes: Record<string, unknown>[] = [];
+  const asked: (string | null)[] = [];
   const fetch: Fetch = async (url, init) => {
+    if (url.startsWith(`${ORIGIN}/config/path-matches?`)) {
+      const query = new URL(url).searchParams;
+      asked.push(query.get("key"));
+      return Response.json({ ref: "main", sha: "0123456789ab", matches: query.getAll("entry").map((entry) => ({ entry, count: entry === "store/schema.py" ? 1 : 0 })) });
+    }
     if (!url.endsWith("/config")) return poll(url, init);
     if (init?.method !== "PUT") return Response.json(config);
     writes.push(JSON.parse(String(init.body)) as Record<string, unknown>);
@@ -32,7 +39,7 @@ async function mount(values: ConfigValues) {
   render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={ORIGIN} pollDeps={fakeDeps(fetch).deps} /></QueryClientProvider>);
   await act(settle);
   await act(settle);
-  return writes;
+  return { writes, asked };
 }
 
 const row = (key: string) => document.querySelector<HTMLElement>(`[data-setting="${key}"]`)!;
@@ -52,7 +59,7 @@ test("General shows a Reverts switch, off with no [revert] table, and a Never re
 });
 
 test("saving a turned-on Reverts switch and an edited Never revert list writes revert.enabled and revert.refuse_paths", async () => {
-  const writes = await mount({ loop: { workers: 2 } });
+  const { writes } = await mount({ loop: { workers: 2 } });
   fireEvent.click(screen.getByRole("switch", { name: "Reverts" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Never revert" }), { target: { value: "store/schema.py\n\n**/*.sql" } });
   fireEvent.click(within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }));
@@ -63,4 +70,12 @@ test("saving a turned-on Reverts switch and an edited Never revert list writes r
   await act(settle);
   expect(writes).toHaveLength(1);
   expect(writes[0]!.patch).toEqual({ "revert.enabled": true, "revert.refuse_paths": ["store/schema.py", "**/*.sql"] });
+});
+
+test("each Never revert entry is followed by its count on main from the daemon's revert.refuse_paths matcher", async () => {
+  const { asked } = await mount({ revert: { enabled: true, refuse_paths: ["store/schema.py", "**/*.sql"] } });
+  await act(settle);
+  const lines = within(screen.getByRole("list", { name: "Never revert matches" })).getAllByRole("listitem");
+  expect(lines.map((line) => line.textContent)).toEqual(["store/schema.py · 1 file", "**/*.sql · matches nothing"]);
+  expect(asked).toEqual(["revert.refuse_paths"]);
 });
