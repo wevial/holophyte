@@ -275,6 +275,61 @@ test("a ticket that merged again after its preview files nothing and says why", 
   expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
 });
 
+async function fileFromDialog(reason = "broke the ledger") {
+  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: reason } }));
+  await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+}
+
+const refusalText = () => screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent;
+
+test("a revert previewed from the Ticket page files nothing once its newest attempt shows a failed run", async () => {
+  const fake = daemon(true, () => Response.json(PREVIEW));
+  await mount("#/tickets/demo/DEMO-9", fake.fetchImpl);
+  await openMenu("More for DEMO-9");
+  await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Revert…" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  fake.state.tickets["DEMO-9"] = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 11, outcome: "failed" }, ...ticketNine.runs] };
+  await fileFromDialog();
+  expect(refusalText()).toContain("newest attempt, run 11, did not merge");
+  expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
+});
+
+test("a run whose revert completed after its preview files nothing, naming the revert ticket", async () => {
+  const fake = daemon(true, () => Response.json(PREVIEW));
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+  fake.state.runs[9] = { ...runNine, run: { ...runNine.run, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } } };
+  await fileFromDialog();
+  expect(refusalText()).toBe("Run 9 of DEMO-9 was already reverted by DEMO-50.");
+  expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
+});
+
+test("a preview answered 200 without its preview fields offers no filing and posts nothing more", async () => {
+  for (const reply of [{}, { ...PREVIEW, dependents: [{ key: "DEMO-12" }] }]) {
+    const fake = daemon(true, () => Response.json(reply));
+    await mount("#/runs/demo/9", fake.fetchImpl);
+    await revertFromRunPage();
+    const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+    expect(within(dialog).queryByText("Nothing merged since touches these files")).toBeNull();
+    expect(within(dialog).getAllByRole("button").map((button) => button.textContent)).toEqual(["Close"]);
+    expect(fake.posted).toHaveLength(1);
+    cleanup();
+  }
+});
+
+test("a Done row whose ticket read fails keeps Revert… disabled and saying so", async () => {
+  writeView("table");
+  const fake = daemon(true);
+  await mount("#/tickets", async (url, init) => (url === `${DEMO}/tickets/DEMO-9` ? new Response(null, { status: 503 }) : fake.fetchImpl(url, init)));
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
+  for (let round = 0; round < 6; round += 1) await act(settle);
+  const item = screen.getByRole("menuitem", { name: "Revert…" });
+  expect(item.getAttribute("aria-disabled")).toBe("true");
+  expect(document.getElementById(item.getAttribute("aria-describedby")!)?.textContent).toBe("Couldn't read DEMO-9");
+});
+
 test("a File revert refused on its recheck moves focus from the vanished button to Close", async () => {
   const fake = daemon(true, () => Response.json(PREVIEW));
   await mount("#/runs/demo/9", fake.fetchImpl);
@@ -389,15 +444,16 @@ test("Enter on the ⋯ button opens the menu with its first item focused", async
   expect(document.activeElement?.textContent).toBe("Open ticket");
 });
 
-test("holding Enter or Space that opened the menu chooses no item, and a fresh Enter chooses the focused one", async () => {
+test.each(["Enter", " "])("holding the %p that opened the menu chooses no item, and a fresh Enter chooses the focused one", async (key) => {
   await mount("#/runs/demo/9?project=demo", daemon(true).fetchImpl);
   const button = screen.getByRole("button", { name: "More for run 9" });
-  await act(async () => void fireEvent.keyDown(button, { key: "Enter" }));
+  await act(async () => void fireEvent.keyDown(button, { key }));
   const item = screen.getByRole("menuitem", { name: "Open ticket" });
+  expect(document.activeElement).toBe(item);
   let browserMayActivate = true;
-  await act(async () => void (browserMayActivate = fireEvent.keyDown(item, { key: "Enter", repeat: true })));
+  await act(async () => void (browserMayActivate = fireEvent.keyDown(item, { key, repeat: true })));
   expect(browserMayActivate).toBe(false);
-  await act(async () => void (browserMayActivate = fireEvent.keyUp(item, { key: " " })));
+  await act(async () => void (browserMayActivate = fireEvent.keyUp(item, { key })));
   expect(browserMayActivate).toBe(false);
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(screen.queryByRole("menu")).not.toBeNull();

@@ -13,13 +13,14 @@ import { useToast } from "./Toast";
 import { detailLine } from "./CardActions";
 
 /** A merged ticket of a project whose status reports `reverts`, its merged
- *  `run`, its `reverted` once reverted, and `off` saying why its daemon
- *  takes no actions. */
+ *  `run`, `newest` when that run was offered as its newest attempt, its
+ *  `reverted` once reverted, and `off` saying why its daemon takes none. */
 interface RevertTarget {
   base: string;
   project: string;
   ticket: string;
   run: number | null;
+  newest?: boolean;
   reverted?: Reverted | null;
   off?: string | null;
 }
@@ -81,11 +82,16 @@ async function checkTarget(on: RevertTarget, fetch: Fetch): Promise<Checked> {
     if (ticket == null) return failure(`${on.ticket} is not mirrored on this host`);
     const latest = Math.max(-1, ...ticket.runs.filter((each) => each.outcome === "merged").map((each) => each.run));
     if (latest < 0) return failure(`${on.ticket} has no merged run`);
+    const attempt = ticket.runs.reduce((top, each) => (each.run > top.run ? each : top), ticket.runs[0]!);
+    if (on.newest === true && attempt.run !== latest) {
+      return failure(`${on.ticket}'s newest attempt, run ${attempt.run}, did not merge; nothing was filed. Revert run ${latest} from its run page.`);
+    }
     if (on.run != null && on.run !== latest) {
       return failure(`Run ${on.run} is not ${on.ticket}'s latest merge; a revert would undo run ${latest}. Revert it from run ${latest}.`);
     }
     if (ticket.reverted != null) return failure(`${on.ticket}'s merge was already reverted${ticket.reverted.by == null ? "" : ` by ${ticket.reverted.by}`}.`);
-    const sha = (await fetchRoute(fetch, `${on.base}/runs/${latest}`, runDetailSchema)).run.merge_sha;
+    const { merge_sha: sha, reverted } = (await fetchRoute(fetch, `${on.base}/runs/${latest}`, runDetailSchema)).run;
+    if (reverted != null) return failure(`Run ${latest} of ${on.ticket} was already reverted${reverted.by == null ? "" : ` by ${reverted.by}`}.`);
     if (sha == null) {
       const older = ticket.runs.some((each) => each.outcome === "merged" && each.run !== latest);
       const outcome = older ? `a revert would undo an older merge of ${on.ticket}` : "there is no merge to revert";
@@ -201,7 +207,7 @@ function RevertDialog({ target, sha: merge, first, onClose, onFiled }: {
         onChange={(event) => setReason(event.target.value)}
         rows={3}
         placeholder="Why revert it?"
-        className="field mt-2 block w-full resize-y leading-[1.5]"
+        className="field mt-3 block w-full resize-y leading-[1.5]"
       />
     </ConfirmDialog>
   );

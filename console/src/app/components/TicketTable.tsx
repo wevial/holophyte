@@ -67,8 +67,8 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
 
 /** A row's ⋯ menu where its project reports `reverts`: its ticket is read
  *  while the menu is open, whatever column the row sits in. A Done row holds
- *  Revert… disabled until then; another row offers it once the read finds
- *  its newest run merged. A reverted ticket's Revert… is disabled naming
+ *  Revert… disabled until that read answers; any row offers it once the read
+ *  finds its newest run merged. A reverted ticket's Revert… is disabled naming
  *  the revert ticket; a ticket whose newest run did not merge offers none. */
 function MergedRowMenu({ card, column, actions, items }: { card: TicketCard; column: ColumnId; actions: boolean; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
@@ -77,11 +77,11 @@ function MergedRowMenu({ card, column, actions, items }: { card: TicketCard; col
   const newest = read?.runs.reduce<number>((top, each) => Math.max(top, each.run), -1);
   const merged = read == null ? column === "done" : read.runs.find((each) => each.run === newest)?.outcome === "merged";
   const revert = useRevertFlow(
-    merged ? { base: card.base, project: card.project, ticket: card.key, run: newest ?? card.runId, reverted: read?.reverted, off: actions ? null : ACTIONS_OFF } : null,
+    merged ? { base: card.base, project: card.project, ticket: card.key, run: newest ?? card.runId, newest: true, reverted: read?.reverted, off: actions ? null : ACTIONS_OFF } : null,
     items,
   );
-  const checking = ticket.isPending;
-  const shown = revert.items.map((item) => (checking && item.label === "Revert…" ? { ...item, disabled: true, note: "Checking…" } : item));
+  const unread = ticket.isPending ? "Checking…" : read == null ? `Couldn't read ${card.key}` : null;
+  const shown = revert.items.map((item) => (unread != null && item.label === "Revert…" ? { ...item, disabled: true, note: unread } : item));
   return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpenChange={setOpen} />;
 }
 

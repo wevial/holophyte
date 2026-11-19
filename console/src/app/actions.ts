@@ -111,11 +111,16 @@ const PREVIEW_REASON = "preview";
 
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((each): each is string => typeof each === "string") : []);
 
-function dependentsOf(value: unknown): RevertDependent[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((each: Record<string, unknown> | null) =>
-    each != null && typeof each.key === "string" ? [{ key: each.key, sha: typeof each.sha === "string" ? each.sha : "", paths: strings(each.paths) }] : [],
-  );
+const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every((each) => typeof each === "string");
+
+const isDependent = (each: unknown): each is RevertDependent =>
+  typeof each === "object" && each != null && typeof (each as RevertDependent).key === "string" && typeof (each as RevertDependent).sha === "string" && isStrings((each as RevertDependent).paths);
+
+/** A preview's dependents when `record` is a whole allowed preview, else null. */
+function previewOf(record: Record<string, unknown>): RevertDependent[] | null {
+  const { enabled, refused, dependents } = record;
+  if (enabled !== true || refused !== null || !Array.isArray(dependents) || !dependents.every(isDependent)) return null;
+  return dependents.map(({ key, sha, paths }) => ({ key, sha, paths }));
 }
 
 /** `POST /actions/revert` through `postAction()`, decoding the reply it
@@ -137,7 +142,10 @@ async function postRevert(base: string, body: Record<string, unknown>, fetchImpl
   if (refused != null && typeof refused.reason === "string") return { kind: "refused", reason: refused.reason, paths: strings(refused.paths) };
   if (!answered.ok) return { kind: "failed", reason: posted.detail };
   if (answer !== record) return { kind: "failed", reason: "the daemon's reply could not be read" };
-  if (body.dry_run === true) return { kind: "preview", dependents: dependentsOf(record.dependents) };
+  if (body.dry_run === true) {
+    const dependents = previewOf(record);
+    return dependents == null ? { kind: "failed", reason: "the daemon's preview could not be read" } : { kind: "preview", dependents };
+  }
   return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "failed", reason: "the daemon named no revert ticket" };
 }
 

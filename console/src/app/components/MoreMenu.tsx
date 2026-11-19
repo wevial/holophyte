@@ -173,7 +173,7 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
             const noteId = `${id}-${item.label}`;
             return (
               <div key={item.label} role="none">
-                {item.divided && <div role="separator" className="mx-1.5 my-1 h-px bg-hair" />}
+                {item.divided && <div role="separator" className="mx-0.5 my-1 h-px bg-hair" />}
                 <button
                   type="button"
                   role="menuitem"
