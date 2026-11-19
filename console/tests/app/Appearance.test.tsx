@@ -497,11 +497,15 @@ test("Reset to default returns the saved fades of Lava and Haze to 70, also afte
   expect(fades()).toEqual({ lava: "70", haze: "70" });
 });
 
+function fullStorage(real: Storage): PropertyDescriptor {
+  const full = { getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } };
+  return { configurable: true, get: () => full };
+}
+
 function refuseWrites() {
   const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
   const real = localStorage;
-  const full = { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) };
-  Object.defineProperty(globalThis, "localStorage", full);
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
   return {
     otherTab: (key: string, value: string) => {
       real.setItem(key, value);
@@ -570,7 +574,7 @@ test("a Haze strength of 150 saved under the old key still shows 150 when storag
   localStorage.setItem("holophyte.hazeStrength", "150");
   const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
   const real = localStorage;
-  Object.defineProperty(globalThis, "localStorage", { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) });
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
   try {
     const freshInstance = "../../src/app/appearance.ts?quota";
     const appearance: typeof import("../../src/app/appearance") = await import(freshInstance);
@@ -586,7 +590,7 @@ test("a Haze strength of 150 left under the old key by a full store gives way to
   localStorage.setItem("holophyte.hazeStrength", "150");
   const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
   const real = localStorage;
-  Object.defineProperty(globalThis, "localStorage", { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) });
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
   try {
     const freshInstance = "../../src/app/appearance.ts?retired";
     const appearance: typeof import("../../src/app/appearance") = await import(freshInstance);
