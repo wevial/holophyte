@@ -7,6 +7,7 @@ from holophyte.babysit.description_review import (
     LEAD,
     description_findings,
     hold_for_pr_text,
+    text_review,
     without_description,
     without_description_items,
 )
@@ -38,9 +39,13 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         return fix_goal(pull, ticket, verdict, "Operator babysit note",
                         fix_note), None
+    described = description_findings(verdict, decision, unwitnessed)
+    if described:
+        return None, (f"{asked}; not merged. Review findings about the pull"
+                      " request description, left with the PR-text writer:\n"
+                      f"{text_review(conn, run_id, described)}")
     cap = merge_config(project).covering_fix_rounds
-    if not cap or conn is None or description_findings(verdict, decision,
-                                                       unwitnessed):
+    if not cap or conn is None:
         return None, asked + findings
     covering = _covering_findings(conn, run_id, rnd)
     threshold = sweep_config(project).review_overlap_threshold

@@ -315,6 +315,18 @@ class MixedRoundTests(unittest.TestCase):
         self.assertEqual(self.phase(), "awaiting_merge_approval")
         self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
 
+    def test_a_refused_description_only_rewrite_parks_naming_every_finding_sent(self):
+        again = DESCRIBED.replace("Changes table", "Summary")
+        with self.assertRaises(MergeParked):
+            self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}", f"{again}{REJECT}",
+                            refreshed=False)
+
+        sent = f"{DESCRIBED}\n{again}"
+        self.assertEqual(self.refreshed_reviews()[-1], sent)
+        (park,) = [entry.text for entry in store.read.ledger(self.conn, self.run_id)
+                   if entry.text.startswith("PR OPEN")]
+        self.assertIn(sent, park)
+
     def test_a_refused_rewrite_with_nothing_pending_still_reaches_the_gate(self):
         self.review_fix(f"{TABLE}{REJECT}", refreshed=False)
 

@@ -80,6 +80,10 @@ def pending_text_review(conn, run_id):
     return "\n".join(pending)
 
 
+def text_review(conn, run_id, findings):
+    return "\n".join(filter(None, (pending_text_review(conn, run_id), *findings)))
+
+
 def _blocker_items(verdict):
     reply = without_criteria(without_refuted(verdict))
     for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
@@ -98,8 +102,7 @@ def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
     rewrote = refresh_pr_text(
         project, conn, run_id, task_id, ticket.splitlines()[0], branch, ticket,
         beat_s, wt, budget_min, pull, answered, sha=sha,
-        review="\n".join(filter(None, (pending_text_review(conn, run_id),
-                                        *findings))))
+        review=text_review(conn, run_id, findings))
     if rewrote:
         ledger(conn, run_id, task_id, "round",
                f"Rewrote the description of {pull.url} for the review of the"
