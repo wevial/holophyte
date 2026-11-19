@@ -504,6 +504,11 @@ Each module, one line:
   `plan()` reads another store and the project's own, both read-only, and
   says per table what an import would move — rows, id range, the remap
   offset and a sha256 of the rows in id order; `render()` prints it.
+- `holophyte/cli/store_export.py` — `--export-store DIR [--since MS]`:
+  `records()` reads the store's runs, their events in `(runId, seq)` order
+  and their `agent_session` events; `Redactor` puts `[private]` over
+  `[merge] private_patterns` matches and `[secret]` over credential-shaped
+  text; `export()` writes them as NDJSON with a `manifest.json`.
 - `holophyte/host/supervisor_lock.py` — the one-supervisor-per-project lock
   (KO-396): the lockfile's path, read, acquire and release, the
   `SupervisorHeld` refusal and the `supervisor_running()` probe.
