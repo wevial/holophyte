@@ -6,10 +6,10 @@ import { projectName } from "../lib/derive";
 import { formatAge, formatClock, formatDuration } from "../lib/format";
 import { hostItems, type HostRecord } from "../lib/hosts";
 import { phaseLabel } from "../lib/runs";
-import { newestFirst, prLabel, todayMerges } from "../lib/shipped";
+import { prLabel, todayMerges } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import type { ContractBodies } from "./fleet";
-import { useBoards, useMergedRecently, useReadiness, useRevertedMerges } from "./queries";
+import { useBoards, useMergedRecently, useReadiness } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, STATES, type State } from "./state";
 
@@ -286,10 +286,7 @@ export function useTicketBoard(): TicketBoard {
   const hosts = scopedHosts(peers.hosts, project);
   const readiness = useReadiness(hosts, deps);
   const boards = useBoards(hosts, deps);
-  const recent = useMergedRecently(hosts, deps.fetch);
-  const older = useRevertedMerges(hosts, deps.fetch);
-  const read = new Set(recent.map((row) => `${row.daemon ?? ""} run ${row.id}`));
-  const merged = newestFirst([...recent, ...older.filter((row) => !read.has(`${row.daemon ?? ""} run ${row.id}`))]);
+  const merged = useMergedRecently(hosts, deps.fetch);
   const today = new Set(todayMerges(merged, now));
   const columns = emptyColumns();
   const cards: TicketCard[] = [];
