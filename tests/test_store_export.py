@@ -165,9 +165,19 @@ class StoreExportTests(unittest.TestCase):
         self.assertNotIn("abc123def456", text)
 
     def test_manifest_counts_files_and_a_rerun_is_byte_identical(self):
+        replace, published = os.replace, []
+
+        def note_each_publish(source, destination):
+            replace(source, destination)
+            time.sleep(0.005)
+            published.append((Path(destination).name, now_ms()))
         before_export = now_ms()
-        self.export()
+        with patch("os.replace", note_each_publish):
+            self.export()
         after_export = now_ms()
+        self.assertEqual(published[-1][0], "manifest.json")
+        data_published = max(at for name, at in published
+                             if name.endswith(".jsonl"))
         names = ("factory_runs.jsonl", "factory_events.jsonl",
                  "agent_sessions.jsonl")
         before = {name: (self.out / name).read_bytes() for name in names}
@@ -180,6 +190,7 @@ class StoreExportTests(unittest.TestCase):
         self.assertRegex(manifest["ended_at"], ISO_UTC)
         self.assertTrue(before_export <= ms(manifest["started_at"])
                         <= ms(manifest["ended_at"]) <= after_export)
+        self.assertGreaterEqual(ms(manifest["ended_at"]), data_published)
         self.assertIsNone(manifest["since"])
         self.assertIsInstance(manifest["redaction_version"], int)
         self.export()
@@ -344,21 +355,36 @@ class StoreExportTests(unittest.TestCase):
                    if e["run_id"] == run]
         self.assertEqual(note["summary"], "[secret]; [secret]\n[private]")
 
-    def test_bearer_tokens_without_digits_are_hidden_and_prose_is_kept(self):
+    def test_any_bearer_token_is_hidden_quotes_and_all(self):
         conn = store.open(str(self.store_path))
         run = store.claim(conn, self.project_id, self.ticket, now=SECOND + 40)
         store.record_event(conn, run, "note", "", now=SECOND + 41)
         conn.execute(
             "UPDATE runEvents SET summary = ? WHERE runId = ?",
-            ("Authorization: Bearer mF_a.Bcf-X.JqM;"
-             " sent Bearer mF_a.Bcf-X.JqM; Bearer tokens.", run))
+            ("Authorization: Bearer mF_a.Bcf-X.JqM; sent Bearer mFabCDef;"
+             ' Authorization: Bearer "abc123def456"; bearer \'qq\';'
+             " pallbearer kept", run))
         conn.commit()
         conn.close()
         self.export()
         (note,) = [e for e in lines(self.out / "factory_events.jsonl")
                    if e["run_id"] == run]
-        self.assertEqual(note["summary"],
-                         "[secret]; sent [secret]; Bearer tokens.")
+        self.assertEqual(note["summary"], "[secret]; sent [secret]; [secret];"
+                                          " [secret]; pallbearer kept")
+
+    def test_an_event_kind_matching_a_private_pattern_is_redacted(self):
+        conn = store.open(str(self.store_path))
+        store.record_event(conn, self.first, "vault-internal", "x",
+                           now=FIRST + 3)
+        conn.close()
+        self.private("vault-internal", "_session")
+        self.export()
+        kinds = [e["kind"] for e in lines(self.out / "factory_events.jsonl")]
+        self.assertIn("[private]", kinds)
+        self.assertIn("agent[private]", kinds)
+        self.assertNotIn("vault-internal", kinds)
+        self.assertEqual([s["session_id"] for s in lines(
+            self.out / "agent_sessions.jsonl")], ["sess-impl", "sess-rev"])
 
     def test_patterns_keep_session_ids_and_redact_the_project_name(self):
         self.private("session_[a-z]+", "^repo$")

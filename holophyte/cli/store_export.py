@@ -15,12 +15,12 @@ import store.read
 from holophyte.config.serve_settings import serve_config
 
 REDACTION_VERSION = 1
+TOKEN = r"(?:\"[^\"\n]*\"|'[^'\n]*'|[\w.~+/=-]+)"
 SECRETS = (
     re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----(?:.*?"
                r"-----END [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|.*)", re.S),
-    re.compile(r"\b(?i:authorization)\s*[:=]\s*(?:[A-Za-z]+\s+)?[\w.~+/=-]+"),
-    re.compile(r"\b(?i:bearer)\s+(?=[\w.~+/=-]*(?:\d|[._~+/-]\w)"
-               r"|[\w.~+/=-]{16})[\w.~+/=-]+"),
+    re.compile(r"\b(?i:authorization)\s*[:=]\s*(?:[A-Za-z]+\s+)?" + TOKEN),
+    re.compile(r"\b(?i:bearer)\s+" + TOKEN),
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{8,}"),
 )
@@ -145,7 +145,7 @@ def records(conn, project_id, project, redactor, since):
     for run_id, seq, at, kind, summary, raw in _events(conn, project_id, since):
         parsed = _parsed(raw)
         events.append({"run_id": run_id, "seq": seq, "at": iso(at),
-                       "kind": kind, "summary": redactor.text(summary),
+                       "kind": redactor.text(kind), "summary": redactor.text(summary),
                        "payload": redactor.tree(parsed)})
         if kind == "agent_session" and isinstance(parsed, dict):
             field = {name: redactor.tree(parsed.get(name))
@@ -179,26 +179,25 @@ def _refuse_the_store(directory, store_path):
                              f" {store_path}; nothing was written")
 
 
-def _publish(directory, texts, manifest):
-    mask = os.umask(0)
-    os.umask(mask)
+def _replace(directory, texts, mask):
     staged = {}
     try:
         for name, text in texts.items():
             staged[name] = _staged(directory / name, text, mask)
-        staged[MANIFEST] = _staged(directory / MANIFEST, manifest(), mask)
-    except BaseException:
-        for temporary in staged.values():
-            os.unlink(temporary)
-        raise
-    try:
-        (directory / MANIFEST).unlink(missing_ok=True)
         for name in list(staged):
             os.replace(staged[name], directory / name)
             del staged[name]
     finally:
         for temporary in staged.values():
             os.unlink(temporary)
+
+
+def _publish(directory, texts, manifest):
+    mask = os.umask(0)
+    os.umask(mask)
+    (directory / MANIFEST).unlink(missing_ok=True)
+    _replace(directory, texts, mask)
+    _replace(directory, {MANIFEST: manifest()}, mask)
 
 
 @contextlib.contextmanager
