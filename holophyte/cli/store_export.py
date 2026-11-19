@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import tempfile
@@ -13,9 +14,9 @@ from holophyte.config.serve_settings import serve_config
 
 REDACTION_VERSION = 1
 SECRETS = (
-    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?:.*?"
-               r"-----END [A-Z ]*PRIVATE KEY-----|.*)", re.S),
-    re.compile(r"(?i:bearer)\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----(?:.*?"
+               r"-----END [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|.*)", re.S),
+    re.compile(r"\b(?i:bearer)\s+(?=[\w.~+/=-]*\d|[\w.~+/=-]{16})[\w.~+/=-]+"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{8,}"),
 )
@@ -42,18 +43,32 @@ def _merged(spans):
     return merged
 
 
+def _number(text):
+    value = float(text)
+    return value if math.isfinite(value) else text
+
+
 def _parsed(raw):
     try:
-        return None if raw is None else json.loads(raw)
+        return None if raw is None else json.loads(
+            raw, parse_float=_number, parse_constant=str)
     except ValueError:
         return raw
+
+
+def _unique(key, taken):
+    candidate, n = key, 1
+    while candidate in taken:
+        n += 1
+        candidate = f"{key}#{n}"
+    return candidate
 
 
 class Redactor:
     def __init__(self, private):
         self.private = tuple(private)
 
-    def _spans(self, value):
+    def _private(self, value):
         offset = 0
         for line in value.split("\n"):
             for pattern in self.private:
@@ -61,11 +76,20 @@ class Redactor:
                     if match.end() > match.start():
                         yield offset + match.start(), offset + match.end(), False
             offset += len(line) + 1
-        for pattern in SECRETS:
-            for match in pattern.finditer(value):
-                yield match.start(), match.end(), True
+
+    def _spans(self, value):
+        private = list(self._private(value))
+        masked = list(value)
+        for start, end, _ in private:
+            masked[start:end] = " " * (end - start)
+        yield from private
+        for text in (value, "".join(masked)):
+            for pattern in SECRETS:
+                for match in pattern.finditer(text):
+                    yield match.start(), match.end(), True
 
     def text(self, value):
+        value = value.encode("utf-8", "replace").decode("utf-8")
         parts, cursor = [], 0
         for start, end, secret in _merged(self._spans(value)):
             parts += [value[cursor:start], "[secret]" if secret else "[private]"]
@@ -78,8 +102,10 @@ class Redactor:
         if isinstance(value, list):
             return [self.tree(item) for item in value]
         if isinstance(value, dict):
-            return {self.text(key): self.tree(item)
-                    for key, item in value.items()}
+            redacted = {}
+            for key, item in value.items():
+                redacted[_unique(self.text(key), redacted)] = self.tree(item)
+            return redacted
         return value
 
 
@@ -125,18 +151,49 @@ def records(conn, project_id, project, redactor, since):
     return {RUNS: runs, EVENTS: events, SESSIONS: sessions}
 
 
-def _replace(path, text):
+def _staged(path, text, mask):
+    mode = path.stat().st_mode & 0o777 if path.is_file() else 0o666 & ~mask
     handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=".export-")
-    mask = os.umask(0)
-    os.umask(mask)
     try:
-        os.fchmod(handle, 0o666 & ~mask)
+        os.fchmod(handle, mode)
         with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(text)
-        os.replace(temporary, path)
     except BaseException:
         os.unlink(temporary)
         raise
+    return temporary
+
+
+def _refuse_the_store(directory, store_path):
+    held = [Path(f"{store_path}{suffix}") for suffix in ("", "-wal", "-shm")]
+    for name in (RUNS, EVENTS, SESSIONS, MANIFEST):
+        path = directory / name
+        if path.exists() and any(
+                part.exists() and os.path.samefile(path, part) for part in held):
+            raise SystemExit(f"[holo2] export refused: {path} is the store"
+                             f" {store_path}; nothing was written")
+
+
+def _publish(directory, texts, manifest):
+    mask = os.umask(0)
+    os.umask(mask)
+    staged = {}
+    try:
+        for name, text in texts.items():
+            staged[name] = _staged(directory / name, text, mask)
+        staged[MANIFEST] = _staged(directory / MANIFEST, manifest(), mask)
+    except BaseException:
+        for temporary in staged.values():
+            os.unlink(temporary)
+        raise
+    try:
+        (directory / MANIFEST).unlink(missing_ok=True)
+        for name in list(staged):
+            os.replace(staged[name], directory / name)
+            del staged[name]
+    finally:
+        for temporary in staged.values():
+            os.unlink(temporary)
 
 
 def _lines(rows):
@@ -164,14 +221,16 @@ def export(target, directory, since):
         conn.close()
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    for name, rows in files.items():
-        _replace(directory / name, _lines(rows))
-    manifest = {
-        "project": project,
-        "files": {name: len(rows) for name, rows in files.items()},
-        "started_at": iso(started), "ended_at": iso(int(time.time() * 1000)),
-        "since": since, "redaction_version": REDACTION_VERSION}
-    _replace(directory / MANIFEST,
-             json.dumps(manifest, sort_keys=True, indent=2) + "\n")
+    _refuse_the_store(directory, target.store_path)
+
+    def manifest():
+        return json.dumps({
+            "project": project,
+            "files": {name: len(rows) for name, rows in files.items()},
+            "started_at": iso(started), "ended_at": iso(int(time.time() * 1000)),
+            "since": since, "redaction_version": REDACTION_VERSION},
+            sort_keys=True, indent=2) + "\n"
+    _publish(directory, {name: _lines(rows) for name, rows in files.items()},
+             manifest)
     print(f"[holo2] exported {len(files[RUNS])} runs, {len(files[EVENTS])}"
           f" events and {len(files[SESSIONS])} agent sessions to {directory}")
