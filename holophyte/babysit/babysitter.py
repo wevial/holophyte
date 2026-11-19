@@ -85,6 +85,7 @@ from holophyte.review.briefs import (
     tests_brief,
 )
 from holophyte.review.criterion_ids import numbered
+from holophyte.review.json_reply import reply_brief
 from holophyte.review.reply_parsing import (
     _review_reply,
     criteria_findings,
@@ -466,11 +467,10 @@ def _covering_review(project, conn, run_id, provider, task_id, branch, wt, sha,
             + tests_brief(wt)
             + scope_brief(wt, ticket, covered, sha, candidate_only=True)
             + evidence
-            + TAG_BRIEF
-            + "Do not modify anything. End your reply with exactly one "
-            "line:\n"
-            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers.", wt,
+            + reply_brief(project, TAG_BRIEF + "Do not modify anything. End "
+                          "your reply with exactly one line:\nVERDICT: APPROVE"
+                          "  or  VERDICT: REQUEST_CHANGES\nIf REQUEST_CHANGES, "
+                          "list only concrete blockers."), wt,
             base_sha, sha, conn, run_id, run_agent=agent)
     if conn is not None and run_id is not None:
         store.record_event(conn, run_id, "reviewed_commit",

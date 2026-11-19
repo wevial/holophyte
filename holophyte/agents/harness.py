@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from holophyte.review import review_runner
+from holophyte.review.json_reply import SCHEMA_FILE
 from holophyte.tickets.ticket_template import ORCHESTRATION_MODES
 
 TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",
@@ -129,7 +130,7 @@ class Codex(Adapter):
         if role in WRITING_ROLES:
             return [binary, "exec", *self.IMPLEMENTER, *self.route(options)]
         return [binary, "exec", *self.route(options), *self.subagents(role),
-                *self.sandbox(role)]
+                *self.reply_schema(role), *self.sandbox(role)]
 
     def session(self, argv):
         return None
@@ -138,7 +139,8 @@ class Codex(Adapter):
         if role in WRITING_ROLES:
             return [binary, "exec", "resume", session, *self.IMPLEMENTER,
                     *self.route(options)]
-        tail = [*self.route(options), *self.subagents(role)]
+        tail = [*self.route(options), *self.subagents(role),
+                *self.reply_schema(role)]
         if role in READ_ONLY_ROLES:
             return [binary, "exec", *self.sandbox(role), "resume", *tail,
                     session]
@@ -147,6 +149,10 @@ class Codex(Adapter):
     @staticmethod
     def subagents(role):
         return ["--disable", "multi_agent"] if role == SCOUT_LEAD else []
+
+    @staticmethod
+    def reply_schema(role):
+        return ["--output-schema", str(SCHEMA_FILE)] if role == "reviewer" else []
 
     @staticmethod
     def mcp_flags(server):
