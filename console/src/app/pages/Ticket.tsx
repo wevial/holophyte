@@ -8,7 +8,7 @@ import { Btn } from "../components/Btn";
 import { MoreMenu, type MenuItem } from "../components/MoreMenu";
 import { usePlaceItems, useRevertFlow } from "../components/Revert";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
-import { StateDot, TONE_TEXT } from "../components/StateDot";
+import { RevertedGlyph, StateDot, TONE_TEXT } from "../components/StateDot";
 import { ScoutThis, useScoutThis } from "../components/ScoutThis";
 import type { ScoutTarget } from "../scouts";
 import { SteerBox } from "../components/SteerBox";
@@ -20,9 +20,11 @@ import { TicketMoves } from "../components/TicketMoves";
 import { TicketRuns } from "../components/TicketRuns";
 import { TitleText } from "../components/TitleText";
 import { runPage } from "../run";
+import { keepScope } from "../scope";
 import { STATES } from "../state";
+import { COLUMN_HEADS } from "../tickets";
 import { useTicketPage, type BoardChip } from "../ticket";
-import type { TicketDetail } from "../../lib/contract.gen";
+import type { Reverted, TicketDetail } from "../../lib/contract.gen";
 import { NotFound } from "./Placeholder";
 import { CRUMB_LINK } from "./runShared";
 
@@ -43,17 +45,40 @@ function Page({ project, ticketKey, children }: { project: string; ticketKey: st
   );
 }
 
-function BoardLine({ chip, liveRun, project }: { chip: BoardChip; liveRun: number | null; project: string }) {
-  const tone = chip.need ? "need" : STATES[chip.state].tone;
+function RevertedLine({ reverted, project }: { reverted: Reverted; project: string }) {
+  return (
+    <span role="status" aria-label="Revert" className="inline-flex items-center gap-1.5 font-sans text-[13px] font-medium leading-[1.3]">
+      <RevertedGlyph />
+      <span className="text-ink-2">
+        reverted
+        {reverted.by != null && (
+          <>
+            {" by "}
+            <Link to="/tickets/$project/$key" params={{ project, key: reverted.by }} search={keepScope} className="text-act underline underline-offset-2 hover:text-ink">{reverted.by}</Link>
+          </>
+        )}
+        {reverted.reason && <span className="font-normal">: “{reverted.reason}”</span>}
+      </span>
+    </span>
+  );
+}
+
+/** The ticket's revert, if its merge was reverted, then its board column
+ *  unless it says only the reverted merge or the revert's Backlog. */
+function BoardLine({ chip, reverted, liveRun, project }: { chip: BoardChip | null; reverted: Reverted | null; liveRun: number | null; project: string }) {
+  const tone = chip == null ? "ink-3" : chip.need ? "need" : STATES[chip.state].tone;
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
-      <span role="status" aria-label="Board" className="inline-flex items-center gap-1.5 font-sans text-[13px] font-medium leading-[1.3]">
-        <StateDot state={chip.state} hideWord tone={tone} />
-        <span>
-          <span className={TONE_TEXT[tone]}>{chip.label}</span>
-          {chip.sub != null && <span className="font-normal text-ink-3"> · {chip.sub}</span>}
+      {reverted != null && <RevertedLine reverted={reverted} project={project} />}
+      {chip != null && (reverted == null || (chip.state !== "merged" && chip.label !== COLUMN_HEADS.backlog.label)) && (
+        <span role="status" aria-label="Board" className="inline-flex items-center gap-1.5 font-sans text-[13px] font-medium leading-[1.3]">
+          <StateDot state={chip.state} hideWord tone={tone} />
+          <span>
+            <span className={TONE_TEXT[tone]}>{chip.label}</span>
+            {chip.sub != null && <span className="font-normal text-ink-3"> · {chip.sub}</span>}
+          </span>
         </span>
-      </span>
+      )}
       {liveRun != null && (
         <Link {...runPage(project, liveRun)} className="font-sans text-[13px] leading-[1.3] text-ink-3 no-underline hover:text-ink hover:underline underline-offset-2">
           open run {liveRun}
@@ -170,7 +195,7 @@ export function TicketPage() {
             </div>
           </div>
         </div>
-        {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} project={project} />}
+        {(chip != null || ticket.reverted != null) && <BoardLine chip={chip} reverted={ticket.reverted ?? null} liveRun={page.liveRun} project={project} />}
       </div>
       {steering && actionsOn && !SETTLED.has(ticket.status) && (
         <SteerBox key={`${project}/${key}`} ticketKey={key} base={page.host.base} liveRun={page.liveRun} onClose={() => setSteeringKey(null)} />

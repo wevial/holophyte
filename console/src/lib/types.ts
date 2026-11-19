@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { hostProjectSchema, hostStatusSchema, statusSchema, supervisorSchema, runSchema, queuedSchema, findingSchema, roundSchema, runEventSchema } from "./schemas";
+import type { Reverted } from "./contract.gen";
 
 /** The daemon's `/attention` body (holophyte/serve/server.py `attention()`). */
 export interface Attention {
@@ -51,6 +52,7 @@ export interface ShippedRow {
    *  else null; a daemon older than the field sends none. */
   pr_url?: string | null;
   host: string | null;
+  reverted?: Reverted | null;
   /** The console's stamp: the base of the daemon the row came from. */
   daemon?: string;
   /** The console's stamp: the name of the project the daemon serves,

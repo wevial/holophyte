@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { needsYouEntries, type NeedsYouEntry, type ReadinessMap } from "../lib/attention";
-import type { Board, BoardColumn, StatusRun } from "../lib/contract.gen";
+import type { Board, BoardColumn, Reverted, StatusRun } from "../lib/contract.gen";
 import { projectName } from "../lib/derive";
 import { formatAge, formatClock, formatDuration } from "../lib/format";
 import { hostItems, type HostRecord } from "../lib/hosts";
@@ -47,6 +47,8 @@ export interface TicketCard {
   timeBoxMs: number | null;
   waitsOn: string[];
   endedMs: number | null;
+  /** The revert that undid the ticket's merge, from its `/board` row. */
+  reverted: Reverted | null;
   /** The daemon's clock less the browser's, as of its last answer. */
   skewMs: number;
 }
@@ -61,7 +63,8 @@ const BY_STATE: Record<TicketCard["state"], ColumnId> = {
   merged: "done",
 };
 
-export function boardColumn(card: Pick<TicketCard, "state" | "need">): ColumnId {
+export function boardColumn(card: Pick<TicketCard, "state" | "need" | "reverted">): ColumnId {
+  if (card.state === "merged" && card.reverted != null) return "backlog";
   return card.need != null && card.state !== "merged" ? "needs_you" : BY_STATE[card.state];
 }
 
@@ -91,7 +94,7 @@ export function validateTicketsSearch({ filter, q }: Record<string, unknown>): T
 
 /** The state a card is listed under: its column, with Backlog split into
  *  Needs spec and the rest. */
-export function ticketView(card: Pick<TicketCard, "state" | "need">): TicketFilter {
+export function ticketView(card: Pick<TicketCard, "state" | "need" | "reverted">): TicketFilter {
   const column = boardColumn(card);
   if (column !== "backlog") return column;
   return card.state === "needs_spec" ? "needs_spec" : "backlog";
@@ -150,6 +153,7 @@ export function cardWord(card: TicketCard, now: number): string {
       if (card.state === "needs_spec") return "needs a spec";
       return card.waitsOn.length === 0 ? STATES.todo.word : `blocked by ${card.waitsOn.join(", ")}`;
     case "merged":
+      if (card.reverted != null) return "reverted";
       return card.endedMs == null ? "merged" : `merged ${formatClock(card.endedMs)}`;
     default:
       return STATES[state].word;
@@ -267,6 +271,7 @@ export function hostCards(host: HostRecord<ContractBodies>, board: Board, readin
       timeBoxMs: ticket.time_box_ms,
       waitsOn: ticket.waits_on,
       endedMs: null,
+      reverted: ticket.reverted ?? null,
       skewMs,
     })),
   );
@@ -290,10 +295,18 @@ export function useTicketBoard(): TicketBoard {
       cards.push(card);
     }
   }
+  const undone = new Set(cards.filter((card) => card.reverted != null).map((card) => card.id));
+  const latest = new Map<string, (typeof merged)[number]>();
   for (const row of merged) {
+    const key = cardId(row.daemon ?? "", row.ticket);
+    if (!latest.has(key)) latest.set(key, row);
+  }
+  for (const row of merged) {
+    const key = cardId(row.daemon ?? "", row.ticket);
+    if (row.reverted != null || undone.has(key) || latest.get(key)?.reverted != null) continue;
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
-      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, skewMs: 0,
+      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);
     cards.push(card);

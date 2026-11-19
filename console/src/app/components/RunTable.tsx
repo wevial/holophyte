@@ -8,15 +8,15 @@ import type { RunRow } from "../history";
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
 import type { State } from "../state";
-import { StateDot } from "./StateDot";
+import { RevertedGlyph, StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { MoreMenu, ROW_MENU } from "./MoreMenu";
 import { usePlaceItems, useRevertFlow } from "./Revert";
 
 const GRID = "grid items-center gap-x-3 max-[760px]:grid-cols-[22px_auto_auto_minmax(0,1fr)_auto] max-[760px]:gap-x-1.5";
-const DAY_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_48px_60px] min-[760px]:@max-[780px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_44px_44px_48px_60px] min-[760px]:@max-[600px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_48px_60px]";
-const DATED_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_44px_88px_60px] min-[760px]:@max-[780px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_44px_44px_88px_60px] min-[760px]:@max-[600px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_88px_60px]";
+const DAY_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_60px_48px_60px] min-[760px]:@max-[780px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_44px_60px_48px_60px] min-[760px]:@max-[600px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_48px_60px]";
+const DATED_COLUMNS = "grid-cols-[16px_36px_96px_minmax(0,1fr)_minmax(0,148px)_44px_60px_88px_60px] min-[760px]:@max-[780px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_44px_60px_88px_60px] min-[760px]:@max-[600px]:grid-cols-[16px_36px_96px_minmax(0,1fr)_88px_60px]";
 const MONO = "font-mono text-[12px] leading-none tabular-nums text-ink-3";
 const WIDE = "max-[760px]:hidden";
 const ROOMY = "max-[760px]:hidden min-[760px]:@max-[600px]:hidden";
@@ -62,6 +62,7 @@ export function ResumedAs({ row }: { row: { base: string; resumed_as?: number | 
 
 function StateGlyph({ row }: { row: RunRow }) {
   const [shown, setShown] = useState(false);
+  const tip = row.reverted == null ? row.stage : `${row.stage} · reverted${row.reverted.by == null ? "" : ` by ${row.reverted.by}`}`;
   return (
     <span
       tabIndex={0}
@@ -72,10 +73,10 @@ function StateGlyph({ row }: { row: RunRow }) {
       onKeyDown={(event) => event.key === "Escape" && setShown(false)}
       className={`relative inline-flex size-4 items-center justify-center focus-visible:outline-2 focus-visible:outline-focus ${shown ? "z-30" : "z-[1]"}`}
     >
-      <StateDot state={row.state} hideWord label={row.stage} />
+      {row.reverted == null ? <StateDot state={row.state} hideWord label={tip} /> : <RevertedGlyph label={tip} />}
       {shown && (
         <span role="tooltip" className="absolute top-full left-0 mt-1.5 w-max max-w-[min(320px,calc(100vw-32px))] border border-rule bg-paper px-3 py-2 font-sans text-[13px] leading-[1.45] text-ink shadow-[var(--card-shadow)]">
-          {row.stage}
+          {tip}
         </span>
       )}
     </span>
@@ -110,10 +111,10 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
       data-row
       data-run={row.id}
       data-need={need ? "" : undefined}
-      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} group relative min-h-8 border-b border-rule-2 pl-2.5 pr-11 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)] max-[760px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
+      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} group relative min-h-10 border-b border-rule-2 pl-2.5 pr-11 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)] max-[760px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
       <span className="inline-flex max-[760px]:row-span-2"><StateGlyph row={row} /></span>
-      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} ${NARROW_LINK} no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
+      <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}${row.reverted == null ? "" : ", reverted"}, started ${start}`} className={`${MONO} ${NARROW_LINK} no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>
         {row.id}
       </RunRowLink>
       <span className={`${MONO} ${UNDER_TITLE} truncate max-[760px]:col-start-2`}>
@@ -127,7 +128,8 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
         </Link>
       </span>
       <span data-title className="flex min-w-0 items-baseline gap-2 max-[760px]:col-span-3 max-[760px]:col-start-2 max-[760px]:mb-1">
-        <span className="truncate font-read text-[14px] font-medium leading-[1.3]"><TitleText>{row.title}</TitleText></span>
+        <span className={`truncate font-read text-[14px] font-medium leading-[1.3] ${row.reverted == null ? "" : "text-ink-2"}`}><TitleText>{row.title}</TitleText></span>
+        {row.reverted != null && <span data-reverted className="shrink-0 font-mono text-[11.5px] text-ink-3 min-[760px]:@min-[600px]:hidden">reverted</span>}
         {row.resumed_as != null && <span className="shrink-0 font-mono text-[11.5px] text-ink-3"><ResumedAs row={row} /></span>}
       </span>
       <span className={`${WIDE} flex min-w-0 items-center gap-2 font-sans text-[13px] text-ink-2 min-[760px]:@max-[780px]:hidden`}>
@@ -137,10 +139,10 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
       <span data-rounds className={`${MONO} ${ROOMY} inline-flex items-center gap-1`}>
         {row.rounds > 0 ? <><LoopGlyph />{row.rounds}</> : DASH}
       </span>
-      <span data-pr className={`${MONO} ${ROOMY}`}>{prNumber(row.pr_url)}</span>
+      <span data-pr className={`${MONO} ${ROOMY}`}>{row.reverted == null ? prNumber(row.pr_url) : "reverted"}</span>
       <span className={`${MONO} ${UNDER_TITLE} whitespace-nowrap max-[760px]:col-start-3 max-[760px]:before:content-['·_']`}>{shownStart}</span>
       <span className={`${MONO} whitespace-nowrap text-right max-[760px]:col-start-5 max-[760px]:row-span-2 max-[760px]:row-start-1`}>{formatSettled(row.elapsed_ms)}</span>
-      <MoreMenu compact label={`More for run ${row.id}`} items={menu.items} className={`${ROW_MENU} absolute top-0 right-1.5 z-[2] flex h-8 items-center`} />
+      <MoreMenu compact label={`More for run ${row.id}`} items={menu.items} className={`${ROW_MENU} absolute top-0 right-1.5 z-[2] flex h-10 items-center`} />
       <div className="col-span-full pb-1.5 empty:hidden">{menu.layer}</div>
     </li>
   );

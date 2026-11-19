@@ -952,6 +952,13 @@ class PathMatchesTests(TrackedMainTestCase):
         self.assertEqual(code, 200)
         self.assertEqual([item["count"] for item in body["matches"]], [2, 1, 0])
 
+    def test_refuse_paths_count_each_entry_by_the_revert_glob(self):
+        code, _, body = self.counts(
+            "revert.refuse_paths", "**/*.ts", "**/build.ts", "*.ts", "nope/**")
+        self.assertEqual(code, 200)
+        self.assertEqual([item["count"] for item in body["matches"]],
+                         [3, 1, 0, 0])
+
     def test_an_unknown_key_or_an_oversized_ask_is_400(self):
         for key, entries in (("merge.mode", ["x"]),
                              ("merge.ui_paths", ["x"] * 101),

@@ -564,6 +564,7 @@ class ShippedRow(TypedDict):
     outcome_reason: str | None
     pr_url: str | None
     host: str | None
+    reverted: NotRequired[Reverted | None]
 
 
 class Shipped(TypedDict):

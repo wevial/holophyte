@@ -9,7 +9,7 @@ import { useTicket } from "../queries";
 import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
 import { cardElementId, modified, TicketGlyph } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
-import { TONE_TEXT } from "./StateDot";
+import { RevertedGlyph, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
 import { MoreMenu, ROW_MENU, type MenuItem } from "./MoreMenu";
 import { usePlaceItems, useRevertFlow } from "./Revert";
@@ -52,8 +52,8 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
       className={`${merged ? GLYPH_GRID : GRID} min-h-[42px] py-2 [:root[data-density=compact]_&]:min-h-[34px]! [:root[data-density=compact]_&]:py-1.5! font-sans text-[13px] leading-[1.3] text-ink-2 no-underline transition-colors duration-(--motion-colour) ${open ? "bg-selected" : "hover:bg-[color-mix(in_srgb,var(--hover)_50%,var(--raised))]"}`}
     >
       <span data-cell="status" className={`inline-flex items-center gap-[5px] whitespace-nowrap text-[12.5px] ${merged ? "-mr-2 max-[820px]:mr-0" : ""} ${open ? "text-ink" : TONE_TEXT[tone]}`}>
-        <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} />
-        <span className={merged ? "sr-only" : undefined}>{COLUMN_HEADS[column].label}</span>
+        {card.reverted == null ? <TicketGlyph state={COLUMN_HEADS[column].state} tone={tone} /> : <RevertedGlyph />}
+        <span className={merged ? "sr-only" : undefined}>{card.reverted == null ? COLUMN_HEADS[column].label : card.state === "merged" ? "reverted" : `reverted · ${COLUMN_HEADS[column].label}`}</span>
       </span>
       <span data-cell="key" className={`font-mono text-[12px] tabular-nums ${open ? "text-ink-2" : "text-ink-3"}`}>{card.key}</span>
       <span

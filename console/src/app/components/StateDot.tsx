@@ -131,3 +131,15 @@ export function StateDot({
     </span>
   );
 }
+
+/** A reverted merge's glyph, drawn in place of its merged one. */
+export function RevertedGlyph({ label = "reverted" }: { label?: string }) {
+  return (
+    <span role="img" aria-label={label} data-state="reverted" className="inline-flex items-center text-bad-text">
+      <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-3.5 shrink-0">
+        <path d="M6 3.5 3 6.5l3 3" />
+        <path d="M3 6.5h6.25a3.5 3.5 0 0 1 0 7H7" />
+      </svg>
+    </span>
+  );
+}

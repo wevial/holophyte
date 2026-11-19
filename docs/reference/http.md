@@ -276,7 +276,8 @@ non-positive or non-integer limit is 400.
    "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "pr_url": "https://github.com/example/repo/pull/2170",
-   "host": "writer-1", "outcome": "merged", "outcome_reason": null}
+   "host": "writer-1", "outcome": "merged", "outcome_reason": null,
+   "reverted": null}
 ], "next_before": 298, "limit": 50}
 ```
 
@@ -298,7 +299,9 @@ the chain and `turn_count` the number of agent turns `/runs/N/turns`
 lists, summed over them. `outcome=merged` (the default) returns only merged runs;
 `outcome=all` returns every run that closed its chain, whatever its
 outcome. Each row includes `outcome` and
-`outcome_reason` (the stored reason cut at 400 characters, null when absent).
+`outcome_reason` (the stored reason cut at 400 characters, null when absent),
+and `reverted`, the closing run's as `/runs/N` serves it; an older daemon
+leaves it out.
 Any other `outcome` is 400 naming the parameter and its value. The console's
 Shipped view scrolls back over it grouped by day; the Board's "shipped
 today" is its first page. `findings` is the count of findings over the
@@ -1530,7 +1533,9 @@ it is typed.
 `review.high_paths` and `review.medium_paths` (matched as review's blast
 radius matches, a pattern with no `/` also against the file's name) and
 `worktree.setup.inputs` (an exact path or a directory prefix): the rules
-`stale_config_paths` in `--status` uses. Each `entry` is matched as given,
+`stale_config_paths` in `--status` uses; and `revert.refuse_paths`,
+matched as `holo revert` matches it (`**` across directories, `*` within
+one). Each `entry` is matched as given,
 saved or not; `matches` keeps their order, each with its `entry` and
 `count`. `ref` is the main the daemon reads (`origin/main`, else `main`)
 and `sha` its commit, short to 12. The listing is `git ls-tree` of that

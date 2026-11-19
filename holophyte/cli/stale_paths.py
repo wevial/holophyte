@@ -2,12 +2,14 @@
 import fnmatch
 import functools
 import os
+import re
 import subprocess
 from pathlib import Path
 
 from holophyte.config.config_tables import merge_config
 from holophyte.config.review_settings import review_config
 from holophyte.config.worktree_settings import setup_steps
+from holophyte.revert.checks import glob_pattern
 from holophyte.review.blast_radius import matching
 from holophyte.review.briefs import main_ref
 
@@ -24,11 +26,25 @@ def _input_match(entry, path):
     return path == entry or path.startswith(entry + "/")
 
 
+@functools.lru_cache(maxsize=256)
+def _refuse_pattern(entry):
+    try:
+        return glob_pattern(entry)
+    except re.error:
+        return None
+
+
+def _refuse_match(entry, path):
+    pattern = _refuse_pattern(entry)
+    return pattern is not None and pattern.fullmatch(path)
+
+
 PATH_MATCHERS = {
     "merge.ui_paths": ("[merge] ui_paths", _ui_match),
     "review.high_paths": ("[review] high_paths", _review_match),
     "review.medium_paths": ("[review] medium_paths", _review_match),
     "worktree.setup.inputs": ("[worktree] setup inputs", _input_match),
+    "revert.refuse_paths": ("[revert] refuse_paths", _refuse_match),
 }
 
 
