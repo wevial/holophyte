@@ -253,7 +253,8 @@ class RevertCliTests(ConfigTestCase):
                       self.refused("NAT-1", "broke the header"))
 
     def test_a_refuse_paths_character_class_refuses_a_matching_path(self):
-        for glob in ("change_[0-9]*.py", "change_[[:digit:]]*.py"):
+        for glob in ("change_[0-9]*.py", "change_[[:digit:]]*.py",
+                     "change_[^]]*.py"):
             with self.subTest(glob=glob):
                 self.project_with(
                     ENABLED + f'refuse_paths = ["db/changes/{glob}"]\n',
@@ -416,6 +417,16 @@ class RevertCliTests(ConfigTestCase):
                         contextlib.redirect_stdout(io.StringIO()):
                     holophyte.cli.entry.cli([str(self.target)])
                 self.assertIn("[revert] refuse_paths must be a list",
+                              str(raised.exception.code))
+
+    def test_startup_refuses_an_empty_negated_class_in_refuse_paths(self):
+        for glob in ("db/changes/[!].sql", "db/changes/[^].sql"):
+            with self.subTest(glob=glob):
+                self.locate(f'{ENABLED}refuse_paths = ["{glob}"]\n')
+                with self.assertRaises(SystemExit) as raised, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    holophyte.cli.entry.cli([str(self.target)])
+                self.assertIn("is not a path glob",
                               str(raised.exception.code))
 
 

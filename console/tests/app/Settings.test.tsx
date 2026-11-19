@@ -121,7 +121,7 @@ test("Review presents ordered grouped sections with matching host badge and curr
   const view = await mount("#/settings/review?project=demo");
   view.failRunner();
   await view.poll();
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Review");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Review · demo");
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   const links = within(nav).getAllByRole("link");
   expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts1", "General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]);
@@ -132,12 +132,12 @@ test("Review presents ordered grouped sections with matching host badge and curr
   expect(footer.getAttribute("href")).toMatch(/#\/settings\/general\?project=demo$/);
 });
 
-test("General's header holds its title alone, with no subtitle, file, revision or footer line", async () => {
+test("General's header holds its title and project alone, with no subtitle, file, revision or footer line", async () => {
   const saved = async () => Response.json({ text: "", values: {}, path: "/srv/demo/config.toml", applies: "next loop start", revision: "3f9a2c1" + "a".repeat(57), saved: { at_ms: 1791969120000, actor: "maintainer" }, modified_ms: 1791969120000 });
   await mount("#/settings/general?project=demo", fleet(saved));
-  const title = screen.getByRole("heading", { level: 1, name: "General" });
-  expect(title.closest("header")!.textContent).toBe("General");
-  const page = screen.getByRole("region", { name: "General" });
+  const title = screen.getByRole("heading", { level: 1, name: "General · demo" });
+  expect(title.closest("header")!.textContent).toBe("General · demo");
+  const page = screen.getByRole("region", { name: "General · demo" });
   expect(within(page).getByRole("group", { name: "Merge mode" })).toBeTruthy();
   expect(page.querySelector("footer")).toBeNull();
   for (const gone of ["config.toml", "3f9a2c1", "[merge]", "saved "]) expect(page.textContent).not.toContain(gone);
@@ -374,7 +374,7 @@ test("the sidebar's project switcher remembers the choice and names held project
   await view.poll();
   await pickProject("writer");
   expect(readStoredScope()).toBe("writer");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General · writer");
   expect(switcher().getAttribute("aria-label")).toBe("Project: writer. Switch project");
   fireEvent.click(switcher());
   await act(settle);
@@ -385,7 +385,7 @@ test("the sidebar's project switcher remembers the choice and names held project
   expect(within(nav).getByRole("link", { name: /^Hold/ }).textContent).toContain("held");
   cleanup();
   await mount("#/settings");
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("General · demo");
   expect(switcher().getAttribute("aria-label")).toBe("Project: demo. Switch project");
   expect(window.location.hash).toBe("#/settings");
 });
@@ -401,7 +401,7 @@ test("project panels distinguish pending, disabled and failed config reads while
     expect(screen.getByText(message)).toBeTruthy();
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Hold" }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold · demo");
     cleanup();
   }
 });
@@ -411,7 +411,7 @@ test("an unknown project's panels report no matching host and selecting a known 
   for (const label of ["General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(label);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`${label} · unknown`);
     expect(screen.getByText("No host is available for unknown.")).toBeTruthy();
     expect(screen.queryByText(/^Reading config.toml/)).toBeNull();
   }
@@ -435,13 +435,13 @@ test("Raw TOML drops the page's width cap and sizes its editor to the viewport w
   const toml = async () => Response.json({ text: "[loop]\nworkers = 2\n", values: {}, path: "/srv/demo/config.toml", applies: "next loop start", revision: "3f9a2c1b" + "a".repeat(56), saved: null, modified_ms: null });
   await mount("#/settings/toml?project=demo", fleet(toml));
   const classes = (element: Element) => element.className.split(/\s+/);
-  expect(classes(screen.getByRole("region", { name: "Raw TOML" }).firstElementChild!)).not.toContain("max-w-[1180px]");
+  expect(classes(screen.getByRole("region", { name: "Raw TOML · demo" }).firstElementChild!)).not.toContain("max-w-[1180px]");
   const scroller = classes(screen.getByRole("textbox", { name: "config.toml for demo" }).closest("[data-toml-scroller]")!);
   expect(scroller).not.toContain("h-[360px]");
   expect(scroller.filter((name) => /^h-\[max\(360px,calc\(100dvh-\d+px\)\)\]$/.test(name))).toHaveLength(1);
   fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "General" }));
   await act(settle);
-  expect(classes(screen.getByRole("region", { name: "General" }).firstElementChild!)).toContain("max-w-[1180px]");
+  expect(classes(screen.getByRole("region", { name: "General · demo" }).firstElementChild!)).toContain("max-w-[1180px]");
 });
 
 test("on Appearance the sidebar holds the Settings sections in place of the Pages nav, and the page holds only that section", async () => {

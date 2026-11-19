@@ -21,10 +21,11 @@ import { RunStepper } from "../components/RunStepper";
 import { RevertedGlyph, StateDot } from "../components/StateDot";
 import { TitleText } from "../components/TitleText";
 import { useRunTurns, useTicket } from "../queries";
-import { stepperOf, useRunPage, type RunPage as RunPageFacts } from "../run";
+import { STAGE_NAMES, stepperOf, useRunPage, type RunPage as RunPageFacts } from "../run";
 import { keepScope, PollDepsContext } from "../scope";
 import type { Reverted, RunDetail } from "../../lib/contract.gen";
-import { commitLink, shortSha } from "../../lib/shipped";
+import { formatSettled } from "../../lib/format";
+import { commitLink, prLabel, shortSha } from "../../lib/shipped";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
 /** The summary the run was given: the claimed revision's body when the
@@ -93,6 +94,27 @@ function RevertedVerdict({ run, reverted, project }: { run: RunDetail["run"]; re
       )}
       {reverted.reason ? <>: “{reverted.reason}”</> : "."}
     </>
+  );
+}
+
+const SUMMARY_FACT = "font-mono text-[12px] text-ink-3";
+
+/** A reverted merge's settled run: every stage finished as one unlabeled
+ *  bar, then its pull request, review rounds, verify and duration. */
+function RevertedSummary({ detail }: { detail: RunDetail }) {
+  const { run, rounds } = detail;
+  return (
+    <div data-run-summary>
+      <div aria-hidden="true" className="mt-5 flex gap-1">
+        {STAGE_NAMES.map((name) => <span key={name} data-stage-done className="h-[3px] flex-1 rounded-[2px] bg-live" />)}
+      </div>
+      <p className="mt-4 flex flex-wrap gap-x-[18px] gap-y-1">
+        {run.pr_url != null && <a href={run.pr_url} target="_blank" rel="noreferrer" className={`${SUMMARY_FACT} no-underline hover:text-ink`}>{prLabel(run.pr_url)}</a>}
+        <span className={SUMMARY_FACT}>review <b className="font-semibold text-ink-2">{rounds.length} {rounds.length === 1 ? "round" : "rounds"}</b></span>
+        <span className={SUMMARY_FACT}>verify <b className="font-semibold text-ink-2">passed</b></span>
+        {run.ended_ms != null && <span className={SUMMARY_FACT}>{formatSettled(run.ended_ms - run.started_ms)}</span>}
+      </p>
+    </div>
   );
 }
 
@@ -166,10 +188,16 @@ export function RunPage() {
           <p role="status" className="m-0 max-w-[64ch] font-sans text-[15px] leading-[1.45] text-ink">
             {reverted == null ? <Verdict sentence={page.sentence} run={run} merged={merged} /> : <RevertedVerdict run={run} reverted={reverted} project={project} />}
           </p>
-          {page.agentMs != null && <TimeBox agentMs={page.agentMs} boxMs={page.boxMs} />}
+          {reverted == null && page.agentMs != null && <TimeBox agentMs={page.agentMs} boxMs={page.boxMs} />}
         </div>
-        <Stepper page={page} />
-        <RunFacts run={run} labels={page.labels} prFacts={page.prFacts} ready={page.state === "ready_to_merge"} merged={merged} />
+        {reverted == null ? (
+          <>
+            <Stepper page={page} />
+            <RunFacts run={run} labels={page.labels} prFacts={page.prFacts} ready={page.state === "ready_to_merge"} merged={merged} />
+          </>
+        ) : (
+          <RevertedSummary detail={page.detail} />
+        )}
       </header>
       <div data-run-body className="@container mt-9 grid min-h-40 grid-cols-1 items-start gap-x-[52px] gap-y-8 min-[1180px]:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-w-0 flex-col gap-[30px]">

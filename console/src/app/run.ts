@@ -149,7 +149,7 @@ export interface StepperStage {
   slots: number;
 }
 
-const STAGE_NAMES = ["Implement", "Verify", "Review", "Merge gate", "Merged"] as const;
+export const STAGE_NAMES = ["Implement", "Verify", "Review", "Merge gate", "Merged"] as const;
 const STAGE_OF: Record<string, number> = {
   claimed: 0,
   working: 0,

@@ -22,7 +22,8 @@ const historyRow = (id: number, ticket: string, reverted: Reverted | null): Hist
 });
 const runSeven: RunDetail = {
   ...servedRun,
-  run: { ...servedRun.run, id: 7, ticket: "DEMO-7", title: "Page the ledger", phase: "done", outcome: "merged", merge_sha: "4f2a91c0ffee", ended_ms: ENDED, reverted: REVERTED },
+  run: { ...servedRun.run, id: 7, ticket: "DEMO-7", title: "Page the ledger", phase: "done", outcome: "merged", merge_sha: "4f2a91c0ffee",
+    started_ms: ENDED - 34 * MINUTE, ended_ms: ENDED, pr_url: "https://github.com/acme/demo/pull/1071", reverted: REVERTED },
 };
 const ticketSeven: TicketDetail = { ...servedTicket, ticket: "DEMO-7", title: "Page the ledger", status: "backlog", reverted: REVERTED };
 const listed = servedBoard.columns.flatMap((column) => column.tickets)[0]!;
@@ -118,6 +119,17 @@ test("a reverted run's page says it merged then was reverted by the revert ticke
   expect(within(verdict).getByRole("status").textContent).toBe("Merged into main as 4f2a91c, then reverted by HOLO-9: “broke the header”");
   expect(within(verdict).getByRole("link", { name: "HOLO-9" }).getAttribute("href")).toBe("/#/tickets/demo/HOLO-9");
   expect(within(verdict).getByRole("img", { name: "reverted" })).toBeTruthy();
+});
+
+test("a reverted run's page sums the settled run under its verdict in place of the time meter, stepper and agent facts", async () => {
+  await mount("#/runs/demo/7", daemon());
+  expect(document.querySelector("[data-run-verdict]")!.textContent).not.toContain("/ 25m");
+  expect(screen.queryByRole("list", { name: "Stages" })).toBeNull();
+  expect(screen.queryByRole("img", { name: "Implementer" })).toBeNull();
+  const summary = document.querySelector<HTMLElement>("[data-run-summary]")!;
+  expect(summary.querySelectorAll("[data-stage-done]")).toHaveLength(5);
+  expect(summary.textContent).toBe("PR #1071review 1 roundverify passed34m");
+  expect(within(summary).getByRole("link", { name: "PR #1071" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/1071");
 });
 
 test("a reverted ticket's page names the revert ticket and the reason in place of its Backlog column", async () => {

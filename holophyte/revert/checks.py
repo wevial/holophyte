@@ -135,7 +135,9 @@ def glob_steps(part):
     if part in tokens:
         return tokens[part]
     negated = part[1:2] in ("!", "^")
-    if part.startswith("[") and part.endswith("]") and len(part) > 2 + negated:
+    if part.startswith("[") and part.endswith("]") and len(part) > 2:
+        if len(part) == 2 + negated:
+            raise re.error(f"empty negated character class {part}")
         members = class_members(part[1 + negated:-1])
         member = re.compile(f"(?!/)[{'^' if negated else ''}{members}]",
                             re.DOTALL)
@@ -192,7 +194,7 @@ class Glob:
 
 def glob_pattern(glob):
     parts = re.split(r"(\\.|\*\*/|/\*\*$|\*\*|\*|\?"
-                     r"|\[!?\]?(?:\[:[a-z]+:\]|[^\]/])*\])", glob)
+                     r"|\[[!^]?\]?(?:\[:[a-z]+:\]|[^\]/])*\])", glob)
     return Glob([step for part in parts for step in glob_steps(part)])
 
 

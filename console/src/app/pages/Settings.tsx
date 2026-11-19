@@ -116,7 +116,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
     setMarks({ counts: JSON.parse(countsKey) as Record<string, number>, checkRefused });
   }, [setMarks, countsKey, checkRefused]);
   useEffect(() => () => setMarks(null), [setMarks]);
-  const heading = <h1 id="page-title" className="font-sans text-[24px] font-semibold leading-[1.25] tracking-[-0.015em] text-ink">{tab.label}</h1>;
+  const heading = <h1 id="page-title" className="font-sans text-[24px] font-semibold leading-[1.25] tracking-[-0.015em] text-ink">{tab.group === "Project" && project ? `${tab.label} · ${project}` : tab.label}</h1>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   return (
     <section aria-labelledby="page-title" className="flex min-h-full flex-col px-5 pt-3.5 pb-[22px] min-[720px]:px-10">
