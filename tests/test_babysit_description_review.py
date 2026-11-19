@@ -109,6 +109,17 @@ class DescriptionFindingsTests(unittest.TestCase):
                 self.assertEqual(description_findings(
                     f"{line}{TAIL}", "REQUEST_CHANGES", []), [line])
 
+    def test_a_code_blocker_under_a_tagged_finding_is_not_its_continuation(self):
+        for code in ("  ```x``` is wrong\n- [P0] holophyte/x.py:3 crashes.",
+                     "  ```\n  example\n- [P0] holophyte/x.py:3 crashes.",
+                     "\n  The parser raises an error on an empty config.",
+                     "  **Code**\n  The retry loop never exits.",
+                     "  load() crashes on empty input.",
+                     "  High: the retry loop never exits."):
+            with self.subTest(code=code):
+                self.assertEqual(description_findings(
+                    f"{TAGGED}\n{code}{TAIL}", "REQUEST_CHANGES", []), [])
+
     def test_a_wrapped_tagged_bullet_is_one_description_finding(self):
         self.assertEqual(description_findings(
             f"{WRAPPED}{TAIL}", "REQUEST_CHANGES", []), [WRAPPED])
