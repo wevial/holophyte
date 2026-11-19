@@ -60,14 +60,9 @@ export function ResumedAs({ row }: { row: { base: string; resumed_as?: number | 
   );
 }
 
-/** "reverted", naming the revert ticket when its daemon knows it. */
-export function revertedWord(reverted: { by: string | null }): string {
-  return reverted.by == null ? "reverted" : `reverted by ${reverted.by}`;
-}
-
 function StateGlyph({ row }: { row: RunRow }) {
   const [shown, setShown] = useState(false);
-  const tip = row.reverted == null ? row.stage : `${row.stage} · ${revertedWord(row.reverted)}`;
+  const tip = row.reverted == null ? row.stage : `${row.stage} · reverted${row.reverted.by == null ? "" : ` by ${row.reverted.by}`}`;
   return (
     <span
       tabIndex={0}
