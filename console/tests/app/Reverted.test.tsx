@@ -104,16 +104,10 @@ test("on Tickets a reverted ticket's row reads reverted · Backlog beside the un
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["backlog"]);
 });
 
-test("on Tickets a reverted merge missing from the board lists one row with the undo glyph and the word reverted, outside Done today", async () => {
+test("on Tickets a reverted merge whose ticket is off the board lists no row, as for a ticket cancelled after its revert", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null));
-  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
-  expect(rows).toHaveLength(1);
-  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
-  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
-  expect(status.textContent).toBe("reverted");
-  expect(rows[0]!.getAttribute("data-column")).not.toBe("done");
-  expect(rows[0]!.querySelector('[data-state="merged"]')).toBeNull();
+  expect(document.querySelectorAll("[data-row]")).toHaveLength(0);
 });
 
 test("on the default Tickets board a reverted ticket's Backlog card shows the undo glyph and the word reverted", async () => {
@@ -123,39 +117,16 @@ test("on the default Tickets board a reverted ticket's Backlog card shows the un
   expect(line.textContent).toMatch(/^reverted · /);
 });
 
-test("on Tickets a merge reverted on an earlier day and missing from the board lists one reverted row", async () => {
-  writeView("table");
-  await mount("#/tickets", daemon(null, [{ ...revertedMerge, ended_ms: NOW - 26 * 60 * MINUTE }]));
-  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
-  expect(rows).toHaveLength(1);
-  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
-  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
-  expect(status.textContent).toBe("reverted");
-});
-
-test("on Tickets a reverted merge ending the same millisecond as an older merge of its ticket lists only the reverted row", async () => {
-  writeView("table");
-  await mount("#/tickets", daemon(null, [merged(5, "DEMO-7", ENDED), revertedMerge]));
-  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
-  expect(rows).toHaveLength(1);
-  expect(rows[0]!.querySelector('[data-cell="status"]')!.textContent).toBe("reverted");
-  expect(rows[0]!.getAttribute("data-column")).not.toBe("done");
-});
-
 test("on Tickets a reverted ticket merged again lists only the new merge", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null, [merged(12, "DEMO-7", ENDED + 10 * MINUTE), revertedMerge]));
   expect([...document.querySelectorAll("[data-row]")].map((row) => row.querySelector('[data-cell="stage"]')?.textContent)).toEqual(["merged 11:40"]);
 });
 
-test("on Tickets a merge reverted after an earlier merge the same day lists only the reverted row", async () => {
+test("on Tickets a merge reverted after an earlier merge the same day keeps the earlier merge out of Done today", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null, [revertedMerge, merged(12, "DEMO-7", ENDED - 10 * MINUTE)]));
-  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
-  expect(rows).toHaveLength(1);
-  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
-  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
-  expect(status.textContent).toBe("reverted");
+  expect(document.querySelectorAll("[data-row]")).toHaveLength(0);
 });
 
 test("a reverted run's page says it merged then was reverted by the revert ticket, linked, with the reason", async () => {

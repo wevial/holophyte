@@ -6,10 +6,10 @@ import { projectName } from "../lib/derive";
 import { formatAge, formatClock, formatDuration } from "../lib/format";
 import { hostItems, type HostRecord } from "../lib/hosts";
 import { phaseLabel } from "../lib/runs";
-import { prLabel, todayMerges } from "../lib/shipped";
+import { prLabel } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import type { ContractBodies } from "./fleet";
-import { useBoards, useMergedRecently, useReadiness } from "./queries";
+import { useBoards, useMergedToday, useReadiness } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, STATES, type State } from "./state";
 
@@ -47,7 +47,7 @@ export interface TicketCard {
   timeBoxMs: number | null;
   waitsOn: string[];
   endedMs: number | null;
-  /** The revert that undid the ticket's merge, from its `/board` or `/shipped` row. */
+  /** The revert that undid the ticket's merge, from its `/board` row. */
   reverted: Reverted | null;
   /** The daemon's clock less the browser's, as of its last answer. */
   skewMs: number;
@@ -286,8 +286,7 @@ export function useTicketBoard(): TicketBoard {
   const hosts = scopedHosts(peers.hosts, project);
   const readiness = useReadiness(hosts, deps);
   const boards = useBoards(hosts, deps);
-  const merged = useMergedRecently(hosts, deps.fetch);
-  const today = new Set(todayMerges(merged, now));
+  const merged = useMergedToday(hosts, now, deps.fetch);
   const columns = emptyColumns();
   const cards: TicketCard[] = [];
   for (const { host, board } of boards) {
@@ -296,19 +295,16 @@ export function useTicketBoard(): TicketBoard {
       cards.push(card);
     }
   }
-  const listed = new Set(cards.map((card) => card.id));
   const latest = new Map<string, (typeof merged)[number]>();
   for (const row of merged) {
     const key = cardId(row.daemon ?? "", row.ticket);
     if (!latest.has(key)) latest.set(key, row);
   }
-  const undone = new Set(merged.filter((row) => row.reverted != null).map((row) => cardId(row.daemon ?? "", row.ticket)));
   for (const row of merged) {
-    const listedAs = cardId(row.daemon ?? "", row.ticket);
-    if (listed.has(listedAs) || (undone.has(listedAs) && latest.get(listedAs) !== row) || (row.reverted == null && !today.has(row))) continue;
+    if (row.reverted != null || latest.get(cardId(row.daemon ?? "", row.ticket))?.reverted != null) continue;
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
-      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: row.reverted ?? null, skewMs: 0,
+      park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,
     };
     columns[boardColumn(card)].push(card);
     cards.push(card);
