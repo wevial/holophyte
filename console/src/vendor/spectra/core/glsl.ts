@@ -79,20 +79,14 @@ vec2 smoke(vec2 n, float t) {
  * premultiplied with alpha from the light at the pixel, its brightest
  * channel: unlit pixels let the page through, and over a black page the
  * result is exactly `srgb`, so a dark page looks the same and a light one is
- * tinted by the colors. GRAIN includes this chunk. An effect that blends
- * from a ground color sets `uPage` to it: the alpha is then the least that
- * reproduces `srgb` over that color, so the blend keeps its ground.
+ * tinted by the colors. GRAIN includes this chunk.
  */
 export const TRANSPARENT = /* glsl */ `
 uniform float uTransparent;  // 1 on a transparent stage
-uniform vec3 uPage;          // sRGB the color is drawn over; black unless set
 
 vec4 overPage(vec3 srgb) {
   vec3 c = clamp(srgb, 0.0, 1.0);
-  if (uTransparent < 0.5) return vec4(c, 1.0);
-  vec3 need = max((uPage - c) / max(uPage, 1e-4), (c - uPage) / max(1.0 - uPage, 1e-4));
-  float a = clamp(max(max(need.r, need.g), need.b), 0.0, 1.0);
-  return vec4(clamp(c - uPage * (1.0 - a), 0.0, a), a);
+  return vec4(c, uTransparent > 0.5 ? max(max(c.r, c.g), c.b) : 1.0);
 }
 `;
 
