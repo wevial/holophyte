@@ -8,7 +8,6 @@ from holophyte.review.reply_parsing import (
     FINDING_CATEGORIES,
     SCOPE_LINE_RE,
     without_criteria,
-    without_follow_ups,
     without_refuted,
 )
 
@@ -86,7 +85,7 @@ def text_review(conn, run_id, findings):
 
 
 def _blocker_items(verdict):
-    reply = without_follow_ups(without_criteria(without_refuted(verdict)))
+    reply = without_criteria(without_refuted(verdict))
     for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
         reply = pattern.sub("", reply)
     return [line.strip() for line in reply.splitlines() if line.strip()]

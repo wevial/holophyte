@@ -13,6 +13,10 @@ TOKEN_COUNT_TAIL_RE = re.compile(r"\s*(?:tokens used\s+[\d,]+\s*)?")
 
 MD_LINK_RE = re.compile(r"(`[^`]*`)|\[([^\]\n]*)\]\(([^)\s]+)\)")
 
+NO_REASON = "(no reason given)"
+
+UNNAMED_WITNESS = "met claimed but no test or check named"
+
 TYPES = {"object": dict, "array": list, "string": str, "integer": int,
          "null": type(None)}
 
@@ -113,17 +117,33 @@ def finding_line(finding):
     severity, message = finding["severity"], message_line(finding["message"])
     if finding[TARGET_FIELD] == "description":
         return f'- path: "PR description" [{severity}] {message}'
-    where = place(one_line(finding["path"]), finding["line"])
+    path, line = one_line(finding["path"]), finding["line"]
+    where = place(path, line)
     tags = f"[{severity}] [{finding['category']}] {message}"
-    return f"- {where} {tags}" if where else f"- {tags}"
+    if not where:
+        return f"- {tags}"
+    for rendered_line in (f"- {where} {tags}", f"- [{where}]({where}) {tags}"):
+        if located(rendered_line, path, line):
+            return rendered_line
+    return f"- [location](#) {where} {tags}"
+
+
+def located(rendered_line, path, line):
+    from holophyte.review.reply_parsing import parse_findings
+
+    [parsed] = parse_findings(rendered_line)
+    expected = line if line is not None and line > 0 else None
+    return (parsed["path"], parsed.get("line")) == (path, expected)
 
 
 def criterion_line(criterion):
     number = re.search(r"\d+", criterion["id"])
     label = f"C{int(number[0])}" if number else one_line(criterion["id"])
-    line = (f"CRITERION {label}: {criterion['status'].replace('_', ' ')} \u2014 "
-            f"{one_line(criterion['reason'])}")
-    witness = one_line(criterion["witness"])
+    status = criterion["status"].replace("_", " ")
+    reason, witness = one_line(criterion["reason"]), one_line(criterion["witness"])
+    if status == "met" and not (reason or witness):
+        status, reason = "unwitnessed", UNNAMED_WITNESS
+    line = f"CRITERION {label}: {status} \u2014 {reason or NO_REASON}"
     return f"{line}; witness: {witness}" if witness else line
 
 

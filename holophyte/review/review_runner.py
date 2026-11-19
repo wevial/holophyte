@@ -726,15 +726,19 @@ def main() -> int:
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--prompt-file", type=Path, required=True)
     args = parser.parse_args()
-    print(
-        run_review(
-            repo=args.repo,
-            run_id=args.run_id,
-            base_sha=args.base,
-            candidate_sha=args.candidate,
-            prompt=args.prompt_file.read_text(),
-        )
-    )
+    from holophyte.review.json_reply import read_reply
+
+    reply, _ = read_reply(run_review(
+        repo=args.repo,
+        run_id=args.run_id,
+        base_sha=args.base,
+        candidate_sha=args.candidate,
+        prompt=args.prompt_file.read_text(),
+        verdicts=None,
+        reply_schema=True,
+    ))
+    terminal_verdict(reply)
+    print(reply)
     return 0
 
 

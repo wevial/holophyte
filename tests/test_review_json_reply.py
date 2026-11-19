@@ -4,6 +4,8 @@ to the line format every reader parses, and any other reply is parsed as it
 always was."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -12,6 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -39,6 +42,11 @@ from holophyte.review.reply_parsing import (  # noqa: E402
     parse_findings,
 )
 from holophyte.review.review_runner import terminal_verdict  # noqa: E402
+from tests.test_review_runner import (  # noqa: E402
+    IMAGE_SHIM,
+    docker_shim,
+    two_commit_repo,
+)
 
 REPLY = {
     "verdict": "REQUEST_CHANGES",
@@ -137,45 +145,52 @@ class ReviewerArgvTests(unittest.TestCase):
 
 
 class ContainerReviewTests(unittest.TestCase):
-    """The container's exec line runs in a real shell with each CLI replaced
-    by a stub that prints the arguments it was given."""
+    """The container's exec line runs in a real shell, its /home/reviewer
+    read through the host directory the command mounts there, with each CLI
+    replaced by a stub that prints the arguments it was given."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        for name in ("candidate", "home", "toolchain", "bin"):
+            (self.root / name).mkdir()
 
     def exec_argv(self, harness, reply_schema):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            for name in ("candidate", "home", "toolchain", "bin"):
-                (root / name).mkdir()
-            command = review_runner.container_command(
-                image="holophyte-reviewer:test", workspace=root / "candidate",
-                reviewer_home=root / "home", toolchain=root / "toolchain",
-                name="holophyte-review-test", prompt="review the candidate",
-                uid=1000, gid=1000, harness=harness, credential="TOKEN",
-                reply_schema=reply_schema)
-            staged = root / "home" / review_runner.REPLY_SCHEMA_NAME
-            staged_text = staged.read_text() if staged.exists() else None
-            stub = root / "bin" / "cli"
-            stub.write_text('#!/bin/sh\nfor arg in "$@"; do printf "%s\\0" "$arg"; '
-                            'done\n')
-            stub.chmod(0o755)
-            script = command[command.index("-c") + 1]
-            run = script[script.index("exec /opt/"):]
-            run = run.replace(f"/opt/{harness}/bin/{harness}", str(stub)).replace(
-                "/home/reviewer/", f"{root / 'home'}/")
-            positional = command[command.index(script) + 1:]
-            out = subprocess.run(["sh", "-eu", "-c", run, *positional],
-                                 capture_output=True, text=True, check=True,
-                                 cwd=root, env=dict(os.environ, PATH="/usr/bin:/bin"))
-        return out.stdout.split("\0")[:-1], staged_text
+        command = review_runner.container_command(
+            image="holophyte-reviewer:test", workspace=self.root / "candidate",
+            reviewer_home=self.root / "home", toolchain=self.root / "toolchain",
+            name="holophyte-review-test", prompt="review the candidate",
+            uid=1000, gid=1000, harness=harness, credential="TOKEN",
+            reply_schema=reply_schema)
+        [home] = [mount.split(":")[0] for mount in
+                  (command[i + 1] for i, arg in enumerate(command)
+                   if arg == "--volume")
+                  if mount.split(":")[1] == "/home/reviewer"]
+        stub = self.root / "bin" / "cli"
+        stub.write_text('#!/bin/sh\nfor arg in "$@"; do printf "%s\\0" "$arg"; '
+                        'done\n')
+        stub.chmod(0o755)
+        script = command[command.index("-c") + 1]
+        run = script[script.index("exec /opt/"):].replace(
+            "/home/reviewer/", f"{home}/").replace(
+            f"/opt/{harness}/bin/{harness}", str(stub))
+        positional = command[command.index(script) + 1:]
+        out = subprocess.run(["sh", "-eu", "-c", run, *positional],
+                             capture_output=True, text=True, check=True,
+                             cwd=self.root, env=dict(os.environ, PATH="/usr/bin:/bin"))
+        return out.stdout.split("\0")[:-1], Path(home)
 
-    def test_a_codex_container_review_names_the_staged_schema(self):
-        argv, staged = self.exec_argv("codex", True)
-        self.assertEqual(staged, SCHEMA_FILE.read_text())
+    def test_a_codex_container_review_names_the_schema_staged_in_its_home(self):
+        argv, home = self.exec_argv("codex", True)
         named = Path(argv[argv.index("--output-schema") + 1])
-        self.assertEqual(named.name, review_runner.REPLY_SCHEMA_NAME)
+        self.assertEqual(named.parent, home)
+        self.assertEqual(json.loads(named.read_text()),
+                         json.loads(SCHEMA_FILE.read_text()))
         self.assertEqual(argv[-1], "review the candidate")
 
     def test_a_claude_container_review_passes_the_staged_schema_text(self):
-        argv, staged = self.exec_argv("claude", True)
+        argv, _ = self.exec_argv("claude", True)
         self.assertEqual(json.loads(argv[argv.index("--json-schema") + 1]),
                          json.loads(SCHEMA_FILE.read_text()))
         self.assertEqual(argv[-1], "review the candidate")
@@ -184,9 +199,29 @@ class ContainerReviewTests(unittest.TestCase):
         for harness, flag in (("codex", "--output-schema"),
                               ("claude", "--json-schema")):
             with self.subTest(harness=harness):
-                argv, staged = self.exec_argv(harness, False)
-                self.assertIsNone(staged)
+                argv, home = self.exec_argv(harness, False)
+                self.assertEqual(list(home.iterdir()), [])
                 self.assertNotIn(flag, argv)
+
+    def test_the_standalone_runner_starts_its_review_with_the_schema(self):
+        bin_dir, env = docker_shim(self.root / "shim")
+        (bin_dir / "docker").write_text(IMAGE_SHIM)
+        env["HOLOPHYTE_DOCKER_IMAGES"] = str(self.root / "docker.images")
+        (self.root / "docker.images").write_text(f"{review_runner.IMAGE}\n")
+        (self.root / "auth.json").write_text("{}")
+        (self.root / "prompt.txt").write_text("review")
+        base, candidate = two_commit_repo(self.root / "repo")
+        argv = ["review_runner", "--repo", str(self.root / "repo"),
+                "--base", base, "--candidate", candidate,
+                "--prompt-file", str(self.root / "prompt.txt")]
+        with patch.dict(os.environ, env), patch.object(sys, "argv", argv), \
+                patch.object(review_runner, "SCRATCH_ROOT", self.root / "reviews"), \
+                patch.object(review_runner, "CODEX_AUTH", self.root / "auth.json"), \
+                contextlib.redirect_stdout(io.StringIO()) as printed:
+            self.assertEqual(review_runner.main(), 0)
+        self.assertEqual(printed.getvalue(), "VERDICT: APPROVE\n")
+        log = Path(env["HOLOPHYTE_DOCKER_LOG"]).read_text()
+        self.assertIn(f"--output-schema {review_runner.REPLY_SCHEMA} ", log)
 
     def test_a_claude_structured_reply_is_read_as_the_json_reply(self):
         output = json.dumps({"is_error": False, "result": "",
@@ -242,10 +277,32 @@ class RenderedReplyTests(unittest.TestCase):
 
     def test_code_in_backticks_is_not_read_as_a_link(self):
         finding = dict(REPLY["findings"][0],
-                       message="`handlers[0](event)` raises on an empty list")
+                       message="load() calls\n`handlers[0](event)` on an empty list")
         text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
         [parsed] = parse_findings(text)
-        self.assertIn("`handlers[0](event)` raises", parsed["message"])
+        self.assertEqual((parsed["path"], parsed["line"]), ("src/app.py", 12))
+        self.assertIn("`handlers[0](event)` on an empty", parsed["message"])
+
+    def test_a_location_the_line_format_cannot_carry_is_not_moved(self):
+        for path in ("LICENSE", "docs/Release Notes.md", "app/[id]/page.tsx"):
+            with self.subTest(path=path):
+                finding = dict(REPLY["findings"][0], path=path,
+                               message="see docs/development.md:9")
+                text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+                [parsed] = parse_findings(text)
+                self.assertTrue(parsed["path"].startswith("(unparsed):"))
+                self.assertIn(f"{path}:12", parsed["message"])
+
+    def test_a_met_criterion_naming_nothing_is_unwitnessed(self):
+        criterion = dict(REPLY["criteria"][0], reason=" ", witness=None)
+        reply = dict(REPLY, verdict="APPROVE", findings=[],
+                     criteria=[criterion, REPLY["criteria"][1]])
+        text, _ = read_reply(json.dumps(reply))
+        self.assertEqual([(match["n"], match["status"])
+                          for match in criterion_accounts(text)],
+                         [("C1", "unwitnessed"), ("C2", "not met")])
+        self.assertEqual([finding["line"] for finding in criteria_findings(
+            text, ("loads", "skips blanks"))], [1, 2])
 
     def test_a_lone_finding_parses_as_its_markdown_twin_does(self):
         reply = dict(REPLY, criteria=[], follow_ups=[],
@@ -263,12 +320,13 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertEqual([finding["path"] for finding in parse_findings(text)],
                          [finding["path"] for finding in parse_findings(self.text)])
 
-    def test_a_follow_up_does_not_hide_a_description_only_blocker(self):
-        reply = dict(REPLY, findings=[REPLY["findings"][1]])
-        text, _ = read_reply(json.dumps(reply))
-        self.assertEqual(description_findings(text, "REQUEST_CHANGES", []),
-                         ['- path: "PR description" [p2] The summary promises'
-                          ' a retry the diff does not add.'])
+    def test_a_markdown_follow_up_still_keeps_the_round_off_the_rewrite(self):
+        answer = ('- path: "PR description" [p2] The summary promises a retry.\n'
+                  "FOLLOW_UP(guardrail): Pin the blank-line case\n"
+                  "VERDICT: REQUEST_CHANGES")
+        text, reply_format = read_reply(answer)
+        self.assertEqual(reply_format, "markdown")
+        self.assertEqual(description_findings(text, "REQUEST_CHANGES", []), [])
 
     def test_criteria_follow_ups_and_verdict_read_from_the_rendering(self):
         self.assertEqual([(match["n"], match["status"])
