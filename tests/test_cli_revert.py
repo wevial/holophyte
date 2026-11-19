@@ -263,6 +263,16 @@ class RevertCliTests(ConfigTestCase):
                 self.assertIn("db/changes/change_2026.py",
                               self.refused("NAT-1", "broke the header"))
 
+    def test_a_negated_class_closed_by_its_leading_bracket_refuses_a_path(self):
+        for glob in ("[!]*.sql", "[^]]?.sql"):
+            with self.subTest(glob=glob):
+                self.project_with(
+                    ENABLED + f'refuse_paths = ["db/changes/{glob}"]\n',
+                    {"db/changes/x.sql": "op\n"})
+
+                self.assertIn("db/changes/x.sql",
+                              self.refused("NAT-1", "broke the header"))
+
     def test_an_escaped_bracket_in_refuse_paths_matches_itself(self):
         self.project_with(
             ENABLED + 'refuse_paths = ["app/\\\\[id\\\\]/page.tsx"]\n',
@@ -419,7 +429,7 @@ class RevertCliTests(ConfigTestCase):
                 self.assertIn("[revert] refuse_paths must be a list",
                               str(raised.exception.code))
 
-    def test_startup_refuses_an_empty_negated_class_in_refuse_paths(self):
+    def test_startup_refuses_a_negated_class_nothing_closes_in_refuse_paths(self):
         for glob in ("db/changes/[!].sql", "db/changes/[^].sql"):
             with self.subTest(glob=glob):
                 self.locate(f'{ENABLED}refuse_paths = ["{glob}"]\n')

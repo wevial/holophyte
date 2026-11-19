@@ -121,7 +121,7 @@ test("Review presents ordered grouped sections with matching host badge and curr
   const view = await mount("#/settings/review?project=demo");
   view.failRunner();
   await view.poll();
-  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Review · demo");
+  expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Review");
   const nav = screen.getByRole("navigation", { name: "Settings sections" });
   const links = within(nav).getAllByRole("link");
   expect(links.map((link) => link.textContent)).toEqual(["Appearance", "Today's log", "Hosts1", "General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]);
@@ -401,7 +401,7 @@ test("project panels distinguish pending, disabled and failed config reads while
     expect(screen.getByText(message)).toBeTruthy();
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: "Hold" }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold · demo");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Hold");
     cleanup();
   }
 });
@@ -411,7 +411,7 @@ test("an unknown project's panels report no matching host and selecting a known 
   for (const label of ["General", "Review", "Agents", "Capture", "Hold", "Raw TOML"]) {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("link", { name: label }));
     await act(settle);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(`${label} · unknown`);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(label === "General" ? "General · unknown" : label);
     expect(screen.getByText("No host is available for unknown.")).toBeTruthy();
     expect(screen.queryByText(/^Reading config.toml/)).toBeNull();
   }
@@ -435,7 +435,7 @@ test("Raw TOML drops the page's width cap and sizes its editor to the viewport w
   const toml = async () => Response.json({ text: "[loop]\nworkers = 2\n", values: {}, path: "/srv/demo/config.toml", applies: "next loop start", revision: "3f9a2c1b" + "a".repeat(56), saved: null, modified_ms: null });
   await mount("#/settings/toml?project=demo", fleet(toml));
   const classes = (element: Element) => element.className.split(/\s+/);
-  expect(classes(screen.getByRole("region", { name: "Raw TOML · demo" }).firstElementChild!)).not.toContain("max-w-[1180px]");
+  expect(classes(screen.getByRole("region", { name: "Raw TOML" }).firstElementChild!)).not.toContain("max-w-[1180px]");
   const scroller = classes(screen.getByRole("textbox", { name: "config.toml for demo" }).closest("[data-toml-scroller]")!);
   expect(scroller).not.toContain("h-[360px]");
   expect(scroller.filter((name) => /^h-\[max\(360px,calc\(100dvh-\d+px\)\)\]$/.test(name))).toHaveLength(1);

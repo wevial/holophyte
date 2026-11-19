@@ -37,12 +37,13 @@ const revertedMerge = { ...merged(7, "DEMO-7", ENDED), reverted: REVERTED };
 /** DEMO answers its history with merged runs 7 (reverted by `REVERTED`)
  *  and 8 (not reverted), run 7's page, DEMO-7's ticket, and a board
  *  listing DEMO-7, reverted, in `column` (off the board when null); it
- *  ships today the merges of `shipped`, run 7's reverted one by default. */
-function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped: ShippedRow[] = [revertedMerge]) {
+ *  ships today the merges of `shipped`, run 7's reverted one by default,
+ *  and answers DEMO-7 as `ticket`. */
+function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped: ShippedRow[] = [revertedMerge], ticket: TicketDetail = ticketSeven) {
   const polls = fleet({ items: [], shipped }, { items: [] });
   return async (url: string) => {
     if (url === `${DEMO}/runs/7`) return Response.json(runSeven);
-    if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticketSeven);
+    if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticket);
     if (url === `${DEMO}/board`) return Response.json(board(column));
     if (url.startsWith(`${DEMO}/history?`)) {
       return Response.json({
@@ -128,8 +129,8 @@ test("a reverted run's page sums the settled run under its verdict in place of t
   expect(screen.queryByRole("img", { name: "Implementer" })).toBeNull();
   const summary = document.querySelector<HTMLElement>("[data-run-summary]")!;
   expect(summary.querySelectorAll("[data-stage-done]")).toHaveLength(5);
-  expect(summary.textContent).toBe("PR #1071review 1 roundverify passed34m");
-  expect(within(summary).getByRole("link", { name: "PR #1071" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/1071");
+  expect(summary.textContent).toBe("#1071review 1 roundverify passed34 min");
+  expect(within(summary).getByRole("link", { name: "#1071" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/1071");
 });
 
 test("a reverted ticket's page names the revert ticket and the reason in place of its Backlog column", async () => {
@@ -144,4 +145,11 @@ test("a reverted ticket claimed again keeps its board column beside the revert o
   await mount("#/tickets/demo/DEMO-7", daemon("in_flight"));
   expect(screen.getByRole("status", { name: "Revert" }).textContent).toBe("reverted by HOLO-9: “broke the header”");
   expect(screen.getByRole("status", { name: "Board" }).textContent).toMatch(/^In flight/);
+});
+
+test("a reverted ticket still merged in the store shows the revert and no Merged column on its page", async () => {
+  await mount("#/tickets/demo/DEMO-7", daemon(null, [revertedMerge], { ...ticketSeven, status: "merged" }));
+  expect(screen.getByRole("status", { name: "Revert" }).textContent).toBe("reverted by HOLO-9: “broke the header”");
+  expect(screen.queryByRole("status", { name: "Board" })).toBeNull();
+  expect(document.querySelector('[data-state="merged"]')).toBeNull();
 });

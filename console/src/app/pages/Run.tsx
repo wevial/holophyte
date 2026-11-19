@@ -18,6 +18,7 @@ import { FoldChevron } from "../components/icons";
 import { ScoutThis, useScoutThis } from "../components/ScoutThis";
 import type { ScoutTarget } from "../scouts";
 import { RunStepper } from "../components/RunStepper";
+import { prNumber } from "../components/RunTable";
 import { RevertedGlyph, StateDot } from "../components/StateDot";
 import { TitleText } from "../components/TitleText";
 import { useRunTurns, useTicket } from "../queries";
@@ -25,7 +26,7 @@ import { STAGE_NAMES, stepperOf, useRunPage, type RunPage as RunPageFacts } from
 import { keepScope, PollDepsContext } from "../scope";
 import type { Reverted, RunDetail } from "../../lib/contract.gen";
 import { formatSettled } from "../../lib/format";
-import { commitLink, prLabel, shortSha } from "../../lib/shipped";
+import { commitLink, shortSha } from "../../lib/shipped";
 import { CRUMB_LINK, Loading, Notice, Page } from "./runShared";
 
 /** The summary the run was given: the claimed revision's body when the
@@ -98,6 +99,9 @@ function RevertedVerdict({ run, reverted, project }: { run: RunDetail["run"]; re
 }
 
 const SUMMARY_FACT = "font-mono text-[12px] text-ink-3";
+const MINUTE = 60_000;
+
+const settledMinutes = (ms: number) => ms >= MINUTE && ms < 60 * MINUTE ? `${Math.floor(ms / MINUTE)} min` : formatSettled(ms);
 
 /** A reverted merge's settled run: every stage finished as one unlabeled
  *  bar, then its pull request, review rounds, verify and duration. */
@@ -106,13 +110,13 @@ function RevertedSummary({ detail }: { detail: RunDetail }) {
   return (
     <div data-run-summary>
       <div aria-hidden="true" className="mt-5 flex gap-1">
-        {STAGE_NAMES.map((name) => <span key={name} data-stage-done className="h-[3px] flex-1 rounded-[2px] bg-live" />)}
+        {STAGE_NAMES.map((name) => <span key={name} data-stage-done className="h-1 flex-1 rounded-[2px] bg-live/55" />)}
       </div>
       <p className="mt-4 flex flex-wrap gap-x-[18px] gap-y-1">
-        {run.pr_url != null && <a href={run.pr_url} target="_blank" rel="noreferrer" className={`${SUMMARY_FACT} no-underline hover:text-ink`}>{prLabel(run.pr_url)}</a>}
+        {run.pr_url != null && <a href={run.pr_url} target="_blank" rel="noreferrer" className={`${SUMMARY_FACT} no-underline hover:text-ink`}>{prNumber(run.pr_url)}</a>}
         <span className={SUMMARY_FACT}>review <b className="font-semibold text-ink-2">{rounds.length} {rounds.length === 1 ? "round" : "rounds"}</b></span>
         <span className={SUMMARY_FACT}>verify <b className="font-semibold text-ink-2">passed</b></span>
-        {run.ended_ms != null && <span className={SUMMARY_FACT}>{formatSettled(run.ended_ms - run.started_ms)}</span>}
+        {run.ended_ms != null && <span className={SUMMARY_FACT}>{settledMinutes(run.ended_ms - run.started_ms)}</span>}
       </p>
     </div>
   );

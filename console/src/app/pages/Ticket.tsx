@@ -64,13 +64,13 @@ function RevertedLine({ reverted, project }: { reverted: Reverted; project: stri
 }
 
 /** The ticket's revert, if its merge was reverted, then its board column
- *  unless the revert's return to Backlog is all that column says. */
+ *  unless it says only the reverted merge or the revert's Backlog. */
 function BoardLine({ chip, reverted, liveRun, project }: { chip: BoardChip | null; reverted: Reverted | null; liveRun: number | null; project: string }) {
   const tone = chip == null ? "ink-3" : chip.need ? "need" : STATES[chip.state].tone;
   return (
     <div className="mt-2.5 flex flex-wrap items-center gap-x-3.5 gap-y-2.5">
       {reverted != null && <RevertedLine reverted={reverted} project={project} />}
-      {chip != null && (reverted == null || chip.label !== COLUMN_HEADS.backlog.label) && (
+      {chip != null && (reverted == null || (chip.state !== "merged" && chip.label !== COLUMN_HEADS.backlog.label)) && (
         <span role="status" aria-label="Board" className="inline-flex items-center gap-1.5 font-sans text-[13px] font-medium leading-[1.3]">
           <StateDot state={chip.state} hideWord tone={tone} />
           <span>

@@ -111,7 +111,7 @@ export function SettingRow({ field, values, value: draft, onChange, base, projec
           </div> : field.kind === "boolean" ? <button type="button" role="switch" aria-label={field.label} aria-checked={value === true} disabled={disabled} onClick={() => onChange(!value, original)}
             className="switch"><span aria-hidden="true" /></button>
             : showTree ? <PathTree tree={tree} value={value} label={field.label} onChange={(next) => onChange(next, original)} />
-            : field.kind === "lines" ? <textarea aria-label={field.label} rows={Math.min(8, Math.max(3, listText.split("\n").length))} value={listText} onBlur={() => setLines(null)} onChange={(event) => {
+            : field.kind === "lines" ? <textarea aria-label={field.label} rows={`${field.table}.${field.key}` === "revert.refuse_paths" ? Math.min(8, Math.max(3, listText.split("\n").length)) : 3} value={listText} onBlur={() => setLines(null)} onChange={(event) => {
               setLines(event.target.value);
               onChange(event.target.value.split("\n").filter((line) => line.trim() !== ""), original);
             }} className={FIELD_CLASS} />

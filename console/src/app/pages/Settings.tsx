@@ -116,7 +116,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
     setMarks({ counts: JSON.parse(countsKey) as Record<string, number>, checkRefused });
   }, [setMarks, countsKey, checkRefused]);
   useEffect(() => () => setMarks(null), [setMarks]);
-  const heading = <h1 id="page-title" className="font-sans text-[24px] font-semibold leading-[1.25] tracking-[-0.015em] text-ink">{tab.group === "Project" && project ? `${tab.label} · ${project}` : tab.label}</h1>;
+  const heading = <h1 id="page-title" className="font-sans text-[24px] font-semibold leading-[1.25] tracking-[-0.015em] text-ink">{tab.id === "general" && project ? `${tab.label} · ${project}` : tab.label}</h1>;
   const diff = rawMode && answer?.state === "ok" ? lineDiff(answer.config.text, rawText) : [];
   return (
     <section aria-labelledby="page-title" className="flex min-h-full flex-col px-5 pt-3.5 pb-[22px] min-[720px]:px-10">
@@ -134,7 +134,7 @@ function SettingsProjectPage({ tab, project }: { tab: Tab; project: string }) {
         </div>}
         <section>
           {["general", "review", "agents", "capture"].includes(tab.id) && host && answer?.state === "ok" && answer.config.values !== null ? (
-            <div className="mt-0.5 max-w-[740px] pb-12">
+            <div className={`mt-0.5 ${tab.id === "general" ? "max-w-[860px]" : "max-w-[740px]"} pb-12`}>
               {rawChanged && <p className="mb-4 font-mono text-[13px] text-ink-3">Save or revert the raw edit first.</p>}
               <fieldset disabled={rawChanged || save.isPending}>
               {SETTINGS_FIELDS.filter((field) => field.tab === tab.id).map((field) => {
