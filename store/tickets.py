@@ -162,6 +162,18 @@ def transition(conn, ticket_id, to_status):
 STORY_ADVANCED = "story_advanced"
 
 
+def reopen_merged(conn, ticket_id):
+    with _transaction(conn):
+        row = conn.execute("SELECT status FROM tickets WHERE id = ?",
+                           (ticket_id,)).fetchone()
+        if row is None or row[0] != _Status.MERGED.value:
+            raise IllegalTransition(
+                f"ticket {ticket_id}: only a merged ticket is reopened, not"
+                f" {row and row[0]}")
+        conn.execute("UPDATE tickets SET status = ? WHERE id = ?",
+                     (_Status.READY.value, ticket_id))
+
+
 def _story_advanced(conn, ticket_id):
     return conn.execute(
         "SELECT 1 FROM runEvents e JOIN runs r ON r.id = e.runId"
