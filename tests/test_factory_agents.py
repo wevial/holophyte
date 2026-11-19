@@ -359,7 +359,6 @@ class AgentRouteTests(unittest.TestCase):
             verdicts=None,
             carry=[],
             on_start=ANY,
-            reply_schema=True,
         )
         self.assertEqual(holophyte.agents.roles.agent_route(self.project, "review"),
                          "codex-astra-high")

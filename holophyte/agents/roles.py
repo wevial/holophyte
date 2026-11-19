@@ -3,6 +3,7 @@ import os
 import re
 import shlex
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 
 from holophyte.agents.agent_output import (
@@ -72,7 +73,7 @@ from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.pr.mockup import review_carry
 from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.review import review_runner
-from holophyte.review.json_reply import line_brief, schema_command
+from holophyte.review.json_reply import SchemaBrief, route_brief
 
 REVIEW_TIMEOUT = 1800
 WRITING_ROLES = ("implement", "trim")
@@ -250,7 +251,6 @@ def refused_once(project, role, goal, cwd, kwargs, failure, refusal):
         raise refusal_failure(failure, refusal) from failure.__cause__
     argv = shlex.split(command)
     turn = dict(kwargs, fallback_command=command)
-    goal = goal if schema_command(command) else line_brief(goal)
     try:
         output = fallback_turn(
             project, role, argv, conn, run_id,
@@ -386,7 +386,7 @@ def refused_exit(role, error):
 
 def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                      run_id, switched, review_round=None, timeout=None,
-                     family_route=None):
+                     family_route=None, reply_schema=False):
     from holophyte.loop.runs import heartbeat_while
     from holophyte.review.review_session import record_review_session
     model, effort = review_route(project, fallback=switched)
@@ -400,7 +400,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     options = {} if tier is None else {"service_tier": tier}
     if role == "adversary":
         options["multi_agent"] = True
-    if role == "review":
+    if reply_schema:
         options["reply_schema"] = True
     sessions = []
     kept = kept_session(project, role, conn, run_id, review_round, sessions)
@@ -455,8 +455,13 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         raise failure from e
 
 
-def review_argv(role, cmd):
-    return Codex.schemed_command(cmd) if role == "review" else cmd
+def routed_seat(project, role, command, schemed):
+    seat = harness_seat(project, role) if command is None else None
+    return None if seat is None else replace(seat, reply_schema=schemed)
+
+
+def review_argv(schemed, cmd):
+    return Codex.schemed_command(cmd) if schemed else cmd
 
 
 def stream_watch(project, streamed, role, cwd, conn, run_id):
@@ -477,18 +482,20 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         raise ValueError(role)
     if role in SHA_ROLES and not (base_sha and candidate_sha):
         raise ValueError(f"{role} requires exact base_sha and candidate_sha")
-    goal = outbound(goal, known_secrets(project.config()))
     switched = (role in routes(project).commands
                 and container_fallback_profile(project, role) is not None)
     command = fallback_command or (None if switched
                                    else routes(project).commands.get(role))
+    goal = route_brief(project, goal, fallback_command)
+    schemed = isinstance(goal, SchemaBrief)
+    goal = outbound(goal, known_secrets(project.config()))
     cmd = (shlex.split(command) + [goal] if command else
            agent_command(project, role, goal))
     session_id = (agent_session(project, role, cmd)
                   if session and command is None and argv is None else None)
     if argv is not None:
         cmd = [outbound(arg, known_secrets(project.config())) for arg in argv] + [goal]
-    seat = harness_seat(project, role) if command is None else None
+    seat = routed_seat(project, role, command, schemed)
     dispatched_route = (seat.named(cmd) if seat is not None else
                         shlex.join(cmd[:-1]) if cmd is not None else
                         DEFAULT_IMPLEMENTER)
@@ -496,7 +503,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         if role not in WRITING_ROLES:
             return container_review(project, role, goal, cwd, base_sha,
                                     candidate_sha, conn, run_id, switched,
-                                    review_round, timeout, family_route)
+                                    review_round, timeout, family_route,
+                                    reply_schema=schemed)
         cmd = [DEFAULT_IMPLEMENTER, "-p", goal, "--model", IMPL_MODEL,
                "--effort", IMPL_EFFORT]
     elif role not in WRITING_ROLES:
@@ -525,7 +533,7 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                               role, run_id=run_id, conn=conn,
                                               kill=kill)
                     else:
-                        output = configured_review(review_argv(role, cmd), cwd,
+                        output = configured_review(review_argv(schemed, cmd), cwd,
                                                    cap, env, role,
                                                    dispatched_route,
                                                    on_start=kill.arm)

@@ -128,6 +128,11 @@ class Codex(Adapter):
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
     IMPLEMENTER = ["--dangerously-bypass-approvals-and-sandbox",
                    "--skip-git-repo-check"]
+    VALUED_OPTIONS = frozenset({
+        "-c", "--config", "--enable", "--disable", "--remote",
+        "--remote-auth-token-env", "-i", "--image", "-m", "--model",
+        "--local-provider", "-p", "--profile", "-s", "--sandbox", "-C", "--cd",
+        "--add-dir", "-a", "--ask-for-approval"})
 
     def turn(self, binary, options, role):
         if role in WRITING_ROLES:
@@ -159,17 +164,33 @@ class Codex(Adapter):
 
     @staticmethod
     def schemed_command(argv):
-        if (len(argv) < 2 or Path(argv[0]).name != Codex.name
-                or argv[1] != "exec" or "--output-schema" in argv):
+        if not argv or Path(argv[0]).name != Codex.name:
             return argv
-        return [*argv[:2], *Codex.reply_schema("reviewer"), *argv[2:]]
+        kept = Codex.unschemed(argv)
+        at = Codex.subcommand_at(kept)
+        if at is None or kept[at] not in ("exec", "e"):
+            return argv
+        return [*kept[:at + 1], *Codex.reply_schema("reviewer"), *kept[at + 1:]]
+
+    @staticmethod
+    def subcommand_at(argv):
+        at = 1
+        while at < len(argv) and argv[at].startswith("-"):
+            valued = argv[at] in Codex.VALUED_OPTIONS
+            at += 2 if valued else 1
+        return at if at < len(argv) else None
 
     @staticmethod
     def unschemed(argv):
-        if "--output-schema" not in argv:
-            return argv
-        at = argv.index("--output-schema")
-        return argv[:at] + argv[at + 2:]
+        kept, skip = [], False
+        for arg in argv:
+            if skip:
+                skip = False
+            elif arg == "--output-schema":
+                skip = True
+            elif not arg.startswith("--output-schema="):
+                kept.append(arg)
+        return kept
 
     @staticmethod
     def mcp_flags(server):

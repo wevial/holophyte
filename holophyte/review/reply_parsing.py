@@ -68,13 +68,6 @@ FINDING_PATH_RE = re.compile(
 MD_LINK_TARGET_RE = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
 
 
-SELF_LINK_RE = re.compile(
-    r"\s*(?:[-*+]|\d+[.)])\s+\[(?P<text>[^\]\s]+)\]\((?P<href>[^)\s]+)\)")
-
-
-SELF_CITED_RE = re.compile(r"([\w.\-/]*\w)(?::(\d+))?")
-
-
 WORKSPACE_PREFIXES = ("/workspace/", "/home/reviewer/candidate/")
 
 
@@ -203,8 +196,7 @@ def parse_findings(reply):
     accounts = SCOPE_LINE_RE.sub("", without_criteria(reply))
     for block in finding_blocks(accounts):
         match = (FINDING_PATH_RE.search(citation(unfenced(block)))
-                 or FINDING_PATH_RE.search(citation(block))
-                 or self_cited(block))
+                 or FINDING_PATH_RE.search(citation(block)))
         listed = BLOCK_BREAK_RE.match(block) is not None
         if match is None and not listed:
             continue
@@ -221,13 +213,6 @@ def parse_findings(reply):
             finding["line"] = int(line)
         findings.append(finding)
     return findings or [raw_finding(reply)]
-
-
-def self_cited(block):
-    link = SELF_LINK_RE.match(block)
-    if link is None or link["text"] != link["href"]:
-        return None
-    return SELF_CITED_RE.fullmatch(link["text"])
 
 
 def citation(block):

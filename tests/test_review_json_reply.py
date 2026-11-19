@@ -21,14 +21,16 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import store  # noqa: E402
-from holophyte.agents import roles  # noqa: E402
+from holophyte.agents import probes, roles  # noqa: E402
 from holophyte.agents.agent_output import AgentOutput  # noqa: E402
+from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.agents.harness import ADAPTERS, Seat  # noqa: E402
 from holophyte.agents.review_workspace import configured_review  # noqa: E402
 from holophyte.babysit.description_review import (  # noqa: E402
     description_findings,
     without_description,
 )
+from holophyte.loop.gates import sh  # noqa: E402
 from holophyte.review import review_runner  # noqa: E402
 from holophyte.review.json_reply import (  # noqa: E402
     REPLY_BRIEF,
@@ -45,6 +47,8 @@ from holophyte.review.reply_parsing import (  # noqa: E402
     parse_findings,
 )
 from holophyte.review.review_runner import terminal_verdict  # noqa: E402
+from tests.sweep_fixture import SweepTestCase  # noqa: E402
+from tests.test_capacity_fallback import AT_CAPACITY  # noqa: E402
 from tests.test_review_runner import (  # noqa: E402
     IMAGE_SHIM,
     docker_shim,
@@ -266,46 +270,103 @@ class ConfiguredCommandTests(unittest.TestCase):
     def launched(self, role, command):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        stub = Path(tmp.name) / "codex"
+        stub = Path(tmp.name) / shlex.split(command)[0]
         stub.write_text('#!/bin/sh\nfor arg in "$@"; do printf "%s\\0" "$arg"; '
                         'done\n')
         stub.chmod(0o755)
         argv = [str(stub), *shlex.split(command)[1:], "review the candidate"]
-        output = configured_review(roles.review_argv(role, argv), tmp.name, 30,
+        output = configured_review(roles.review_argv(role == "review", argv),
+                                   tmp.name, 30,
                                    dict(os.environ), role, command)
         return str(output).split("\0")[:-1]
 
     def test_a_configured_codex_review_command_requires_the_reply_schema(self):
-        argv = self.launched("review", self.COMMAND)
-        self.assertEqual(named_schema(argv), json.loads(SCHEMA_FILE.read_text()))
-        self.assertEqual(argv[-3:], ["-m", "gpt-6-astra", "review the candidate"])
-        self.assertEqual(reply_brief(brief_project(
-            self, {"reviewer": self.COMMAND}), "LINES"), REPLY_BRIEF)
-
-    def test_an_adversary_or_non_codex_command_launches_as_configured(self):
-        for role, command in (("adversary", self.COMMAND),
-                              ("review", "codex review --uncommitted")):
-            with self.subTest(role=role, command=command):
-                self.assertNotIn("--output-schema", self.launched(role, command))
-
-    def test_a_refusal_fallback_is_sent_the_brief_for_its_own_route(self):
-        goal = "Review.\n" + reply_brief(brief_project(self, {}), "LINES")
-        retried = goal + " Retry."
-        for command, sent in (("wrapper --review", "Review.\nLINES Retry."),
-                              (self.COMMAND, f"Review.\n{REPLY_BRIEF} Retry.")):
+        for command in (self.COMMAND,
+                        "codex -c model_reasoning_effort=low exec -m gpt-6-astra",
+                        "codex exec --output-schema other.json -m gpt-6-astra",
+                        "codex exec --output-schema=other.json -m gpt-6-astra"):
             with self.subTest(command=command):
-                launched = []
+                argv = self.launched("review", command)
+                self.assertEqual(argv.count("--output-schema"), 1)
+                self.assertEqual(named_schema(argv),
+                                 json.loads(SCHEMA_FILE.read_text()))
+                self.assertEqual(argv[-3:],
+                                 ["-m", "gpt-6-astra", "review the candidate"])
+                self.assertEqual(reply_brief(brief_project(
+                    self, {"reviewer": command}), "LINES"), REPLY_BRIEF)
 
-                def turn(project, role, goal, cwd, **kwargs):
-                    launched.append(goal)
-                    return AgentOutput("VERDICT: APPROVE", command, exit_code=0)
-                with patch.object(roles, "refusal_fallback",
-                                  return_value=command), \
-                        patch.object(roles, "_agent", turn):
-                    roles.refused_once(None, "review", retried, "wt",
-                                       {"conn": None, "run_id": None},
-                                       RuntimeError("refused"), "refused")
-                self.assertEqual(launched, [sent])
+    def test_a_non_codex_review_command_launches_as_configured(self):
+        self.assertEqual(self.launched("review", "wrapper exec --review"),
+                         ["exec", "--review", "review the candidate"])
+
+
+class DispatchedBriefTests(SweepTestCase):
+    """Turns go through the real dispatcher: the container launch is
+    replaced, and a fallback reviewer is a real script that records the
+    prompt it was handed."""
+
+    def setUp(self):
+        super().setUp()
+        sh(["git", "init", "-q", str(self.target)])
+        sh(["git", "-c", "user.name=Test", "-c", "user.email=test@example.test",
+            "commit", "--allow-empty", "-qm", "base"], cwd=self.target)
+        self.sha = sh(["git", "rev-parse", "HEAD"], cwd=self.target)
+        self.addCleanup(reset, self.project)
+        self.prompts = self.root / "prompts"
+        self.wrapper = self.root / "wrapper"
+        self.wrapper.write_text(
+            f"#!{sys.executable}\nimport subprocess, sys\n"
+            f"with open({str(self.prompts)!r}, 'a') as f:\n"
+            " f.write(repr(sys.argv[-1]) + '\\n')\n"
+            f"if sys.argv[-1] == {probes.REVIEW_PROBE_GOAL!r}:\n"
+            " print('ready', subprocess.check_output(\n"
+            "     ['git', 'rev-parse', 'HEAD'], text=True).strip())\n"
+            "else:\n print('VERDICT: APPROVE')\n")
+        self.wrapper.chmod(0o755)
+
+    def sent(self):
+        return [line for line in map(eval, self.prompts.read_text().splitlines())
+                if line != probes.REVIEW_PROBE_GOAL]
+
+    def dispatch(self, goal, container, **turn):
+        with patch.object(roles.review_runner, "run_review",
+                          side_effect=container), \
+                contextlib.redirect_stdout(io.StringIO()):
+            return roles.agent(self.project, "review", goal, self.target,
+                               base_sha=self.sha, candidate_sha=self.sha,
+                               conn=self.conn, run_id=self.a_run(), **turn)
+
+    def test_a_markdown_fallback_after_a_capacity_failure_gets_the_line_brief(self):
+        self.configure(f'[agents]\nreviewer_fallback = ["{self.wrapper}"]\n')
+        script = self.root / "container"
+        script.write_text(AT_CAPACITY)
+        launched = []
+
+        def at_capacity(*, candidate_sha, prompt, reply_schema=False, **_):
+            launched.append((prompt, reply_schema))
+            review_runner._run([sys.executable, str(script), candidate_sha,
+                                prompt])
+        goal = "Review.\n" + reply_brief(self.project, "LINES")
+        self.assertEqual(self.dispatch(goal, at_capacity), "VERDICT: APPROVE")
+        self.assertEqual(launched, [(f"Review.\n{REPLY_BRIEF}", True)])
+        self.assertEqual(self.sent(), ["Review.\nLINES"])
+
+    def test_a_refusal_fallback_command_gets_the_line_brief(self):
+        goal = "Review.\n" + reply_brief(self.project, "LINES")
+        roles._agent(self.project, "review", goal, self.target,
+                     base_sha=self.sha, candidate_sha=self.sha,
+                     fallback_command=str(self.wrapper))
+        self.assertEqual(self.sent(), ["Review.\nLINES"])
+
+    def test_a_brief_asking_for_lines_starts_a_container_without_the_schema(self):
+        launched = []
+
+        def container(*, prompt, reply_schema=False, **_):
+            launched.append((prompt, reply_schema))
+            return "VERDICT: APPROVE"
+        self.dispatch("Review. End with VERDICT: APPROVE.", container)
+        self.assertEqual(launched, [("Review. End with VERDICT: APPROVE.",
+                                     False)])
 
 
 class RenderedReplyTests(unittest.TestCase):
@@ -370,26 +431,18 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertIn('splits on `"user  id"` and', parsed["message"])
 
     def test_a_location_the_line_format_cannot_carry_is_not_moved(self):
-        for path in ("docs/Release Notes.md", "app/[id]/page.tsx"):
+        for path, line in (("docs/Release Notes.md", 12),
+                           ("app/[id]/page.tsx", 12), ("LICENSE", 12),
+                           ("docker/Makefile", None)):
             with self.subTest(path=path):
-                finding = dict(REPLY["findings"][0], path=path,
+                finding = dict(REPLY["findings"][0], path=path, line=line,
                                message="see docs/development.md:9")
                 text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
                 [parsed] = parse_findings(text)
                 self.assertTrue(parsed["path"].startswith("(unparsed):"))
-                self.assertIn(f"{path}:12", parsed["message"])
+                where = path if line is None else f"{path}:{line}"
+                self.assertIn(f"(at {where})", parsed["message"])
                 self.assertEqual(parsed["category"], "correctness")
-
-    def test_a_path_without_an_extension_keeps_its_location(self):
-        for path, line in (("LICENSE", 12), ("docker/Makefile", None)):
-            with self.subTest(path=path):
-                finding = dict(REPLY["findings"][0], path=path, line=line)
-                text, _ = read_reply(json.dumps(dict(
-                    REPLY, findings=[finding, REPLY["findings"][1]])))
-                code, described = parse_findings(text)
-                self.assertEqual((code["path"], code.get("line")), (path, line))
-                self.assertEqual(code["category"], "correctness")
-                self.assertTrue(described["path"].startswith("(unparsed):"))
 
     def test_a_message_citation_never_becomes_a_finding_location(self):
         cited = "see docs/development.md:272"
@@ -517,6 +570,9 @@ class ReplyFormatTests(unittest.TestCase):
         reply, decision, _ = self.review(MARKDOWN)
         self.assertEqual(reply, MARKDOWN)
         self.assertEqual(decision, "REQUEST_CHANGES")
+        self.assertEqual([(finding["path"], finding["line"])
+                          for finding in parse_findings(reply)],
+                         [("src/app.py", 3)])
         self.assertEqual(self.formats(), [{"format": "markdown", "round": 2}])
 
     def test_a_schema_valid_reply_is_rendered_and_recorded_as_json(self):

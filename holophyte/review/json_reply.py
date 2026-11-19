@@ -74,8 +74,11 @@ def reply_brief(project, line_format, schema_tail=""):
     return SchemaBrief(REPLY_BRIEF + schema_tail, line_format)
 
 
-def line_brief(goal):
-    return getattr(goal, "line_text", goal)
+def route_brief(project, goal, command=None):
+    if not isinstance(goal, SchemaBrief):
+        return goal
+    schemed = schema_command(command) if command else schema_enforced(project)
+    return goal if schemed else goal.line_text
 
 
 def schema_command(command):
