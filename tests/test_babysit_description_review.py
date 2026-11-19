@@ -1,16 +1,30 @@
 """Which covering-review replies count as faulting only the PR description."""
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from holophyte.babysit.description_review import (  # noqa: E402 - after the sys.path insert
+import holophyte.config.project  # noqa: E402 - after the sys.path insert
+import holophyte.loop.implement  # noqa: E402
+import holophyte.loop.review_round  # noqa: E402
+import holophyte.pr.pullrequest  # noqa: E402
+import store  # noqa: E402
+import store.tickets  # noqa: E402
+from holophyte.babysit import babysitter  # noqa: E402
+from holophyte.babysit.description_review import (  # noqa: E402
     description_findings,
 )
+from holophyte.loop.runs import open_store, set_phase  # noqa: E402
+from holophyte.pr import github  # noqa: E402
+from holophyte.pr.github import PullRequest  # noqa: E402
 
 TAGGED = '- Blocker (path: "PR description" -- it promises a handshake).'
 CODE = "- Blocker: src/app.py:3 drops the tab target."
@@ -42,7 +56,6 @@ class DescriptionFindingsTests(unittest.TestCase):
         mention = CODE[:-1] + ' (also noted under path: "PR description").'
         self.assertEqual(description_findings(
             f"{mention}{TAIL}", "REQUEST_CHANGES", []), [])
-
 
     def test_a_tag_after_a_bracketed_severity_is_a_description_finding(self):
         bracketed = ('- [P2] path: "PR description" — The description promises'
@@ -77,6 +90,123 @@ class DescriptionFindingsTests(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(description_findings(
                     f"{TAGGED}\n{code}{TAIL}", "REQUEST_CHANGES", []), [])
+
+    def test_a_backticked_or_bold_severity_tag_is_a_description_finding(self):
+        for line in ('- `path: "PR description"` — the Changes table misstates'
+                     ' the menu',
+                     '- **[p2]** path: "PR description" — the Changes table'
+                     ' misstates the menu'):
+            with self.subTest(line=line):
+                self.assertEqual(description_findings(
+                    f"{line}{TAIL}", "REQUEST_CHANGES", []), [line])
+
+
+DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
+TABLE = ('- [P1] path: "console/src/app/components/TicketTable.tsx" — the row'
+         ' menu drops the revert item')
+PULL = PullRequest("example.test", "o", "n", 1, "https://example.test/pull/1")
+TICKET = "Fix the row menu in `menu.txt`.\n"
+CRITERION = "Given the table, then its row menu offers revert"
+MET = "\nCRITERION 1: met — menu.txt offers revert"
+APPROVE = f"{MET}\nVERDICT: APPROVE"
+REJECT = f"{MET}\nVERDICT: REQUEST_CHANGES"
+
+
+class MixedRoundTests(unittest.TestCase):
+    """A real covering review round on a real store and worktree; only the
+    agents and GitHub are faked."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Path(tmp.name, "repo")
+        repo.mkdir()
+        self.enterContext(patch.dict(
+            os.environ, {"HOLOPHYTE_HOME": str(Path(tmp.name, "home"))}))
+        self.project = holophyte.config.project.Project.locate(repo)
+        self.root = holophyte.config.project.worktree_path(self.project, "task")
+        for args in (("init", "-q", "-b", "main"),
+                     ("config", "user.name", "Test implementer"),
+                     ("config", "user.email", "implementer@example.test"),
+                     ("commit", "--allow-empty", "-qm", "base"),
+                     ("worktree", "add", "-qb", "task", str(self.root))):
+            self.git(*args, cwd=repo)
+        self.head = self.commit("candidate")
+        self.project.config_path.parent.mkdir(parents=True, exist_ok=True)
+        self.project.config_path.write_text(
+            '[merge]\nmode = "pr"\napprove = "auto"\ncovering_fix_rounds = 1\n')
+        self.conn = open_store(self.project)
+        self.addCleanup(self.conn.close)
+        store.init(self.conn)
+        project_id = store.tickets.ensure_project(self.conn, "team-1", repo)
+        ticket = store.tickets.mirror_ticket(
+            self.conn, project_id, linear_issue_id="issue-1",
+            linear_identifier="KO-1", title="ticket 1",
+            acceptance_criteria=[CRITERION], verification_commands=["true"],
+            time_box_ms=60 * 60 * 1000)
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        self.run_id = store.claim(self.conn, project_id, ticket)
+        store.set_branch(self.conn, self.run_id, "task")
+        set_phase(self.conn, self.run_id, "merge_gate")
+
+    def git(self, *args, cwd=None):
+        return subprocess.check_output(
+            ["git", *args], cwd=cwd or self.root, text=True,
+            stderr=subprocess.PIPE).strip()
+
+    def commit(self, message):
+        Path(self.root, "menu.txt").write_text(message)
+        self.git("add", ".")
+        self.git("commit", "-qm", message)
+        return self.git("rev-parse", "HEAD")
+
+    def review_fix(self, rejection):
+        replies, self.goals = [rejection, APPROVE], []
+
+        def reviewer(target, role, goal, *args, **kwargs):
+            return replies.pop(0)
+
+        def fixer(project, conn, run_id, beat_s, wt, budget_min, goal, *args,
+                  **kwargs):
+            self.goals.append(goal)
+            self.commit("fix")
+            return "Restored the revert item.", False
+
+        with (patch.object(holophyte.loop.review_round, "agent", reviewer),
+              patch.object(holophyte.loop.implement, "_transport_timed", fixer),
+              patch.object(github, "push_branch"),
+              patch.object(github, "rest", return_value={"body": "Menu."}),
+              patch.object(github, "edit_pr_body"),
+              patch.object(holophyte.pr.pullrequest,
+                           "refresh_pr_text") as self.refresh,
+              patch.object(babysitter, "_post")):
+            babysitter._review_fix(
+                self.project, self.conn, self.run_id, None, "KO-1", "task",
+                self.root, self.head, None, 30, PULL, TICKET, "true", (),
+                [CRITERION], budget_min=10)
+
+    def reviewer_findings(self):
+        (goal,) = self.goals
+        return goal.partition("Reviewer findings:")[2]
+
+    def test_a_mixed_round_sends_the_description_finding_to_the_pr_text(self):
+        self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}")
+
+        self.assertIn("TicketTable.tsx", self.reviewer_findings())
+        self.assertNotIn("PR description", self.reviewer_findings())
+        self.assertNotIn("Changes table", self.reviewer_findings())
+        self.assertEqual(self.refresh.call_args.kwargs["review"], DESCRIBED)
+
+    def test_an_all_code_round_sends_every_blocker_to_the_implementer(self):
+        code = f"{TABLE}\n- [P2] path: \"holophyte/menu.py\" — revert is unguarded"
+        self.assertEqual(description_findings(
+            f"{code}{REJECT}", "REQUEST_CHANGES", []), [])
+
+        self.review_fix(f"{code}{REJECT}")
+
+        self.assertIn("TicketTable.tsx", self.reviewer_findings())
+        self.assertIn("holophyte/menu.py", self.reviewer_findings())
+        self.assertEqual(self.refresh.call_args.kwargs["review"], "")
 
 
 if __name__ == "__main__":

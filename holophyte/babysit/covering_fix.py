@@ -3,7 +3,13 @@ import re
 
 import store
 import store.read
-from holophyte.babysit.description_review import description_findings
+from holophyte.babysit.description_review import (
+    DESCRIPTION_SUBJECT_RE,
+    LEAD,
+    description_findings,
+    hold_for_pr_text,
+    without_description,
+)
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.review.reply_parsing import UNPARSED_PATH
@@ -11,9 +17,7 @@ from holophyte.review.reply_parsing import UNPARSED_PATH
 ROUND_KIND = "covering_fix_round"
 ALLOWANCE_KIND = "review_fix_allowance"
 
-LEAD_RE = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
-                     r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
-                     r"[:\u2014-]?\s*)?(?:\*\*)?\s*", re.I)
+LEAD_RE = re.compile(LEAD, re.I)
 
 
 def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
@@ -59,9 +63,13 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
            f"Automatic fix round {made + 1} of {cap} after round {rnd} on"
            f" {pull.url}: the review of the fix at {sha} asked for new"
            " changes", provider)
+    verdict, described = without_description(verdict)
+    hold_for_pr_text(conn, run_id, described)
+    code = [finding for finding in covering if not DESCRIPTION_SUBJECT_RE.match(
+        str(finding.get("message", "")))]
     return fix_goal(pull, ticket, verdict,
                     f"Fix note from the review of the fix at {sha[:12]}",
-                    fix_note_of(covering)), None
+                    fix_note_of(code)), None
 
 
 def fix_goal(pull, ticket, verdict, label, note):

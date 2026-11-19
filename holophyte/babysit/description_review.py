@@ -1,5 +1,7 @@
 import re
 
+import store
+import store.read
 from holophyte.board.projection import ledger
 from holophyte.loop.gates import sh
 from holophyte.review.briefs import main_merge_base
@@ -9,10 +11,14 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 
+LEAD = (r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
+        r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
+        r"[:\u2014-]?\s*)?(?:\*\*)?\s*")
+
 DESCRIPTION_SUBJECT_RE = re.compile(
-    r'^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:\[\s*(?:p[0-3]|nit|blocker|major|minor)'
-    r'\s*\]\s*)?(?:(?:p[0-3]|nit|blocker|major|minor)\b'
-    r'[^\w(\n]*)?[(\[]?\s*path:\s*"PR description"', re.I)
+    LEAD + r'[^\w(\n]*[(\[]?[`*\s]*path:\s*"PR description"', re.I)
+
+PR_TEXT_REVIEW_KIND = "pr_text_review"
 
 VERDICT_LINE_RE = re.compile(r"^\s*VERDICT:.*$", re.M)
 
@@ -33,13 +39,43 @@ def description_findings(verdict, decision, unwitnessed):
     """The blockers, when every one of them is about the PR description."""
     if decision != "REQUEST_CHANGES" or unwitnessed:
         return []
-    reply = without_criteria(without_refuted(verdict))
-    for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
-        reply = pattern.sub("", reply)
-    findings = [line.strip() for line in reply.splitlines() if line.strip()]
+    findings = _blocker_lines(verdict)
     if findings and all(DESCRIPTION_SUBJECT_RE.match(line) for line in findings):
         return findings
     return []
+
+
+def without_description(verdict):
+    described = [line for line in _blocker_lines(verdict)
+                 if DESCRIPTION_SUBJECT_RE.match(line)]
+    kept = [line for line in verdict.splitlines() if line.strip() not in described]
+    return "\n".join(kept), described
+
+
+def hold_for_pr_text(conn, run_id, described):
+    if described:
+        store.record_event(conn, run_id, PR_TEXT_REVIEW_KIND,
+                           "\n".join(described), level="detail")
+
+
+def pending_text_review(conn, run_id):
+    if conn is None:
+        return ""
+    pending = []
+    for event in store.read.narrative_events(
+            conn, run_id, (PR_TEXT_REVIEW_KIND, "pr_text_sha")):
+        if event.kind == PR_TEXT_REVIEW_KIND:
+            pending.append(event.summary)
+        elif event.kind == "pr_text_sha":
+            pending = []
+    return "\n".join(pending)
+
+
+def _blocker_lines(verdict):
+    reply = without_criteria(without_refuted(verdict))
+    for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
+        reply = pattern.sub("", reply)
+    return [line.strip() for line in reply.splitlines() if line.strip()]
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
@@ -53,7 +89,8 @@ def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,
     rewrote = refresh_pr_text(
         project, conn, run_id, task_id, ticket.splitlines()[0], branch, ticket,
         beat_s, wt, budget_min, pull, answered, sha=sha,
-        review="\n".join(findings))
+        review="\n".join(filter(None, (pending_text_review(conn, run_id),
+                                        *findings))))
     if rewrote:
         ledger(conn, run_id, task_id, "round",
                f"Rewrote the description of {pull.url} for the review of the"
