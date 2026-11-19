@@ -69,7 +69,7 @@ MD_LINK_TARGET_RE = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
 
 
 SELF_LINK_RE = re.compile(
-    r"\s*(?:[-*+]|\d+[.)])\s+\[(?P<text>[^\]\s]+)\]\((?P<target>[^)\s]+)\)")
+    r"\s*(?:[-*+]|\d+[.)])\s+\[(?P<text>[^\]\s]+)\]\((?P<href>[^)\s]+)\)")
 
 
 SELF_CITED_RE = re.compile(r"([\w.\-/]*\w)(?::(\d+))?")
@@ -225,7 +225,7 @@ def parse_findings(reply):
 
 def self_cited(block):
     link = SELF_LINK_RE.match(block)
-    if link is None or link["text"] != link["target"]:
+    if link is None or link["text"] != link["href"]:
         return None
     return SELF_CITED_RE.fullmatch(link["text"])
 
