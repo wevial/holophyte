@@ -29,15 +29,17 @@ function DotsIcon() {
 
 /** A ⋯ button named `label` opening a menu of `items`, under the button,
  *  above it where the viewport has no room below, else held inside the
- *  viewport and scrolling where it is taller; `onOpen` hears each opening: arrow keys, Home and End
- *  move between them, Esc or a choice closes it and returns focus to the
- *  button. A pointer opens it with no item focused, keys with the first or
- *  last. Its clicks never reach the row it sits in; `compact` is a row's
- *  smaller unedged button. */
-export function MoreMenu({ label, items, className = "", compact = false, onOpen }: {
-  label: string; items: MenuItem[]; className?: string; compact?: boolean; onOpen?: () => void;
+ *  viewport and scrolling where it is taller; kept inside it sideways and
+ *  placed again when its items change. `onOpenChange` hears it open and
+ *  close. Arrow keys, Home and End move between items; Esc or a choice
+ *  closes it and returns focus to the button, and focus lost with an item
+ *  that left goes to the menu. A pointer opens it with no item focused,
+ *  keys with the first or last. Its clicks never reach the row it sits
+ *  in; `compact` is a row's smaller unedged button. */
+export function MoreMenu({ label, items, className = "", compact = false, onOpenChange }: {
+  label: string; items: MenuItem[]; className?: string; compact?: boolean; onOpenChange?: (open: boolean) => void;
 }) {
-  const [at, setAt] = useState<{ top: number; right: number; above: number; placed?: boolean; maxHeight?: number } | null>(null);
+  const [at, setAt] = useState<{ top: number; right: number; above: number; below: number; side: number; placed?: boolean; maxHeight?: number } | null>(null);
   const [focusOn, setFocusOn] = useState<"menu" | "first" | "last">("menu");
   const id = useId();
   const wrap = useRef<HTMLDivElement>(null);
@@ -48,11 +50,28 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
 
   useLayoutEffect(() => {
     const box = menu.current?.getBoundingClientRect();
-    if (at == null || at.placed || box == null || box.bottom <= window.innerHeight - 8) return;
+    if (at == null || at.placed || box == null) return;
+    const right = box.left < 8 ? Math.max(8, window.innerWidth - 8 - box.width) : at.right;
+    if (box.bottom <= window.innerHeight - 8) {
+      if (right !== at.right) setAt({ ...at, placed: true, right });
+      return;
+    }
     const room = window.innerHeight - 16;
-    if (at.above - box.height >= 8) setAt({ ...at, placed: true, top: at.above - box.height });
-    else setAt({ ...at, placed: true, top: Math.max(8, room + 8 - box.height), maxHeight: box.height > room ? room : undefined });
+    if (at.above - box.height >= 8) setAt({ ...at, placed: true, right, top: at.above - box.height });
+    else setAt({ ...at, placed: true, right, top: Math.max(8, room + 8 - box.height), maxHeight: box.height > room ? room : undefined });
   }, [at]);
+
+  useLayoutEffect(() => {
+    setAt((now) => (now == null ? now : { ...now, top: now.below, right: now.side, maxHeight: undefined, placed: false }));
+  }, [items.length]);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && (document.activeElement == null || document.activeElement === document.body)) menu.current?.focus();
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -79,8 +98,8 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
   const show = (focus: "menu" | "first" | "last") => {
     const box = button.current!.getBoundingClientRect();
     setFocusOn(focus);
-    onOpen?.();
-    setAt({ top: box.bottom + 6, right: Math.max(8, window.innerWidth - box.right), above: box.top - 6 });
+    const side = Math.max(8, window.innerWidth - box.right);
+    setAt({ top: box.bottom + 6, right: side, above: box.top - 6, below: box.bottom + 6, side });
   };
   const close = () => {
     setAt(null);

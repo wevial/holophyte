@@ -65,42 +65,47 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
   );
 }
 
-/** A Done row's ⋯ menu where its project reports `reverts`: its ticket is
- *  read once the menu first opens, holding Revert… disabled until then.
- *  A reverted ticket's Revert… is disabled naming the revert ticket; a
- *  ticket whose newest run did not merge offers none. */
-function DoneRowMenu({ card, actions, items }: { card: TicketCard; actions: boolean; items: MenuItem[] }) {
-  const [asked, setAsked] = useState(false);
-  const ticket = useTicket(card.base, card.key, useContext(PollDepsContext), asked);
+/** The ⋯ menu of a row that may hold a merge, where its project reports
+ *  `reverts`: its ticket is read while the menu is open. A Done row holds
+ *  Revert… disabled until then; another row offers it once the read finds
+ *  its newest run merged. A reverted ticket's Revert… is disabled naming
+ *  the revert ticket; a ticket whose newest run did not merge offers none. */
+function MergedRowMenu({ card, column, actions, items }: { card: TicketCard; column: ColumnId; actions: boolean; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ticket = useTicket(card.base, card.key, useContext(PollDepsContext), open);
   const read = ticket.data;
   const newest = read?.runs.reduce<number>((top, each) => Math.max(top, each.run), -1);
-  const merged = read == null || read.runs.find((each) => each.run === newest)?.outcome === "merged";
+  const merged = read == null ? column === "done" : read.runs.find((each) => each.run === newest)?.outcome === "merged";
   const revert = useRevertFlow(
-    merged ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, reverted: read?.reverted, off: actions ? null : ACTIONS_OFF } : null,
+    merged ? { base: card.base, project: card.project, ticket: card.key, run: newest ?? card.runId, reverted: read?.reverted, off: actions ? null : ACTIONS_OFF } : null,
     items,
   );
-  const checking = ticket.isPending && asked;
+  const checking = ticket.isPending;
   const shown = revert.items.map((item) => (checking && item.label === "Revert…" ? { ...item, disabled: true, note: "Checking…" } : item));
-  return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpen={() => setAsked(true)} />;
+  return <RowMenuFrame card={card} items={shown} layer={revert.layer} onOpenChange={setOpen} />;
 }
 
-function RowMenuFrame({ card, items, layer, onOpen }: { card: TicketCard; items: MenuItem[]; layer?: ReactNode; onOpen?: () => void }) {
+function RowMenuFrame({ card, items, layer, onOpenChange }: { card: TicketCard; items: MenuItem[]; layer?: ReactNode; onOpenChange?: (open: boolean) => void }) {
   return (
     <>
-      <MoreMenu compact label={`More for ${card.key}`} items={items} onOpen={onOpen} className={`${ROW_MENU} absolute top-2 right-3 [:root[data-density=compact]_&]:top-1`} />
+      <MoreMenu compact label={`More for ${card.key}`} items={items} onOpenChange={onOpenChange} className={`${ROW_MENU} absolute top-2 right-3 [:root[data-density=compact]_&]:top-1`} />
       <div className="px-4 pb-2 empty:hidden">{layer}</div>
     </>
   );
 }
 
-/** A row's ⋯ menu: Open ticket, Copy link, and on a Done row of a project
- *  that reports `reverts`, Revert…; a filed revert's status line reads
- *  under the row. */
+const mayHoldMerge = (card: TicketCard, column: ColumnId) => column === "done" || ((column === "backlog" || column === "ready") && card.runId != null);
+
+/** A row's ⋯ menu: Open ticket, Copy link, and on a row that may hold a
+ *  merge in a project that reports `reverts`, Revert…; a filed revert's
+ *  status line reads under the row. */
 function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
   const status = useConsolePeers().hosts.find((each) => each.base === card.base)?.status;
   const place = { project: card.project, ticket: card.key };
   const items = usePlaceItems(place, place);
-  if (column === "done" && status?.reverts === true) return <DoneRowMenu card={card} actions={status.actions === true} items={items} />;
+  if (mayHoldMerge(card, column) && status?.reverts === true) {
+    return <MergedRowMenu card={card} column={column} actions={status.actions === true} items={items} />;
+  }
   return <RowMenuFrame card={card} items={items} />;
 }
 

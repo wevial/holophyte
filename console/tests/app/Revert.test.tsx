@@ -45,7 +45,8 @@ interface Served {
 
 /** DEMO serves `served` (by default merged run 9 of DEMO-9, shipped today,
  *  and an empty board), read afresh on every request, its status reporting
- *  `reverts`; each `POST /actions/revert` is kept and answered by `revert`. */
+ *  `reverts`; each `POST /actions/revert` is kept and answered by `revert`,
+ *  and each ticket read is kept by key. */
 function daemon(
   reverts: boolean,
   revert: (body: Record<string, unknown>) => Response | Promise<Response> = () => new Response(null, { status: 500 }),
@@ -53,6 +54,7 @@ function daemon(
   shipped = [merged(9, "DEMO-9", ENDED)],
 ) {
   const posted: Posted[] = [];
+  const ticketReads: string[] = [];
   const state: Served = { runs: { 9: runNine }, tickets: { "DEMO-9": ticketNine }, board: emptyBoard, ...served };
   const polls = fleet({ items: [], shipped }, { items: [] });
   const fetchImpl = async (url: string, init?: RequestInit) => {
@@ -65,6 +67,7 @@ function daemon(
     const run = /^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1];
     if (url.startsWith(DEMO) && run != null && state.runs[Number(run)]) return Response.json(state.runs[Number(run)]);
     const ticket = /^\/tickets\/([A-Z]+-\d+)$/.exec(url.slice(DEMO.length))?.[1];
+    if (url.startsWith(DEMO) && ticket != null) ticketReads.push(ticket);
     if (url.startsWith(DEMO) && ticket != null && state.tickets[ticket]) return Response.json(state.tickets[ticket]);
     if (url === `${DEMO}/board`) return Response.json(state.board);
     if (url.startsWith(`${DEMO}/history?`)) {
@@ -75,7 +78,7 @@ function daemon(
     }
     return polls(url);
   };
-  return { posted, state, fetchImpl };
+  return { posted, ticketReads, state, fetchImpl };
 }
 
 const PREVIEW = { action: "revert", recorded: null, enabled: true, refused: null, dependents: [] };
@@ -190,12 +193,15 @@ test("a latest merge with no recorded sha is refused before any preview, naming 
   expect([...only.posted, ...again.posted]).toEqual([]);
 });
 
-test("a Done row reads its ticket when its menu opens: a reverted one disables Revert… naming the revert ticket, a newer unmerged attempt drops it", async () => {
+test("a Done row reads its ticket only once its menu opens: a reverted one disables Revert… naming the revert ticket, a newer unmerged attempt drops it", async () => {
   const doneMenu = async (ticket: TicketDetail) => {
     writeView("table");
-    await mount("#/tickets", daemon(true, undefined, { tickets: { "DEMO-9": ticket } }).fetchImpl);
+    const fake = daemon(true, undefined, { tickets: { "DEMO-9": ticket } });
+    await mount("#/tickets", fake.fetchImpl);
+    expect(fake.ticketReads).toEqual([]);
     await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
     for (let round = 0; round < 4; round += 1) await act(settle);
+    expect(fake.ticketReads).toContain("DEMO-9");
     return screen.queryByRole("menuitem", { name: "Revert…" });
   };
   const item = await doneMenu({ ...ticketNine, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } });
@@ -205,6 +211,43 @@ test("a Done row reads its ticket when its menu opens: a reverted one disables R
 
   const retried = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 12, outcome: "failed" }, ...ticketNine.runs] };
   expect(await doneMenu(retried)).toBeNull();
+});
+
+test("a Backlog row whose latest run merged and was reverted ends its menu with Revert… disabled, naming the revert ticket", async () => {
+  const reverted = { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" };
+  const card = { ...servedBoard.columns.find((column) => column.tickets.length > 0)!.tickets[0]!, ticket: "DEMO-9", title: "Page the ledger", run: 9, reverted };
+  const board: Board = { ...emptyBoard, columns: [...emptyBoard.columns, { ...emptyBoard.columns[0]!, state: "backlog", tickets: [card] }] };
+  writeView("table");
+  const fake = daemon(true, undefined, { board, tickets: { "DEMO-9": { ...ticketNine, status: "backlog", reverted } } }, []);
+  await mount("#/tickets", fake.fetchImpl);
+  expect(document.querySelector("[data-row]")?.getAttribute("data-column")).toBe("backlog");
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for DEMO-9" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  const items = within(screen.getByRole("menu", { name: "More for DEMO-9" })).getAllByRole("menuitem");
+  expect(items.map((item) => item.textContent)).toEqual(["Open ticket", "Copy link", "Revert…"]);
+  expect(items.at(-1)!.getAttribute("aria-disabled")).toBe("true");
+  expect(document.getElementById(items.at(-1)!.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
+});
+
+test("Esc still returns focus to ⋯ after the focused Revert… leaves a Done row's menu once its ticket shows a newer unmerged attempt", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const retried = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 12, outcome: "failed" }, ...ticketNine.runs] };
+  const fake = daemon(true, undefined, { tickets: { "DEMO-9": retried } });
+  writeView("table");
+  await mount("#/tickets", async (url, init) => {
+    if (url === `${DEMO}/tickets/DEMO-9`) await held;
+    return fake.fetchImpl(url, init);
+  });
+  const button = screen.getByRole("button", { name: "More for DEMO-9" });
+  await act(async () => void fireEvent.keyDown(button, { key: "ArrowUp" }));
+  expect(document.activeElement?.textContent).toBe("Revert…");
+  await act(async () => release());
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(screen.queryByRole("menuitem", { name: "Revert…" })).toBeNull();
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(document.activeElement).toBe(button);
 });
 
 test("a ticket that merged again after its preview files nothing and says why", async () => {
@@ -276,7 +319,8 @@ test("Copy link on a plain-HTTP origin copies the run's link through a selection
   Object.defineProperty(window, "isSecureContext", { value: false, configurable: true });
   document.execCommand = ((command: string) => {
     if (command !== "copy") return false;
-    copied = (document.activeElement as HTMLTextAreaElement).value;
+    const area = document.activeElement as HTMLTextAreaElement;
+    copied = area.value.slice(area.selectionStart, area.selectionEnd);
     return true;
   }) as typeof document.execCommand;
   try {
