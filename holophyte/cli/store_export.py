@@ -36,8 +36,6 @@ class Redactor:
         self.private = tuple(private)
 
     def text(self, value):
-        if value is None:
-            return None
         for pattern in self.private:
             value = pattern.sub(PRIVATE, value)
         for pattern in SECRETS:
@@ -78,7 +76,7 @@ def _events(conn, since):
         " ORDER BY runId, seq", (since or 0,)).fetchall()
 
 
-def records(conn, project, redactor, since=None):
+def records(conn, project, redactor, since):
     runs, events, sessions = [], [], []
     keys = {}
     for (run_id, key, attempt, outcome, failure_kind, merge_sha, rounds,
@@ -110,9 +108,9 @@ def _write_lines(path, rows):
             stream.write("\n")
 
 
-def export(target, directory, since=None, clock=time.time):
+def export(target, directory, since):
     from holophyte.leak_guard import patterns
-    started = int(clock() * 1000)
+    started = int(time.time() * 1000)
     if not target.store_path.is_file():
         raise SystemExit(f"[holo2] no store at {target.store_path}")
     project = serve_config(target).name
@@ -130,7 +128,7 @@ def export(target, directory, since=None, clock=time.time):
     manifest = {
         "project": project,
         "files": {name: len(rows) for name, rows in files.items()},
-        "started_at": iso(started), "ended_at": iso(int(clock() * 1000)),
+        "started_at": iso(started), "ended_at": iso(int(time.time() * 1000)),
         "since": since, "redaction_version": REDACTION_VERSION}
     (directory / MANIFEST).write_text(
         json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8")
