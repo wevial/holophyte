@@ -157,8 +157,9 @@ Each module, one line:
   and the dependents, and unless `--dry-run` files the ticket through
   `file_ticket()` in Todo at priority urgent and records a `revert`
   intervention on the merged run.
-- `holophyte/revert/close.py` — after a run merges a ticket whose Summary
-  carries `Reverts: KEY at SHA` outside any fence, naming KEY's merged sha,
+- `holophyte/revert/close.py` — after a run merges a ticket whose Summary,
+  as claimed, carries `Reverts: KEY at SHA` outside any fence or code span,
+  naming KEY's merged sha,
   KEY returns to Backlog on a native board through
   `store.board.reopen_reverted()` and `move_ticket()`, with a
   `Reverted by REVERT-KEY: REASON` note and a `reverted` event on KEY's

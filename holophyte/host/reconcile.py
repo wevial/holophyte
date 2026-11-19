@@ -161,8 +161,9 @@ def _ask_before_cancel(target, conn, provider, ticket_id):
         return "wait"
     GITHUB_BUDGET.remember(status)
     if status.merged:
-        _land_github_merge(target, conn, provider, ticket, pull, status)
-        return "landed"
+        landed = _land_github_merge(target, conn, provider, ticket, pull,
+                                    status)
+        return "landed" if landed else "wait"
     if status.closed:
         _note_closed_pr(target, conn, provider, ticket, pull, status)
     return "cancel"
@@ -524,7 +525,11 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
     identifier, run_id = ticket.linearIdentifier, ticket.runId
     who = status.merged_by or "someone"
     sha = status.merge_sha
-    short = sha[:12] if sha else "an unrecorded sha"
+    if not sha:
+        print(f"[holo2] {identifier}: {pull.url} is merged without a named"
+              " merge commit yet; read again next pass")
+        return False
+    short = sha[:12]
     with store.transaction(conn):
         now = store.read.ticket_by_id(conn, ticket.id)
         parked = _parked_phase(conn, run_id)
@@ -533,7 +538,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
                 or parked is None:
             print(f"[holo2] {identifier}: {pull.url} is merged on GitHub but"
                   " the ticket moved while it was asked; left alone")
-            return
+            return True
         store.record_pr_seen(conn, run_id, _seen(status))
         branch = parked[0]
         store.record_intervention(
@@ -560,6 +565,7 @@ def _land_github_merge(target, conn, provider, ticket, pull, status):
     refresh_findings(target, conn)
     print(f"[holo2] {identifier}: {pull.url} was merged on GitHub by {who}"
           f" as {short}; run {run_id} closed out as merged")
+    return True
 
 
 def _note_closed_pr(target, conn, provider, ticket, pull, status):

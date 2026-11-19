@@ -177,7 +177,8 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
 
 REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,64})")
 WHY = re.compile(r"(?:\*\*Why:\s*\*\*|Why:)\s*(.+)")
-FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
+TICKS = re.compile(r"`+")
 
 
 def reopen_reverted(conn, run_id, native=True):
@@ -185,14 +186,16 @@ def reopen_reverted(conn, run_id, native=True):
     with _transaction(conn):
         row = conn.execute(
             "SELECT r.outcome, r.mergeSha, t.projectId, t.linearIdentifier,"
-            " t.body FROM runs r JOIN tickets t ON t.id = r.ticketId"
+            " COALESCE((SELECT v.body FROM ticketRevisions v WHERE"
+            " v.ticketId = r.ticketId AND v.revision = r.revision), t.body)"
+            " FROM runs r JOIN tickets t ON t.id = r.ticketId"
             " WHERE r.id = ?", (run_id,)).fetchone()
         if row is None or row[0] != "merged":
             return None
         _, merge_sha, project_id, revert_key, text = row
-        lines = _unfenced(ticket_template.parse(text)
-                          .sections.get("Summary", ""))
-        named = next(filter(None, map(REVERTS.fullmatch, lines)), None)
+        sections = ticket_template.parse(text).sections
+        named = next(filter(None, map(
+            REVERTS.fullmatch, _live(sections.get("Summary", "")))), None)
         if named is None:
             return None
         key, sha = named.groups()
@@ -210,7 +213,7 @@ def reopen_reverted(conn, run_id, native=True):
             return None
         ticket_id, column, merged_run = original
         reason = (_filed_reason(conn, merged_run, revert_key)
-                  or _written_reason(key, text))
+                  or _written_reason(key, sections))
         why = f": {reason}" if reason else ""
         note = f"Reverted by {revert_key}{why or '.'}"
         if not native:
@@ -231,21 +234,52 @@ def reopen_reverted(conn, run_id, native=True):
     return key, note
 
 
+def _live(text):
+    live, paragraph = [], []
+    for line in _unfenced(text) + [""]:
+        if line.strip():
+            paragraph.append(line)
+            continue
+        live += _outside_code_spans(paragraph)
+        paragraph = []
+    return live
+
+
 def _unfenced(text):
     fence, kept = None, []
     for line in text.splitlines():
-        opened = FENCE.match(line)
-        if fence is None and opened and not (
-                opened[1][0] == "`" and "`" in line[opened.end():]):
-            fence = opened[1]
-        elif fence is not None:
+        opened = FENCE.fullmatch(line)
+        if fence is not None:
             if opened and opened[1][0] == fence[0] \
-                    and len(opened[1]) >= len(fence) \
-                    and not line.strip(" \t" + fence[0]):
+                    and len(opened[1]) >= len(fence) and not opened[2].strip():
                 fence = None
+        elif opened and not (opened[1][0] == "`" and "`" in opened[2]):
+            fence = opened[1]
+            kept.append("")
         else:
-            kept.append(line.rstrip())
+            kept.append(line)
     return kept
+
+
+def _outside_code_spans(lines):
+    joined = "\n".join(lines)
+    runs, spans, i = list(TICKS.finditer(joined)), [], 0
+    while i < len(runs):
+        close = next((j for j in range(i + 1, len(runs))
+                      if len(runs[j][0]) == len(runs[i][0])), None)
+        if close is None:
+            i += 1
+            continue
+        spans.append((runs[i].start(), runs[close].end()))
+        i = close + 1
+    live, at = [], 0
+    for line in lines:
+        indent = len(line) - len(line.lstrip(" "))
+        start = at + indent
+        if indent <= 3 and not any(a <= start < b for a, b in spans):
+            live.append(line.strip())
+        at += len(line) + 1
+    return live
 
 
 def _filed_reason(conn, merged_run, revert_key):
@@ -258,12 +292,12 @@ def _filed_reason(conn, merged_run, revert_key):
     return None
 
 
-def _written_reason(key, text):
+def _written_reason(key, sections):
     undo = re.compile(rf"Undo {re.escape(key)}'s merge: (.+)")
-    for line in _unfenced(text):
-        written = undo.fullmatch(line) or WHY.fullmatch(line)
-        if written:
-            return written[1]
+    for section, pattern in (("Summary", undo), ("What / Why / How", WHY)):
+        for line in _live(sections.get(section, "")):
+            if written := pattern.fullmatch(line):
+                return written[1]
     return None
 
 
