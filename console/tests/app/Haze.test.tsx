@@ -40,15 +40,18 @@ function grantingGl(canvas: HTMLCanvasElement) {
 }
 
 let webgl2Asks = 0;
+let contextAlpha: boolean | undefined;
 
 beforeEach(() => {
   localStorage.clear();
   document.documentElement.removeAttribute("data-theme");
   webgl2Asks = 0;
+  contextAlpha = undefined;
   canvasDraws = [];
-  spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((function (this: HTMLCanvasElement, kind: string) {
+  spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation((function (this: HTMLCanvasElement, kind: string, attributes?: WebGLContextAttributes) {
     if (kind !== "webgl2") return null;
     webgl2Asks += 1;
+    contextAlpha = attributes?.alpha;
     return grantingGl(this);
   }) as typeof HTMLCanvasElement.prototype.getContext);
 });
@@ -70,6 +73,12 @@ async function mount() {
 
 const band = () => screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
 const chooseTheme = (name: string) => fireEvent.click(within(screen.getByRole("group", { name: "Theme" })).getByRole("button", { name }));
+
+test("a stored light theme mounts the vendored Haze on one canvas, asking WebGL2 for the alpha channel it draws over the page with", async () => {
+  localStorage.setItem(THEME_KEY, "light");
+  await mount();
+  expect([webgl2Asks, contextAlpha, band().querySelectorAll("canvas").length, band().classList.contains("haze-fallback")]).toEqual([1, true, 1, false]);
+});
 
 /** Distinct light and dark haze tokens, since the tests run without the compiled stylesheet. */
 const LIGHT = { ground: "#fbfaff", back: "#c8bff6", front: "#f3bddb" };
