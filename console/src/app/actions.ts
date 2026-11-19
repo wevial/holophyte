@@ -1,9 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useContext } from "react";
 import { actionBase, postAction, type ActionResult } from "../lib/actions";
-import { addressOf } from "../lib/hosts";
 import type { Fetch } from "../lib/poll";
-import { withToken } from "../lib/token";
 import { cancelTicket, moveTicket, type WriteResult } from "../lib/boardWrites";
 import { putConfig, type ConfigWrite } from "../lib/config";
 import { useToast } from "./components/Toast";
@@ -115,27 +113,24 @@ function dependentsOf(value: unknown): RevertDependent[] {
   );
 }
 
+/** `POST /actions/revert` through `postAction()`, decoding the reply it
+ *  hands back from the fetch it was given: `postAction()` keeps only `ok`
+ *  and `detail`, and a revert's reply carries neither. */
 async function postRevert(base: string, body: Record<string, unknown>, fetchImpl: Fetch): Promise<RevertAnswer> {
-  const url = `${base}/actions/revert`;
-  const init = withToken(addressOf(base), {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify(body),
-  });
-  let response: Response;
-  try {
-    response = await fetchImpl(url, init);
-  } catch (failure) {
-    return { kind: "failed", reason: failure instanceof Error ? failure.message : String(failure) };
-  }
-  const answer: unknown = await response.json().catch(() => null);
+  let reply: Response | null = null;
+  const keep: Fetch = async (url, init) => {
+    const response = await fetchImpl(url, init);
+    reply = response.clone();
+    return response;
+  };
+  const posted = await postAction(base, "/actions/revert", body, keep);
+  const answered = reply as Response | null;
+  if (answered == null) return { kind: "failed", reason: posted.detail };
+  const answer: unknown = await answered.json().catch(() => null);
   const record = typeof answer === "object" && answer != null ? (answer as Record<string, unknown>) : {};
   const refused = typeof record.refused === "object" && record.refused != null ? (record.refused as Record<string, unknown>) : null;
   if (refused != null && typeof refused.reason === "string") return { kind: "refused", reason: refused.reason, paths: strings(refused.paths) };
-  if (!response.ok) {
-    const error = typeof record.error === "string" ? record.error : "";
-    return { kind: "failed", reason: `${url} answered ${response.status}${error ? `: ${error}` : ""}` };
-  }
+  if (!answered.ok) return { kind: "failed", reason: posted.detail };
   if (body.dry_run === true) return { kind: "preview", dependents: dependentsOf(record.dependents) };
   return typeof record.key === "string" ? { kind: "filed", ticket: record.key } : { kind: "failed", reason: "the daemon named no revert ticket" };
 }

@@ -89,7 +89,7 @@ export function RunActions({ page, project, after, menu }: { page: Page; project
   const items: MenuItem[] = labels.map((label) => ({
     label,
     onSelect: press[label]!,
-    disabled: !page.actions,
+    disabled: !page.actions || pending != null,
     note: page.actions ? undefined : ACTIONS_OFF_LINE,
   }));
   const branch = run.branch == null ? "Its branch" : `The branch ${run.branch}`;

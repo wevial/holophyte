@@ -7,7 +7,8 @@ import { trap } from "./trap";
  *  button (`cancelLabel`) and Tab stays inside, Esc or that button calls
  *  `onCancel`, and the `confirm` button (`primary` unless `confirmVariant`)
  *  calls `onConfirm` unless `confirmDisabled`, showing `busyLabel` while
- *  `busy`; with no `confirm` only the cancel button shows. `refusal` reads
+ *  `busy`; with no `confirm` only the cancel button shows, and
+ *  `cancelDisabled` holds the dialog open, Esc included. `refusal` reads
  *  under the buttons. */
 export function ConfirmDialog({
   label,
@@ -22,6 +23,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   confirmVariant = "primary",
   confirmDisabled = false,
+  cancelDisabled = false,
   refusal = null,
   children,
 }: {
@@ -37,6 +39,7 @@ export function ConfirmDialog({
   cancelLabel?: string;
   confirmVariant?: "primary" | "danger-fill";
   confirmDisabled?: boolean;
+  cancelDisabled?: boolean;
   refusal?: ReactNode;
   children: ReactNode;
 }) {
@@ -44,7 +47,7 @@ export function ConfirmDialog({
   const box = useRef<HTMLElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const cancelled = useRef(onCancel);
-  cancelled.current = onCancel;
+  cancelled.current = cancelDisabled ? () => {} : onCancel;
   useEffect(() => {
     cancel.current?.focus();
     const keep = (event: KeyboardEvent) => trap(event, box.current, cancelled.current);
@@ -59,7 +62,7 @@ export function ConfirmDialog({
         aria-modal="true"
         aria-label={ariaLabel}
         aria-labelledby={ariaLabel ? undefined : headingId}
-        className="relative box-border w-full max-w-[480px] rounded-[12px] bg-raised px-[22px] pb-5 pt-[18px] text-[14px] leading-normal text-ink shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
+        className="relative box-border max-h-full w-full max-w-[480px] overflow-y-auto overscroll-contain rounded-[12px] bg-raised px-[22px] pb-5 pt-[18px] text-[14px] leading-normal text-ink shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
         <div className={`${labelClassName} text-[12px] leading-none text-ink-3`}>
           {label}
@@ -69,7 +72,7 @@ export function ConfirmDialog({
         </h2>
         {children}
         <div className="mt-[22px] flex flex-wrap justify-end gap-2.5">
-          <Btn ref={cancel} onClick={onCancel}>
+          <Btn ref={cancel} disabled={cancelDisabled} onClick={onCancel}>
             {cancelLabel}
           </Btn>
           {confirm != null && (

@@ -71,11 +71,11 @@ const SETTLED = new Set(["merged", "abandoned"]);
 
 const scoutOf = (project: string, key: string, actions: boolean): ScoutTarget => ({ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actions ? null : ACTIONS_OFF });
 
-/** The header's ⋯ menu: Steer while unsettled, Scout, Copy link, and
- *  Revert… when the ticket's latest run merged in a project that reports
+/** The header's ⋯ menu: Steer while unsettled, Scout, the ticket's
+ *  `moves`, Copy link, and Revert… when the ticket's latest run merged in a project that reports
  *  `reverts`. */
-function TicketMenu({ project, ticketKey, ticket, base, reverts, actions, onSteer }: {
-  project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean; actions: boolean; onSteer: () => void;
+function TicketMenu({ project, ticketKey, ticket, base, reverts, actions, onSteer, moves }: {
+  project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean; actions: boolean; onSteer: () => void; moves: MenuItem[];
 }) {
   const latest = ticket.runs[0];
   const off = actions ? undefined : ACTIONS_OFF;
@@ -83,6 +83,7 @@ function TicketMenu({ project, ticketKey, ticket, base, reverts, actions, onStee
   const pageItems: MenuItem[] = [
     ...(SETTLED.has(ticket.status) ? [] : [{ label: "Steer", onSelect: onSteer, disabled: !actions, note: off }]),
     { label: "Scout", onSelect: scout, disabled: !actions, note: off },
+    ...moves,
   ];
   const revertable = reverts && latest?.outcome === "merged";
   const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted, off: actions ? null : ACTIONS_OFF } : null, [...pageItems, ...usePlaceItems({ project, ticket: ticketKey })]);
@@ -148,7 +149,30 @@ export function TicketPage() {
                 editOpen={editing != null}
               />
             </div>
-            <TicketMenu key={`menu ${project}/${key}`} project={project} ticketKey={key} ticket={ticket} base={page.host.base} reverts={page.host.status?.reverts === true} actions={actionsOn} onSteer={() => setSteeringKey(steering ? null : `${project}/${key}`)} />
+            <div className="flex flex-col items-end gap-2">
+              <TicketMoves
+                key={`menu ${project}/${key}`}
+                project={project}
+                ticketKey={key}
+                ticket={ticket}
+                host={page.host}
+                liveRun={page.liveRun}
+                onEditRaw={view === "markdown" ? (revision) => showBody({ view, editing: revision }) : undefined}
+                editOpen={editing != null}
+                menu={(moves) => (
+                  <TicketMenu
+                    project={project}
+                    ticketKey={key}
+                    ticket={ticket}
+                    base={page.host.base}
+                    reverts={page.host.status?.reverts === true}
+                    actions={actionsOn}
+                    onSteer={() => setSteeringKey(steering ? null : `${project}/${key}`)}
+                    moves={moves}
+                  />
+                )}
+              />
+            </div>
           </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} project={project} />}

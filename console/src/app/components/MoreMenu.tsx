@@ -114,7 +114,7 @@ export function MoreMenu({ label, items, className = "", compact = false }: { la
         aria-controls={open ? id : undefined}
         onClick={() => (open ? setAt(null) : show("menu"))}
         onKeyDown={onButtonKey}
-        className={`${TRIGGER} ${compact ? "size-[26px]" : "size-8 shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}
+        className={`${TRIGGER} ${compact ? "size-[26px] aria-expanded:bg-[color-mix(in_oklab,var(--accent)_32%,var(--selected))]" : "size-8 shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}
       >
         <DotsIcon />
       </button>

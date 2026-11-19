@@ -3,7 +3,9 @@ import { formatAge } from "../../lib/format";
 import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
 import { ACTIONS_OFF } from "../../lib/actions";
-import { keepScope, useConsolePeers } from "../scope";
+import { useContext } from "react";
+import { useBoards } from "../queries";
+import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
 import { cardElementId, modified, TicketGlyph } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
 import { TONE_TEXT } from "./StateDot";
@@ -65,13 +67,17 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
 
 /** A row's ⋯ menu: Open ticket, Copy link, and Revert… for a done ticket of
  *  a project that reports `reverts`; a filed revert's status line reads
- *  under the row. */
+ *  under the row. A done ticket back on the board has a newer attempt, or
+ *  was reverted, which disables Revert… naming the revert ticket. */
 function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
-  const status = useConsolePeers().hosts.find((host) => host.base === card.base)?.status;
-  const revertable = column === "done" && status?.reverts === true;
+  const host = useConsolePeers().hosts.find((each) => each.base === card.base);
+  const status = host?.status;
+  const board = useBoards(host == null ? [] : [host], useContext(PollDepsContext))[0]?.board;
+  const onBoard = board?.columns.flatMap((each) => each.tickets).find((each) => each.ticket === card.key);
+  const revertable = column === "done" && status?.reverts === true && (onBoard == null || onBoard.reverted != null);
   const place = { project: card.project, ticket: card.key };
   const revert = useRevertFlow(
-    revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, off: status?.actions === true ? null : ACTIONS_OFF } : null,
+    revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, reverted: onBoard?.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null,
     usePlaceItems(place, place),
   );
   return (
@@ -87,7 +93,7 @@ function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
     <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "" : "pb-1.5"}>
       {ROW_ORDER.flatMap((column) =>
         lane.columns[column].toSorted(byKey).map((card) => (
-          <li key={card.id} className="group relative border-b border-hair last:border-b-0 has-[[aria-expanded=true]]:bg-selected">
+          <li key={card.id} className="group relative border-b border-hair last:border-b-0 has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)]">
             <TicketRow card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
             <TicketRowMenu card={card} column={column} />
           </li>

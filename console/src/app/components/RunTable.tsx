@@ -97,7 +97,7 @@ function useRunRowMenu(row: RunRow) {
   const status = useConsolePeers().hosts.find((host) => host.base === row.base)?.status;
   const revertable = row.state === "merged" && status?.reverts === true;
   const place = { project: row.project, run: row.id };
-  return useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, sha: row.merge_sha, reverted: row.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null, usePlaceItems(place, place));
+  return useRevertFlow(revertable ? { base: row.base, project: row.project, ticket: row.ticket, run: row.id, reverted: row.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null, usePlaceItems(place, place));
 }
 
 function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; colour: string | undefined; grouped: boolean }) {
@@ -110,7 +110,7 @@ function RunTableRow({ row, now, colour, grouped }: { row: RunRow; now: number; 
       data-row
       data-run={row.id}
       data-need={need ? "" : undefined}
-      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} group relative min-h-8 border-b border-rule-2 pl-2.5 pr-11 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover has-[[aria-expanded=true]]:bg-selected max-[760px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
+      className={`${GRID} ${grouped ? DAY_COLUMNS : DATED_COLUMNS} group relative min-h-8 border-b border-rule-2 pl-2.5 pr-11 text-[14px] text-ink transition-colors duration-(--motion-colour) hover:bg-hover has-[[aria-expanded=true]]:bg-[color-mix(in_srgb,var(--selected)_45%,transparent)] max-[760px]:py-1.5 ${need ? "bg-(image:--need-tint) shadow-[inset_2px_0_0_var(--need)]" : ""}`}
     >
       <span className="inline-flex max-[760px]:row-span-2"><StateGlyph row={row} /></span>
       <RunRowLink row={row} aria-label={`Run ${row.id}, ${row.ticket} ${plainTitle(row.title)}, ${row.project}, ${row.stage}, started ${start}`} className={`${MONO} ${NARROW_LINK} no-underline after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-focus`}>

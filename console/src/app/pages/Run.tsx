@@ -94,7 +94,7 @@ function RunMenu({ page, project, actions }: { page: Extract<RunPageFacts, { kin
   const scoutItems: MenuItem[] = run.outcome === "failed" ? [{ label: "Scout", onSelect: openScout, disabled: scout.off != null, note: scout.off ?? undefined }] : [];
   const revertable = run.outcome === "merged" && page.host.status?.reverts === true;
   const revert = useRevertFlow(
-    revertable ? { base: page.host.base, project, ticket: run.ticket, run: run.id, sha: run.merge_sha, reverted: run.reverted, off: page.actions ? null : ACTIONS_OFF_LINE } : null,
+    revertable ? { base: page.host.base, project, ticket: run.ticket, run: run.id, reverted: run.reverted, off: page.actions ? null : ACTIONS_OFF_LINE } : null,
     [...actions, ...scoutItems, ...usePlaceItems({ project, run: run.id }, { project, ticket: run.ticket })],
   );
   return (

@@ -84,6 +84,11 @@ async function press(name: string, scope: HTMLElement = actions()) {
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
+async function menuItems(key: string): Promise<string[]> {
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: `More for ${key}` })));
+  return within(screen.getByRole("menu", { name: `More for ${key}` })).getAllByRole("menuitem").map((item) => item.textContent ?? "");
+}
+
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/`));
@@ -166,4 +171,17 @@ test("Esc or Keep it closes the cancel dialog, returns focus to Cancel ticket an
 test("a host whose /board is not editable draws none of the moves", async () => {
   await mount("DEMO-2", { editable: false });
   expect(within(actions()).getAllByRole("button").map((button) => button.textContent)).toEqual(["Steer", "Scout"]);
+});
+
+test("the ⋯ menu carries the header's moves: a Ready ticket's Move to backlog posts the move, and a Backlog ticket offers Requeue", async () => {
+  const write = fakeFetch({ ticket: "DEMO-2", revision: 4 });
+  await mount("DEMO-2", { write: write.fetchImpl });
+  expect(await menuItems("DEMO-2")).toEqual(["Steer", "Scout", "Edit", "Move to backlog", "Cancel ticket", "Copy link"]);
+  await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Move to backlog" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(write.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/tickets/DEMO-2/move`, body: expect.objectContaining({ column: "backlog" }) }]);
+  cleanup();
+
+  await mount("DEMO-1");
+  expect(await menuItems("DEMO-1")).toEqual(["Steer", "Scout", "Edit", "Requeue", "Cancel ticket", "Copy link"]);
 });

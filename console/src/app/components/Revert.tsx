@@ -3,7 +3,8 @@ import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import type { Reverted } from "../../lib/contract.gen";
 import { shortSha } from "../../lib/shipped";
 import { previewRevert, useRevert, type RevertAnswer } from "../actions";
-import { ticketQuery, useRun } from "../queries";
+import { fetchRoute, ticketQuery } from "../queries";
+import { runDetailSchema } from "../../lib/contract.gen";
 import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -12,14 +13,13 @@ import { useToast } from "./Toast";
 import { detailLine } from "./CardActions";
 
 /** A merged ticket of a project whose status reports `reverts`, its merged
- *  `run`, its merge `sha` when known, its `reverted` once reverted, and
- *  `off` saying why its daemon takes no actions. */
+ *  `run`, its `reverted` once reverted, and `off` saying why its daemon
+ *  takes no actions. */
 interface RevertTarget {
   base: string;
   project: string;
   ticket: string;
   run: number | null;
-  sha?: string | null;
   reverted?: Reverted | null;
   off?: string | null;
 }
@@ -47,25 +47,35 @@ export function usePlaceItems(copy: Place, open?: Place): MenuItem[] {
   return items;
 }
 
-/** Why `run` of `key` can't be reverted from here, or null: the daemon
- *  reverts the ticket's latest merge, so an earlier merged run, or a
- *  latest merge already reverted, is refused before any preview. */
-async function staleTarget(on: RevertTarget, fetch: Parameters<typeof ticketQuery>[2]): Promise<RevertAnswer | null> {
-  let ticket;
+type Fetch = Parameters<typeof ticketQuery>[2];
+type Checked = { refusal: Extract<RevertAnswer, { kind: "failed" }> } | { sha: string };
+
+const failure = (reason: string): Checked => ({ refusal: { kind: "failed", reason } });
+
+/** The merge sha a revert of `on` would undo, or why `on` can't be
+ *  reverted from here. The daemon reverts the ticket's latest merged run
+ *  with a recorded sha and is sent only the key, so `on.run` must be the
+ *  ticket's latest merge, with a sha and not reverted. */
+async function checkTarget(on: RevertTarget, fetch: Fetch): Promise<Checked> {
   try {
-    ticket = await ticketQuery(on.base, on.ticket, fetch).queryFn();
-  } catch (failure) {
-    return { kind: "failed", reason: failure instanceof Error ? failure.message : String(failure) };
+    const ticket = await ticketQuery(on.base, on.ticket, fetch).queryFn();
+    if (ticket == null) return failure(`${on.ticket} is not mirrored on this host`);
+    const latest = Math.max(-1, ...ticket.runs.filter((each) => each.outcome === "merged").map((each) => each.run));
+    if (latest < 0) return failure(`${on.ticket} has no merged run`);
+    if (on.run != null && on.run !== latest) {
+      return failure(`Run ${on.run} is not ${on.ticket}'s latest merge; a revert would undo run ${latest}. Revert it from run ${latest}.`);
+    }
+    if (ticket.reverted != null) return failure(`${on.ticket}'s merge was already reverted${ticket.reverted.by == null ? "" : ` by ${ticket.reverted.by}`}.`);
+    const sha = (await fetchRoute(fetch, `${on.base}/runs/${latest}`, runDetailSchema)).run.merge_sha;
+    if (sha == null) return failure(`Run ${latest} recorded no merge sha, so a revert would undo an older merge of ${on.ticket}. Ship a forward fix instead.`);
+    return { sha };
+  } catch (failed) {
+    return failure(failed instanceof Error ? failed.message : String(failed));
   }
-  if (ticket == null) return { kind: "failed", reason: `${on.ticket} is not mirrored on this host` };
-  const latest = Math.max(-1, ...ticket.runs.filter((each) => each.outcome === "merged").map((each) => each.run));
-  if (latest < 0) return { kind: "failed", reason: `${on.ticket} has no merged run` };
-  if (on.run != null && on.run !== latest) {
-    return { kind: "failed", reason: `Run ${on.run} is not ${on.ticket}'s latest merge; a revert would undo run ${latest}. Revert it from run ${latest}.` };
-  }
-  if (ticket.reverted != null) return { kind: "failed", reason: `${on.ticket}'s merge was already reverted${ticket.reverted.by == null ? "" : ` by ${ticket.reverted.by}`}.` };
-  return null;
 }
+
+/** Every row's previews share one count, so only the newest asked opens. */
+let newestPreview = 0;
 
 function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" | "failed" }> }) {
   return (
@@ -88,15 +98,17 @@ function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" |
   );
 }
 
-function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarget; first: RevertAnswer; onClose: () => void; onFiled: (ticket: string) => void }) {
+function RevertDialog({ target, sha: merge, first, onClose, onFiled }: {
+  target: RevertTarget; sha: string | null; first: RevertAnswer; onClose: () => void; onFiled: (ticket: string) => void;
+}) {
   const deps = useContext(PollDepsContext);
   const file = useRevert();
   const [answer, setAnswer] = useState(first);
   const [reason, setReason] = useState("");
   const [failed, setFailed] = useState<string | null>(null);
   const reasonId = useId();
-  const read = useRun(target.sha == null && answer.kind === "preview" ? target.base : null, target.run, deps);
-  const sha = shortSha(target.sha ?? read.data?.run.merge_sha ?? null);
+  const [checking, setChecking] = useState(false);
+  const sha = shortSha(merge);
   const label = target.run == null ? target.project : `${target.project} · run ${target.run}`;
   if (answer.kind !== "preview") {
     return (
@@ -106,6 +118,13 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
     );
   }
   const send = async () => {
+    setChecking(true);
+    const checked = await checkTarget(target, deps.fetch);
+    setChecking(false);
+    if ("refusal" in checked || checked.sha !== merge) {
+      setAnswer("refusal" in checked ? checked.refusal : { kind: "failed", reason: `${target.ticket} merged again since this preview; nothing was filed. Preview its newest merge.` });
+      return;
+    }
     const filed = await file.mutateAsync({ base: target.base, key: target.ticket, reason: reason.trim() });
     setFailed(filed.kind === "failed" ? filed.reason : null);
     if (filed.kind === "filed") onFiled(filed.ticket);
@@ -117,8 +136,9 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
       heading={`Revert ${target.ticket}?`}
       confirm="File revert"
       busyLabel="Filing…"
-      busy={file.isPending}
+      busy={checking || file.isPending}
       cancelLabel="Keep it"
+      cancelDisabled={checking || file.isPending}
       confirmVariant="danger-fill"
       confirmDisabled={reason.trim() === ""}
       onConfirm={() => void send()}
@@ -170,15 +190,18 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
 export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): { items: MenuItem[]; layer: ReactNode } {
   const deps = useContext(PollDepsContext);
   const [previewing, setPreviewing] = useState(false);
-  const [open, setOpen] = useState<{ target: RevertTarget; answer: RevertAnswer; opener: HTMLElement | null } | null>(null);
+  const [open, setOpen] = useState<{ target: RevertTarget; sha: string | null; answer: RevertAnswer; opener: HTMLElement | null } | null>(null);
   const [filed, setFiled] = useState<{ ticket: string; of: RevertTarget } | null>(null);
   const start = async (on: RevertTarget) => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setFiled(null);
     setPreviewing(true);
-    const answer = (await staleTarget(on, deps.fetch)) ?? (await previewRevert(on.base, on.ticket, deps.fetch));
+    const asked = ++newestPreview;
+    const checked = await checkTarget(on, deps.fetch);
+    const answer = "refusal" in checked ? checked.refusal : await previewRevert(on.base, on.ticket, deps.fetch);
     setPreviewing(false);
-    setOpen({ target: on, answer, opener });
+    if (asked !== newestPreview) return;
+    setOpen({ target: on, sha: "sha" in checked ? checked.sha : null, answer, opener });
   };
   const close = () => {
     open?.opener?.focus();
@@ -204,6 +227,7 @@ export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): {
       {open != null && (
         <RevertDialog
           target={open.target}
+          sha={open.sha}
           first={open.answer}
           onClose={close}
           onFiled={(ticket) => {

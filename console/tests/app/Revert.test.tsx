@@ -37,17 +37,34 @@ interface Posted {
   body: Record<string, unknown>;
 }
 
-/** DEMO serves merged run 9 of DEMO-9 as `run` and the ticket as `ticket`
- *  on every read, its status reporting `reverts`; each
- *  `POST /actions/revert` is kept and answered by `revert`. */
+interface Served {
+  runs: Record<number, RunDetail>;
+  tickets: Record<string, TicketDetail>;
+  board: Board;
+}
+
+type BoardTicket = Board["columns"][number]["tickets"][number];
+
+const boardWith = (ticket: Partial<BoardTicket>, state: Board["columns"][number]["state"] = "backlog"): Board => ({
+  ...emptyBoard,
+  columns: [
+    ...emptyBoard.columns.filter((column) => column.state !== state),
+    { state, tickets: [{ ...servedBoard.columns.flatMap((each) => each.tickets)[0]!, ...ticket }] },
+  ],
+});
+
+/** DEMO serves `served` (by default merged run 9 of DEMO-9, shipped today,
+ *  and an empty board), read afresh on every request, its status reporting
+ *  `reverts`; each `POST /actions/revert` is kept and answered by `revert`. */
 function daemon(
   reverts: boolean,
-  revert: (body: Record<string, unknown>) => Response = () => new Response(null, { status: 500 }),
-  run: RunDetail = runNine,
-  ticket: TicketDetail = ticketNine,
+  revert: (body: Record<string, unknown>) => Response | Promise<Response> = () => new Response(null, { status: 500 }),
+  served: Partial<Served> = {},
+  shipped = [merged(9, "DEMO-9", ENDED)],
 ) {
   const posted: Posted[] = [];
-  const polls = fleet({ items: [], shipped: [merged(9, "DEMO-9", ENDED)] }, { items: [] });
+  const state: Served = { runs: { 9: runNine }, tickets: { "DEMO-9": ticketNine }, board: emptyBoard, ...served };
+  const polls = fleet({ items: [], shipped }, { items: [] });
   const fetchImpl = async (url: string, init?: RequestInit) => {
     if (init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -55,9 +72,11 @@ function daemon(
       return revert(body);
     }
     if (url === `${DEMO}/status`) return Response.json({ ...((await (await polls(url)).json()) as Status), actions: true, reverts });
-    if (url === `${DEMO}/runs/9`) return Response.json(run);
-    if (url === `${DEMO}/tickets/DEMO-9`) return Response.json(ticket);
-    if (url === `${DEMO}/board`) return Response.json(emptyBoard);
+    const run = /^\/runs\/(\d+)$/.exec(url.slice(DEMO.length))?.[1];
+    if (url.startsWith(DEMO) && run != null && state.runs[Number(run)]) return Response.json(state.runs[Number(run)]);
+    const ticket = /^\/tickets\/([A-Z]+-\d+)$/.exec(url.slice(DEMO.length))?.[1];
+    if (url.startsWith(DEMO) && ticket != null && state.tickets[ticket]) return Response.json(state.tickets[ticket]);
+    if (url === `${DEMO}/board`) return Response.json(state.board);
     if (url.startsWith(`${DEMO}/history?`)) {
       return Response.json({
         rows: [historyNine], since: 0, until: null, limit: 200, offset: 0, truncated: false, total: 1,
@@ -66,8 +85,10 @@ function daemon(
     }
     return polls(url);
   };
-  return { posted, fetchImpl };
+  return { posted, state, fetchImpl };
 }
+
+const PREVIEW = { action: "revert", recorded: null, enabled: true, refused: null, dependents: [] };
 
 async function mount(hash: string, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>) {
   window.location.hash = hash;
@@ -141,7 +162,7 @@ test("a ticket whose latest run merged ends its Ticket page menu and its Tickets
 
 test("a reverted run's Revert… is disabled, names its revert ticket, and posts nothing when pressed", async () => {
   const reverted = { ...runNine, run: { ...runNine.run, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } } };
-  const fake = daemon(true, undefined, reverted);
+  const fake = daemon(true, undefined, { runs: { 9: reverted } });
   await mount("#/runs/demo/9", fake.fetchImpl);
   await openMenu("More for run 9");
   const item = screen.getByRole("menuitem", { name: "Revert…" });
@@ -155,7 +176,7 @@ test("a reverted run's Revert… is disabled, names its revert ticket, and posts
 
 test("a run that is not its ticket's latest merge is refused before any preview, naming the run a revert would undo", async () => {
   const remerged = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 11 }, ...ticketNine.runs] };
-  const fake = daemon(true, undefined, runNine, remerged);
+  const fake = daemon(true, undefined, { tickets: { "DEMO-9": remerged } });
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
   const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
@@ -165,7 +186,7 @@ test("a run that is not its ticket's latest merge is refused before any preview,
 
 test("a Done row whose ticket's merge is already reverted is refused before any preview", async () => {
   const reverted = { ...ticketNine, reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke the ledger" } };
-  const fake = daemon(true, undefined, runNine, reverted);
+  const fake = daemon(true, undefined, { tickets: { "DEMO-9": reverted } });
   writeView("table");
   await mount("#/tickets", fake.fetchImpl);
   await openMenu("More for DEMO-9");
@@ -174,6 +195,95 @@ test("a Done row whose ticket's merge is already reverted is refused before any 
   const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
   expect(dialog.querySelector("[data-revert-refusal]")?.textContent).toBe("DEMO-9's merge was already reverted by DEMO-50.");
   expect(fake.posted).toEqual([]);
+});
+
+test("a latest merge with no recorded sha is refused before any preview, since the daemon would revert an older merge", async () => {
+  const fake = daemon(true, undefined, { runs: { 9: { ...runNine, run: { ...runNine.run, merge_sha: null } } } });
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  expect(dialog.querySelector("[data-revert-refusal]")?.textContent).toBe("Run 9 recorded no merge sha, so a revert would undo an older merge of DEMO-9. Ship a forward fix instead.");
+  expect(fake.posted).toEqual([]);
+});
+
+test("a ticket that merged again after its preview files nothing and says why", async () => {
+  const fake = daemon(true, () => Response.json(PREVIEW));
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+  fake.state.tickets["DEMO-9"] = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 11 }, ...ticketNine.runs] };
+  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
+  await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent).toContain("a revert would undo run 11");
+  expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
+});
+
+test("a Done row whose ticket is back on the board is disabled once reverted and offers no Revert for a newer attempt", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon(true, undefined, { board: boardWith({ ticket: "DEMO-9", reverted: { by: "DEMO-50", sha: "77aa01b", reason: "broke it" } }) }).fetchImpl);
+  const done = screen.getAllByRole("button", { name: "More for DEMO-9" }).at(-1)!;
+  await act(async () => void fireEvent.click(done));
+  const item = screen.getByRole("menuitem", { name: "Revert…" });
+  expect(item.getAttribute("aria-disabled")).toBe("true");
+  expect(document.getElementById(item.getAttribute("aria-describedby")!)?.textContent).toBe("Reverted by DEMO-50");
+  cleanup();
+
+  writeView("table");
+  await mount("#/tickets", daemon(true, undefined, { board: boardWith({ ticket: "DEMO-9", reverted: null }, "in_flight") }).fetchImpl);
+  for (const button of screen.getAllByRole("button", { name: "More for DEMO-9" })) {
+    await act(async () => void fireEvent.click(button));
+    expect(screen.queryByRole("menuitem", { name: "Revert…" })).toBeNull();
+    await act(async () => void fireEvent.click(button));
+  }
+});
+
+test("a filing in flight holds the dialog open against Keep it and Esc", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const fake = daemon(true, async (body) => {
+    if (body.dry_run === true) return Response.json(PREVIEW);
+    await held;
+    return Response.json({ action: "revert", recorded: 42, key: "DEMO-50" });
+  });
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
+  await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect((within(dialog).getByRole("button", { name: "Keep it" }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
+  expect(screen.getByRole("dialog", { name: "Revert DEMO-9?" })).toBe(dialog);
+  await act(async () => release());
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(document.querySelector("[data-revert-filed]")?.textContent).toBe("Filed DEMO-50 to revert DEMO-9.");
+});
+
+test("a slow preview from one Done row does not open over the dialog of a row chosen after it", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const runEight = { ...runNine, run: { ...runNine.run, id: 8, ticket: "DEMO-8" } };
+  const ticketEight = { ...ticketNine, ticket: "DEMO-8", runs: [{ ...ticketNine.runs[0]!, run: 8 }] };
+  const fake = daemon(
+    true,
+    async (body) => {
+      if (body.key === "DEMO-8") await held;
+      return Response.json(PREVIEW);
+    },
+    { runs: { 8: runEight, 9: runNine }, tickets: { "DEMO-8": ticketEight, "DEMO-9": ticketNine } },
+    [merged(9, "DEMO-9", ENDED), merged(8, "DEMO-8", ENDED - MINUTE)],
+  );
+  writeView("table");
+  await mount("#/tickets", fake.fetchImpl);
+  for (const key of ["DEMO-8", "DEMO-9"]) {
+    await openMenu(`More for ${key}`);
+    await act(async () => void fireEvent.click(screen.getByRole("menuitem", { name: "Revert…" })));
+    for (let round = 0; round < 4; round += 1) await act(settle);
+  }
+  await act(async () => release());
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(screen.getAllByRole("dialog").map((dialog) => dialog.querySelector("h2")?.textContent)).toEqual(["Revert DEMO-9?"]);
 });
 
 test("arrow keys move through the menu and Esc closes it, returning focus to its ⋯ button", async () => {
