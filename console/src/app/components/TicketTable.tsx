@@ -64,7 +64,7 @@ function TicketRow({ card, column, now, open, menuOpen, onOpen }: {
           <TitleText>{card.title}</TitleText>
         </span>
         {merged && (
-          <span data-cell="project" className="ml-auto inline-flex min-w-0 shrink-[1000] items-center gap-2 font-normal text-ink-2">
+          <span data-cell="project" className="ml-auto inline-flex min-w-[calc(0.875rem+6ch)] shrink-[1000] items-center justify-end gap-2 font-normal text-ink-2">
             <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full" style={{ background: colour ?? "var(--ink-3)" }} />
             <span className="min-w-0 truncate">{card.project}</span>
           </span>
