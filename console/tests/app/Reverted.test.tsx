@@ -116,6 +116,32 @@ test("on Tickets a reverted merge missing from the board lists one row with the 
   expect(rows[0]!.querySelector('[data-state="merged"]')).toBeNull();
 });
 
+test("on the default Tickets board a reverted ticket's Backlog card shows the undo glyph and the word reverted", async () => {
+  await mount("#/tickets", daemon());
+  const line = document.querySelector<HTMLElement>("[data-state-line]")!;
+  expect(within(line).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
+  expect(line.textContent).toMatch(/^reverted · /);
+});
+
+test("on Tickets a merge reverted on an earlier day and missing from the board lists one reverted row", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon(null, [{ ...revertedMerge, ended_ms: NOW - 26 * 60 * MINUTE }]));
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
+  expect(rows).toHaveLength(1);
+  const status = rows[0]!.querySelector<HTMLElement>('[data-cell="status"]')!;
+  expect(within(status).getByRole("img", { name: "reverted" }).getAttribute("data-state")).toBe("reverted");
+  expect(status.textContent).toBe("reverted");
+});
+
+test("on Tickets a reverted merge ending the same millisecond as an older merge of its ticket lists only the reverted row", async () => {
+  writeView("table");
+  await mount("#/tickets", daemon(null, [merged(5, "DEMO-7", ENDED), revertedMerge]));
+  const rows = [...document.querySelectorAll<HTMLElement>("[data-row]")];
+  expect(rows).toHaveLength(1);
+  expect(rows[0]!.querySelector('[data-cell="status"]')!.textContent).toBe("reverted");
+  expect(rows[0]!.getAttribute("data-column")).not.toBe("done");
+});
+
 test("on Tickets a reverted ticket merged again lists only the new merge", async () => {
   writeView("table");
   await mount("#/tickets", daemon(null, [merged(12, "DEMO-7", ENDED + 10 * MINUTE), revertedMerge]));
@@ -152,8 +178,8 @@ test("a reverted run's page sums the settled run under its verdict in place of t
   expect(within(summary).getByRole("link", { name: "#1071" }).getAttribute("href")).toBe("https://github.com/acme/demo/pull/1071");
 });
 
-test("a reverted run's summary leaves verify out when the run recorded no verification", async () => {
-  await mount("#/runs/demo/7", daemon(undefined, undefined, undefined, { ...runSeven, run: { ...runSeven.run, verify_ms: null } }));
+test("a reverted run's summary leaves verify out when the run recorded no verification time", async () => {
+  await mount("#/runs/demo/7", daemon(undefined, undefined, undefined, { ...runSeven, run: { ...runSeven.run, verify_ms: 0 } }));
   expect(document.querySelector<HTMLElement>("[data-run-summary]")!.textContent).toBe("#1071review 1 round34 min");
 });
 

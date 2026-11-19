@@ -76,8 +76,8 @@ export function BoardCard({
         <h3 className={`break-words font-sans text-[13.5px] font-medium leading-[1.35] ${LOOKS[look].title}`}><TitleText>{card.title}</TitleText></h3>
         <div className="flex min-w-0 items-center gap-2 text-[12px] leading-[1.45]">
           <p data-state-line className="flex min-w-0 items-center gap-[5px]">
-            {state === "merged" && card.reverted != null ? <RevertedGlyph /> : <TicketGlyph state={state} tone={tone} />}
-            <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[tone]}`}>{cardWord(card, now)}</span>
+            {card.reverted != null ? <RevertedGlyph /> : <TicketGlyph state={state} tone={tone} />}
+            <span className={`min-w-0 [overflow-wrap:anywhere] ${TONE_TEXT[tone]}`}>{card.reverted != null && state !== "merged" ? `reverted · ${cardWord(card, now)}` : cardWord(card, now)}</span>
           </p>
           {card.timeBoxMs != null && (
             <span data-time-box className="ml-auto shrink-0 font-mono text-ink-3 tabular-nums">

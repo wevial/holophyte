@@ -107,7 +107,7 @@ const settledMinutes = (ms: number) => ms >= MINUTE && ms < 60 * MINUTE ? `${Mat
 
 /** A reverted merge's settled run: every stage finished as one unlabeled
  *  bar, then its pull request, review rounds, verify and duration. A merged
- *  run only merges past a passing verify, so a recorded verify passed. */
+ *  run only merges past a passing verify, so verify time spent passed. */
 function RevertedSummary({ detail }: { detail: RunDetail }) {
   const { run, rounds } = detail;
   return (
@@ -118,7 +118,7 @@ function RevertedSummary({ detail }: { detail: RunDetail }) {
       <p className="mt-4 flex flex-wrap gap-x-[18px] gap-y-1">
         {run.pr_url != null && <a href={run.pr_url} target="_blank" rel="noreferrer" className={`${SUMMARY_FACT} no-underline hover:text-ink`}>{prNumber(run.pr_url)}</a>}
         <span className={SUMMARY_FACT}>review <b className="font-semibold text-ink-2">{rounds.length} {rounds.length === 1 ? "round" : "rounds"}</b></span>
-        {run.verify_ms != null && <span className={SUMMARY_FACT}>verify <b className="font-semibold text-ink-2">passed</b></span>}
+        {(run.verify_ms ?? 0) > 0 && <span className={SUMMARY_FACT}>verify <b className="font-semibold text-ink-2">passed</b></span>}
         {run.ended_ms != null && <span className={SUMMARY_FACT}>{settledMinutes(run.ended_ms - run.started_ms)}</span>}
       </p>
     </div>

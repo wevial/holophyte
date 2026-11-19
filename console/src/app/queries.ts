@@ -56,7 +56,7 @@ import {
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
 import { PollDepsContext, scopedHosts } from "./scope";
-import { mergedRows, shippedUrl, tagRows, todayMerges } from "../lib/shipped";
+import { mergedRows, newestFirst, shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow, ShippedWireRow } from "../lib/types";
 
 /** One daemon route's cache key: the base it hangs off and its path. */
@@ -459,9 +459,9 @@ export function usePeerList(origin: string, enabled: boolean, deps: { fetch: Fet
   return data ?? null;
 }
 
-/** Every host's merges since local midnight before `now`, newest first:
- *  one `/shipped` query per host, shared by every page that reads it. */
-export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fetch: Fetch): ShippedRow[] {
+/** Every host's latest page of merges, newest first: one `/shipped` query
+ *  per host, shared by every page that reads it. */
+export function useMergedRecently(hosts: HostRecord<PollBodies>[], fetch: Fetch): ShippedRow[] {
   const path = shippedUrl("", SHIPPED_PAGE, undefined, "merged");
   const results = useQueries({
     queries: hosts.map((host) => ({
@@ -475,7 +475,12 @@ export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fet
     const result = results[index];
     return result?.status === "success" ? tagRows(host, result.data.rows) : [];
   });
-  return todayMerges(rows, now);
+  return newestFirst(mergedRows(rows));
+}
+
+/** Every host's merges since local midnight before `now`, newest first. */
+export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fetch: Fetch): ShippedRow[] {
+  return todayMerges(useMergedRecently(hosts, fetch), now);
 }
 
 const WEEK_PAGE = 200;
