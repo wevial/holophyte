@@ -1,7 +1,6 @@
 import re
 
 import store
-import store.read
 from holophyte.board.projection import ledger
 from holophyte.loop.gates import sh
 from holophyte.review.briefs import main_merge_base
@@ -83,12 +82,13 @@ def pending_text_review(conn, run_id):
     if conn is None:
         return ""
     pending = []
-    for event in store.read.narrative_events(
-            conn, run_id, (PR_TEXT_REVIEW_KIND, "pr_text_sha")):
-        if event.kind == PR_TEXT_REVIEW_KIND:
-            pending.append(event.summary)
-        elif event.kind == "pr_text_sha":
-            pending = []
+    for kind, summary in conn.execute(
+            "SELECT e.kind, e.summary FROM runEvents e"
+            " JOIN runs r ON r.id = e.runId JOIN runs me ON me.id = ?"
+            " WHERE e.kind IN (?, 'pr_text_sha') AND (e.runId = me.id"
+            " OR r.ticketId = me.ticketId AND r.prUrl = me.prUrl)"
+            " ORDER BY e.id", (run_id, PR_TEXT_REVIEW_KIND)):
+        pending = [*pending, summary] if kind == PR_TEXT_REVIEW_KIND else []
     return "\n".join(pending)
 
 

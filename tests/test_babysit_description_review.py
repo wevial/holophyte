@@ -26,7 +26,7 @@ from holophyte.babysit.description_review import (  # noqa: E402
 )
 from holophyte.loop.gates import MergeParked  # noqa: E402
 from holophyte.loop.runs import open_store, set_phase  # noqa: E402
-from holophyte.pr import github  # noqa: E402
+from holophyte.pr import github, pr_status  # noqa: E402
 from holophyte.pr.github import PullRequest  # noqa: E402
 
 TAGGED = '- Blocker (path: "PR description" -- it promises a handshake).'
@@ -180,14 +180,17 @@ class MixedRoundTests(unittest.TestCase):
         self.conn = open_store(self.project)
         self.addCleanup(self.conn.close)
         store.init(self.conn)
-        project_id = store.tickets.ensure_project(self.conn, "team-1", repo)
-        ticket = store.tickets.mirror_ticket(
-            self.conn, project_id, linear_issue_id="issue-1",
+        self.project_id = store.tickets.ensure_project(self.conn, "team-1", repo)
+        self.ticket = store.tickets.mirror_ticket(
+            self.conn, self.project_id, linear_issue_id="issue-1",
             linear_identifier="KO-1", title="ticket 1",
             acceptance_criteria=[CRITERION], verification_commands=["true"],
             time_box_ms=60 * 60 * 1000)
-        store.tickets.transition(self.conn, ticket, "in_flight")
-        self.run_id = store.claim(self.conn, project_id, ticket)
+        store.tickets.transition(self.conn, self.ticket, "in_flight")
+        self.claim()
+
+    def claim(self):
+        self.run_id = store.claim(self.conn, self.project_id, self.ticket)
         store.set_branch(self.conn, self.run_id, "task")
         set_phase(self.conn, self.run_id, "merge_gate")
 
@@ -219,6 +222,8 @@ class MixedRoundTests(unittest.TestCase):
               patch.object(github, "push_branch"),
               patch.object(github, "rest", return_value={"body": "Menu."}),
               patch.object(github, "edit_pr_body"),
+              patch.object(pr_status, "pull_status",
+                           side_effect=OSError("no GitHub in tests")),
               patch.object(holophyte.pr.pullrequest,
                            "refresh_pr_text",
                            return_value=refreshed) as self.refresh,
@@ -347,6 +352,19 @@ class MixedRoundTests(unittest.TestCase):
         self.assertIn("refused to rewrite the description", str(parked.exception))
         self.assertEqual(self.phase(), "awaiting_merge_approval")
         self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
+
+    def test_a_babysit_release_carries_the_pending_findings_to_the_next_run(self):
+        with self.assertRaises(MergeParked):
+            self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}", refreshed=False)
+        store.babysit(self.conn, self.ticket, "look again")
+        self.claim()
+        carried = store.read.approved_candidate(self.conn, self.ticket, self.run_id)
+        store.set_pull_request(self.conn, self.run_id, carried.pr_url, carried.sha)
+
+        self.review_fix()
+
+        self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
+        self.assertEqual(self.phase(), "merge_gate")
 
     def test_a_refused_rewrite_with_nothing_pending_still_reaches_the_gate(self):
         self.review_fix(f"{TABLE}{REJECT}", refreshed=False)
