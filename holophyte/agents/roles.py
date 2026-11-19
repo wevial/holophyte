@@ -397,6 +397,8 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     options = {} if tier is None else {"service_tier": tier}
     if role == "adversary":
         options["multi_agent"] = True
+    if role == "review":
+        options["reply_schema"] = True
     sessions = []
     kept = kept_session(project, role, conn, run_id, review_round, sessions)
     # A kill ends the container's client; the runner removes the container.

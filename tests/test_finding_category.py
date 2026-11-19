@@ -76,7 +76,8 @@ class BriefTests(unittest.TestCase):
         self.sha = git(self.wt, "rev-parse", "HEAD")
 
     def briefs(self):
-        project = SimpleNamespace(path=self.wt, config=lambda: {},
+        project = SimpleNamespace(path=self.wt, config=lambda: {
+                                      "agents": {"reviewer": "reviewer --lines"}},
                                   config_path=self.wt / "config.toml")
         plan = Pass(1, "high", "full", "candidate", self.sha, self.sha,
                     Family("codex"))

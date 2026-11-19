@@ -1,13 +1,17 @@
-"""Reviewer replies in the output schema's JSON: the Codex reviewer argv names
-the schema, a schema-valid reply renders to the line format every reader
-parses, and any other reply is parsed as it always was."""
+"""Reviewer replies in the output schema's JSON: the Codex reviewer argv and
+the review container's command name the schema, a schema-valid reply renders
+to the line format every reader parses, and any other reply is parsed as it
+always was."""
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -19,7 +23,13 @@ from holophyte.babysit.description_review import (  # noqa: E402
     description_findings,
     without_description,
 )
-from holophyte.review.json_reply import read_reply  # noqa: E402
+from holophyte.review import review_runner  # noqa: E402
+from holophyte.review.json_reply import (  # noqa: E402
+    REPLY_BRIEF,
+    SCHEMA_FILE,
+    read_reply,
+    reply_brief,
+)
 from holophyte.review.reply_parsing import (  # noqa: E402
     FINDING_CATEGORIES,
     _review_reply,
@@ -124,6 +134,80 @@ class ReviewerArgvTests(unittest.TestCase):
         seat = reviewer_seat("adjudicator")
         for argv in (seat.turn("adjudicate"), seat.resume("0199")):
             self.assertNotIn("--output-schema", argv)
+
+
+class ContainerReviewTests(unittest.TestCase):
+    """The container's exec line runs in a real shell with each CLI replaced
+    by a stub that prints the arguments it was given."""
+
+    def exec_argv(self, harness, reply_schema):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("candidate", "home", "toolchain", "bin"):
+                (root / name).mkdir()
+            command = review_runner.container_command(
+                image="holophyte-reviewer:test", workspace=root / "candidate",
+                reviewer_home=root / "home", toolchain=root / "toolchain",
+                name="holophyte-review-test", prompt="review the candidate",
+                uid=1000, gid=1000, harness=harness, credential="TOKEN",
+                reply_schema=reply_schema)
+            staged = root / "home" / review_runner.REPLY_SCHEMA_NAME
+            staged_text = staged.read_text() if staged.exists() else None
+            stub = root / "bin" / "cli"
+            stub.write_text('#!/bin/sh\nfor arg in "$@"; do printf "%s\\0" "$arg"; '
+                            'done\n')
+            stub.chmod(0o755)
+            script = command[command.index("-c") + 1]
+            run = script[script.index("exec /opt/"):]
+            run = run.replace(f"/opt/{harness}/bin/{harness}", str(stub)).replace(
+                "/home/reviewer/", f"{root / 'home'}/")
+            positional = command[command.index(script) + 1:]
+            out = subprocess.run(["sh", "-eu", "-c", run, *positional],
+                                 capture_output=True, text=True, check=True,
+                                 cwd=root, env=dict(os.environ, PATH="/usr/bin:/bin"))
+        return out.stdout.split("\0")[:-1], staged_text
+
+    def test_a_codex_container_review_names_the_staged_schema(self):
+        argv, staged = self.exec_argv("codex", True)
+        self.assertEqual(staged, SCHEMA_FILE.read_text())
+        named = Path(argv[argv.index("--output-schema") + 1])
+        self.assertEqual(named.name, review_runner.REPLY_SCHEMA_NAME)
+        self.assertEqual(argv[-1], "review the candidate")
+
+    def test_a_claude_container_review_passes_the_staged_schema_text(self):
+        argv, staged = self.exec_argv("claude", True)
+        self.assertEqual(json.loads(argv[argv.index("--json-schema") + 1]),
+                         json.loads(SCHEMA_FILE.read_text()))
+        self.assertEqual(argv[-1], "review the candidate")
+
+    def test_a_container_turn_without_the_schema_stages_and_names_none(self):
+        for harness, flag in (("codex", "--output-schema"),
+                              ("claude", "--json-schema")):
+            with self.subTest(harness=harness):
+                argv, staged = self.exec_argv(harness, False)
+                self.assertIsNone(staged)
+                self.assertNotIn(flag, argv)
+
+    def test_a_claude_structured_reply_is_read_as_the_json_reply(self):
+        output = json.dumps({"is_error": False, "result": "",
+                             "structured_output": REPLY})
+        message, _ = review_runner.parse_claude_output(output, None)
+        text, reply_format = read_reply(message)
+        self.assertEqual(reply_format, "json")
+        self.assertTrue(text.endswith("VERDICT: REQUEST_CHANGES"))
+
+    def test_the_default_container_route_gets_the_field_brief(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+
+        def project(agents):
+            root = Path(tmp.name)
+            return SimpleNamespace(path=root, holo_dir=root,
+                                   config=lambda: {"agents": agents},
+                                   config_path=root / "config.toml")
+        self.assertEqual(reply_brief(project({}), "LINES"), REPLY_BRIEF)
+        self.assertEqual(reply_brief(project({"reviewer": "reviewer --lines"}),
+                                     "LINES"), "LINES")
 
 
 class RenderedReplyTests(unittest.TestCase):

@@ -235,9 +235,25 @@ def _prepare_runtime(root: Path, auth: Path,
 
 CODEX_EXEC = r'''exec /opt/codex/bin/codex exec --json -C /home/reviewer/candidate \
   -m "$2" -c "$3" ${4+-c "$4"} \
-  -s danger-full-access --SWITCH multi_agent "$1"'''
-CLAUDE_EXEC = '''cd /home/reviewer/candidate
-exec /opt/claude/bin/claude -p --model "$2" --effort "$3" --output-format json "$1"'''
+  -s danger-full-access --SWITCH multi_agent SCHEMA"$1"'''
+CLAUDE_EXEC = ('cd /home/reviewer/candidate\nexec /opt/claude/bin/claude -p '
+               '--model "$2" --effort "$3" --output-format json SCHEMA"$1"')
+REPLY_SCHEMA_NAME = "review_reply.schema.json"
+REPLY_SCHEMA = f"/home/reviewer/{REPLY_SCHEMA_NAME}"
+SCHEMA_FLAGS = {"codex": f"--output-schema {REPLY_SCHEMA} ",
+                "claude": f'--json-schema "$(cat {REPLY_SCHEMA})" '}
+
+
+def exec_script(harness: str, multi_agent: bool, reply_schema: bool) -> str:
+    script = CLAUDE_EXEC if harness == "claude" else CODEX_EXEC.replace(
+        "SWITCH", "enable" if multi_agent else "disable")
+    return script.replace("SCHEMA", SCHEMA_FLAGS[harness] if reply_schema else "")
+
+
+def stage_reply_schema(reviewer_home: Path) -> None:
+    from holophyte.review.json_reply import SCHEMA_FILE
+
+    shutil.copyfile(SCHEMA_FILE, reviewer_home / REPLY_SCHEMA_NAME)
 
 
 def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
@@ -264,6 +280,7 @@ def container_command(
     multi_agent: bool = False,
     harness: str = "codex",
     credential: str | None = None,
+    reply_schema: bool = False,
 ) -> list[str]:
     """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
@@ -289,8 +306,9 @@ fi
 test ! -e /var/run/docker.sock
 echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
-'''.strip() + "\n" + (CLAUDE_EXEC if harness == "claude" else CODEX_EXEC.replace(
-        "SWITCH", "enable" if multi_agent else "disable"))
+'''.strip() + "\n" + exec_script(harness, multi_agent, reply_schema)
+    if reply_schema:
+        stage_reply_schema(reviewer_home)
 
     command = [
         "docker",
@@ -430,14 +448,17 @@ def parse_claude_output(
         reply = json.loads(output)
     except json.JSONDecodeError:
         reply = None
+    structured = reply.get("structured_output") if isinstance(reply, dict) else None
     if not (isinstance(reply, dict) and reply.get("is_error") is False
-            and isinstance(reply.get("result"), str)):
+            and (isinstance(reply.get("result"), str)
+                 or isinstance(structured, dict))):
         detail = reply.get("result") if isinstance(reply, dict) else None
         error = ReviewBoundaryError(
             f"Claude turn failed: {detail}" if detail
             else "Claude printed no JSON result")
         raise error
-    message = reply["result"]
+    message = (json.dumps(structured) if isinstance(structured, dict)
+               else reply["result"])
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)
@@ -621,6 +642,7 @@ def run_review(
     multi_agent: bool = False,
     harness: str = "codex",
     credential: str | None = None,
+    reply_schema: bool = False,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -661,6 +683,7 @@ def run_review(
             multi_agent=multi_agent,
             harness=harness,
             credential=credential,
+            reply_schema=reply_schema,
         )
         try:
             with _removing_on_signal(name):

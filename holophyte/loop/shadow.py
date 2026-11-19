@@ -27,6 +27,7 @@ from holophyte.loop.task_worktree import run_worktree_setup
 from holophyte.redact import known_secrets, outbound, redact_values
 from holophyte.redact import safe_print as print
 from holophyte.review import review_runner
+from holophyte.review.json_reply import read_reply
 from holophyte.review.reply_parsing import criteria_findings, parse_findings
 
 
@@ -144,8 +145,9 @@ def _review(project, run_id, brief, wt, branch, head, ok, out):
             prompt=outbound(prompt, known_secrets(project.config())),
             model=model, effort=effort, profile=review["reviewer"],
             timeout=REVIEW_TIMEOUT, verdicts=None,
-            carry=carry_directories(project), service_tier=tier)
-        review.update(_judged(project, reply, brief.criteria, wt))
+            carry=carry_directories(project), service_tier=tier,
+            reply_schema=True)
+        review.update(_judged(project, read_reply(reply)[0], brief.criteria, wt))
     except Exception as error:
         review.update(verdict="error", error=route_prose(project, str(error)))
     review["seconds"] = round(monotonic() - started, 3)

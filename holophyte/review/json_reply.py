@@ -31,12 +31,13 @@ REPLY_BRIEF = (
     "description rather than the code) and message.\n"
     "- follow_ups: each with kind (feature or guardrail), text, and the path "
     "and line it concerns, or null.\n"
-    "- scope: one entry per changed file the ticket does not name, with "
-    "path, status (needed or tangent) and reason; empty when none is listed.\n"
+    "- scope: one entry per file a changed-files list above asks about, "
+    "with path, status (needed or tangent) and reason; empty when none is "
+    "listed.\n"
     "- refuted: each finding a verification refuted, with finding and the "
     "reason it did not hold; empty when none was.\n"
-    "Where these instructions ask for a CRITERION, SCOPE, FOLLOW_UP or "
-    "VERDICT line or a refuted-findings section, give it as that field "
+    "Where these instructions ask for a criterion, scope, follow-up or "
+    "verdict line or a refuted-findings section, give it as that field "
     "instead. With REQUEST_CHANGES, list only concrete blockers in findings.")
 
 
@@ -47,9 +48,13 @@ def reply_brief(project, line_format, schema_tail=""):
 def schema_enforced(project):
     from holophyte.agents.agent_routes import routes
     from holophyte.agents.harness import Codex, seat
+    from holophyte.agents.probes import container_fallback_profile
+    from holophyte.config.reader import AGENT_CONFIG_KEYS, config_table
 
     if routes(project).commands.get("review"):
-        return False
+        return container_fallback_profile(project, "review") is not None
+    if config_table(project, "agents").get(AGENT_CONFIG_KEYS["review"]) is None:
+        return True
     reviewer = seat(project, "review")
     return reviewer is not None and reviewer.name == Codex.name
 
