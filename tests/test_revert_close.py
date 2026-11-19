@@ -215,6 +215,31 @@ class RevertCloseTests(ConfigTestCase):
         self.assertIn(("move", f"Reverted by NAT-3: {REASON}"), state["notes"])
         self.assertIn("reverted", [kind for kind, _ in state["events"]])
 
+    def test_a_second_revert_of_a_ticket_in_backlog_records_its_own_note(self):
+        self.file_revert()
+        with contextlib.closing(open_store(self.project)) as conn:
+            key_id = self.ticket_id(conn, "NAT-1")
+            set_board_state(conn, key_id, "Backlog", "backlog")
+            store.revisions.record_board_fields(conn, key_id)
+            conn.commit()
+        self.run_revert(self.merge_the_revert)
+        with contextlib.closing(open_store(self.project)) as conn:
+            store.tickets.transition(conn, key_id, "in_flight")
+            store.tickets.transition(conn, key_id, "merged")
+            store.tickets.reopen_merged(conn, self.ticket_id(conn, "NAT-3"))
+        self.run_revert(self.merge_again)
+        state = self.key_state()
+        self.assertEqual(state["ticket"], [("ready", "backlog", "Backlog")])
+        self.assertEqual(state["notes"].count(
+            ("move", f"Reverted by NAT-3: {REASON}")), 2, state["notes"])
+        self.assertEqual([kind for kind, _ in state["events"]].count(
+            "reverted"), 2, state["events"])
+
+    def merge_again(self, _target, _task, conn, run_id, _provider):
+        advance_phase(conn, run_id, "merging")
+        return self.commit({"src/header.py": "header again\n"},
+                           "NAT-3: revert again")
+
     def test_a_canceled_original_still_returns_to_backlog(self):
         self.file_revert()
         with contextlib.closing(open_store(self.project)) as conn:

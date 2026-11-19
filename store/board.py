@@ -151,10 +151,11 @@ def edit_ticket(conn, project_id, identifier, text, expected_revision,
 
 
 def move_ticket(conn, project_id, identifier, column, expected_revision,
-                author="cli", note=None, now=None, reverted=False):
+                author="cli", note=None, now=None, reverted_by=None):
     """A live run on a ticket moved to Backlog continues."""
     if column not in ("ready", "backlog"):
         raise ValueError(f"a ticket moves to ready or backlog, not {column!r}")
+    reverted = reverted_by is not None
     if reverted and column != "backlog":
         raise ValueError("a reverted ticket returns to backlog")
     if now is None:
@@ -176,7 +177,8 @@ def move_ticket(conn, project_id, identifier, column, expected_revision,
                 raise FilingRefused(problems)
         return _record_column(conn, ticket_id, column, "move",
                               note or f"Moved to {_BOARD_STATES[column]}.",
-                              author, now)
+                              author, now,
+                              reverted and f"reverted:{reverted_by}")
 
 
 REVERTS = re.compile(r"Reverts: (\S+) at ([0-9a-f]{7,64})")
@@ -231,7 +233,7 @@ def reopen_reverted(conn, run_id, native=True):
                      f"reverted by {revert_key} (merge sha:"
                      f" {merge_sha or 'null'}){why}", now=now)
     move_ticket(conn, project_id, key, "backlog", revision, author="factory",
-                note=note, now=now, reverted=True)
+                note=note, now=now, reverted_by=run_id)
     return key, note
 
 
@@ -488,10 +490,11 @@ def _open_ticket(conn, project_id, identifier, expected_revision,
     return ticket_id, status, run_id, text or ""
 
 
-def _record_column(conn, ticket_id, column, kind, text, author, now):
+def _record_column(conn, ticket_id, column, kind, text, author, now,
+                   dedup_key=None):
     set_board_state(conn, ticket_id, _BOARD_STATES[column], column)
     revision = record_board_fields(conn, ticket_id, author, now)
-    record_note(conn, ticket_id, kind, text, f"{kind}:{revision}",
+    record_note(conn, ticket_id, kind, text, dedup_key or f"{kind}:{revision}",
                 author=author, now=now)
     return revision
 
