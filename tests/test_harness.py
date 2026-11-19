@@ -283,11 +283,13 @@ class CodexTableTests(TableReviewCase):
                           self.events("review_session")],
                          [None, None, "no rollout found"])
 
-    def test_the_review_probe_turn_runs_without_the_reply_schema(self):
-        holophyte.agents.probes.probe_route(self.target, "review", False, 60, 0)
+    def test_the_review_probe_runs_and_reports_one_argv_without_the_schema(self):
+        probe = holophyte.agents.probes.probe_route(self.target, "review",
+                                                    False, 60, 0)
         [call] = self.received()
         self.assertEqual(call["argv"], ["exec", *OPTIONS,
                                         holophyte.agents.probes.REVIEW_PROBE_GOAL])
+        self.assertEqual(probe.command[1:], call["argv"])
 
 
 # The fake cursor-agent: records its argv, its cwd's HEAD and whether the
