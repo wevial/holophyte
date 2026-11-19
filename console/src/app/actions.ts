@@ -88,7 +88,7 @@ export function writeRefusal(result: WriteResult | undefined, key: string): stri
 }
 
 /** One later merge that changed a file the reverted merge changed. */
-export interface RevertDependent {
+interface RevertDependent {
   key: string;
   sha: string;
   paths: string[];

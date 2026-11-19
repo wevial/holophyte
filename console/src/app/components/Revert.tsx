@@ -14,7 +14,7 @@ import { detailLine } from "./CardActions";
 /** A merged ticket of a project whose status reports `reverts`, its merged
  *  `run`, its merge `sha` when known, its `reverted` once reverted, and
  *  `off` saying why its daemon takes no actions. */
-export interface RevertTarget {
+interface RevertTarget {
   base: string;
   project: string;
   ticket: string;
