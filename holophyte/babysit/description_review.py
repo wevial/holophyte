@@ -16,7 +16,8 @@ LEAD = (r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
         r"[:\u2014-]?\s*)?(?:\*\*)?\s*")
 
 DESCRIPTION_SUBJECT_RE = re.compile(
-    LEAD + r'[^\w(\n]*[(\[]?[`*\s]*path:\s*"PR description"', re.I)
+    LEAD + r'(?:(?:p[0-3]|nit|blocker|major|minor)\b)?[^\w(\n]*[(\[]?[`*\s]*'
+    r'path:\s*"PR description"', re.I)
 
 PR_TEXT_REVIEW_KIND = "pr_text_review"
 

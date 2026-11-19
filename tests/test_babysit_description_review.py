@@ -100,6 +100,14 @@ class DescriptionFindingsTests(unittest.TestCase):
                 self.assertEqual(description_findings(
                     f"{line}{TAIL}", "REQUEST_CHANGES", []), [line])
 
+    def test_a_bracketed_then_worded_severity_before_the_tag_is_one(self):
+        for line in ('- [P1] Blocker: path: "PR description" — it names a menu.',
+                     '- [P1] Blocker (path: "PR description" — it names a menu.)',
+                     '- **[P2] Blocker** — path: "PR description" names a menu.'):
+            with self.subTest(line=line):
+                self.assertEqual(description_findings(
+                    f"{line}{TAIL}", "REQUEST_CHANGES", []), [line])
+
 
 DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
 TABLE = ('- [P1] path: "console/src/app/components/TicketTable.tsx" — the row'
