@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/ribbons/src/index.ts (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@4d4c754 backgrounds/ribbons/src/index.ts (MIT, see ../LICENSE), given a motion option.
 // Ribbons background — translucent ribbons of colored light ripple across a
 // black field. They pinch to a point at both ends, cross over each other,
 // and add up toward white where they overlap, under a wide soft bloom.
@@ -81,23 +81,32 @@ const HALO_SIGMA = 2.5;
 /** Wide glow blur, sigma in eighth-resolution texels, applied twice (~45 CSS px). */
 const WIDE_SIGMA = 4;
 
+export interface RibbonsOptions extends Partial<RibbonsConfig> {
+  /**
+   * Draw over the page instead of black: unlit areas are see-through and
+   * the light tints whatever is behind the canvas. Fixed at mount. Default false.
+   */
+  transparent?: boolean;
+}
+
 /**
  * Mount the effect into `container` (which should be positioned and sized).
  * Without WebGL2 + float targets the container gets the `ribbons-fallback`
  * class instead.
  */
-export function mount(container: HTMLElement, opts: Partial<RibbonsConfig> = {}): RibbonsHandle {
+export function mount(container: HTMLElement, { transparent = false, ...opts }: RibbonsOptions = {}): RibbonsHandle {
   const config: RibbonsConfig = { ...DEFAULTS, ...opts };
 
   let resizeGlow = () => {};
   let drawn = '';
   const stage = createStage(container, {
+    fallback: 'ribbons-fallback',
     floatTargets: true,
     held: () => !config.motion,
+    transparent,
     onResize: () => { resizeGlow(); drawn = ''; },
   });
   if (!stage) {
-    container.classList.add('ribbons-fallback');
     return { config, pulse() {}, destroy() {} };
   }
   const { gl, canvas, reducedMotion } = stage;

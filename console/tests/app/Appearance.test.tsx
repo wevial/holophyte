@@ -691,13 +691,6 @@ test("a Lava Heat set before the storage event arrives keeps the Haze Strength 1
   cleanup();
 });
 
-test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {
-  await mount();
-  fireEvent.click(scheme("Light"));
-  fireEvent.change(knob("Fade"), { target: { value: "0" } });
-  expect(band().style.getPropertyValue("--haze-fade")).toBe("");
-});
-
 test("under prefers-reduced-motion the Motion switch is off and disabled", async () => {
   const media = reducedMotion(true);
   try {

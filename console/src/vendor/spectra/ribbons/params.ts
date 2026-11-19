@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/ribbons/src/params.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/ribbons/src/params.ts (MIT, see ../LICENSE).
 // Pure helpers, no GL: palettes, per-ribbon wave parameters, Gaussian taps.
 
 /**

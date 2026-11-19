@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 packages/core/src/gl.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 packages/core/src/gl.ts (MIT, see ../LICENSE).
 // Minimal WebGL2 helpers: program/uniform management, ping-pong FBOs, fullscreen blit.
 
 export function compileShader(gl: WebGL2RenderingContext, type: GLenum, source: string): WebGLShader {

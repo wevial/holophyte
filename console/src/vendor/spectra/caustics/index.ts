@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/caustics/src/index.ts (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@4d4c754 backgrounds/caustics/src/index.ts (MIT, see ../LICENSE), given a motion option.
 // Caustics background — sunlight through moving water onto a pool floor.
 // The surface is a sum of travelling waves; a dense mesh of it is refracted
 // onto the floor once per wavelength, so light gathers into a web of
@@ -56,6 +56,14 @@ export const DEFAULTS = {
 };
 
 export type CausticsConfig = typeof DEFAULTS;
+
+export interface CausticsOptions extends Partial<CausticsConfig> {
+  /**
+   * Draw over the page instead of the pool floor: unlit areas are see-through and
+   * the light tints whatever is behind the canvas. Fixed at mount. Default false.
+   */
+  transparent?: boolean;
+}
 
 export interface CausticsHandle {
   /** Live config: mutate fields and the next frame picks them up. */
@@ -191,18 +199,19 @@ export function gaussianTaps(sigma: number) {
  * Without WebGL2 + float targets the container gets the `caustics-fallback`
  * class instead.
  */
-export function mount(container: HTMLElement, opts: Partial<CausticsConfig> = {}): CausticsHandle {
+export function mount(container: HTMLElement, { transparent = false, ...opts }: CausticsOptions = {}): CausticsHandle {
   const config: CausticsConfig = { ...DEFAULTS, ...opts };
 
   let resizeLight = () => {};
   let drawn = '';
   const stage = createStage(container, {
+    fallback: 'caustics-fallback',
     floatTargets: true,
     held: () => !config.motion,
+    transparent,
     onResize: () => { resizeLight(); drawn = ''; },
   });
   if (!stage) {
-    container.classList.add('caustics-fallback');
     return { config, destroy() {} };
   }
   const { gl, canvas, reducedMotion } = stage;
@@ -466,7 +475,7 @@ export function mount(container: HTMLElement, opts: Partial<CausticsConfig> = {}
     light!.attach(0);
     glow!.attach(1);
     const [floor, sun] = colors.map(hexToLinear);
-    gl.uniform3fv(u.uFloor, floor);
+    gl.uniform3fv(u.uFloor, transparent ? [0, 0, 0] : floor); // transparent: the page is the floor
     gl.uniform3fv(u.uSun, sun);
     gl.uniform1f(u.uIntensity, config.intensity * (layers ? LAYER_INTENSITY : 1));
     gl.uniform1f(u.uSharpness, config.sharpness + (layers ? LAYER_SHARPNESS : 0));

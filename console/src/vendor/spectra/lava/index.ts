@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/lava/src/index.ts (MIT, see ../LICENSE), given a motion option.
+// Vendored from wevial/spectra@4d4c754 backgrounds/lava/src/index.ts (MIT, see ../LICENSE), given a motion option.
 // Lava background — a lava lamp, simulated as two fluids. The bulb warms
 // the wax pooled on it; warm wax rises through the liquid in plumes that
 // neck and pinch off, splats against the top, cools, drips and sinks back,
@@ -47,6 +47,14 @@ export const DEFAULTS = {
 
 export type LavaConfig = typeof DEFAULTS;
 
+export interface LavaOptions extends Partial<LavaConfig> {
+  /**
+   * Draw over the page instead of the liquid: unlit areas are see-through and
+   * the light tints whatever is behind the canvas. Fixed at mount. Default false.
+   */
+  transparent?: boolean;
+}
+
 export interface LavaHandle {
   /** Live config: mutate fields and the next frame picks them up. */
   config: LavaConfig;
@@ -72,13 +80,12 @@ function hexToRgb(hex: string): [number, number, number] {
  * Mount the effect into `container` (which should be positioned and sized).
  * Without WebGL2 + float targets the container gets the `lava-fallback` class instead.
  */
-export function mount(container: HTMLElement, opts: Partial<LavaConfig> = {}): LavaHandle {
+export function mount(container: HTMLElement, { transparent = false, ...opts }: LavaOptions = {}): LavaHandle {
   const config: LavaConfig = { ...DEFAULTS, ...opts };
 
   let drawn = '';
-  const stage = createStage(container, { floatTargets: true, held: () => !config.motion, onResize: () => { drawn = ''; } });
+  const stage = createStage(container, { fallback: 'lava-fallback', floatTargets: true, held: () => !config.motion, transparent, onResize: () => { drawn = ''; } });
   if (!stage) {
-    container.classList.add('lava-fallback');
     return { config, measure: () => null, advance() {}, destroy() {} };
   }
   const { gl, canvas, reducedMotion } = stage;
@@ -127,6 +134,7 @@ export function mount(container: HTMLElement, opts: Partial<LavaConfig> = {}): L
         ? [RAINBOW_LIQUID, RAINBOW_LIQUID, RAINBOW_LIQUID]
         : PALETTES[config.palette as keyof typeof PALETTES] ?? PALETTES.magma;
       const [liquid, deep, hot] = hex.map(hexToRgb);
+      if (transparent) liquid.fill(0); // the page is the liquid
       colors = { liquid, deep, hot };
     }
     fluid.render(colors, config.glow, 1 - Math.pow(1 - reveal, 3), mode, grain);

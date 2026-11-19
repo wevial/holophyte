@@ -1,12 +1,11 @@
 # Spectra
 
 Vendored from [wevial/spectra](https://github.com/wevial/spectra) (MIT, see
-`LICENSE`) at commit `d34e0f8`. Haze was taken at `75ae266`. Hyphae and Mycelium were
-taken at `256aa26`.
+`LICENSE`) at commit `4d4c754`.
 
 | Folder | Spectra path |
 | --- | --- |
-| `core` | `packages/core/src` (`gl`, `glsl`, `resolution`, `stage`) |
+| `core` | `packages/core/src` (`gl`, `glsl`, `random`, `resolution`, `stage`) |
 | `haze` | `backgrounds/haze/src` |
 | `caustics` | `backgrounds/caustics/src` |
 | `plume` | `backgrounds/plume/src` |
@@ -42,4 +41,6 @@ copy:
 - The stage records itself against its container, and `destroyStages`
   destroys what a mount that threw after creating its stage left live.
 - Haze's `PALETTES` is typed open, so the console can register its theme
-  palette there, and Haze falls back when its shaders fail to compile.
+  palette there, and Haze falls back when its shaders fail to compile. Haze
+  adds its `haze-fallback` class itself rather than through the stage's
+  `fallback` option.

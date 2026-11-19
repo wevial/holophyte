@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/nebula/src/fluid.js (MIT, see ../LICENSE), given a motion option and a texture size capped to the GPU's limit.
+// Vendored from wevial/spectra@4d4c754 cursors/nebula/src/fluid.js (MIT, see ../LICENSE), given a motion option and a texture size capped to the GPU's limit.
 // GPU fluid + displacement-field nebula. The velocity sim carries cursor
 // momentum; the offset field accumulates it as a local bend of the cloud and
 // decays back to zero. The cloud itself is recomputed from the procedural

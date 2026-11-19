@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 backgrounds/lava/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/lava/src/shaders.ts (MIT, see ../LICENSE).
 import { NOISE, COLOR, GRAIN, RAINBOW } from '../core/glsl';
 
 // The lamp is a two-fluid simulation on a grid of square cells (the box is

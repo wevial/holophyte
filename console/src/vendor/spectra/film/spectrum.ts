@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@d34e0f8 cursors/film/src/spectrum.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 cursors/film/src/spectrum.ts (MIT, see ../LICENSE).
 // Wavelength to color. The CIE 1931 2° color matching functions, as Wyman,
 // Sloan & Shirley's multi-lobe Gaussian fit, converted to linear sRGB.
 // Pure spectral colors lie outside sRGB; see toGamut().

@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@75ae266 backgrounds/haze/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/haze/src/shaders.ts (MIT, see ../LICENSE).
 import { NOISE, COLOR, SMOKE, GRAIN, RAINBOW } from '../core/glsl';
 
 // Pass 1, half resolution: coverage of the two smoke bands in r and g, and

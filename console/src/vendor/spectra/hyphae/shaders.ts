@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@256aa26 backgrounds/hyphae/src/shaders.ts (MIT, see ../LICENSE).
+// Vendored from wevial/spectra@4d4c754 backgrounds/hyphae/src/shaders.ts (MIT, see ../LICENSE).
 import { NOISE, COLOR, GRAIN, RAINBOW } from '../core/glsl';
 import { MAX_PATCHES, MAX_TAPS } from './params';
 
