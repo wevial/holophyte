@@ -5,11 +5,12 @@ import { criteriaRows } from "../../lib/criteria";
 import { formatAge, formatClock } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
 import { Btn } from "../components/Btn";
-import { MoreMenu } from "../components/MoreMenu";
+import { MoreMenu, type MenuItem } from "../components/MoreMenu";
 import { usePlaceItems, useRevertFlow } from "../components/Revert";
 import { Criteria, SECTION_LABEL } from "../components/Criteria";
 import { StateDot, TONE_TEXT } from "../components/StateDot";
-import { ScoutThis } from "../components/ScoutThis";
+import { ScoutThis, useScoutThis } from "../components/ScoutThis";
+import type { ScoutTarget } from "../scouts";
 import { SteerBox } from "../components/SteerBox";
 import { SteerNotes } from "../components/SteerNotes";
 import { StoryPanel } from "../components/StoryPanel";
@@ -68,12 +69,23 @@ function filedAt(at: number, now: number): string {
 
 const SETTLED = new Set(["merged", "abandoned"]);
 
-/** The header's ⋯ menu: Copy link, and Revert… when the ticket's latest run
- *  merged in a project that reports `reverts`. */
-function TicketMenu({ project, ticketKey, ticket, base, reverts, actions }: { project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean; actions: boolean }) {
+const scoutOf = (project: string, key: string, actions: boolean): ScoutTarget => ({ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actions ? null : ACTIONS_OFF });
+
+/** The header's ⋯ menu: Steer while unsettled, Scout, Copy link, and
+ *  Revert… when the ticket's latest run merged in a project that reports
+ *  `reverts`. */
+function TicketMenu({ project, ticketKey, ticket, base, reverts, actions, onSteer }: {
+  project: string; ticketKey: string; ticket: TicketDetail; base: string; reverts: boolean; actions: boolean; onSteer: () => void;
+}) {
   const latest = ticket.runs[0];
+  const off = actions ? undefined : ACTIONS_OFF;
+  const scout = useScoutThis(scoutOf(project, ticketKey, actions));
+  const pageItems: MenuItem[] = [
+    ...(SETTLED.has(ticket.status) ? [] : [{ label: "Steer", onSelect: onSteer, disabled: !actions, note: off }]),
+    { label: "Scout", onSelect: scout, disabled: !actions, note: off },
+  ];
   const revertable = reverts && latest?.outcome === "merged";
-  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted, off: actions ? null : ACTIONS_OFF } : null, usePlaceItems({ project, ticket: ticketKey }));
+  const revert = useRevertFlow(revertable ? { base, project, ticket: ticketKey, run: latest.run, reverted: ticket.reverted, off: actions ? null : ACTIONS_OFF } : null, [...pageItems, ...usePlaceItems({ project, ticket: ticketKey })]);
   return (
     <div className="flex flex-col items-end gap-2">
       <MoreMenu label={`More for ${ticketKey}`} items={revert.items} />
@@ -124,7 +136,7 @@ export function TicketPage() {
                   Steer
                 </Btn>
               )}
-              <ScoutThis target={{ project, about: `ticket:${key}`, kind: "research", ask: `${key}: `, off: actionsOn ? null : ACTIONS_OFF }} />
+              <ScoutThis target={scoutOf(project, key, actionsOn)} />
               <TicketMoves
                 key={`${project}/${key}`}
                 project={project}
@@ -136,7 +148,7 @@ export function TicketPage() {
                 editOpen={editing != null}
               />
             </div>
-            <TicketMenu key={`menu ${project}/${key}`} project={project} ticketKey={key} ticket={ticket} base={page.host.base} reverts={page.host.status?.reverts === true} actions={actionsOn} />
+            <TicketMenu key={`menu ${project}/${key}`} project={project} ticketKey={key} ticket={ticket} base={page.host.base} reverts={page.host.status?.reverts === true} actions={actionsOn} onSteer={() => setSteeringKey(steering ? null : `${project}/${key}`)} />
           </div>
         </div>
         {chip != null && <BoardLine chip={chip} liveRun={page.liveRun} project={project} />}

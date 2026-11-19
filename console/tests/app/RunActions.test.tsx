@@ -101,6 +101,15 @@ test("a live run's Pause posts the run with the page's note, reads Pausing… in
   expect(toast()).toBe("Pause requested for run 12.");
 });
 
+test("a live run's ⋯ menu offers Pause and Abort before Open ticket, and its Abort opens the same confirm", async () => {
+  await mount(12);
+  await act(async () => void fireEvent.click(screen.getByRole("button", { name: "More for run 12" })));
+  const menu = screen.getByRole("menu", { name: "More for run 12" });
+  expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Pause", "Abort", "Open ticket", "Copy link"]);
+  await act(async () => void fireEvent.click(within(menu).getByRole("menuitem", { name: "Abort" })));
+  expect(dialog()).toBeTruthy();
+});
+
 test("Abort asks for a reason in a confirm that Esc closes unposted, then posts the reason without closing the PR", async () => {
   const post = fakeFetch({ ok: true, detail: "aborted run 12" });
   await mount(12, { post: post.fetchImpl });

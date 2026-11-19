@@ -2,10 +2,8 @@ import { Link } from "@tanstack/react-router";
 import { formatAge } from "../../lib/format";
 import { STATES, type Tone } from "../state";
 import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type Lane, type TicketCard } from "../tickets";
-import { useContext } from "react";
 import { ACTIONS_OFF } from "../../lib/actions";
-import { useTicket } from "../queries";
-import { keepScope, PollDepsContext, useConsolePeers } from "../scope";
+import { keepScope, useConsolePeers } from "../scope";
 import { cardElementId, modified, TicketGlyph } from "./BoardCard";
 import { BoardLane, type LaneBodyProps } from "./BoardLane";
 import { TONE_TEXT } from "./StateDot";
@@ -71,15 +69,14 @@ function TicketRow({ card, column, now, open, onOpen }: { card: TicketCard; colu
 function TicketRowMenu({ card, column }: { card: TicketCard; column: ColumnId }) {
   const status = useConsolePeers().hosts.find((host) => host.base === card.base)?.status;
   const revertable = column === "done" && status?.reverts === true;
-  const detail = useTicket(card.base, card.key, useContext(PollDepsContext), revertable).data;
   const place = { project: card.project, ticket: card.key };
   const revert = useRevertFlow(
-    revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, reverted: detail?.reverted, off: status?.actions === true ? null : ACTIONS_OFF } : null,
+    revertable ? { base: card.base, project: card.project, ticket: card.key, run: card.runId, off: status?.actions === true ? null : ACTIONS_OFF } : null,
     usePlaceItems(place, place),
   );
   return (
     <>
-      <MoreMenu label={`More for ${card.key}`} items={revert.items} className={`${ROW_MENU} absolute top-[5px] right-3 [:root[data-density=compact]_&]:top-px`} />
+      <MoreMenu compact label={`More for ${card.key}`} items={revert.items} className={`${ROW_MENU} absolute top-2 right-3 [:root[data-density=compact]_&]:top-1`} />
       <div className="px-4 pb-2 empty:hidden">{revert.layer}</div>
     </>
   );
@@ -90,7 +87,7 @@ function LaneRows({ lane, now, openId, onOpen, body }: LaneBodyProps) {
     <ul id={body.id} hidden={body.hidden} data-lane-rows className={body.flat ? "" : "pb-1.5"}>
       {ROW_ORDER.flatMap((column) =>
         lane.columns[column].toSorted(byKey).map((card) => (
-          <li key={card.id} className="group relative border-b border-hair last:border-b-0">
+          <li key={card.id} className="group relative border-b border-hair last:border-b-0 has-[[aria-expanded=true]]:bg-selected">
             <TicketRow card={card} column={column} now={now} open={card.id === openId} onOpen={onOpen} />
             <TicketRowMenu card={card} column={column} />
           </li>

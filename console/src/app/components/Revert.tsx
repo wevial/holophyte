@@ -3,7 +3,7 @@ import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import type { Reverted } from "../../lib/contract.gen";
 import { shortSha } from "../../lib/shipped";
 import { previewRevert, useRevert, type RevertAnswer } from "../actions";
-import { useRun } from "../queries";
+import { ticketQuery, useRun } from "../queries";
 import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -47,9 +47,29 @@ export function usePlaceItems(copy: Place, open?: Place): MenuItem[] {
   return items;
 }
 
+/** Why `run` of `key` can't be reverted from here, or null: the daemon
+ *  reverts the ticket's latest merge, so an earlier merged run, or a
+ *  latest merge already reverted, is refused before any preview. */
+async function staleTarget(on: RevertTarget, fetch: Parameters<typeof ticketQuery>[2]): Promise<RevertAnswer | null> {
+  let ticket;
+  try {
+    ticket = await ticketQuery(on.base, on.ticket, fetch).queryFn();
+  } catch (failure) {
+    return { kind: "failed", reason: failure instanceof Error ? failure.message : String(failure) };
+  }
+  if (ticket == null) return { kind: "failed", reason: `${on.ticket} is not mirrored on this host` };
+  const latest = Math.max(-1, ...ticket.runs.filter((each) => each.outcome === "merged").map((each) => each.run));
+  if (latest < 0) return { kind: "failed", reason: `${on.ticket} has no merged run` };
+  if (on.run != null && on.run !== latest) {
+    return { kind: "failed", reason: `Run ${on.run} is not ${on.ticket}'s latest merge; a revert would undo run ${latest}. Revert it from run ${latest}.` };
+  }
+  if (ticket.reverted != null) return { kind: "failed", reason: `${on.ticket}'s merge was already reverted${ticket.reverted.by == null ? "" : ` by ${ticket.reverted.by}`}.` };
+  return null;
+}
+
 function Refusal({ answer }: { answer: Extract<RevertAnswer, { kind: "refused" | "failed" }> }) {
   return (
-    <div data-revert-refusal className="mt-3 rounded-[6px] bg-bad-wash px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_var(--bad)]">
+    <div data-revert-refusal className="mt-3 rounded-[6px] bg-[color-mix(in_oklab,var(--bad)_9%,var(--raised))] px-3.5 py-3 font-sans text-[14px] leading-[1.5] text-ink shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--bad)_42%,var(--raised))]">
       {answer.kind === "refused" && answer.paths.length > 0 ? (
         <>
           It changed{" "}
@@ -118,7 +138,7 @@ function RevertDialog({ target, first, onClose, onFiled }: { target: RevertTarge
       {answer.dependents.length === 0 ? (
         <p className="m-0 mt-2.5 font-sans text-[13px] leading-[1.45] text-ink-3">Nothing merged since touches these files</p>
       ) : (
-        <ul aria-label="Merged since, same files" className="m-0 mt-2.5 flex list-none flex-col gap-1.5 p-0">
+        <ul aria-label="Merged since, same files" className="m-0 mt-2.5 flex max-h-[min(220px,28vh)] list-none flex-col gap-1.5 overflow-y-auto p-0">
           {answer.dependents.map((dependent) => (
             <li key={`${dependent.key} ${dependent.sha}`} data-dependent className="flex flex-wrap gap-x-2.5 font-mono text-[12.5px] leading-[1.45] text-ink-2">
               <span className="font-semibold text-ink">{dependent.key}</span>
@@ -156,7 +176,7 @@ export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setFiled(null);
     setPreviewing(true);
-    const answer = await previewRevert(on.base, on.ticket, deps.fetch);
+    const answer = (await staleTarget(on, deps.fetch)) ?? (await previewRevert(on.base, on.ticket, deps.fetch));
     setPreviewing(false);
     setOpen({ target: on, answer, opener });
   };

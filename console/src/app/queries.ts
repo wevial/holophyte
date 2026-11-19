@@ -197,8 +197,8 @@ export function ticketQuery(base: string, key: string, fetch: Fetch) {
   };
 }
 
-export function useTicket(base: string, key: string, deps: { fetch: Fetch }, enabled = true) {
-  return useQuery({ ...ticketQuery(base, key, deps.fetch), enabled });
+export function useTicket(base: string, key: string, deps: { fetch: Fetch }) {
+  return useQuery(ticketQuery(base, key, deps.fetch));
 }
 
 /** Each status-answering host's `/tickets?q=` answer for `text`, as its
