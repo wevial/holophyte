@@ -55,7 +55,7 @@ export function ConfirmDialog({
     return () => document.removeEventListener("keydown", keep, true);
   }, []);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--scrim)_84%,transparent)] p-4">
       <section
         ref={box}
         role="dialog"

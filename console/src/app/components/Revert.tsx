@@ -260,9 +260,9 @@ export function useRevertFlow(target: RevertTarget | null, items: MenuItem[]): {
         />
       )}
       {filed != null && (
-        <p role="status" data-revert-filed className={`m-0 text-ink-2 ${detailLine}`}>
+        <p role="status" data-revert-filed className={`relative z-[2] m-0 text-ink-2 ${detailLine}`}>
           Filed{" "}
-          <Link to="/tickets/$project/$key" params={{ project: filed.of.project, key: filed.ticket }} className="font-medium text-ink underline underline-offset-2">
+          <Link to="/tickets/$project/$key" params={{ project: filed.of.project, key: filed.ticket }} search={keepScope} className="font-medium text-ink underline underline-offset-2">
             {filed.ticket}
           </Link>{" "}
           to revert {filed.of.ticket}.

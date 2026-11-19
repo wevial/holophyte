@@ -102,8 +102,8 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
     const width = button.current!.offsetWidth;
     const gap = compact ? 3 : 6;
     setFocusOn(focus);
-    const side = Math.max(8, window.innerWidth - box.right);
     const scale = width > 0 && box.width > 0 ? box.width / width : 1;
+    const side = Math.max(8, window.innerWidth - box.right - (compact ? 4 : 0) * scale);
     setAt({ top: box.bottom + gap * scale, right: side, above: box.top - gap * scale, below: box.bottom + gap * scale, side, scale });
   };
   const close = () => {

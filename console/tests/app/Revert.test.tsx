@@ -413,6 +413,18 @@ test("Revert… previews, lists the later merge, and files the revert with the t
   expect(within(status as HTMLElement).getByRole("link", { name: "DEMO-50" }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-50");
 });
 
+test("the filed revert's ticket link from a project-scoped Run page keeps the project scope", async () => {
+  const fake = daemon(true, (body) => (body.dry_run === true ? Response.json(PREVIEW) : Response.json({ action: "revert", recorded: 42, key: "DEMO-50" })));
+  await mount("#/runs/demo/9?project=demo", fake.fetchImpl);
+  await revertFromRunPage();
+  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
+  await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  const status = document.querySelector<HTMLElement>("[data-revert-filed]")!;
+  expect(within(status).getByRole("link", { name: "DEMO-50" }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-50?project=demo");
+});
+
 test("a preview refused for store/schema.py names the path, offers only Close, and posts nothing more", async () => {
   const fake = daemon(true, () =>
     Response.json(
