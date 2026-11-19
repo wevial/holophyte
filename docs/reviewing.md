@@ -139,7 +139,9 @@ low`) goes through the outage path below.
 A review turn, not an adversary's, also requires the reply schema: the runner
 copies `review_reply.schema.json` into the reviewer home, and the script
 passes it as `--output-schema` to Codex and as `--json-schema` to Claude,
-whose reply is then the `structured_output` field.
+whose reply is then the `structured_output` field. A configured `codex exec`
+reviewer command gains `--output-schema` too. A route without the schema,
+such as a refusal fallback to another command, is sent the line-format brief.
 
 A review prompt whose range from the frozen base holds commits from the
 [trim step](loop.md) gets a trim section, read from git on every round,

@@ -32,6 +32,7 @@ from holophyte.agents.fallback import (
 )
 from holophyte.agents.harness import (
     ClaudeSdk,
+    Codex,
     agent_session,
     critic_seat,
     route_text,
@@ -71,6 +72,7 @@ from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.pr.mockup import review_carry
 from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.review import review_runner
+from holophyte.review.json_reply import line_brief, schema_command
 
 REVIEW_TIMEOUT = 1800
 WRITING_ROLES = ("implement", "trim")
@@ -248,6 +250,7 @@ def refused_once(project, role, goal, cwd, kwargs, failure, refusal):
         raise refusal_failure(failure, refusal) from failure.__cause__
     argv = shlex.split(command)
     turn = dict(kwargs, fallback_command=command)
+    goal = goal if schema_command(command) else line_brief(goal)
     try:
         output = fallback_turn(
             project, role, argv, conn, run_id,
@@ -452,6 +455,10 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         raise failure from e
 
 
+def review_argv(role, cmd):
+    return Codex.schemed_command(cmd) if role == "review" else cmd
+
+
 def stream_watch(project, streamed, role, cwd, conn, run_id):
     if not streamed:
         return {}
@@ -518,7 +525,8 @@ def _agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                               role, run_id=run_id, conn=conn,
                                               kill=kill)
                     else:
-                        output = configured_review(cmd, cwd, cap, env, role,
+                        output = configured_review(review_argv(role, cmd), cwd,
+                                                   cap, env, role,
                                                    dispatched_route,
                                                    on_start=kill.arm)
                 # Past the heartbeat, which raises for a swept run: no session.

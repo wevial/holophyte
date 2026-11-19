@@ -457,8 +457,12 @@ def parse_claude_output(
             f"Claude turn failed: {detail}" if detail
             else "Claude printed no JSON result")
         raise error
-    message = (json.dumps(structured) if isinstance(structured, dict)
-               else reply["result"])
+    from holophyte.review.json_reply import schema_valid
+
+    message = reply.get("result")
+    if isinstance(structured, dict) and (
+            schema_valid(structured) or not isinstance(message, str)):
+        message = json.dumps(structured)
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)

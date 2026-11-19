@@ -1,5 +1,6 @@
 import json
 import re
+import shlex
 from pathlib import Path
 
 from holophyte.agents.agent_output import AgentOutput
@@ -54,8 +55,33 @@ REPLY_BRIEF = (
     "instead. With REQUEST_CHANGES, list only concrete blockers in findings.")
 
 
+class SchemaBrief(str):
+    def __new__(cls, text, line_text):
+        brief = super().__new__(cls, text)
+        brief.line_text = line_text
+        return brief
+
+    def __add__(self, more):
+        return SchemaBrief(str(self) + more, self.line_text + more)
+
+    def __radd__(self, head):
+        return SchemaBrief(head + str(self), head + self.line_text)
+
+
 def reply_brief(project, line_format, schema_tail=""):
-    return REPLY_BRIEF + schema_tail if schema_enforced(project) else line_format
+    if not schema_enforced(project):
+        return line_format
+    return SchemaBrief(REPLY_BRIEF + schema_tail, line_format)
+
+
+def line_brief(goal):
+    return getattr(goal, "line_text", goal)
+
+
+def schema_command(command):
+    from holophyte.agents.harness import Codex
+
+    return "--output-schema" in Codex.schemed_command(shlex.split(command))
 
 
 def schema_enforced(project):
@@ -64,10 +90,14 @@ def schema_enforced(project):
     from holophyte.agents.probes import container_fallback_profile
     from holophyte.config.reader import AGENT_CONFIG_KEYS, config_table
 
-    if routes(project).commands.get("review"):
-        return container_fallback_profile(project, "review") is not None
-    if config_table(project, "agents").get(AGENT_CONFIG_KEYS["review"]) is None:
+    if command := routes(project).commands.get("review"):
+        return (container_fallback_profile(project, "review") is not None
+                or schema_command(command))
+    configured = config_table(project, "agents").get(AGENT_CONFIG_KEYS["review"])
+    if configured is None:
         return True
+    if isinstance(configured, str):
+        return schema_command(configured)
     reviewer = seat(project, "review")
     return reviewer is not None and reviewer.name == Codex.name
 
@@ -104,9 +134,12 @@ def reply_object(reply):
             continue
         if TOKEN_COUNT_TAIL_RE.fullmatch(reply, end) is None:
             continue
-        schema = json.loads(SCHEMA_FILE.read_text(encoding="utf-8"))
-        return value if valid(value, schema) else None
+        return value if schema_valid(value) else None
     return None
+
+
+def schema_valid(value):
+    return valid(value, json.loads(SCHEMA_FILE.read_text(encoding="utf-8")))
 
 
 def kept_line(text):

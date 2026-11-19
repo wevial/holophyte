@@ -158,6 +158,13 @@ class Codex(Adapter):
         return ["--output-schema", str(SCHEMA_FILE)] if role == "reviewer" else []
 
     @staticmethod
+    def schemed_command(argv):
+        if (len(argv) < 2 or Path(argv[0]).name != Codex.name
+                or argv[1] != "exec" or "--output-schema" in argv):
+            return argv
+        return [*argv[:2], *Codex.reply_schema("reviewer"), *argv[2:]]
+
+    @staticmethod
     def unschemed(argv):
         if "--output-schema" not in argv:
             return argv

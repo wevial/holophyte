@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -20,8 +21,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import store  # noqa: E402
+from holophyte.agents import roles  # noqa: E402
 from holophyte.agents.agent_output import AgentOutput  # noqa: E402
 from holophyte.agents.harness import ADAPTERS, Seat  # noqa: E402
+from holophyte.agents.review_workspace import configured_review  # noqa: E402
 from holophyte.babysit.description_review import (  # noqa: E402
     description_findings,
     without_description,
@@ -231,18 +234,78 @@ class ContainerReviewTests(unittest.TestCase):
         self.assertEqual(reply_format, "json")
         self.assertTrue(text.endswith("VERDICT: REQUEST_CHANGES"))
 
+    def test_a_claude_markdown_result_outlives_an_off_schema_structured_one(self):
+        output = json.dumps({"is_error": False, "result": MARKDOWN,
+                             "structured_output": {"verdict": "APPROVE"}})
+        message, verdict = review_runner.parse_claude_output(output)
+        self.assertEqual((message, verdict), (MARKDOWN, "REQUEST_CHANGES"))
+        self.assertEqual(read_reply(message), (MARKDOWN, "markdown"))
+
     def test_the_default_container_route_gets_the_field_brief(self):
+        self.assertEqual(reply_brief(brief_project(self, {}), "LINES"),
+                         REPLY_BRIEF)
+        self.assertEqual(reply_brief(brief_project(
+            self, {"reviewer": "reviewer --lines"}), "LINES"), "LINES")
+
+
+def brief_project(case, agents):
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    root = Path(tmp.name)
+    return SimpleNamespace(path=root, holo_dir=root,
+                           config=lambda: {"agents": agents},
+                           config_path=root / "config.toml")
+
+
+class ConfiguredCommandTests(unittest.TestCase):
+    """The configured command runs as a real process: a `codex` stub that
+    prints the arguments it was launched with."""
+
+    COMMAND = "codex exec -m gpt-6-astra"
+
+    def launched(self, role, command):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
+        stub = Path(tmp.name) / "codex"
+        stub.write_text('#!/bin/sh\nfor arg in "$@"; do printf "%s\\0" "$arg"; '
+                        'done\n')
+        stub.chmod(0o755)
+        argv = [str(stub), *shlex.split(command)[1:], "review the candidate"]
+        output = configured_review(roles.review_argv(role, argv), tmp.name, 30,
+                                   dict(os.environ), role, command)
+        return str(output).split("\0")[:-1]
 
-        def project(agents):
-            root = Path(tmp.name)
-            return SimpleNamespace(path=root, holo_dir=root,
-                                   config=lambda: {"agents": agents},
-                                   config_path=root / "config.toml")
-        self.assertEqual(reply_brief(project({}), "LINES"), REPLY_BRIEF)
-        self.assertEqual(reply_brief(project({"reviewer": "reviewer --lines"}),
-                                     "LINES"), "LINES")
+    def test_a_configured_codex_review_command_requires_the_reply_schema(self):
+        argv = self.launched("review", self.COMMAND)
+        self.assertEqual(named_schema(argv), json.loads(SCHEMA_FILE.read_text()))
+        self.assertEqual(argv[-3:], ["-m", "gpt-6-astra", "review the candidate"])
+        self.assertEqual(reply_brief(brief_project(
+            self, {"reviewer": self.COMMAND}), "LINES"), REPLY_BRIEF)
+
+    def test_an_adversary_or_non_codex_command_launches_as_configured(self):
+        for role, command in (("adversary", self.COMMAND),
+                              ("review", "codex review --uncommitted")):
+            with self.subTest(role=role, command=command):
+                self.assertNotIn("--output-schema", self.launched(role, command))
+
+    def test_a_refusal_fallback_is_sent_the_brief_for_its_own_route(self):
+        goal = "Review.\n" + reply_brief(brief_project(self, {}), "LINES")
+        retried = goal + " Retry."
+        for command, sent in (("wrapper --review", "Review.\nLINES Retry."),
+                              (self.COMMAND, f"Review.\n{REPLY_BRIEF} Retry.")):
+            with self.subTest(command=command):
+                launched = []
+
+                def turn(project, role, goal, cwd, **kwargs):
+                    launched.append(goal)
+                    return AgentOutput("VERDICT: APPROVE", command, exit_code=0)
+                with patch.object(roles, "refusal_fallback",
+                                  return_value=command), \
+                        patch.object(roles, "_agent", turn):
+                    roles.refused_once(None, "review", retried, "wt",
+                                       {"conn": None, "run_id": None},
+                                       RuntimeError("refused"), "refused")
+                self.assertEqual(launched, [sent])
 
 
 class RenderedReplyTests(unittest.TestCase):
@@ -307,7 +370,7 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertIn('splits on `"user  id"` and', parsed["message"])
 
     def test_a_location_the_line_format_cannot_carry_is_not_moved(self):
-        for path in ("LICENSE", "docs/Release Notes.md", "app/[id]/page.tsx"):
+        for path in ("docs/Release Notes.md", "app/[id]/page.tsx"):
             with self.subTest(path=path):
                 finding = dict(REPLY["findings"][0], path=path,
                                message="see docs/development.md:9")
@@ -316,6 +379,17 @@ class RenderedReplyTests(unittest.TestCase):
                 self.assertTrue(parsed["path"].startswith("(unparsed):"))
                 self.assertIn(f"{path}:12", parsed["message"])
                 self.assertEqual(parsed["category"], "correctness")
+
+    def test_a_path_without_an_extension_keeps_its_location(self):
+        for path, line in (("LICENSE", 12), ("docker/Makefile", None)):
+            with self.subTest(path=path):
+                finding = dict(REPLY["findings"][0], path=path, line=line)
+                text, _ = read_reply(json.dumps(dict(
+                    REPLY, findings=[finding, REPLY["findings"][1]])))
+                code, described = parse_findings(text)
+                self.assertEqual((code["path"], code.get("line")), (path, line))
+                self.assertEqual(code["category"], "correctness")
+                self.assertTrue(described["path"].startswith("(unparsed):"))
 
     def test_a_message_citation_never_becomes_a_finding_location(self):
         cited = "see docs/development.md:272"
