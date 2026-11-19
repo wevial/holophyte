@@ -250,12 +250,6 @@ def exec_script(harness: str, multi_agent: bool, reply_schema: bool) -> str:
     return script.replace("SCHEMA", SCHEMA_FLAGS[harness] if reply_schema else "")
 
 
-def stage_reply_schema(reviewer_home: Path) -> None:
-    from holophyte.review.json_reply import SCHEMA_FILE
-
-    shutil.copyfile(SCHEMA_FILE, reviewer_home / REPLY_SCHEMA_NAME)
-
-
 def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
     return ["--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", f"--pids-limit={PIDS_LIMIT}",
@@ -308,7 +302,9 @@ echo "PREFLIGHT_OK candidate=$actual" >&2
 cp -a /workspace /home/reviewer/candidate
 '''.strip() + "\n" + exec_script(harness, multi_agent, reply_schema)
     if reply_schema:
-        stage_reply_schema(reviewer_home)
+        from holophyte.review.json_reply import SCHEMA_FILE
+
+        shutil.copyfile(SCHEMA_FILE, reviewer_home / REPLY_SCHEMA_NAME)
 
     command = [
         "docker",
