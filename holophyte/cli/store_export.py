@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import math
 import os
@@ -16,7 +18,9 @@ REDACTION_VERSION = 1
 SECRETS = (
     re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----(?:.*?"
                r"-----END [A-Z0-9 ]*PRIVATE KEY[A-Z ]*-----|.*)", re.S),
-    re.compile(r"\b(?i:bearer)\s+(?=[\w.~+/=-]*\d|[\w.~+/=-]{16})[\w.~+/=-]+"),
+    re.compile(r"\b(?i:authorization)\s*[:=]\s*(?:[A-Za-z]+\s+)?[\w.~+/=-]+"),
+    re.compile(r"\b(?i:bearer)\s+(?=[\w.~+/=-]*(?:\d|[._~+/-]\w)"
+               r"|[\w.~+/=-]{16})[\w.~+/=-]+"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{8,}"),
 )
@@ -114,16 +118,16 @@ def _runs(conn, project_id, since):
         "SELECT r.id, t.linearIdentifier, r.attempt, r.outcome, r.failureKind,"
         " r.mergeSha, r.reviewRoundCount, r.startedAt, r.endedAt"
         " FROM runs r JOIN tickets t ON t.id = r.ticketId"
-        " WHERE r.projectId = ? AND r.startedAt >= ? ORDER BY r.id",
-        (project_id, since or 0)).fetchall()
+        " WHERE r.projectId = ? AND (? IS NULL OR r.startedAt >= ?)"
+        " ORDER BY r.id", (project_id, since, since)).fetchall()
 
 
 def _events(conn, project_id, since):
     return conn.execute(
         "SELECT runId, seq, at, kind, summary, payload FROM runEvents"
         " WHERE runId IN (SELECT id FROM runs"
-        " WHERE projectId = ? AND startedAt >= ?)"
-        " ORDER BY runId, seq", (project_id, since or 0)).fetchall()
+        " WHERE projectId = ? AND (? IS NULL OR startedAt >= ?))"
+        " ORDER BY runId, seq", (project_id, since, since)).fetchall()
 
 
 def records(conn, project_id, project, redactor, since):
@@ -165,7 +169,8 @@ def _staged(path, text, mask):
 
 
 def _refuse_the_store(directory, store_path):
-    held = [Path(f"{store_path}{suffix}") for suffix in ("", "-wal", "-shm")]
+    held = [Path(f"{path}{suffix}") for suffix in ("", "-wal", "-shm")
+            for path in (store_path, os.path.realpath(store_path))]
     for name in (RUNS, EVENTS, SESSIONS, MANIFEST):
         path = directory / name
         if path.exists() and any(
@@ -196,6 +201,16 @@ def _publish(directory, texts, manifest):
             os.unlink(temporary)
 
 
+@contextlib.contextmanager
+def _one_export_at_a_time(directory):
+    held = os.open(directory, os.O_RDONLY)
+    try:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(held)
+
+
 def _lines(rows):
     return "".join(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n"
                    for row in rows)
@@ -221,7 +236,6 @@ def export(target, directory, since):
         conn.close()
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    _refuse_the_store(directory, target.store_path)
 
     def manifest():
         return json.dumps({
@@ -230,7 +244,9 @@ def export(target, directory, since):
             "started_at": iso(started), "ended_at": iso(int(time.time() * 1000)),
             "since": since, "redaction_version": REDACTION_VERSION},
             sort_keys=True, indent=2) + "\n"
-    _publish(directory, {name: _lines(rows) for name, rows in files.items()},
-             manifest)
+    with _one_export_at_a_time(directory):
+        _refuse_the_store(directory, target.store_path)
+        _publish(directory,
+                 {name: _lines(rows) for name, rows in files.items()}, manifest)
     print(f"[holo2] exported {len(files[RUNS])} runs, {len(files[EVENTS])}"
           f" events and {len(files[SESSIONS])} agent sessions to {directory}")

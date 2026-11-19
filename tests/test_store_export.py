@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 from datetime import datetime
@@ -128,6 +129,14 @@ class StoreExportTests(unittest.TestCase):
                 self.sessions_from <= ms(session["at"]) <= self.sessions_to)
 
     def test_events_are_once_each_in_seq_order_with_matches_redacted(self):
+        conn = sqlite3.connect(self.store_path)
+        conn.execute("UPDATE runEvents SET seq = -seq WHERE runId = ?",
+                      (self.first,))
+        conn.execute("UPDATE runEvents SET seq = (SELECT MAX(-seq) FROM"
+                     " runEvents WHERE runId = ?) + 1 + seq WHERE runId = ?",
+                     (self.first, self.first))
+        conn.commit()
+        conn.close()
         self.export()
         events = lines(self.out / "factory_events.jsonl")
         for event in events:
@@ -140,6 +149,8 @@ class StoreExportTests(unittest.TestCase):
             (self.first, self.second)).fetchall()
         conn.close()
         self.assertEqual(keys, sorted(stored))
+        self.assertEqual([e["kind"] for e in events if e["run_id"] == self.first],
+                         ["phase_change", "note"])
         self.assertIn("agent_session", [e["kind"] for e in events])
         (note,) = [e for e in events if e["kind"] == "note"]
         self.assertEqual(note["summary"],
@@ -183,6 +194,67 @@ class StoreExportTests(unittest.TestCase):
             self.out / "factory_events.jsonl")}, {self.second})
         manifest = json.loads((self.out / "manifest.json").read_text())
         self.assertEqual(manifest["since"], SECOND)
+
+    def test_without_since_a_run_started_before_the_epoch_is_kept(self):
+        conn = store.open(str(self.store_path))
+        early = store.claim(conn, self.project_id, self.ticket, now=-1)
+        store.record_event(conn, early, "note", "early", now=0)
+        conn.close()
+        self.export()
+        self.assertIn(early, [r["run_id"] for r in lines(
+            self.out / "factory_runs.jsonl")])
+        self.assertIn(early, [e["run_id"] for e in lines(
+            self.out / "factory_events.jsonl")])
+
+    def test_concurrent_exports_publish_files_matching_the_last_manifest(self):
+        replace, paused, resume = os.replace, threading.Event(), threading.Event()
+
+        def pause_after_first_replace(*args):
+            replace(*args)
+            if not paused.is_set():
+                paused.set()
+                resume.wait(10)
+        failures = []
+
+        def run(*flags):
+            try:
+                holo_cli.main(["store", "export", str(self.out), *flags,
+                               "-p", str(self.target)])
+            except BaseException as error:
+                failures.append(error)
+        whole = threading.Thread(target=run)
+        filtered = threading.Thread(target=run,
+                                    args=("--since", str(SECOND)))
+        with contextlib.redirect_stdout(io.StringIO()), \
+                patch("os.replace", pause_after_first_replace):
+            whole.start()
+            self.assertTrue(paused.wait(10))
+            filtered.start()
+            filtered.join(1)
+            resume.set()
+            whole.join(10)
+            filtered.join(10)
+        self.assertEqual(failures, [])
+        manifest = json.loads((self.out / "manifest.json").read_text())
+        self.assertEqual(manifest["files"], {
+            name: len(lines(self.out / name)) for name in manifest["files"]})
+
+    def test_an_output_aliasing_the_resolved_stores_wal_is_refused(self):
+        shared = self.out.parent / "shared"
+        shared.mkdir()
+        self.store_path.rename(shared / "store.db")
+        self.store_path.symlink_to(shared / "store.db")
+        writer = store.open(str(shared / "store.db"))
+        self.addCleanup(writer.close)
+        store.record_event(writer, self.second, "note", "live", now=SECOND + 9)
+        wal = shared / "store.db-wal"
+        self.assertTrue(wal.exists())
+        self.out.mkdir()
+        (self.out / "factory_events.jsonl").symlink_to(wal)
+        with self.assertRaises(SystemExit) as refused:
+            self.export()
+        self.assertIn("is the store", str(refused.exception))
+        self.assertTrue((self.out / "factory_events.jsonl").is_symlink())
 
     def test_a_store_linked_into_the_export_directory_is_refused(self):
         self.out.mkdir()
@@ -271,6 +343,22 @@ class StoreExportTests(unittest.TestCase):
         (note,) = [e for e in lines(self.out / "factory_events.jsonl")
                    if e["run_id"] == run]
         self.assertEqual(note["summary"], "[secret]; [secret]\n[private]")
+
+    def test_bearer_tokens_without_digits_are_hidden_and_prose_is_kept(self):
+        conn = store.open(str(self.store_path))
+        run = store.claim(conn, self.project_id, self.ticket, now=SECOND + 40)
+        store.record_event(conn, run, "note", "", now=SECOND + 41)
+        conn.execute(
+            "UPDATE runEvents SET summary = ? WHERE runId = ?",
+            ("Authorization: Bearer mF_a.Bcf-X.JqM;"
+             " sent Bearer mF_a.Bcf-X.JqM; Bearer tokens.", run))
+        conn.commit()
+        conn.close()
+        self.export()
+        (note,) = [e for e in lines(self.out / "factory_events.jsonl")
+                   if e["run_id"] == run]
+        self.assertEqual(note["summary"],
+                         "[secret]; sent [secret]; Bearer tokens.")
 
     def test_patterns_keep_session_ids_and_redact_the_project_name(self):
         self.private("session_[a-z]+", "^repo$")

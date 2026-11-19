@@ -252,6 +252,26 @@ class HoloUsageTests(unittest.TestCase):
         self.assertIn("automations off", grouped)
         self.assertEqual(unnamed_holo_words(CLI_PAGE.read_text(), grouped), [])
 
+    def test_cli_page_rows_name_every_flag_of_their_factory_mode_command(self):
+        rows = [re.split(r"(?<!\\)\|", line)[1]
+                for line in CLI_PAGE.read_text().splitlines()
+                if line.startswith("| `holo ")]
+        unnamed = []
+        for command in COMMANDS:
+            if not (command.mode or "").startswith("--"):
+                continue
+            words = re.escape(" ".join(command.words))
+            cells = " ".join(row for row in rows
+                             if re.search(rf"`holo {words}(?![\w-])", row))
+            unnamed += [f"holo {' '.join(command.words)} {flag.name}"
+                        for flag in command.flags
+                        if not re.search(rf"{re.escape(flag.name)}(?![\w-])",
+                                         cells)]
+        self.assertIn("--since", [flag.name for command in COMMANDS
+                                  if command.words == ("store", "export")
+                                  for flag in command.flags])
+        self.assertEqual(unnamed, [])
+
     def test_cli_page_mcp_write_table_names_every_signed_write(self):
         from holophyte.holo.mcp_tools import WRITES
         table = CLI_PAGE.read_text().split(
