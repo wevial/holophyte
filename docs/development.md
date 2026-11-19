@@ -509,6 +509,9 @@ Each module, one line:
 - `holophyte/serve/serve_merge.py` — the daemon's `GET /runs/N/merge` and
   `POST /actions/merge`: a run parked for a human's merge read for
   readiness, and released through the store's `approve` only when ready.
+- `holophyte/serve/serve_revert.py` — the daemon's `POST /actions/revert`:
+  `holo revert`'s checks and dependents as a preview, or its urgent revert
+  ticket filed, behind the action token.
 - `holophyte/serve/serve_merge_queue.py` — the daemon's `GET /merge-queue`:
   the base branch's merge queue read from GitHub, each pull request's
   store run joined to it, cached per project for 15 seconds.
