@@ -11,7 +11,7 @@ TARGET_FIELD = "target"
 
 TOKEN_COUNT_TAIL_RE = re.compile(r"\s*(?:tokens used\s+[\d,]+\s*)?")
 
-MD_LINK_RE = re.compile(r"\[([^\]\n]*)\]\(([^)\s]+)\)")
+MD_LINK_RE = re.compile(r"(`[^`]*`)|\[([^\]\n]*)\]\(([^)\s]+)\)")
 
 TYPES = {"object": dict, "array": list, "string": str, "integer": int,
          "null": type(None)}
@@ -96,7 +96,8 @@ def one_line(text):
 
 
 def message_line(text):
-    return MD_LINK_RE.sub(r"\1 (\2)", one_line(text))
+    return MD_LINK_RE.sub(
+        lambda link: link[1] or f"{link[2]} ({link[3]})", one_line(text))
 
 
 def place(path, line):

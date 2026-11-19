@@ -156,6 +156,13 @@ class RenderedReplyTests(unittest.TestCase):
         self.assertEqual((parsed["path"], parsed["line"]), ("src/app.py", 12))
         self.assertIn("tests/test_app.py:40", parsed["message"])
 
+    def test_code_in_backticks_is_not_read_as_a_link(self):
+        finding = dict(REPLY["findings"][0],
+                       message="`handlers[0](event)` raises on an empty list")
+        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+        [parsed] = parse_findings(text)
+        self.assertIn("`handlers[0](event)` raises", parsed["message"])
+
     def test_a_lone_finding_parses_as_its_markdown_twin_does(self):
         reply = dict(REPLY, criteria=[], follow_ups=[],
                      findings=[REPLY["findings"][0]])
