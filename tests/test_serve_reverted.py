@@ -103,6 +103,12 @@ class RevertedResponseTests(ConfigTestCase):
             run = store.claim(conn, project_id, ticket_id)
             store.tickets.transition(conn, ticket_id, "in_flight")
             store.set_phase(conn, run, "working")
+
+        self.assertEqual(self.get(port, "/tickets/NAT-1")["reverted"],
+                         expected)
+        self.assertEqual(self.board_entry(port, "NAT-1")["reverted"], expected)
+
+        with contextlib.closing(open_store(self.project)) as conn:
             finish_run(conn, run, "merged", merge_sha=self.commit(
                 {"src/header.py": "header, fixed\n"}, "NAT-1: header again"))
             store.tickets.transition(conn, ticket_id, "merged")
@@ -117,3 +123,13 @@ class RevertedResponseTests(ConfigTestCase):
                 self.assertEqual("[revert]" in config, reverts)
                 port = self.serve(self.target)
                 self.assertIs(self.get(port, "/status")["reverts"], reverts)
+
+    def test_status_reads_reverts_from_the_saved_config_on_each_request(self):
+        self.project_with(cli_revert.ENABLED, {"src/header.py": "broken\n"})
+        port = self.serve(self.target)
+        self.assertIs(self.get(port, "/status")["reverts"], True)
+        for config in (cli_revert.NATIVE, cli_revert.NATIVE
+                       + '[revert]\nenabled = false\nrefuse_paths = [""]\n'):
+            with self.subTest(config=config):
+                self.project.config_path.write_text(config)
+                self.assertIs(self.get(port, "/status")["reverts"], False)
