@@ -121,6 +121,7 @@ PINNED = {
     "holophyte/cli/shadow_report.py": 0,
     "holophyte/cli/stale_paths.py": 1,
     "holophyte/cli/status.py": 4,
+    "holophyte/cli/store_export.py": 0,
     "holophyte/cli/store_import.py": 3,
     "holophyte/cli/store_verbs.py": 0,
 

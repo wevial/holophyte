@@ -40,6 +40,8 @@ SAMPLES = {
                           {"dry_run": True}),
     ("store", "import"): (["other.db", "--dry-run"], "import_store", "other.db",
                           None, {"dry_run": True}),
+    ("store", "export"): (["out", "--since", "1700000000000"], "export_store",
+                          "out", None, {"since": 1_700_000_000_000}),
     ("file",): (["T.md", "--backlog", "--priority", "high"], "file_ticket",
                 "T.md", None, {"state": "Backlog", "priority": "high"}),
     ("move",): (["HOLO-1", "ready", "--revision", "2", "now"], "move",

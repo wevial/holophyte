@@ -22,6 +22,17 @@ def serve_address(text):
     return text
 
 
+def epoch_ms(text):
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from None
+    if not -2**63 <= value < 2**63:
+        raise argparse.ArgumentTypeError(
+            f"{text} is outside the store's 64-bit integer range")
+    return value
+
+
 def _file_ticket_only(parser, args):
     if args.file_ticket is None:
         if args.update is not None and args.file_story is None:
@@ -202,6 +213,9 @@ def _modifier_checks(parser, args):
         parser.error("--import-store has only its dry run yet: add --dry-run "
                      "to see what it would move; applying the import is a "
                      "later ticket built on that report (after KO-595)")
+    if args.since is not None and args.export_store is None:
+        parser.error("--since says which runs --export-store writes; it has "
+                     "nothing to filter by itself")
     if args.dry_run and args.import_store is None and not args.board_import \
             and args.revert is None:
         parser.error("--dry-run says what --import-store, --board-import or "
@@ -353,6 +367,10 @@ def build_parser():
              "a sha256 of the rows; refuses stores at different schema "
              "versions, and writes nothing")
     modes.add_argument(
+        "--export-store", metavar="DIR",
+        help="write the project store's runs, run events and agent sessions "
+             "into DIR as redacted NDJSON with a manifest.json; reads only")
+    modes.add_argument(
         "--board-import", action="store_true",
         help="copy every open issue of the project's Linear board, Backlog "
              "included, into its store by board id in one transaction, "
@@ -371,6 +389,10 @@ def build_parser():
              "flight, stranded tickets, quiet runs and repeat failures, "
              "less the [patrol] ignore list, or one `nothing to do` line; "
              "reads only")
+    parser.add_argument(
+        "--since", metavar="MS", type=epoch_ms,
+        help="with --export-store: only runs started at or after this "
+             "epoch-millisecond time, with their events and sessions")
     parser.add_argument("--json", action="store_true",
                         help="with --status, --patrol, --automation-list or "
                              "--automation-show: print it as one JSON object")
