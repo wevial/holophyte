@@ -229,10 +229,10 @@ class RevertCloseTests(ConfigTestCase):
     def test_a_refused_move_keeps_the_reverted_event_and_warns(self):
         self.file_revert()
 
-        def refuse(*_args):
+        def refuse(*_args, **_kwargs):
             raise store.board.FilingRefused(["the board refused the move"])
 
-        with patch.object(store.board, "_record_column", refuse):
+        with patch.object(store.board, "move_ticket", refuse):
             run = self.run_revert(self.merge_the_revert)
         state = self.key_state()
         self.assertEqual(state["ticket"], [("merged", "ready", None)])

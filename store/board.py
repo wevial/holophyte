@@ -151,19 +151,23 @@ def edit_ticket(conn, project_id, identifier, text, expected_revision,
 
 
 def move_ticket(conn, project_id, identifier, column, expected_revision,
-                author="cli", note=None, now=None):
+                author="cli", note=None, now=None, reverted=False):
     """A live run on a ticket moved to Backlog continues."""
     if column not in ("ready", "backlog"):
         raise ValueError(f"a ticket moves to ready or backlog, not {column!r}")
+    if reverted and column != "backlog":
+        raise ValueError("a reverted ticket returns to backlog")
     if now is None:
         now = int(time.time() * 1000)
     repo = _repo_path(conn, project_id)
     with _transaction(conn):
         ticket_id, status, _run, text = _open_ticket(
-            conn, project_id, identifier, expected_revision)
+            conn, project_id, identifier, expected_revision, closed=reverted)
+        if reverted:
+            reopen_merged(conn, ticket_id)
         (current,) = conn.execute("SELECT boardColumn FROM tickets"
                                   " WHERE id = ?", (ticket_id,)).fetchone()
-        if current == column:
+        if current == column and not reverted:
             raise FilingRefused([f"{identifier} is already in {column} at"
                                  f" status {status}; nothing changed"])
         if column == "ready":
@@ -205,7 +209,7 @@ def reopen_reverted(conn, run_id, native=True):
             return None
         key, sha = named.groups()
         original = conn.execute(
-            "SELECT t.id, r.id FROM tickets t"
+            "SELECT t.revision, r.id FROM tickets t"
             " JOIN runs r ON r.ticketId = t.id"
             " WHERE t.projectId = ? AND t.linearIdentifier = ?"
             " AND t.status = 'merged' AND r.outcome = 'merged'"
@@ -216,7 +220,7 @@ def reopen_reverted(conn, run_id, native=True):
             (project_id, key, sha, sha, sha)).fetchone()
         if original is None:
             return None
-        ticket_id, merged_run = original
+        revision, merged_run = original
         reason = (_filed_reason(conn, merged_run, revert_key)
                   or _written_reason(key, sections))
         why = f": {reason}" if reason else ""
@@ -226,16 +230,8 @@ def reopen_reverted(conn, run_id, native=True):
         record_event(conn, merged_run, "reverted",
                      f"reverted by {revert_key} (merge sha:"
                      f" {merge_sha or 'null'}){why}", now=now)
-    with _transaction(conn):
-        reopen_merged(conn, ticket_id)
-        (column,) = conn.execute("SELECT boardColumn FROM tickets WHERE id = ?",
-                                 (ticket_id,)).fetchone()
-        if column == "backlog":
-            record_note(conn, ticket_id, "move", note, f"reverted:{run_id}",
-                        author="factory", now=now)
-        else:
-            _record_column(conn, ticket_id, "backlog", "move", note,
-                           "factory", now)
+    move_ticket(conn, project_id, key, "backlog", revision, author="factory",
+                note=note, now=now, reverted=True)
     return key, note
 
 
@@ -472,7 +468,8 @@ def _parked_on_pull_request(conn, ticket_id):
         " AND r.prUrl IS NOT NULL", (ticket_id,)).fetchone() is not None
 
 
-def _open_ticket(conn, project_id, identifier, expected_revision):
+def _open_ticket(conn, project_id, identifier, expected_revision,
+                 closed=False):
     row = conn.execute(
         "SELECT id, revision, boardColumn, status, activeRunId, body"
         " FROM tickets WHERE projectId = ? AND linearIdentifier = ?",
@@ -482,6 +479,8 @@ def _open_ticket(conn, project_id, identifier, expected_revision):
     ticket_id, revision, column, status, run_id, text = row
     if revision != expected_revision:
         raise RevisionMoved(identifier, expected_revision, revision)
+    if closed:
+        return ticket_id, status, run_id, text or ""
     if column == "canceled":
         raise FilingRefused([f"{identifier} is canceled"])
     if status in ("merged", "abandoned"):

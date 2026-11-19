@@ -113,7 +113,7 @@ EXPECTED = [
     "is_gate_conflict",
     "render_state_graph",
     "render_state_graph_section",
-    # HOLO-822: a merged revert reopens its original, off the §3 walk graph.
+    # a merged revert reopens its original, off the §3 walk graph.
     "reopen_merged",
     "resume",
     "run_contract",
@@ -307,7 +307,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                    "record_criteria"]),
                                  # KO-750: the native board's writers;
                                  # KO-753: moves/cancels; HOLO-404: check reader;
-                                 # HOLO-822: a merged revert reopens its ticket.
+                                 # a merged revert reopens its ticket.
                                  (store.board, ["cancel_ticket", "check_ticket",
                                                 "edit_ticket",
                                                 "file_ticket", "move_ticket",
