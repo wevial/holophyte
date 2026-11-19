@@ -181,6 +181,9 @@ FENCE = re.compile(r" {0,3}(`{3,}|~{3,})(.*)")
 TICKS = re.compile(r"`+")
 INLINE_OPENER = re.compile(r"`+|<!--")
 COMMENT_BLOCK = re.compile(r" {0,3}<!--")
+HEADING = re.compile(r" {0,3}#{1,6}(?:[ \t]|$)")
+RULE = re.compile(r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*")
+SETEXT = re.compile(r" {0,3}(?:=+|-+)[ \t]*")
 
 
 def reopen_reverted(conn, run_id, native=True):
@@ -239,10 +242,14 @@ def reopen_reverted(conn, run_id, native=True):
 def _live(text):
     live, paragraph = [], []
     for line in _blocks(text) + [""]:
-        if line.strip():
+        indent = len(line.expandtabs(4)) - len(line.lstrip(" \t"))
+        underline = paragraph and SETEXT.fullmatch(line)
+        if line.strip() and (paragraph or indent <= 3) and not underline \
+                and not HEADING.match(line) and not RULE.fullmatch(line):
             paragraph.append(line)
             continue
-        live += _prose(paragraph)
+        if not underline:
+            live += _prose(paragraph)
         paragraph = []
     return live
 
@@ -271,12 +278,10 @@ def _blocks(text):
 def _prose(lines):
     joined = "\n".join(lines)
     code, comments = _inline_spans(joined)
-    live, at, prose = [], 0, False
+    live, at = [], 0
     for line in lines:
         start = at + len(line) - len(line.lstrip(" \t"))
-        indent = len(line.expandtabs(4)) - len(line.lstrip(" \t"))
-        prose = prose or indent <= 3
-        if prose and not any(a <= start < b for a, b in code):
+        if not any(a <= start < b for a, b in code):
             live.append("".join(
                 char for i, char in enumerate(line, at)
                 if not any(a <= i < b for a, b in comments)).strip())

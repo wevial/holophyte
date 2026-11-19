@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_fixture import ConfigTestCase  # noqa: E402 - after the sys.path insert
 from loop_fixture import MergeModeFixture, StubProvider  # noqa: E402
-from phase_fixture import advance_phase  # noqa: E402 - after the sys.path insert
+from phase_fixture import advance_phase, finish_run  # noqa: E402
 
 import store  # noqa: E402
 from holophyte.board.provider import board_for  # noqa: E402
@@ -219,9 +219,11 @@ class RevertCloseTests(ConfigTestCase):
         self.file_revert()
         long_sha = "ab" * 32
         with contextlib.closing(open_store(self.project)) as conn:
-            conn.execute("UPDATE runs SET mergeSha = ? WHERE id = ?",
-                         (long_sha, self.runs["NAT-1"]))
-            conn.commit()
+            (project_id,) = conn.execute("SELECT id FROM projects").fetchone()
+            ticket_id = self.ticket_id(conn, "NAT-1")
+            run = store.claim(conn, project_id, ticket_id)
+            store.set_phase(conn, run, "working")
+            finish_run(conn, run, "merged", merge_sha=long_sha)
         self.edit_revert((f"Reverts: NAT-1 at {self.key_sha}",
                           f"Reverts: NAT-1 at {long_sha}"))
         self.run_revert(self.merge_the_revert)
@@ -283,6 +285,12 @@ class RevertCloseTests(ConfigTestCase):
     def test_a_comment_closing_inside_a_code_span_does_not_expose_a_marker(self):
         self.assert_hidden_marker_reopens_nothing(
             "See `a <!-- < ` --> `\n{}\n` here.")
+
+    def test_a_marker_indented_under_a_heading_is_code_and_reopens_nothing(self):
+        self.assert_hidden_marker_reopens_nothing("### Example\n    {}")
+
+    def test_a_backtick_in_indented_code_does_not_hide_a_later_marker(self):
+        self.assert_marker_stays_live("Before.\n\n    a ` b\n{}\nthen `c`.")
 
     def test_a_marker_after_an_html_comment_is_still_live(self):
         self.assert_marker_stays_live("<!-- < filed by hand -->\n{}")
