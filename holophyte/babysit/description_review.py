@@ -7,7 +7,6 @@ from holophyte.review.briefs import main_merge_base
 from holophyte.review.reply_parsing import (
     FINDING_CATEGORIES,
     SCOPE_LINE_RE,
-    closed_fence_flags,
     without_criteria,
     without_refuted,
 )
@@ -24,16 +23,7 @@ DESCRIPTION_SUBJECT_RE = re.compile(
 
 PR_TEXT_REVIEW_KIND = "pr_text_review"
 
-CONTINUATION_RE = re.compile(
-    r"^\s+(?!\s)(?!(?:[-*+\u2022>]|\d+[.)])\s|\*\*|[\[(]?\s*(?i:p[0-4]|nit|blocker"
-    r"|major|minor|critical|high|medium|low)\b)(?!.*(?:\bpath:|[\w.-][/\\][\w.-]"
-    r"|\b[\w-]+\.[a-z]\w{0,5}\b|\w\(|\b[a-z]+[A-Z]|\b[A-Z][a-z]+[A-Z])).*\S")
-
-MID_SENTENCE_RE = re.compile(r"[\w,]$")
-
-WRAPPED_WORD_RE = re.compile(r"^\s+[a-z]+ ")
-
-VERDICT_LINE_RE = re.compile(r"^\s*(?:\*\*|__)?VERDICT:.*$", re.M)
+VERDICT_LINE_RE = re.compile(r"^\s*(?:[`*_]+\s*)?VERDICT:.*$", re.M)
 
 HEADING_WORDS = (r"(?:(?:review|open|remaining|description)\s+)?"
                  r"(?:findings|blockers|issues|comments|notes|problems)"
@@ -59,13 +49,9 @@ def description_findings(verdict, decision, unwitnessed):
 
 
 def without_description(verdict):
-    described = [item for item in _blocker_items(verdict)
-                 if DESCRIPTION_SUBJECT_RE.match(item)]
-    heads = {item.splitlines()[0] for item in described}
-    lines = verdict.splitlines()
-    kept = [line for group in _items(lines)
-            if lines[group[0]].strip() not in heads
-            for line in (lines[i] for i in group)]
+    described = [line for line in _blocker_items(verdict)
+                 if DESCRIPTION_SUBJECT_RE.match(line)]
+    kept = [line for line in verdict.splitlines() if line.strip() not in described]
     return "\n".join(kept), described
 
 
@@ -87,11 +73,9 @@ def pending_text_review(conn, run_id):
         return ""
     pending = []
     for kind, summary in conn.execute(
-            "SELECT e.kind, e.summary FROM runEvents e"
-            " JOIN runs r ON r.id = e.runId JOIN runs me ON me.id = ?"
-            " WHERE e.kind IN (?, 'pr_text_sha') AND (e.runId = me.id"
-            " OR r.ticketId = me.ticketId AND r.prUrl = me.prUrl)"
-            " ORDER BY e.id", (run_id, PR_TEXT_REVIEW_KIND)):
+            "SELECT kind, summary FROM runEvents WHERE runId = ?"
+            " AND kind IN (?, 'pr_text_sha') ORDER BY id",
+            (run_id, PR_TEXT_REVIEW_KIND)):
         pending = [*pending, summary] if kind == PR_TEXT_REVIEW_KIND else []
     return "\n".join(pending)
 
@@ -100,30 +84,7 @@ def _blocker_items(verdict):
     reply = without_criteria(without_refuted(verdict))
     for pattern in (SCOPE_LINE_RE, VERDICT_LINE_RE, HEADING_RE):
         reply = pattern.sub("", reply)
-    lines = reply.splitlines()
-    return ["\n".join([lines[group[0]].strip()]
-                      + [lines[i].rstrip() for i in group[1:] if lines[i].strip()])
-            for group in _items(lines) if lines[group[0]].strip()]
-
-
-def _items(lines):
-    groups, after_blank = [], True
-    for index, (line, fenced) in enumerate(zip(lines, closed_fence_flags(lines))):
-        joins = (fenced or not line.strip()
-                 or not after_blank and _continues(lines[index - 1], line))
-        if groups and joins:
-            groups[-1].append(index)
-        else:
-            groups.append([index])
-        after_blank = not fenced and not line.strip()
-    return groups
-
-
-def _continues(previous, line):
-    if DESCRIPTION_SUBJECT_RE.match(line):
-        return False
-    return bool(CONTINUATION_RE.match(line) or MID_SENTENCE_RE.search(previous)
-                and WRAPPED_WORD_RE.match(line))
+    return [line.strip() for line in reply.splitlines() if line.strip()]
 
 
 def rewrite_description(project, conn, run_id, provider, task_id, branch, wt,

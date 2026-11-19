@@ -36,8 +36,8 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
         ledger(conn, run_id, task_id, "round",
                f"Babysit review fix allowance after round {rnd}: one fix and"
                " recorded re-review, even if reviewRoundCap is spent.", provider)
-        return _code_goal(conn, run_id, pull, ticket, verdict,
-                          "Operator babysit note", fix_note), None
+        return fix_goal(pull, ticket, verdict, "Operator babysit note",
+                        fix_note), None
     cap = merge_config(project).covering_fix_rounds
     if not cap or conn is None or description_findings(verdict, decision,
                                                        unwitnessed):

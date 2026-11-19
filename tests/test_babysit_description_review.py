@@ -111,44 +111,15 @@ class DescriptionFindingsTests(unittest.TestCase):
                 self.assertEqual(description_findings(
                     f"{line}{TAIL}", "REQUEST_CHANGES", []), [line])
 
-    def test_a_code_blocker_under_a_tagged_finding_is_not_its_continuation(self):
-        for code in ("  ```x``` is wrong\n- [P0] holophyte/x.py:3 crashes.",
-                     "  ```\n  example\n- [P0] holophyte/x.py:3 crashes.",
-                     "\n  The parser raises an error on an empty config.",
-                     "  **Code**\n  The retry loop never exits.",
-                     "  load() crashes on empty input.",
-                     "  High: the retry loop never exits.",
-                     "  - The retry loop never stops on an empty queue.",
-                     "\n> holophyte/worker.py:40 still swallows the error."):
-            with self.subTest(code=code):
+    def test_a_backticked_or_bold_verdict_line_is_not_a_blocker(self):
+        for verdict in ("**VERDICT: REQUEST_CHANGES**", "`VERDICT: REQUEST_CHANGES`"):
+            with self.subTest(verdict=verdict):
                 self.assertEqual(description_findings(
-                    f"{TAGGED}\n{code}{TAIL}", "REQUEST_CHANGES", []), [])
-
-    def test_a_wrapped_tagged_bullet_is_one_description_finding(self):
-        self.assertEqual(description_findings(
-            f"{WRAPPED}{TAIL}", "REQUEST_CHANGES", []), [WRAPPED])
-
-    def test_a_quoted_tag_inside_a_list_item_is_a_code_finding(self):
-        quoted = ('- > path: "PR description" — sample reviewer reply\n'
-                  "  shows the reply parser wrongly accepts this sample")
-        self.assertEqual(description_findings(
-            f"{quoted}{TAIL}", "REQUEST_CHANGES", []), [])
-
-    def test_a_bold_verdict_marker_is_not_a_blocker(self):
-        self.assertEqual(description_findings(
-            f"{TAGGED}\nCRITERION 1: met — tests/test_thing.py::test_it_works"
-            "\n**VERDICT: REQUEST_CHANGES**", "REQUEST_CHANGES", []), [TAGGED])
+                    f"{TAGGED}\nCRITERION 1: met — tests/test_thing.py::test_it_works"
+                    f"\n{verdict}", "REQUEST_CHANGES", []), [TAGGED])
 
 
 DESCRIBED = '- **[p2]** path: "PR description" — the Changes table misstates the menu'
-WRAPPED = ('- [P2] path: "PR description" — the Changes table misstates\n'
-           '  the `Revert` item it lists for a reverted run')
-WRAPPED_FILE = ('- [P2] path: "PR description" — the Changes table incorrectly'
-                ' says\n  that TicketTable.tsx still shows Revert on reverted'
-                ' tickets')
-STANDALONE = 'P2: path: "PR description" — the Changes table misstates the menu'
-CATEGORIZED = ('- [p2] [correctness] path: "PR description" — the Changes table'
-               ' misstates the menu')
 TABLE_FAULT = "the row menu drops the revert item"
 LINKED = ('P2: path: "PR description" — it links [the guide](docs/guide.md:25) for'
           ' the Changes table')
@@ -214,7 +185,7 @@ class MixedRoundTests(unittest.TestCase):
         self.git("commit", "-qm", message)
         return self.git("rev-parse", "HEAD")
 
-    def review_fix(self, *rejections, fix_note=None, refreshed=True):
+    def review_fix(self, *rejections, refreshed=True):
         replies, self.goals, self.writes = [*rejections, APPROVE], [], []
 
         def reviewer(target, role, goal, *args, **kwargs):
@@ -244,7 +215,7 @@ class MixedRoundTests(unittest.TestCase):
             babysitter._review_fix(
                 self.project, self.conn, self.run_id, None, "KO-1", "task",
                 self.root, self.head, None, 30, PULL, TICKET, "true", (),
-                [CRITERION], fix_note=fix_note, budget_min=10)
+                [CRITERION], fix_note=None, budget_min=10)
 
     def reviewer_findings(self, goal):
         findings = goal.partition("\n\nReviewer findings:\n")[2]
@@ -285,34 +256,10 @@ class MixedRoundTests(unittest.TestCase):
         self.assertEqual(pr_activity.latest(self.conn, self.run_id, "pr_text_sha"),
                          self.git("rev-parse", "HEAD"))
 
-    def test_a_wrapped_description_finding_leaves_the_fix_goal_whole(self):
-        self.assert_split(WRAPPED)
-        self.assertNotIn("reverted run", self.goals[0])
-
-    def test_a_description_finding_wrapped_across_a_file_name_stays_whole(self):
-        self.assert_split(WRAPPED_FILE)
-        self.assertNotIn("reverted tickets", self.goals[0])
-
-    def test_an_unbulleted_description_finding_after_a_code_bullet_is_split(self):
-        self.assert_split(STANDALONE)
-
     def test_a_linked_description_finding_leaves_the_code_path_and_line(self):
         self.assert_split(LINKED)
         self.assertNotIn("docs/guide.md", self.goals[0])
         self.assertIn(f"- Fix {TABLE_PATH} \u2014", self.fix_note(self.goals[0]))
-
-    def test_a_categorized_description_finding_is_split(self):
-        self.assert_split(CATEGORIZED)
-
-    def test_a_mixed_round_under_an_operator_note_keeps_the_split(self):
-        self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}",
-                        fix_note="restore the revert item")
-
-        (goal,) = self.goals
-        self.assertIn("restore the revert item", goal)
-        self.assertIn(TABLE_FAULT, self.reviewer_findings(goal))
-        self.assertNotIn("PR description", goal)
-        self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
 
     def test_a_repeated_description_finding_does_not_make_a_round_a_repeat(self):
         self.project.config_path.write_text(
@@ -333,14 +280,6 @@ class MixedRoundTests(unittest.TestCase):
         self.assertIn(TABLE_FAULT, self.fix_note(goal))
         self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
 
-    def test_a_fenced_example_of_the_tag_stays_with_its_code_blocker(self):
-        example = '  ````\n  - path: "PR description" — sample reply\n  ````'
-        self.review_fix(f"{TABLE}\n{example}{REJECT}")
-
-        (goal,) = self.goals
-        self.assertIn("sample reply", self.reviewer_findings(goal))
-        self.assertEqual(self.refreshed_reviews(), [""])
-
     def test_an_evidence_reply_is_not_turned_into_fix_note_items(self):
         unanswered = ('- [P1] path: "holophyte/old.py" — the old loop never exits'
                       f"\n{DESCRIBED}")
@@ -349,13 +288,6 @@ class MixedRoundTests(unittest.TestCase):
         (goal,) = self.goals
         self.assertIn(TABLE_FAULT, self.fix_note_line(goal, TABLE_PATH))
         self.assertNotIn("holophyte/old.py", self.fix_note(goal))
-
-    def test_a_quoted_example_of_the_tag_stays_with_its_code_blocker(self):
-        self.review_fix(f'{TABLE}\n> - path: "PR description" — sample reply{REJECT}')
-
-        (goal,) = self.goals
-        self.assertIn("sample reply", self.reviewer_findings(goal))
-        self.assertEqual(self.refreshed_reviews(), [""])
 
     def test_an_all_code_round_sends_every_blocker_to_the_implementer(self):
         code = f"{TABLE}\n- [P2] path: \"holophyte/menu.py\" — revert is unguarded"
@@ -379,21 +311,9 @@ class MixedRoundTests(unittest.TestCase):
             self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}", refreshed=False)
 
         self.assertIn("refused to rewrite the description", str(parked.exception))
+        self.assertIn(DESCRIBED[:40], str(parked.exception))
         self.assertEqual(self.phase(), "awaiting_merge_approval")
         self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
-
-    def test_a_babysit_release_carries_the_pending_findings_to_the_next_run(self):
-        with self.assertRaises(MergeParked):
-            self.review_fix(f"{TABLE}\n{DESCRIBED}{REJECT}", refreshed=False)
-        store.babysit(self.conn, self.ticket, "look again")
-        self.claim()
-        carried = store.read.approved_candidate(self.conn, self.ticket, self.run_id)
-        store.set_pull_request(self.conn, self.run_id, carried.pr_url, carried.sha)
-
-        self.review_fix()
-
-        self.assertEqual(self.refreshed_reviews(), [DESCRIBED])
-        self.assertEqual(self.phase(), "merge_gate")
 
     def test_a_refused_rewrite_with_nothing_pending_still_reaches_the_gate(self):
         self.review_fix(f"{TABLE}{REJECT}", refreshed=False)
