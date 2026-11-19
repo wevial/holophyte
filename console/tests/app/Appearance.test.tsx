@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -169,7 +169,7 @@ function fakeEffects() {
     (configs[name] ??= []).push(config);
     return {
       config,
-      advance: (seconds: number) => handleCalls.push(`${name} advance${seconds > 0 ? "" : " nothing"}${name === "Lava" ? ` heat ${(config as { heat?: number }).heat}` : ""}`),
+      advance: (seconds: number) => handleCalls.push(`${name} advance${seconds > 0 ? "" : " nothing"}${name === "Lava" ? ` heat ${(config as { heat?: number }).heat}` : ""}${name === "Plume" ? ` currents ${(config as { currents?: number }).currents}` : ""}`),
       reset: () => {
         const { appetite, food, seed } = config as Record<string, number>;
         handleCalls.push(`${name} reset appetite ${appetite} food ${food} seed ${seed}`);
@@ -415,8 +415,27 @@ test("with Motion off, a settled burst of Lava Heat runs the held lamp forward o
     fireEvent.change(knob("Speed"), { target: { value: "2" } });
     await idle();
     expect([effects.configs.Lava!.length, effects.configs.Hyphae!.length, effects.handleCalls]).toEqual([1, 1, [
-      "Lava advance heat 2.7", "Plume advance", "Hyphae reset appetite 1 food 3 seed 0", "Hyphae reset appetite 1 food 3 seed 7",
+      "Lava advance heat 2.7", "Plume advance currents 1", "Plume advance currents 2", "Hyphae reset appetite 1 food 3 seed 0", "Hyphae reset appetite 1 food 3 seed 7",
     ]]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("with Motion off, Plume mounted after a reload with saved Currents 4 runs its held cloud forward once at Currents 4", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(motion());
+    fireEvent.click(tile("Header", "Plume"));
+    fireEvent.change(knob("Currents"), { target: { value: "4" } });
+    await idle();
+    effects.handleCalls.length = 0;
+    await reload();
+    await idle();
+    expect([effects.live, effects.handleCalls]).toEqual([["Plume"], ["Plume advance currents 4"]]);
   } finally {
     cleanup();
     effects.restore();
@@ -650,6 +669,26 @@ test("a Haze strength of 150 left under the old key by a full store gives way to
   } finally {
     Object.defineProperty(globalThis, "localStorage", storage);
   }
+});
+
+test("a Lava Heat set before the storage event arrives keeps the Haze Strength 175 another tab saved over the retired 150 a full store left", async () => {
+  localStorage.setItem("holophyte.hazeStrength", "150");
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
+  let appearance: typeof import("../../src/app/appearance");
+  try {
+    const freshInstance = "../../src/app/appearance.ts?unheard";
+    appearance = await import(freshInstance);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", storage);
+  }
+  real.setItem("holophyte.effects", JSON.stringify({ haze: { strength: 175 } }));
+  real.removeItem("holophyte.hazeStrength");
+  const { result } = renderHook(() => appearance.useEffectSettings("lava"));
+  act(() => result.current.set("heat", 2));
+  expect(JSON.parse(real.getItem("holophyte.effects")!)).toEqual({ haze: { strength: 175 }, lava: { heat: 2 } });
+  cleanup();
 });
 
 test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {

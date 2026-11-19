@@ -208,10 +208,10 @@ function KnobChoice({ knob, value, onChange }: { knob: ChoiceKnob; value: string
   return (
     <div className="grid min-h-[38px] grid-cols-[77px_minmax(0,1fr)] items-center gap-3 min-[1100px]:col-span-2">
       <span aria-hidden="true" className="text-[13px] text-ink-2">{knob.label}</span>
-      <div role="group" aria-label={knob.label} className="flex h-[38px] min-w-0 items-stretch gap-1 overflow-x-auto rounded-[7px] bg-paper-2 p-[3px] shadow-[inset_0_0_0_1px_var(--hair)]">
+      <div role="group" aria-label={knob.label} className="flex h-[38px] min-w-0 items-stretch gap-1 overflow-x-auto rounded-[7px] bg-paper-2 p-[3px] shadow-[inset_0_0_0_1px_var(--hair-2)]">
         {knob.choices.map((choice) => (
           <button key={choice} type="button" aria-pressed={choice === value} onClick={() => onChange(choice)}
-            className="shrink-0 rounded-[5px] px-2.5 font-sans text-[15px] text-ink-3 transition-colors hover:text-ink aria-pressed:bg-canvas aria-pressed:font-medium aria-pressed:text-ink aria-pressed:shadow-[inset_0_1px_2px_rgb(0_0_0/0.35)]">
+            className="shrink-0 rounded-[5px] px-2.5 font-sans text-[15px] text-ink-3 transition-colors hover:text-ink aria-pressed:bg-selected aria-pressed:font-medium aria-pressed:text-ink aria-pressed:shadow-[inset_0_0_0_1px_var(--hair-2)]">
             {choice === THEME ? "Theme" : choice}
           </button>
         ))}

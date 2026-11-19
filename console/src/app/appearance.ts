@@ -417,6 +417,15 @@ export function useHeaderEffect() {
   return { effect: useSyncExternalStore(effectStore.subscribe, effectStore.getSnapshot), setEffect: effectStore.set };
 }
 
+function currentEffectSettings(): EffectSettings {
+  try {
+    dropMovedHazeStrength();
+  } catch {
+    return effectSettingsStore.getSnapshot();
+  }
+  return readEffectSettings(effectSettingsStore.getSnapshot());
+}
+
 function knobDefaults(effect: BandEffect): EffectEntry {
   return { fade: DEFAULT_FADE, opacity: FULL, ...(effect === "haze" && { strength: FULL }), ...Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, knob.initial])) };
 }
@@ -427,7 +436,7 @@ export function useEffectSettings(effect: BandEffect) {
   const defaults = knobDefaults(effect);
   const saved = settings[effect];
   const set = (key: string, value: KnobValue) => {
-    const next = { ...readEffectSettings(effectSettingsStore.getSnapshot()) };
+    const next = { ...currentEffectSettings() };
     const entry = { ...next[effect], [key]: value };
     if (value === defaults[key]) delete entry[key];
     if (Object.keys(entry).length) next[effect] = entry;
@@ -436,7 +445,7 @@ export function useEffectSettings(effect: BandEffect) {
   };
   const changed = Object.entries(saved ?? {}).some(([key, value]) => value !== defaults[key]);
   const reset = () => {
-    const next = { ...readEffectSettings(effectSettingsStore.getSnapshot()) };
+    const next = { ...currentEffectSettings() };
     delete next[effect];
     effectSettingsStore.set(next);
   };

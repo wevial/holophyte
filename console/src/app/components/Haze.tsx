@@ -105,6 +105,7 @@ export function Haze({ effect }: { effect: BandEffect }) {
     }
     live.current = drawing;
     applied.current = values;
+    if (still && effect === "plume") drawing.advance?.(PLUME_RESETTLE_S);
     setFallback(false);
     const lost = () => {
       live.current = null;
