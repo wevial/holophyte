@@ -143,7 +143,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
           <p className="m-0 mt-3 font-sans text-[14px] leading-[1.5] text-ink-2">
             {page.stops} stops now. {kept}, and {run.ticket} waits for you to requeue it.
           </p>
-          <label htmlFor={reasonId} className="mt-4 block font-mono text-[11px] font-medium uppercase leading-none tracking-[.12em] text-ink-3">
+          <label htmlFor={reasonId} className="mt-4 block font-sans text-[13px] font-semibold leading-none text-ink">
             Reason · saved with the run
           </label>
           <textarea
@@ -152,7 +152,7 @@ export function RunActions({ page, project }: { page: Page; project: string }) {
             onChange={(event) => setReason(event.target.value)}
             rows={3}
             placeholder="Why stop it?"
-            className="mt-2 block w-full resize-y border border-rule bg-paper px-3 py-2.5 font-plex text-[14px] leading-[1.5] text-ink placeholder:text-ink-3"
+            className="field mt-2 block w-full resize-y leading-[1.5]"
           />
           {pr != null && (
             <label className="mt-3 flex min-h-10 items-center gap-2 font-sans text-[14px] leading-[1.5] text-ink-2">

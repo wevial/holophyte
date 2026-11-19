@@ -247,6 +247,12 @@ PINNED = {
     "holophyte/questions.py": 1,
     "holophyte/redact.py": 14,
 
+    "holophyte/revert/__init__.py": 0,
+    "holophyte/revert/checks.py": 1,
+    "holophyte/revert/command.py": 0,
+    "holophyte/revert/settings.py": 0,
+    "holophyte/revert/ticket_text.py": 0,
+
     "holophyte/review/__init__.py": 0,
     "holophyte/review/adversary.py": 2,
     "holophyte/review/blast_radius.py": 1,
@@ -317,6 +323,7 @@ PINNED = {
     "holophyte/serve/serve_merge.py": 0,
     "holophyte/serve/serve_merge_queue.py": 1,
     "holophyte/serve/serve_queue_actions.py": 1,
+    "holophyte/serve/serve_revert.py": 0,
     "holophyte/serve/serve_prefs.py": 1,
     "holophyte/serve/serve_runs.py": 9,
     "holophyte/serve/serve_stories.py": 0,

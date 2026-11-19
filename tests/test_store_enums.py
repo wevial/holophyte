@@ -42,7 +42,7 @@ class StoreEnumTests(unittest.TestCase):
                          + ", 'hold', 'release_hold', 'register_project',"
                          " 'disable', 'pause', 'abort', 'abort_close',"
                          " 'approve_story', 'decide', 'steer', 'queue_jump',"
-                         " 'queue_remove'))")
+                         " 'queue_remove', 'revert'))")
         self.assertEqual(actual['interventions', 'trigger'],
                          previous['interventions', 'trigger'][:-2]
                          + ", 'board_cancelled'))")
