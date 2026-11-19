@@ -116,9 +116,10 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
     item.onSelect();
   };
   const onButtonKey = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const opens = event.key === "ArrowDown" || event.key === "ArrowUp" || (!open && (event.key === "Enter" || event.key === " "));
+    if (!opens) return;
     event.preventDefault();
-    show(event.key === "ArrowDown" ? "first" : "last");
+    show(event.key === "ArrowUp" ? "last" : "first");
   };
   const onMenuKey = (event: KeyboardEvent) => {
     const all = entries();

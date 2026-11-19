@@ -4,12 +4,12 @@ import { Btn } from "./Btn";
 import { trap } from "./trap";
 
 /** A modal confirm labelled by its `heading`: focus starts on the cancel
- *  button (`cancelLabel`) and Tab stays inside, Esc or that button calls
- *  `onCancel`, and the `confirm` button (`primary` unless `confirmVariant`)
- *  calls `onConfirm` unless `confirmDisabled`, showing `busyLabel` while
- *  `busy`; with no `confirm` only the cancel button shows, and
- *  `cancelDisabled` holds the dialog open, Esc included. `refusal` reads
- *  under the buttons. */
+ *  button (`cancelLabel`), returns there when the focused control leaves,
+ *  and Tab stays inside; Esc or that button calls `onCancel`, and the
+ *  `confirm` button (`primary` unless `confirmVariant`) calls `onConfirm`
+ *  unless `confirmDisabled`, showing `busyLabel` while `busy`; with no
+ *  `confirm` only the cancel button shows, and `cancelDisabled` holds the
+ *  dialog open, Esc included. `refusal` reads under the buttons. */
 export function ConfirmDialog({
   label,
   ariaLabel,
@@ -54,6 +54,9 @@ export function ConfirmDialog({
     document.addEventListener("keydown", keep, true);
     return () => document.removeEventListener("keydown", keep, true);
   }, []);
+  useEffect(() => {
+    if (document.activeElement == null || document.activeElement === document.body) cancel.current?.focus();
+  }, [confirm != null, confirmDisabled, busy, cancelDisabled]);
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--scrim)_84%,transparent)] p-4">
       <section

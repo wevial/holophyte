@@ -275,6 +275,22 @@ test("a ticket that merged again after its preview files nothing and says why", 
   expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
 });
 
+test("a File revert refused on its recheck moves focus from the vanished button to Close", async () => {
+  const fake = daemon(true, () => Response.json(PREVIEW));
+  await mount("#/runs/demo/9", fake.fetchImpl);
+  await revertFromRunPage();
+  fake.state.tickets["DEMO-9"] = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 11 }, ...ticketNine.runs] };
+  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
+  const file = within(dialog).getByRole("button", { name: "File revert" });
+  file.focus();
+  await act(async () => void fireEvent.click(file));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  const dialogNow = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  expect(dialogNow.contains(document.activeElement)).toBe(true);
+  expect(document.activeElement?.textContent).toBe("Close");
+});
+
 test("a filing in flight holds the dialog open against Keep it and Esc", async () => {
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
@@ -363,6 +379,14 @@ test("arrow keys move through the menu and Esc closes it, returning focus to its
   await act(async () => void fireEvent.keyDown(menu, { key: "Escape" }));
   expect(screen.queryByRole("menu")).toBeNull();
   expect(document.activeElement).toBe(button);
+});
+
+test("Enter on the ⋯ button opens the menu with its first item focused", async () => {
+  await mount("#/runs/demo/9", daemon(true).fetchImpl);
+  const button = screen.getByRole("button", { name: "More for run 9" });
+  await act(async () => void fireEvent.keyDown(button, { key: "Enter" }));
+  expect(screen.getByRole("menu", { name: "More for run 9" })).toBeTruthy();
+  expect(document.activeElement?.textContent).toBe("Open ticket");
 });
 
 test("a scroll inside an open menu keeps it open, and a page scroll closes it", async () => {
