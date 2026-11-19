@@ -4,6 +4,47 @@
   "description": "GET /shipped",
   "$ref": "#/$defs/Shipped",
   "$defs": {
+    "Reverted": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "sha",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
     "ShippedRow": {
       "type": "object",
       "properties": {
@@ -144,6 +185,16 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reverted": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Reverted"
             },
             {
               "type": "null"

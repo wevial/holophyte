@@ -9,7 +9,7 @@ import { phaseLabel } from "../lib/runs";
 import { prLabel } from "../lib/shipped";
 import type { AttentionItem } from "../lib/types";
 import type { ContractBodies } from "./fleet";
-import { useBoards, useMergedToday, useReadiness, useRevertedMerges } from "./queries";
+import { useBoards, useMergedToday, useReadiness } from "./queries";
 import { PollDepsContext, scopedHosts, useConsolePeers } from "./scope";
 import { stateOf, STATES, type State } from "./state";
 
@@ -285,7 +285,6 @@ export function useTicketBoard(): TicketBoard {
   const readiness = useReadiness(hosts, deps);
   const boards = useBoards(hosts, deps);
   const merged = useMergedToday(hosts, now, deps.fetch);
-  const reverted = useRevertedMerges(merged, deps.fetch);
   const columns = emptyColumns();
   const cards: TicketCard[] = [];
   for (const { host, board } of boards) {
@@ -296,7 +295,7 @@ export function useTicketBoard(): TicketBoard {
   }
   const listed = new Set(cards.map((card) => card.id));
   for (const row of merged) {
-    if (listed.has(cardId(row.daemon ?? "", row.ticket)) || reverted.has(`${row.daemon ?? ""} run ${row.id}`)) continue;
+    if (row.reverted != null || listed.has(cardId(row.daemon ?? "", row.ticket))) continue;
     const card: TicketCard = {
       id: `${row.daemon ?? ""} run ${row.id}`, base: row.daemon ?? "", key: row.ticket, title: row.title ?? "", labels: [], project: row.project, state: "merged", need: null,
       park: null, run: null, runId: row.id, staleMs: Infinity, queuedReason: null, held: false, timeBoxMs: row.estimate_min == null ? null : row.estimate_min * MINUTE_MS, waitsOn: [], endedMs: row.ended_ms, reverted: null, skewMs: 0,

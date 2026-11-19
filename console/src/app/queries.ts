@@ -478,23 +478,6 @@ export function useMergedToday(hosts: HostRecord<PollBodies>[], now: number, fet
   return todayMerges(rows, now);
 }
 
-/** Which of `rows` were reverted, each as `base run`, by its run's
- *  `/runs/N`; a run not yet answered counts as not reverted. */
-export function useRevertedMerges(rows: ShippedRow[], fetch: Fetch): ReadonlySet<string> {
-  const results = useQueries({
-    queries: rows.map((row) => {
-      const path = `/runs/${row.id}`;
-      return {
-        queryKey: routeKey(row.daemon ?? "", path),
-        queryFn: () => fetchRoute(fetch, `${row.daemon ?? ""}${path}`, runDetailSchema),
-        refetchInterval: POLL_INTERVAL_MS,
-        staleTime: POLL_INTERVAL_MS,
-      };
-    }),
-  });
-  return new Set(rows.filter((_, index) => results[index]?.data?.run.reverted != null).map((row) => `${row.daemon ?? ""} run ${row.id}`));
-}
-
 const WEEK_PAGE = 200;
 
 /** `base`'s merged `/shipped` rows, newest first, paged back until a page

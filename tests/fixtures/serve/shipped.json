@@ -22,7 +22,8 @@
       "outcome": "abandoned",
       "outcome_reason": "approved for merge; the next claim resumes the candidate at the merge gate",
       "pr_url": "https://github.com/example/repo/pull/9",
-      "host": "writer"
+      "host": "writer",
+      "reverted": null
     }
   ],
   "next_before": null,

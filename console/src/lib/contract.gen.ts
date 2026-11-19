@@ -775,6 +775,7 @@ export const shippedRowSchema = z.looseObject({
   outcome_reason: z.string().nullable(),
   pr_url: z.string().nullable(),
   host: z.string().nullable(),
+  reverted: revertedSchema.nullable().optional(),
 });
 export type ShippedRow = z.infer<typeof shippedRowSchema>;
 

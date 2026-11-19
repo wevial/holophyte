@@ -276,7 +276,8 @@ non-positive or non-integer limit is 400.
    "merge_sha": "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "commit_url": "https://github.com/example/repo/commit/5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f",
    "pr_url": "https://github.com/example/repo/pull/2170",
-   "host": "writer-1", "outcome": "merged", "outcome_reason": null}
+   "host": "writer-1", "outcome": "merged", "outcome_reason": null,
+   "reverted": null}
 ], "next_before": 298, "limit": 50}
 ```
 
@@ -298,7 +299,9 @@ the chain and `turn_count` the number of agent turns `/runs/N/turns`
 lists, summed over them. `outcome=merged` (the default) returns only merged runs;
 `outcome=all` returns every run that closed its chain, whatever its
 outcome. Each row includes `outcome` and
-`outcome_reason` (the stored reason cut at 400 characters, null when absent).
+`outcome_reason` (the stored reason cut at 400 characters, null when absent),
+and `reverted`, the closing run's as `/runs/N` serves it; an older daemon
+leaves it out.
 Any other `outcome` is 400 naming the parameter and its value. The console's
 Shipped view scrolls back over it grouped by day; the Board's "shipped
 today" is its first page. `findings` is the count of findings over the

@@ -200,6 +200,7 @@ def shipped(project, query=""):
         chains = store.read.run_chains(conn, [run.id for run in runs])
         turn_counts = {run.id: chain_turns(conn, chains[run.id])
                        for run in runs}
+        reverted = store.read.reverted_runs(conn, [run.id for run in runs])
     finally:
         conn.close()
     origin = origin_web_url(project)
@@ -218,7 +219,8 @@ def shipped(project, query=""):
                   "outcome_reason": (run.outcomeReason[:400]
                                      if run.outcomeReason is not None else None),
                   "pr_url": run.prUrl,
-                  "host": json_host(project, run.host)}
+                  "host": json_host(project, run.host),
+                  "reverted": reverted[run.id]}
                  for run in runs],
         "next_before": runs[-1].id if more else None,
         "limit": limit,

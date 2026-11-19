@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Board, HistoryRow, Reverted, RunDetail, TicketDetail } from "../../src/lib/contract.gen";
+import type { Board, HistoryRow, Reverted, RunDetail, ShippedRow, TicketDetail } from "../../src/lib/contract.gen";
 import { writeView } from "../../src/app/components/ViewToggle";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -31,17 +31,16 @@ const board = (state: Board["columns"][number]["state"] | null): Board => ({
   stories: [],
   columns: state == null ? [] : [{ state, tickets: [{ ...listed, ticket: "DEMO-7", title: "Page the ledger", run: 7, reverted: REVERTED }] }],
 });
-const runTwelve: RunDetail = { ...servedRun, run: { ...runSeven.run, id: 12, merge_sha: "9b8a7c6d5e4f", ended_ms: ENDED + 10 * MINUTE, reverted: null } };
+const revertedMerge = { ...merged(7, "DEMO-7", ENDED), reverted: REVERTED };
 
 /** DEMO answers its history with merged runs 7 (reverted by `REVERTED`)
- *  and 8 (not reverted), runs 7 and 12's pages, DEMO-7's ticket, and a
- *  board listing DEMO-7, reverted, in `column` (off the board when null);
- *  it ships today the merges of `shipped`, run 7's by default. */
-function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped = [merged(7, "DEMO-7", ENDED)]) {
+ *  and 8 (not reverted), run 7's page, DEMO-7's ticket, and a board
+ *  listing DEMO-7, reverted, in `column` (off the board when null); it
+ *  ships today the merges of `shipped`, run 7's reverted one by default. */
+function daemon(column: Board["columns"][number]["state"] | null = "backlog", shipped: ShippedRow[] = [revertedMerge]) {
   const polls = fleet({ items: [], shipped }, { items: [] });
   return async (url: string) => {
     if (url === `${DEMO}/runs/7`) return Response.json(runSeven);
-    if (url === `${DEMO}/runs/12`) return Response.json(runTwelve);
     if (url === `${DEMO}/tickets/DEMO-7`) return Response.json(ticketSeven);
     if (url === `${DEMO}/board`) return Response.json(board(column));
     if (url.startsWith(`${DEMO}/history?`)) {
@@ -109,8 +108,8 @@ test("on Tickets a reverted merge leaves Done today: cancelled after its revert 
   expect(document.querySelectorAll("[data-row]")).toHaveLength(0);
   cleanup();
 
-  await mount("#/tickets", daemon(null, [merged(12, "DEMO-7", ENDED + 10 * MINUTE), merged(7, "DEMO-7", ENDED)]));
-  expect([...document.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-column"))).toEqual(["done"]);
+  await mount("#/tickets", daemon(null, [merged(12, "DEMO-7", ENDED + 10 * MINUTE), revertedMerge]));
+  expect([...document.querySelectorAll("[data-row]")].map((row) => row.querySelector('[data-cell="stage"]')?.textContent)).toEqual(["merged 11:40"]);
 });
 
 test("a reverted run's page says it merged then was reverted by the revert ticket, linked, with the reason", async () => {

@@ -1,4 +1,4 @@
-"""The daemon's run, history, ticket and board answers carry the revert a
+"""The daemon's run, history, shipped, ticket and board answers carry the revert a
 merged revert ticket recorded on a merged run, and `/status` says whether
 the project allows reverts; the event is written by the loop's real merge
 recording against a native board's store and a real git repository.
@@ -77,6 +77,7 @@ class RevertedResponseTests(ConfigTestCase):
                     "reason": revert_close.REASON}
         rows = {row["id"]: row
                 for row in self.get(port, "/history?since=0")["rows"]}
+        shipped = {row["id"]: row for row in self.get(port, "/shipped")["rows"]}
         for key, reverted in (("NAT-1", expected), ("NAT-2", None)):
             run = self.runs[key]
             with self.subTest(ticket=key):
@@ -85,6 +86,7 @@ class RevertedResponseTests(ConfigTestCase):
                 self.assertEqual(served["reverted"], reverted)
                 self.assertEqual(rows[run]["outcome"], "merged")
                 self.assertEqual(rows[run]["reverted"], reverted)
+                self.assertEqual(shipped[run]["reverted"], reverted)
 
     def test_a_ticket_carries_the_revert_of_its_latest_merged_run_only(self):
         revert_sha = self.reverted_nat_1()
