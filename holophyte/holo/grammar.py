@@ -59,6 +59,7 @@ WINDOW = Flag("--since", "WINDOW")
 NOTES = Flag("--notes")
 WATCH = Flag("--watch", "SECONDS", const="5")
 SINCE = Flag("--since", "AGO")
+SINCE_MS = Flag("--since", "MS")
 EVERY = Flag("--every", "SECONDS")
 SCOUT_KIND_NAMES = tuple(kind.value for kind in ScoutKind)
 KIND = Flag("--kind", "|".join(SCOUT_KIND_NAMES), choices=SCOUT_KIND_NAMES)
@@ -90,6 +91,9 @@ COMMANDS = (
     Command(("store", "import"), "--import-store",
             "what importing another store would move", takes=("PATH",),
             flags=(DRY_RUN,)),
+    Command(("store", "export"), "--export-store",
+            "write the store's runs, events and agent sessions as NDJSON",
+            takes=("DIR",), flags=(SINCE_MS,)),
     Command(("file",), "--file-ticket", "file a ticket, or --update its body",
             takes=("FILE",), note=OPTIONAL,
             flags=(BACKLOG, PRIORITY, UPDATE, REVISION, LABELS, AUTHOR),
