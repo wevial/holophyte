@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -35,10 +35,21 @@ function radio(group: string, name: string) {
 const scheme = (name: string) => within(screen.getByRole("radiogroup", { name: "Theme" })).getByRole("radio", { name });
 const tile = (row: string, name: string) => within(screen.getByRole("group", { name: row })).getByRole("button", { name: new RegExp(`^${name}`) });
 const pressed = (row: string) => within(screen.getByRole("group", { name: row })).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent);
-const slider = (name: string) => screen.getByRole("slider", { name }) as HTMLInputElement;
+/** A page-level slider, outside the picked effect's Customize section, which has its own Grain. */
+function slider(name: string) {
+  const section = document.getElementById(screen.queryByRole("button", { name: "Customize" })?.getAttribute("aria-controls") ?? "");
+  return screen.getAllByRole("slider", { name }).find((input) => !section?.contains(input)) as HTMLInputElement;
+}
 const motion = () => screen.getByRole("switch", { name: "Motion" });
+const customizeButton = () => screen.getByRole("button", { name: "Customize" });
+/** The picked effect's Customize section, opened if it is closed. */
+function customize() {
+  if (customizeButton().getAttribute("aria-expanded") === "false") fireEvent.click(customizeButton());
+  return within(document.getElementById(customizeButton().getAttribute("aria-controls")!)!);
+}
+const knob = (name: string) => customize().getByRole("slider", { name }) as HTMLInputElement;
 const shell = () => screen.getByRole("main").parentElement!;
-const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.hazeStrength", "holophyte.next.font", "holophyte.next.density"];
+const KEYS = ["holophyte.theme", "holophyte.theme.light", "holophyte.theme.dark", "holophyte.next.effect", "holophyte.next.motion", "holophyte.textSize", "holophyte.grain", "holophyte.effects", "holophyte.next.font", "holophyte.next.density"];
 const stored = () => KEYS.filter((key) => localStorage.getItem(key) !== null);
 const FONT_NAMES = ["Plex Sans", "Plex Serif", "Hyperlegible"];
 const storedValues = () => Object.fromEntries(KEYS.map((key) => [key, localStorage.getItem(key)]));
@@ -46,7 +57,7 @@ const controls = () => ({
   scheme: within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio").filter((radio) => radio.getAttribute("aria-checked") === "true").map((radio) => radio.textContent),
   light: pressed("Light"), dark: pressed("Dark"), header: pressed("Header"),
   motion: motion().getAttribute("aria-checked"),
-  sliders: [slider("Text size").value, slider("Grain").value, (screen.queryByRole("slider", { name: "Haze strength" }) as HTMLInputElement | null)?.value ?? null],
+  sliders: [slider("Text size").value, slider("Grain").value],
   font: FONT_NAMES.filter((name) => radio("Reading font", name).checked),
   density: screen.getAllByRole("button", { name: /^(Comfortable|Compact)$/ }).filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.textContent),
 });
@@ -82,15 +93,16 @@ afterEach(() => {
   clearRoot();
 });
 
-test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and the Text, Grain and Haze strength sliders read 100%", async () => {
+test("with nothing stored, System, Lotus in both rows, Haze and Motion are on and the Text, Grain and Haze's Strength sliders read 100%", async () => {
   await mount();
   expect(scheme("System").getAttribute("aria-checked")).toBe("true");
   expect(pressed("Light")).toEqual(["Lotus"]);
   expect(pressed("Dark")).toEqual(["Lotus"]);
   expect(pressed("Header")).toEqual(["Haze"]);
   expect(motion().getAttribute("aria-checked")).toBe("true");
-  expect([slider("Text size").value, slider("Grain").value, slider("Haze strength").value]).toEqual(["100", "100", "100"]);
-  expect(screen.getAllByText("100%")).toHaveLength(3);
+  expect([slider("Text size").value, slider("Grain").value]).toEqual(["100", "100"]);
+  expect(screen.getAllByText("100%")).toHaveLength(2);
+  expect(knob("Strength").value).toBe("100");
 });
 
 test("Tide in the Dark row and Dune in the Light row are pressed, stored and carried by the document, the canvas resolving to Tide dark under Dark and Dune light under Light", async () => {
@@ -142,21 +154,30 @@ test("each effect tile previews one decorative still served from the console's p
   expect(served).toEqual(Array(6).fill(true));
 });
 
-/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs and destroys. */
+/** Stand-ins for the vendored mounts, since happy-dom has no WebGL: each draws a canvas and records its mounts, options, live configs, destroys and calls to its handle's advance and reset. */
 function fakeEffects() {
   const modules = { Haze: haze, Caustics: caustics, Plume: plume, Ribbons: ribbons, Lava: lava, Hyphae: hyphae };
   const live: string[] = [];
   const options: Record<string, { motion?: boolean }[]> = {};
   const configs: Record<string, { motion?: boolean }[]> = {};
+  const handleCalls: string[] = [];
   const spies = Object.entries(modules).map(([name, module]) => spyOn(module, "mount").mockImplementation(((container: HTMLElement, given: { motion?: boolean } = {}) => {
     container.appendChild(document.createElement("canvas"));
     live.push(name);
     (options[name] ??= []).push({ ...given });
     const config = { ...given };
     (configs[name] ??= []).push(config);
-    return { config, destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); } };
+    return {
+      config,
+      advance: (seconds: number) => handleCalls.push(`${name} advance${seconds > 0 ? "" : " nothing"}${name === "Lava" ? ` heat ${(config as { heat?: number }).heat}` : ""}${name === "Plume" ? ` currents ${(config as { currents?: number }).currents}` : ""}`),
+      reset: () => {
+        const { appetite, food, seed } = config as Record<string, number>;
+        handleCalls.push(`${name} reset appetite ${appetite} food ${food} seed ${seed}`);
+      },
+      destroy: () => { live.splice(live.indexOf(name), 1); container.querySelector("canvas")?.remove(); },
+    };
   }) as never));
-  return { live, options, configs, restore: () => spies.forEach((spy) => spy.mockRestore()) };
+  return { live, options, configs, handleCalls, restore: () => spies.forEach((spy) => spy.mockRestore()) };
 }
 
 test("in a dark theme the band mounts only the picked effect: Caustics, then Ribbons in its place, and None leaves no band", async () => {
@@ -187,7 +208,7 @@ test("in a dark theme Hyphae mounts alone in the header band, and picking Lava d
     const band = screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
     expect([effects.live, band.querySelectorAll("canvas").length]).toEqual([["Hyphae"], 1]);
     fireEvent.click(tile("Header", "Lava"));
-    expect([effects.live, effects.options.Hyphae]).toEqual([["Lava"], [{ motion: true }]]);
+    expect([effects.live, effects.options.Hyphae!.map((given) => given.motion)]).toEqual([["Lava"], [true]]);
   } finally {
     cleanup();
     effects.restore();
@@ -231,26 +252,18 @@ test("turning Motion off asks each of the five running effects for a still frame
   }
 });
 
-test("the Haze strength row shows only while Haze is picked", async () => {
-  await mount();
-  fireEvent.click(tile("Header", "Lava"));
-  expect(screen.queryByRole("slider", { name: "Haze strength" })).toBeNull();
-  fireEvent.click(tile("Header", "Haze"));
-  expect(screen.getByRole("slider", { name: "Haze strength" })).toBeTruthy();
-});
-
 const band = () => screen.getByRole("main").querySelector<HTMLElement>("[data-haze]")!;
 
 test("each effect keeps its own Fade: Lava at 40 leaves Haze at 70, and Lava's 40 returns when picked again and after a reload", async () => {
   await mount();
   fireEvent.click(tile("Header", "Lava"));
-  fireEvent.change(slider("Fade"), { target: { value: "40" } });
+  fireEvent.change(knob("Fade"), { target: { value: "40" } });
   fireEvent.click(tile("Header", "Haze"));
-  expect(slider("Fade").value).toBe("70");
+  expect(knob("Fade").value).toBe("70");
   fireEvent.click(tile("Header", "Lava"));
-  expect([slider("Fade").value, localStorage.getItem("holophyte.effects")]).toEqual(["40", JSON.stringify({ lava: { fade: 40 } })]);
+  expect([knob("Fade").value, localStorage.getItem("holophyte.effects")]).toEqual(["40", JSON.stringify({ lava: { fade: 40 } })]);
   await reload();
-  expect([pressed("Header"), slider("Fade").value]).toEqual([["Lava"], "40"]);
+  expect([pressed("Header"), knob("Fade").value]).toEqual([["Lava"], "40"]);
 });
 
 test("a Fade saved in another open tab survives this tab setting a different effect's Fade", async () => {
@@ -258,7 +271,7 @@ test("a Fade saved in another open tab survives this tab setting a different eff
   const other = JSON.stringify({ lava: { fade: 40 } });
   localStorage.setItem("holophyte.effects", other);
   act(() => { window.dispatchEvent(new StorageEvent("storage", { key: "holophyte.effects", newValue: other })); });
-  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  fireEvent.change(knob("Fade"), { target: { value: "20" } });
   expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { fade: 40 }, haze: { fade: 20 } });
 });
 
@@ -269,7 +282,7 @@ test("Fade at 0, 70 and 100 sets the band's fade to 0%, 70% and 100%, and None s
     fireEvent.click(scheme("Dark"));
     fireEvent.click(tile("Header", "Caustics"));
     const fades = ["0", "70", "100"].map((value) => {
-      fireEvent.change(slider("Fade"), { target: { value } });
+      fireEvent.change(knob("Fade"), { target: { value } });
       return band().style.getPropertyValue("--haze-fade");
     });
     expect(fades).toEqual(["0%", "70%", "100%"]);
@@ -301,11 +314,233 @@ test("in a dark theme Lava draws in a box inside the band anchored at its top an
   }
 });
 
+const ranges = () => customize().getAllByRole("slider").map((input) => [input.getAttribute("aria-label"), (input as HTMLInputElement).min, (input as HTMLInputElement).max, (input as HTMLInputElement).step]);
+const choices = (group: string) => customize().getByRole("group", { name: group }).querySelectorAll("button");
+const choose = (group: string, name: string) => fireEvent.click(within(customize().getByRole("group", { name: group })).getByRole("button", { name }));
+
+test("Customize starts collapsed and opens Fade, Opacity and Lava's knobs with the gallery's ranges, and Haze's section adds Strength with no Haze strength row outside it", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  expect([customizeButton().getAttribute("aria-expanded"), screen.queryByRole("slider", { name: "Fade" })]).toEqual(["false", null]);
+  fireEvent.click(customizeButton());
+  expect(customizeButton().getAttribute("aria-expanded")).toBe("true");
+  expect(ranges()).toEqual([
+    ["Fade", "0", "100", "5"], ["Opacity", "0", "100", "5"],
+    ["Wax", "0.05", "0.35", "0.01"], ["Heat", "0", "3", "0.05"], ["Speed", "0", "5", "0.05"], ["Glow", "0", "3", "0.05"], ["Seed", "0", "100", "1"],
+  ]);
+  expect([...choices("Palette")].map((button) => button.textContent)).toEqual(["Theme", "rainbow", "thermal", "magma", "lilac", "acid", "ocean", "rose"]);
+  fireEvent.click(tile("Header", "Haze"));
+  expect(ranges()).toEqual([
+    ["Fade", "0", "100", "5"], ["Opacity", "0", "100", "5"], ["Strength", "0", "200", "5"],
+    ["Size", "0.3", "3", "0.05"], ["Smokiness", "0", "1.5", "0.05"], ["Speed", "0", "5", "0.05"], ["Grain", "0", "0.5", "0.01"], ["Seed", "0", "100", "1"],
+  ]);
+  expect([...choices("Palette")].map((button) => button.textContent)).toEqual(["Theme", "ember", "rose", "teal", "dusk", "lagoon", "rainbow"]);
+  expect([screen.queryByRole("slider", { name: "Haze strength" }), screen.getAllByRole("slider", { name: "Strength" })]).toEqual([null, [knob("Strength")]]);
+});
+
+test("with nothing saved each effect mounts with its Theme palette, built from the theme's haze ground, back, front and accent", async () => {
+  const tokens = document.createElement("style");
+  tokens.textContent = ":root { --haze-ground: #202020; --haze-back: #000080; --haze-front: #800000; --accent: #008000; }";
+  document.head.appendChild(tokens);
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    const palettes = { Haze: haze.PALETTES, Caustics: caustics.PALETTES, Ribbons: ribbons.PALETTES, Lava: lava.PALETTES, Hyphae: hyphae.PALETTES } as Record<string, Record<string, string[]>>;
+    const mounted = ["Caustics", "Plume", "Ribbons", "Lava", "Hyphae", "Haze"].map((name) => {
+      fireEvent.click(tile("Header", name));
+      const given = effects.options[name]!.at(-1)! as { palette?: string; paint?: string };
+      return [name, name === "Plume" ? plume.PAINTS[given.paint!] : palettes[name]![given.palette!]];
+    });
+    expect(mounted).toEqual([
+      ["Caustics", ["#202020", "#ac5959"]],
+      ["Plume", { inks: ["#000080", "#400040", "#800000", "#cc9999"], ground: "#202020" }],
+      ["Ribbons", ["#000080", "#800000", "#008000", "#4d4da6", "#a64d4d", "#4da64d"]],
+      ["Lava", ["#202020", "#000080", "#800000"]],
+      ["Hyphae", ["#202020", "#101050", "#800000", "#d9b3b3"]],
+      ["Haze", ["#202020", "#000080", "#800000"]],
+    ]);
+  } finally {
+    cleanup();
+    effects.restore();
+    tokens.remove();
+  }
+});
+
+test("Heat 2 and Palette magma reach mounted Lava's live config without a remount, and Lava mounts with both after a reload", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    choose("Palette", "magma");
+    const running = effects.configs.Lava!.at(-1)! as { heat?: number; palette?: string };
+    expect([effects.configs.Lava!.length, running.heat, running.palette]).toEqual([1, 2, "magma"]);
+    expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { heat: 2, palette: "magma" } });
+    await reload();
+    const remounted = effects.options.Lava!.at(-1)! as { heat?: number; palette?: string };
+    expect([remounted.heat, remounted.palette]).toEqual([2, "magma"]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+const idle = () => act(() => new Promise((done) => setTimeout(done, 300)));
+
+test("with Motion off, a settled burst of Lava Heat runs the held lamp forward once at the last Heat, Plume's Currents run its held cloud forward, and Hyphae's Appetite, Patches and Seed bloom a fresh colony from the new values, while Speed and moving frames do neither", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    await idle();
+    expect(effects.handleCalls).toEqual([]);
+    fireEvent.click(motion());
+    for (const value of ["2.5", "2.6", "2.7"]) fireEvent.change(knob("Heat"), { target: { value } });
+    await idle();
+    fireEvent.change(knob("Speed"), { target: { value: "2" } });
+    await idle();
+    fireEvent.click(tile("Header", "Plume"));
+    fireEvent.change(knob("Currents"), { target: { value: "2" } });
+    await idle();
+    fireEvent.click(tile("Header", "Hyphae"));
+    fireEvent.change(knob("Appetite"), { target: { value: "1" } });
+    fireEvent.change(knob("Patches"), { target: { value: "3" } });
+    await idle();
+    fireEvent.change(knob("Seed"), { target: { value: "7" } });
+    await idle();
+    fireEvent.change(knob("Speed"), { target: { value: "2" } });
+    await idle();
+    expect([effects.configs.Lava!.length, effects.configs.Hyphae!.length, effects.handleCalls]).toEqual([1, 1, [
+      "Lava advance heat 2.7", "Plume advance currents 1", "Plume advance currents 2", "Hyphae reset appetite 1 food 3 seed 0", "Hyphae reset appetite 1 food 3 seed 7",
+    ]]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("with Motion off, Plume mounted after a reload with saved Currents 4 runs its held cloud forward once at Currents 4", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(motion());
+    fireEvent.click(tile("Header", "Plume"));
+    fireEvent.change(knob("Currents"), { target: { value: "4" } });
+    await idle();
+    effects.handleCalls.length = 0;
+    await reload();
+    await idle();
+    expect([effects.live, effects.handleCalls]).toEqual([["Plume"], ["Plume advance currents 4"]]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("a held Lava Heat change still pending when reduced motion turns off does not run the moving lamp forward", async () => {
+  let reduced = true;
+  const listeners = new Set<() => void>();
+  const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+    get matches() { return query === "(prefers-reduced-motion: reduce)" && reduced; },
+    media: query,
+    addEventListener: (_: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_: string, listener: () => void) => listeners.delete(listener),
+  }) as unknown as MediaQueryList);
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    reduced = false;
+    act(() => listeners.forEach((listener) => listener()));
+    await idle();
+    expect(effects.handleCalls).toEqual([]);
+  } finally {
+    cleanup();
+    effects.restore();
+    media.mockRestore();
+  }
+});
+
+test("Lava's Opacity at 40 sets the band's opacity to 0.4 in Dark and Light, and Haze keeps Opacity 100 and an opacity of 1", async () => {
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Opacity"), { target: { value: "40" } });
+    expect(band().style.opacity).toBe("0.4");
+    fireEvent.click(scheme("Light"));
+    expect(band().style.opacity).toBe("0.4");
+    fireEvent.click(scheme("Dark"));
+    fireEvent.click(tile("Header", "Haze"));
+    expect([knob("Opacity").value, band().style.opacity]).toEqual(["100", "1"]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
+test("Reset in Lava's section returns its Heat, Fade and Opacity to their defaults and disables itself, leaving Caustics' Speed at 1", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Caustics"));
+  fireEvent.change(knob("Speed"), { target: { value: "1" } });
+  fireEvent.click(tile("Header", "Lava"));
+  const reset = () => customize().getByRole("button", { name: "Reset" }) as HTMLButtonElement;
+  expect(reset().disabled).toBe(true);
+  for (const [name, value] of [["Heat", "2"], ["Fade", "40"], ["Opacity", "40"]]) fireEvent.change(knob(name!), { target: { value } });
+  expect(reset().disabled).toBe(false);
+  fireEvent.click(reset());
+  expect([knob("Heat").value, knob("Fade").value, knob("Opacity").value, reset().disabled]).toEqual([String(lava.DEFAULTS.heat), "70", "100", true]);
+  fireEvent.click(tile("Header", "Caustics"));
+  expect(knob("Speed").value).toBe("1");
+});
+
+test("Reset in Lava's section keeps Caustics' Speed 1 that another tab saved before its storage event arrived", async () => {
+  await mount();
+  fireEvent.click(tile("Header", "Lava"));
+  fireEvent.change(knob("Heat"), { target: { value: "2" } });
+  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { heat: 2 }, caustics: { speed: 1 } }));
+  fireEvent.click(customize().getByRole("button", { name: "Reset" }));
+  expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ caustics: { speed: 1 } });
+  fireEvent.click(tile("Header", "Caustics"));
+  expect(knob("Speed").value).toBe("1");
+});
+
+test("Haze's Strength scales only Haze's band: at 0 Haze's band carries a haze scale of 0 and Lava's band, picked next, a scale of 1", async () => {
+  await mount();
+  fireEvent.change(knob("Strength"), { target: { value: "0" } });
+  expect(band().style.getPropertyValue("--haze-scale")).toBe("0");
+  fireEvent.click(tile("Header", "Lava"));
+  expect(band().style.getPropertyValue("--haze-scale")).toBe("1");
+});
+
+test("a stored Lava heat of 9 and a stored knob named bogus are ignored: Lava mounts with Spectra's default heat and no bogus option", async () => {
+  localStorage.setItem("holophyte.next.effect", "lava");
+  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { heat: 9, bogus: 1 } }));
+  const effects = fakeEffects();
+  try {
+    await mount();
+    fireEvent.click(scheme("Dark"));
+    const given = effects.options.Lava!.at(-1)! as Record<string, unknown>;
+    expect([given.heat, "bogus" in given]).toEqual([lava.DEFAULTS.heat, false]);
+  } finally {
+    cleanup();
+    effects.restore();
+  }
+});
+
 const fades = () => {
   fireEvent.click(tile("Header", "Lava"));
-  const lava = slider("Fade").value;
+  const lava = knob("Fade").value;
   fireEvent.click(tile("Header", "Haze"));
-  return { lava, haze: slider("Fade").value };
+  return { lava, haze: knob("Fade").value };
 };
 
 async function reload() {
@@ -316,9 +551,9 @@ async function reload() {
 test("Reset to default returns the saved fades of Lava and Haze to 70, also after a reload", async () => {
   await mount();
   fireEvent.click(tile("Header", "Lava"));
-  fireEvent.change(slider("Fade"), { target: { value: "40" } });
+  fireEvent.change(knob("Fade"), { target: { value: "40" } });
   fireEvent.click(tile("Header", "Haze"));
-  fireEvent.change(slider("Fade"), { target: { value: "20" } });
+  fireEvent.change(knob("Fade"), { target: { value: "20" } });
   expect(JSON.parse(localStorage.getItem("holophyte.effects")!)).toEqual({ lava: { fade: 40 }, haze: { fade: 20 } });
   await reload();
   expect(fades()).toEqual({ lava: "40", haze: "20" });
@@ -329,11 +564,15 @@ test("Reset to default returns the saved fades of Lava and Haze to 70, also afte
   expect(fades()).toEqual({ lava: "70", haze: "70" });
 });
 
+function fullStorage(real: Storage): PropertyDescriptor {
+  const full = { getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } };
+  return { configurable: true, get: () => full };
+}
+
 function refuseWrites() {
   const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
   const real = localStorage;
-  const full = { ...storage, get: () => ({ getItem: (key: string) => real.getItem(key), removeItem: (key: string) => real.removeItem(key), setItem: () => { throw new DOMException("full", "QuotaExceededError"); } }) };
-  Object.defineProperty(globalThis, "localStorage", full);
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
   return {
     otherTab: (key: string, value: string) => {
       real.setItem(key, value);
@@ -352,10 +591,10 @@ test("when storage refuses writes, setting Haze's Fade after passing through Non
   const storage = refuseWrites();
   try {
     fireEvent.click(tile("Header", "Lava"));
-    fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    fireEvent.change(knob("Fade"), { target: { value: "40" } });
     fireEvent.click(tile("Header", "None"));
     fireEvent.click(tile("Header", "Haze"));
-    fireEvent.change(slider("Fade"), { target: { value: "20" } });
+    fireEvent.change(knob("Fade"), { target: { value: "20" } });
     expect([fades(), localStorage.getItem("holophyte.effects")]).toEqual([{ lava: "40", haze: "20" }, null]);
   } finally {
     storage.restore();
@@ -368,7 +607,7 @@ test("when storage refuses this tab's write of Lava's Fade, another tab saving H
   const storage = refuseWrites();
   try {
     fireEvent.click(tile("Header", "Lava"));
-    fireEvent.change(slider("Fade"), { target: { value: "40" } });
+    fireEvent.change(knob("Fade"), { target: { value: "40" } });
     storage.otherTab("holophyte.effects", JSON.stringify({ haze: { fade: 20 } }));
     expect(fades()).toEqual({ lava: "40", haze: "20" });
   } finally {
@@ -376,10 +615,86 @@ test("when storage refuses this tab's write of Lava's Fade, another tab saving H
   }
 });
 
+test("when storage refuses this tab's write of Lava's Heat, another tab saving Lava's Fade 30 shows Fade 30 beside the unsaved Heat 2", async () => {
+  localStorage.setItem("holophyte.effects", JSON.stringify({ lava: { fade: 20 } }));
+  await mount();
+  const storage = refuseWrites();
+  try {
+    fireEvent.click(tile("Header", "Lava"));
+    fireEvent.change(knob("Heat"), { target: { value: "2" } });
+    storage.otherTab("holophyte.effects", JSON.stringify({ lava: { fade: 30 } }));
+    expect([knob("Fade").value, knob("Heat").value]).toEqual(["30", "2"]);
+  } finally {
+    storage.restore();
+  }
+});
+
+test("Haze's Strength is saved in Haze's entry of holophyte.effects and returns after a reload", async () => {
+  await mount();
+  fireEvent.change(knob("Strength"), { target: { value: "150" } });
+  expect([localStorage.getItem("holophyte.effects"), localStorage.getItem("holophyte.hazeStrength")]).toEqual([JSON.stringify({ haze: { strength: 150 } }), null]);
+  await reload();
+  expect([knob("Strength").value, root.style.getPropertyValue("--haze-scale")]).toEqual(["150", "1.5"]);
+});
+
+test("a Haze strength of 150 saved under the old key still shows 150 when storage is full, and Reset to default clears it", async () => {
+  localStorage.setItem("holophyte.hazeStrength", "150");
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
+  try {
+    const freshInstance = "../../src/app/appearance.ts?quota";
+    const appearance: typeof import("../../src/app/appearance") = await import(freshInstance);
+    expect([appearance.readHazeStrength(), real.getItem("holophyte.effects")]).toEqual([150, null]);
+    appearance.resetAppearance();
+    expect([appearance.readHazeStrength(), real.getItem("holophyte.hazeStrength")]).toEqual([100, null]);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", storage);
+  }
+});
+
+test("a Haze strength of 150 left under the old key by a full store gives way to 175 saved in another tab that retired the key", async () => {
+  localStorage.setItem("holophyte.hazeStrength", "150");
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
+  try {
+    const freshInstance = "../../src/app/appearance.ts?retired";
+    const appearance: typeof import("../../src/app/appearance") = await import(freshInstance);
+    expect(appearance.readHazeStrength()).toBe(150);
+    real.setItem("holophyte.effects", JSON.stringify({ haze: { strength: 175 } }));
+    real.removeItem("holophyte.hazeStrength");
+    window.dispatchEvent(new StorageEvent("storage", { key: "holophyte.effects" }));
+    expect(appearance.readHazeStrength()).toBe(175);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", storage);
+  }
+});
+
+test("a Lava Heat set before the storage event arrives keeps the Haze Strength 175 another tab saved over the retired 150 a full store left", async () => {
+  localStorage.setItem("holophyte.hazeStrength", "150");
+  const storage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")!;
+  const real = localStorage;
+  Object.defineProperty(globalThis, "localStorage", fullStorage(real));
+  let appearance: typeof import("../../src/app/appearance");
+  try {
+    const freshInstance = "../../src/app/appearance.ts?unheard";
+    appearance = await import(freshInstance);
+  } finally {
+    Object.defineProperty(globalThis, "localStorage", storage);
+  }
+  real.setItem("holophyte.effects", JSON.stringify({ haze: { strength: 175 } }));
+  real.removeItem("holophyte.hazeStrength");
+  const { result } = renderHook(() => appearance.useEffectSettings("lava"));
+  act(() => result.current.set("heat", 2));
+  expect(JSON.parse(real.getItem("holophyte.effects")!)).toEqual({ haze: { strength: 175 }, lava: { heat: 2 } });
+  cleanup();
+});
+
 test("in a light theme the band's fallback keeps its default fade whatever the picked effect's Fade", async () => {
   await mount();
   fireEvent.click(scheme("Light"));
-  fireEvent.change(slider("Fade"), { target: { value: "0" } });
+  fireEvent.change(knob("Fade"), { target: { value: "0" } });
   expect(band().style.getPropertyValue("--haze-fade")).toBe("");
 });
 
@@ -409,14 +724,14 @@ test("text at 110% is stored, zooms the document around the shell by 1.1 and sho
   expect(screen.queryByRole("button", { name: "Reset text size" })).toBeNull();
 });
 
-test("grain at 50% and haze at 150% set the document's scales, and each row's reset restores 100%", async () => {
+test("grain at 50% and Haze's Strength at 150% set the document's scales, and the Grain row's reset and Haze's Reset restore 100%", async () => {
   await mount();
   fireEvent.change(slider("Grain"), { target: { value: "50" } });
-  fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
+  fireEvent.change(knob("Strength"), { target: { value: "150" } });
   expect([root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["0.5", "1.5"]);
   fireEvent.click(screen.getByRole("button", { name: "Reset grain" }));
-  fireEvent.click(screen.getByRole("button", { name: "Reset haze strength" }));
-  expect([slider("Grain").value, slider("Haze strength").value]).toEqual(["100", "100"]);
+  fireEvent.click(customize().getByRole("button", { name: "Reset" }));
+  expect([slider("Grain").value, knob("Strength").value]).toEqual(["100", "100"]);
   expect([root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["", ""]);
 });
 
@@ -425,7 +740,7 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   fireEvent.click(scheme("Dark"));
   fireEvent.click(tile("Dark", "Tide"));
   fireEvent.click(tile("Light", "Dune"));
-  fireEvent.change(slider("Haze strength"), { target: { value: "150" } });
+  fireEvent.change(knob("Strength"), { target: { value: "150" } });
   fireEvent.click(tile("Header", "None"));
   fireEvent.click(motion());
   fireEvent.change(slider("Text size"), { target: { value: "110" } });
@@ -443,7 +758,7 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   expect(screen.queryByText("Reset?")).toBeNull();
   expect(storedValues()).toEqual(values);
   expect(controls()).toEqual(before);
-  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50", null], font: ["Hyperlegible"], density: ["Compact"] });
+  expect(before).toEqual({ scheme: ["Dark"], light: ["Dune"], dark: ["Tide"], header: ["None"], motion: "false", sliders: ["110", "50"], font: ["Hyperlegible"], density: ["Compact"] });
   expect([root.getAttribute("data-font"), root.getAttribute("data-density")]).toEqual(["hyperlegible", "compact"]);
   expect([root.style.getPropertyValue("zoom"), root.style.getPropertyValue("--grain-scale"), root.style.getPropertyValue("--haze-scale")]).toEqual(["1.1", "0.5", "1.5"]);
 
@@ -453,7 +768,7 @@ test("Reset to default asks inline: Cancel keeps every choice and Confirm restor
   expect(scheme("System").getAttribute("aria-checked")).toBe("true");
   expect([pressed("Light"), pressed("Dark"), pressed("Header")]).toEqual([["Lotus"], ["Lotus"], ["Haze"]]);
   expect(motion().getAttribute("aria-checked")).toBe("true");
-  expect([slider("Text size").value, slider("Grain").value, slider("Haze strength").value]).toEqual(["100", "100", "100"]);
+  expect([slider("Text size").value, slider("Grain").value, knob("Strength").value]).toEqual(["100", "100", "100"]);
   expect(["data-theme", "data-light", "data-dark"].filter((name) => root.hasAttribute(name))).toEqual([]);
   expect(root.style.getPropertyValue("--grain-scale")).toBe("");
   expect(screen.getByRole("main").querySelectorAll("[data-haze]")).toHaveLength(1);

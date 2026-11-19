@@ -1,8 +1,8 @@
 # Spectra
 
 Vendored from [wevial/spectra](https://github.com/wevial/spectra) (MIT, see
-`LICENSE`) at commit `d34e0f8`. Haze was taken at `9f2195d`; its source is the
-same at `d34e0f8`. Hyphae and Mycelium were taken at `256aa26`.
+`LICENSE`) at commit `d34e0f8`. Haze was taken at `75ae266`. Hyphae and Mycelium were
+taken at `256aa26`.
 
 | Folder | Spectra path |
 | --- | --- |
@@ -36,8 +36,10 @@ copy:
 - Nebula's still frame draws once and holds until its cloud, config or
   drawing buffer changes, its quality governor rests while the frame is held,
   and its textures are capped to the GPU's limit, which a wide header band
-  would exceed.
+  would exceed. Its `advance()` runs the currents unseen for a held frame.
+- Hyphae's held regrowth after `reset()` leaves the last drawn frame on the
+  canvas until the new colony is grown.
 - The stage records itself against its container, and `destroyStages`
   destroys what a mount that threw after creating its stage left live.
-- Haze is trimmed to the `ember` palette the console overrides, and falls back
-  when its shaders fail to compile.
+- Haze's `PALETTES` is typed open, so the console can register its theme
+  palette there, and Haze falls back when its shaders fail to compile.

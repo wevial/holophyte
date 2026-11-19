@@ -649,7 +649,8 @@ class MergeModeFixture(LoopFixture):
             ' [ "$3" = +refs/heads/main:refs/remotes/origin/main ];'
             f" then {main_fetch}; fi\n"
             'if [ "$1" = ls-remote ] && [ "$2" = origin ]; then\n'
-            f'  tail -1 "{self.push_log}" | awk \'{{print $2}}\'\n'
+            f'  tail -1 "{self.push_log}" | awk -v ref="$3"'
+            ' \'{print $2 "\\t" ref}\'\n'
             '  exit 0\n'
             'fi\n'
             'if [ "$1" = push ]; then\n'

@@ -3,6 +3,7 @@ import {
   applyCustomTheme, applyPick, applyTheme, deriveTheme, isCustom, parseCustomThemes, readCustomThemesRaw, readPick, readTheme, writeCustomThemes, writePick, writeTheme,
   type CustomTheme, type Theme, type ThemeMode, type ThemePick,
 } from "../lib/theme";
+import { KNOBS, validKnob, type KnobValue } from "./effectKnobs";
 
 export type ReadingFont = "sans" | "serif" | "hyperlegible";
 
@@ -26,13 +27,16 @@ export type HeaderEffect = (typeof HEADER_EFFECTS)[number];
 
 export type BandEffect = Exclude<HeaderEffect, "none">;
 
-type EffectSettings = Partial<Record<BandEffect, { fade: number }>>;
+type EffectEntry = Record<string, KnobValue>;
+
+type EffectSettings = Partial<Record<BandEffect, EffectEntry>>;
 
 export const TEXT_SIZES = { min: 90, max: 125, step: 5 };
 export const STRENGTHS = { min: 0, max: 200, step: 5 };
 export const FULL = 100;
 export const FADES = { min: 0, max: 100, step: 5 };
 export const DEFAULT_FADE = 70;
+export const OPACITIES = { min: 0, max: 100, step: 5 };
 
 function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   try {
@@ -43,12 +47,13 @@ function readHeaderEffect(fallback: HeaderEffect = "haze"): HeaderEffect {
   }
 }
 
-function writeStored(key: string, value: string | null): void {
+function writeStored(key: string, value: string | null): boolean {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
+    return true;
   } catch {
-    return;
+    return false;
   }
 }
 
@@ -89,9 +94,15 @@ export function applyTextSize(percent: number, root: HTMLElement = document.docu
 }
 
 export const readGrain = readPercent(GRAIN_KEY, STRENGTHS);
-export const readHazeStrength = readPercent(HAZE_STRENGTH_KEY, STRENGTHS);
 export const applyGrain = applyScale("--grain-scale");
 export const applyHazeStrength = applyScale("--haze-scale");
+
+function validEntryValue(effect: BandEffect, key: string, value: unknown): value is KnobValue {
+  if (key === "fade") return inRange(value, FADES);
+  if (key === "opacity") return inRange(value, OPACITIES);
+  if (key === "strength") return effect === "haze" && inRange(value, STRENGTHS);
+  return validKnob(effect, key, value);
+}
 
 function parseEffectSettings(raw: string | null): EffectSettings {
   let parsed: unknown;
@@ -100,18 +111,23 @@ function parseEffectSettings(raw: string | null): EffectSettings {
   } catch {
     return {};
   }
-  const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, { fade?: unknown } | null>;
+  const stored = (parsed && typeof parsed === "object" ? parsed : {}) as Record<string, unknown>;
   const settings: EffectSettings = {};
   for (const effect of HEADER_EFFECTS) {
-    const fade = stored[effect]?.fade;
-    if (effect !== "none" && inRange(fade, FADES)) settings[effect] = { fade };
+    const entry = stored[effect];
+    if (effect === "none" || !entry || typeof entry !== "object") continue;
+    const kept = Object.entries(entry).filter(([key, value]) => validEntryValue(effect, key, value));
+    if (kept.length) settings[effect] = Object.fromEntries(kept);
   }
   return settings;
 }
 
+type UnsavedValues = Map<BandEffect, Map<string, KnobValue | null>>;
+
 let effectSettingsRead: [string | null, EffectSettings] = [null, {}];
-let unsavedFades = new Map<BandEffect, number | null>();
-let effectSettingsShown: [EffectSettings, Map<BandEffect, number | null>, EffectSettings] = [{}, unsavedFades, {}];
+let unsavedValues: UnsavedValues = new Map();
+let unmovedHazeStrength: number | null = null;
+let effectSettingsShown: [EffectSettings, UnsavedValues, EffectSettings] = [{}, unsavedValues, {}];
 
 function readStoredEffectSettings(): EffectSettings {
   const raw = localStorage.getItem(EFFECTS_KEY);
@@ -126,34 +142,83 @@ function readEffectSettings(fallback: EffectSettings = {}): EffectSettings {
   } catch {
     return fallback;
   }
-  if (!unsavedFades.size) return stored;
-  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedFades) {
+  if (!unsavedValues.size) return stored;
+  if (effectSettingsShown[0] !== stored || effectSettingsShown[1] !== unsavedValues) {
     const shown = { ...stored };
-    for (const [effect, fade] of unsavedFades) {
-      if (fade === null) delete shown[effect];
-      else shown[effect] = { fade };
+    for (const [effect, values] of unsavedValues) {
+      const entry = { ...stored[effect] };
+      for (const [key, value] of values) {
+        if (value === null) delete entry[key];
+        else entry[key] = value;
+      }
+      if (Object.keys(entry).length) shown[effect] = entry;
+      else delete shown[effect];
     }
-    effectSettingsShown = [stored, unsavedFades, shown];
+    effectSettingsShown = [stored, unsavedValues, shown];
   }
   return effectSettingsShown[2];
 }
 
 function writeEffectSettings(settings: EffectSettings): void {
   const raw = Object.keys(settings).length ? JSON.stringify(settings) : null;
-  writeStored(EFFECTS_KEY, raw);
+  if (writeStored(EFFECTS_KEY, raw)) {
+    unsavedValues = new Map();
+    unmovedHazeStrength = null;
+    writeStored(HAZE_STRENGTH_KEY, null);
+    return;
+  }
   let stored: EffectSettings = {};
   try {
     stored = readStoredEffectSettings();
   } catch {
     stored = {};
   }
-  const unsaved = new Map<BandEffect, number | null>();
+  const unsaved: UnsavedValues = new Map();
   for (const effect of HEADER_EFFECTS) {
     if (effect === "none") continue;
-    const fade = settings[effect]?.fade ?? null;
-    if (fade !== (stored[effect]?.fade ?? null)) unsaved.set(effect, fade);
+    const [wanted, saved] = [settings[effect] ?? {}, stored[effect] ?? {}];
+    const differing = new Map<string, KnobValue | null>();
+    for (const key of new Set([...Object.keys(wanted), ...Object.keys(saved)])) {
+      if (wanted[key] !== saved[key]) differing.set(key, wanted[key] ?? null);
+    }
+    if (differing.size) unsaved.set(effect, differing);
   }
-  unsavedFades = unsaved;
+  unsavedValues = unsaved;
+}
+
+export function readHazeStrength(): number {
+  const strength = readEffectSettings().haze?.strength;
+  return typeof strength === "number" ? strength : FULL;
+}
+
+function moveSavedHazeStrength(): void {
+  try {
+    const legacy = localStorage.getItem(HAZE_STRENGTH_KEY);
+    if (legacy === null) return;
+    const strength = Number(legacy);
+    const settings = readStoredEffectSettings();
+    if (inRange(strength, STRENGTHS) && strength !== FULL && settings.haze?.strength === undefined
+      && !writeStored(EFFECTS_KEY, JSON.stringify({ ...settings, haze: { ...settings.haze, strength } }))) {
+      unsavedValues = new Map([["haze", new Map([["strength", strength]])]]);
+      unmovedHazeStrength = strength;
+      return;
+    }
+    localStorage.removeItem(HAZE_STRENGTH_KEY);
+  } catch {
+    return;
+  }
+}
+
+moveSavedHazeStrength();
+
+function dropMovedHazeStrength(): void {
+  if (unmovedHazeStrength === null || localStorage.getItem(HAZE_STRENGTH_KEY) !== null) return;
+  const haze = new Map(unsavedValues.get("haze"));
+  if (haze.get("strength") === unmovedHazeStrength) haze.delete("strength");
+  unmovedHazeStrength = null;
+  unsavedValues = new Map(unsavedValues);
+  if (haze.size) unsavedValues.set("haze", haze);
+  else unsavedValues.delete("haze");
 }
 
 function readMotion(fallback = true): boolean {
@@ -267,11 +332,10 @@ const customStore = customThemesStore();
 const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
-const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, () => {});
+const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, (settings) => applyHazeStrength(Number(settings.haze?.strength ?? FULL)));
 const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
-const hazeStrengthStore = appearanceStore(readHazeStrength, writePercent(HAZE_STRENGTH_KEY), applyHazeStrength);
 
 function mediaQuery(media: string) {
   return {
@@ -301,7 +365,14 @@ export function applyCustomPick(): void {
 systemDark.subscribe(applyCustomPick);
 
 window.addEventListener("storage", (event) => {
-  if (event.key === EFFECTS_KEY || event.key === null) effectSettingsStore.reload();
+  if (event.key !== EFFECTS_KEY && event.key !== HAZE_STRENGTH_KEY && event.key !== null) return;
+  try {
+    dropMovedHazeStrength();
+  } catch {
+    return;
+  }
+  effectSettingsStore.reload();
+  applyHazeStrength(readHazeStrength());
 });
 
 export function useTheme() {
@@ -346,15 +417,39 @@ export function useHeaderEffect() {
   return { effect: useSyncExternalStore(effectStore.subscribe, effectStore.getSnapshot), setEffect: effectStore.set };
 }
 
-export function useFade(effect: BandEffect) {
+function currentEffectSettings(): EffectSettings {
+  try {
+    dropMovedHazeStrength();
+  } catch {
+    return effectSettingsStore.getSnapshot();
+  }
+  return readEffectSettings(effectSettingsStore.getSnapshot());
+}
+
+function knobDefaults(effect: BandEffect): EffectEntry {
+  return { fade: DEFAULT_FADE, opacity: FULL, ...(effect === "haze" && { strength: FULL }), ...Object.fromEntries(KNOBS[effect].map((knob) => [knob.key, knob.initial])) };
+}
+
+/** An effect's Fade, Opacity and knobs over their defaults, with Haze's Strength; only values off their default are saved, over what storage holds now. */
+export function useEffectSettings(effect: BandEffect) {
   const settings = useSyncExternalStore(effectSettingsStore.subscribe, effectSettingsStore.getSnapshot);
-  const setFade = (fade: number) => {
-    const next = { ...effectSettingsStore.getSnapshot() };
-    if (fade === DEFAULT_FADE) delete next[effect];
-    else next[effect] = { fade };
+  const defaults = knobDefaults(effect);
+  const saved = settings[effect];
+  const set = (key: string, value: KnobValue) => {
+    const next = { ...currentEffectSettings() };
+    const entry = { ...next[effect], [key]: value };
+    if (value === defaults[key]) delete entry[key];
+    if (Object.keys(entry).length) next[effect] = entry;
+    else delete next[effect];
     effectSettingsStore.set(next);
   };
-  return { fade: settings[effect]?.fade ?? DEFAULT_FADE, setFade };
+  const changed = Object.entries(saved ?? {}).some(([key, value]) => value !== defaults[key]);
+  const reset = () => {
+    const next = { ...currentEffectSettings() };
+    delete next[effect];
+    effectSettingsStore.set(next);
+  };
+  return { values: { ...defaults, ...saved }, set, changed, reset };
 }
 
 export function useMotion() {
@@ -370,10 +465,6 @@ export function useGrain() {
   return { grain: useSyncExternalStore(grainStore.subscribe, grainStore.getSnapshot), setGrain: grainStore.set };
 }
 
-export function useHazeStrength() {
-  return { hazeStrength: useSyncExternalStore(hazeStrengthStore.subscribe, hazeStrengthStore.getSnapshot), setHazeStrength: hazeStrengthStore.set };
-}
-
 export function resetAppearance(): void {
   themeStore.set("system");
   lightPickStore.set("lotus");
@@ -383,7 +474,6 @@ export function resetAppearance(): void {
   motionStore.set(true);
   textSizeStore.set(FULL);
   grainStore.set(FULL);
-  hazeStrengthStore.set(FULL);
   fontStore.set("sans");
   densityStore.set("comfortable");
 }

@@ -230,6 +230,68 @@ def approve(conn, ticket_id, note, now=None, run_id=None):
         " at the merge gate", now, run_id=run_id)
 
 
+STUCK_SWEEP = re.compile(
+    r"(?:swept by the supervisor in phase \w+: )?(review_stuck|criterion_stuck)\b")
+
+
+def swept_condition(conn, run_id):
+    row = conn.execute(
+        "SELECT r.outcome, r.failureKind, r.outcomeReason, r.approvedAt,"
+        " t.status, t.activeRunId, t.boardState, t.boardColumn FROM runs r"
+        " JOIN tickets t ON t.id = r.ticketId WHERE r.id = ?",
+        (run_id,)).fetchone()
+    if row is None:
+        return None
+    outcome, kind, reason, approved_at, status, active, board, column = row
+    matched = STUCK_SWEEP.match(reason or "")
+    if (outcome != "failed" or kind != "swept" or matched is None
+            or approved_at is not None or active is not None
+            or board in ("Backlog", "Canceled", "Done")
+            or column in ("backlog", "canceled")
+            or status not in ("in_flight", "blocked_on_operator")):
+        return None
+    return matched[1]
+
+
+def approve_swept(conn, ticket_id, note, sha, run_id, judged_round,
+                  confirm=None):
+    now = int(time.time() * 1000)
+    with _transaction(conn):
+        row = conn.execute(
+            "SELECT linearIdentifier, lastRunId FROM tickets WHERE id = ?",
+            (ticket_id,)).fetchone()
+        if row is None:
+            raise ApproveRefused(f"ticket {ticket_id} does not exist")
+        identifier, last_run_id = row
+        if last_run_id != run_id:
+            raise ApproveRefused(
+                f"{identifier}'s newest run is {last_run_id}, not run"
+                f" {run_id}; nothing approved")
+        if swept_condition(conn, last_run_id) is None:
+            raise ApproveRefused(
+                f"{identifier}: run {last_run_id} is not a run swept as"
+                " review_stuck or criterion_stuck awaiting approval;"
+                " nothing approved")
+        (newest,) = conn.execute(
+            "SELECT MAX(round) FROM reviewRounds WHERE runId = ?"
+            " AND endedAt IS NOT NULL", (run_id,)).fetchone()
+        if newest != judged_round:
+            raise ApproveRefused(
+                f"{identifier}: run {run_id}'s newest ended review round is"
+                f" {newest}, not round {judged_round}, whose commit was to be"
+                " approved; nothing approved")
+        record_intervention(conn, last_run_id, "approve", note, now=now)
+        conn.execute("UPDATE runs SET resumePhase = ?, candidateSha = ?,"
+                     " approvedAt = ?, approvedBy = ? WHERE id = ?",
+                     (APPROVED_RESUME_PHASE, sha, now, getpass.getuser(),
+                      last_run_id))
+        conn.execute("UPDATE tickets SET blockedQuestion = NULL WHERE id = ?",
+                     (ticket_id,))
+        walk_ticket(conn, ticket_id, "ready")
+        if confirm is not None:
+            confirm()
+
+
 def babysit(conn, ticket_id, note, now=None, source="human", *,
             firing_id=None):
     return _release_parked(

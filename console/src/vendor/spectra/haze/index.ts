@@ -1,4 +1,4 @@
-// Vendored from wevial/spectra@9f2195d backgrounds/haze/src/index.ts (MIT, see ../LICENSE), trimmed to what the console calls, given a motion option and a fallback when its shaders fail.
+// Vendored from wevial/spectra@75ae266 backgrounds/haze/src/index.ts (MIT, see ../LICENSE), given a motion option and a fallback when its shaders fail.
 // Haze background — an ambient smoky glow, after the AgentMail console header.
 // Two soft bands of smoke lean across a near-black base, bent by a slow wave
 // and billowed by domain-warped noise, under live film grain, fading out
@@ -10,13 +10,26 @@ import { setGrain } from '../core/glsl';
 import { createStage } from '../core/stage';
 import { GLOW, COMPOSITE } from './shaders';
 
-/** Three colors by name: base, mid (the back band), highlight (the front band). */
+/**
+ * Three colors: base, mid (the back band), highlight (the front band).
+ * `ember` is what the AgentMail header actually displays: its #a83205 and
+ * #e85d05 go through a P3 conversion that lightens and softens them.
+ */
 export const PALETTES: Record<string, [string, string, string]> = {
   ember: ['#120602', '#9b3b1a', '#d8662a'],
+  rose: ['#12040a', '#912948', '#d65270'],
+  teal: ['#020f0f', '#316d68', '#55b5a6'],
+  dusk: ['#0b0612', '#6a2fb8', '#f08a3c'],
+  lagoon: ['#030c12', '#1a7f8c', '#f06a9a'],
 };
 
-const DEFAULTS = {
-  palette: 'ember',
+/** Base for the `rainbow` palette, whose band colors are a drifting Oklch hue sweep. */
+export const RAINBOW_BASE = '#0a0710';
+
+export type PaletteName = string;
+
+export const DEFAULTS = {
+  palette: 'rainbow' as PaletteName,
   /** Band opacity; past 1 the soft edges fill in. */
   intensity: 1,
   /** Drift and morph speed. */
@@ -119,7 +132,8 @@ export function mount(container: HTMLElement, opts: Partial<HazeConfig> = {}): H
       if (config.grainPeriod > 0) grainClock += rawDtMs / 1000 / config.grainPeriod;
     }
 
-    const colors = PALETTES[config.palette] ?? PALETTES.ember;
+    const rainbow = config.palette === 'rainbow';
+    const colors = rainbow ? [RAINBOW_BASE, RAINBOW_BASE, RAINBOW_BASE] : PALETTES[config.palette] ?? PALETTES.ember;
     const [base, mid, high] = colors.map(hexToRgb);
     const w = canvas.clientWidth || 1;
     const h = canvas.clientHeight || 1;
@@ -148,7 +162,8 @@ export function mount(container: HTMLElement, opts: Partial<HazeConfig> = {}): H
     gl.uniform1f(u.uFadeBottom, config.fadeBottom);
     gl.uniform1f(u.uFadeSide, config.fadeSide);
     setGrain(gl, u, config.grain, grainClock);
-    gl.uniform1f(u.uRainbow, 0);
+    gl.uniform1f(u.uRainbow, rainbow ? 1 : 0);
+    gl.uniform1f(u.uHue, time * 0.08 + (s ? hash(s + 6) * TAU : 0));
     blit(null);
   }
 
