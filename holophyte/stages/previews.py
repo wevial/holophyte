@@ -121,7 +121,7 @@ RENDERS = {"implement": implement, "review": review, "trim": trim,
 
 
 def preview(project, target):
-    builtin, tail = str(RENDERS[target](project, SLOT)).split(SLOT)
+    builtin, tail = RENDERS[target](project, SLOT).split(SLOT)
     block = notes.block(project, None, None, target)
     held = dict.fromkeys(found.group(1) for found
                          in STAND_IN.finditer(builtin + SLOT + tail))
