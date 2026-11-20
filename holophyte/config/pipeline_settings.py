@@ -1,7 +1,7 @@
 from pathlib import PurePosixPath
 
 from holophyte.config.reader import load_config
-from holophyte.redact import known_secrets, outbound
+from holophyte.redact import known_secrets, outbound, redact_document
 
 NOTE_TARGETS = ("implement", "review", "trim", "critic", "pr_writer",
                 "babysit_reply")
@@ -67,11 +67,16 @@ def check_secrets(project):
 
 
 def pinned_checks(project):
-    raw = current_checks(project)
+    raw = [check for after in CHECK_AFTER for check in current_checks(project)
+           if check["after"] == after]
     secrets = check_secrets(project)
-    shown = [{**check, **{key: [outbound(value, secrets) for value in check[key]]
-                          for key in ("commands", "paths")}} for check in raw]
-    return raw, shown
+    shown = []
+    for check in raw:
+        display = {**check, "id": outbound(check["id"], secrets),
+                   **{key: [outbound(value, secrets) for value in check[key]]
+                      for key in ("commands", "paths")}}
+        shown.append({**display, "redacted": redact_document(display) != check})
+    return raw, shown, secrets
 
 
 def pipeline_checks(project, config=None):
@@ -117,8 +122,7 @@ def _check_problem(entry, earlier):
 def _settings_problem(entry):
     commands, paths = entry.get("commands"), entry.get("paths", [])
     if entry.get("after") not in CHECK_AFTER:
-        return (f"after must be one of {', '.join(CHECK_AFTER)}, got "
-                f"{entry.get('after')!r}")
+        return f"after must be one of {', '.join(CHECK_AFTER)}"
     if (not isinstance(commands, list) or not commands or any(
             not isinstance(command, str) or not command.strip()
             for command in commands)):
@@ -126,12 +130,11 @@ def _settings_problem(entry):
     if entry.get("mode") == "required":
         return "mode required is not available yet; use advisory or off"
     if entry.get("mode") not in CHECK_MODES:
-        return (f"mode must be one of {', '.join(CHECK_MODES)}, got "
-                f"{entry.get('mode')!r}")
+        return f"mode must be one of {', '.join(CHECK_MODES)}"
     if not isinstance(paths, list) or any(
             not isinstance(path, str) or not path.strip()
             or PurePosixPath(path).is_absolute()
             or ".." in PurePosixPath(path).parts for path in paths):
         return ("paths must be a list of non-empty repository-relative globs "
-                f"without `..`, got {paths!r}")
+                "without `..`")
     return None

@@ -21,6 +21,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import test_stale_approval_rereview as stale_fixture  # noqa: E402
+import test_witness_turns as witness_fixture  # noqa: E402
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     REQUEST_CHANGES,
@@ -45,7 +46,11 @@ from holophyte.config.pipeline_settings import (  # noqa: E402
     STANDARD_STAGES,
     pipeline_checks,
 )
+from holophyte.loop.stop import command  # noqa: E402
+from holophyte.redact import REDACTED, values_held  # noqa: E402
 from holophyte.stages import checks, record, standard  # noqa: E402
+
+PausingCommit = witness_fixture.PausingCommit
 
 # Fixed commit times, so two fixtures' candidates have the same shas.
 GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
@@ -165,6 +170,13 @@ class CheckRuns(LoopFixture):
         return ([turn.goal for turn in fake.turns], phases, ledger,
                 self.read("SELECT outcome FROM runs"))
 
+    def assert_checked_before_verify_and_review(self, attempts, check):
+        for at, (stage, sha, _, _, detail) in enumerate(attempts):
+            if stage in ("verify", "review"):
+                earlier = [(row[1], row[4]["round"]) for row in attempts[:at]
+                           if row[0] == check]
+                self.assertIn((sha, detail["round"]), earlier, (stage, at))
+
     def fresh(self):
         self.doCleanups()
         self.setUp()
@@ -233,22 +245,14 @@ class AdvisoryCheckTests(CheckRuns):
         attempts = self.attempts()
         self.assertEqual([row for row in attempts if row[0] != "lint"],
                          unchecked)
-        lints = [at for at, row in enumerate(attempts) if row[0] == "lint"]
-        self.assertEqual(len(lints), 2)
-        for rnd, at in enumerate(lints, 1):
-            _, sha, outcome, edge, detail = attempts[at]
-            review = next(row for row in attempts[at + 1:]
-                          if row[0] == "review")
-            verified = [row[1] for row in attempts
-                        if row[0] == "verify" and row[4]["round"] == rnd]
+        lints = [row for row in attempts if row[0] == "lint"]
+        self.assertEqual([row[4]["round"] for row in lints], [1, 2])
+        for _, _, outcome, edge, detail in lints:
             self.assertEqual((outcome, edge), ("fail", "next"))
             self.assertEqual(detail["exit_status"], 1)
-            self.assertEqual(detail["round"], rnd)
             self.assertRegex(detail["output"], r"(?m)^scripted-\d+\.txt$")
             self.assertNotIn("START", detail["output"])
-            self.assertEqual((review[1], review[4]["round"]), (sha, rnd))
-            self.assertEqual(verified, [sha])
-        self.assertEqual(attempts[lints[0] + 1][0], "verify")
+        self.assert_checked_before_verify_and_review(attempts, "lint")
 
     def test_a_passing_advisory_check_records_pass(self):
         self.walked(check_table("lint", "implement", ["echo clean"],
@@ -389,9 +393,136 @@ class AdvisoryCheckTests(CheckRuns):
         (attempt,) = [row for row in self.attempts() if row[0] == "pages"]
         self.assertEqual(attempt[2:4], ("pass", "next"))
 
+    def test_a_check_leaves_the_index_dirty_untracked_and_ignored_files_as_found(self):
+        (self.target / ".gitignore").write_text("*.out\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-q", "-m", "ignore outputs")
+        (self.target / "README.md").write_text("base\ndirty\n")
+        (self.target / "draft.txt").write_text("a draft\n")
+        (self.target / "old.out").write_text("kept\n")
+        status = self.git("status", "--porcelain", "--ignored")
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["echo more >> README.md", "git add -A",
+                         "echo changed > old.out", "touch artifact.out",
+                         "rm draft.txt", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
+        self.assertEqual((self.target / "README.md").read_text(),
+                         "base\ndirty\n")
+        self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
+        self.assertFalse((self.target / "artifact.out").exists())
+        self.assertEqual(found["restored"],
+                         ["README.md", "artifact.out", "draft.txt"])
+
+    def test_a_registered_value_in_a_selector_neither_runs_nor_drops_a_check(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        markers = Path(held.name)
+        with values_held(["off", "implement"]):
+            self.walked(check_table("dormant", "implement",
+                                    [f"touch {markers / 'dormant'}"], "off")
+                        + check_table("lint", "implement",
+                                      [f"touch {markers / 'lint'}"],
+                                      "advisory"),
+                        Commit("the scripted work"), APPROVE)
+
+        found = {row[0]: row for row in self.attempts()}
+        self.assertEqual(found["dormant"][2], "skipped")
+        self.assertEqual(found["lint"][2:4], ("pass", "next"))
+        self.assertEqual(sorted(path.name for path in markers.iterdir()),
+                         ["lint"])
+
+    def test_a_literal_redaction_marker_runs_without_the_pinning_process(self):
+        class Forgets(Commit):
+            def play(self, cwd, turn):
+                record.PINNED_CHECKS.clear()
+                return super().play(cwd, turn)
+
+        self.walked(check_table("say", "implement", ["echo '[redacted]'"],
+                                "advisory"), Forgets("the scripted work"),
+                    APPROVE)
+
+        (attempt,) = [row for row in self.attempts() if row[0] == "say"]
+        self.assertEqual(attempt[2:4], ("pass", "next"))
+
+    def test_a_resumed_run_runs_the_command_its_predecessor_pinned(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        marker = Path(held.name) / "said"
+        self.configure(UNTRIMMED + '[extras]\napi_token = "resumed-credential-4"\n'
+                       + check_table("say", "implement", [
+                           f"echo resumed-credential-4 > {marker}"],
+                           "advisory"))
+        self.loop(PausingCommit(self.db, Commit("the scripted work")))
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
+
+        command(self.project, "KO-131", None, resume=True)
+        self.loop(APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+        (attempt,) = [row for row in self.attempts(2) if row[0] == "say"]
+        self.assertEqual(attempt[2], "pass")
+        self.assertEqual(marker.read_text(), "resumed-credential-4\n")
+
+    def test_a_rotated_glob_and_restored_path_are_scrubbed_from_the_store(self):
+        config = self.db.parent / "config.toml"
+        self.configure(UNTRIMMED)
+        rotated = (UNTRIMMED + '[extras]\napi_token = "glob-credential-5"\n'
+                   + check_table("paths", "implement", ["true"], "advisory",
+                                 ["glob-credential-5/**"])
+                   + check_table("report", "implement", [
+                       "touch report-glob-credential-5.txt", "exit 1"],
+                       "advisory"))
+
+        self.loop(EditsConfig(config, rotated), APPROVE,
+                  Commit("second"), APPROVE,
+                  provider=StubProvider(a_task(1), a_task(2)))
+
+        found = {row[0]: row for row in self.attempts(2)}
+        self.assertEqual(found["paths"][2], "skipped")
+        self.assertEqual(found["report"][2], "fail")
+        self.assertEqual(len(found["report"][4]["restored"]), 1)
+        stored = json.dumps(self.read("SELECT detail FROM stageAttempts")
+                            + self.read("SELECT payload FROM runEvents"))
+        self.assertNotIn("glob-credential-5", stored)
+
+    def test_a_credential_only_the_pin_saw_is_scrubbed_after_a_rotation(self):
+        config = self.db.parent / "config.toml"
+        self.configure(UNTRIMMED + '[extras]\napi_token = "loaded-credential-a"\n')
+
+        def with_token(token, check=""):
+            return UNTRIMMED + f'[extras]\napi_token = "{token}"\n' + check
+
+        pinned = with_token("pinned-credential-b", check_table(
+            "say", "implement", ["echo pinned-credential-b"], "advisory"))
+        self.loop(EditsConfig(config, pinned), APPROVE,
+                  EditsConfig(config, with_token("rotated-credential-c")),
+                  APPROVE, provider=StubProvider(a_task(1), a_task(2)))
+
+        (attempt,) = [row for row in self.attempts(2) if row[0] == "say"]
+        self.assertEqual(attempt[2], "pass")
+        self.assertIn(REDACTED, attempt[4]["output"])
+        self.assertNotIn("pinned-credential-b",
+                         json.dumps(self.read("SELECT detail FROM stageAttempts")))
+
+    def test_a_rejected_glob_is_not_repeated_in_the_refusal(self):
+        self.configure(check_table("first", "trim", ["true"], "advisory",
+                                   ["/var/held-credential-6/*"]))
+
+        with self.assertRaises(SystemExit) as stopped:
+            check_config(self.project)
+
+        self.assertIn("[[pipeline.check]] first: paths", str(stopped.exception))
+        self.assertNotIn("held-credential-6", str(stopped.exception))
+
     def test_a_command_that_exits_127_after_starting_closes_fail(self):
         self.walked(check_table("lint", "implement",
-                                ["echo started; exit 127"], "advisory"),
+                                ["echo test fixture not found; exit 127"],
+                                "advisory"),
                     Commit("the scripted work"), APPROVE)
 
         (lint,) = [row for row in self.attempts() if row[0] == "lint"]
@@ -473,6 +604,26 @@ class StaleRereviewCheckTests(unittest.TestCase):
             " FROM stageAttempts WHERE stageId = 'lint' ORDER BY id").fetchall()
         self.assertEqual([tuple(row) for row in lints],
                          [(self.head, "pass", 1), (self.head, "pass", 2)])
+
+
+class WitnessRepairCheckTests(witness_fixture.RunningRepo):
+    attempts = CheckRuns.attempts
+    assert_checked_before_verify_and_review = (
+        CheckRuns.assert_checked_before_verify_and_review)
+
+    def test_a_witness_repair_is_checked_before_its_reverify(self):
+        self.configure(UNTRIMMED + check_table("lint", "implement", ["true"],
+                                               "advisory"))
+
+        self.run_task(witness_fixture.gated(),
+                      Commit("run the gated test", path="tests/test_gate.py",
+                             body=witness_fixture.OPENED), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        attempts = self.attempts()
+        lints = [row[1] for row in attempts if row[0] == "lint"]
+        self.assertEqual(len(set(lints)), 2)
+        self.assert_checked_before_verify_and_review(attempts, "lint")
 
 
 class FailedChecksTests(CheckRuns):

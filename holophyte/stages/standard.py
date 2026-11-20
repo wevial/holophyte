@@ -50,7 +50,8 @@ def resolve(project, profile=None, notes=None, checks=()):
         stages[at + 1:at + 1] = [
             stage(check["id"], "check", "candidate", after=after,
                   mode=check["mode"], commands=check["commands"],
-                  paths=check["paths"])
+                  paths=check["paths"],
+                  **({"redacted": True} if check.get("redacted") else {}))
             for check in checks if check["after"] == after]
     document = {"format": FORMAT, "name": NAME,
                 "merge": {"mode": merge.mode, "approve": merge.approve},
