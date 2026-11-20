@@ -57,6 +57,8 @@ UNREASONED = "dropped without a reason"
 DESCRIBED = "PR description"
 SETTLED_KIND = "pr_text_settled"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
+TURN_FAILURES = (InfraFailure, OSError, subprocess.SubprocessError,
+                 UnicodeError)
 
 
 @dataclass(frozen=True)
@@ -100,8 +102,7 @@ def ask(project, conn, run_id, wt, base_sha, sha, prompt, run_agent, number,
             reply = run_agent(project, "review", goal, wt, base_sha=base_sha,
                               candidate_sha=sha, conn=conn, run_id=run_id,
                               family_route=route)
-        except (InfraFailure, OSError, subprocess.SubprocessError,
-                UnicodeError) as failure:
+        except TURN_FAILURES as failure:
             if not getattr(failure.__cause__, "schema_refused", False):
                 return ended("missing", reason=str(failure))
             reply = ""
@@ -322,8 +323,7 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
                               base_sha=base_sha, candidate_sha=sha,
                               timeout=consolidate.TIMEOUT, conn=conn,
                               run_id=run_id, family_route=route)
-        except (InfraFailure, OSError, subprocess.SubprocessError,
-                UnicodeError) as failure:
+        except TURN_FAILURES as failure:
             if not getattr(failure.__cause__, "schema_refused", False):
                 return None, f"the consolidator's route failed: {failure}"
             reply = ""
