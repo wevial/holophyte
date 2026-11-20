@@ -22,7 +22,6 @@ from holophyte.loop import (
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
-    TIMEOUT_HEAD,
     InfraFailure,
     RunFailure,
     run_verify,
@@ -30,6 +29,7 @@ from holophyte.loop.gates import (
     verify_timed_out,
     with_baseline,
 )
+from holophyte.loop.gates import timed_out as stalled
 from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.runs import (
     heartbeat_while,
@@ -335,7 +335,7 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
         attempt.close("pass" if ok else "fail", "next", head,
-                      timed_out=not ok and TIMEOUT_HEAD in str(out))
+                      timed_out=not ok and stalled(out))
     return ok, out
 
 
@@ -484,7 +484,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             project, conn, run_id, beat_s, wt, budget_min, reviewed,
             without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
             check_cap=_check_run_cap,
-            criteria=numbered(conn, run_id, criteria))
+            criteria=numbered(conn, run_id, criteria), kind="fix")
         ledger(conn, run_id, task_id, "round",
                f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
                f"Reviewer findings:\n{verdict}\n\n"

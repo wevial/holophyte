@@ -60,7 +60,7 @@ STEER_ASK = ('Apply the maintainer\'s notes above to your work on this '
 
 
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
-             *, timed, check_cap, criteria=None):
+             *, timed, check_cap, criteria=None, kind=None):
     pending = pending_prompt(conn, run_id) if conn is not None else ''
     if criteria is None:
         parsed = ticket_template.parse(ticket)
@@ -93,7 +93,7 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
              f'{ticket}\n\n' + findings)
     return _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha,
                          findings, fresh, timed=timed, check_cap=check_cap,
-                         kind='fix')
+                         kind=kind)
 
 
 def steer_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
@@ -173,15 +173,14 @@ def self_check_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
 
 def _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha, resumed,
                   fresh, *, timed, check_cap, kind, record=True):
-    with stage_record.Attempt(conn, run_id, 'implement', sha,
-                              {'kind': kind}) as attempt:
+    staged = kind is not None
+    with stage_record.Attempt(conn if staged else None, run_id, 'implement',
+                              sha, {'kind': kind}, wt=wt) as attempt:
         output, timed_out = _session_turns(
             target, conn, run_id, beat_s, wt, budget_min, sha, resumed, fresh,
             timed=timed, check_cap=check_cap, record=record)
-        if attempt.recording:
-            attempt.close('fail' if timed_out else 'pass',
-                          'end' if timed_out else 'next',
-                          sh(['git', 'rev-parse', 'HEAD'], cwd=wt))
+        attempt.close_at_head('fail' if timed_out else 'pass',
+                              'end' if timed_out else 'next')
     return output, timed_out
 
 

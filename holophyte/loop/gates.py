@@ -503,7 +503,12 @@ def run_verify(cmd, cwd, contracts=None, timeout=None, *, conn=None, run_id=None
                       f"the first attempt failed:\n{out}")
     return False, VerificationOutput(
         f"{out}\n[verify] an immediate rerun failed too:\n{again}",
-        out.results, failure=out.failure)
+        out.results, failure=out.failure,
+        timed_out=timed_out(out) or timed_out(again))
+
+
+def timed_out(out):
+    return getattr(out, "timed_out", False)
 
 
 def failed_to_finish(out):
@@ -596,7 +601,8 @@ def _run_command(cmd, cwd, timeout, project, on_start=None):
                                         per_clause, cleaned, expired.timeout)
         index = max(per_clause, default=1)
         return False, _verify_failure(report, cmd, clauses if marked else None,
-                                      index, None, per_clause.get(index, cleaned))
+                                      index, None, per_clause.get(index, cleaned),
+                                      timed_out=True)
     per_clause, failed, cleaned = parse_clause_output(out)
     if returncode == 0:
         vacuous = vacuous_green_report(cmd, cleaned)
@@ -613,12 +619,13 @@ def _run_command(cmd, cwd, timeout, project, on_start=None):
                                   index, returncode, per_clause.get(index, cleaned))
 
 
-def _verify_failure(report, cmd, clauses, index, status, output):
+def _verify_failure(report, cmd, clauses, index, status, output,
+                    timed_out=False):
     command = clauses[index - 1] if clauses and 1 <= index <= len(clauses) else cmd
     facts = {'command_index': index, 'command': command,
              'exit_status': status,
              'last_output_line': output.splitlines()[-1] if output else '(no output)'}
-    return VerificationOutput(report, [], failure=facts)
+    return VerificationOutput(report, [], failure=facts, timed_out=timed_out)
 
 
 class RunFailure(Exception):
@@ -754,10 +761,11 @@ def remove_dead_merge_lock(path):
 
 
 class VerificationOutput(str):
-    def __new__(cls, output, results, *, failure=None):
+    def __new__(cls, output, results, *, failure=None, timed_out=False):
         value = super().__new__(cls, output)
         value.results = results
         value.failure = failure
+        value.timed_out = timed_out
         return value
 
 
@@ -769,7 +777,7 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
         raise ValueError(f"unknown verify tier: {tier}")
     results, reports = [], []
     ok = True
-    failure = None
+    failure, stalled = None, False
     for command in getattr(config, tier):
         ok, out = run_verify(command, wt, timeout=config.timeout_sec,
                              conn=conn, run_id=run_id, project=project,
@@ -779,9 +787,10 @@ def run_baseline(project, wt, tier, conn=None, run_id=None):
                         "output": str(out)})
         reports.append(f"[baseline:{tier}] {command}\n{out}")
         if not ok:
-            failure = getattr(out, 'failure', None)
+            failure, stalled = getattr(out, 'failure', None), timed_out(out)
             break
-    return ok, VerificationOutput("\n".join(reports), results, failure=failure)
+    return ok, VerificationOutput("\n".join(reports), results, failure=failure,
+                                  timed_out=stalled)
 
 
 def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
@@ -793,7 +802,7 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
     results = ([{"source": "ticket", "command": command,
                  "exitCode": 0 if ok else 1, "output": str(out)}]
                if command else [])
-    failure = getattr(out, "failure", None)
+    failure, stalled = getattr(out, "failure", None), timed_out(out)
     reports = [str(out)]
     if ok and command:
         from holophyte.loop.importing_tests import run_importing_tests
@@ -801,13 +810,14 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
         ok, importing = run_importing_tests(project, wt, command, conn, run_id)
         if importing is not None:
             failure = importing.pop("failure", failure)
+            stalled = importing.pop("timed_out", False)
             results.append(importing)
             reports.append(importing["output"])
     for tier in (("always", "before_merge") if before_merge else ("always",)):
         if not ok:
             break
         ok, baseline = run_baseline(project, wt, tier, conn, run_id)
-        failure = baseline.failure
+        failure, stalled = baseline.failure, baseline.timed_out
         results.extend(baseline.results)
         if baseline:
             reports.append(str(baseline))
@@ -817,7 +827,8 @@ def with_baseline(project, wt, command, ok, out, conn=None, run_id=None,
                            "Mechanical verification " + ("passed" if ok else "failed"),
                            level="detail",
                            payload=json.dumps({"verificationResults": results}))
-    output = VerificationOutput("\n".join(reports), results, failure=failure)
+    output = VerificationOutput("\n".join(reports), results, failure=failure,
+                                timed_out=stalled)
     if before_merge:
         record_unreviewed_verification(conn, run_id, output)
     return ok, output

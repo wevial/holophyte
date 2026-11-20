@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -34,6 +35,11 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     LoopFixture,
     StubProvider,
     a_task,
+)
+from test_not_reproduced import (  # noqa: E402 - after the sys.path insert
+    REFUSED,
+    REPRODUCED,
+    Declare,
 )
 from test_reproduce_first import (  # noqa: E402 - after the sys.path insert
     PASSES,
@@ -117,6 +123,27 @@ class AdversaryRouteFails:
 
     def play(self, cwd, turn):
         raise InfraFailure("the adversary route did not start", "review_route")
+
+
+class EditThenFail:
+    """A fix turn that leaves an edit uncommitted, then its route fails."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        (cwd / "half-done.txt").write_text("half done\n")
+        raise InfraFailure("the implementer route fell over")
+
+
+class LoseHead:
+    """A fix turn that leaves HEAD naming a branch that does not exist."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        subprocess.run(["git", "symbolic-ref", "HEAD", "refs/heads/gone"],
+                       cwd=cwd, check=True)
+        return "moved on"
 
 
 class StageRecordingTests(LoopFixture):
@@ -322,6 +349,46 @@ class TerminalReviewEdgeTests(LoopFixture):
             "SELECT detail FROM stageAttempts WHERE stageId = 'verify'"
             " AND attempt = 1")]
         self.assertIs(detail["timed_out"], True)
+
+    def test_a_verify_printing_a_timeout_line_is_not_a_timeout(self):
+        task = dict(a_task(), verify="echo '[verify] FAILED: verify timed out"
+                    " after 1s'; exit 1")
+        self.run_loop(UNTRIMMED, Commit("work"), APPROVE, Idle(), task=task)
+
+        (detail,) = [json.loads(detail) for (detail,) in self.read(
+            "SELECT detail FROM stageAttempts WHERE stageId = 'verify'"
+            " AND attempt = 1")]
+        self.assertIs(detail["timed_out"], False)
+
+    def test_a_fix_turn_that_raises_records_the_head_it_left(self):
+        self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
+                      EditThenFail())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.read(
+            "SELECT outcome, edge, outputSha FROM stageAttempts"
+            " WHERE stageId = 'implement' AND attempt = 2"),
+            [("error", "end", self.git("rev-parse", BRANCH).strip())])
+
+    def test_an_unreadable_head_after_a_fix_keeps_the_fix_round_ledger(self):
+        self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES, LoseHead())
+
+        (text,), = self.read("SELECT text FROM ledger WHERE text LIKE"
+                             " 'Round 1: REQUEST_CHANGES -> fix round%'")
+        self.assertIn("moved on", text)
+        writes = [json.loads(payload)["write"] for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'")]
+        self.assertEqual(writes, ["stage_head"])
+
+    def test_the_evidence_checks_repair_turn_records_no_attempt(self):
+        self.run_loop(UNTRIMMED, Declare("test the modal"), REFUSED,
+                      Declare("open the modal in the test"), REPRODUCED)
+
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("not_reproduced",)])
+        self.assertEqual(self.read(
+            "SELECT stageId, attempt, outcome FROM stageAttempts ORDER BY id"),
+            [("implement", 1, "pass"), ("trim", 1, "skipped")])
 
     def test_an_idle_first_turn_records_its_attempt_without_a_refusal(self):
         self.run_loop(UNTRIMMED, Idle())

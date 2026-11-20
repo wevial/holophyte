@@ -41,7 +41,8 @@ def with_removals(wt, base_sha, sha, ticket, ok, out, conn=None, run_id=None):
                            "Mechanical verification failed", level="detail",
                            payload=json.dumps({"verificationResults": results}))
     return False, VerificationOutput(
-        "\n".join([out, *lines]), results, failure=failure)
+        "\n".join([out, *lines]), results, failure=failure,
+        timed_out=getattr(out, "timed_out", False))
 
 
 def _changed_pairs(wt, base_sha, sha):

@@ -6,7 +6,13 @@ import subprocess
 from typing import NamedTuple
 
 from holophyte.config.config_tables import verify_config
-from holophyte.loop.gates import _word_spans, run_verify, sh, split_and_clauses
+from holophyte.loop.gates import (
+    _word_spans,
+    run_verify,
+    sh,
+    split_and_clauses,
+    timed_out,
+)
 from holophyte.review.blast_radius import (
     importers,
     module_name,
@@ -254,4 +260,5 @@ def run_importing_tests(project, wt, command, conn, run_id, *, base=None,
     report = (f"[verify] FAILED: {named} imports a changed module and failed\n"
               f"{out}")
     return False, {"source": "importers", "command": joined, "exitCode": 1,
-                   "output": report, "failure": failure or None}
+                   "output": report, "failure": failure or None,
+                   "timed_out": timed_out(out)}

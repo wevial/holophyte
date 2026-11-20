@@ -100,12 +100,17 @@ class Attempt:
         return self
 
     def __exit__(self, kind, error, trace):
-        if error is not None and self.recording:
-            head = guarded(self.conn, self.run_id, "stage_head", self.head)
-            self.close("error" if isinstance(error, InfraFailure) else "fail",
-                       "end", None if head is REFUSED else head,
-                       error=str(error))
+        if error is not None:
+            self.close_at_head(
+                "error" if isinstance(error, InfraFailure) else "fail", "end",
+                error=str(error))
         return False
+
+    def close_at_head(self, outcome, edge, **detail):
+        if not self.recording:
+            return
+        head = guarded(self.conn, self.run_id, "stage_head", self.head)
+        self.close(outcome, edge, None if head is REFUSED else head, **detail)
 
 
     def head(self):
