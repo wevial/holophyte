@@ -127,6 +127,12 @@
             "$ref": "#/$defs/FlowWeek"
           }
         },
+        "buckets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FlowWeek"
+          }
+        },
         "phases": {
           "type": "object",
           "additionalProperties": {
@@ -149,7 +155,6 @@
       },
       "required": [
         "now",
-        "weeks",
         "phases",
         "waits",
         "reverted"

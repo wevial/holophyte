@@ -1054,6 +1054,12 @@ body {
   --panel-height: calc(100vh - 30px);
 }
 
+@media not (width >= 720px) {
+  [data-text-size] [data-shell] {
+    height: calc(100dvh / var(--text-scale));
+  }
+}
+
 @media (width >= 720px) {
   [data-text-size] [data-shell] {
     --panel-height: calc(100vh / var(--text-scale) - 30px);

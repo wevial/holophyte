@@ -24,3 +24,8 @@ export function useChatWidth(): boolean {
 export function useScoutListWidth(): boolean {
   return useMinWidth(1100);
 }
+
+/** Whether the window is at least 720px wide, room for the sidebar beside the page. */
+export function useSidebarWidth(): boolean {
+  return useMinWidth(720);
+}

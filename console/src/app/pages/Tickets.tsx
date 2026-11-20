@@ -94,7 +94,7 @@ export function Tickets() {
   useEffect(() => {
     if (opener == null) return;
     const shut = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
       event.preventDefault();
       setOpenId(null);
       document.getElementById(opener)?.focus();
