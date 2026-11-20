@@ -491,19 +491,25 @@ non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
 The project's flow day by day or week by week: how much the factory
 merged and where its run time went. The console's Flow page reads it.
 
+`GET /flow?days=2&bucket=day&tz=UTC&until=1750032000000`, the 14 and 15
+June 2025 in UTC, answers:
+
 ```json
-{"now": 1750000000000,
+{"now": 1750032000000,
  "buckets": [
-  {"start_ms": 1749395200000, "merged": 2, "rounds_median": 1.5,
-   "interventions": 3,
-   "hours": {"working": 4.25, "waiting": 6.0, "operator": 1.5}}],
- "phases": {"claimed": 0.1, "working": 3.25, "reviewing": 1.0,
-  "merge_gate": 2.4, "awaiting_merge_approval": 3.5,
+  {"start_ms": 1749859200000, "merged": 3, "rounds_median": 2,
+   "interventions": 1,
+   "hours": {"working": 4.25, "waiting": 6.0, "operator": 1.5}},
+  {"start_ms": 1749945600000, "merged": 4, "rounds_median": 1.5,
+   "interventions": 2,
+   "hours": {"working": 3.0, "waiting": 2.5, "operator": 0}}],
+ "phases": {"claimed": 0.5, "working": 4.25, "verifying": 1.0,
+  "reviewing": 2.0, "merge_gate": 2.0, "awaiting_merge_approval": 6.0,
   "blocked_on_operator": 1.5},
- "waits": {"pending_checks": 0.5, "checks_failing": 0, "thread": 1.0,
-  "rounds_used": 0, "behind_main": 0.4, "main_red": 0, "approval": 2.0,
+ "waits": {"pending_checks": 2.5, "checks_failing": 0, "thread": 1.0,
+  "rounds_used": 0, "behind_main": 0.5, "main_red": 0, "approval": 2.5,
   "other": 1.5},
- "reverted": {"count": 0, "merged": 7}}
+ "reverted": {"count": 1, "merged": 7}}
 ```
 
 `buckets` holds one entry per calendar day or run of seven days, oldest

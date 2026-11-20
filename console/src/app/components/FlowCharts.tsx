@@ -140,10 +140,13 @@ function Chart({ title, note, starts, bucket, format, tip, top, values, none, ch
           )}
         </div>
         <span />
-        <div aria-hidden="true" className="flex">
-          {starts.map((start, index) => (
-            <span key={start} className="flex-1 text-center font-mono text-[10.5px] text-ink-3">{index % labelEvery === 0 && weekLabel(start)}</span>
-          ))}
+        <div aria-hidden="true" className="relative h-[26px]">
+          {starts.map((start, index) =>
+            index % labelEvery === 0 ? (
+              <span key={start} data-axis={index} style={{ left: `${weekX(index, count)}%`, width: `${(100 / count) * labelEvery}%` }}
+                className="absolute top-0 -translate-x-1/2 text-center font-mono text-[10.5px] leading-[13px] text-ink-3">{weekLabel(start)}</span>
+            ) : null,
+          )}
         </div>
       </div>
     </figure>
@@ -174,7 +177,7 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
               );
             })}
           </svg>
-          {values.map((value, index) => (index % labelEvery !== 0 && index !== latest) ? null : (
+          {values.map((value, index) => (index === latest || (index % labelEvery === 0 && latest - index >= labelEvery)) ? (
             <span
               key={index}
               data-value={index}
@@ -183,7 +186,7 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
             >
               {props.format(value)}
             </span>
-          ))}
+          ) : null)}
         </>
       )}
     </Chart>

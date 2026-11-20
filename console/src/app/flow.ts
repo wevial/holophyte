@@ -41,6 +41,12 @@ function flowRows(flow: Flow): FlowWeek[] {
   return flow.buckets ?? [];
 }
 
+export function sameWindow<A extends { flow: Flow }>(answers: A[]): A[] {
+  const lastStart = (flow: Flow) => flowRows(flow).at(-1)?.start_ms ?? -Infinity;
+  const latest = Math.max(...answers.map(({ flow }) => lastStart(flow)));
+  return answers.filter(({ flow }) => lastStart(flow) === latest);
+}
+
 /** The median of a flow's weekly round medians, its weeks without a merge left out. */
 function flowRounds(flow: Flow): number | null {
   return median(flowRows(flow).flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median])));
@@ -196,8 +202,7 @@ export function weekLabel(start: number): string {
 
 export function weekRange(start: number, next: number | undefined, bucket: FlowBucket = "week"): string {
   const first = new Date(start);
-  const last = new Date(next ?? start);
-  if (next == null) last.setDate(last.getDate() + (bucket === "day" ? 1 : 7));
+  const last = new Date(next ?? new Date(first.getFullYear(), first.getMonth(), first.getDate() + (bucket === "day" ? 1 : 7)).getTime());
   last.setTime(last.getTime() - 1);
   if (last.toDateString() === first.toDateString()) return MONTH_DAY.format(first);
   const end = last.getMonth() === first.getMonth() ? String(last.getDate()) : MONTH_DAY.format(last);

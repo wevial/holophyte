@@ -22,6 +22,7 @@ import {
   type FlowBucket,
   type FlowNumbers,
   type FlowWeekly,
+  sameWindow,
 } from "../flow";
 import { dayStart, validDay } from "../history";
 import { storeScope } from "../projects";
@@ -52,9 +53,8 @@ export interface FlowSearch {
 }
 
 function dayEnd(day: string): Date {
-  const end = dayStart(day);
-  end.setDate(end.getDate() + 1);
-  return end;
+  const start = dayStart(day);
+  return new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
 }
 
 function wholeDays(from: string, to: string): number {
@@ -375,7 +375,7 @@ export function FlowPage() {
   const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
   const asked = flowWindow(search);
-  const answers = useFlows(hosts, deps, asked).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
+  const answers = sameWindow(useFlows(hosts, deps, asked)).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
   const inScope = new Set(scopedHosts(hosts, project));
   const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;

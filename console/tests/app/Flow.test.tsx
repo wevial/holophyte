@@ -8,7 +8,7 @@ import type { Flow, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
-const OLDER = "http://writer-host:7711";
+const PEER = "http://writer-host:7711";
 const DAY = 24 * 3600 * 1000;
 const NO_WAITS = { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 };
 
@@ -19,17 +19,15 @@ const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => vo
 
 function daysBack(count: number, now = Date.now()): number {
   const day = new Date(now - 1);
-  day.setHours(0, 0, 0, 0);
-  day.setDate(day.getDate() - count);
-  return day.getTime();
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() - count).getTime();
 }
 
 /** A daemon answering each `/flow` ask with one bucket per day or week of the asked span, merges rising bucket by bucket. */
-function flowDaemon(asked: URLSearchParams[], older: Flow | null): Fetch {
+function flowDaemon(asked: URLSearchParams[], peer: Flow | null): Fetch {
   const daemon = (project: string) => ({ status: { ...working, host: "writer-host", project }, attention: { level: "none", now: 0, project, items: [] } });
-  const polls = peersFetch(ORIGIN, { [ORIGIN]: daemon("/srv/dev/demo"), ...(older ? { [OLDER]: daemon("/srv/dev/older") } : {}) });
+  const polls = peersFetch(ORIGIN, { [ORIGIN]: daemon("/srv/dev/demo"), ...(peer ? { [PEER]: daemon("/srv/dev/writer") } : {}) });
   return async (url, init) => {
-    if (older && url.startsWith(`${OLDER}/flow?`)) return Response.json(older);
+    if (peer && url.startsWith(`${PEER}/flow?`)) return Response.json(peer);
     if (!url.startsWith(`${ORIGIN}/flow?`)) return polls(url, init);
     const query = new URL(url).searchParams;
     asked.push(query);
@@ -58,13 +56,13 @@ async function flush() {
   for (let round = 0; round < 6; round += 1) await act(settle);
 }
 
-async function mount(hash: string, older: Flow | null = null) {
+async function mount(hash: string, peer: Flow | null = null) {
   const asked: URLSearchParams[] = [];
   happyDOM.setURL(`${ORIGIN}/`);
   window.location.hash = hash;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
-      <ConsoleApp base={ORIGIN} pollDeps={fakeDeps(flowDaemon(asked, older)).deps} />
+      <ConsoleApp base={ORIGIN} pollDeps={fakeDeps(flowDaemon(asked, peer)).deps} />
     </QueryClientProvider>,
   );
   await flush();
@@ -159,9 +157,60 @@ test("over Last 90 days the oldest point's range ends the day before the next we
   expect(next!.getAttribute("aria-label")).toStartWith(`${dated(new Date(daysBack(83)))} – `);
 });
 
-test("the 30-day Merges chart labels at most every fourth bar and the latest, while every bar keeps its point", async () => {
+test("the 30-day Merges chart labels bars at least four apart, always the latest, while every bar keeps its point", async () => {
   await mount("#/flow");
   const merges = document.querySelector('figure[data-chart="Merges"]')!;
   expect(merges.querySelectorAll("[data-point]").length).toBe(30);
-  expect([...merges.querySelectorAll("[data-value]")].map((label) => Number(label.getAttribute("data-value")))).toEqual([0, 4, 8, 12, 16, 20, 24, 28, 29]);
+  expect([...merges.querySelectorAll("[data-value]")].map((label) => Number(label.getAttribute("data-value")))).toEqual([0, 4, 8, 12, 16, 20, 24, 29]);
+});
+
+test("each date under a chart is centred on its own bar's point", async () => {
+  await mount("#/flow");
+  const merges = document.querySelector('figure[data-chart="Merges"]')!;
+  const points = [...merges.querySelectorAll<HTMLElement>("[data-point]")];
+  const labels = [...merges.querySelectorAll<HTMLElement>("[data-axis]")];
+  expect(labels.length).toBeGreaterThan(1);
+  for (const label of labels) {
+    const point = points[Number(label.getAttribute("data-axis"))]!;
+    expect(parseFloat(label.style.left)).toBeCloseTo(parseFloat(point.style.left) + parseFloat(point.style.width) / 2, 6);
+  }
+});
+
+test("where a clock change skips midnight, a custom range ends at the next midnight and the latest points name only their own days", async () => {
+  const zone = process.env.TZ;
+  process.env.TZ = "America/Santiago";
+  try {
+    const asked = await mount("#/flow?from=2026-08-28&to=2026-09-06");
+    expect(windowOf(asked.at(-1)!)).toEqual(["10", "day", "1788750000000"]);
+    const daily = [...document.querySelector('figure[data-chart="Merges"]')!.querySelectorAll("[data-point]")];
+    expect(daily.at(-1)!.getAttribute("aria-label")).toStartWith("Sep 6:");
+    cleanup();
+    await mount("#/flow?from=2026-07-29&to=2026-09-12");
+    const weekly = [...document.querySelector('figure[data-chart="Merges"]')!.querySelectorAll("[data-point]")];
+    expect(weekly.at(-1)!.getAttribute("aria-label")).toStartWith("Sep 6 – 12:");
+  } finally {
+    if (zone == null) delete process.env.TZ;
+    else process.env.TZ = zone;
+  }
+});
+
+test("a host's answer whose days end before today is left out rather than summed into other dates", async () => {
+  const yesterday = daysBack(0);
+  const stale: Flow = {
+    now: yesterday,
+    buckets: Array.from({ length: 7 }, (_, index) => ({
+      start_ms: daysBack(6 - index, yesterday),
+      merged: 5,
+      rounds_median: 1,
+      interventions: 0,
+      hours: { working: 1, waiting: 0, operator: 0 },
+    })),
+    phases: {},
+    waits: NO_WAITS,
+    reverted: { count: 0, merged: 35 },
+  };
+  await mount("#/flow?range=7d", stale);
+  const figure = (label: string) => document.querySelector(`[data-number="${label}"]`)!.textContent;
+  expect([figure("Merged"), figure("Reverted")]).toEqual([String(1 + 2 + 3 + 4 + 5 + 6 + 7), "0 of 1"]);
+  expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toStartWith("Seven days, ");
 });
