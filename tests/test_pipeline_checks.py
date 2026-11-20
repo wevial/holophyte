@@ -398,6 +398,22 @@ class AdvisoryCheckTests(CheckRuns):
                          [["README.md", "generated.txt"]] * 2)
         self.assertEqual(self.git("show", "main:README.md"), "base\n")
 
+    def test_a_check_that_only_narrows_a_tracked_files_mode_leaves_verify_passing(self):
+        readable = ('[verify]\nalways = [\'[ -n "$(find README.md -perm'
+                    ' -o=r)" ]\']\n')
+        plain = self.walked(readable, *self.SCRIPT)
+        self.fresh()
+        narrowed = self.walked(readable + check_table(
+            "lint", "implement", ["chmod 600 README.md", "exit 1"],
+            "advisory"), *self.SCRIPT)
+
+        self.assertEqual(narrowed, plain)
+        self.assertEqual(narrowed[3], [("merged",)])
+        lints = [row for row in self.attempts() if row[0] == "lint"]
+        self.assertEqual([(row[2], row[3], row[4]["restored"])
+                          for row in lints],
+                         [("fail", "next", ["README.md"])] * 2)
+
     def test_a_glob_a_credential_would_redact_still_matches_its_paths(self):
         class DocsCommit(Commit):
             def play(self, cwd, turn):
@@ -454,6 +470,36 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual((self.target / "draft.sh").stat().st_mode & 0o777,
                          0o644)
         self.assertEqual(found["restored"], ["draft.sh", "link"])
+
+    def test_a_read_only_staged_draft_is_put_back_with_the_index(self):
+        (self.target / "draft.txt").write_text("a draft\n")
+        (self.target / "draft.txt").chmod(0o644)
+        status = self.git("status", "--porcelain")
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["echo edit >> draft.txt", "chmod 444 draft.txt",
+                         "git add draft.txt", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
+        self.assertEqual((self.target / "draft.txt").stat().st_mode & 0o777,
+                         0o644)
+        self.assertEqual(self.git("status", "--porcelain"), status)
+        self.assertEqual(found["restored"], ["draft.txt"])
+
+    def test_a_path_that_cannot_be_put_back_still_restores_the_index(self):
+        (self.target / "draft.txt").write_text("a draft\n")
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["git add draft.txt", "rm draft.txt",
+                         "mkdir -p draft.txt/inner", "touch draft.txt/inner/x",
+                         "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual((outcome, found["check_outcome"]), ("error", "fail"))
+        self.assertIn("draft.txt", found["restore_error"])
+        self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
 
     def test_a_failed_restore_closes_error_and_keeps_the_checks_result(self):
         with patch.object(checks.Snapshot, "restore",

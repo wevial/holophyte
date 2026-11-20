@@ -3,6 +3,7 @@ import os
 import re
 import stat
 import subprocess
+import tempfile
 from pathlib import Path
 
 from holophyte.agents.review_workspace import review_base
@@ -137,34 +138,51 @@ def scrubbed_output(text, secrets):
 
 
 class Snapshot:
-    """The index, the content and mode or link target of every path that differs
-    from HEAD, and which ignored files exist; ignored rewrites stay."""
+    """The index, tracked modes, the content, mode or link target of each path
+    that differs from HEAD, and which ignored files exist; ignored rewrites stay."""
 
     def __init__(self, wt):
         self.wt = Path(wt)
         self.index = Path(wt, _git(wt, "rev-parse", "--git-path", "index"))
-        self.staged = self.index.read_bytes() if self.index.exists() else None
+        self.staged = _state(self.index)
         self.files = {path: _state(self.wt / path) for path in _outside(wt)}
+        self.modes = _modes(wt)
         self.ignored = _ignored(wt)
 
     def restore(self):
         changed = sorted(path for path in _outside(self.wt) | set(self.files)
                          if _state(self.wt / path) != self.files.get(path))
+        changed += sorted(path for path, mode in self.modes.items()
+                          if path not in changed and path not in self.files
+                          and _mode(self.wt / path) not in (None, mode))
         added = sorted(_ignored(self.wt) - self.ignored)
-        for path in added:
-            (self.wt / path).unlink(missing_ok=True)
-        for path in changed:
-            target, kept = self.wt / path, self.files.get(path)
-            if kept is not None:
-                _put(target, kept)
-            elif _tracked(self.wt, path):
-                _git(self.wt, "restore", "--source=HEAD", "--worktree", "--",
-                     path)
-            else:
-                target.unlink(missing_ok=True)
+        failed = []
+        for path, put in [(path, self._drop) for path in added] + [
+                (path, self._put_back) for path in changed]:
+            try:
+                put(path)
+            except Exception as error:
+                failed.append(f"{path}: {error}")
         if self.staged is not None:
-            self.index.write_bytes(self.staged)
+            _put(self.index, self.staged)
+        if failed:
+            raise OSError("could not restore " + "; ".join(failed))
         return sorted(changed + added)
+
+    def _drop(self, path):
+        (self.wt / path).unlink(missing_ok=True)
+
+    def _put_back(self, path):
+        target, kept = self.wt / path, self.files.get(path)
+        if kept is not None:
+            _put(target, kept)
+            return
+        if not _tracked(self.wt, path):
+            target.unlink(missing_ok=True)
+            return
+        _git(self.wt, "restore", "--source=HEAD", "--worktree", "--", path)
+        if self.modes.get(path) is not None:
+            os.chmod(target, self.modes[path])
 
 
 def _git(wt, *args):
@@ -190,6 +208,21 @@ def _ignored(wt):
     return {os.fsdecode(path) for path in listed.split(b"\0") if path}
 
 
+def _modes(wt):
+    listed = subprocess.run(["git", "ls-files", "-z"], cwd=wt,
+                            capture_output=True, check=True).stdout
+    paths = {os.fsdecode(path) for path in listed.split(b"\0") if path}
+    return {path: _mode(Path(wt, path)) for path in paths}
+
+
+def _mode(path):
+    try:
+        info = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    return stat.S_IMODE(info.st_mode) if stat.S_ISREG(info.st_mode) else None
+
+
 def _tracked(wt, path):
     return subprocess.run(["git", "cat-file", "-e", f"HEAD:{path}"], cwd=wt,
                           capture_output=True).returncode == 0
@@ -209,11 +242,17 @@ def _state(path):
 
 def _put(target, state):
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_symlink():
-        target.unlink()
-    if state[0] == "link":
+    if target.is_symlink() or state[0] == "link":
         target.unlink(missing_ok=True)
+    if state[0] == "link":
         os.symlink(state[1], target)
         return
-    target.write_bytes(state[1])
-    os.chmod(target, state[2])
+    handle, staging = tempfile.mkstemp(dir=target.parent, prefix=".holo-")
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(state[1])
+        os.chmod(staging, state[2])
+        os.replace(staging, target)
+    except BaseException:
+        Path(staging).unlink(missing_ok=True)
+        raise
