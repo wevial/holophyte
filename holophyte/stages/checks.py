@@ -2,9 +2,7 @@
 import io
 import os
 import re
-import shutil
 import signal
-import stat
 import subprocess
 import tempfile
 import time
@@ -13,7 +11,7 @@ from pathlib import Path
 from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import verify_config
 from holophyte.config.pipeline_settings import check_secrets, current_checks
-from holophyte.isolation.isolation_git import git_environment
+from holophyte.isolation.isolation_git import git
 from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import REDACTED, outbound
@@ -25,7 +23,6 @@ from store import pipelines
 OUTPUT_TAIL = 1000
 FRAGMENT = 8
 GROUP_GRACE_S = 2.0
-IDENTITY = ("user.name", "user.email")
 UNLAUNCHED = re.compile(
     r"^(?:\S*/)?(?:ba|da|z)?sh: (?:line )?(?:\d+: )?.+: "
     r"(?:command not found|not found|Permission denied|cannot execute.*)$")
@@ -84,59 +81,36 @@ def skip_reason(check, wt, base_sha, sha):
 
 
 def ran(project, check, wt, sha):
-    held = tempfile.mkdtemp(prefix="holo-check-")
-    tree = Path(held, "checkout")
+    outcome, found = "error", {}
     try:
-        _checkout(wt, tree, sha)
-        outcome, found = _outcome(project, check, tree)
+        scratch = tempfile.TemporaryDirectory(prefix="holo-check-")
+        with scratch as root:
+            tree = Path(root, "checkout")
+            git(wt, "worktree", "add", "--detach", str(tree), sha)
+            try:
+                outcome, found = _outcome(project, check, tree)
+            finally:
+                cleanup_error = _remove_worktree(wt, tree, scratch)
+                if cleanup_error:
+                    found["cleanup_error"] = cleanup_error
     except Exception as error:
-        outcome, found = "error", {"error": str(error)}
-    finally:
-        left = _removed(held)
-    if left is not None:
-        found["cleanup_error"] = left
+        found["error"] = str(error)
     return outcome, {key: scrubbed_output(value, check["secrets"])
                      if key in ("output", "error", "cleanup_error") else value
                      for key, value in found.items()}
 
 
-def _checkout(wt, tree, sha):
-    _git(tree.parent, "-c", "init.templateDir=", "init", "--quiet", str(tree))
-    _git(tree, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
-         "--update-head-ok", str(Path(wt).resolve()), "+refs/*:refs/*")
-    for key in IDENTITY:
-        value = subprocess.run(["git", "config", "--get", key], cwd=wt,
-                               capture_output=True, text=True,
-                               env=git_environment()).stdout.strip()
-        if value:
-            _git(tree, "config", key, value)
-    _git(tree, "checkout", "--detach", "--quiet", sha)
-
-
-def _removed(held):
+def _remove_worktree(wt, tree, scratch):
+    args = ("worktree", "remove", "--force", "--force", str(tree))
     try:
-        _opened(held)
-        shutil.rmtree(held)
-    except Exception as error:
-        return f"could not remove the check's checkout {held}: {error}"
+        git(wt, *args)
+    except subprocess.CalledProcessError:
+        try:
+            scratch.cleanup()
+            git(wt, *args)
+        except (OSError, subprocess.CalledProcessError) as error:
+            return f"could not remove {tree}: {error}"
     return None
-
-
-def _opened(root):
-    for top, dirs, _ in os.walk(root):
-        for name in dirs:
-            path = Path(top, name)
-            if not path.is_symlink():
-                os.chmod(path, stat.S_IMODE(path.stat().st_mode) | stat.S_IRWXU)
-
-
-def _git(wt, *args):
-    done = subprocess.run(["git", *args], cwd=wt, capture_output=True,
-                          env=git_environment())
-    if done.returncode != 0:
-        raise OSError(f"git {args[0]} {args[1] if len(args) > 1 else ''}"
-                      f" failed: {done.stderr.decode(errors='replace').strip()}")
-    return done.stdout.decode().strip()
 
 
 def _outcome(project, check, wt):
@@ -145,7 +119,7 @@ def _outcome(project, check, wt):
         status, out = _verify_command(project, " && ".join(check["commands"]),
                                       wt, verify_config(project).timeout_sec,
                                       on_start=lambda proc: _held(proc, started),
-                                      own_repository=True)
+                                      disposable_worktree=True)
     except subprocess.TimeoutExpired as expired:
         return "fail", {"exit_status": None, "timed_out": True,
                         "output": _text(expired.output)}

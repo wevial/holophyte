@@ -2232,24 +2232,23 @@ A project's own Check stages, one `[[pipeline.check]]` entry each. Each
 becomes a `check` stage in the pinned pipeline document, right after its
 Build stage (`implement` or `trim`), in config order; with no entry the
 document, its digest and its revision are the same as without the array. A
-check runs its commands, joined with `&&`, with the verify runner under
-`[verify] timeout_sec`, in a throwaway repository holding its own copy of
-the task repository's objects and refs (branches such as `main`,
-remote-tracking refs and tags) and its Git identity, checked out detached at
-the head it checks, with no remote, and removed afterwards whatever the
-command returned, so the task worktree, its index, its refs and its
-worktree list are never touched and a container route can mount it alone;
-files the head does not commit, ignored build output included, are not in
-it, and neither is the rest of the repository's local config. It
-records a stage attempt under its `id`: `pass` or `fail` with edge `next`,
-the exit status and the output's tail in its detail, and `timed_out` when
-the timeout ended it. It closes `error` when the command could not start,
-an exit of 126 or 127 the shell reports as a command not found or not
-executable included; a command that ran and exited 127 closes `fail`.
-Every process left in the command's process group is ended before the
-clone is removed, and a clone that could not be removed is named
-under `cleanup_error`. The output's tail is the command's own output, every
-line kept, bytes that are not UTF-8 replaced, with credentials redacted.
+check runs its commands, joined with `&&`, in a fresh detached Git worktree
+at the commit being checked. Host checks share the task repository's
+objects, branches and tags. Local edits, untracked files and ignored build
+output from the task worktree are absent. With container isolation enabled, verify
+mounts this checkout directly. The workspace follows the configured mount
+permissions and Git metadata is mounted read-only.
+
+Each attempt records the check's `id`, its outcome (`pass` or `fail`) and
+the `next` edge. Its detail holds the exit status and the last 1000
+characters of command output, with credentials scrubbed and invalid UTF-8
+replaced. The verify runner enforces `[verify] timeout_sec` and records
+`timed_out` on a timeout. A command that could not start records `error`,
+including when the shell reports a missing or non-executable command.
+A command that runs and exits 127 records `fail`. The runner ends any
+remaining processes in the command's process group and removes the
+detached worktree after each check. A removal failure is recorded under
+`cleanup_error`.
 
 A run runs the checks it pinned, never an edit made after the pin. The
 pinned document holds each check's `id`, `after`, `mode` and `paths` as

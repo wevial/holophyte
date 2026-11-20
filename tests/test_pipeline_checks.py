@@ -420,20 +420,18 @@ class AdvisoryCheckTests(CheckRuns):
         (self.target / "draft.txt").write_text("a draft\n")
         files, head = self.files(), self.git("rev-parse", "HEAD")
         status = self.git("status", "--porcelain", "--ignored")
-        refs = self.git("for-each-ref")
+        worktrees = self.git("worktree", "list", "--porcelain")
 
         outcome, found = self.ran([
             "cat README.md", "echo more >> README.md", "touch generated.txt",
-            "git add -A", COMMITS, "git tag check-side-effect",
-            "git branch check-branch", "exit 1"])
+            "git add -A", COMMITS, "rm .git", "exit 1"])
 
         self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
         self.assertEqual(found["output"], "base\n")
         self.assertEqual(self.files(), files)
         self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
-        self.assertEqual(self.git("for-each-ref"), refs)
-        self.assertEqual(len(self.git("worktree", "list").splitlines()), 1)
+        self.assertEqual(self.git("worktree", "list", "--porcelain"), worktrees)
 
     def test_git_location_variables_do_not_steer_a_check_to_the_task_repository(self):
         (self.target / "README.md").write_text("base\ndirty\n")
@@ -453,60 +451,67 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
 
-    def test_a_check_sees_the_task_repositorys_branches_from_a_linked_worktree(self):
+    def test_a_check_can_read_a_detached_round_head_and_main(self):
         task = self.target.parent / "task"
-        self.git("worktree", "add", "-qb", "task", str(task))
+        self.git("worktree", "add", "--detach", str(task))
         (task / "work.txt").write_text("work\n")
         self.git("add", "work.txt", cwd=task)
         self.git("commit", "-qm", "work", cwd=task)
         head = self.git("rev-parse", "HEAD", cwd=task).strip()
 
         outcome, found = checks.ran(
-            self.project, {"commands": ["git rev-parse main",
+            self.project, {"commands": ["git rev-parse HEAD main",
                                         "git diff --check main...HEAD"],
                            "secrets": frozenset()}, task, head)
 
-        self.assertEqual((outcome, found["exit_status"]), ("pass", 0))
-        self.assertEqual(found["output"], self.git("rev-parse", "main"))
+        self.assertEqual(outcome, "pass", found)
+        self.assertEqual(found["output"], head + "\n" + self.git("rev-parse", "main"))
 
-    def in_container(self, writable, commands):
-        """Run a check on a container route whose `docker run` runs the
-        command in the mounted checkout with the task repository's objects
-        out of reach and only the container's Git config."""
-        objects = Path(self.git("rev-parse", "--git-common-dir").strip())
-        objects = (self.target / objects / "objects").resolve()
+    def test_container_verify_mounts_the_registered_checkout_and_keeps_its_result(self):
+        mounted = []
 
-        def docker(command, workspace, timeout, env=None, **_):
-            objects.rename(objects.with_name("hidden"))
-            try:
-                done = subprocess.run(
-                    command[-1], shell=True, cwd=workspace, text=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    env={**env, "PATH": os.environ["PATH"]})
-            finally:
-                objects.with_name("hidden").rename(objects)
+        def docker(command, cwd, timeout, **kwargs):
+            volumes = [value for flag, value in zip(command, command[1:])
+                       if flag == "--volume"]
+            source, = [Path(value.split(":")[0]) for value in volumes
+                       if value.split(":")[1] == "/workspace"]
+            registered = self.git("worktree", "list", "--porcelain")
+            mounted.append((f"worktree {source}\n" in registered, source))
+            done = subprocess.run(command[-3:], cwd=source, text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             return done.returncode, done.stdout
 
-        route = launcher.Route(backend="container", writable=writable)
-        with patch.object(launcher, "route_for", return_value=route), \
-                patch.object(launcher, "image_ready"), \
-                patch.object(launcher, "run_capped", side_effect=docker), \
-                patch("holophyte.review.review_runner._remove_container"), \
-                patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull,
-                                        "GIT_CONFIG_NOSYSTEM": "1"}):
-            return self.ran(commands)
+        for writable in (False, True):
+            with self.subTest(writable=writable):
+                route = launcher.Route(backend="container", writable=writable)
+                with patch.object(launcher, "route_for", return_value=route), \
+                        patch.object(launcher, "image_ready"), \
+                        patch.object(launcher, "run_capped", side_effect=docker), \
+                        patch("holophyte.review.review_runner._remove_container"):
+                    outcome, found = self.ran(["cat README.md", "exit 19"])
 
-    def test_a_read_only_container_route_runs_git_in_a_self_contained_checkout(self):
-        outcome, found = self.in_container(False, ["git cat-file -t HEAD"])
+                self.assertEqual((outcome, found), ("fail", {
+                    "exit_status": 19, "timed_out": False, "output": "base\n"}))
+                registered, checkout = mounted.pop()
+                self.assertTrue(registered, checkout)
+                self.assertNotEqual(checkout, self.target)
+                self.assertFalse(checkout.exists())
 
-        self.assertEqual((outcome, found["exit_status"]), ("pass", 0))
-        self.assertEqual(found["output"], "commit\n")
+    @unittest.skipUnless(os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+                         "set HOLOPHYTE_TEST_DOCKER=1 for container integration")
+    def test_git_in_the_verify_container_can_read_the_check_head_and_packed_refs(self):
+        self.configure('[agents]\nimplementer_isolation = "container"\n')
+        main = self.git("rev-parse", "main")
+        self.git("pack-refs", "--all")
+        self.git("checkout", "--detach")
+        (self.target / "new.txt").write_text("round head\n")
+        self.git("add", "new.txt")
+        self.git("commit", "-qm", "round head")
 
-    def test_a_writable_container_route_takes_the_task_repositorys_identity(self):
-        outcome, found = self.in_container(True, ["echo executed"])
+        outcome, found = self.ran(["git rev-parse HEAD main", "git diff --check main"])
 
-        self.assertEqual((outcome, found["exit_status"]), ("pass", 0))
-        self.assertEqual(found["output"], "executed\n")
+        self.assertEqual(outcome, "pass", found)
+        self.assertEqual(found["output"], self.git("rev-parse", "HEAD") + main)
 
     def test_a_background_child_cannot_write_after_the_check_returns(self):
         marker = self.target.parent / "late.marker"
