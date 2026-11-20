@@ -2190,6 +2190,7 @@ change reaches the next run, never a run already under way.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `notes` | Default: absent (no notes) | The `[pipeline.notes]` table below. |
+| `check` | Default: absent (no checks) | The `[[pipeline.check]]` entries below. |
 
 ## `[pipeline.notes]`
 
@@ -2224,6 +2225,52 @@ note. A project with no note pins
 the same document, revision and digest as one without the table. An unknown
 key, a value that is not a string or a note over 4000 characters is a
 startup error naming the key and the accepted keys.
+
+## `[pipeline.check]`
+
+A project's own Check stages, one `[[pipeline.check]]` entry each. Each
+becomes a `check` stage in the pinned pipeline document, right after its
+Build stage (`implement` or `trim`), in config order; with no entry the
+document, its digest and its revision are the same as without the array. A
+check runs its commands, joined with `&&`, in the task worktree with the
+verify runner under `[verify] timeout_sec`, and records a stage attempt
+under its `id`: `pass` or `fail` with edge `next`, the exit status and the
+output's tail in its detail, `timed_out` when the timeout ended it, `error`
+when the command could not start. A check after `implement` runs at the
+top of each review round, before that round's verify, on the round's head;
+a check after `trim` runs once, right after trim (or its skip), on the
+trimmed head. An advisory check's output goes only into its attempt: no
+prompt, ledger entry or finding carries it, and the run goes on whatever
+it returns. A run reads its checks from its pinned pipeline document. A
+check whose read or run fails records `stage_record_failed` and never stops
+the run.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | Default: none (required) | The stage's id: a non-empty string no other check and no standard stage (`critic`, `implement`, `trim`, `verify`, `review`, `merge_gate`, `capture`, `covering_fix`, `check_fix`, `capture_fix`, `waiting`) uses. |
+| `after` | Default: none (required) | `implement` or `trim`: the Build stage the check follows. |
+| `commands` | Default: none (required) | A non-empty list of non-empty shell commands. |
+| `mode` | Default: none (required) | `advisory` (a failure is recorded and the run goes on) or `off` (recorded `skipped` with reason `mode off`, nothing runs). `required` is refused: that mode is not available yet. |
+| `paths` | Default: `[]` (every change) | Repository-relative globs, matched like `[review] high_paths`; when set, the check runs only if a file changed from the round's review base to the head matches one, and is recorded `skipped` with a reason naming the globs otherwise. |
+
+```toml
+[[pipeline.check]]
+id = "lint"
+after = "implement"
+commands = ["ruff check ."]
+mode = "advisory"
+
+[[pipeline.check]]
+id = "docs"
+after = "trim"
+commands = ["mkdocs build --strict"]
+mode = "advisory"
+paths = ["docs/**"]
+```
+
+A repeated `id`, an `id` a standard stage uses, an `after` or `mode`
+outside the values above, an empty `commands`, an unknown key, or a path
+that is absolute or climbs with `..` is a startup error naming the entry.
 
 ## `[scout]`
 

@@ -12,7 +12,7 @@ EFFORT_KEY = "model_reasoning_effort"
 REVIEW_ROLES = ["review", "adjudicate", "adversary", "consolidate"]
 
 
-def resolve(project, profile=None, notes=None):
+def resolve(project, profile=None, notes=None, checks=()):
     labels = route_labels(project)
     merge = merge_config(project)
     verify = verify_config(project)
@@ -45,6 +45,13 @@ def resolve(project, profile=None, notes=None):
                   cap=merge.capture_fix_rounds),
         ]
     stages.append(stage("waiting", "check", "factory", approve=merge.approve))
+    for after in ("trim", "implement"):
+        at = next(at for at, found in enumerate(stages) if found["id"] == after)
+        stages[at + 1:at + 1] = [
+            stage(check["id"], "check", "candidate", after=after,
+                  mode=check["mode"], commands=list(check["commands"]),
+                  paths=list(check["paths"]))
+            for check in checks if check["after"] == after]
     document = {"format": FORMAT, "name": NAME,
                 "merge": {"mode": merge.mode, "approve": merge.approve},
                 "stages": stages}

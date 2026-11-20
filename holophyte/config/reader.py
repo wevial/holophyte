@@ -98,7 +98,7 @@ KNOWN_KEYS["revert"] = frozenset(REVERT_KEYS)
 KNOWN_KEYS["console"] = frozenset(CONSOLE_KEYS)
 KNOWN_KEYS["patrol"] = frozenset(PATROL_KEYS)
 KNOWN_KEYS["automations"] = frozenset(AUTOMATION_KEYS)
-KNOWN_KEYS["pipeline"] = frozenset({"notes"})
+KNOWN_KEYS["pipeline"] = frozenset({"notes", "check"})
 KNOWN_KEYS["questions"] = frozenset((
     "url", "key_env", "min_confidence", "backend", "model", "effort",
     "backend_fallback", "fallback_model", "fallback_effort", "failures",

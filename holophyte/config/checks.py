@@ -27,7 +27,7 @@ from holophyte.config.config_tables import (
     trim_config,
     verify_config,
 )
-from holophyte.config.pipeline_settings import pipeline_notes
+from holophyte.config.pipeline_settings import pipeline_checks, pipeline_notes
 from holophyte.config.reader import (
     AGENT_CONFIG_KEYS,
     DEFAULT_IMPLEMENTER,
@@ -73,6 +73,7 @@ def check_config(project):
     verify_config(project)
     check_config_keys(project)
     pipeline_notes(project)
+    pipeline_checks(project)
     check_automations(project)
     board_alias_notice(project)
     from holophyte.scout.scout_config import scout_config

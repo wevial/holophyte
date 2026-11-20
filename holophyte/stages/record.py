@@ -3,7 +3,7 @@ import json
 from time import time
 
 import store
-from holophyte.config.pipeline_settings import current_notes
+from holophyte.config.pipeline_settings import current_checks, current_notes
 from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
@@ -53,8 +53,11 @@ def _resolved(run):
     row = latest_profile(conn, run_id)
     notes = guarded(conn, run_id, "pipeline_notes",
                     lambda: current_notes(run.project))
+    checks = guarded(conn, run_id, "pipeline_checks",
+                     lambda: current_checks(run.project))
     document = standard.resolve(run.project, row and row[1]["profile"],
-                                None if notes is REFUSED else notes)
+                                None if notes is REFUSED else notes,
+                                () if checks is REFUSED else checks)
     return pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
 
 
