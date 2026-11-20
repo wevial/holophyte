@@ -19,6 +19,7 @@ import store
 import store.automations
 import store.board
 import store.console_asks
+import store.council
 import store.criteria
 import store.follow_ups
 import store.gap_layers
@@ -390,6 +391,9 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "skip_stage",
                                                  "stage_attempts",
                                                  "stage_numbers"]),
+                                 # HOLO-870: each reviewer seat's row in a
+                                 # council review round.
+                                 (store.council, ["record_seat"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",
