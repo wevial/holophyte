@@ -10,6 +10,7 @@ from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import pr_media
 from holophyte.pr.evidence_refresh import publish_evidence
 from holophyte.redact import safe_print as print
+from holophyte.stages import record
 from holophyte.tickets import ticket_template
 
 
@@ -61,24 +62,30 @@ def fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
     fix round, else `sha`."""
     from holophyte.babysit.babysitter import _fix_threads, _next_round
     from holophyte.pr.pullrequest import _park_on_pr
-    failure = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
-                               sha, beat_s)
     merge = merge_config(project)
     cap = merge.capture_fix_rounds
     number = _rounds_run(conn, run_id) + 1
+    fixable = merge.ui_capture_local and number <= cap
+    failure = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
+                               sha, beat_s, fixable=fixable)
     if (not merge.ui_capture_local or failure is None
             or failure.kind != "capture" or number > cap):
         return sha
     _record_round(conn, run_id, task_id, pull, sha, failure, (number, cap))
     print(f"[holo2] the UI capture at {sha[:12]} failed; capture fix round"
           f" {number} of {cap}")
-    fixed = _fix_threads(project, conn, run_id, provider, task_id, branch, wt,
-                         sha, beat_s, pull, (), None, ticket, verify_cmd,
-                         contracts, budget_min, _next_round(conn, run_id),
-                         review_follows=True, reviewed=reviewed,
-                         goal=capture_fix_brief(project, pull, ticket, task_id,
-                                                sha, failure),
-                         reviewed_by_caller=True, notes=notes)
+    detail = {"round": number, "cap": cap,
+              "failure": " ".join(failure.sentence.split()),
+              "missing": list(failure.missing)}
+    fixed = record.fix_round(
+        conn, run_id, "capture_fix", sha, detail, wt,
+        lambda: _fix_threads(
+            project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+            pull, (), None, ticket, verify_cmd, contracts, budget_min,
+            _next_round(conn, run_id), review_follows=True, reviewed=reviewed,
+            goal=capture_fix_brief(project, pull, ticket, task_id, sha,
+                                   failure),
+            reviewed_by_caller=True, notes=notes))
     parsed = ticket_template.parse(ticket)
     with heartbeat_while(conn, run_id, beat_s):
         pr_media.prepare(project, wt, task_id, evidence_states=parsed.evidence_states,

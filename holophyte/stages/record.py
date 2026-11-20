@@ -3,7 +3,7 @@ import json
 from time import time
 
 import store
-from holophyte.loop.gates import InfraFailure, sh
+from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
 from holophyte.stages import standard
@@ -126,6 +126,17 @@ class Attempt:
         return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
 
 
+def fix_round(conn, run_id, stage_id, sha, detail, wt, fix):
+    with Attempt(conn, run_id, stage_id, sha, detail, wt=wt) as attempt:
+        try:
+            fixed = fix()
+        except MergeParked:
+            attempt.close_at_head("fail", "park")
+            raise
+        attempt.close("pass", "next", fixed)
+    return fixed
+
+
 def head(conn, run_id, wt):
     found = guarded(conn, run_id, "stage_head",
                     lambda: sh(["git", "rev-parse", "HEAD"], cwd=wt))
@@ -172,6 +183,15 @@ def skip(conn, run_id, stage_id, reason, sha=None):
     if conn is not None and run_id is not None:
         guarded(conn, run_id, "skip_stage",
                 lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))
+
+
+def repeats(conn, run_id, stage_id, sha, outcome, edge, detail):
+    row = guarded(conn, run_id, "stage_read", lambda: conn.execute(
+        "SELECT inputSha, outcome, edge, detail FROM stageAttempts"
+        " WHERE runId = ? AND stageId = ? ORDER BY id DESC LIMIT 1",
+        (run_id, stage_id)).fetchone())
+    return row not in (None, REFUSED) and (
+        tuple(row[:3]) == (sha, outcome, edge) and json.loads(row[3]) == detail)
 
 
 def waiting(conn, run_id, sha, approve, ready=False):

@@ -14,6 +14,7 @@ from holophyte.babysit.description_review import (
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, sweep_config
 from holophyte.review.reply_parsing import UNPARSED_PATH, parse_findings
+from holophyte.stages import record
 
 ROUND_KIND = "covering_fix_round"
 ALLOWANCE_KIND = "review_fix_allowance"
@@ -71,6 +72,35 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
     return _code_goal(conn, run_id, pull, ticket, verdict,
                       f"Fix note from the review of the fix at {sha[:12]}",
                       fix_note_of(_code_findings(covering))), None
+
+
+def fix_covering(review, contracts, budget_min, rnd, goal, notes):
+    from holophyte.babysit.babysitter import _fix_threads
+    (project, conn, run_id, provider, task_id, branch, wt, sha, _, beat_s, pull,
+     ticket, verify_cmd) = review[:13]
+    detail = record.guarded(conn, run_id, "stage_read",
+                            lambda: _round_detail(project, conn, run_id, rnd))
+    return record.fix_round(
+        conn, run_id, "covering_fix", sha,
+        {"review_round": rnd} if detail is record.REFUSED else detail, wt,
+        lambda: _fix_threads(
+            project, conn, run_id, provider, task_id, branch, wt, sha, beat_s,
+            pull, (), None, ticket, verify_cmd, contracts, budget_min, rnd,
+            review_follows=True, goal=goal, reviewed_by_caller=True,
+            notes=notes))
+
+
+def _round_detail(project, conn, run_id, rnd):
+    detail = {"review_round": rnd}
+    if conn is None:
+        return detail
+    kinds = [event.kind for event in store.read.narrative_events(
+        conn, run_id, (ALLOWANCE_KIND,)) if event.kind in (ROUND_KIND,
+                                                            ALLOWANCE_KIND)]
+    if kinds[-1:] == [ALLOWANCE_KIND]:
+        return {**detail, "allowance": True}
+    return {**detail, "round": kinds.count(ROUND_KIND),
+            "cap": merge_config(project).covering_fix_rounds}
 
 
 def _code_goal(conn, run_id, pull, ticket, verdict, label, note):

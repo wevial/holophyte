@@ -21,6 +21,7 @@ from holophyte.loop.stop import stop_if_requested
 from holophyte.pr import github, pr_status
 from holophyte.pr.pr_head import _just_pushed_state
 from holophyte.redact import safe_print as print
+from holophyte.stages import record
 
 LOG_TAIL_LINES = 80
 LOCAL_RUN_SEC = 300
@@ -114,14 +115,18 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     print(f"[holo2] checks failed on {pull.url}"
           f" ({', '.join(check.name for check in failed)}); check fix round"
           f" {number} of {cap}")
-    sha = _fix_threads(run.project, run.conn, run.run_id, run.provider,
-                       run.task_id, run.branch, run.wt, run.sha, beat_s, pull,
-                       (), None, ticket, verify_cmd, contracts, run.budget_min,
-                       pass_no, review_follows=True,
-                       goal=check_fix_brief(pull, failed, logs, ticket, group,
-                                            (number, cap)),
-                       no_commit_why=why, reviewed=reviewed,
-                       notes=state.notes)
+    detail = {"round": number, "cap": cap,
+              "checks": [check.name for check in failed], "group": group}
+    sha = record.fix_round(
+        run.conn, run.run_id, "check_fix", run.sha, detail, run.wt,
+        lambda: _fix_threads(
+            run.project, run.conn, run.run_id, run.provider, run.task_id,
+            run.branch, run.wt, run.sha, beat_s, pull, (), None, ticket,
+            verify_cmd, contracts, run.budget_min, pass_no,
+            review_follows=True,
+            goal=check_fix_brief(pull, failed, logs, ticket, group,
+                                 (number, cap)),
+            no_commit_why=why, reviewed=reviewed, notes=state.notes))
     return sha, _just_pushed_state(run.project, run.conn, run.run_id,
                                    run.provider, run.task_id, run.branch, sha,
                                    beat_s, pull, reviewed)

@@ -3,13 +3,64 @@ from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import github, image_fetch, pr_media
+from holophyte.stages import record
 from holophyte.tickets import ticket_template
 
 
-def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha, beat_s):
+def captured(project, conn, run_id, wt, task_id, parsed, capture, sha=None,
+             fixable=False):
+    if conn is None or run_id is None:
+        return capture()
+    sha = sha or record.head(conn, run_id, wt)
+    with record.Deferred(conn, run_id, "capture", sha, {}, wt) as attempt:
+        taken = capture()
+    found = record.guarded(conn, run_id, "stage_read", lambda: _capture_outcome(
+        project, wt, task_id, parsed, fixable))
+    if found is record.REFUSED or record.repeats(conn, run_id, "capture", sha,
+                                                   *found):
+        return taken
+    outcome, edge, detail = found
+    if outcome == "skipped":
+        record.skip(conn, run_id, "capture", detail["reason"], sha)
+    else:
+        attempt.opened().close(outcome, edge, sha, **detail)
+    return taken
+
+
+def _capture_outcome(project, wt, task_id, parsed, fixable):
+    cfg = merge_config(project)
+    reason = ("[merge] ui_paths is unset" if not cfg.ui_paths
+              else "[merge] ui_capture is unset" if not cfg.ui_capture.strip()
+              else "the change touches no UI path"
+              if not pr_media.matches(wt, cfg.ui_paths)
+              else "the ticket asks for no UI capture"
+              if not pr_media._wants_capture(cfg, wt, task_id, parsed.ui_change,
+                                             parsed.evidence_states)
+              else None)
+    if reason is not None:
+        return "skipped", "next", {"reason": reason}
+    failure = pr_media.capture_failure(
+        project, wt, task_id, parsed.evidence_states, parsed.evidence_files,
+        ui_change=parsed.ui_change)
+    if failure is None:
+        return "pass", "next", {}
+    edge = "on_fail" if fixable and failure.kind == "capture" else "next"
+    return "fail", edge, {"kind": failure.kind,
+                          "failure": " ".join(failure.sentence.split()),
+                          "missing": list(failure.missing)}
+
+
+def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha,
+                     beat_s, fixable=False):
+    parsed = ticket_template.parse(ticket)
+    return captured(project, conn, run_id, wt, task_id, parsed, lambda: _publish(
+        project, conn, run_id, task_id, wt, pull, parsed, sha, beat_s), sha,
+        fixable)
+
+
+def _publish(project, conn, run_id, task_id, wt, pull, parsed, sha, beat_s):
     if not merge_config(project).ui_paths:
         return None
-    parsed = ticket_template.parse(ticket)
     states, files = parsed.evidence_states, parsed.evidence_files
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
