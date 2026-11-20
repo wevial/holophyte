@@ -30,6 +30,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     a_task,
 )
 
+import holophyte.loop.pipeline  # noqa: E402 - after the sys.path insert above
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert
@@ -40,7 +41,7 @@ import store.operator_notes  # noqa: E402 - after the sys.path insert
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
-from holophyte.loop.gates import HUMAN_MERGE  # noqa: E402 - after the insert
+from holophyte.loop.gates import HUMAN_MERGE, InfraFailure  # noqa: E402
 
 HUMAN = '[merge]\nmode = "local"\napprove = "human"\n' + UNTRIMMED
 
@@ -105,6 +106,19 @@ class GateAndApprovalParkTests(StageQueries, LoopFixture):
                          [(2, 1, "pass", "next")])
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
                          [(1, "abandoned"), (2, "merged")])
+
+    def test_an_approved_park_closes_when_the_next_run_fails_profiling(self):
+        self.configure(HUMAN)
+        self.loop(Commit("work"), APPROVE)
+        self.released("approve")
+        unprofiled = InfraFailure("the run's implementer profile is gone")
+        with patch.object(holophyte.loop.pipeline, "profiled_run",
+                          side_effect=unprofiled):
+            self.loop()
+
+        (_, _, outcome, edge, _, _, ended, _), = self.attempts("waiting")
+        self.assertEqual((outcome, edge, ended),
+                         ("pass", "next", self.release_at("approve")))
 
     def test_a_gate_failing_after_merging_main_ends_at_the_merged_head(self):
         self.configure('[verify]\nbefore_merge = ["exit 1"]\n' + UNTRIMMED)
