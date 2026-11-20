@@ -178,15 +178,19 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
     return True
 
 
-def probe_council(project):
+def probe_council(project, numbers=None):
     from holophyte.review.council import seat_route
 
+    state = routes(project)
     for number, seat in enumerate(review_config(project).council, 1):
+        if numbers is not None and number not in numbers:
+            continue
         probe = probe_council_seat(project, number, seat_route(project, seat))
+        state.council_checked[number] = list(seat)
+        state.council_down.pop(number, None)
         if not probe.ok:
-            routes(project).council_down[number] = probe_diagnostic(project,
-                                                                    probe)
-            print(routes(project).council_down[number])
+            state.council_down[number] = probe_diagnostic(project, probe)
+            print(state.council_down[number])
 
 
 def container_pair_seat(project, role):

@@ -44,6 +44,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     UNTRIMMED,
     LoopFixture,
+    StubProvider,
 )
 
 import holophyte.review.council  # noqa: E402 - after the sys.path insert
@@ -59,7 +60,7 @@ from holophyte.config.review_settings import CouncilSeat  # noqa: E402
 from holophyte.loop import pool  # noqa: E402
 from holophyte.loop.gates import InfraFailure  # noqa: E402
 from holophyte.redact import REDACTED, values_held  # noqa: E402
-from holophyte.review import review_runner  # noqa: E402
+from holophyte.review import adversary, review_runner  # noqa: E402
 
 ASTRA = ("codex", "gpt-6-astra", "high")
 OPUS = ("claude", "opus", "high")
@@ -96,10 +97,11 @@ class Answer:
             "criteria": [{"id": "C1", "status": self.criterion,
                           "reason": "the named test runs the thing",
                           "witness": self.witness}] if self.criterion else [],
-            "findings": [{"path": path, "line": line, "severity": "p1",
+            "findings": [{"path": path, "line": line,
+                          "severity": (severity or ["p1"])[0],
                           "category": "correctness", "target": "code",
                           "message": message}
-                         for path, line, message in self.findings],
+                         for path, line, message, *severity in self.findings],
             "follow_ups": [],
             "scope": [{"path": path, "status": "needed",
                        "reason": "the scripted work"}
@@ -278,6 +280,11 @@ class CouncilRoundTests(CouncilFixture):
             "SELECT inputTokens, outputTokens FROM stageAttempts"
             " WHERE stageId = 'review'"), [(4600, 460)])
         self.assertEqual(self.findings(1), [])
+        self.assertEqual(sorted(
+            (turn["role"], turn["label"]) for (turn,) in (
+                (json.loads(payload),) for (payload,) in self.read(
+                    "SELECT payload FROM runEvents WHERE kind = 'agent_turn'"))),
+            [("review", "claude opus"), ("review", "codex gpt-6-astra")])
 
     def test_an_approval_and_a_request_merge_to_changes_with_the_union(self):
         fake = self.run_council(
@@ -382,16 +389,43 @@ class CouncilRoundTests(CouncilFixture):
         fake = self.run_council(
             council(ASTRA, OPUS).replace(UNTRIMMED, ADVERSARY_ON),
             Change("change", "poetry.lock", "locked\n"),
-            Attack("Nothing broke.\nADVERSARY: DONE"),
+            Attack("- src/app.py:4 [p2] a symlink may slip by\n"
+                   "EVIDENCE: concern\nADVERSARY: DONE"), Consolidate(),
             Change("fix", "src/app.py", "fixed\n"), seats={
                 "gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (unpinned,)),
                                 Answer("APPROVE", 9)],
                 "opus": [Answer("APPROVE", 8), Answer("APPROVE", 9)]})
 
         fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
-        self.assertIn("1. Dockerfile:7 [p1]", fix.goal)
+        self.assertIn("Dockerfile:7 [p1]", fix.goal)
         self.assertNotIn("README.md:12 [p1]", fix.goal)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_findings_differing_only_in_severity_both_reach_the_fix(self):
+        twins = (("README.md", 1, "the base line is never read back", "p1"),
+                 ("README.md", 1, "the base line is never read back", "p2"))
+        concern = ("- src/app.py:4 [p2] a symlink may slip by\n"
+                   "EVIDENCE: concern\nADVERSARY: DONE")
+        for side in (("Nothing broke.\nADVERSARY: DONE",),
+                     (concern, Consolidate())):
+            with self.subTest(adversary=side[0][:20]):
+                fixture = CouncilFixture()
+                fixture.setUp()
+                self.addCleanup(fixture.doCleanups)
+                fake = fixture.run_council(
+                    council(ASTRA, OPUS).replace(UNTRIMMED, ADVERSARY_ON),
+                    Change("change", "poetry.lock", "locked\n"),
+                    Attack(side[0]), *side[1:],
+                    Change("fix", "src/app.py", "fixed\n"), seats={
+                        "gpt-6-astra": [Answer("REQUEST_CHANGES", 4, twins),
+                                        Answer("APPROVE", 9)],
+                        "opus": [Answer("APPROVE", 8), Answer("APPROVE", 9)]})
+
+                fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
+                self.assertEqual(fix.goal.count(twins[0][2]), 2, fix.goal)
+                self.assertEqual(
+                    sorted(f["severity"] for f in fixture.findings(1)),
+                    ["p1", "p2"])
 
     def test_a_seat_down_at_its_startup_probe_is_missing_and_not_dispatched(self):
         fake = self.run_council(
@@ -504,6 +538,27 @@ class CouncilSignalTests(unittest.TestCase):
         self.assertEqual(review_runner._LIVE, set())
 
 
+class AdversarySignalTests(unittest.TestCase):
+    def test_the_stop_handler_stays_until_the_adversary_joins(self):
+        before = signal.getsignal(signal.SIGTERM)
+        primary_done, seen = threading.Event(), []
+
+        def primary():
+            primary_done.set()
+            return "reviewed"
+
+        def side():
+            primary_done.wait(10)
+            time.sleep(0.1)
+            seen.append(signal.getsignal(signal.SIGTERM))
+            return "attacked"
+        result = adversary.beside(None, None, primary, side)
+
+        self.assertEqual(result, ("reviewed", "attacked"))
+        self.assertNotEqual(seen, [before])
+        self.assertEqual(signal.getsignal(signal.SIGTERM), before)
+
+
 class CouncilSeatFailureTests(CouncilFixture):
     def a_run(self):
         self.configure("")
@@ -532,9 +587,11 @@ class CouncilSeatFailureTests(CouncilFixture):
         self.assertEqual(list(down), [1])
         self.assertIn("auth.json", down[1])
 
-    def test_a_pooled_worker_inherits_the_schedulers_failed_seat_probes(self):
-        self.configure(council(ASTRA, OPUS, LUNA))
-        routes(self.project).council_down = {2: "claude opus: unreachable"}
+    def scheduler_env(self, down):
+        state = routes(self.project)
+        state.council_checked = {number: list(seat) for number, seat in
+                                 enumerate((ASTRA, OPUS, LUNA), 1)}
+        state.council_down = dict(down)
         spawned = {}
 
         def spawn(argv, env, stdin):
@@ -543,11 +600,39 @@ class CouncilSeatFailureTests(CouncilFixture):
         with patch.object(pool, "SPAWN", spawn):
             pool._spawn_worker(self.project, 1)
         reset(self.project)
-        with patch.dict(os.environ, spawned, clear=True):
-            pool.inherit_council(self.project)
+        return spawned
 
-        self.assertEqual(routes(self.project).council_down,
-                         {2: "claude opus: unreachable"})
+    def worker_routes(self, config, spawned):
+        self.configure(config)
+        container, seen = Container(), {}
+
+        def work(target, provider):
+            seen.update(routes(target).council_down)
+            return 0
+        with patch.dict(os.environ, spawned, clear=True), \
+                patch.object(review_runner, "run_review", container), \
+                patch.object(pool, "_worker", work):
+            pool.worker(self.project, StubProvider())
+        return seen, container.probed
+
+    def test_a_pooled_worker_inherits_the_schedulers_failed_seat_probes(self):
+        self.configure(council(ASTRA, OPUS, LUNA))
+        spawned = self.scheduler_env({2: "claude opus: unreachable"})
+
+        seen, probed = self.worker_routes(council(ASTRA, OPUS, LUNA), spawned)
+
+        self.assertEqual(seen, {2: "claude opus: unreachable"})
+        self.assertEqual(probed, [])
+
+    def test_a_pooled_worker_probes_a_seat_its_config_changed_since(self):
+        self.configure(council(ASTRA, OPUS, LUNA))
+        spawned = self.scheduler_env({2: "claude opus: unreachable"})
+
+        seen, probed = self.worker_routes(
+            council(ASTRA, ("claude", "sonnet", "high"), LUNA), spawned)
+
+        self.assertEqual(seen, {})
+        self.assertEqual(probed, ["sonnet"])
 
     def test_a_failed_route_leaves_its_seat_missing_and_the_others_decide(self):
         fake = self.run_council(

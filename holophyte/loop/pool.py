@@ -32,7 +32,7 @@ WORKER_HANDOFF = 6
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
 CRITIC_FALLBACK_ENV = "HOLOPHYTE_CRITIC_FALLBACK"
-COUNCIL_DOWN_ENV = "HOLOPHYTE_COUNCIL_DOWN"
+COUNCIL_PROBES_ENV = "HOLOPHYTE_COUNCIL_PROBES"
 SPAWN = subprocess.Popen
 
 
@@ -102,10 +102,21 @@ def worker(target, provider):
 
 def inherit_council(target):
     from holophyte.agents.agent_routes import routes
+    from holophyte.agents.fallback import probe_council
+    from holophyte.config.review_settings import review_config
 
-    down = json.loads(os.environ.get(COUNCIL_DOWN_ENV) or "{}")
-    routes(target).council_down = {int(number): diagnostic
-                                   for number, diagnostic in down.items()}
+    probed = json.loads(os.environ.get(COUNCIL_PROBES_ENV) or "{}")
+    state, unchecked = routes(target), set()
+    for number, seat in enumerate(review_config(target).council, 1):
+        checked = probed.get(str(number))
+        if checked is None or checked["route"] != list(seat):
+            unchecked.add(number)
+            continue
+        state.council_checked[number] = checked["route"]
+        if checked["diagnostic"] is not None:
+            state.council_down[number] = checked["diagnostic"]
+    if unchecked:
+        probe_council(target, unchecked)
 
 
 def inherit_critic(target):
@@ -555,10 +566,14 @@ def _spawn_worker(target, slot):
 
     program, argv = reexec_command()
     env = dict(os.environ, **{WORKER_SLOT_ENV: str(slot)})
-    for key in (CRITIC_DOWN_ENV, CRITIC_FALLBACK_ENV, COUNCIL_DOWN_ENV):
+    for key in (CRITIC_DOWN_ENV, CRITIC_FALLBACK_ENV, COUNCIL_PROBES_ENV):
         env.pop(key, None)
-    if routes(target).council_down:
-        env[COUNCIL_DOWN_ENV] = json.dumps(routes(target).council_down)
+    state = routes(target)
+    if state.council_checked:
+        env[COUNCIL_PROBES_ENV] = json.dumps({
+            number: {"route": route,
+                     "diagnostic": state.council_down.get(number)}
+            for number, route in state.council_checked.items()})
     if routes(target).critic_failed:
         env[CRITIC_DOWN_ENV] = "1"
     if "critic" in routes(target).commands:

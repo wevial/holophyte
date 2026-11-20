@@ -250,12 +250,14 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         ruling)
     primary = stuck_review.kept_findings(consolidate.primary_findings(
         verdict, decision, unwitnessed + red + private), ruling)
-    handed = adversarial is not None and consolidate.handed_on(
-        project, conn, run_id, provider, task_id, rnd, primary,
-        adversarial, fixing,
-        partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
-                candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
-                run_id=run_id))
+    handed = (adversarial is not None and (adversarial or not seats)
+              and consolidate.handed_on(
+                  project, conn, run_id, provider, task_id, rnd, primary,
+                  adversarial, fixing,
+                  partial(agent, project, "consolidate", cwd=wt,
+                          base_sha=base_sha, candidate_sha=sha,
+                          timeout=consolidate.TIMEOUT, conn=conn,
+                          run_id=run_id)))
     if ruling is not None and ruling.settled_all:
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),

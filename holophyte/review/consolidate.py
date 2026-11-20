@@ -113,12 +113,19 @@ def ordered(merged):
 def exact(found):
     merged = {}
     for item in found:
-        key = (*_place(item), said(item["messages"][0]))
-        if key in merged:
-            _absorb(merged[key], item, messages=False)
+        kept = merged.setdefault((*_place(item), said(item["messages"][0])), [])
+        twin = next((other for other in kept if not _distinct(other, item)),
+                    None)
+        if twin is None:
+            kept.append(dict(item))
         else:
-            merged[key] = dict(item)
-    return ordered(list(merged.values()))
+            _absorb(twin, item, messages=False)
+    return ordered([item for kept in merged.values() for item in kept])
+
+
+def _distinct(kept, item):
+    return (kept["found_by"] == item["found_by"] == ["primary"]
+            and kept["severity"] != item["severity"])
 
 
 def _where(path, line):
