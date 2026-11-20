@@ -62,11 +62,11 @@ function Shell() {
   return (
     <ToastProvider>
       <SettingsMarksProvider>
-      <div data-shell="" className="flex min-h-screen flex-col bg-side text-ink min-[720px]:h-screen min-[720px]:overflow-hidden">
+      <div data-shell="" className="flex h-dvh flex-col overflow-hidden bg-side text-ink min-[720px]:h-screen">
         <TitleBar {...sidebar} />
-        <div className="flex flex-1 flex-col min-[720px]:min-h-0 min-[720px]:flex-row">
-          {sidebar.narrow ? sidebar.drawer && <SidebarDrawer onClose={sidebar.closeDrawer} /> : <Sidebar folded={sidebar.folded} />}
-          <main className="relative isolate min-w-0 flex-1 bg-canvas min-[720px]:overflow-y-auto min-[720px]:rounded-tl-[10px] min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]">
+        <div className="flex min-h-0 flex-1 flex-col min-[720px]:flex-row">
+          {sidebar.narrow ? <SidebarDrawer open={sidebar.drawer} onClose={sidebar.closeDrawer} /> : <Sidebar folded={sidebar.folded} />}
+          <main className="relative isolate min-w-0 flex-1 overflow-y-auto bg-canvas min-[720px]:rounded-tl-[10px] min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]">
             <TokenPrompt />
             <Outlet />
             {effect !== "none" && <Haze effect={effect} />}

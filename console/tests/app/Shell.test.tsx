@@ -1259,7 +1259,7 @@ test("at 390px the page loads with no sidebar nav and the panel button opens a d
   });
 });
 
-test("at 390px the open drawer closes on a nav link, the dimmed page or Escape, each time returning focus to the panel button", async () => {
+test("at 390px the open drawer, laid under the title bar that stays while the page scrolls, closes on a nav link, the dimmed page, Escape or the panel button, each time returning focus to the panel button", async () => {
   await atWidth(390, async () => {
     await mount("#/");
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toBe("Runs");
@@ -1267,10 +1267,13 @@ test("at 390px the open drawer closes on a nav link, the dimmed page or Escape, 
       ["link", () => fireEvent.click(within(drawer()!).getByRole("link", { name: "Runs" }))],
       ["scrim", () => fireEvent.click(document.querySelector("[data-scrim]")!)],
       ["escape", () => fireEvent.keyDown(document, { key: "Escape" })],
+      ["panel button", () => fireEvent.click(openSidebar())],
     ];
     for (const [way, close] of closes) {
       fireEvent.click(openSidebar());
       expect(drawer()).not.toBeNull();
+      expect(drawer()!.parentElement!.classList.contains("top-[30px]")).toBe(true);
+      expect([titleBar().parentElement!.classList.contains("overflow-hidden"), screen.getByRole("main").classList.contains("overflow-y-auto")]).toEqual([true, true]);
       await act(async () => close());
       await act(settle);
       expect([way, drawer()]).toEqual([way, null]);
@@ -1305,9 +1308,62 @@ test("at 390px the Runs state tabs keep one row that scrolls sideways, no tab wr
   await atWidth(390, async () => {
     await mount("#/runs");
     const row = screen.getByRole("group", { name: "Run states" });
-    for (const name of ["max-[720px]:flex-nowrap", "max-[720px]:overflow-x-auto"]) expect(row.classList.contains(name)).toBe(true);
+    for (const name of ["not-min-[720px]:flex-nowrap", "not-min-[720px]:overflow-x-auto"]) expect(row.classList.contains(name)).toBe(true);
     const tabs = within(row).getAllByRole("button");
     expect(tabs.map((tab) => tab.textContent!.split(" ")[0])).toEqual(["All", "Active", "Merged", "Failed", "Abandoned"]);
-    for (const tab of tabs) for (const name of ["max-[720px]:shrink-0", "max-[720px]:whitespace-nowrap"]) expect(tab.classList.contains(name)).toBe(true);
+    for (const tab of tabs) for (const name of ["not-min-[720px]:shrink-0", "not-min-[720px]:whitespace-nowrap"]) expect(tab.classList.contains(name)).toBe(true);
+  });
+});
+
+test("at 390px Ctrl+backslash opens no drawer over another modal", async () => {
+  await atWidth(390, async () => {
+    await mount("#/runs");
+    const modal = document.body.appendChild(Object.assign(document.createElement("div"), { role: "dialog" }));
+    modal.setAttribute("aria-modal", "true");
+    try {
+      fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+      expect(drawer()).toBeNull();
+    } finally {
+      modal.remove();
+    }
+    fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+    expect(drawer()).not.toBeNull();
+  });
+});
+
+test("at 390px going back to the same page with another filter closes the drawer and returns focus to the panel button", async () => {
+  await atWidth(390, async () => {
+    await mountAt("#/runs");
+    fireEvent.click(within(screen.getByRole("group", { name: "Run states" })).getByRole("button", { name: /^Merged/ }));
+    await settleHistory();
+    expect(window.location.hash).toContain("state=merged");
+    fireEvent.click(openSidebar());
+    await act(async () => window.history.back());
+    await settleHistory();
+    expect(window.location.hash).not.toContain("state=merged");
+    expect(drawer()).toBeNull();
+    expect(document.activeElement).toBe(openSidebar());
+  });
+});
+
+test("at 390px the drawer's Settings back row returns to the filtered page Settings was opened from", async () => {
+  await atWidth(390, async () => {
+    await mountAt("#/runs?state=merged");
+    fireEvent.click(openSidebar());
+    await act(async () => void fireEvent.click(within(drawer()!).getByRole("link", { name: "Settings" })));
+    await act(settle);
+    fireEvent.click(openSidebar());
+    const back = within(drawer()!).getAllByRole("link").find((link) => link.textContent === "Settings")!;
+    await act(async () => void fireEvent.click(back));
+    await act(settle);
+    expect(window.location.hash).toBe("#/runs?state=merged");
+  });
+});
+
+test("at 390px the drawer's first opening already lists the Merge queue link and count polled while it was closed", async () => {
+  await atWidth(390, async () => {
+    await mount("#/runs", queueDaemons(noQueue, servedQueue));
+    fireEvent.click(openSidebar());
+    expect(within(drawer()!).getByRole("link", { name: "Merge queue, 4 queued" })).toBeTruthy();
   });
 });

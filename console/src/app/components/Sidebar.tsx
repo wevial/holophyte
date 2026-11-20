@@ -300,11 +300,11 @@ export type SidebarFold = {
 export function useSidebarFold(): SidebarFold {
   const [storedFold, setFolded] = useState(readFolded);
   const narrow = !useSidebarWidth();
-  const path = useRouterState({ select: (state) => state.location.pathname });
-  const settingsMenu = SETTINGS_PATH.test(path);
+  const settingsMenu = useRouterState({ select: (state) => SETTINGS_PATH.test(state.location.pathname) });
+  const href = useRouterState({ select: (state) => state.location.href });
   const [openedOn, setOpenedOn] = useState<string | null>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const drawer = narrow && openedOn === path;
+  const drawer = narrow && openedOn === href;
   const folded = storedFold && !settingsMenu && !narrow;
   const closeDrawer = () => {
     setOpenedOn(null);
@@ -313,7 +313,7 @@ export function useSidebarFold(): SidebarFold {
   const fold = () => {
     if (narrow) {
       if (drawer) closeDrawer();
-      else setOpenedOn(path);
+      else setOpenedOn(href);
       return;
     }
     if (settingsMenu) return;
@@ -324,6 +324,7 @@ export function useSidebarFold(): SidebarFold {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!modChord(event, "\\")) return;
+      if (narrow && !drawer && document.querySelector('[aria-modal="true"]')) return;
       event.preventDefault();
       fold();
     };
@@ -572,32 +573,33 @@ export function Sidebar({ folded }: { folded: boolean }) {
   );
 }
 
-export function SidebarDrawer({ onClose }: { onClose: () => void }) {
+export function SidebarDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const box = useRef<HTMLDivElement>(null);
   const live = useRef(onClose);
   live.current = onClose;
   useEffect(() => {
+    if (!open) return;
     box.current?.focus();
     const keep = (event: KeyboardEvent) => {
       if (!event.defaultPrevented) trap(event, box.current, () => live.current());
     };
     document.addEventListener("keydown", keep);
     return () => document.removeEventListener("keydown", keep);
-  }, []);
+  }, [open]);
   return createPortal(
-    <div className="fixed inset-0 z-50">
+    <div hidden={!open} className="fixed inset-x-0 top-[30px] bottom-0 z-50">
       <div data-scrim aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-scrim" />
       <div
         ref={box}
         id="sidebar-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Sidebar"
+        role={open ? "dialog" : undefined}
+        aria-modal={open ? "true" : undefined}
+        aria-label={open ? "Sidebar" : undefined}
         tabIndex={-1}
         onClick={(event) => {
           if ((event.target as Element).closest("a[href]")) onClose();
         }}
-        className="absolute inset-y-0 left-0 flex w-[85%] bg-side outline-none text-ink shadow-[8px_0_24px_rgba(0,0,0,.28)]"
+        className="absolute inset-y-0 left-0 flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
         <Sidebar folded={false} />
       </div>

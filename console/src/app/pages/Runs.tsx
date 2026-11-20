@@ -96,14 +96,14 @@ function StateTabs({ state, counts, onPick }: { state: string | undefined; count
   const all = RUN_GROUPS.reduce((sum, group) => sum + counts[group], 0);
   const tabs = [{ group: undefined, label: "All", count: all }, ...RUN_GROUPS.map((group) => ({ group, label: STATE_LABELS[group], count: counts[group] }))];
   return (
-    <div role="group" aria-label="Run states" className="flex flex-wrap items-center gap-1 max-[720px]:flex-nowrap max-[720px]:overflow-x-auto">
+    <div role="group" aria-label="Run states" className="flex flex-wrap items-center gap-1 not-min-[720px]:flex-nowrap not-min-[720px]:overflow-x-auto">
       {tabs.map((tab) => (
         <button
           key={tab.label}
           type="button"
           aria-pressed={state === tab.group}
           onClick={() => onPick(tab.group)}
-          className="inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-chip px-2.5 max-[720px]:shrink-0 max-[720px]:whitespace-nowrap font-sans text-[13.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink"
+          className="inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-chip px-2.5 not-min-[720px]:shrink-0 not-min-[720px]:whitespace-nowrap font-sans text-[13.5px] font-medium text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink"
         >
           {tab.label} <span className="font-mono text-[12px] font-normal tabular-nums text-ink-3">{tab.count}</span>
         </button>
