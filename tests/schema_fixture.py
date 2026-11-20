@@ -89,7 +89,7 @@ DOCUMENTED_COLUMNS = {
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
-        "findingsFingerprint", "reviewerModel", "startedAt", "endedAt",
+        "findingsFingerprint", "reviewerModel", "startedAt", "endedAt", "reply",
     },
     "runEvents": {
         "id", "runId", "projectId", "seq", "level", "kind", "summary", "payload", "at",

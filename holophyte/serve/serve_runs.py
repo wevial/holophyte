@@ -16,6 +16,8 @@ from holophyte.config.config_tables import MERGE_KEYS, loop_config, merge_config
 from holophyte.config.project import worktree_path
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
+from holophyte.review.reply_parsing import UNWITNESSED_NOTE
+from holophyte.review.round_account import round_account
 from holophyte.serve import day_log
 from store.operator_notes import round_notes
 from store.steer_notes import chain_notes
@@ -368,23 +370,16 @@ def round_criteria(entries):
             for c in sorted(entries, key=lambda c: c["n"])]
 
 
-CRITERION_FINDING = re.compile(r"^CRITERION C(\d+): (.+?) \u2014 (.*)")
-
-
 def final_criteria(final, judged):
     if final.verdict == "error":
         return []
+    account = round_account(final)
     newest = next(iter(judged.values()), [])
-    verdicts = {c["n"]: dict(c, status="met", note="")
-                for c in round_criteria(newest)}
-    for finding in json.loads(final.findings):
-        found = (CRITERION_FINDING.match(finding.get("message", ""))
-                 if finding.get("path") == store.CRITERIA_PATH else None)
-        if found is not None:
-            n = int(found[1])
-            verdicts[n] = {"id": f"C{n}", "n": n,
-                           "status": found[2].replace(" ", "_"),
-                           "note": found[3]}
+    unlisted = (dict(status="met", note="") if account.verdict is None
+                else dict(status="unwitnessed", note=UNWITNESSED_NOTE))
+    verdicts = {c["n"]: dict(c, **unlisted) for c in round_criteria(newest)}
+    verdicts.update((c["n"], c) for c in account.criteria
+                    if c["n"] in verdicts or not newest)
     return [verdicts[n] for n in sorted(verdicts)]
 
 

@@ -549,6 +549,7 @@ class Version26EnumMigrationTests(unittest.TestCase):
         after['projects'] = [row[:7] + row[9:-1] for row in after['projects']]
         after['tickets'] = [row[:-11] for row in after['tickets']]
         after['runEvents'] = [row[:-1] for row in after['runEvents']]
+        after['reviewRounds'] = [row[:-1] for row in after['reviewRounds']]
         columns = [r[1] for r in conn.execute('PRAGMA table_info(runs)')]
         added = {'parkKind', 'failureKind', 'stopRequested', 'workerPid', 'revision',
                  'prSeenTitle', 'prSeenState', 'verifyMs', 'verifyStartedAt',
@@ -950,9 +951,9 @@ class PullRequestStateMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT prSeenState FROM runs ORDER BY id").fetchall(),
                 [(None,), (None,)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 70)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 71)
             self.assertEqual(store.schema.READABLE_FROM, 50)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (70,))
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone(), (71,))
             self.assertEqual(conn.execute(
                 f"SELECT {', '.join(columns)} FROM runs ORDER BY id").fetchall(),
                 before)
@@ -980,7 +981,7 @@ class ScoutTaskTitleMigrationTests(unittest.TestCase):
             self.addCleanup(conn.close)
 
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
-                             (70,))
+                             (71,))
             self.assertEqual(store.schema.READABLE_FROM, 50)
             columns = [row[1] for row in conn.execute(
                 "PRAGMA table_info(scoutTasks)") if row[1] != "title"]

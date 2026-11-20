@@ -325,6 +325,9 @@ Each module, one line:
   `holophyte/review/reply_parsing.py` reads (a reply that fails the schema is
   parsed as text), and the `review_reply_format` run event naming which format
   each review round used.
+- `holophyte/review/round_account.py` — a recorded review round's verdict,
+  criteria and findings, read from its stored JSON reply, or from its findings
+  text when the round has none.
 - `holophyte/review/citations.py` — near-miss witness citations: the classes
   that define a cited test, the dotted-module file, and whether an approved
   test is unchanged at the candidate.

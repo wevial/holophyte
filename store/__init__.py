@@ -528,7 +528,7 @@ def _json_document(label, value):
 
 def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
                         findings=(), verification_results=(),
-                        started_at=None, ended_at=None):
+                        started_at=None, ended_at=None, reply=None):
     if verdict not in ROUND_VERDICTS:
         raise ValueError(
             f"round verdict must be one of {ROUND_VERDICTS}, got {verdict!r}"
@@ -545,6 +545,7 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
         "verification results",
         _redact_document(_document_argument(
             "verification results", verification_results)))
+    reply_json = None if reply is None else _json_document("reply", reply)
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):
@@ -555,9 +556,9 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
         cursor = conn.execute(
             "INSERT INTO reviewRounds (runId, round, verificationResults,"
             " verdict, findings, findingsFingerprint, reviewerModel,"
-            " startedAt, endedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " startedAt, endedAt, reply) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (run_id, round_number, results_json, verdict, findings_json,
-             fingerprint, reviewer_model, started_at, ended_at),
+             fingerprint, reviewer_model, started_at, ended_at, reply_json),
         )
     return cursor.lastrowid
 

@@ -275,6 +275,10 @@ def event_reply(reply):
     return texts[-1] if reply_object(texts[-1]) is not None else None
 
 
+class RenderedReply(str):
+    pass
+
+
 def read_reply(reply):
     value = reply_object(reply)
     if value is None:
@@ -283,7 +287,14 @@ def read_reply(reply):
     if isinstance(reply, AgentOutput):
         text = AgentOutput(text, reply.command)
         text.__dict__.update(reply.__dict__)
+    else:
+        text = RenderedReply(text)
+    text.json_reply = value
     return text, "json"
+
+
+def json_reply(reply):
+    return getattr(reply, "json_reply", None)
 
 
 def record_format(conn, run_id, reply_format, review_round):

@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 70) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 71) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -42,7 +42,7 @@ A new table or column follows the ones already there:
 | `tickets` | Linear issue the loop has mirrored | loop | `activeRunId` is the lease: held by one run at a time, renewed by that run's heartbeat; status machine below; `blockedQuestion` when parked for a human; the contract snapshot the merge gate compares against |
 | `ticketCriteria` | version of a ticket criterion | ticket mirror, migration backfill, steer amendment | append-only; newest `id` per `(ticketId, criterion)` whose nullable `steerNoteId` does not name a withdrawn note is current; `criterion` renders as C1, C2, … and is never reassigned; `position` is 1-based or NULL when retired; `text` excludes a leading bold id; `witnessKind` ∈ `test, verify, reviewer_read`, nullable `witnessTarget`; `status` ∈ `open, retired`; `source` ∈ `filed, backfill, amendment`; `at` records the version time; migration backfills only open tickets |
 | `runs` | attempt at a ticket | loop, supervisor (end only) | phase machine below; `lastHeartbeat`, `timeBoxMs`, `outcome`, `outcomeReason`, `outcomeClass` (`work` or `infra`), `resumePhase`, `host` |
-| `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route |
+| `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route, the schema-checked JSON reply when the reviewer gave one |
 | `runEvents` | narrative event | loop, supervisor | phase changes, warnings, sweeps; the story `FINDINGS.md` does not tell. `level` ∈ `narrative, detail`; a `detail` row of kind `crash` carries the traceback of a run that crashed in its `payload`, its summary the one-line reason |
 | `sweepStrikes` | supervisor sighting | supervisor | consecutive silent sightings per run |
 | `supervisorHeartbeats` | supervisor process; one row for the host sweep | supervisor | pid, start, last beat, passes, host; the host sweep keeps one sentinel row per store, pid 0, which readers print as "host sweep" |
