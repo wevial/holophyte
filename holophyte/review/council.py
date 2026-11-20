@@ -315,7 +315,6 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
                if name in found]
         covered.update(ids)
         kept.append(dict(finding, raised_by=raisers(found, ids)))
-    held = {spot(finding) for finding in kept if spot(finding)}
     shared = shared_places(found)
     dropped, refuted = set(), []
     for entry in value["refuted"]:
@@ -325,13 +324,8 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
         if ids and entry["reason"].strip():
             dropped.update(ids)
             refuted.append(dict(entry, raised_by=raisers(found, ids)))
-    restored = {}
-    for name, (_, finding) in found.items():
-        if name in covered or name in dropped or spot(finding) in held:
-            continue
-        restored.setdefault(spot(finding) or name, []).append(name)
-    for at, ids in restored.items():
-        finding = dict(found[ids[0]][1], raised_by=raisers(found, ids))
+    for at, ids in unaccounted(found, covered | dropped).items():
+        finding = restored(found, ids)
         kept.append(finding)
         record_kept(conn, run_id, rnd, finding,
                     SHARED if at in shared else UNREASONED)
@@ -343,9 +337,25 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
             "scope": ruled_scope(value, answered), "refuted": refuted}
 
 
+def unaccounted(found, accounted):
+    left = {}
+    for name, (_, finding, evidence) in found.items():
+        if name not in accounted and evidence != "concern":
+            left.setdefault(spot(finding) or name, []).append(name)
+    return left
+
+
+def restored(found, ids):
+    findings = sorted((found[name][1] for name in ids),
+                      key=lambda finding: finding["severity"])
+    messages = dict.fromkeys(finding["message"] for finding in findings)
+    return dict(findings[0], message="\n".join(messages),
+                raised_by=raisers(found, ids))
+
+
 def spot(finding):
     path = candidate_path(kept_line(finding["path"]))
-    if not path or finding["line"] is None:
+    if not path or finding["line"] is None or finding["line"] <= 0:
         return None
     return path, finding["line"]
 
@@ -356,7 +366,7 @@ def raisers(found, ids):
 
 def shared_places(found):
     seats = {}
-    for who, finding in found.values():
+    for who, finding, _ in found.values():
         if who.startswith("seat") and spot(finding):
             seats.setdefault(spot(finding), set()).add(who)
     return {at for at, who in seats.items() if len(who) >= 2}

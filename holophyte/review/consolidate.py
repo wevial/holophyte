@@ -255,9 +255,9 @@ def second_pass(merged, ask):
 
 
 def council_inputs(answered, adversary):
-    raised = [(f"seat {seat.number}", finding) for seat in answered
+    raised = [(f"seat {seat.number}", finding, None) for seat in answered
               for finding in seat.value["findings"]]
-    raised += [("adversary", _council_finding(item))
+    raised += [("adversary", _council_finding(item), item["evidence"])
                for item in items([], adversary)]
     return {f"F{n}": entry for n, entry in enumerate(raised, 1)}
 
@@ -281,8 +281,9 @@ def _council_vote(seat):
 def council_brief(seated, found, criteria, sha):
     listed = "\n".join(
         f"{name}, raised by {who}: {_where(finding['path'] or '', finding['line'])}"
-        f" [{finding['severity']}] {' '.join(finding['message'].split())}"
-        for name, (who, finding) in found.items()) or "(none)"
+        f" [{finding['severity']}]{f' evidence {evidence}' if evidence else ''}"
+        f" {' '.join(finding['message'].split())}"
+        for name, (who, finding, evidence) in found.items()) or "(none)"
     text = (
         "You are the READ-ONLY consolidator of a review council. Its seats "
         f"reviewed commit {sha} against the ticket's acceptance criteria:\n\n"
@@ -297,7 +298,9 @@ def council_brief(seated, found, criteria, sha):
         "finding above it covers. Drop a finding only as a refuted entry "
         "naming its ids in raised_by, with the reason it does not block. A "
         "finding two or more seats raised at the same path and line is kept "
-        "even if you drop it, and so is one you neither keep nor drop. A "
+        "even if you drop it, and so is one you neither keep nor drop, except "
+        "an adversary finding with evidence concern, which blocks only if you "
+        "keep it. A "
         "criterion a seat marks not_met or unwitnessed stays so unless you "
         "name the test that witnesses it. Do not modify anything. Your reply "
         "is one JSON object that the turn's output schema checks: verdict, "

@@ -32,6 +32,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     Idle,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
+    UNTRIMMED,
     VALID_BODY,
     MergeModeFixture,
     StubProvider,
@@ -221,9 +222,49 @@ class ConsolidatedRoundTests(Consolidated):
         self.assertEqual(level, "detail")
         self.assertIn("README.md:1", summary)
         self.assertIn(SHARED[2], summary)
-        self.assertEqual(json.loads(payload)["finding"]["message"], SHARED[2])
+        self.assertEqual(json.loads(payload)["finding"]["message"],
+                         f"{SHARED[2]}\n{REWORDED[2]}")
         fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
         self.assertIn(SHARED[2], fix.goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_lone_finding_dropped_with_a_blank_reason_is_kept(self):
+        self.run_panel(
+            council(ASTRA, OPUS), Commit("work"), Commit("fix"),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (OTHER,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 9), Answer("APPROVE", 9)]},
+            rulings=[Ruling(refuted=((OTHER[2], " ", ("F1",)),)), Ruling()])
+
+        self.assertEqual(self.round_rows()[0],
+                         (1, "changes_requested", CONSOLIDATED_BY))
+        self.assertEqual([(f["path"], f["raised_by"]) for f in self.findings(1)],
+                         [("tests/test_thing.py", ["seat 1"])])
+        [(summary, _, _)] = self.events("council_kept")
+        self.assertIn("dropped without a reason", summary)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_an_adversary_finding_dropped_with_a_reason_no_longer_blocks(self):
+        traced = ("- src/app.py:4 [p1] a symlink may slip by\nEVIDENCE: traced\n"
+                  "- src/app.py:9 [p2] the lock may go stale\n"
+                  "EVIDENCE: concern\nADVERSARY: DONE")
+        self.run_panel(
+            council(ASTRA, OPUS).replace(UNTRIMMED, ADVERSARY_ON),
+            Change("change", "poetry.lock", "locked\n"), Attack(traced),
+            seats={"gpt-6-astra": [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)]},
+            rulings=[Ruling(refuted=((
+                "a symlink may slip by", "the path is resolved first",
+                ("F1",)),))])
+
+        [(_, _, brief)] = self.panel.consolidations
+        self.assertIn("F1, raised by adversary: src/app.py:4 [p1] evidence "
+                      "traced", brief)
+        self.assertIn("F2, raised by adversary: src/app.py:9 [p2] evidence "
+                      "concern", brief)
+        self.assertEqual(self.round_rows(), [(1, "pass", CONSOLIDATED_BY)])
+        self.assertEqual(self.findings(1), [])
+        self.assertEqual(self.events("council_kept"), [])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_seats_unmet_criterion_outlasts_a_met_claim_naming_no_witness(self):
