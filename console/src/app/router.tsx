@@ -65,7 +65,7 @@ function Shell() {
       <div data-shell="" className="flex h-dvh flex-col overflow-hidden bg-side text-ink min-[720px]:h-screen">
         <TitleBar {...sidebar} />
         <div className="flex min-h-0 flex-1 flex-col min-[720px]:flex-row">
-          {sidebar.narrow ? <SidebarDrawer open={sidebar.drawer} onClose={sidebar.closeDrawer} /> : <Sidebar folded={sidebar.folded} />}
+          {sidebar.narrow ? <SidebarDrawer open={sidebar.drawer} onClose={sidebar.closeDrawer} back={sidebar.back} /> : <Sidebar folded={sidebar.folded} back={sidebar.back} />}
           <main className="relative isolate min-w-0 flex-1 overflow-y-auto bg-canvas min-[720px]:rounded-tl-[10px] min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]">
             <TokenPrompt />
             <Outlet />
@@ -115,9 +115,11 @@ const routeTree = rootRoute.addChildren([
   pageRoute("/settings/$tab", Settings),
 ]);
 
+const narrowMain = () => (window.matchMedia?.("(min-width: 720px)").matches ? null : document.querySelector("main"));
+
 function createConsoleRouter() {
   const bare = window.location.hash === "" || window.location.hash === "#";
-  const router = createRouter({ routeTree, history: createHashHistory() });
+  const router = createRouter({ routeTree, history: createHashHistory(), scrollToTopSelectors: [narrowMain] });
   const stored = bare ? readStoredScope() : undefined;
   if (stored) void router.navigate({ to: "/", search: { project: stored }, replace: true });
   return router;

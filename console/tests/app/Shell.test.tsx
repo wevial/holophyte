@@ -1266,7 +1266,7 @@ test("at 390px the open drawer, laid under the title bar that stays while the pa
     const closes: [string, () => void][] = [
       ["link", () => fireEvent.click(within(drawer()!).getByRole("link", { name: "Runs" }))],
       ["scrim", () => fireEvent.click(document.querySelector("[data-scrim]")!)],
-      ["escape", () => fireEvent.keyDown(document, { key: "Escape" })],
+      ["escape", () => fireEvent.keyDown(document.activeElement!, { key: "Escape" })],
       ["panel button", () => fireEvent.click(openSidebar())],
     ];
     for (const [way, close] of closes) {
@@ -1365,5 +1365,70 @@ test("at 390px the drawer's first opening already lists the Merge queue link and
     await mount("#/runs", queueDaemons(noQueue, servedQueue));
     fireEvent.click(openSidebar());
     expect(within(drawer()!).getByRole("link", { name: "Merge queue, 4 queued" })).toBeTruthy();
+  });
+});
+
+test("at 390px with a ticket preview open, Escape in the drawer closes only the drawer, and / leaves focus in the drawer", async () => {
+  await atWidth(390, async () => {
+    const polls = daemons([], []);
+    await mount("#/tickets", async (url, init) => (url === `${ORIGIN}/board` ? Response.json(pinned) : polls(url, init)));
+    await act(settle);
+    await act(async () => void fireEvent.click(document.querySelector<HTMLElement>('[id^="card-"]')!));
+    const preview = () => screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer());
+    expect(preview()).toHaveLength(1);
+    fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true });
+    const panel = drawer()!;
+    fireEvent.keyDown(document.activeElement!, { key: "/" });
+    expect(panel.contains(document.activeElement)).toBe(true);
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    expect(drawer()).toBeNull();
+    expect(document.activeElement).toBe(openSidebar());
+    expect(preview()).toHaveLength(1);
+  });
+});
+
+test("at 390px a page opened from the drawer starts at the top of the scrolled page panel", async () => {
+  await atWidth(390, async () => {
+    await mountAt("#/runs");
+    const main = screen.getByRole("main");
+    main.scrollTop = 300;
+    expect(main.scrollTop).toBe(300);
+    fireEvent.click(openSidebar());
+    await act(async () => void fireEvent.click(within(drawer()!).getByRole("link", { name: "Flow" })));
+    await settleHistory();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Flow");
+    expect(main.scrollTop).toBe(0);
+  });
+});
+
+test("Settings opened from a filtered page at 390px still returns there after the window widens past 720px", async () => {
+  await atWidth(390, async () => {
+    await mountAt("#/runs?state=merged");
+    fireEvent.click(openSidebar());
+    await act(async () => void fireEvent.click(within(drawer()!).getByRole("link", { name: "Settings" })));
+    await act(settle);
+    act(() => happyDOM.setViewport({ width: 1280 }));
+    const back = within(aside()).getAllByRole("link").find((link) => link.textContent === "Settings")!;
+    await act(async () => void fireEvent.click(back));
+    await act(settle);
+    expect(window.location.hash).toBe("#/runs?state=merged");
+  });
+});
+
+test("at 390px Escape in the drawer's project switcher closes the switcher and leaves the drawer and a ticket preview open", async () => {
+  await atWidth(390, async () => {
+    const polls = daemons([], []);
+    await mount("#/tickets", async (url, init) => (url === `${ORIGIN}/board` ? Response.json(pinned) : polls(url, init)));
+    await act(settle);
+    await act(async () => void fireEvent.click(document.querySelector<HTMLElement>('[id^="card-"]')!));
+    fireEvent.click(openSidebar());
+    await act(async () => void fireEvent.click(within(drawer()!).getByRole("button", { name: /Switch project$/ })));
+    const find = within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
+    await act(async () => find.focus());
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    await act(settle);
+    expect(screen.queryByRole("dialog", { name: "Switch project" })).toBeNull();
+    expect(drawer()).not.toBeNull();
+    expect(screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer())).toHaveLength(1);
   });
 });

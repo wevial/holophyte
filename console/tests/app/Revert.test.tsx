@@ -477,7 +477,7 @@ test("a preview answered after the narrow-width sidebar drawer opened and closed
     await revertFromRunPage();
     await act(async () => void fireEvent.keyDown(document, { key: "\\", ctrlKey: true }));
     expect(screen.getByRole("dialog", { name: "Sidebar" })).toBeTruthy();
-    await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
     expect(screen.queryAllByRole("dialog")).toHaveLength(0);
     await act(async () => release());
     for (let round = 0; round < 4; round += 1) await act(settle);

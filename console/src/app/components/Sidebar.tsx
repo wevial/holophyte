@@ -295,6 +295,7 @@ export type SidebarFold = {
   drawer: boolean;
   closeDrawer: () => void;
   toggleRef: RefObject<HTMLButtonElement | null>;
+  back: string | null;
 };
 
 export function useSidebarFold(): SidebarFold {
@@ -305,6 +306,8 @@ export function useSidebarFold(): SidebarFold {
   const [openedOn, setOpenedOn] = useState<string | null>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const drawer = narrow && openedOn === href;
+  const lastPage = useRef<string | null>(null);
+  if (!settingsMenu) lastPage.current = href;
   const folded = storedFold && !settingsMenu && !narrow;
   const closeDrawer = () => {
     setOpenedOn(null);
@@ -338,7 +341,7 @@ export function useSidebarFold(): SidebarFold {
     if (narrow) toggleRef.current?.focus();
   }, [openedOn, drawer, narrow]);
 
-  return { folded, foldable: narrow || !settingsMenu, fold, narrow, drawer, closeDrawer, toggleRef };
+  return { folded, foldable: narrow || !settingsMenu, fold, narrow, drawer, closeDrawer, toggleRef, back: lastPage.current };
 }
 
 const REACH_KEY = "holophyte.history-reach";
@@ -471,7 +474,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
   );
 }
 
-export function Sidebar({ folded }: { folded: boolean }) {
+export function Sidebar({ folded, back }: { folded: boolean; back: string | null }) {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const deps = useContext(PollDepsContext);
@@ -480,9 +483,6 @@ export function Sidebar({ folded }: { folded: boolean }) {
   const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
   const onSettings = useRouterState({ select: (state) => /^\/settings(\/|$)/.test(state.location.pathname) });
   const settingsMenu = useRouterState({ select: (state) => SETTINGS_PATH.test(state.location.pathname) });
-  const href = useRouterState({ select: (state) => state.location.href });
-  const lastPage = useRef<string | null>(null);
-  if (!settingsMenu) lastPage.current = href;
   const hostNeeds = hostsNeedingAttention(hosts);
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
@@ -546,7 +546,7 @@ export function Sidebar({ folded }: { folded: boolean }) {
         folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
-      {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
+      {settingsMenu ? <SettingsNav back={back} /> : <>
       <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
@@ -573,7 +573,12 @@ export function Sidebar({ folded }: { folded: boolean }) {
   );
 }
 
-export function SidebarDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+const inPopup = (target: EventTarget | null, drawer: HTMLElement | null) => {
+  const popup = target instanceof Element ? target.closest('[role="dialog"]') : null;
+  return popup != null && popup !== drawer;
+};
+
+export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose: () => void; back: string | null }) {
   const box = useRef<HTMLDivElement>(null);
   const live = useRef(onClose);
   live.current = onClose;
@@ -581,13 +586,22 @@ export function SidebarDrawer({ open, onClose }: { open: boolean; onClose: () =>
     if (!open) return;
     box.current?.focus();
     const keep = (event: KeyboardEvent) => {
-      if (!event.defaultPrevented) trap(event, box.current, () => live.current());
+      const target = event.target as Node;
+      if (target !== document.body && !box.current?.contains(target)) return;
+      if (inPopup(event.target, box.current)) return;
+      trap(event, box.current, () => live.current());
     };
-    document.addEventListener("keydown", keep);
-    return () => document.removeEventListener("keydown", keep);
+    document.addEventListener("keydown", keep, true);
+    return () => document.removeEventListener("keydown", keep, true);
   }, [open]);
   return createPortal(
-    <div hidden={!open} className="fixed inset-x-0 top-[30px] bottom-0 z-50">
+    <div
+      hidden={!open}
+      onKeyDown={(event) => {
+        if (!event.metaKey && !event.ctrlKey && !inPopup(event.target, box.current)) event.stopPropagation();
+      }}
+      className="fixed inset-x-0 top-[30px] bottom-0 z-50"
+    >
       <div data-scrim aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-scrim" />
       <div
         ref={box}
@@ -601,7 +615,7 @@ export function SidebarDrawer({ open, onClose }: { open: boolean; onClose: () =>
         }}
         className="absolute inset-y-0 left-0 flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
-        <Sidebar folded={false} />
+        <Sidebar folded={false} back={back} />
       </div>
     </div>,
     document.body,
