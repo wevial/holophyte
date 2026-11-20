@@ -427,14 +427,12 @@ class IsolationTests(GoRaceCases, IsolationCase):
                 self.assertEqual(command[-2:], ["claude", "-p"])
 
     def agy_project(self):
-        main, worktree = self.make_worktree()
-        self.target.path = main
+        self.target.path, worktree = self.make_worktree()
         release = self.fake_codex_release()
         binary = release / "agy"
         binary.write_text('#!/bin/sh\nprintf "%s" "$PATH"\n')
         binary.chmod(0o755)
-        login = Path(".gemini/antigravity-cli/antigravity-oauth-token")
-        host_login = self.root / login
+        host_login = self.root / ".gemini/antigravity-cli/antigravity-oauth-token"
         host_login.parent.mkdir(parents=True)
         host_login.write_text("host-login")
         self.table["agents"].update(
@@ -463,10 +461,10 @@ class IsolationTests(GoRaceCases, IsolationCase):
         from holophyte.isolation import launcher
 
         worktree, binary, host_login = self.agy_project()
-        target = Path("/home/implementer/.gemini/antigravity-cli",
-                      "antigravity-oauth-token")
+        target = Path("/home/implementer") / host_login.relative_to(self.root)
         sibling = self.root / "provider.json"
         sibling.write_text("provider")
+        argv = ["agy", "-p", "goal"]
 
         def run(command, cwd, timeout, *, env):
             mounts = [command[i + 1] for i, flag in enumerate(command)
@@ -488,13 +486,12 @@ class IsolationTests(GoRaceCases, IsolationCase):
             return 0, copy.read_text()
 
         with (patch.object(launcher, "image_ready"),
-              patch.object(launcher.review_runner, "_remove_container")):
+              patch.object(launcher.review_runner, "_remove_container"),
+              patch.object(launcher, "run_capped", side_effect=run)):
             for credential in ({}, {"file": str(sibling),
                                     "destination": str(target.with_name("key"))}):
-                with (self.subTest(credential=credential),
-                      patch.object(launcher, "run_capped", side_effect=run)):
+                with self.subTest(credential=credential):
                     self.table["agents"]["implementer_credential"] = credential
-                    argv = ["agy", "-p", "goal"]
                     route = launcher.turn_route(self.target, argv)
                     self.assertEqual(launcher.launch(route, worktree, {}, argv,
                                                      project=self.target),
@@ -503,15 +500,13 @@ class IsolationTests(GoRaceCases, IsolationCase):
     def test_agy_launch_requires_the_host_executable(self):
         from holophyte.isolation import launcher
 
-        main, worktree = self.make_worktree()
-        self.target.path = main
         with (patch.dict(os.environ, {"PATH": str(self.root), "HOME": str(self.root)}),
               patch.object(launcher, "image_ready"),
               patch.object(launcher.review_runner, "_remove_container"),
               patch.object(launcher, "run_capped"),
-              self.assertRaisesRegex(RuntimeError, "agy")):
-            launcher.launch(launcher.Route("container", writable=False), worktree, {},
-                            ["agy", "-p", "goal"], project=self.target)
+              self.assertRaisesRegex(RuntimeError, "agy executable missing from PATH")):
+            launcher.launch(launcher.Route("container", writable=False), self.root, {},
+                            ["agy", "-p", "goal"])
 
     def test_codex_fallback_mounts_the_host_release_read_only(self):
         from holophyte.isolation import launcher
