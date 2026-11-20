@@ -158,17 +158,16 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
             f"answer, under the quorum of {QUORUM}: {'; '.join(absent)}; "
             f"candidate preserved at {sha}", "review_route")
     value = merged([seat.value for seat in answered], criteria, wt, sha)
-    reply = council_reply(value, answered)
-    reply.council_seats = seated
-    return reply, value["verdict"], ""
+    return council_reply(value, seated), value["verdict"], ""
 
 
-def council_reply(value, answered):
+def council_reply(value, seated):
     reply = RenderedReply(rendered(value))
     reply.json_reply = value
     reply.council_findings = stored_findings(value["findings"])
-    reply.council_route = "council " + ", ".join(seat.route
-                                                 for seat in answered)
+    reply.council_route = "council " + ", ".join(
+        seat.route for seat in seated if seat.status == "answered")
+    reply.council_seats = seated
     return reply
 
 
@@ -278,8 +277,7 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
             store.record_event(conn, run_id, "council_unconsolidated", summary)
         return verdict, verdict.json_reply["verdict"]
     final = ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha)
-    reply = council_reply(final, answered)
-    reply.council_seats = seated
+    reply = council_reply(final, seated)
     reply.consolidated_by = label
     return reply, final["verdict"]
 
