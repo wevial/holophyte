@@ -625,10 +625,10 @@ class DevinImplementerTests(ClaudeTableTests):
 class AgyImplementerTests(unittest.TestCase):
     setUp = ClaudeTableTests.setUp
     TABLE = 'harness = "agy"\nmodel = "gemini-4-neon-xhigh"\n'
-    OPTIONS = ["-p", "--model", "gemini-4-neon-xhigh",
+    OPTIONS = ["--model", "gemini-4-neon-xhigh",
                "--dangerously-skip-permissions", "--output-format", "json"]
 
-    def test_writing_seats_run_agy_print_mode_with_the_goal_last(self):
+    def test_writing_seats_end_with_the_print_flag_then_the_goal(self):
         self.target.config_path.write_text("".join(
             f"[agents.{key}]\n{self.TABLE}" for key in
             ("implementer", "trimmer", "implementer_profiles.neon")))
@@ -638,7 +638,8 @@ class AgyImplementerTests(unittest.TestCase):
         seats.append(holophyte.agents.harness.implementer_profiles(self.target)["neon"])
         for seat in seats:
             with self.subTest(seat=seat.role):
-                self.assertEqual(seat.turn("GOAL"), ["agy", *self.OPTIONS, "GOAL"])
+                self.assertEqual(seat.turn("GOAL"),
+                                 ["agy", *self.OPTIONS, "-p", "GOAL"])
 
     def test_agy_requires_a_model_and_refuses_effort(self):
         for options, key in (
@@ -652,7 +653,7 @@ class AgyImplementerTests(unittest.TestCase):
                         SystemExit, rf"\[agents\.implementer\] {key}\b"):
                     holophyte.config.checks.check_config(self.target)
 
-    def test_agy_extracts_the_reply_and_resumes_its_conversation_before_the_goal(self):
+    def test_agy_reply_and_resume_keep_the_print_flag_last(self):
         self.target.config_path.write_text("[agents.implementer]\n" + self.TABLE)
         seat = holophyte.agents.harness.seat(self.target, "implement")
         output = '{"conversation_id":"c-1","status":"SUCCESS","response":"done"}'
@@ -664,7 +665,8 @@ class AgyImplementerTests(unittest.TestCase):
         holophyte.agents.roles.agent(self.target, "implement", "fix the finding",
                                      self.repo, argv=seat.resume(session))
         self.assertEqual(json.loads(self.calls.read_text()),
-                         [*self.OPTIONS, "--conversation", "c-1", "fix the finding"])
+                         [*self.OPTIONS, "--conversation", "c-1", "-p",
+                          "fix the finding"])
 
 
 class ContainerImplementerTests(unittest.TestCase):
