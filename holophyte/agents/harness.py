@@ -51,6 +51,7 @@ class Adapter:
     efforts = None
     resumes = True
     orchestrations = frozenset()
+    models = ()
 
     @property
     def binary(self):
@@ -78,6 +79,7 @@ class Claude(Adapter):
     roles = frozenset({"implementer", "trimmer", "critic", SCOUT_LEAD,
                        SCOUT_HELPER})
     orchestrations = frozenset({"subagents", "workflow"})
+    models = ("opus", "sonnet", "haiku")
 
     def turn(self, binary, options, role):
         return [binary, "-p", "--session-id", str(uuid.uuid4()),
@@ -125,6 +127,7 @@ class Codex(Adapter):
                        "critic", "adversary", SCOUT_LEAD, SCOUT_HELPER})
     efforts = review_runner.EFFORTS
     orchestrations = frozenset({"subagents"})
+    models = ("gpt-6-astra", "gpt-6-luna", "gpt-6.1-sol")
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
     IMPLEMENTER = ["--dangerously-bypass-approvals-and-sandbox",
                    "--skip-git-repo-check"]
@@ -313,6 +316,7 @@ class ClaudeSdk(Adapter):
     harness_key = "claude"
     roles = frozenset({"critic"})
     resumes = False
+    models = Claude.models
 
     def turn(self, binary, options, role):
         return [self.name, *Claude.route(options)]
