@@ -68,11 +68,8 @@ def configured_seats(agents):
     if isinstance(profiles, dict):
         entries += [(f"{PROFILES_KEY}.{name}", value)
                     for name, value in profiles.items()]
-    seats = []
-    for seat, value in entries:
-        seats += [(seat, name, model) for name, model in seat_routes(seat, value)
-                  if name is not None]
-    return seats
+    return [(seat, name, model) for seat, value in entries
+            for name, model in seat_routes(seat, value) if name is not None]
 
 
 def seat_routes(seat, value):
@@ -111,8 +108,7 @@ def newest_probe(seats, probes):
 
 
 def models(adapter, configured):
-    curated = list(adapter.models)
     extra = [model for model in dict.fromkeys(configured)
-             if model is not None and model not in curated]
-    return ([{"id": model, "source": "curated"} for model in curated]
+             if model is not None and model not in adapter.models]
+    return ([{"id": model, "source": "curated"} for model in adapter.models]
             + [{"id": model, "source": "configured"} for model in extra])
