@@ -47,7 +47,7 @@ FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention", "prefs",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
-           "run-transcript", "run-stages", "pipeline",
+           "run-transcript", "run-stages", "pipeline", "harnesses",
            "shipped", "history", "holds", "ledger", "findings", "board", "ticket",
            "story", "ticket-check", "ticket-search", "scouts", "scout",
            "scout-routes", "merge-queue")
@@ -143,8 +143,8 @@ class GeneratedFilesTests(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in before
                                 if path.parent == SCHEMA_DIR),
                          [f"{stem}.schema.json" for stem in (
-                             "attention", "board", "findings", "flow", "history",
-                             "holds",
+                             "attention", "board", "findings", "flow",
+                             "harnesses", "history", "holds",
                              "host-attention", "host-status", "ledger",
                              "merge-queue", "path-matches", "peers",
                              "pipeline", "prefs",

@@ -296,6 +296,27 @@ CREATE TABLE IF NOT EXISTS reviewRounds (
     UNIQUE (runId, round)
 );
 
+-- councilSeats: one reviewer seat of a council review round; `verdict`,
+-- `score` and `reply` stay NULL unless the seat answered.
+CREATE TABLE IF NOT EXISTS councilSeats (
+    id        INTEGER PRIMARY KEY,
+    runId     INTEGER NOT NULL REFERENCES runs (id),
+    round     INTEGER NOT NULL,
+    seat      INTEGER NOT NULL CHECK (seat > 0),
+    route     TEXT    NOT NULL,
+    status    TEXT    NOT NULL
+        {_enums.check_clause('status', _enums.CouncilSeatStatus)},
+    verdict   TEXT
+        {_enums.check_clause('verdict', _enums.CouncilVerdict)},
+    score     INTEGER CHECK (score BETWEEN 0 AND 10),
+    reply     TEXT,  -- the schema-checked JSON reply, redacted
+    reason    TEXT,
+    seconds   REAL,
+    startedAt INTEGER NOT NULL,
+    endedAt   INTEGER NOT NULL,
+    UNIQUE (runId, round, seat)
+);
+
 -- runEvents: append-only log, one stream per run (state-model §2).
 CREATE TABLE IF NOT EXISTS runEvents (
     id      INTEGER PRIMARY KEY,

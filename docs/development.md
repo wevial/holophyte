@@ -340,6 +340,11 @@ Each module, one line:
 - `holophyte/review/adversary.py` — the adversarial pass beside the primary
   review: when a round runs it, its brief by depth and scope, the reply's
   evidence levels and the findings that block.
+- `holophyte/review/council.py` — a council review round under
+  `[[review.council]]`: every seat in parallel on the round's prompt with the
+  `council_reply.schema.json` reply brief, one retry for a reply the schema
+  refuses, each seat's `councilSeats` row, the two-seat quorum and the
+  strictest-wins merge of the answering seats' replies.
 - `holophyte/review/consolidate.py` — one findings list for a fix turn after an
   adversarial pass: the exact merge, the consolidator's merges and order, the
   three-concern cap, the held concerns and the high-path raise.
@@ -560,6 +565,9 @@ Each module, one line:
 - `holophyte/serve/serve_pipeline.py` — the daemon's `GET /pipeline`:
   the pipeline the project's config resolves to now, its pinned revision,
   and each stage's numbers over a window of days.
+- `holophyte/serve/serve_harnesses.py` — the daemon's `GET /harnesses`:
+  each registered harness, the binary it would run and whether the host
+  has it, the seats on it, their newest probe and the models it offers.
 - `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
   does not hold: a `park` row for each park waiting on the maintainer and a
   `failure` row for each failed run with no `failure` ledger row.
@@ -601,7 +609,8 @@ Each module, one line:
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
 - `holophyte/serve/contract_pipeline.py` — the current pipeline and its
-  stages' numbers `GET /pipeline` answers, as the contract declares them.
+  stages' numbers `GET /pipeline` answers, and the harnesses
+  `GET /harnesses` answers, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.
@@ -1109,6 +1118,8 @@ The store is its own package:
 - `store/stages.py` — `open_stage()`, `close_stage()` and `skip_stage()`: a
   run's `stageAttempts`, numbered per stage, each closed with the agent
   seconds, tokens and cost of its roles' turns recorded while it was open.
+- `store/council.py` — `record_seat()`: one reviewer seat's row in a council
+  review round, its reply and reason redacted.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
