@@ -2217,7 +2217,8 @@ review = "Check the migration notes against the schema change."
 ```
 
 A fresh run reads its notes from the config file as it stands at its claim,
-even mid-loop, and pins each note's text verbatim. The shadow reviewer gets
+even mid-loop, and pins each note's text verbatim, less any credential that
+file or the loop's config holds. The shadow reviewer gets
 the run's pinned `review` note too. An empty or whitespace-only note is no
 note. A project with no note pins
 the same document, revision and digest as one without the table. An unknown

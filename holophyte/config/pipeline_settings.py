@@ -1,12 +1,21 @@
 from holophyte.config.reader import load_config
+from holophyte.redact import known_secrets, outbound
 
 NOTE_TARGETS = ("implement", "review", "trim", "critic", "pr_writer",
                 "babysit_reply")
 NOTE_LIMIT = 4000
 
 
-def pipeline_notes(project):
-    table = load_config(project.config_path).get("pipeline", {})
+def current_notes(project):
+    config = load_config(project.config_path)
+    secrets = known_secrets(config) | known_secrets(project.config())
+    return {key: outbound(text, secrets)
+            for key, text in pipeline_notes(project, config).items()}
+
+
+def pipeline_notes(project, config=None):
+    config = project.config() if config is None else config
+    table = config.get("pipeline", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {project.config_path}: [pipeline] must be a table, got "

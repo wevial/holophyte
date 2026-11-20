@@ -31,6 +31,8 @@ from holophyte.review.json_reply import read_reply
 from holophyte.review.reply_parsing import criteria_findings, parse_findings
 from holophyte.stages import record
 
+NOTES_SLOT = "\0notes\0"
+
 
 @dataclass(frozen=True)
 class ShadowBrief:
@@ -141,8 +143,9 @@ def _review(project, run_id, brief, wt, branch, head, ok, out, notes):
         prompt = round_prompt(project, run_id, brief.task_id, wt, brief.base_sha,
                               head, brief.ticket, brief.verify, brief.criteria,
                               review_mode(project), ok, out, evidence=False,
-                              notes=notes)
-        prompt = _as_primary(prompt, wt, branch, brief.branch)
+                              notes=NOTES_SLOT)
+        prompt = _as_primary(prompt, wt, branch, brief.branch).replace(
+            NOTES_SLOT, notes)
         reply = review_runner.run_review(
             repo=wt, run_id=run_id, base_sha=brief.base_sha, candidate_sha=head,
             prompt=outbound(prompt, known_secrets(project.config())),
