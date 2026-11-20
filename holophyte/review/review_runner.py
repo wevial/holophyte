@@ -274,7 +274,7 @@ def container_command(
     multi_agent: bool = False,
     harness: str = "codex",
     credential: str | None = None,
-    reply_schema: bool = False,
+    reply_schema: bool | Path = False,
 ) -> list[str]:
     """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
@@ -304,7 +304,8 @@ cp -a /workspace /home/reviewer/candidate
     if reply_schema:
         from holophyte.review.json_reply import SCHEMA_FILE
 
-        shutil.copyfile(SCHEMA_FILE, reviewer_home / REPLY_SCHEMA_NAME)
+        shutil.copyfile(SCHEMA_FILE if reply_schema is True else reply_schema,
+                        reviewer_home / REPLY_SCHEMA_NAME)
 
     command = [
         "docker",
@@ -453,11 +454,12 @@ def parse_claude_output(
             f"Claude turn failed: {detail}" if detail
             else "Claude printed no JSON result")
         raise error
-    from holophyte.review.json_reply import schema_valid
+    from holophyte.review.json_reply import COUNCIL_SCHEMA_FILE, schema_valid
 
     message = reply.get("result")
     if isinstance(structured, dict) and (
-            schema_valid(structured) or not isinstance(message, str)):
+            schema_valid(structured) or not isinstance(message, str)
+            or schema_valid(structured, COUNCIL_SCHEMA_FILE)):
         message = json.dumps(structured)
     if verdicts is None:
         return message, None
@@ -642,7 +644,7 @@ def run_review(
     multi_agent: bool = False,
     harness: str = "codex",
     credential: str | None = None,
-    reply_schema: bool = False,
+    reply_schema: bool | Path = False,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:

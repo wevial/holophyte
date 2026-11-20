@@ -2097,6 +2097,7 @@ line and the run's previous round can raise the tier and never lower it.
 | `fan_in` | Default: `10` | Integer of at least 0; a changed Python module imported by at least this many other tracked `.py` files at the candidate makes the round `medium`. A module inside a package is also named from its top-most package, so `src/pkg/core.py` counts importers of `pkg.core`. `0` turns the signal off. |
 | `packages` | Default: `3` | Integer of at least 0; changed paths spanning at least this many first path segments make the round `medium`. Paths under `tests/`, `test/` or `docs/`, and paths ending `.md`, do not count; a root-level file counts as `.`. `0` turns the signal off. |
 | `adversary` | Default: `false` | `true` or `false`; `true` runs the adversarial pass described in [Reviewing](reviewing.md) beside the primary review on `medium` and `high` rounds, on the `[agents] adversary` seat. While it is `false` no adversary turn runs. |
+| `council` | Default: absent (each round runs the one reviewer) | `[[review.council]]` tables, at least two, each with exactly `harness` (`"codex"` or `"claude"`), a non-empty `model` and `effort` (`"low"`, `"medium"`, `"high"` or `"xhigh"`). Set, each review round runs every seat in parallel in place of the reviewer, read-only in the review container on the same base, candidate and prompt, whose reply brief asks for the review fields plus an integer `score` from 0 to 10 (`holophyte/review/council_reply.schema.json`). A seat runs on its own route only: no fallback, refusal fallback or switched reviewer route runs in its place. A Claude seat passes `[agents] adversary_credential` to the container, and fails as `missing` without it. A reply the schema refuses gets one retry, then the seat is `unreadable`; a failed route makes it `missing`. Each seat's reply, score, status and times go in a `councilSeats` row. The round needs two answering seats, else it fails as `review_route` with the candidate preserved, naming each seat that did not answer. The round approves only when every answering seat approves and every criterion is met by all of them; its findings are the union of theirs, an exact duplicate (path, line, severity, message) once, and its `reviewerModel` is `council` followed by the answering seats' routes. The adversarial pass still runs beside the council. The pinned pipeline document's `review` stage lists the seats. |
 
 ```toml
 [review]
@@ -2105,12 +2106,24 @@ medium_paths = ["src/parse/*"]
 fan_in = 10
 packages = 3
 adversary = true
+
+[[review.council]]
+harness = "codex"
+model = "gpt-6-astra"
+effort = "high"
+
+[[review.council]]
+harness = "claude"
+model = "opus"
+effort = "high"
 ```
 
 A `high_paths` or `medium_paths` that is not a list of such globs, a `fan_in` or
 `packages` that is not an integer of at least 0 (a boolean included), an
 `adversary` that is not a boolean, or an unknown key is a startup error naming
-the key.
+the key. A `council` with one entry, or an entry with an unknown or missing
+key, a harness other than `"codex"` or `"claude"`, an empty model or an
+unknown effort, is a startup error naming the `[[review.council]]` entry.
 
 Four keys hold repository paths, and each is matched against changed or
 tracked files as its consumer matches it: `[merge] ui_paths` with

@@ -1,9 +1,13 @@
 import collections
 from pathlib import PurePosixPath
 
+from holophyte.review.review_runner import EFFORTS
+
 REVIEW_KEYS = {"high_paths": (), "medium_paths": (), "fan_in": 10, "packages": 3,
-               "adversary": False}
+               "adversary": False, "council": ()}
 ReviewConfig = collections.namedtuple("ReviewConfig", REVIEW_KEYS)
+CouncilSeat = collections.namedtuple("CouncilSeat", "harness model effort")
+COUNCIL_HARNESSES = ("codex", "claude")
 
 
 def _globs(project, key, value):
@@ -33,6 +37,39 @@ def _switch(project, key, value):
     return value
 
 
+def _seat(project, number, entry):
+    where = f"[holo2] {project.config_path}: [[review.council]] entry {number}"
+    if not isinstance(entry, dict) or set(entry) != set(CouncilSeat._fields):
+        raise SystemExit(
+            f"{where} must be a table with exactly harness, model and effort, "
+            f"got {entry!r}")
+    if entry["harness"] not in COUNCIL_HARNESSES:
+        raise SystemExit(
+            f'{where}: harness must be "codex" or "claude", got '
+            f"{entry['harness']!r}")
+    if not isinstance(entry["model"], str) or not entry["model"].strip():
+        raise SystemExit(
+            f"{where}: model must be a non-empty string, got {entry['model']!r}")
+    if entry["effort"] not in EFFORTS:
+        raise SystemExit(
+            f"{where}: effort must be one of {', '.join(EFFORTS)}, got "
+            f"{entry['effort']!r}")
+    return CouncilSeat(entry["harness"], entry["model"], entry["effort"])
+
+
+def _council(project, value):
+    if not isinstance(value, (list, tuple)):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [review] council must be "
+            f"[[review.council]] tables, got {value!r}")
+    if len(value) == 1:
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [[review.council]] entry 1 is the "
+            "only seat; a council needs at least two")
+    return tuple(_seat(project, number, entry)
+                 for number, entry in enumerate(value, 1))
+
+
 def review_config(project):
     table = project.config().get("review", {})
     if not isinstance(table, dict):
@@ -45,4 +82,5 @@ def review_config(project):
         medium_paths=_globs(project, "medium_paths", values["medium_paths"]),
         fan_in=_floor(project, "fan_in", values["fan_in"]),
         packages=_floor(project, "packages", values["packages"]),
-        adversary=_switch(project, "adversary", values["adversary"]))
+        adversary=_switch(project, "adversary", values["adversary"]),
+        council=_council(project, values["council"]))

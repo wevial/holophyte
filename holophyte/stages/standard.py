@@ -29,7 +29,8 @@ def resolve(project, profile=None):
                         "before_merge": list(verify.before_merge)}),
         stage("review", "check", "candidate", REVIEW_ROLES,
               seat=labels["reviewer"], effort=review_effort(project),
-              adversary=review_config(project).adversary),
+              adversary=review_config(project).adversary,
+              **council_seats(project)),
         stage("merge_gate", "check", "factory"),
     ]
     if merge.mode == "pr":
@@ -63,6 +64,11 @@ def scrubbed(value, secrets):
 def stage(stage_id, kind, group, roles=(), **settings):
     return {"id": stage_id, "type": kind, "group": group, "roles": list(roles),
             **settings}
+
+
+def council_seats(project):
+    seats = review_config(project).council
+    return {"council": [seat._asdict() for seat in seats]} if seats else {}
 
 
 def critic_label(project, seat):
