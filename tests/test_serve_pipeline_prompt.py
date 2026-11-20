@@ -109,6 +109,20 @@ class PromptRouteTests(ServeTestCase):
         self.assertTrue(all(entry["stands_for"]
                             for entry in body["placeholders"]))
 
+    def test_a_seated_council_review_ends_on_the_council_reply_brief(self):
+        seats = "".join(f'[[review.council]]\nharness = "{harness}"\n'
+                        f'model = "{model}"\neffort = "high"\n'
+                        for harness, model in (("codex", "gpt-6-astra"),
+                                               ("claude", "opus")))
+        body = self.answer("review", notes_table(review=REVIEW_NOTE) + seats)
+
+        self.assertEqual(body["notes"], f"{FRAME}\n\n{REVIEW_NOTE}\n\n")
+        self.assertTrue(body["tail"].startswith(
+            "Do not modify anything. Your reply is one JSON object"),
+            body["tail"][:200])
+        self.assertIn("score: your score for the candidate", body["tail"])
+        self.assertNotIn("VERDICT: APPROVE  or", body["tail"])
+
     def test_trim_without_a_note_is_its_builtin_text_joined_to_its_tail(self):
         body = self.answer("trim", notes_table(review=REVIEW_NOTE))
 

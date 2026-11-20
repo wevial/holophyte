@@ -4,6 +4,7 @@ import re
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import merge_config
+from holophyte.config.review_settings import review_config
 from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import _commands_brief, implement_goal
 from holophyte.loop.review_round import review_text, verify_text
@@ -129,7 +130,7 @@ def review(project, slot):
         + s("adjudicator rulings"),
         tests=test_rules_text(s("test rules")), scope=scope_text(s("scope")),
         trim=trim_commits_text(s("trim commits"), s("trade-offs")),
-        evidence=s("evidence"))
+        evidence=s("evidence"), seated=bool(review_config(project).council))
 
 
 def trim(project, slot):
