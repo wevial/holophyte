@@ -494,6 +494,7 @@ class IsolationTests(GoRaceCases, IsolationCase):
             copy.write_bytes(b"refreshed")
             if credential:
                 self.assertEqual(copy.with_name("key").read_text(), "provider")
+                copy.parent.chmod(0o500)
             return 0, str(home)
 
         with (patch.object(launcher, "image_ready"),

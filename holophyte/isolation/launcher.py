@@ -225,7 +225,11 @@ def install_gemini_credential(home, relative, staged, *, temporary):
         finally:
             if temporary:
                 with contextlib.suppress(FileNotFoundError):
-                    os.unlink(relative.name, dir_fd=parent)
+                    try:
+                        os.unlink(relative.name, dir_fd=parent)
+                    except PermissionError:
+                        os.fchmod(parent, 0o700)
+                        os.unlink(relative.name, dir_fd=parent)
 
 
 def agy_login_flags(route, task, project, scratch, stack):
