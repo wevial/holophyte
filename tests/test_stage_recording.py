@@ -323,6 +323,18 @@ class StageRecordingTests(LoopFixture):
         fixed = self.git("rev-parse", "main^2^").strip()
         self.assertEqual(self.shas("verify", 2)[0], fixed)
 
+    def test_a_verify_rerun_on_a_dirty_tree_at_the_same_head_is_recorded(self):
+        task = dict(a_task(), verify="echo ran >> verify-runs.log")
+        self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
+                      Commit("fix"), APPROVE, task=task)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        fixed = self.git("rev-parse", "main^2").strip()
+        self.assertEqual(self.outcomes()[4:], [
+            ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
+            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
+        self.assertEqual(self.shas("verify", 3), (fixed, fixed))
+
 class TerminalReviewEdgeTests(LoopFixture):
     def run_loop(self, config, *script, task=None):
         self.configure(config)

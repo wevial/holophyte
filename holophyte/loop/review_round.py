@@ -24,6 +24,7 @@ from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
+    cached_pass,
     run_verify,
     sh,
     timed_out,
@@ -330,7 +331,8 @@ def _round_contract(conn, run_id, ticket, claimed, pending):
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
             contracts, rnd):
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    if record.verified_last(conn, run_id, head):
+    if record.verified_last(conn, run_id, head) and cached_pass(
+            run_id, verify_cmd, wt, verify_config(project).timeout_sec):
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
         if not ok:

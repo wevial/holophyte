@@ -548,6 +548,10 @@ def _pass_key(run_id, cmd, cwd, timeout):
                                VERIFY_TIMEOUT if timeout is None else timeout)
 
 
+def cached_pass(run_id, cmd, cwd, timeout=None):
+    return bool(cmd) and _pass_key(run_id, cmd, cwd, timeout) in _PASSES
+
+
 def _verify_command(project, command, cwd, timeout, on_start=None):
     from holophyte.isolation import launcher
 
