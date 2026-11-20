@@ -94,7 +94,7 @@ function ThemeTile({ name, pressed, onPick, tile, style, custom = false }: {
   name: string; pressed: boolean; onPick: () => void; tile?: string; style?: CSSProperties; custom?: boolean;
 }) {
   return (
-    <button type="button" aria-pressed={pressed} onClick={onPick} className="group flex w-[122px] flex-col gap-1.5 text-left">
+    <button type="button" aria-pressed={pressed} onClick={onPick} className="group flex min-w-0 flex-col gap-1.5 text-left min-[720px]:w-[122px]">
       <span aria-hidden="true" data-tile={tile} style={style}
         className={`theme-tile relative block h-[58px] w-full rounded-card shadow-[inset_0_0_0_1px_var(--hair)] ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}>
         <span className="theme-tile-dot absolute right-2 bottom-2 size-2.5 rounded-full" />
@@ -116,7 +116,7 @@ function ThemeRow({ mode, onSubject }: { mode: ThemeMode; onSubject: (subject: E
   const pickedTheme = isCustom(picked) ? customs.find((theme) => theme.id === picked) : builtinSpec(mode, picked);
   return (
     <Row id={`appearance-${mode}`} icon={mode === "light" ? <SunIcon /> : <MoonIcon />} title={mode === "light" ? "Light" : "Dark"} labelTop="pt-[15px]">
-      <div role="group" aria-labelledby={`appearance-${mode}`} className="flex flex-wrap gap-3">
+      <div role="group" aria-labelledby={`appearance-${mode}`} className="grid grid-cols-3 gap-3 min-[720px]:flex min-[720px]:flex-wrap">
         {BUILTIN_PICKS.map((value) => (
           <ThemeTile key={value} name={BUILTIN_NAMES[value]} pressed={picked === value} tile={`${mode}-${value}`} onPick={() => choose(value)} />
         ))}
@@ -124,7 +124,7 @@ function ThemeRow({ mode, onSubject }: { mode: ThemeMode; onSubject: (subject: E
           <ThemeTile key={theme.id} name={theme.name} pressed={picked === theme.id} style={tileStyle(theme)} custom onPick={() => choose(theme.id)} />
         ))}
         <button type="button" onClick={() => onSubject({ draft: copyOf(pickedTheme ?? builtinSpec(mode, "lotus")) })}
-          className="flex h-[58px] w-[122px] flex-col items-center justify-center gap-1 rounded-card text-[13px] text-ink-2 hover:bg-hover hover:text-ink">
+          className="flex h-[58px] flex-col items-center justify-center gap-1 rounded-card text-[13px] text-ink-2 hover:bg-hover hover:text-ink min-[720px]:w-[122px]">
           <span aria-hidden="true" className="text-[18px] leading-none">+</span>New theme
         </button>
       </div>
@@ -146,11 +146,11 @@ function EffectRow() {
   return (
     <Row id="appearance-header" icon={<WavesGlyph />} title="Header" labelTop="pt-1.5">
       <div className="flex flex-wrap items-start gap-3">
-        <div role="group" aria-labelledby="appearance-header" className="flex flex-wrap gap-3">
+        <div role="group" aria-labelledby="appearance-header" className="w-full grid grid-cols-3 gap-3 min-[720px]:flex min-[720px]:flex-wrap min-[720px]:w-auto">
           {EFFECTS.map((item) => {
             const pressed = effect === item.value;
             return (
-              <button key={item.value} type="button" aria-pressed={pressed} onClick={() => { setEffect(item.value); setClosing(false); }} className="group flex w-[96px] flex-col gap-1.5 text-left">
+              <button key={item.value} type="button" aria-pressed={pressed} onClick={() => { setEffect(item.value); setClosing(false); }} className="group flex min-w-0 flex-col gap-1.5 text-left min-[720px]:w-[96px]">
                 <span aria-hidden="true"
                   className={`relative block h-[40px] w-full overflow-hidden rounded-card bg-canvas shadow-[inset_0_0_0_1px_var(--hair)] ${item.still ? "after:absolute after:inset-0 after:rounded-card after:shadow-[inherit] after:content-['']" : ""} ${pressed ? "outline-2 outline-offset-2 outline-focus" : "group-hover:shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}>
                   {item.still && <img src={item.still} alt="" draggable={false} className="size-full object-cover" />}
@@ -160,7 +160,7 @@ function EffectRow() {
             );
           })}
         </div>
-        <label className="flex min-h-11 items-center gap-2.5 pr-[3px] pl-[22px] text-[13px] text-ink-2">
+        <label className="flex min-h-11 items-center gap-2.5 pr-[3px] text-[13px] text-ink-2 min-[720px]:pl-[22px]">
           <Switch aria-label="Motion" checked={motion && !reduced} disabled={reduced} onCheckedChange={setMotion} className="switch">
             <SwitchThumb />
           </Switch>
@@ -284,7 +284,7 @@ function DensityRow() {
   const { density, setDensity } = useDensity();
   return (
     <Row id="appearance-density" icon={<DensityGlyph />} title="Density" reset={density !== "comfortable" && <RowReset label="Reset density" onReset={() => setDensity("comfortable")} />}>
-      <p id="appearance-density-help" className="mb-3 font-sans text-[13px] text-ink-3">Compact tightens rows on Overview, Runs and Tickets. Buttons keep their 44px.</p>
+      <p id="appearance-density-help" className="mb-3 font-sans text-[13px] text-ink-3">Compact tightens rows on Overview, Runs and Tickets.</p>
       <Segmented label="Density" options={DENSITIES} value={density} onPick={setDensity} describedBy="appearance-density-help" />
       <div role="region" aria-label="Preview" className={`mt-4 ${CARD}`}>
         {[0, 1].map((row) => (
