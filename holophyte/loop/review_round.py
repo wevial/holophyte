@@ -45,7 +45,7 @@ from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.loop.test_removal import with_removals
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary, consolidate
+from holophyte.review import adversary, consolidate, council
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     CORNER_CASE_RULE,
@@ -147,7 +147,18 @@ def _evidence_brief(project, wt, task_id, ticket):
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
-                 witness="", earlier="", notes=""):
+                 witness="", earlier="", notes="", seated=False):
+    schema_tail = (f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
+                   "guardrail follow_up.")
+    brief = council.reply_brief(schema_tail) if seated else reply_brief(
+        project,
+        "Do not modify anything. End your reply with exactly one line:\n"
+        "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+        "If REQUEST_CHANGES, list only concrete blockers, each as one list "
+        f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
+        "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
+        f"before {follow_up_place(criteria)}.",
+        schema_tail)
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
         f"{review_refs(run_id)[0]} as the frozen base and "
@@ -168,16 +179,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + trim_brief(wt, base_sha, sha)
         + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
         + notes
-        + reply_brief(
-            project,
-            "Do not modify anything. End your reply with exactly one line:\n"
-            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers, each as one list "
-            f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
-            "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
-            f"before {follow_up_place(criteria)}.",
-            f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
-            "guardrail follow_up."))
+        + brief)
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
@@ -191,18 +193,21 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
     earlier = earlier_rounds_brief(conn, run_id, wt, rnd, criteria)
+    seats = review_config(project).council
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
                           witness=witness,
                           earlier=earlier + stuck_review.settled(conn, run_id),
                           notes=record.notes_block(project, conn, run_id,
-                                                   "review"))
+                                                   "review"),
+                          seated=bool(seats))
+    primary = (partial(council.run_round, project, conn, run_id, wt, base_sha,
+                       sha, prompt, rnd, seats, criteria, agent) if seats else
+               partial(_review_reply, project, prompt, wt, base_sha, sha, conn,
+                       run_id, run_agent=agent, review_round=rnd))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
-            conn, run_id,
-            _decided(attempt, partial(_review_reply, project, prompt, wt,
-                                      base_sha, sha, conn, run_id,
-                                      run_agent=agent, review_round=rnd)),
+            conn, run_id, _decided(attempt, primary),
             plan and _ran(attempt, partial(adversary.attack, project, conn,
                                            run_id, wt, base_sha, ticket, plan,
                                            agent)))
@@ -216,6 +221,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  ok, out,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
+                 route=getattr(verdict, "council_route", None),
+                 structured_findings=getattr(verdict, "council_findings", None),
                  adversary=blocking + red + private,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
     attempt.note(decision=decision, findings=len(consolidate.primary_findings(
@@ -246,12 +253,14 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         ruling)
     primary = stuck_review.kept_findings(consolidate.primary_findings(
         verdict, decision, unwitnessed + red + private), ruling)
-    handed = adversarial is not None and consolidate.handed_on(
-        project, conn, run_id, provider, task_id, rnd, primary,
-        adversarial, fixing,
-        partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
-                candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
-                run_id=run_id))
+    handed = (adversarial is not None and (adversarial or not seats)
+              and consolidate.handed_on(
+                  project, conn, run_id, provider, task_id, rnd, primary,
+                  adversarial, fixing,
+                  partial(agent, project, "consolidate", cwd=wt,
+                          base_sha=base_sha, candidate_sha=sha,
+                          timeout=consolidate.TIMEOUT, conn=conn,
+                          run_id=run_id)))
     if ruling is not None and ruling.settled_all:
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),

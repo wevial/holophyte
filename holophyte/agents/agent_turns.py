@@ -117,6 +117,8 @@ def timed_turn(project, role, routed_role, launch, ended, family_route=None):
         payload["timed_out"] = isinstance(cause, subprocess.TimeoutExpired)
         if hasattr(exc, "service_tier"):
             payload["service_tier"] = exc.service_tier
+        if hasattr(exc, "usage"):
+            payload["usage"] = exc.usage
         if payload["timed_out"] and hasattr(exc, "tail"):
             payload["tail"] = exc.tail
         raise

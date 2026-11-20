@@ -244,7 +244,8 @@ SCHEMA_FLAGS = {"codex": f"--output-schema {REPLY_SCHEMA} ",
                 "claude": f'--json-schema "$(cat {REPLY_SCHEMA})" '}
 
 
-def exec_script(harness: str, multi_agent: bool, reply_schema: bool) -> str:
+def exec_script(harness: str, multi_agent: bool,
+                reply_schema: bool | Path) -> str:
     script = CLAUDE_EXEC if harness == "claude" else CODEX_EXEC.replace(
         "SWITCH", "enable" if multi_agent else "disable")
     return script.replace("SCHEMA", SCHEMA_FLAGS[harness] if reply_schema else "")
@@ -274,7 +275,7 @@ def container_command(
     multi_agent: bool = False,
     harness: str = "codex",
     credential: str | None = None,
-    reply_schema: bool = False,
+    reply_schema: bool | Path = False,
 ) -> list[str]:
     """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
@@ -304,7 +305,8 @@ cp -a /workspace /home/reviewer/candidate
     if reply_schema:
         from holophyte.review.json_reply import SCHEMA_FILE
 
-        shutil.copyfile(SCHEMA_FILE, reviewer_home / REPLY_SCHEMA_NAME)
+        shutil.copyfile(SCHEMA_FILE if reply_schema is True else reply_schema,
+                        reviewer_home / REPLY_SCHEMA_NAME)
 
     command = [
         "docker",
@@ -413,13 +415,20 @@ def provider_error(output: str) -> str | None:
     return "\n".join(messages) or None
 
 
+class ReviewMessage(str):
+    usage = None
+
+
 def parse_codex_output(
     output: str, verdicts: Sequence[str] | None = REVIEW_VERDICTS
 ) -> tuple[str, str | None]:
     """Read trusted CLI JSONL events, not model-controlled transcript strings."""
     command_succeeded = False
     messages: list[str] = []
+    usage = None
     for event in codex_events(output):
+        if event.get("type") == "turn.completed":
+            usage = event.get("usage")
         if event.get("type") != "item.completed":
             continue
         item = event.get("item", {})
@@ -431,7 +440,12 @@ def parse_codex_output(
         raise ReviewBoundaryError("reviewer produced no successful command event")
     if not messages:
         raise ReviewBoundaryError("reviewer produced no final message event")
-    message = messages[-1]
+    message = ReviewMessage(messages[-1])
+    if isinstance(usage, dict):
+        from holophyte.agents.agent_output import count
+
+        message.usage = dict(input_tokens=count(usage.get("input_tokens")),
+                             output_tokens=count(usage.get("output_tokens")))
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)
@@ -452,13 +466,24 @@ def parse_claude_output(
         error = ReviewBoundaryError(
             f"Claude turn failed: {detail}" if detail
             else "Claude printed no JSON result")
+        error.schema_refused = (isinstance(reply, dict) and reply.get(
+            "subtype") == "error_max_structured_output_retries")
+        if isinstance(reply, dict):
+            from holophyte.agents.agent_output import claude_usage
+
+            error.usage = claude_usage(reply)
         raise error
-    from holophyte.review.json_reply import schema_valid
+    from holophyte.review.json_reply import COUNCIL_SCHEMA_FILE, schema_valid
 
     message = reply.get("result")
     if isinstance(structured, dict) and (
-            schema_valid(structured) or not isinstance(message, str)):
+            schema_valid(structured) or not isinstance(message, str)
+            or schema_valid(structured, COUNCIL_SCHEMA_FILE)):
         message = json.dumps(structured)
+    from holophyte.agents.agent_output import claude_usage
+
+    message = ReviewMessage(message)
+    message.usage = claude_usage(reply)
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)
@@ -560,17 +585,39 @@ def _remove_container(name: str, *, env=None) -> None:
         )
 
 
+_LIVE: set[str] = set()
+_LIVE_LOCK = threading.RLock()
+
+
 @contextlib.contextmanager
 def _removing_on_signal(name: str):
+    with _LIVE_LOCK:
+        _LIVE.add(name)
+    try:
+        with removing_on_signal():
+            yield
+    finally:
+        with _LIVE_LOCK:
+            _LIVE.discard(name)
+
+
+@contextlib.contextmanager
+def removing_on_signal():
     """Signals install only from the main thread; elsewhere `finally` alone removes."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
 
     def handler(signum, frame):
-        _remove_container(name)
-        signal.signal(signum, signal.SIG_DFL)
-        os.kill(os.getpid(), signum)
+        with _LIVE_LOCK:
+            names = sorted(_LIVE)
+        try:
+            for name in names:
+                with contextlib.suppress(Exception):
+                    _remove_container(name)
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
 
     previous = {sig: signal.signal(sig, handler) for sig in REMOVAL_SIGNALS}
     try:
@@ -642,7 +689,7 @@ def run_review(
     multi_agent: bool = False,
     harness: str = "codex",
     credential: str | None = None,
-    reply_schema: bool = False,
+    reply_schema: bool | Path = False,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -685,20 +732,21 @@ def run_review(
             credential=credential,
             reply_schema=reply_schema,
         )
-        try:
-            with _removing_on_signal(name):
+        with _removing_on_signal(name):
+            try:
                 result = _run(command, timeout=timeout, on_start=on_start,
                               check=codex is not None)
-        except ReviewBoundaryError as error:
-            if getattr(error, "returncode", None) is not None:
-                error.exit_status = error.returncode
-                error.tail = error.output[-EVIDENCE_TAIL:]
-                error.line = unparsed_line(error.stdout)
-            raise
-        finally:
-            _remove_container(name)
-            if _fingerprint(staged.path, run_id) != staged.fingerprint:
-                raise ReviewBoundaryError("staged candidate changed during review")
+            except ReviewBoundaryError as error:
+                if getattr(error, "returncode", None) is not None:
+                    error.exit_status = error.returncode
+                    error.tail = error.output[-EVIDENCE_TAIL:]
+                    error.line = unparsed_line(error.stdout)
+                raise
+            finally:
+                _remove_container(name)
+                if _fingerprint(staged.path, run_id) != staged.fingerprint:
+                    raise ReviewBoundaryError(
+                        "staged candidate changed during review")
         if "PREFLIGHT_OK" not in result.stderr:
             raise ReviewBoundaryError(
                 "review preflight did not complete: "

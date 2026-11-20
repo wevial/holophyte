@@ -2097,6 +2097,7 @@ line and the run's previous round can raise the tier and never lower it.
 | `fan_in` | Default: `10` | Integer of at least 0; a changed Python module imported by at least this many other tracked `.py` files at the candidate makes the round `medium`. A module inside a package is also named from its top-most package, so `src/pkg/core.py` counts importers of `pkg.core`. `0` turns the signal off. |
 | `packages` | Default: `3` | Integer of at least 0; changed paths spanning at least this many first path segments make the round `medium`. Paths under `tests/`, `test/` or `docs/`, and paths ending `.md`, do not count; a root-level file counts as `.`. `0` turns the signal off. |
 | `adversary` | Default: `false` | `true` or `false`; `true` runs the adversarial pass described in [Reviewing](reviewing.md) beside the primary review on `medium` and `high` rounds, on the `[agents] adversary` seat. While it is `false` no adversary turn runs. |
+| `council` | Default: absent (each round runs the one reviewer) | `[[review.council]]` tables, at least two, each with exactly `harness` (`"codex"` or `"claude"`), a non-empty `model` and `effort` (`"low"`, `"medium"`, `"high"` or `"xhigh"`). Set, each review round runs every seat in parallel in place of the reviewer, read-only in the review container on the same base, candidate and prompt, whose reply brief asks for the review fields plus an integer `score` from 0 to 10 (`holophyte/review/council_reply.schema.json`). A seat runs on its own route only: no fallback, refusal fallback or switched reviewer route runs in its place. Startup live-probes each seat's route in the review container (recorded under `council seat N` in the route probes; a probe that cannot launch fails) and prints a failed probe, and a pooled worker takes the scheduler's result for a seat whose harness, model and effort it still has and probes any seat its config changed; a seat whose probe failed is never sent the candidate and is `missing` in every round with `startup probe failed:` and the probe's diagnostic as its reason. A Claude seat passes `[agents] adversary_credential` to the container, and fails as `missing` without it. A reply the schema refuses, or a Claude turn that ends `error_max_structured_output_retries`, gets one retry, then the seat is `unreadable`; a failed route makes it `missing`. Each seat's reply, score, status and times go in a `councilSeats` row. The round needs two answering seats, else it fails as `review_route` with the candidate preserved, naming each seat that did not answer. Each seat's criteria are judged against the ticket's numbered criteria, its cited witnesses checked as a single reviewer's are, so a criterion a seat omits or witnesses with no real test is not met. The round approves only when every answering seat approves and every criterion is met by all of them; its findings, stored on an approved round too, are the union of theirs, an exact duplicate (path, line, severity, message) once, and its `reviewerModel` is `council` followed by the answering seats' routes. The adversarial pass still runs beside the council; when it adds nothing, the council's findings go to the fix turn as they are, without the consolidation pass. The pinned pipeline document's `review` stage lists the seats. |
 
 ```toml
 [review]
@@ -2105,12 +2106,24 @@ medium_paths = ["src/parse/*"]
 fan_in = 10
 packages = 3
 adversary = true
+
+[[review.council]]
+harness = "codex"
+model = "gpt-6-astra"
+effort = "high"
+
+[[review.council]]
+harness = "claude"
+model = "opus"
+effort = "high"
 ```
 
 A `high_paths` or `medium_paths` that is not a list of such globs, a `fan_in` or
 `packages` that is not an integer of at least 0 (a boolean included), an
 `adversary` that is not a boolean, or an unknown key is a startup error naming
-the key.
+the key. A `council` with one entry, or an entry with an unknown or missing
+key, a harness other than `"codex"` or `"claude"`, an empty model or an
+unknown effort, is a startup error naming the `[[review.council]]` entry.
 
 Four keys hold repository paths, and each is matched against changed or
 tracked files as its consumer matches it: `[merge] ui_paths` with
@@ -2207,9 +2220,9 @@ fails sends the prompt without notes and records `stage_record_failed`.
 | `implement` | Default: empty (no note) | String of at most 4000 characters; added to the first implement turn's prompt, ahead of the ticket and the closing instructions. |
 | `review` | Default: empty (no note) | String of at most 4000 characters; added to each review round's prompt, ahead of its reply format. |
 | `trim` | Default: empty (no note) | String of at most 4000 characters; added to the trim turn's prompt, ahead of its protected files and hard rules. |
-| `critic` | Default: empty (no note) | String of at most 4000 characters; accepted and pinned, not yet added to the critic's prompt. |
-| `pr_writer` | Default: empty (no note) | String of at most 4000 characters; accepted and pinned, not yet added to the PR-text writer's prompt. |
-| `babysit_reply` | Default: empty (no note) | String of at most 4000 characters; accepted and pinned, not yet added to the babysitter's thread replies. |
+| `critic` | Default: empty (no note) | String of at most 4000 characters; added to the critic's prompt, ahead of its `FRESHNESS` reply lines. The critic runs at admission, before the claim, when no run or pinned pipeline exists yet, so it reads this note from the config file as it stands at that moment, and a failed read sends its prompt without the note and records nothing. |
+| `pr_writer` | Default: empty (no note) | String of at most 4000 characters; added to the PR-text writer's prompt under `[merge] mode = "pr"`, after the `[merge] pr_style` instructions and ahead of the ticket and the diff. Both stay: the style text comes first, then the notes block. |
+| `babysit_reply` | Default: empty (no note) | String of at most 4000 characters; added to the prompt the babysitter answers a pull request's `ask` thread with, ahead of the ticket, the thread and the question. |
 
 ```toml
 [pipeline.notes]

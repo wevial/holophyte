@@ -94,6 +94,10 @@ DOCUMENTED_COLUMNS = {
         "inputSha", "outputSha", "outcome", "edge", "openSeq", "agentSeconds",
         "inputTokens", "outputTokens", "costUsd", "detail",
     },
+    "councilSeats": {
+        "id", "runId", "round", "seat", "route", "status", "verdict", "score",
+        "reply", "reason", "seconds", "startedAt", "endedAt",
+    },
     "ledger": {
         "id", "runId", "ticketId", "at", "kind", "text", "source",
     },

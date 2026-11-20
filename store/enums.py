@@ -315,6 +315,17 @@ class StageOutcome(str, Enum):
     ERROR = 'error'
 
 
+class CouncilSeatStatus(str, Enum):
+    ANSWERED = 'answered'
+    MISSING = 'missing'
+    UNREADABLE = 'unreadable'
+
+
+class CouncilVerdict(str, Enum):
+    APPROVE = 'APPROVE'
+    REQUEST_CHANGES = 'REQUEST_CHANGES'
+
+
 class StageEdge(str, Enum):
     NEXT = 'next'
     ON_FAIL = 'on_fail'
@@ -392,6 +403,8 @@ CONSTRAINED_COLUMNS = {
     ('automationPauses', 'actor'): PauseActor,
     ('stageAttempts', 'outcome'): StageOutcome,
     ('stageAttempts', 'edge'): StageEdge,
+    ('councilSeats', 'status'): CouncilSeatStatus,
+    ('councilSeats', 'verdict'): CouncilVerdict,
 }
 
 
