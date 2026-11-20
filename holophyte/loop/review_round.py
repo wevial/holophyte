@@ -29,7 +29,6 @@ from holophyte.loop.gates import (
     verify_timed_out,
     with_baseline,
 )
-from holophyte.loop.gates import timed_out as stalled
 from holophyte.loop.implement import _check_run_cap, _timed
 from holophyte.loop.runs import (
     heartbeat_while,
@@ -330,12 +329,12 @@ def _round_contract(conn, run_id, ticket, claimed, pending):
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
             contracts, rnd):
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-    with record.Attempt(conn, run_id, "verify", head,
-                        {"round": rnd}) as attempt:
+    with record.Attempt(conn, run_id, "verify", head, {"round": rnd},
+                        wt=wt) as attempt:
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
-        attempt.close("pass" if ok else "fail", "next", head,
-                      timed_out=not ok and stalled(out))
+        attempt.close_at_head("pass" if ok else "fail", "next",
+                              timed_out=not ok and verify_timed_out(out))
     return ok, out
 
 
@@ -477,41 +476,53 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                  out=str(out), verdict=verdict, verify_cmd=verify_cmd)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
-        from holophyte.agents.fix_session import fix_turn
-        states = ticket_template.parse(ticket).evidence_states
-        spec = capture_spec_digest(project, wt, task_id, states)
-        fixes, timed_out = fix_turn(
-            project, conn, run_id, beat_s, wt, budget_min, reviewed,
-            without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
-            check_cap=_check_run_cap,
-            criteria=numbered(conn, run_id, criteria), kind="fix")
-        ledger(conn, run_id, task_id, "round",
-               f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
-               f"Reviewer findings:\n{verdict}\n\n"
-               f"Implementer response:\n{fixes}", provider)
-        contradiction.park(conn, run_id, provider, task_id, wt, "fix", fixes,
-                           timed_out, ticket)
-        boundary(conn, run_id, "verifying", rnd=rnd + 1)
-        head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
-        if timed_out or (head == sha and capture_spec_digest(
-                project, wt, task_id, states) == spec):
-            usage = getattr(fixes, "usage", None) or {}
-            exit_code = getattr(fixes, "exit_code", None)
-            if (not timed_out and exit_code not in (None, 0)
-                    and usage.get("input_tokens") == 0
-                    and usage.get("output_tokens") == 0):
-                raise InfraFailure(
-                    f"fix turn exited {exit_code} without using a token; "
-                    f"branch {branch} preserved at {sha}", "infra")
-            print(f"[holo2] fix round timed out or made no progress; "
-                  f"leaving branch {branch} at {sha} for a human.")
-            findings = store.read.rounds_of(conn, run_id)[-1].findings if conn else None
-            pending = json.loads(findings) if findings else []
-            raise RunFailure(failure_reason.fix_round(
-                pending, timed_out, f"branch {branch} preserved at {sha[:12]}"))
+        with record.Attempt(conn, run_id, "implement", sha, {"kind": "fix"},
+                            wt=wt) as fixing:
+            head = _fix_round(project, conn, run_id, provider, task_id, branch,
+                              wt, beat_s, sha, ticket, reviewed, verdict,
+                              criteria, budget_min, rnd, fixing)
+            fixing.close_at_head("pass", "next")
         sha = fix_self_check.after_fix(
             project, conn, run_id, beat_s, wt, budget_min, reviewed, sha, head,
-            verify_cmd, partial(_verify, project, conn, run_id, beat_s, wt,
+            verify_cmd, partial(_checked, project, conn, run_id, beat_s, wt,
                                 base_sha, reviewed, verify_cmd, contracts,
                                 rnd + 1))
     return sha, rnd, False
+
+
+def _fix_round(project, conn, run_id, provider, task_id, branch, wt, beat_s,
+               sha, ticket, reviewed, verdict, criteria, budget_min, rnd,
+               attempt):
+    from holophyte.agents.fix_session import fix_turn
+    states = ticket_template.parse(ticket).evidence_states
+    spec = capture_spec_digest(project, wt, task_id, states)
+    fixes, timed_out = fix_turn(
+        project, conn, run_id, beat_s, wt, budget_min, reviewed,
+        without_follow_ups(without_refuted(verdict)), sha, timed=_timed,
+        check_cap=_check_run_cap,
+        criteria=numbered(conn, run_id, criteria), attempt=attempt)
+    ledger(conn, run_id, task_id, "round",
+           f"Round {rnd}: REQUEST_CHANGES -> fix round\n"
+           f"Reviewer findings:\n{verdict}\n\n"
+           f"Implementer response:\n{fixes}", provider)
+    contradiction.park(conn, run_id, provider, task_id, wt, "fix", fixes,
+                       timed_out, ticket)
+    boundary(conn, run_id, "verifying", rnd=rnd + 1)
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if timed_out or (head == sha and capture_spec_digest(
+            project, wt, task_id, states) == spec):
+        usage = getattr(fixes, "usage", None) or {}
+        exit_code = getattr(fixes, "exit_code", None)
+        if (not timed_out and exit_code not in (None, 0)
+                and usage.get("input_tokens") == 0
+                and usage.get("output_tokens") == 0):
+            raise InfraFailure(
+                f"fix turn exited {exit_code} without using a token; "
+                f"branch {branch} preserved at {sha}", "infra")
+        print(f"[holo2] fix round timed out or made no progress; "
+              f"leaving branch {branch} at {sha} for a human.")
+        findings = store.read.rounds_of(conn, run_id)[-1].findings if conn else None
+        pending = json.loads(findings) if findings else []
+        raise RunFailure(failure_reason.fix_round(
+            pending, timed_out, f"branch {branch} preserved at {sha[:12]}"))
+    return head

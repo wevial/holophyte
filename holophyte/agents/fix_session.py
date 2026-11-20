@@ -60,7 +60,7 @@ STEER_ASK = ('Apply the maintainer\'s notes above to your work on this '
 
 
 def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
-             *, timed, check_cap, criteria=None, kind=None):
+             *, timed, check_cap, criteria=None, attempt=None):
     pending = pending_prompt(conn, run_id) if conn is not None else ''
     if criteria is None:
         parsed = ticket_template.parse(ticket)
@@ -93,7 +93,7 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
              f'{ticket}\n\n' + findings)
     return _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha,
                          findings, fresh, timed=timed, check_cap=check_cap,
-                         kind=kind)
+                         kind=None, attempt=attempt)
 
 
 def steer_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
@@ -172,7 +172,11 @@ def self_check_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
 
 
 def _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha, resumed,
-                  fresh, *, timed, check_cap, kind, record=True):
+                  fresh, *, timed, check_cap, kind, record=True, attempt=None):
+    if attempt is not None:
+        return _session_turns(target, conn, run_id, beat_s, wt, budget_min,
+                              sha, resumed, fresh, timed=timed,
+                              check_cap=check_cap, record=record)
     staged = kind is not None
     with stage_record.Attempt(conn if staged else None, run_id, 'implement',
                               sha, {'kind': kind}, wt=wt) as attempt:

@@ -197,7 +197,7 @@ class StageRecordingTests(LoopFixture):
             ("implement", 1, "pass", "next"), ("trim", 1, "skipped", "next"),
             ("verify", 1, "pass", "next"), ("review", 1, "fail", "on_fail"),
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
-            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
+            ("review", 2, "pass", "next")])
         self.assertEqual(recorded[4][4]["kind"], "fix")
         self.assertEqual(self.shas("review", 1)[0], implemented)
         self.assertEqual(self.shas("implement", 2), (implemented, fixed))
@@ -360,17 +360,42 @@ class TerminalReviewEdgeTests(LoopFixture):
             (detail["decision"], detail["findings"], detail["adversary"]),
             ("REQUEST_CHANGES", 2, "ran"))
 
-    def test_a_verify_that_times_out_on_its_rerun_records_the_timeout(self):
+    def test_a_verify_that_times_out_on_its_rerun_ends_an_approving_review(self):
         marker = self.target.parent / "first-run"
         task = dict(a_task(), verify=f"test -e {marker} || {{ touch {marker};"
                     " exit 1; }; sleep 5")
         self.run_loop("[verify]\ntimeout_sec = 1\n" + UNTRIMMED,
-                      Commit("work"), APPROVE, Idle(), task=task)
+                      Commit("work"), APPROVE, task=task)
 
         (detail,) = [json.loads(detail) for (detail,) in self.read(
             "SELECT detail FROM stageAttempts WHERE stageId = 'verify'"
             " AND attempt = 1")]
         self.assertIs(detail["timed_out"], True)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual([review[:3] for review in self.reviews()],
+                         [(1, "fail", "end")])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM stageAttempts"
+                                   " WHERE stageId = 'implement'"), [(1,)])
+
+    def test_a_verify_that_commits_records_the_head_it_left(self):
+        task = dict(a_task(), verify="git commit -q --allow-empty -m checked")
+        self.run_loop(UNTRIMMED, Commit("work"), APPROVE, task=task)
+
+        (input_sha, output_sha), = self.read(
+            "SELECT inputSha, outputSha FROM stageAttempts"
+            " WHERE stageId = 'verify' AND attempt = 1")
+        self.assertEqual(self.git("log", "-1", "--format=%s", output_sha).strip(),
+                         "checked")
+        self.assertEqual(self.git("rev-parse", f"{output_sha}^").strip(),
+                         input_sha)
+
+    def test_a_fix_that_makes_no_progress_ends_its_attempt(self):
+        self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES, Idle())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.read(
+            "SELECT outcome, edge FROM stageAttempts"
+            " WHERE stageId = 'implement' AND attempt = 2"), [("fail", "end")])
 
     def test_a_verify_printing_a_timeout_line_is_not_a_timeout(self):
         task = dict(a_task(), verify="echo '[verify] FAILED: verify timed out"
@@ -459,6 +484,29 @@ class RefusedStageWritesTests(LoopFixture):
             "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'"
             " AND level = 'detail'")}
         self.assertEqual(writes, {"open_stage", "skip_stage"})
+
+    def test_a_store_refusing_every_close_leaves_the_run_unchanged(self):
+        self.configure(UNTRIMMED)
+        self.loop(*self.SCRIPT)
+        recorded = self.walked()
+        self.fresh_fixture()
+
+        refused = sqlite3.OperationalError("database is locked")
+        with patch.object(store.stages, "close_stage", side_effect=refused):
+            self.configure(UNTRIMMED)
+            self.loop(*self.SCRIPT)
+
+        self.assertEqual(self.walked(), recorded)
+        self.assertEqual(self.read(
+            "SELECT COUNT(*) FROM stageAttempts WHERE outcome IS NOT NULL"
+            " AND outcome != 'skipped'"), [(0,)])
+        opened = self.read("SELECT COUNT(*) FROM stageAttempts"
+                           " WHERE outcome IS NULL")[0][0]
+        writes = [json.loads(payload)["write"] for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'"
+            " AND level = 'detail'")]
+        self.assertEqual(writes, ["close_stage"] * opened)
+        self.assertTrue(opened)
 
     def fresh_fixture(self):
         self.doCleanups()
