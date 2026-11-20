@@ -1,6 +1,7 @@
 """A project's `[[pipeline.check]]` stages run on a candidate and recorded."""
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 
@@ -87,14 +88,24 @@ def ran(project, check, wt):
     try:
         outcome, found = _outcome(project, check, wt)
     finally:
-        restored = snapshot.restore()
+        restored, failed = _restored(snapshot)
+    if failed is not None:
+        outcome, found = "error", {**found, "check_outcome": outcome,
+                                   "restore_error": failed}
     found = {key: scrubbed_output(value, check["secrets"])
-             if key in ("output", "error") else value
+             if key in ("output", "error", "restore_error") else value
              for key, value in found.items()}
     if restored:
         found["restored"] = [scrubbed_output(path, check["secrets"])
                              for path in restored]
     return outcome, found
+
+
+def _restored(snapshot):
+    try:
+        return snapshot.restore(), None
+    except Exception as error:
+        return [], str(error)
 
 
 def _outcome(project, check, wt):
@@ -126,27 +137,26 @@ def scrubbed_output(text, secrets):
 
 
 class Snapshot:
-    """The index, the content of every file that differs from HEAD, and which
-    ignored files exist; an ignored file a check rewrites is not put back."""
+    """The index, the content and mode or link target of every path that differs
+    from HEAD, and which ignored files exist; ignored rewrites stay."""
 
     def __init__(self, wt):
         self.wt = Path(wt)
         self.index = Path(wt, _git(wt, "rev-parse", "--git-path", "index"))
         self.staged = self.index.read_bytes() if self.index.exists() else None
-        self.files = {path: _read(self.wt / path) for path in _outside(wt)}
+        self.files = {path: _state(self.wt / path) for path in _outside(wt)}
         self.ignored = _ignored(wt)
 
     def restore(self):
         changed = sorted(path for path in _outside(self.wt) | set(self.files)
-                         if _read(self.wt / path) != self.files.get(path))
+                         if _state(self.wt / path) != self.files.get(path))
         added = sorted(_ignored(self.wt) - self.ignored)
         for path in added:
             (self.wt / path).unlink(missing_ok=True)
         for path in changed:
             target, kept = self.wt / path, self.files.get(path)
             if kept is not None:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(kept)
+                _put(target, kept)
             elif _tracked(self.wt, path):
                 _git(self.wt, "restore", "--source=HEAD", "--worktree", "--",
                      path)
@@ -185,5 +195,25 @@ def _tracked(wt, path):
                           capture_output=True).returncode == 0
 
 
-def _read(path):
-    return path.read_bytes() if path.is_file() else None
+def _state(path):
+    try:
+        info = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    if stat.S_ISLNK(info.st_mode):
+        return "link", os.readlink(path)
+    if stat.S_ISREG(info.st_mode):
+        return "file", path.read_bytes(), stat.S_IMODE(info.st_mode)
+    return None
+
+
+def _put(target, state):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink():
+        target.unlink()
+    if state[0] == "link":
+        target.unlink(missing_ok=True)
+        os.symlink(state[1], target)
+        return
+    target.write_bytes(state[1])
+    os.chmod(target, state[2])

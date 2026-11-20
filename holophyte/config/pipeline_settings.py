@@ -67,9 +67,11 @@ def check_secrets(project):
 
 
 def pinned_checks(project):
-    raw = [check for after in CHECK_AFTER for check in current_checks(project)
+    config = load_config(project.config_path)
+    checks = pipeline_checks(project, config)
+    raw = [check for after in CHECK_AFTER for check in checks
            if check["after"] == after]
-    secrets = check_secrets(project)
+    secrets = known_secrets(config) | known_secrets(project.config())
     shown = []
     for check in raw:
         display = {**check, "id": outbound(check["id"], secrets),

@@ -44,6 +44,7 @@ from test_pipeline_notes import (  # noqa: E402 - after the sys.path insert
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.config.pipeline_settings import (  # noqa: E402
     STANDARD_STAGES,
+    pinned_checks,
     pipeline_checks,
 )
 from holophyte.loop.stop import command  # noqa: E402
@@ -227,6 +228,23 @@ class PinnedChecksTests(CheckRuns):
             {**pinned, "stages": [stage for stage in pinned["stages"]
                                   if stage["id"] not in ("lint", "docs")]},
             plain)
+
+
+    def test_one_config_read_supplies_every_pinned_check_and_its_secrets(self):
+        self.configure(UNTRIMMED)
+        lint = {"id": "lint", "commands": ["echo pinned-credential-1"],
+                "mode": "advisory"}
+        reads = iter([{"extras": {"api_token": "pinned-credential-1"},
+                       "pipeline": {"check": [{**lint, "after": "implement"}]}}])
+        edited = {"pipeline": {"check": [{**lint, "after": "trim"}]}}
+
+        with patch("holophyte.config.pipeline_settings.load_config",
+                   side_effect=lambda path: next(reads, edited)):
+            raw, shown, _ = pinned_checks(self.project)
+
+        self.assertEqual([(check["id"], check["after"]) for check in raw],
+                         [("lint", "implement")])
+        self.assertNotIn("pinned-credential-1", json.dumps(shown))
 
 
 class AdvisoryCheckTests(CheckRuns):
@@ -416,6 +434,39 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertFalse((self.target / "artifact.out").exists())
         self.assertEqual(found["restored"],
                          ["README.md", "artifact.out", "draft.txt"])
+
+    def test_a_check_puts_back_retargeted_symlinks_and_changed_modes(self):
+        (self.target / "other.txt").write_text("other\n")
+        self.git("add", "other.txt")
+        self.git("commit", "-q", "-m", "another file")
+        (self.target / "link").symlink_to("README.md")
+        (self.target / "draft.sh").write_text("echo draft\n")
+        (self.target / "draft.sh").chmod(0o644)
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["ln -sfn other.txt link", "chmod 755 draft.sh",
+                         "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertEqual(os.readlink(self.target / "link"), "README.md")
+        self.assertEqual((self.target / "other.txt").read_text(), "other\n")
+        self.assertEqual((self.target / "draft.sh").stat().st_mode & 0o777,
+                         0o644)
+        self.assertEqual(found["restored"], ["draft.sh", "link"])
+
+    def test_a_failed_restore_closes_error_and_keeps_the_checks_result(self):
+        with patch.object(checks.Snapshot, "restore",
+                          side_effect=OSError("restore refused")):
+            outcome, found = checks.ran(self.project, {
+                "commands": ["echo clean"], "secrets": frozenset()},
+                self.target)
+
+        self.assertEqual(outcome, "error")
+        self.assertEqual((found["check_outcome"], found["exit_status"]),
+                         ("pass", 0))
+        self.assertIn("clean", found["output"])
+        self.assertIn("restore refused", found["restore_error"])
 
     def test_a_registered_value_in_a_selector_neither_runs_nor_drops_a_check(self):
         held = tempfile.TemporaryDirectory()
