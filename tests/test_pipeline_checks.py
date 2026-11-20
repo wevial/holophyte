@@ -675,6 +675,17 @@ class AdvisoryCheckTests(CheckRuns):
 
 
 class SkippedCheckTests(CheckRuns):
+    def test_path_filter_matches_candidate_changes_with_a_foreign_git_dir(self):
+        other = self.target.parent / "other.git"
+        self.git("init", "--bare", str(other))
+        (self.target / "README.md").write_text("updated\n")
+        self.git("commit", "-qam", "update readme")
+        head = self.git("rev-parse", "HEAD").strip()
+        check = {"mode": "advisory", "paths": ["README.md"]}
+
+        with patch.dict(os.environ, {"GIT_DIR": str(other)}):
+            self.assertIsNone(checks.skip_reason(check, self.target, self.base, head))
+
     def test_an_unmatched_path_condition_and_mode_off_skip_without_running(self):
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)
