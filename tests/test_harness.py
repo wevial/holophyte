@@ -622,6 +622,38 @@ class DevinImplementerTests(ClaudeTableTests):
         self.assertEqual(json.loads(payload), {"arm": "resume", "resumed": True})
 
 
+class AgyImplementerTests(unittest.TestCase):
+    setUp = ClaudeTableTests.setUp
+
+    def test_writing_seats_run_agy_print_mode_with_the_goal_last(self):
+        options = 'harness = "agy"\nmodel = "gemini-4-neon-xhigh"\n'
+        self.target.config_path.write_text("".join(
+            f"[agents.{key}]\n{options}" for key in
+            ("implementer", "trimmer", "implementer_profiles.neon")))
+        holophyte.config.checks.check_config(self.target)
+        seats = [holophyte.agents.harness.seat(self.target, role)
+                 for role in ("implement", "trim")]
+        seats.append(holophyte.agents.harness.implementer_profiles(self.target)["neon"])
+        for seat in seats:
+            with self.subTest(seat=seat.role):
+                self.assertEqual(seat.turn("GOAL"), [
+                    "agy", "-p", "--model", "gemini-4-neon-xhigh",
+                    "--dangerously-skip-permissions", "--output-format", "json",
+                    "GOAL"])
+
+    def test_agy_requires_a_model_and_refuses_effort(self):
+        for options, key in (
+                ("", "model"),
+                ('model = "gemini-4-neon-xhigh"\neffort = "high"\n', "effort")):
+            with self.subTest(key=key):
+                self.target.config_path.write_text(
+                    '[agents.implementer]\nharness = "agy"\n' + options)
+                self.target._config = None
+                with self.assertRaisesRegex(
+                        SystemExit, rf"\[agents\.implementer\] {key}\b"):
+                    holophyte.config.checks.check_config(self.target)
+
+
 class ContainerImplementerTests(unittest.TestCase):
     """A table implementer under `implementer_isolation = "container"`, its
     container launch replaced by one that records the argv it was handed."""

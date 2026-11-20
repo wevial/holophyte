@@ -298,6 +298,32 @@ class Devin(Adapter):
                 "--respect-workspace-trust", "false"]
 
 
+class Agy(Adapter):
+    name = "agy"
+    roles = frozenset(WRITING_ROLES)
+    requires = frozenset({"model"})
+    refuses = frozenset({"effort"})
+    models = ("gemini-4-neon-xhigh",)
+
+    def turn(self, binary, options, role):
+        return [binary, "-p", "--model", options["model"],
+                "--dangerously-skip-permissions", "--output-format", "json"]
+
+    def session(self, argv):
+        return None
+
+    def resume(self, binary, options, session, role):
+        return [*self.turn(binary, options, role), "--conversation", session]
+
+    def reported_session(self, binary, output, role, run):
+        try:
+            reply = json.loads(output)
+        except ValueError:
+            return None
+        session = reply.get("conversation_id") if isinstance(reply, dict) else None
+        return session if isinstance(session, str) else None
+
+
 class Cursor(Adapter):
     name = "cursor"
     binary = "cursor-agent"
@@ -342,7 +368,7 @@ class T3(Adapter):
 
 
 ADAPTERS = {adapter.name: adapter for adapter in (Claude(), ClaudeSdk(), Codex(),
-                                                  Cursor(), Devin(), T3())}
+                                                  Cursor(), Devin(), Agy(), T3())}
 
 
 @dataclass(frozen=True)

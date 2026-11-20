@@ -190,6 +190,32 @@ def file_mount_flags(mounts):
 
 
 CODEX_BIN = "/opt/codex/bin"
+AGY_BIN = "/opt/agy/bin"
+AGY_LOGIN = PurePosixPath(".gemini/antigravity-cli/antigravity-oauth-token")
+
+
+def agy_mount_flags():
+    found = shutil.which("agy")
+    if not found:
+        raise RuntimeError("agy executable missing from PATH")
+    source = Path(found).resolve(strict=True)
+    if ":" in str(source):
+        raise RuntimeError(f"bind source {source} must not contain a colon")
+    return ["--volume", f"{source}:{AGY_BIN}/agy:ro"]
+
+
+def agy_login_flags(route, task, project, scratch, stack):
+    destination = PurePosixPath("/home/implementer", AGY_LOGIN)
+    configured = PurePosixPath(route.credential.get("destination", "/"))
+    if not CREDENTIAL_NEEDED.get() or configured == destination:
+        return []
+    login = {"file": str(Path.home() / AGY_LOGIN), "destination": str(destination)}
+    if configured.parent == destination.parent:
+        stage_credential(login, scratch)
+        return []
+    login_dir = stack.enter_context(
+        credential_copy(replace(route, credential=login), task, project))
+    return ["--volume", f"{login_dir}:{destination.parent}:rw"]
 
 
 def codex_mount_flags():
@@ -269,23 +295,27 @@ def cache_directory(task, project):
     return cache
 
 
+def stage_credential(credential, scratch):
+    source = Path(credential["file"]).expanduser().resolve(strict=True)
+    if not source.is_file() or ":" in str(source):
+        raise RuntimeError("implementer credential must be a regular file")
+    copy = scratch / PurePosixPath(credential["destination"]).name
+    shutil.copyfile(source, copy)
+    copy.chmod(0o600)
+
+
 @contextlib.contextmanager
 def credential_copy(route, task, project):
     if "file" not in route.credential:
         yield None
         return
-    source = Path(route.credential["file"]).expanduser().resolve(strict=True)
-    if not source.is_file() or ":" in str(source):
-        raise RuntimeError("implementer credential must be a regular file")
     try:
         parent = project_state(Path(task).resolve(strict=True), project) / "credentials"
     except subprocess.CalledProcessError:
         parent = Path(tempfile.gettempdir())
     scratch = private_directory(parent / f"holophyte-credential-{uuid.uuid4().hex}")
     try:
-        copy = scratch / PurePosixPath(route.credential["destination"]).name
-        shutil.copyfile(source, copy)
-        copy.chmod(0o600)
+        stage_credential(route.credential, scratch)
         yield scratch
     finally:
         remove_scratch(scratch)
@@ -320,7 +350,7 @@ def credential_mount_flags(credential, scratch, mounted):
 
 def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
                       project=None, cache_for=None, credential_scratch=None,
-                      carry=None):
+                      carry=None, agy_flags=()):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -361,6 +391,7 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     if "file" in credential:
         command += credential_mount_flags(credential, credential_scratch, mounted)
     command += file_mount_flags(mounts)
+    command += agy_flags
     if route.codex:
         command += codex_mount_flags()
         home = (env or {}).get("CODEX_HOME") or CODEX_HOME
@@ -442,14 +473,19 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
     carry = carry_mounts(task, carry) if route.writable else []
     checkout = (turn_clone(worktree, project, carry) if route.writable
                 else contextlib.nullcontext((worktree, {})))
-    with (unwinding_on_signal(name),
+    with (unwinding_on_signal(name), contextlib.ExitStack() as staged,
           credential_copy(route, worktree, project) as scratch,
           checkout as (workspace, git_env), around(workspace)):
+        agy_flags = []
+        if argv[:1] == ["agy"]:
+            agy_flags = agy_mount_flags()
+            agy_flags += agy_login_flags(route, worktree, project, scratch, staged)
+            argv = ["/bin/sh", "-c", f'PATH="{AGY_BIN}:$PATH" exec "$@"', "agy", *argv]
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
             task=worktree if keep_session else None, project=project,
             cache_for=worktree, credential_scratch=scratch,
-            carry={entry: task / entry for entry in carry},
+            carry={entry: task / entry for entry in carry}, agy_flags=agy_flags,
         )
         try:
             return run_capped(command, workspace, timeout, env=host_env, **hook)
