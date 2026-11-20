@@ -5,7 +5,11 @@ NOTE_LIMIT = 4000
 
 def pipeline_notes(project):
     table = project.config().get("pipeline", {})
-    notes = table.get("notes", {}) if isinstance(table, dict) else {}
+    if not isinstance(table, dict):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [pipeline] must be a table, got "
+            f"{type(table).__name__}")
+    notes = table.get("notes", {})
     accepts = f"[pipeline.notes] accepts: {', '.join(sorted(NOTE_TARGETS))}"
     if not isinstance(notes, dict):
         raise SystemExit(
