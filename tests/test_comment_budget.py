@@ -264,6 +264,7 @@ PINNED = {
     "holophyte/review/criterion_ids.py": 0,
     "holophyte/review/findings.py": 4,
     "holophyte/review/freshness.py": 0,
+    "holophyte/review/json_reply.py": 0,
     "holophyte/review/landmarks.py": 1,
     "holophyte/review/main_baseline.py": 6,
     "holophyte/review/moved_landmarks.py": 0,

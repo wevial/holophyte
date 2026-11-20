@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from holophyte.review import review_runner
+from holophyte.review.json_reply import SCHEMA_FILE
 from holophyte.tickets.ticket_template import ORCHESTRATION_MODES
 
 TABLE_ROLES = ("implementer", "reviewer", "adjudicator", "critic", "trimmer",
@@ -68,6 +69,9 @@ class Adapter:
     def mcp_flags(self, server):
         raise ValueError(f"harness {self.name!r} takes no MCP server")
 
+    def unschemed(self, argv):
+        return argv
+
 
 class Claude(Adapter):
     name = "claude"
@@ -124,12 +128,17 @@ class Codex(Adapter):
     BANNER = re.compile(r"^[ \t]*session id:[ \t]*(\S+)", re.MULTILINE)
     IMPLEMENTER = ["--dangerously-bypass-approvals-and-sandbox",
                    "--skip-git-repo-check"]
+    VALUED_OPTIONS = frozenset({
+        "-c", "--config", "--enable", "--disable", "--remote",
+        "--remote-auth-token-env", "-i", "--image", "-m", "--model",
+        "--local-provider", "-p", "--profile", "-s", "--sandbox", "-C", "--cd",
+        "--add-dir", "-a", "--ask-for-approval"})
 
     def turn(self, binary, options, role):
         if role in WRITING_ROLES:
             return [binary, "exec", *self.IMPLEMENTER, *self.route(options)]
         return [binary, "exec", *self.route(options), *self.subagents(role),
-                *self.sandbox(role)]
+                *self.reply_schema(role), *self.sandbox(role)]
 
     def session(self, argv):
         return None
@@ -138,7 +147,8 @@ class Codex(Adapter):
         if role in WRITING_ROLES:
             return [binary, "exec", "resume", session, *self.IMPLEMENTER,
                     *self.route(options)]
-        tail = [*self.route(options), *self.subagents(role)]
+        tail = [*self.route(options), *self.subagents(role),
+                *self.reply_schema(role)]
         if role in READ_ONLY_ROLES:
             return [binary, "exec", *self.sandbox(role), "resume", *tail,
                     session]
@@ -147,6 +157,48 @@ class Codex(Adapter):
     @staticmethod
     def subagents(role):
         return ["--disable", "multi_agent"] if role == SCOUT_LEAD else []
+
+    @staticmethod
+    def reply_schema(role):
+        return ["--output-schema", str(SCHEMA_FILE)] if role == "reviewer" else []
+
+    @staticmethod
+    def schemed_command(argv):
+        found = Codex.exec_command(argv)
+        if found is None:
+            return argv
+        kept, at = found
+        return [*kept[:at + 1], *Codex.reply_schema("reviewer"), *kept[at + 1:]]
+
+    @staticmethod
+    def exec_command(argv):
+        if not argv or Path(argv[0]).name != Codex.name:
+            return None
+        kept = Codex.unschemed(argv)
+        at = Codex.subcommand_at(kept)
+        if at is None or kept[at] not in ("exec", "e"):
+            return None
+        return kept, at
+
+    @staticmethod
+    def subcommand_at(argv):
+        at = 1
+        while at < len(argv) and argv[at].startswith("-"):
+            valued = argv[at] in Codex.VALUED_OPTIONS
+            at += 2 if valued else 1
+        return at if at < len(argv) else None
+
+    @staticmethod
+    def unschemed(argv):
+        kept, skip = [], False
+        for arg in argv:
+            if skip:
+                skip = False
+            elif arg == "--output-schema":
+                skip = True
+            elif not arg.startswith("--output-schema="):
+                kept.append(arg)
+        return kept
 
     @staticmethod
     def mcp_flags(server):
@@ -292,14 +344,15 @@ class Seat:
     binary: str
     options: dict
     role: str
+    reply_schema: bool = True
 
     @property
     def name(self):
         return self.adapter.name
 
     def turn(self, goal, server=None):
-        return self.served(self.adapter.turn(self.binary, self.options,
-                                             self.role), server) + [goal]
+        return self.served(self.schemed(self.adapter.turn(
+            self.binary, self.options, self.role)), server) + [goal]
 
     def probe(self):
         return self.adapter.probe(self.binary, self.options)
@@ -308,8 +361,11 @@ class Seat:
         return self.adapter.session(argv)
 
     def resume(self, session, server=None):
-        return self.served(self.adapter.resume(self.binary, self.options,
-                                               session, self.role), server)
+        return self.served(self.schemed(self.adapter.resume(
+            self.binary, self.options, session, self.role)), server)
+
+    def schemed(self, argv):
+        return argv if self.reply_schema else self.adapter.unschemed(argv)
 
     def served(self, argv, server):
         if server is None:

@@ -26,6 +26,7 @@ import holophyte.config.checks
 import holophyte.config.project
 import holophyte.loop.implement
 import holophyte.loop.runs
+import holophyte.review.json_reply
 import store
 
 # The fake harness: records its argv, then sleeps past the cap when the
@@ -156,6 +157,8 @@ CODEX_CONFIG = "".join(
 ) + '[loop]\nreview_session = "resume"\n'
 OPTIONS = ["-m", "gpt-5.6-luna", "-c", "model_reasoning_effort=low",
            "--dangerously-bypass-approvals-and-sandbox"]
+REVIEW_OPTIONS = [*OPTIONS[:-1], "--output-schema",
+                  str(holophyte.review.json_reply.SCHEMA_FILE), OPTIONS[-1]]
 
 
 class TableReviewCase(unittest.TestCase):
@@ -230,8 +233,14 @@ class TableReviewCase(unittest.TestCase):
 class CodexTableTests(TableReviewCase):
     BINARY, FAKE, CONFIG = "codex", FAKE_CODEX, CODEX_CONFIG
 
-    def assert_fresh_turn_in_a_candidate_checkout(self, call, goal):
-        self.assertEqual(call["argv"], ["exec", *OPTIONS, goal])
+    def dispatch(self, role, goal, review_round=1):
+        if role == "review":
+            goal = holophyte.review.json_reply.SchemaBrief(goal, goal, goal)
+        return super().dispatch(role, goal, review_round)
+
+    def assert_fresh_turn_in_a_candidate_checkout(self, call, goal,
+                                                  options=REVIEW_OPTIONS):
+        self.assertEqual(call["argv"], ["exec", *options, goal])
         self.assert_in_a_candidate_checkout(call)
 
     def test_review_and_adjudicator_tables_run_codex_in_a_candidate_checkout(self):
@@ -241,7 +250,8 @@ class CodexTableTests(TableReviewCase):
                 self.dispatch(role, f"{role} the candidate")
                 [call] = self.received()
                 self.assert_fresh_turn_in_a_candidate_checkout(
-                    call, f"{role} the candidate")
+                    call, f"{role} the candidate",
+                    REVIEW_OPTIONS if role == "review" else OPTIONS)
         [recorded] = self.events("agent_session")
         self.assertEqual((recorded["session_id"], recorded["role"],
                           recorded["round"]), ("codex-1", "review", 1))
@@ -266,7 +276,8 @@ class CodexTableTests(TableReviewCase):
         self.dispatch("review", "second look", review_round=2)
         _, resumed = self.received()
         self.assertEqual(resumed["argv"],
-                         ["exec", "resume", *OPTIONS, "codex-1", "second look"])
+                         ["exec", "resume", *REVIEW_OPTIONS, "codex-1",
+                          "second look"])
         self.assertEqual(resumed["head"], self.candidate)
         with patch.dict(os.environ, {"FAKE_NO_ROLLOUT": "1"}):
             self.dispatch("review", "third look", review_round=2)
@@ -276,6 +287,14 @@ class CodexTableTests(TableReviewCase):
         self.assertEqual([event.get("reason") for event in
                           self.events("review_session")],
                          [None, None, "no rollout found"])
+
+    def test_the_review_probe_runs_and_reports_one_argv_without_the_schema(self):
+        probe = holophyte.agents.probes.probe_route(self.target, "review",
+                                                    False, 60, 0)
+        [call] = self.received()
+        self.assertEqual(call["argv"], ["exec", *OPTIONS,
+                                        holophyte.agents.probes.REVIEW_PROBE_GOAL])
+        self.assertEqual(probe.command[1:], call["argv"])
 
 
 # The fake cursor-agent: records its argv, its cwd's HEAD and whether the

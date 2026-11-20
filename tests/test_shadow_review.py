@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from holophyte.loop import review_round
 from holophyte.review import review_runner
+from holophyte.review.json_reply import REPLY_BRIEF
 from tests.test_shadow import ShadowRun, commits
 
 TICKET = """# Write the done marker
@@ -58,7 +59,7 @@ class ShadowReviewTests(ShadowRun, unittest.TestCase):
         self.assertIn("Write the done marker", prompt)
         for criterion in CRITERIA:
             self.assertIn(criterion, prompt)
-        self.assertIn("VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES", prompt)
+        self.assertIn(REPLY_BRIEF, prompt)
         self.assertNotIn("sonnet", prompt)
         self.assertNotIn("shadow", prompt.lower())
         self.assertEqual(prompt, self.primary_prompt(call.kwargs["candidate_sha"]))

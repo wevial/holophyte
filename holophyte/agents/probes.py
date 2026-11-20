@@ -178,6 +178,8 @@ def probe_route(project, role, fallback, timeout, entry):
         seat = harness_seat(project, role, fallback=fallback)
         return probe_launch(project, cmd, cap, AGENT_CONFIG_KEYS[role], entry,
                             claude=seat is not None and seat.name == "claude")
+    seat, cmd = (None, cmd) if default else review_probe(project, role,
+                                                         fallback, goal, cmd)
     sha = None
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         try:
@@ -195,8 +197,8 @@ def probe_route(project, role, fallback, timeout, entry):
                     service_tier=review_tier(project, fallback=fallback))
                 code = 0
             else:
-                code, out = probe_configured_review(project, role, fallback, goal,
-                                                    cmd, scratch, cap)
+                code, out = probe_configured_review(seat, role, goal, cmd,
+                                                    scratch, cap)
         except subprocess.TimeoutExpired as expired:
             partial = expired.output or ""
             if isinstance(partial, bytes):
@@ -275,8 +277,15 @@ def container_fallback_profile(project, role):
     return review_profile(*pair) if pair else None
 
 
-def probe_configured_review(project, role, fallback, goal, cmd, clone, cap):
+def review_probe(project, role, fallback, goal, cmd):
     seat = harness_seat(project, role, fallback=fallback)
+    if seat is None:
+        return None, cmd
+    seat = replace(seat, reply_schema=False)
+    return seat, seat.turn(goal)
+
+
+def probe_configured_review(seat, role, goal, cmd, clone, cap):
     if seat is None:
         return run_capped(cmd, clone, cap)
     env = {key: value for key, value in os.environ.items()

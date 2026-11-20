@@ -765,16 +765,23 @@ def _scope_findings(reply, scope):
 
 
 def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
-                  run_agent=None, review_round=None):
+                  run_agent=None, review_round=None, reply_round=None):
     from holophyte.agents.roles import agent
     from holophyte.board.projection import comment_body
+    from holophyte.review.json_reply import (
+        SchemaBrief,
+        read_reply,
+        record_format,
+        retry_brief,
+    )
 
     run_agent = run_agent or agent
     first_reply = ""
     session = {} if review_round is None else {"review_round": review_round}
     for attempt in range(2):
-        reply = run_agent(target, "review", prompt, wt, base_sha=base_sha,
-                          candidate_sha=sha, conn=conn, run_id=run_id, **session)
+        reply, reply_format = read_reply(run_agent(
+            target, "review", prompt, wt, base_sha=base_sha, candidate_sha=sha,
+            conn=conn, run_id=run_id, **session))
         try:
             decision = review_runner.terminal_verdict(reply)
         except review_runner.ReviewBoundaryError:
@@ -785,10 +792,10 @@ def _review_reply(target, prompt, wt, base_sha, sha, conn, run_id, *,
         stop_if_requested(conn, run_id, "reviewing")
         if attempt == 0:
             first_reply = "first reply (no verdict):\n" + comment_body(reply)
-            prompt += ("\n\nYour previous reply had no clean terminal verdict. "
-                       "Your reply must end with exactly one line, "
-                       "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, "
-                       "and nothing after it.")
+            prompt = retry_brief(prompt)
+    if isinstance(prompt, SchemaBrief):
+        record_format(conn, run_id, reply_format,
+                      review_round if reply_round is None else reply_round)
     return reply, decision, first_reply
 
 

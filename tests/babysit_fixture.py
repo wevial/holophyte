@@ -302,7 +302,7 @@ class ConflictRefusalCases(BabysitHelpers):
         reviews = [t for t in self.last_fake.turns if t.role == "review"]
         self.assertEqual(len(reviews), 3)
         self.assertTrue(reviews[2].goal.startswith(reviews[1].goal))
-        self.assertIn("nothing after it", reviews[2].goal)
+        self.assertIn("no clean terminal verdict", reviews[2].goal)
         self.assertNotIn("criteria not witnessed", output)
         return output
 

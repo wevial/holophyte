@@ -58,6 +58,7 @@ from holophyte.review.briefs import (
     verified_brief,
 )
 from holophyte.review.criterion_ids import numbered
+from holophyte.review.json_reply import reply_brief
 from holophyte.review.reply_parsing import (
     FINDING_FORMAT,
     _review_reply,
@@ -161,13 +162,16 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + scope_brief(wt, ticket, base_sha, sha)
         + trim_brief(wt, base_sha, sha)
         + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
-        + "Do not modify anything. End your reply with exactly one "
-        "line:\n"
-        "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-        "If REQUEST_CHANGES, list only concrete blockers, each as one list "
-        f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
-        "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
-        f"before {follow_up_place(criteria)}.")
+        + reply_brief(
+            project,
+            "Do not modify anything. End your reply with exactly one line:\n"
+            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+            "If REQUEST_CHANGES, list only concrete blockers, each as one list "
+            f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
+            "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
+            f"before {follow_up_place(criteria)}.",
+            f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
+            "guardrail follow_up."))
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,

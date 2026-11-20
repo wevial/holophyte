@@ -136,6 +136,15 @@ is not JSON, or whose `is_error` is true, fails the turn with the output's
 tail, and an outage line (`You've hit your limit`, `Credit balance is too
 low`) goes through the outage path below.
 
+A review turn, not an adversary's, also requires the reply schema: the runner
+copies `review_reply.schema.json` into the reviewer home, and the script
+passes it as `--output-schema` to Codex and as `--json-schema` to Claude,
+whose reply is then the `structured_output` field. A configured `codex exec`
+reviewer command gains `--output-schema` too, replacing any schema it names.
+The schema follows the brief: each turn's dispatched route decides it, so a
+route without the schema, such as a fallback to another command, is sent the
+line-format brief, and a review whose brief asks for lines runs without it.
+
 A review prompt whose range from the frozen base holds commits from the
 [trim step](loop.md) gets a trim section, read from git on every round,
 resumed runs included. It lists each `trim:` pass commit by short sha and
