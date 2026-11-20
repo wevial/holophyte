@@ -49,8 +49,8 @@ def resolve(project, profile=None, notes=None, checks=()):
         at = next(at for at, found in enumerate(stages) if found["id"] == after)
         stages[at + 1:at + 1] = [
             stage(check["id"], "check", "candidate", after=after,
-                  mode=check["mode"], commands=list(check["commands"]),
-                  paths=list(check["paths"]))
+                  mode=check["mode"], commands=check["commands"],
+                  paths=check["paths"])
             for check in checks if check["after"] == after]
     document = {"format": FORMAT, "name": NAME,
                 "merge": {"mode": merge.mode, "approve": merge.approve},
