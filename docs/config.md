@@ -280,9 +280,8 @@ model   = "gpt-5.6-sol"   # optional; passed to -m
 effort  = "medium"        # optional; low, medium, high or xhigh
 ```
 
-To run Antigravity, set `harness = "agy"` in `[agents.implementer]`,
-`[agents.trimmer]` or `[agents.implementer_profiles.NAME]`. The model name
-includes the thinking level, so supply `model` and omit `effort`.
+Antigravity requires a `model` that includes the thinking level. Omit `effort`.
+Use the same options for `[agents.trimmer]` or `[agents.implementer_profiles.NAME]`.
 
 ```toml
 [agents.implementer]
@@ -296,12 +295,11 @@ and the session ID from `conversation_id`. The turn output keeps the full JSON.
 Host implementer turns record the session ID and pass `--conversation ID`
 before the goal on a resumed fix. Container fix rounds currently start fresh.
 
-Under container isolation the launcher finds
-`agy` on the host's `PATH`, mounts it read-only at `/opt/agy/bin/agy`, and
-prepends `/opt/agy/bin` to the turn's `PATH`. It copies the host login at
-`~/.gemini/antigravity-cli/antigravity-oauth-token` to the same relative
-path in the turn's temporary home. Antigravity can refresh this private copy.
-The launcher removes it when the turn ends.
+An isolated agy turn mounts the host's `agy` from `PATH` read-only at
+`/opt/agy/bin/agy` and prepends `/opt/agy/bin` to its `PATH`. The launcher copies
+`~/.gemini/antigravity-cli/antigravity-oauth-token` to the same relative path
+in the turn's temporary home. Antigravity can refresh the copy until the
+launcher removes it at the end of the turn.
 
 `[agents.reviewer] harness = "devin"` (and the same for `adjudicator`) runs
 in the same throwaway candidate checkout as
