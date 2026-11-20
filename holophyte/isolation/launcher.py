@@ -1,5 +1,6 @@
 import contextlib
 import contextvars
+import errno
 import hashlib
 import itertools
 import os
@@ -208,29 +209,53 @@ def agy_mount_flags():
     return readonly_volume(Path(found).resolve(strict=True), f"{AGY_BIN}/agy")
 
 
+def open_gemini_subdirectory(parent, name):
+    flags = os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        return os.open(name, flags, dir_fd=parent)
+    except PermissionError:
+        os.chmod(name, 0o700, dir_fd=parent, follow_symlinks=False)
+    except OSError as error:
+        if error.errno in (errno.ELOOP, errno.ENOTDIR):
+            os.unlink(name, dir_fd=parent)
+        elif error.errno != errno.ENOENT:
+            raise
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(name, mode=0o700, dir_fd=parent)
+    return os.open(name, flags, dir_fd=parent)
+
+
+def remove_gemini_entry(parent, name, scratch):
+    try:
+        os.unlink(name, dir_fd=parent)
+    except IsADirectoryError:
+        os.chmod(name, 0o700, dir_fd=parent, follow_symlinks=False)
+        os.replace(name, tempfile.mkdtemp(dir=scratch), src_dir_fd=parent)
+
+
 @contextlib.contextmanager
 def install_gemini_credential(home, destination, scratch, *, temporary):
     relative = destination.relative_to(GEMINI_HOME)
     with contextlib.ExitStack() as directories:
-        flags = os.O_DIRECTORY | os.O_NOFOLLOW
-        parent = os.open(home, flags)
+        parent = os.open(home, os.O_DIRECTORY | os.O_NOFOLLOW)
         directories.callback(os.close, parent)
         for name in relative.parent.parts:
-            with contextlib.suppress(FileExistsError):
-                os.mkdir(name, mode=0o700, dir_fd=parent)
-            parent = os.open(name, flags, dir_fd=parent)
+            parent = open_gemini_subdirectory(parent, name)
             directories.callback(os.close, parent)
-        os.replace(scratch / destination.name, relative.name, dst_dir_fd=parent)
+            os.fchmod(parent, 0o700)
+        source = scratch / relative.name
+        try:
+            os.replace(source, relative.name, dst_dir_fd=parent)
+        except IsADirectoryError:
+            remove_gemini_entry(parent, relative.name, scratch)
+            os.replace(source, relative.name, dst_dir_fd=parent)
         try:
             yield
         finally:
             if temporary:
+                os.fchmod(parent, 0o700)
                 with contextlib.suppress(FileNotFoundError):
-                    try:
-                        os.unlink(relative.name, dir_fd=parent)
-                    except PermissionError:
-                        os.fchmod(parent, 0o700)
-                        os.unlink(relative.name, dir_fd=parent)
+                    remove_gemini_entry(parent, relative.name, scratch)
 
 
 def agy_login_flags(route, task, project, scratch, stack):

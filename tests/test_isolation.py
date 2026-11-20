@@ -511,6 +511,70 @@ class IsolationTests(GoRaceCases, IsolationCase):
         self.assertNotEqual(homes[1], homes[2])
         self.assertEqual(host_login.read_bytes(), b"host-login")
 
+    def first_agy_turn(self, worktree, credential=None):
+        from holophyte.isolation import launcher
+
+        route = launcher.Route("container", credential=credential or {})
+
+        def launch():
+            return launcher.launch(route, worktree, {}, ["agy"], project=self.target)
+
+        _, mounts = self.recorded_volumes(launch)
+        home = next(vol.split(":")[0] for vol in mounts
+                    if vol.endswith(":/home/implementer/.gemini:rw"))
+        return launch, Path(home)
+
+    def test_agy_repairs_a_locked_login_parent_and_directory_at_the_token_path(self):
+        worktree, _, host_login = self.agy_project()
+        launch, home = self.first_agy_turn(worktree)
+        copy = home / "antigravity-cli" / host_login.name
+        conversation = copy.parent / "conversations" / "first"
+        conversation.parent.mkdir()
+        conversation.write_text("saved")
+        copy.unlink()
+        copy.mkdir()
+        (copy / "stale").touch()
+        self.addCleanup(copy.parent.chmod, 0o700)
+        for mode in (0o500, 0):
+            with self.subTest(mode=mode):
+                copy.parent.chmod(mode)
+                self.recorded_volumes(launch)
+                self.assertEqual(copy.read_bytes(), b"host-login")
+                self.assertEqual(conversation.read_text(), "saved")
+                copy.write_text("refreshed")
+
+    def test_agy_replaces_a_linked_login_directory_without_touching_its_target(self):
+        worktree, _, host_login = self.agy_project()
+        launch, home = self.first_agy_turn(worktree)
+        parent = home / "antigravity-cli"
+        shutil.rmtree(parent)
+        outside = self.root / "outside"
+        outside.mkdir(mode=0o500)
+        parent.symlink_to(outside)
+        self.recorded_volumes(launch)
+        self.assertFalse(parent.is_symlink())
+        self.assertEqual((parent / host_login.name).read_bytes(), b"host-login")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o500)
+
+    def test_agy_returns_turn_work_after_a_directory_replaces_a_staged_credential(self):
+        worktree, _, host_login = self.agy_project()
+        launch, home = self.first_agy_turn(worktree, {
+            "file": str(host_login), "destination": "/home/implementer/.gemini/key"})
+        staged = home / "key"
+
+        def turn(clone):
+            self.assertEqual(staged.read_bytes(), b"host-login")
+            staged.unlink()
+            staged.mkdir()
+            (staged / "replacement").touch()
+            staged.chmod(0)
+            (clone / "result").write_text("completed turn")
+
+        self.recorded_volumes(launch, turn)
+        self.assertEqual((worktree / "result").read_text(), "completed turn")
+        self.assertFalse(staged.exists())
+
     def test_agy_launch_requires_the_host_executable(self):
         from holophyte.isolation import launcher
 
