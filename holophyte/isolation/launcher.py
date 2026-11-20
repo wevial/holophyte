@@ -209,7 +209,8 @@ def agy_mount_flags():
 
 
 @contextlib.contextmanager
-def install_gemini_credential(home, relative, staged, *, temporary):
+def install_gemini_credential(home, destination, scratch, *, temporary):
+    relative = destination.relative_to(GEMINI_HOME)
     with contextlib.ExitStack() as directories:
         flags = os.O_DIRECTORY | os.O_NOFOLLOW
         parent = os.open(home, flags)
@@ -219,7 +220,7 @@ def install_gemini_credential(home, relative, staged, *, temporary):
                 os.mkdir(name, mode=0o700, dir_fd=parent)
             parent = os.open(name, flags, dir_fd=parent)
             directories.callback(os.close, parent)
-        os.replace(staged, relative.name, dst_dir_fd=parent)
+        os.replace(scratch / destination.name, relative.name, dst_dir_fd=parent)
         try:
             yield
         finally:
@@ -242,15 +243,13 @@ def agy_login_flags(route, task, project, scratch, stack):
         home = session_directory(task, project, "gemini")
         if configured.is_relative_to(GEMINI_HOME):
             stack.enter_context(install_gemini_credential(
-                home, configured.relative_to(GEMINI_HOME), scratch / configured.name,
-                temporary=True))
+                home, configured, scratch, temporary=True))
             route = replace(route, credential={})
         if configured != destination:
             login_dir = stack.enter_context(
                 credential_copy(replace(route, credential=login), task, project))
             stack.enter_context(install_gemini_credential(
-                home, destination.relative_to(GEMINI_HOME),
-                login_dir / destination.name, temporary=False))
+                home, destination, login_dir, temporary=False))
         return route, ["--volume", f"{home}:{GEMINI_HOME}:rw"]
     if configured == destination:
         return route, []
