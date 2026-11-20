@@ -272,8 +272,10 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
     found = consolidate.council_inputs(answered, adversarial or [])
     route, label = consolidator_route(project)
     goal = consolidate.council_brief(seated, found, criteria, sha)
-    value, why = consolidator_reply(project, conn, run_id, wt, base_sha, sha,
-                                    goal, route, run_agent)
+    down = consolidator_down(project, route, label)
+    value, why = ((None, f"its route's probe failed: {down}") if down else
+                  consolidator_reply(project, conn, run_id, wt, base_sha, sha,
+                                     goal, route, run_agent))
     if value is None:
         summary = (f"round {rnd}: council not consolidated, {why}; the round "
                    "takes the strictest-wins merge of its seats")
@@ -289,6 +291,19 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
     return reply, final["verdict"]
 
 
+def consolidator_down(project, route, label):
+    from holophyte.agents.probes import probe_council_consolidator, probe_diagnostic
+
+    checked = routes(project).consolidator_checked
+    if label not in checked:
+        probe = probe_council_consolidator(project, route)
+        checked[label] = ("" if probe is None or probe.ok
+                          else probe_diagnostic(project, probe))
+        if checked[label]:
+            print(checked[label])
+    return checked[label]
+
+
 def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
                        run_agent):
     for _ in range(2):
@@ -298,7 +313,8 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
                               base_sha=base_sha, candidate_sha=sha,
                               timeout=consolidate.TIMEOUT, conn=conn,
                               run_id=run_id, family_route=route)
-        except (InfraFailure, OSError, subprocess.SubprocessError) as failure:
+        except (InfraFailure, OSError, subprocess.SubprocessError,
+                UnicodeError) as failure:
             if not getattr(failure.__cause__, "schema_refused", False):
                 return None, f"the consolidator's route failed: {failure}"
             reply = ""
@@ -320,7 +336,12 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
         ids = [name for name in dict.fromkeys(finding["raised_by"])
                if name in found]
         covered.update(ids)
-        kept.append(dict(finding, raised_by=raisers(found, ids)))
+        finding = dict(finding, raised_by=raisers(found, ids))
+        twin = next((other for other in kept if twins(other, finding)), None)
+        if twin is None:
+            kept.append(finding)
+        else:
+            absorb(twin, finding["severity"], finding["raised_by"])
     shared = shared_places(found)
     dropped, refuted = set(), []
     for entry in value["refuted"]:
@@ -331,26 +352,39 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
             dropped.update(ids)
             refuted.append(dict(entry, raised_by=raisers(found, ids)))
     for at, ids in unaccounted(found, covered | dropped).items():
-        held = next((finding for finding in kept
-                     if at in shared and spot(finding) == at), None)
-        if held is not None:
-            held.update(severity=min(held["severity"], *(
-                found[name][1]["severity"] for name in ids)),
-                raised_by=list(dict.fromkeys(
-                    held["raised_by"] + raisers(found, ids))))
-            continue
         finding = restored(found, ids)
+        twin = next((other for other in kept
+                     if at in shared and twins(other, finding)), None)
+        if twin is not None:
+            absorb(twin, finding["severity"], finding["raised_by"])
+            continue
         kept.append(finding)
         record_kept(conn, run_id, rnd, finding,
                     SHARED if at in shared else UNREASONED)
     concerns = [found[name][3] for name in found
-                if found[name][2] == "concern" and name not in covered]
+                if found[name][2] == "concern"
+                and name not in covered | dropped]
     judged = ruled_criteria(value, answered, criteria, wt, sha)
     approve = not kept and all(entry["status"] == "met" for entry in judged)
     return {"verdict": "APPROVE" if approve else "REQUEST_CHANGES",
             "criteria": judged, "findings": kept,
             "follow_ups": value["follow_ups"],
             "scope": ruled_scope(value, answered), "refuted": refuted}, concerns
+
+
+def seats_of(finding):
+    return {who for who in finding["raised_by"] if who.startswith("seat")}
+
+
+def twins(kept, finding):
+    return (spot(kept) is not None and spot(kept) == spot(finding)
+            and bool(seats_of(kept)) and bool(seats_of(finding))
+            and not seats_of(kept) & seats_of(finding))
+
+
+def absorb(kept, severity, raised_by):
+    kept.update(severity=min(kept["severity"], severity),
+                raised_by=list(dict.fromkeys(kept["raised_by"] + raised_by)))
 
 
 def unaccounted(found, accounted):
@@ -407,7 +441,8 @@ def ruled_criteria(value, answered, criteria, wt, sha):
     for own, *theirs in zip(checked(value, criteria, wt, sha), *seats):
         worst = min(theirs, key=lambda entry: RANKS[entry[1]])
         n, status, note, witness = (
-            worst if worst[1] != "met" and not (own[1] == "met" and own[3])
+            worst if worst[1] != "met"
+            and not (own[1] == "met" and kept_line(own[3]))
             else own)
         kept.append({"id": f"C{n}", "status": status, "reason": note,
                      "witness": witness})
@@ -443,16 +478,18 @@ def described(finding):
     return isinstance(finding, dict) and finding.get("path") == DESCRIBED
 
 
-def held_description(conn, run_id, verdict, findings):
+def held_description(conn, run_id, verdict, findings, rulings=()):
     hold_for_pr_text(conn, run_id, [finding_line(
         {"target": "description", "severity": finding["severity"],
-         "message": finding["message"]}) for finding in findings])
+         "message": finding["message"]}) for finding in findings]
+        + list(rulings))
     return without_description(verdict)[0]
 
 
-def description_only(verdict, findings):
-    value = verdict.json_reply
-    return (not findings and bool(value["findings"])
-            and all(finding["target"] == "description"
-                    for finding in value["findings"])
-            and all(entry["status"] == "met" for entry in value["criteria"]))
+def split_fixes(fixes):
+    lines = fixes.split("\n")
+    described = [line for line in lines if line.startswith(f"- {DESCRIBED}")]
+    rest = [line for line in lines if line not in described]
+    if not any(line.startswith("- ") for line in rest):
+        return "", described
+    return "\n".join(rest), described

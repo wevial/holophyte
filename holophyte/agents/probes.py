@@ -260,6 +260,15 @@ def probe_council_seat(project, number, route, timeout=None):
     return probe
 
 
+def probe_council_consolidator(project, route, timeout=None):
+    if route is None:
+        return probe_seat(project, "consolidate", timeout=timeout)
+    started = time.time()
+    probe = container_probe(project, "council consolidator", route, timeout)
+    record_probe(project, probe, False, started, time.time())
+    return probe
+
+
 def container_probe(project, seat, route, timeout=None):
     cmd, cap = [route["harness"], "--model", route["model"]], timeout or PROBE_TIMEOUT
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:

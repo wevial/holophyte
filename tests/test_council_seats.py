@@ -438,7 +438,7 @@ class CouncilRoundTests(CouncilFixture):
                 "gpt-6-astra": [Answer("APPROVE", 9)],
                 "gpt-6-luna": [Answer("APPROVE", 8)]})
 
-        self.assertEqual(sorted(self.container.probed),
+        self.assertEqual(sorted(set(self.container.probed)),
                          ["gpt-6-astra", "gpt-6-luna", "opus"])
         self.assertEqual(sorted(turn.model for turn in fake.seat_turns),
                          ["gpt-6-astra", "gpt-6-luna"])
