@@ -48,7 +48,7 @@ def pipeline_notes(project, config=None):
 
 CHECK_KEYS = ("id", "after", "commands", "mode", "paths")
 CHECK_AFTER = ("implement", "trim")
-CHECK_MODES = ("advisory", "off")
+CHECK_MODES = ("advisory", "off", "required")
 STANDARD_STAGES = ("critic", "implement", "trim", "verify", "review",
                    "merge_gate", "capture", "covering_fix", "check_fix",
                    "capture_fix", "waiting")
@@ -128,8 +128,6 @@ def _settings_problem(entry):
             not isinstance(command, str) or not command.strip()
             for command in commands)):
         return "commands must be a non-empty list of non-empty strings"
-    if entry.get("mode") == "required":
-        return "mode required is not available yet; use advisory or off"
     if entry.get("mode") not in CHECK_MODES:
         return f"mode must be one of {', '.join(CHECK_MODES)}"
     if not isinstance(paths, list) or any(

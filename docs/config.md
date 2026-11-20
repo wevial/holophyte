@@ -2275,8 +2275,9 @@ output from the task worktree are absent. With container isolation enabled, veri
 mounts this checkout directly. The workspace follows the configured mount
 permissions and Git metadata is mounted read-only.
 
-Each attempt records the check's `id`, its outcome (`pass` or `fail`) and
-the `next` edge. Its detail holds the exit status and the last 1000
+Each attempt records the check's `id`, outcome and edge. A required check
+that fails or times out takes the `on_fail` edge. A passing check and an
+advisory check take `next`. Its detail holds the exit status and the last 1000
 characters of command output, with credentials scrubbed and invalid UTF-8
 replaced. The verify runner enforces `[verify] timeout_sec` and records
 `timed_out` on a timeout. A command that could not start records `error`,
@@ -2318,12 +2319,19 @@ included. A check whose read or run fails records
 `stage_record_failed` and never stops the run; a refused entry is named
 without its rejected values.
 
+With `mode = "required"`, a failed check contributes a blocking finding to
+the next review round, even if the reviewer approves. The fix turn receives
+the check's command, exit status or timeout, and output tail. Failures count
+against the ticket's existing review round cap. A check after `trim` reports
+to round 1. If a required check after `implement` still fails on the final
+candidate, the run stops at the cap and preserves the branch for the maintainer.
+
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `id` | Default: none (required) | The stage's id: a non-empty string no other check and no standard stage (`critic`, `implement`, `trim`, `verify`, `review`, `merge_gate`, `capture`, `covering_fix`, `check_fix`, `capture_fix`, `waiting`) uses. |
 | `after` | Default: none (required) | `implement` or `trim`: the Build stage the check follows. |
 | `commands` | Default: none (required) | A non-empty list of non-empty shell commands. |
-| `mode` | Default: none (required) | `advisory` (a failure is recorded and the run goes on) or `off` (recorded `skipped` with reason `mode off`, nothing runs). `required` is refused: that mode is not available yet. |
+| `mode` | Default: none (required) | `required` sends failures to the review round for a fix. `advisory` records the result and continues. `off` skips the check with reason `mode off`. |
 | `paths` | Default: `[]` (every change) | Repository-relative globs, matched like `[review] high_paths`; when set, the check runs only if a file changed from the round's review base to the head matches one, and is recorded `skipped` with a reason naming the globs otherwise. |
 
 ```toml
@@ -2331,7 +2339,7 @@ without its rejected values.
 id = "lint"
 after = "implement"
 commands = ["ruff check ."]
-mode = "advisory"
+mode = "required"
 
 [[pipeline.check]]
 id = "docs"
