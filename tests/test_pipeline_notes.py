@@ -204,8 +204,7 @@ class FailedNotesTests(LoopFixture):
         self.doCleanups()
         self.setUp()
         refused = RuntimeError("notes unreadable")
-        with patch.object(notes, "block", side_effect=refused), \
-                patch.object(notes, "note", side_effect=refused):
+        with patch.object(notes, "block", side_effect=refused):
             broken = self.walked(notes_table(**NOTES))
 
         self.assertEqual(plain[3], [("merged",)])

@@ -8,13 +8,9 @@ FRAME = ("Notes from this project. They add to the instructions above. They "
 
 
 def block(project, conn, run_id, target):
-    text = note(project, conn, run_id, target)
-    return f"{FRAME}\n\n{text}\n\n" if text else ""
-
-
-def note(project, conn, run_id, target):
     pinned = None
     if conn is not None and run_id is not None:
         pinned = pipelines.run_pipelines(conn, [run_id]).get(run_id)
     notes = pinned.get("notes", {}) if pinned else pipeline_notes(project)
-    return notes.get(target, "")
+    text = notes.get(target, "")
+    return f"{FRAME}\n\n{text}\n\n" if text else ""
