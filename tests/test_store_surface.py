@@ -377,15 +377,19 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # witness pre-check.
                                                     "witness_prechecks"]),
                                  # A run's pipeline, pinned from its document
-                                 # or inherited by a continuation, and read.
+                                 # or inherited by a continuation, read, and
+                                 # a document's revision.
                                  (store.pipelines, ["inherit_pipeline",
                                                     "pin_pipeline",
+                                                    "pipeline_revision",
                                                     "run_pipelines"]),
                                  # Each stage attempt of a run, opened and
-                                 # closed or recorded skipped, and read.
+                                 # closed or recorded skipped, read, and each
+                                 # stage's window numbers.
                                  (store.stages, ["close_stage", "open_stage",
                                                  "skip_stage",
-                                                 "stage_attempts"]),
+                                                 "stage_attempts",
+                                                 "stage_numbers"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",

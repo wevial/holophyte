@@ -71,6 +71,7 @@ from holophyte.serve.serve_merge import (
     run_merge,
 )
 from holophyte.serve.serve_merge_queue import MERGE_QUEUE_PATH, merge_queue
+from holophyte.serve.serve_pipeline import PIPELINE_PATH, pipeline
 from holophyte.serve.serve_queue_actions import QUEUE_ACTIONS
 from holophyte.serve.serve_revert import REVERT_ACTION, revert_action
 from holophyte.serve.serve_runs import (
@@ -137,7 +138,8 @@ OCTET_STREAM = "application/octet-stream"
 TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
                         "/flow", "/attention", "/board", "/report", "/findings",
-                        "/tickets", "/search", SCOUTS_PATH, MERGE_QUEUE_PATH})
+                        "/tickets", "/search", SCOUTS_PATH, MERGE_QUEUE_PATH,
+                        PIPELINE_PATH})
 CONFIG_READS = frozenset({CONFIG_PATH, PATH_MATCHES_PATH, TRACKED_TREE_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
@@ -292,7 +294,8 @@ QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/flow": flow,
                 "/findings": findings, "/tickets": ticket_search,
                 "/search": search,
-                SCOUTS_PATH: scouts, MERGE_QUEUE_PATH: merge_queue}
+                SCOUTS_PATH: scouts, MERGE_QUEUE_PATH: merge_queue,
+                PIPELINE_PATH: pipeline}
 
 
 def shaped_route(path):
