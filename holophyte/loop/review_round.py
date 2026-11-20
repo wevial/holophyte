@@ -293,16 +293,16 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     verdict = _with_report(
         handed or stuck_review.without_dropped(verdict, undescribed, ruling),
         red, out)
-    fixes, ruled = ((ruling.fixes if ruling is not None else ""), [])
+    fixes = ruling.fixes if ruling is not None else ""
     if held:
         fixes, ruled = council.split_fixes(fixes)
-    verdict += fixes
-    if held:
-        verdict = council.held_description(conn, run_id, verdict, described,
-                                           ruled, settled)
+        verdict = council.held_description(conn, run_id, verdict + fixes,
+                                           described, ruled, settled)
         if (described or ruled) and not (red or private or undescribed):
             decision, findings = "APPROVE", []
             attempt.note(decision=decision)
+    else:
+        verdict += fixes
     return leak_guard.with_findings(verdict, private), decision, findings
 
 
