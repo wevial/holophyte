@@ -436,7 +436,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
             ref={toggleRef}
             aria-label={toggleName}
             aria-expanded={narrow ? drawer : !folded}
-            aria-controls={narrow && drawer ? "sidebar-drawer" : undefined}
+            aria-controls={drawer ? "sidebar-drawer" : undefined}
             onClick={fold}
             className={`${TITLE_BUTTON} ${macApp ? APP_NO_DRAG : ""}`}
           >
