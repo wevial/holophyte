@@ -1193,7 +1193,8 @@ run puts there. Text from the project's config that happens to hold
 `⟨…⟩` is shown as written and is never a stand-in. Adjacent
 stand-ins with no text between them may each be empty in a real run. The
 preview renders a run where every part is present: a ticket with criteria
-and verify commands, a pull request template and a convention file. A run
+and verify commands that passed, a test-heavy diff for trim, a pull
+request template and a convention file. A run
 missing one of them also loses the fixed text that introduces it.
 
 `prompt` is `builtin`, then `notes`, then `tail`, joined. `builtin` is
@@ -1203,7 +1204,8 @@ project sets no note for `KEY`, and `tail` the fixed text after it that
 a note cannot change: the reply format, the review rules or the ticket
 itself, by target. Every string is redacted with the project's known
 secrets; a config file that cannot be read or parsed, or a note the
-config refuses, makes the route answer 503 carrying `error`.
+config refuses, makes the route answer 503 carrying `error`. `target` is
+never redacted.
 
 ## `GET /harnesses`
 

@@ -125,6 +125,10 @@ def trim_goal(base, commands, tests, notes, protected):
             + notes + TRIM_TAIL.format(protected=protected))
 
 
+def test_heavy_brief(tests, code):
+    return TESTS_BRIEF.format(tests=tests, code=code)
+
+
 def protected_brief(listed):
     return PROTECTED_BRIEF.format(files=listed) if listed else ""
 

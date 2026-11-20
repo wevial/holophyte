@@ -5,10 +5,16 @@ from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
 from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import _commands_brief, implement_goal
-from holophyte.loop.review_round import review_text
-from holophyte.loop.trim_brief import protected_brief, trim_goal
+from holophyte.loop.review_round import review_text, verify_text
+from holophyte.loop.trim_brief import protected_brief, test_heavy_brief, trim_goal
 from holophyte.pr.pullrequest import pr_text_goal
-from holophyte.review.briefs import criteria_text, follow_up_place, named_tests_text
+from holophyte.review.briefs import (
+    criteria_text,
+    follow_up_place,
+    named_tests_text,
+    scope_text,
+    test_rules_text,
+)
 from holophyte.review.freshness import critic_text
 from holophyte.stages import notes
 
@@ -34,22 +40,24 @@ STANDS_FOR = {
     "witnessed once": "the criteria witnessed once by an uncommitted test,"
                       " with the rules for those tests; empty when none is",
     "verify commands": "the ticket's verify commands",
-    "verify output": "whether the ticket's verify commands and the project's"
-                     " baseline passed, and their output",
+    "baseline commands": "how many baseline commands ran",
+    "verify output": "the output of the ticket's verify commands and the"
+                     " project's baseline",
     "witness pre-check": "the gaps the factory's witness pre-check found",
     "stale approvals": "earlier approvals of this commit that no longer"
                        " stand; empty unless one was cited",
     "earlier rounds": "the earlier review rounds' findings and the fix"
                       " commits that answer them; empty in round 1",
-    "test rules": "the Tests section of the worktree's AGENTS.md",
-    "scope": "the changed files the ticket does not name",
+    "test rules": "the Tests section of the worktree's AGENTS.md, quoted",
+    "scope": "the changed files the ticket does not name, as a JSON list",
     "trim commits": "the trim turn's commits in the reviewed range",
     "evidence": "the candidate's UI capture and the approved design",
     "orchestration": "the subagent brief for the orchestration the ticket or"
                      " project asks for",
     "evidence capture": "how to capture the ticket's evidence states",
     "design": "the approved design downloaded into the worktree",
-    "tests": "the test and non-test line counts of the run's diff",
+    "test lines": "the test lines the run's diff adds",
+    "code lines": "the non-test lines the run's diff adds",
     "protected files": "the test files the criteria name or the run added",
     "merged since": "the runs merged since the ticket was filed, with their"
                     " changed files",
@@ -87,13 +95,15 @@ def review(project, slot):
     return review_text(
         project, s("candidate commit"), (s("base ref"), s("candidate ref")),
         s("ticket"), review_mode(project), follow_up_place([s("criteria")]),
-        slot, verify=s("verify output"),
+        slot, verify=verify_text(s("baseline commands"), True,
+                                 s("verify output")),
         criteria=criteria_text(s("criteria"), s("criterion id"),
                                "REQUEST_CHANGES", named_tests_text(
                                    s("named tests")))
         + s("witnessed once"),
         witness=s("witness pre-check"), stale=s("stale approvals"),
-        earlier=s("earlier rounds"), tests=s("test rules"), scope=s("scope"),
+        earlier=s("earlier rounds"), tests=test_rules_text(s("test rules")),
+        scope=scope_text(s("scope")),
         trim=s("trim commits"), evidence=s("evidence"))
 
 
@@ -101,7 +111,8 @@ def trim(project, slot):
     s = stand_in
     return trim_goal(s("base commit"),
                      _commands_brief(project, s("verify commands")).strip(),
-                     s("tests"), slot, protected_brief(s("protected files")))
+                     test_heavy_brief(s("test lines"), s("code lines")), slot,
+                     protected_brief(s("protected files")))
 
 
 def critic(project, slot):

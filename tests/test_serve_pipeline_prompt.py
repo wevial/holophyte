@@ -52,18 +52,12 @@ def notes_table(**values):
         f"{key} = {json.dumps(value)}\n" for key, value in values.items())
 
 
-def stand_in_spans(preview, sent):
-    """Match `sent` against `preview`, its stand-ins free and every other
-    character fixed; a run of adjacent stand-ins shares one span. Returns
-    `[(names, text)]`, or None when `sent` differs outside the stand-ins."""
-    pieces = re.split(r"((?:⟨[^⟩]*⟩)+)", preview)
-    pattern = "".join(re.escape(piece) if at % 2 == 0 else "(.*?)"
-                      for at, piece in enumerate(pieces))
-    found = re.fullmatch(pattern, sent, flags=re.DOTALL)
-    if found is None:
-        return None
-    names = [tuple(STAND_IN.findall(piece)) for piece in pieces[1::2]]
-    return list(zip(names, found.groups()))
+def filled(preview, own):
+    """A pattern that `preview` becomes once each stand-in `⟨name⟩` is
+    replaced by its own pattern `own[name]`, every other character fixed."""
+    pieces = re.split(r"⟨([^⟩]*)⟩", preview)
+    return "".join(re.escape(piece) if at % 2 == 0 else f"(?:{own[piece]})"
+                   for at, piece in enumerate(pieces))
 
 
 class Turn:
@@ -145,6 +139,22 @@ class PromptRouteTests(ServeTestCase):
         self.assertNotIn("scope", named)
         self.assertIn("diff", named)
 
+    def test_a_config_that_turns_unreadable_answers_503_with_json(self):
+        self.start(notes_table(review=REVIEW_NOTE))
+        config = self.db.parent / "config.toml"
+        config.chmod(0)
+        self.addCleanup(config.chmod, 0o600)
+
+        code, _, body = self.request("GET", "/pipeline/prompts/review")
+        self.assertEqual(code, 503)
+        self.assertIn("cannot be read", body["error"])
+
+    def test_a_private_pattern_matching_the_key_keeps_the_target(self):
+        body = self.answer("pr_writer",
+                           '[merge]\nprivate_patterns = ["pr_writer"]\n')
+
+        self.assertEqual(body["target"], "pr_writer")
+
     def test_the_critic_answer_keeps_the_pinned_contract(self):
         body = self.answer("critic", notes_table(
             critic="Treat a renamed module as the same module."))
@@ -183,36 +193,32 @@ class LoopAgreementTests(LoopFixture):
 
         code, body = pipeline_prompt(self.project, "review")
         self.assertEqual(code, 200)
-        spans = stand_in_spans(body["prompt"], sent)
-
-        self.assertIsNotNone(spans, "the sent review prompt differs from the"
-                                    " preview outside its stand-ins")
-        self.assertIn(body["notes"], sent)
         self.assertIn("have an independent verifier check each finding",
                       body["builtin"])
         candidate = self.git("rev-parse", "main^2").strip()
         own = {"candidate commit": candidate,
-               "base ref": f"refs/review/{run_id}/base",
-               "candidate ref": f"refs/review/{run_id}/candidate",
+               "base ref": re.escape(f"refs/review/{run_id}/base"),
+               "candidate ref": re.escape(f"refs/review/{run_id}/candidate"),
                "ticket": "add a thing",
-               "verify output": "PASSED",
-               "criteria": "C1. Given the thing, when it runs, then it works"
-                           " (`test_work.py` witnesses it).\nC2. Given a"
-                           " second thing, then it holds",
+               "baseline commands": "0",
+               "verify output": "ok",
+               "criteria": re.escape(
+                   "C1. Given the thing, when it runs, then it works"
+                   " (`test_work.py` witnesses it).\nC2. Given a second"
+                   " thing, then it holds"),
                "criterion id": "C2",
-               "named tests": "`test_work.py`:",
-               "witness pre-check": "Criteria that name no test file: C2.",
-               "test rules": "> - Name each fixture after its oracle.",
-               "scope": '["AGENTS.md", "test_work.py", "work.txt"]'}
-        for names, text in spans:
-            with self.subTest(names=names):
-                held = [own[name] for name in names if name in own]
-                at = [text.find(part) for part in held]
-                self.assertNotIn(-1, at, text)
-                self.assertEqual(at, sorted(at), text)
-        alone = {names[0]: text for names, text in spans if len(names) == 1}
-        for name in ("candidate commit", "base ref", "candidate ref",
-                     "criteria", "criterion id"):
-            self.assertEqual(alone[name], own[name])
-        self.assertLessEqual(set(own), {name for names, _ in spans
-                                        for name in names})
+               "named tests": re.escape(
+                   "`test_work.py`:\n- test_work.py::test_work\n"),
+               "witnessed once": "",
+               "witness pre-check": re.escape(
+                   "The factory's witness pre-check ran before this review;"
+                   " judge each criterion yourself.\n"
+                   "Criteria that name no test file: C2.\n\n"),
+               "stale approvals": "",
+               "earlier rounds": "",
+               "test rules": re.escape("> ## Tests\n>\n"
+                                       "> - Name each fixture after its oracle."),
+               "scope": re.escape('["AGENTS.md", "test_work.py", "work.txt"]'),
+               "trim commits": "",
+               "evidence": ""}
+        self.assertRegex(sent, "^" + filled(body["prompt"], own) + "$")

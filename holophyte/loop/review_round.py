@@ -84,6 +84,10 @@ def _verify_brief(verify_cmd, ok, out):
                 for row in getattr(out, "results", []))
     if not verify_cmd and not count:
         return ""
+    return verify_text(count, ok, out)
+
+
+def verify_text(count, ok, out):
     return (f"The ticket's verification commands and the project's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
