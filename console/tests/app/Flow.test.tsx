@@ -136,7 +136,8 @@ test("a bookmarked From and To over 182 days is cleared from the address and the
   const asked = await mount("#/flow?from=2025-01-01&to=2025-07-02");
   expect(asked.length).toBeGreaterThan(0);
   expect(asked.map(windowOf)).toEqual(asked.map(() => ["30", "day", null]));
-  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("from")).toBeNull();
+  const search = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect([search.get("from"), search.get("to")]).toEqual([null, null]);
   expect(document.querySelector('[data-number="Merged"]')).not.toBeNull();
 });
 
@@ -173,6 +174,7 @@ test("each date under a chart is centred on its own bar's point", async () => {
   for (const label of labels) {
     const point = points[Number(label.getAttribute("data-axis"))]!;
     expect(parseFloat(label.style.left)).toBeCloseTo(parseFloat(point.style.left) + parseFloat(point.style.width) / 2, 6);
+    expect(label.classList.contains("-translate-x-1/2")).toBe(true);
   }
 });
 
@@ -194,7 +196,7 @@ test("where a clock change skips midnight, a custom range ends at the next midni
   }
 });
 
-test("a host's answer whose days end before today is left out rather than summed into other dates", async () => {
+test("a host's answer whose days end before today is left out of All projects, yet still shows when its own project is picked", async () => {
   const yesterday = daysBack(0);
   const stale: Flow = {
     now: yesterday,
@@ -213,4 +215,9 @@ test("a host's answer whose days end before today is left out rather than summed
   const figure = (label: string) => document.querySelector(`[data-number="${label}"]`)!.textContent;
   expect([figure("Merged"), figure("Reverted")]).toEqual([String(1 + 2 + 3 + 4 + 5 + 6 + 7), "0 of 1"]);
   expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toStartWith("Seven days, ");
+  const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+  expect(rows.map((row) => [row.querySelector("th")!.textContent, row.querySelector("td")!.textContent])).toEqual([["demo", "28"], ["writer", "35"]]);
+  cleanup();
+  await mount("#/flow?range=7d&project=writer", stale);
+  expect([figure("Merged"), figure("Reverted")]).toEqual(["35", "0 of 35"]);
 });

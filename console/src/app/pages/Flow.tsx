@@ -363,9 +363,9 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
 }
 
 function byProject(answers: { name: string; flow: Flow }[]): ProjectFlow[] {
-  const grouped = new Map<string, Flow[]>();
-  for (const { name, flow } of answers) grouped.set(name, [...(grouped.get(name) ?? []), flow]);
-  return [...grouped].map(([name, flows]) => ({ name, numbers: flowNumbers(flows) }));
+  const grouped = new Map<string, { name: string; flow: Flow }[]>();
+  for (const answer of answers) grouped.set(answer.name, [...(grouped.get(answer.name) ?? []), answer]);
+  return [...grouped].map(([name, group]) => ({ name, numbers: flowNumbers(sameWindow(group).map(({ flow }) => flow)) }));
 }
 
 export function FlowPage() {
@@ -375,9 +375,9 @@ export function FlowPage() {
   const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
   const asked = flowWindow(search);
-  const answers = sameWindow(useFlows(hosts, deps, asked)).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
+  const answers = useFlows(hosts, deps, asked).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
   const inScope = new Set(scopedHosts(hosts, project));
-  const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
+  const scoped = sameWindow(answers.filter(({ host }) => inScope.has(host))).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;
   const weekly = flowWeekly(scoped);
   const span = flowSpan(scoped);
