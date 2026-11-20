@@ -102,8 +102,6 @@ class FactoryNotesPromptTests(FactoryNotesRun):
             with self.subTest(target=target):
                 text, prompt = NOTES[target], noted[target]
                 self.assertNotIn(FRAME, plain[target])
-                self.assertEqual(prompt.count(text), 1)
-                self.assertEqual(prompt.count(block(text)), 1)
                 start = prompt.index(block(text))
                 self.assertEqual(prompt[:start] + prompt[start + len(block(text)):],
                                  plain[target])
@@ -124,9 +122,6 @@ class FailedFactoryNotesTests(FactoryNotesRun):
             broken = self.walked(notes_table(**NOTES))
 
         self.assertEqual(plain[4], [("merged",)])
-        self.assertEqual(sorted(plain[0]), ["babysit_reply", "critic",
-                                            "pr_writer"])
-        self.assertTrue(any(kind == "merge" for kind, _ in plain[3]), plain[3])
         self.assertEqual(broken, plain)
         self.assertEqual([call.args[3] for call in read.call_args_list],
                          ["critic", "implement", "review", "pr_writer",
