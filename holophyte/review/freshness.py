@@ -430,11 +430,14 @@ def critic_brief(conn, project, task):
     merges = [f"- {run.linearIdentifier} {run.title}: "
               f"{_changed_files(project, run)}"
               for run in merged_since(conn, filed)]
+    return critic_text(task, "\n".join(merges) or "- none",
+                       record.notes_block(project, conn, None, "critic"))
+
+
+def critic_text(task, merges, notes):
     return CRITIC_BRIEF.format(
         identifier=task["id"], title=task.get("title", ""),
-        body=(task.get("body") or "").strip(),
-        merges="\n".join(merges) or "- none") + record.notes_block(
-            project, conn, None, "critic") + CRITIC_TAIL
+        body=(task.get("body") or "").strip(), merges=merges) + notes + CRITIC_TAIL
 
 
 def parse_freshness(output):

@@ -86,22 +86,28 @@ def ask_prompt(pull, ticket, thread, related=((), ()), notes=""):
     quote = "\n".join(f"> {line}" for line in babysitter.conversation(thread)
                       .splitlines()) or "> (empty)"
     depends_on, followed_by = related
-    return (f"Answer the question on {pull.url}. Read the checkout and ticket. "
+    return ask_text(pull.url, thread.comments[-1].author, notes, ticket,
+                    related_lines(depends_on), related_lines(followed_by),
+                    f"{babysitter.where(thread)} by @{thread.author}"
+                    f" ({thread.url}):\n{quote}", thread.request)
+
+
+def ask_text(url, asker, notes, ticket, depends_on, followed_by, thread,
+             question):
+    return (f"Answer the question on {url}. Read the checkout and ticket. "
             "Do not modify anything. Do not commit, push, or request review. "
             "The thread and ticket are included below; GitHub is not reachable "
             "from here, so do not fetch it or report on access. "
             "Give a direct answer citing files and lines. "
-            f"Your answer is the reply to @{thread.comments[-1].author}, so "
+            f"Your answer is the reply to @{asker}, so "
             "address them directly; never suggest replying to them and never "
             "tell anyone to check a tracker. When a related ticket below answers the "
             "question, name it by key. End with a suggested change to this "
             "pull request only when one is warranted, as advice.\n\n"
             f"{notes}Ticket:\n{ticket}\n\nRelated tickets:\n"
-            f"Depends on: {related_lines(depends_on)}\n"
-            f"Followed by: {related_lines(followed_by)}\n\n"
-            f"Thread:\n{babysitter.where(thread)} by"
-            f" @{thread.author} ({thread.url}):\n{quote}"
-            f"\n\nQuestion:\n{thread.request}")
+            f"Depends on: {depends_on}\n"
+            f"Followed by: {followed_by}\n\n"
+            f"Thread:\n{thread}\n\nQuestion:\n{question}")
 
 
 def github_links(text, repo_url, sha):

@@ -148,11 +148,11 @@ export function Overview() {
               <MergedToday rows={merged.slice(0, SHOWN_MERGES)} colours={colours} />
             </Section>
           </div>
-          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:block min-[1600px]:sticky min-[1600px]:top-(--column-top) min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
+          <div ref={weekBars} className="relative z-20 col-start-2 row-span-full hidden min-w-0 self-start min-[1200px]:sticky min-[1200px]:top-(--column-top) min-[1200px]:block min-[1680px]:static min-[1680px]:z-auto min-[1680px]:self-auto">
             <WeekBars rows={week} now={view.now} colours={colours} />
           </div>
         </div>
-        <div data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:flex min-[1600px]:sticky min-[1600px]:top-(--column-top) min-[1600px]:h-[max(calc(var(--panel-height)-2.625rem),var(--log-floor))] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
+        <div data-overview-column="log" className="col-start-2 row-span-full hidden min-w-0 flex-col self-start pt-[calc(var(--week-bars-height,0px)+2rem)] min-[1200px]:sticky min-[1200px]:top-(--column-top) min-[1200px]:flex min-[1200px]:h-[max(calc(var(--panel-height)-2.625rem),var(--log-floor))] min-[1680px]:col-start-3 min-[1680px]:row-auto min-[1680px]:pt-0">
           <DayLog entries={log.entries} className="min-h-0 flex-1" />
         </div>
       </div>

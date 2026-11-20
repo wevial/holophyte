@@ -72,7 +72,12 @@ from holophyte.serve.serve_merge import (
     run_merge,
 )
 from holophyte.serve.serve_merge_queue import MERGE_QUEUE_PATH, merge_queue
-from holophyte.serve.serve_pipeline import PIPELINE_PATH, pipeline
+from holophyte.serve.serve_pipeline import (
+    PIPELINE_PATH,
+    PROMPT_PATH,
+    pipeline,
+    pipeline_prompt,
+)
 from holophyte.serve.serve_queue_actions import QUEUE_ACTIONS
 from holophyte.serve.serve_revert import REVERT_ACTION, revert_action
 from holophyte.serve.serve_runs import (
@@ -271,6 +276,7 @@ SHAPED_ROUTES = (
     (STORY_PATH, story_detail),
     (SCOUT_ROUTES_PATH, scout_routes),
     (SCOUT_PATH, scout_detail),
+    (PROMPT_PATH, pipeline_prompt),
 )
 
 

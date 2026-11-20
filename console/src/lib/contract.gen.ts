@@ -862,6 +862,22 @@ export const pipelineNumbersSchema = z.looseObject({
 });
 export type PipelineNumbers = z.infer<typeof pipelineNumbersSchema>;
 
+export const promptPlaceholderSchema = z.looseObject({
+  name: z.string(),
+  stands_for: z.string(),
+});
+export type PromptPlaceholder = z.infer<typeof promptPlaceholderSchema>;
+
+export const pipelinePromptSchema = z.looseObject({
+  target: z.enum(["implement", "review", "trim", "critic", "pr_writer", "babysit_reply"]),
+  prompt: z.string(),
+  builtin: z.string(),
+  notes: z.string(),
+  tail: z.string(),
+  placeholders: z.array(promptPlaceholderSchema),
+});
+export type PipelinePrompt = z.infer<typeof pipelinePromptSchema>;
+
 export const harnessProbeSchema = z.looseObject({
   ok: z.boolean(),
   at_ms: z.int(),
