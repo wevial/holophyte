@@ -78,8 +78,8 @@ def fix_covering(review, contracts, budget_min, rnd, goal, notes):
     from holophyte.babysit.babysitter import _fix_threads
     (project, conn, run_id, provider, task_id, branch, wt, sha, _, beat_s, pull,
      ticket, verify_cmd) = review[:13]
-    detail = record.guarded(conn, run_id, "stage_read",
-                            lambda: _round_detail(project, conn, run_id, rnd))
+    detail = record.guarded(conn, run_id, "stage_read", lambda: _round_detail(
+        project, conn, run_id, rnd, sha))
     return record.fix_round(
         conn, run_id, "covering_fix", sha,
         {"review_round": rnd} if detail is record.REFUSED else detail, wt,
@@ -90,17 +90,19 @@ def fix_covering(review, contracts, budget_min, rnd, goal, notes):
             notes=notes))
 
 
-def _round_detail(project, conn, run_id, rnd):
-    detail = {"review_round": rnd}
+def _round_detail(project, conn, run_id, rnd, sha):
+    detail = {"review_round": rnd,
+              "failed": f"the review of the fix at {sha[:12]} asked for changes",
+              "cap": merge_config(project).covering_fix_rounds}
     if conn is None:
         return detail
+    detail["findings"] = len(_covering_findings(conn, run_id, rnd))
     kinds = [event.kind for event in store.read.narrative_events(
         conn, run_id, (ALLOWANCE_KIND,)) if event.kind in (ROUND_KIND,
                                                             ALLOWANCE_KIND)]
     if kinds[-1:] == [ALLOWANCE_KIND]:
         return {**detail, "allowance": True}
-    return {**detail, "round": kinds.count(ROUND_KIND),
-            "cap": merge_config(project).covering_fix_rounds}
+    return {**detail, "round": kinds.count(ROUND_KIND)}
 
 
 def _code_goal(conn, run_id, pull, ticket, verdict, label, note):

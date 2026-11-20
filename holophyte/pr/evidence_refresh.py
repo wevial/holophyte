@@ -16,7 +16,7 @@ def captured(project, conn, run_id, wt, task_id, parsed, capture, sha=None,
         taken = capture()
     found = record.guarded(conn, run_id, "stage_read", lambda: _capture_outcome(
         project, wt, task_id, parsed, fixable))
-    if found is record.REFUSED or record.repeats(conn, run_id, "capture", sha,
+    if found in (None, record.REFUSED) or record.repeats(conn, run_id, "capture", sha,
                                                    *found):
         return taken
     outcome, edge, detail = found
@@ -39,6 +39,10 @@ def _capture_outcome(project, wt, task_id, parsed, fixable):
               else None)
     if reason is not None:
         return "skipped", "next", {"reason": reason}
+    receipt = pr_media._receipt(project, wt, task_id, parsed.evidence_states,
+                                parsed.evidence_files)[0]
+    if not receipt.exists():
+        return None
     failure = pr_media.capture_failure(
         project, wt, task_id, parsed.evidence_states, parsed.evidence_files,
         ui_change=parsed.ui_change)

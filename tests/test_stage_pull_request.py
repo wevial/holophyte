@@ -167,8 +167,9 @@ class CaptureStageTests(PullRequestStages):
             ("capture", 2, "fail", "on_fail"), ("capture_fix", 1, "pass", "next"),
             ("capture", 3, "pass", "next")])
         failed, fixed, passed = walked
-        self.assertEqual(fixed[4], failed[4])
-        self.assertEqual(passed[4], fixed[5])
+        reviewed = [turn for turn in fake.turns if turn.role == "review"][-1]
+        self.assertEqual((failed[4], fixed[4], fixed[5], passed[4]),
+                         (reviewed.candidate_sha,) * 4)
         self.assertEqual([view.split()[0] for view in failed[6]["missing"]],
                          ["02"])
 
