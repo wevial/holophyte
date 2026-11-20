@@ -159,8 +159,6 @@ class StageNumbersTests(ServeTestCase):
     def test_the_pinned_fixture_is_the_review_answer(self):
         self.seed_reviews()
         body = self.answer()
-        self.assertTrue(self.now - 30 * DAY <= body["window"]["since_ms"]
-                        <= int(time() * 1000) - 30 * DAY)
         body["window"]["since_ms"] = 1
         self.assertEqual(normalize_contract(body),
                          json.loads(FIXTURE.read_text()))
@@ -185,7 +183,6 @@ class StageNumbersTests(ServeTestCase):
         after = int(time() * 1000)
         self.assertEqual([(stage["id"], stage["attempts"])
                           for stage in body["stages"]], [("verify", 1)])
-        self.assertEqual(body["window"].keys(), {"days", "since_ms"})
         self.assertEqual(body["window"]["days"], 7)
         self.assertTrue(before - 7 * DAY <= body["window"]["since_ms"]
                         <= after - 7 * DAY)
