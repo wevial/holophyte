@@ -415,6 +415,22 @@ class DispatchedBriefTests(SweepTestCase):
                 [_, sent] = [argv[-1] for argv in self.received(name)]
                 self.assertEqual(sent, expected)
 
+    def test_a_codex_json_event_stream_is_read_from_its_final_message(self):
+        events = [{"type": "thread.started", "thread_id": "thread-1"},
+                  {"type": "item.completed",
+                   "item": {"id": "item_0", "type": "agent_message",
+                            "text": json.dumps(REPLY)}},
+                  {"type": "turn.completed", "usage": {"input_tokens": 1}}]
+        cli = self.recording_cli("codex", "\n".join(map(json.dumps, events)))
+        self.configure(f'[agents]\nreviewer = "{cli} exec --json"\n')
+        goal = "Review.\n" + reply_brief(self.project, "LINES")
+        with contextlib.redirect_stdout(io.StringIO()):
+            reply, decision, _ = _review_reply(
+                self.project, goal, self.target, self.sha, self.sha,
+                self.conn, self.a_run())
+        self.assertEqual(decision, "REQUEST_CHANGES")
+        self.assertEqual(reply, read_reply(json.dumps(REPLY))[0])
+
     def test_a_refusal_fallback_command_gets_the_line_brief(self):
         goal = "Review.\n" + reply_brief(self.project, "LINES")
         roles._agent(self.project, "review", goal, self.target,
@@ -499,7 +515,9 @@ class RenderedReplyTests(unittest.TestCase):
                 ("LICENSE", 12, "The first line\nnames no licence."),
                 ("LICENSE", 12, "pyproject.toml names\nanother licence."),
                 ("docker/Makefile", None, "see docs/development.md:9"),
-                ("docs/Release Notes.md", 12, "The heading is stale.")):
+                ("docs/Release Notes.md", 12, "The heading is stale."),
+                ("LICENSE", 12, "docs/config.md calls it MIT, but see "
+                 "[the project metadata](pyproject.toml:12).")):
             with self.subTest(path=path, message=message):
                 finding = dict(REPLY["findings"][0], path=path, line=line,
                                severity="p2", category="docs", message=message)

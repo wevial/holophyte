@@ -204,10 +204,11 @@ def finding_line(finding):
     if not where:
         return f"- {UNPLACED} {tags}"
     expected = (path, line if line is not None and line > 0 else None, severity)
-    plain, linked = f"- {where} {tags}", f"- [{where}]({where}) {tags}"
-    if parsed_place(plain) != expected and parsed_place(linked) == expected:
-        return linked
-    return plain
+    for rendered_line in (f"- {where} {tags}", f"- [{where}]({where}) {tags}"):
+        if parsed_place(rendered_line) == expected:
+            return rendered_line
+    return (f"- {where} [{severity}] [{finding['category']}] "
+            f"{kept_line(finding['message'])}")
 
 
 def parsed_place(rendered_line):
@@ -258,8 +259,26 @@ def rendered(value):
     return "\n".join(lines)
 
 
+def event_reply(reply):
+    from holophyte.review.review_runner import ReviewBoundaryError, codex_events
+
+    try:
+        texts = [event["item"].get("text") for event in codex_events(reply)
+                 if isinstance(event, dict)
+                 and event.get("type") == "item.completed"
+                 and isinstance(event.get("item"), dict)
+                 and event["item"].get("type") == "agent_message"]
+    except ReviewBoundaryError:
+        return None
+    if not texts or not isinstance(texts[-1], str):
+        return None
+    return reply_object(texts[-1])
+
+
 def read_reply(reply):
     value = reply_object(reply)
+    if value is None:
+        value = event_reply(reply)
     if value is None:
         return reply, "markdown"
     text = rendered(value)
