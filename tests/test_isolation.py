@@ -473,17 +473,15 @@ class IsolationTests(GoRaceCases, IsolationCase):
         argv = ["agy", "-p", "goal"]
 
         def run(command, cwd, timeout, *, env):
-            mounts = [command[i + 1] for i, flag in enumerate(command)
+            mounts = [command[i + 1].split(":") for i, flag in enumerate(command)
                       if flag == "--volume"]
-            self.assertIn(f"{binary}:/opt/agy/bin/agy:ro", mounts)
+            self.assertIn([str(binary), "/opt/agy/bin/agy", "ro"], mounts)
             turn = command[command.index(route.image) + 1:]
             self.assertEqual(turn[-len(argv):], argv)
             turn[-len(argv)] = str(binary)
             path = subprocess.check_output(turn, cwd=cwd, env=env, text=True)
             self.assertEqual(path.split(os.pathsep)[0], "/opt/agy/bin")
-            volumes = [vol.split(":") for vol in mounts]
-            gemini = [volume for volume in volumes
-                      if Path(volume[1]).is_relative_to(target)]
+            gemini = [vol for vol in mounts if Path(vol[1]).is_relative_to(target)]
             self.assertEqual([volume[1:] for volume in gemini], [[str(target), "rw"]])
             home = Path(gemini[0][0])
             self.assertEqual(home.stat().st_mode & 0o777, 0o700)
