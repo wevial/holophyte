@@ -68,8 +68,7 @@ def fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
     fixable = merge.ui_capture_local and number <= cap
     failure = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
                                sha, beat_s, fixable=fixable)
-    if (not merge.ui_capture_local or failure is None
-            or failure.kind != "capture" or number > cap):
+    if not fixable or failure is None or failure.kind != "capture":
         return sha
     _record_round(conn, run_id, task_id, pull, sha, failure, (number, cap))
     print(f"[holo2] the UI capture at {sha[:12]} failed; capture fix round"
