@@ -49,7 +49,7 @@ class StageAttemptMigrationTests(unittest.TestCase):
 
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
                              (store.schema.SCHEMA_VERSION,))
-            self.assertEqual(store.schema.SCHEMA_VERSION, 73)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 75)
             self.assertEqual(store.schema.READABLE_FROM, 50)
             insert = ("INSERT INTO stageAttempts (runId, stageId, attempt,"
                       " startedAt, openSeq, outcome, edge)"

@@ -1,4 +1,5 @@
-import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
@@ -34,6 +35,8 @@ import {
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { SettingsNav } from "./SettingsNav";
 import { plainTitle, TitleText } from "./TitleText";
+import { trap } from "./trap";
+import { useSidebarWidth } from "../viewport";
 
 const RAIL_KEY = "holophyte.next.rail";
 const STORIES_KEY = "holophyte.next.stories";
@@ -284,13 +287,38 @@ function modChord(event: KeyboardEvent, key: string): boolean {
   return event.key === key && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
 }
 
-export type SidebarFold = { folded: boolean; foldable: boolean; fold: () => void };
+export type SidebarFold = {
+  folded: boolean;
+  foldable: boolean;
+  fold: () => void;
+  narrow: boolean;
+  drawer: boolean;
+  closeDrawer: () => void;
+  toggleRef: RefObject<HTMLButtonElement | null>;
+  back: string | null;
+};
 
 export function useSidebarFold(): SidebarFold {
   const [storedFold, setFolded] = useState(readFolded);
+  const narrow = !useSidebarWidth();
   const settingsMenu = useRouterState({ select: (state) => SETTINGS_PATH.test(state.location.pathname) });
-  const folded = storedFold && !settingsMenu;
+  const href = useRouterState({ select: (state) => state.location.href });
+  const [openedOn, setOpenedOn] = useState<string | null>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const drawer = narrow && openedOn === href;
+  const lastPage = useRef<string | null>(null);
+  if (!settingsMenu) lastPage.current = href;
+  const folded = storedFold && !settingsMenu && !narrow;
+  const closeDrawer = () => {
+    setOpenedOn(null);
+    toggleRef.current?.focus();
+  };
   const fold = () => {
+    if (narrow) {
+      if (drawer) closeDrawer();
+      else setOpenedOn(href);
+      return;
+    }
     if (settingsMenu) return;
     setFolded(!folded);
     writeFolded(!folded);
@@ -299,6 +327,7 @@ export function useSidebarFold(): SidebarFold {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!modChord(event, "\\")) return;
+      if (narrow && !drawer && document.querySelector('[aria-modal="true"]')) return;
       event.preventDefault();
       fold();
     };
@@ -306,7 +335,13 @@ export function useSidebarFold(): SidebarFold {
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  return { folded, foldable: !settingsMenu, fold };
+  useEffect(() => {
+    if (openedOn == null || drawer) return;
+    setOpenedOn(null);
+    if (narrow) toggleRef.current?.focus();
+  }, [openedOn, drawer, narrow]);
+
+  return { folded, foldable: narrow || !settingsMenu, fold, narrow, drawer, closeDrawer, toggleRef, back: lastPage.current };
 }
 
 const REACH_KEY = "holophyte.history-reach";
@@ -393,17 +428,19 @@ function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; sh
   );
 }
 
-export function TitleBar({ folded, foldable, fold }: SidebarFold) {
+export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: SidebarFold) {
   const [macApp] = useState(inMacApp);
   const nav = useHistoryNav(macApp);
-  const toggleName = folded ? "Expand sidebar" : "Collapse sidebar";
+  const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
   return (
     <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
       {foldable && (
         <Tooltip delay={300} shortcut={"mod+\\"}>
           <TooltipTrigger
+            ref={toggleRef}
             aria-label={toggleName}
-            aria-expanded={!folded}
+            aria-expanded={narrow ? drawer : !folded}
+            aria-controls={drawer ? "sidebar-drawer" : undefined}
             onClick={fold}
             className={`${TITLE_BUTTON} ${macApp ? APP_NO_DRAG : ""}`}
           >
@@ -437,7 +474,7 @@ export function TitleBar({ folded, foldable, fold }: SidebarFold) {
   );
 }
 
-export function Sidebar({ folded }: { folded: boolean }) {
+export function Sidebar({ folded, back }: { folded: boolean; back: string | null }) {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const deps = useContext(PollDepsContext);
@@ -446,9 +483,6 @@ export function Sidebar({ folded }: { folded: boolean }) {
   const onStory = useRouterState({ select: (state) => /^\/stories(\/|$)/.test(state.location.pathname) });
   const onSettings = useRouterState({ select: (state) => /^\/settings(\/|$)/.test(state.location.pathname) });
   const settingsMenu = useRouterState({ select: (state) => SETTINGS_PATH.test(state.location.pathname) });
-  const href = useRouterState({ select: (state) => state.location.href });
-  const lastPage = useRef<string | null>(null);
-  if (!settingsMenu) lastPage.current = href;
   const hostNeeds = hostsNeedingAttention(hosts);
   const rows = switcherRows(hosts, now, readiness);
   const needs = rows.find((row) => row.name === (project ?? null))?.need ?? 0;
@@ -508,11 +542,11 @@ export function Sidebar({ folded }: { folded: boolean }) {
     <aside
       aria-label="Console"
       data-folded={folded}
-      className={`flex w-full shrink-0 flex-col border-b border-rule-2 min-[720px]:overflow-y-auto min-[720px]:border-b-0 ${
+      className={`flex w-full shrink-0 flex-col overflow-y-auto ${
         folded ? "min-[720px]:w-[56px]" : "min-[720px]:w-[232px]"
       }`}
     >
-      {settingsMenu ? <SettingsNav back={lastPage.current} /> : <>
+      {settingsMenu ? <SettingsNav back={back} /> : <>
       <ProjectSwitcher rows={rows} colours={projectColours(hosts)} folded={folded} />
 
       <nav aria-label="Pages" className="flex flex-col pt-2 pb-3">
@@ -536,5 +570,53 @@ export function Sidebar({ folded }: { folded: boolean }) {
         {settings}
       </footer>
     </aside>
+  );
+}
+
+const inPopup = (target: EventTarget | null, drawer: HTMLElement | null) => {
+  const popup = target instanceof Element ? target.closest('[role="dialog"]') : null;
+  return popup != null && popup !== drawer && drawer?.contains(popup) === true;
+};
+
+export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose: () => void; back: string | null }) {
+  const box = useRef<HTMLDivElement>(null);
+  const live = useRef(onClose);
+  live.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    box.current?.focus();
+    const keep = (event: KeyboardEvent) => {
+      if (inPopup(event.target, box.current)) return;
+      trap(event, box.current, () => live.current());
+      if (event.key === "Escape") event.stopPropagation();
+    };
+    document.addEventListener("keydown", keep, true);
+    return () => document.removeEventListener("keydown", keep, true);
+  }, [open]);
+  return createPortal(
+    <div
+      hidden={!open}
+      onKeyDown={(event) => {
+        if (!event.metaKey && !event.ctrlKey) event.stopPropagation();
+      }}
+      className="fixed inset-x-0 top-[30px] bottom-0 z-50"
+    >
+      <div data-scrim aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-scrim" />
+      <div
+        ref={box}
+        id="sidebar-drawer"
+        role={open ? "dialog" : undefined}
+        aria-modal={open ? "true" : undefined}
+        aria-label={open ? "Sidebar" : undefined}
+        tabIndex={-1}
+        onClick={(event) => {
+          if ((event.target as Element).closest("a[href]")) onClose();
+        }}
+        className="absolute inset-y-0 left-0 flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
+      >
+        <Sidebar folded={false} back={back} />
+      </div>
+    </div>,
+    document.body,
   );
 }

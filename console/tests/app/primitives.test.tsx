@@ -208,7 +208,7 @@ test("a week with no merges has no interventions count, so the All projects inte
     interventions: [2, 0, 1][index]!,
     hours: { working: 1, waiting: 1, operator: 0 },
   }));
-  const flow = { now: SIX_WEEKS[3]!, weeks, phases: {}, waits: NO_WAITS, reverted: null };
+  const flow = { now: SIX_WEEKS[3]!, buckets: weeks, phases: {}, waits: NO_WAITS, reverted: null };
   expect(flowWeekly([flow]).interventions).toEqual([2, null, 1]);
 });
 
@@ -224,7 +224,7 @@ const WEEKS = [
   { merged: 0, rounds_median: null, interventions: 3, hours: { working: 4, waiting: 0, operator: 0 } },
   { merged: 173, rounds_median: 3, interventions: 346, hours: { working: 42, waiting: 35, operator: 7 } },
 ].map((week, index) => ({ start_ms: SIX_WEEKS[index + 2]!, ...week }));
-const WEEKLY = flowWeekly([{ now: SIX_WEEKS[5]!, weeks: WEEKS, phases: {}, waits: NO_WAITS, reverted: null }]);
+const WEEKLY = flowWeekly([{ now: SIX_WEEKS[5]!, buckets: WEEKS, phases: {}, waits: NO_WAITS, reverted: null }]);
 
 test("focusing a waiting point tooltips its week, share and run-hours, grows its dot and hides the latest label until blur, whatever the mouse does", () => {
   const { container } = render(
@@ -285,7 +285,7 @@ test("a hovered merges bar grows and names its median review rounds for one proj
 test("a rounds point taken over several hosts names the host medians it is the median of, not their summed merges", () => {
   const host = (merged: number, rounds_median: number) => ({
     now: SIX_WEEKS[1]!,
-    weeks: [{ start_ms: SIX_WEEKS[0]!, merged, rounds_median, interventions: 0, hours: { working: 1, waiting: 0, operator: 0 } }],
+    buckets: [{ start_ms: SIX_WEEKS[0]!, merged, rounds_median, interventions: 0, hours: { working: 1, waiting: 0, operator: 0 } }],
     phases: {},
     waits: NO_WAITS,
     reverted: null,

@@ -73,7 +73,12 @@ from holophyte.loop.gates import GroupKill, InfraFailure, run_capped
 from holophyte.pr.mockup import review_carry
 from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.review import review_runner
-from holophyte.review.json_reply import SchemaBrief, route_brief
+from holophyte.review.json_reply import (
+    CONSOLIDATED_SCHEMA_FILE,
+    COUNCIL_SCHEMA_FILE,
+    SchemaBrief,
+    route_brief,
+)
 
 REVIEW_TIMEOUT = 1800
 WRITING_ROLES = ("implement", "trim")
@@ -162,14 +167,16 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
     requested_role = role
     role = effective_role(project, role)
     with working(conn, run_id):
-        if role == "write":
+        if role in ("write", "critic"):
             return recorded_turn(project, requested_role, role, conn, run_id,
                                  lambda: writer_turn(
-                                     project, goal, cwd, timeout, on_start))
-        if role == "critic":
-            return recorded_turn(project, requested_role, role, conn, run_id,
-                                 lambda: critic_turn(project, goal, cwd, timeout,
-                                                     task))
+                                     project, goal, cwd, timeout, on_start)
+                                 if role == "write" else critic_turn(
+                                     project, goal, cwd, timeout, task))
+        if role in ("review", "consolidate") and family_route is not None:
+            return seat_review(project, role, goal, cwd, base_sha,
+                               candidate_sha, conn, run_id, family_route,
+                               timeout)
         record_pending_switch(project, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
@@ -206,6 +213,31 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         if argv is not None:
             return output
         return outage_checked(project, role, output, attempt, conn, run_id)
+
+
+def seat_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
+                run_id, family_route, timeout):
+    secrets = known_secrets(project.config())
+    goal = outbound(str(goal), secrets)
+    schema = (COUNCIL_SCHEMA_FILE if role == "review"
+              else CONSOLIDATED_SCHEMA_FILE)
+
+    def launch():
+        return container_review(project, role, goal, cwd, base_sha,
+                                candidate_sha, conn, run_id, False,
+                                timeout=timeout, family_route=family_route,
+                                reply_schema=schema)
+    if conn is None or run_id is None:
+        return launch()
+
+    def ended(payload, crashed):
+        payload.update(route="primary",
+                       label=outbound(family_label(family_route), secrets))
+        record_turn(conn, run_id, payload)
+        if crashed is not None:
+            record_crash(project, conn, run_id, role,
+                         payload["exit_status"], crashed)
+    return timed_turn(project, role, role, launch, ended, family_route)
 
 
 def outage_checked(project, role, output, launch, conn, run_id):
@@ -394,14 +426,15 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     profile = review_profile(model, effort)
     turn = {"model": model, "effort": effort, "profile": profile}
     if family_route is not None and not switched:
-        turn, profile, tier = family_route, family_label(family_route), None
+        turn, profile = family_route, family_label(family_route)
+        tier = None if role == "review" else tier
     cap = REVIEW_TIMEOUT if timeout is None else timeout
     configured = carry_directories(project)
     options = {} if tier is None else {"service_tier": tier}
     if role == "adversary":
         options["multi_agent"] = True
     if reply_schema:
-        options["reply_schema"] = True
+        options["reply_schema"] = reply_schema
     sessions = []
     kept = kept_session(project, role, conn, run_id, review_round, sessions)
     # A kill ends the container's client; the runner removes the container.
@@ -409,7 +442,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            output = AgentOutput(review_runner.run_review(
+            reviewed = review_runner.run_review(
                 repo=Path(cwd),
                 run_id=run_id,
                 base_sha=base_sha,
@@ -422,7 +455,10 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 **turn,
                 **options,
                 **kept,
-            ), profile)
+            )
+            output = AgentOutput(reviewed, profile)
+        if getattr(reviewed, "usage", None) is not None:
+            output.usage = reviewed.usage
         output.service_tier = tier
         for session in sessions:
             record_review_session(conn, run_id, session, role,
@@ -441,6 +477,8 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         failure.output = getattr(e, "output", "")
         failure.command = profile
         failure.service_tier = tier
+        if getattr(e, "usage", None) is not None:
+            failure.usage = e.usage
         raise failure from e
     except subprocess.TimeoutExpired as e:
         e.service_tier = tier

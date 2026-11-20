@@ -31,6 +31,7 @@ from holophyte.pr.evidence_refresh import captured
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from holophyte.review.briefs import main_ref
+from holophyte.review.council import held_text
 from holophyte.stages import record
 from holophyte.tickets import ticket_template
 from store import operator_notes
@@ -125,17 +126,8 @@ def _writer_diff_ref(wt):
         return github.BASE
 
 
-def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
-                     beat_s, wt, started, budget_min, issue_url, *, refresh=None):
-    """A refresh returns None on refusal, so its caller keeps the body."""
-    from holophyte.loop.implement import _timed
-
-    ref = _writer_diff_ref(wt)
-    diff = sh(["git", "diff", f"{ref}...HEAD"], cwd=wt)
-    if len(diff) > PR_TEXT_DIFF_CAP:
-        diff = (diff[:PR_TEXT_DIFF_CAP]
-                + "\n\n[diff truncated here: the change is larger than this"
-                " prompt can carry; describe what is shown]")
+def pr_text_goal(project, branch, task_id, task, template, conventions, notes,
+                 ticket, ref, diff, more=()):
     parts = [
         f"Write the pull request title and description for branch {branch},"
         f" the candidate for ticket {task_id}: {task}.",
@@ -158,7 +150,6 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                      " Evidence section. Test or terminal output worth"
                      " showing goes in the description as a short code"
                      " block, never as an image.")
-    template = _pr_template(wt)
     if template:
         parts.append("Pull request template, fill its sections:\n\n"
                      + template)
@@ -166,14 +157,31 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     if style:
         parts.append(f"Style instructions from the project's configuration:"
                      f"\n{style}")
-    for name, text in babysitter.conventions(wt):
+    for name, text in conventions:
         parts.append(f"The repository's {name}:\n\n{text}")
-    parts.append(f"The ticket:\n\n{body or task}")
+    parts.append(f"{notes}The ticket:\n\n{ticket}")
     parts.append(f"The diff against {ref} (`git diff {ref}...HEAD`):\n\n"
                  f"```diff\n{diff}\n```")
-    if refresh is not None:
-        parts.extend(_refresh_parts(project, *refresh))
-    goal = "\n\n".join(parts)
+    parts.extend(more)
+    return "\n\n".join(parts)
+
+
+def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
+                     beat_s, wt, started, budget_min, issue_url, *, refresh=None):
+    """A refresh returns None on refusal, so its caller keeps the body."""
+    from holophyte.loop.implement import _timed
+
+    ref = _writer_diff_ref(wt)
+    diff = sh(["git", "diff", f"{ref}...HEAD"], cwd=wt)
+    if len(diff) > PR_TEXT_DIFF_CAP:
+        diff = (diff[:PR_TEXT_DIFF_CAP]
+                + "\n\n[diff truncated here: the change is larger than this"
+                " prompt can carry; describe what is shown]")
+    goal = pr_text_goal(
+        project, branch, task_id, task, _pr_template(wt),
+        babysitter.conventions(wt),
+        record.notes_block(project, conn, run_id, "pr_writer"), body or task,
+        ref, diff, _writer_extra(project, conn, run_id, refresh))
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
     if conn is not None and run_id is not None:
@@ -213,6 +221,14 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     notes = note_privacy.private_texts(conn, run_id)
     return (note_privacy.withhold(title, notes),
             note_privacy.withhold(text, notes))
+
+
+def _writer_extra(project, conn, run_id, refresh):
+    if refresh is not None:
+        return _refresh_parts(project, *refresh)
+    if held := held_text(conn, run_id):
+        return ["the review says the description must cover:\n\n" + held]
+    return []
 
 
 def _refresh_parts(project, current, answered, review):

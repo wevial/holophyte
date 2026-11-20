@@ -340,9 +340,17 @@ Each module, one line:
 - `holophyte/review/adversary.py` — the adversarial pass beside the primary
   review: when a round runs it, its brief by depth and scope, the reply's
   evidence levels and the findings that block.
+- `holophyte/review/council.py` — a council review round under
+  `[[review.council]]`: every seat in parallel on the round's prompt with the
+  `council_reply.schema.json` reply brief, one retry for a reply the schema
+  refuses, each seat's `councilSeats` row, the two-seat quorum, the
+  consolidator's turn over the seats' replies and the adversary's findings
+  (`consolidated_reply.schema.json`), the split-vote rule applied to its reply,
+  and the strictest-wins merge it falls back to.
 - `holophyte/review/consolidate.py` — one findings list for a fix turn after an
   adversarial pass: the exact merge, the consolidator's merges and order, the
-  three-concern cap, the held concerns and the high-path raise.
+  three-concern cap, the held concerns and the high-path raise; and a council
+  round's numbered inputs and consolidator brief.
 - `holophyte/review/stale_approval.py` — a review left only stale cited
   approvals: the `stale_approval_rereview` event, and the failure when the
   review again at that head still cites one.
@@ -559,7 +567,11 @@ Each module, one line:
   and `/runs/N/files`, their query parsers and the origin-link pair.
 - `holophyte/serve/serve_pipeline.py` — the daemon's `GET /pipeline`:
   the pipeline the project's config resolves to now, its pinned revision,
-  and each stage's numbers over a window of days.
+  and each stage's numbers over a window of days; and
+  `GET /pipeline/prompts/KEY`, a note target's prompt preview.
+- `holophyte/serve/serve_harnesses.py` — the daemon's `GET /harnesses`:
+  each registered harness, the binary it would run and whether the host
+  has it, the seats on it, their newest probe and the models it offers.
 - `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
   does not hold: a `park` row for each park waiting on the maintainer and a
   `failure` row for each failed run with no `failure` ledger row.
@@ -601,7 +613,9 @@ Each module, one line:
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
 - `holophyte/serve/contract_pipeline.py` — the current pipeline and its
-  stages' numbers `GET /pipeline` answers, as the contract declares them.
+  stages' numbers `GET /pipeline` answers, a note target's prompt
+  `GET /pipeline/prompts/KEY` answers, and the harnesses
+  `GET /harnesses` answers, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.
@@ -634,6 +648,10 @@ Each module, one line:
 - `holophyte/stages/notes.py` — the notes block a prompt carries: the
   project's note for one target in its fixed frame, read from the run's
   pinned pipeline, or from the config when the run pinned none.
+- `holophyte/stages/previews.py` — each note target's prompt as the next
+  run would send it: the target's own text builder fed a `⟨name⟩` stand-in
+  for each run-specific part, split into the built-in text, the current
+  notes block and the fixed tail.
 - `holophyte/stages/record.py` — pins a run's pipeline after its profile:
   inherited by a continuation, resolved fresh otherwise; `Attempt` and
   `skip()` record the implement, trim, verify, review and merge gate
@@ -1115,6 +1133,9 @@ The store is its own package:
 - `store/stages.py` — `open_stage()`, `close_stage()` and `skip_stage()`: a
   run's `stageAttempts`, numbered per stage, each closed with the agent
   seconds, tokens and cost of its roles' turns recorded while it was open.
+- `store/council.py` — `record_seat()`: one reviewer seat's row in a council
+  review round, its reply and reason redacted; `record_consolidator()`: the
+  consolidator's route on a consolidated round.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3

@@ -4,6 +4,7 @@ from functools import partial
 from time import time
 
 import store
+import store.council
 import store.read
 from holophyte import failure_reason, leak_guard
 from holophyte.agents.fix_session import steer_turn
@@ -45,7 +46,7 @@ from holophyte.loop.stop import boundary, stop_if_requested
 from holophyte.loop.test_removal import with_removals
 from holophyte.pr.pr_media import capture_spec_digest
 from holophyte.redact import safe_print as print
-from holophyte.review import adversary, consolidate
+from holophyte.review import adversary, consolidate, council
 from holophyte.review.blast_radius import record_tier
 from holophyte.review.briefs import (
     CORNER_CASE_RULE,
@@ -85,6 +86,10 @@ def _verify_brief(verify_cmd, ok, out):
                 for row in getattr(out, "results", []))
     if not verify_cmd and not count:
         return ""
+    return verify_text(count, ok, out)
+
+
+def verify_text(count, ok, out):
     return (f"The ticket's verification commands and the project's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
@@ -148,37 +153,46 @@ def _evidence_brief(project, wt, task_id, ticket):
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
-                 witness="", earlier="", notes=""):
+                 witness="", earlier="", notes="", seated=False):
+    return review_text(
+        project, sha, review_refs(run_id), ticket, mode,
+        follow_up_place(criteria), notes,
+        verify=_verify_brief(verify_cmd, ok, out),
+        criteria=(criteria_brief(criteria, wt=wt)
+                  + witness_once.reviewer_brief(criteria)),
+        witness=witness, stale=stale_approval_brief(stale), earlier=earlier,
+        tests=tests_brief(wt), scope=scope_brief(wt, ticket, base_sha, sha),
+        trim=trim_brief(wt, base_sha, sha),
+        evidence=(_evidence_brief(project, wt, task_id, ticket)
+                  if evidence else ""),
+        seated=seated)
+
+
+def review_text(project, sha, refs, ticket, mode, place, notes, *, verify,
+                criteria, witness, stale, earlier, tests, scope, trim,
+                evidence, seated):
+    schema_tail = (f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
+                   "guardrail follow_up.")
+    brief = council.reply_brief(schema_tail) if seated else reply_brief(
+        project,
+        "Do not modify anything. End your reply with exactly one line:\n"
+        "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
+        "If REQUEST_CHANGES, list only concrete blockers, each as one list "
+        f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
+        "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
+        f"before {place}.",
+        schema_tail)
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-        f"{review_refs(run_id)[0]} as the frozen base and "
-        f"{review_refs(run_id)[1]} as the candidate "
+        f"{refs[0]} as the frozen base and {refs[1]} as the candidate "
         "in this repo against the ticket below. The ticket is the "
         "contract, acceptance criteria included: a candidate that "
         "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
         f"{ticket}\n\n"
-        + _verify_brief(verify_cmd, ok, out)
-        + criteria_brief(criteria, wt=wt)
-        + witness_once.reviewer_brief(criteria)
-        + witness
-        + stale_approval_brief(stale)
-        + earlier
-        + verified_brief(mode)
-        + tests_brief(wt)
-        + scope_brief(wt, ticket, base_sha, sha)
-        + trim_brief(wt, base_sha, sha)
-        + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
+        + verify + criteria + witness + stale + earlier
+        + verified_brief(mode) + tests + scope + trim + evidence
         + notes
-        + reply_brief(
-            project,
-            "Do not modify anything. End your reply with exactly one line:\n"
-            "VERDICT: APPROVE  or  VERDICT: REQUEST_CHANGES\n"
-            "If REQUEST_CHANGES, list only concrete blockers, each as one list "
-            f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
-            "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
-            f"before {follow_up_place(criteria)}.",
-            f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
-            "guardrail follow_up."))
+        + brief)
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
@@ -192,23 +206,38 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
     earlier = earlier_rounds_brief(conn, run_id, wt, rnd, criteria)
+    seats = review_config(project).council
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
                           witness=witness,
                           earlier=earlier + stuck_review.settled(conn, run_id),
                           notes=record.notes_block(project, conn, run_id,
-                                                   "review"))
+                                                   "review"),
+                          seated=bool(seats))
+    primary = (partial(council.run_round, project, conn, run_id, wt, base_sha,
+                       sha, prompt, rnd, seats, criteria, agent,
+                       lambda detail: attempt.note(council=detail))
+               if seats else
+               partial(_review_reply, project, prompt, wt, base_sha, sha, conn,
+                       run_id, run_agent=agent, review_round=rnd))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
-            conn, run_id,
-            _decided(attempt, partial(_review_reply, project, prompt, wt,
-                                      base_sha, sha, conn, run_id,
-                                      run_agent=agent, review_round=rnd)),
+            conn, run_id, _decided(attempt, primary),
             plan and _ran(attempt, partial(adversary.attack, project, conn,
                                            run_id, wt, base_sha, ticket, plan,
                                            agent)))
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
+    if seats:
+        with heartbeat_while(conn, run_id, beat_s):
+            verdict, decision = council.consolidated(
+                project, conn, run_id, wt, base_sha, sha, rnd, verdict,
+                criteria, consolidate.adversary_findings(conn, run_id, rnd)
+                if plan else None, agent)
+        attempt.note(council=council.detail(verdict))
+    consolidated_by = getattr(verdict, "consolidated_by", None)
+    if consolidated_by:
+        blocking = []
     approved = cited_approval(verdict, wt, sha)
     red = _verify_findings(verify_cmd, ok, out)
     leak_guard.record(conn, run_id, leaks)
@@ -217,8 +246,12 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  ok, out,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
+                 route=getattr(verdict, "council_route", None),
+                 structured_findings=getattr(verdict, "council_findings", None),
                  adversary=blocking + red + private,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
+    if consolidated_by and conn is not None:
+        store.council.record_consolidator(conn, run_id, rnd, consolidated_by)
     attempt.note(decision=decision, findings=len(consolidate.primary_findings(
         verdict, decision, blocking + red + private)))
     if decision == "REQUEST_CHANGES" and conn is not None:
@@ -247,22 +280,46 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         ruling)
     primary = stuck_review.kept_findings(consolidate.primary_findings(
         verdict, decision, unwitnessed + red + private), ruling)
-    handed = adversarial is not None and consolidate.handed_on(
-        project, conn, run_id, provider, task_id, rnd, primary,
-        adversarial, fixing,
-        partial(agent, project, "consolidate", cwd=wt, base_sha=base_sha,
-                candidate_sha=sha, timeout=consolidate.TIMEOUT, conn=conn,
-                run_id=run_id))
+    handed = (adversarial is not None and (adversarial or not seats)
+              and not consolidated_by and consolidate.handed_on(
+                  project, conn, run_id, provider, task_id, rnd, primary,
+                  adversarial, fixing,
+                  None if seats else partial(
+                      agent, project, "consolidate", cwd=wt,
+                      base_sha=base_sha, candidate_sha=sha,
+                      timeout=consolidate.TIMEOUT, conn=conn, run_id=run_id)))
+    if consolidated_by and verdict.council_concerns:
+        consolidate.handed_on(project, conn, run_id, provider, task_id, rnd, [],
+                              verdict.council_concerns, False, None)
+    held = council.held_here(project, verdict)
+    asked = consolidate.primary_findings(verdict, decision, unwitnessed)
+    kept = stuck_review.kept_findings(asked, ruling)
+    settled = [council.held_line(finding) for finding in asked
+               if seats and council.pr_mode(project)
+               and council.described(finding)
+               and finding not in kept]
+    council.settle(conn, run_id, settled + getattr(verdict, "withdrawn", []))
     if ruling is not None and ruling.settled_all:
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
+    described = [finding for finding in kept
+                 if held and council.described(finding)]
+    undescribed = [finding for finding in kept if finding not in described]
     verdict = _with_report(
-        handed or stuck_review.without_dropped(
-            verdict, stuck_review.kept_findings(consolidate.primary_findings(
-                verdict, decision, unwitnessed), ruling), ruling),
+        handed or stuck_review.without_dropped(verdict, undescribed, ruling),
         red, out)
-    verdict += ruling.fixes if ruling is not None else ""
+    fixed = ruling.fixed if ruling is not None else []
+    if held:
+        fixed, ruled = council.split_fixes(fixed)
+        verdict = council.held_description(
+            conn, run_id, verdict + stuck_review.fix_brief(fixed), described,
+            ruled)
+        if (described or ruled) and not (red or private or undescribed):
+            decision, findings = "APPROVE", []
+            attempt.note(decision=decision)
+    else:
+        verdict += stuck_review.fix_brief(fixed)
     return leak_guard.with_findings(verdict, private), decision, findings
 
 

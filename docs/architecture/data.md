@@ -5,7 +5,7 @@ and the drawer are views of it; the loop, the supervisor and the serve
 daemon's action endpoints write it, all through the store API. It is one
 SQLite file per project in WAL mode, at
 `~/.holophyte/<slug>/store.db`, with a versioned schema
-(`PRAGMA user_version`, currently 73) and forward-only migrations. A build
+(`PRAGMA user_version`, currently 75) and forward-only migrations. A build
 that opens a store stamped newer than it understands refuses and exits.
 Every connection, writable or read-only, waits `store.schema.BUSY_TIMEOUT_S`
 (30 s) for another writer's lock before raising `database is locked`, so
@@ -44,7 +44,8 @@ A new table or column follows the ones already there:
 | `runs` | attempt at a ticket | loop, supervisor (end only) | phase machine below; `lastHeartbeat`, `timeBoxMs`, `outcome`, `outcomeReason`, `outcomeClass` (`work` or `infra`), `resumePhase`, `host`, `pipelineId` (NULL on a run older than it or whose pin failed) |
 | `pipelines` | revision of a project's resolved pipeline document | loop | `name`, `revision` (1-based per project), `format`, the canonical redacted `document` and its sha256 `digest`, unique per project; a run claimed under an unchanged document shares its row, a continuation inherits its predecessor's |
 | `stageAttempts` | attempt of a candidate stage (implement, trim, verify, review) | loop | `stageId`, `attempt` (1-based per run and stage), `startedAt`/`endedAt`, `inputSha`/`outputSha`; `outcome` ∈ `pass, fail, skipped, error` and `edge` ∈ `next, on_fail, again, park, end`, both NULL while open; `openSeq`, the run's highest event `seq` at the open; `agentSeconds`, `inputTokens`, `outputTokens`, `costUsd` summed from the stage's roles' `agent_turn` events after `openSeq` (NULL when none reports one); redacted JSON `detail` |
-| `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route, the schema-checked JSON reply when the reviewer gave one |
+| `reviewRounds` | review or adjudication round | loop | verdict, structured findings, their fingerprint, the verify result shown to the reviewer, the agent route, the schema-checked JSON reply when the reviewer gave one, and `consolidatedBy`: the consolidator's route (harness and model) when it consolidated a council round, else NULL |
+| `councilSeats` | reviewer seat of a council review round (`[[review.council]]`) | loop | `round`, `seat` (1-based, the `[[review.council]]` entry), `route` (harness and model); `status` ∈ `answered, missing, unreadable`; `verdict` ∈ `APPROVE, REQUEST_CHANGES`, `score` (0 to 10) and the redacted schema-checked JSON `reply`, all NULL unless answered; `reason` for a seat that did not answer; `seconds`, `startedAt`/`endedAt`; unique per `(runId, round, seat)` |
 | `runEvents` | narrative event | loop, supervisor | phase changes, warnings, sweeps; the story `FINDINGS.md` does not tell. `level` ∈ `narrative, detail`; a `detail` row of kind `crash` carries the traceback of a run that crashed in its `payload`, its summary the one-line reason |
 | `sweepStrikes` | supervisor sighting | supervisor | consecutive silent sightings per run |
 | `supervisorHeartbeats` | supervisor process; one row for the host sweep | supervisor | pid, start, last beat, passes, host; the host sweep keeps one sentinel row per store, pid 0, which readers print as "host sweep" |

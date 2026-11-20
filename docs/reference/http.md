@@ -486,31 +486,52 @@ non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
 `error` naming the parameter and any value it got. An `until` at or before
 `since` is 400 with `"until must be after since"`.
 
-## `GET /flow?weeks=N&until=MS`
+## `GET /flow?days=N&bucket=day|week&tz=ZONE&until=MS`
 
-The project's flow week by week: how much the factory merged and where its
-run time went. The console's Flow page reads it.
+The project's flow day by day or week by week: how much the factory
+merged and where its run time went. The console's Flow page reads it.
+
+`GET /flow?days=2&bucket=day&tz=UTC&until=1750032000000`, the 14 and 15
+June 2025 in UTC, answers:
 
 ```json
-{"now": 1750000000000,
- "weeks": [
-  {"start_ms": 1749395200000, "merged": 2, "rounds_median": 1.5,
-   "interventions": 3,
-   "hours": {"working": 4.25, "waiting": 6.0, "operator": 1.5}}],
- "phases": {"claimed": 0.1, "working": 3.25, "reviewing": 1.0,
-  "merge_gate": 2.4, "awaiting_merge_approval": 3.5,
+{"now": 1750032000000,
+ "buckets": [
+  {"start_ms": 1749859200000, "merged": 3, "rounds_median": 2,
+   "interventions": 1,
+   "hours": {"working": 4.25, "waiting": 6.0, "operator": 1.5}},
+  {"start_ms": 1749945600000, "merged": 4, "rounds_median": 1.5,
+   "interventions": 2,
+   "hours": {"working": 3.0, "waiting": 2.5, "operator": 0}}],
+ "phases": {"claimed": 0.5, "working": 4.25, "verifying": 1.0,
+  "reviewing": 2.0, "merge_gate": 2.0, "awaiting_merge_approval": 6.0,
   "blocked_on_operator": 1.5},
- "waits": {"pending_checks": 0.5, "checks_failing": 0, "thread": 1.0,
-  "rounds_used": 0, "behind_main": 0.4, "main_red": 0, "approval": 2.0,
+ "waits": {"pending_checks": 2.5, "checks_failing": 0, "thread": 1.0,
+  "rounds_used": 0, "behind_main": 0.5, "main_red": 0, "approval": 2.5,
   "other": 1.5},
- "reverted": {"count": 0, "merged": 7}}
+ "reverted": {"count": 1, "merged": 7}}
 ```
 
-`weeks` holds one entry per seven-day window ending at `now`, oldest
-first; `weeks` defaults to 6 and runs from 1 to 26. `now` is `until`, the
-end of the last week in epoch milliseconds, or the daemon's clock without
-one; phase changes after it are left out. Each entry's
-`start_ms` opens its window, `merged` counts the runs merged in it,
+`buckets` holds one entry per calendar day or run of seven days, oldest
+first, over the last `days` days in the time zone `tz` (an IANA name such
+as `Europe/Berlin`, UTC without one), the last day being the one `now`
+falls in (the one just before it when `now` is a midnight). Each day runs
+from local midnight to local midnight, so a day a clock change shortens or
+lengthens keeps its own hours. `days` runs from 1 to 182 and defaults to
+30; `bucket` is `day` or `week`, and without it `day` up to 31 days and
+`week` beyond. Weeks count back from the last day, and a span that is not
+a whole number of weeks leaves its oldest entry shorter, opening at the
+span's first midnight.
+
+Asked with `weeks=N` and neither `days` nor `bucket`, as older consoles
+ask, it answers the entries under `weeks` instead of `buckets`, one per
+seven-day window ending at `now`; `weeks` defaults to 6 and runs from 1
+to 26, and `tz` is ignored. Asked with none of the three, it answers the 6
+weeks.
+
+`now` is `until`, the end of the last entry in epoch milliseconds, or the
+daemon's clock without one; phase changes after it are left out. Each
+entry's `start_ms` opens its window, `merged` counts the runs merged in it,
 `rounds_median` is the median review round count of those runs (null with
 none), and `interventions` counts the store's interventions in it. `hours`
 splits the run time of the runs started in the window, read from their
@@ -519,20 +540,24 @@ phase changes: `working` (`working`, `verifying`, `reviewing`,
 other phase but the ended ones), each stay running to the next change, the
 run's end, or `now` for an open run.
 
-`phases` is the hours per phase over all the weeks. `waits` is the hours
-over all the weeks by why the run waited: time in `awaiting_merge_approval`
+`phases` is the hours per phase over all the entries. `waits` is the hours
+over all the entries by why the run waited: time in `awaiting_merge_approval`
 and `blocked_on_operator`, grouped by the note of the phase change that
 entered it, plus `merge_gate` time entered after a "behind main" merge
 refusal. The groups are `pending_checks`, `checks_failing`, `thread`,
 `rounds_used`, `behind_main`, `main_red`, `approval` and `other`.
 
-`reverted` counts the same merges as `weeks`: `merged` is the sum of the
-weekly `merged` values, and `count` is those whose merge commit a `git
+`reverted` counts the same merges as the entries: `merged` is the sum of
+their `merged` values, and `count` is those whose merge commit a `git
 revert` on `main` reverted within 14 days. A merge with no recorded merge
 commit counts as not reverted. It is null when `git log main` fails.
 
-A `weeks` that is not an integer from 1 to 26, or an `until` that is not
-an integer or is later than the daemon's clock, is 400 with an `error`.
+A `weeks` that is not an integer from 1 to 26, a `days` that is not an
+integer from 1 to 182, a `bucket` other than `day` or `week`, a `tz` that
+names no time zone, `weeks`
+asked with `days` or `bucket`, or an `until` that is not an integer or is
+later than the daemon's clock, is 400 with an `error` naming the allowed
+values.
 
 ## `GET /runs/N`
 
@@ -1158,6 +1183,106 @@ as on `/runs/N/stages`; a config file that cannot be read or parsed, or
 a setting the pipeline cannot resolve, makes the route answer 503 carrying
 `error`, which names the setting, redacted like the rest of the answer,
 but never its value.
+
+## `GET /pipeline/prompts/KEY`
+
+```json
+{"target": "critic",
+ "prompt": "You are the critic. ...Ticket ⟨ticket id⟩: ⟨title⟩\n...Notes from this project. ...End your reply with ...",
+ "builtin": "You are the critic. ...Ticket ⟨ticket id⟩: ⟨title⟩\n...",
+ "notes": "Notes from this project. ...\n\nTreat a renamed module as the same module.\n\n",
+ "tail": "End your reply with exactly one of these lines, ...",
+ "placeholders": [{"name": "ticket id", "stands_for": "the ticket's key"},
+                  {"name": "title", "stands_for": "the ticket's title"}]}
+```
+
+The prompt a `[pipeline.notes]` target would send in the next run, with
+the project's current note for it in place. `KEY` is the note's key, one
+of `implement`, `review`, `trim`, `critic`, `pr_writer` and
+`babysit_reply`, and `target` echoes it; any other answers 404 carrying
+`error`, which names the six. It is served
+whatever `[serve] config_edit` says, behind the read token, reads the
+config file again at each request, and writes nothing. A run already
+claimed keeps the notes its pinned pipeline holds; this shows the next
+run's.
+
+The prompt is rendered through the same text builder the loop calls, so
+everything the builder fixes is the loop's own text. Each part a run
+supplies (the ticket, its criteria, the diff, verify output, earlier review
+rounds, a thread) is a stand-in written `⟨name⟩`; where a part comes with
+rules, such as the criteria's CRITERION lines or trim's protected test
+files, the rules are rendered and only the run's own listing is a
+stand-in. `placeholders` lists each stand-in `prompt` holds, in order of
+first appearance, as its `name` and `stands_for`, a sentence saying what a
+run puts there. Text from the project's config that happens to hold
+`⟨…⟩` is shown as written and is never a stand-in. Adjacent
+stand-ins with no text between them may each be empty in a real run. The
+preview renders a run where every part is present: a ticket with criteria
+and verify commands that passed, a resumed branch whose merge of main
+stopped on conflicts, a requeue with unresolved findings, an escalation
+from an implementer profile, a waiting hint and an amending steering note,
+a reproduction commit, a criterion witnessed once, a witness pre-check that found gaps, a
+later review round with trim commits that record a trade-off, a
+test-heavy diff for trim, a ticket with evidence states, an approved
+design, a pull request template and a convention file. Config gates hold:
+with no `[merge] ui_capture`, the implement prompt has no capture brief,
+as in a run. A run
+missing one of them also loses the fixed text that introduces it.
+
+`prompt` is `builtin`, then `notes`, then `tail`, joined. `builtin` is
+the prompt's instructions ahead of the notes block, `notes` the block the
+note is rendered in, its fixed frame then the note, or empty when the
+project sets no note for `KEY`, and `tail` the fixed text after it that
+a note cannot change: the reply format, the review rules or the ticket
+itself, by target. Every string is redacted with the project's known
+secrets and, as regular expressions, its `[merge] private_patterns`; a config file that cannot be read or parsed, or a note the
+config refuses, makes the route answer 503 carrying `error`. `target` and
+the stand-ins are never redacted, so `placeholders` always matches
+`prompt`.
+
+## `GET /harnesses`
+
+```json
+{"harnesses": [
+  {"name": "claude", "binary": "claude", "path": "/usr/local/bin/claude",
+   "found": true, "configured": false, "seats": ["implementer", "trimmer"],
+   "probe": {"ok": false, "at_ms": 1750000000000, "why": "exit 1",
+             "seat": "trimmer"},
+   "models": [{"id": "opus", "source": "curated"},
+              {"id": "claude-custom", "source": "configured"}]}]}
+```
+
+Each harness the factory has an adapter for, in registration order
+(`claude`, `claude-sdk`, `codex`, `cursor`, `devin`, `t3`). It is served
+behind the read token, reads the config file again at each request, and
+starts no process: no probe and no harness CLI runs to answer it.
+
+`name` is the harness as a seat's `harness` names it. `binary` is what the
+factory would run: the `[harnesses]` entry's absolute path when one is set
+(`configured` true), else the bare binary name looked up on `PATH`. `found`
+says whether that path, or the `PATH` lookup, names an executable file, as
+the daemon's host sees it; a container image may still supply a binary the
+host lacks. `path` is the file found, the configured path when it is
+missing, or null.
+
+`seats` names each configured seat that runs on the harness: the
+`[agents]` seats, their `_fallback` routes, `implementer_shadow` and each
+`implementer_profiles.NAME`; a seat given as a command string counts for
+the harness whose `[harnesses]` path, name or binary its first word is.
+`probe` is the newest probe `route-probes.json` records among those seats:
+`ok`, `at_ms`, `why` (null when it passed) and the `seat` it came from; null
+when no seat uses the harness or none has been probed. A seat whose routes
+span several harnesses, or hold a command no harness is known by (a
+`reviewer_fallback` list can), lends its probe to none of them, since the record does not say which harness answered.
+
+`models` lists each model the harness offers as `id` and `source`: the
+adapter's curated list (`curated`), then each model a seat on the harness
+configures that the list lacks (`configured`): a table's `model`, or a
+command string's `--model` or `-m` argument, else its `-c`/`--config`
+`model=` override, attached values included, the last of each winning. `t3` lists the models of the
+providers it runs, `codex` and `claude`. Every string is redacted with the
+project's known secrets; a config file that cannot be read, parsed or
+decoded makes the route answer 503 carrying `error`.
 
 ## `GET /ledger?since=MS`
 

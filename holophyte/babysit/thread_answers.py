@@ -37,8 +37,10 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     related = (store.read.related_tickets(conn, run_id)
                if asks and conn is not None and run_id is not None
                else ((), ()))
+    notes = (record.notes_block(target, conn, run_id, "babysit_reply")
+             if asks else "")
     for thread in asks:
-        prompt = ask_prompt(pull, ticket, thread, related)
+        prompt = ask_prompt(pull, ticket, thread, related, notes)
         with heartbeat_while(conn, run_id, beat_s):
             reply = agent(target, "adjudicate", prompt, wt, conn=conn,
                           base_sha=sh(["git", "merge-base", "main", sha], cwd=wt),
@@ -79,27 +81,33 @@ def related_lines(rows):
                      for row in rows) or "none"
 
 
-def ask_prompt(pull, ticket, thread, related=((), ())):
+def ask_prompt(pull, ticket, thread, related=((), ()), notes=""):
     from holophyte.babysit import babysitter
     quote = "\n".join(f"> {line}" for line in babysitter.conversation(thread)
                       .splitlines()) or "> (empty)"
     depends_on, followed_by = related
-    return (f"Answer the question on {pull.url}. Read the checkout and ticket. "
+    return ask_text(pull.url, thread.comments[-1].author, notes, ticket,
+                    related_lines(depends_on), related_lines(followed_by),
+                    f"{babysitter.where(thread)} by @{thread.author}"
+                    f" ({thread.url}):\n{quote}", thread.request)
+
+
+def ask_text(url, asker, notes, ticket, depends_on, followed_by, thread,
+             question):
+    return (f"Answer the question on {url}. Read the checkout and ticket. "
             "Do not modify anything. Do not commit, push, or request review. "
             "The thread and ticket are included below; GitHub is not reachable "
             "from here, so do not fetch it or report on access. "
             "Give a direct answer citing files and lines. "
-            f"Your answer is the reply to @{thread.comments[-1].author}, so "
+            f"Your answer is the reply to @{asker}, so "
             "address them directly; never suggest replying to them and never "
             "tell anyone to check a tracker. When a related ticket below answers the "
             "question, name it by key. End with a suggested change to this "
             "pull request only when one is warranted, as advice.\n\n"
-            f"Ticket:\n{ticket}\n\nRelated tickets:\n"
-            f"Depends on: {related_lines(depends_on)}\n"
-            f"Followed by: {related_lines(followed_by)}\n\n"
-            f"Thread:\n{babysitter.where(thread)} by"
-            f" @{thread.author} ({thread.url}):\n{quote}"
-            f"\n\nQuestion:\n{thread.request}")
+            f"{notes}Ticket:\n{ticket}\n\nRelated tickets:\n"
+            f"Depends on: {depends_on}\n"
+            f"Followed by: {followed_by}\n\n"
+            f"Thread:\n{thread}\n\nQuestion:\n{question}")
 
 
 def github_links(text, repo_url, sha):

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PipelinePrompt",
+  "description": "GET /pipeline/prompts/KEY",
+  "$ref": "#/$defs/PipelinePrompt",
+  "$defs": {
+    "PromptPlaceholder": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "stands_for": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "stands_for"
+      ],
+      "additionalProperties": true
+    },
+    "PipelinePrompt": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "enum": [
+            "implement",
+            "review",
+            "trim",
+            "critic",
+            "pr_writer",
+            "babysit_reply"
+          ]
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "builtin": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "tail": {
+          "type": "string"
+        },
+        "placeholders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PromptPlaceholder"
+          }
+        }
+      },
+      "required": [
+        "target",
+        "prompt",
+        "builtin",
+        "notes",
+        "tail",
+        "placeholders"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -248,7 +248,30 @@ def probe_adversary_claude(project, timeout=None):
     if credential is None or agent_command(project, "adversary", "") is not None:
         return None
     model, effort = ADVERSARY_CLAUDE
-    cmd, cap = ["claude", "--model", model], timeout or PROBE_TIMEOUT
+    return container_probe(project, "adversary", {
+        "harness": "claude", "model": model, "effort": effort,
+        "credential": credential}, timeout)
+
+
+def probe_council_seat(project, number, route, timeout=None):
+    started = time.time()
+    probe = container_probe(project, f"council seat {number}", route, timeout)
+    record_probe(project, probe, False, started, time.time())
+    return probe
+
+
+def probe_council_consolidator(project, route, timeout=None):
+    if route is None:
+        return probe_seat(project, "consolidate", timeout=timeout)
+    started = time.time()
+    probe = container_probe(project, "council consolidator", route, timeout,
+                            review_tier(project))
+    record_probe(project, probe, False, started, time.time())
+    return probe
+
+
+def container_probe(project, seat, route, timeout=None, service_tier=None):
+    cmd, cap = [route["harness"], "--model", route["model"]], timeout or PROBE_TIMEOUT
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         sh(["git", "clone", "--shared", "--quiet", str(project.path), scratch])
         sha = sh(["git", "rev-parse", "HEAD"], cwd=scratch).strip()
@@ -256,17 +279,16 @@ def probe_adversary_claude(project, timeout=None):
         try:
             out = review_runner.run_review(
                 repo=Path(scratch), base_sha=sha, candidate_sha=sha,
-                prompt=REVIEW_PROBE_GOAL, timeout=cap, verdicts=None,
-                harness="claude", model=model, effort=effort,
-                credential=credential)
+                prompt=REVIEW_PROBE_GOAL, timeout=cap, verdicts=None, **route,
+                **({"service_tier": service_tier} if service_tier else {}))
         except subprocess.TimeoutExpired:
-            return ProbeResult(cmd, None, "", cap, seat="adversary",
+            return ProbeResult(cmd, None, "", cap, seat=seat,
                                expected_commit=sha)
-        except review_runner.ReviewBoundaryError as failed:
+        except (review_runner.ReviewBoundaryError, OSError) as failed:
             return ProbeResult(cmd, None, getattr(failed, "output", ""), cap,
-                               launch_error=str(failed), seat="adversary",
+                               launch_error=str(failed), seat=seat,
                                expected_commit=sha)
-    return ProbeResult(cmd, 0, out, cap, seat="adversary", expected_commit=sha)
+    return ProbeResult(cmd, 0, out, cap, seat=seat, expected_commit=sha)
 
 
 def container_fallback_profile(project, role):

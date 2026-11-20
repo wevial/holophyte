@@ -94,12 +94,17 @@ DOCUMENTED_COLUMNS = {
         "inputSha", "outputSha", "outcome", "edge", "openSeq", "agentSeconds",
         "inputTokens", "outputTokens", "costUsd", "detail",
     },
+    "councilSeats": {
+        "id", "runId", "round", "seat", "route", "status", "verdict", "score",
+        "reply", "reason", "seconds", "startedAt", "endedAt",
+    },
     "ledger": {
         "id", "runId", "ticketId", "at", "kind", "text", "source",
     },
     "reviewRounds": {
         "id", "runId", "round", "verificationResults", "verdict", "findings",
         "findingsFingerprint", "reviewerModel", "startedAt", "endedAt", "reply",
+        "consolidatedBy",
     },
     "runEvents": {
         "id", "runId", "projectId", "seq", "level", "kind", "summary", "payload", "at",

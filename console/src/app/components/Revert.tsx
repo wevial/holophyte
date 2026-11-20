@@ -112,13 +112,14 @@ const holdsModal = (node: Node) =>
 /** Whether a modal opened while `work` ran, even one closed again by its end. */
 async function watchModals<T>(work: () => Promise<T>): Promise<{ value: T; interrupted: boolean }> {
   let interrupted = document.querySelector('[aria-modal="true"]') != null;
+  const opened = (record: MutationRecord) => (record.type === "attributes" ? holdsModal(record.target) : [...record.addedNodes].some(holdsModal));
   const observer = new MutationObserver((records) => {
-    if (records.some((record) => [...record.addedNodes].some(holdsModal))) interrupted = true;
+    if (records.some(opened)) interrupted = true;
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true, attributeFilter: ["aria-modal"] });
   try {
     const value = await work();
-    if (observer.takeRecords().some((record) => [...record.addedNodes].some(holdsModal))) interrupted = true;
+    if (observer.takeRecords().some(opened)) interrupted = true;
     return { value, interrupted };
   } finally {
     observer.disconnect();

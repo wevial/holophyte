@@ -30,8 +30,10 @@ def _listed(criteria):
 
 def implementer_brief(criteria):
     listed = _listed(criteria)
-    if not listed:
-        return ""
+    return implementer_text(listed) if listed else ""
+
+
+def implementer_text(listed):
     return ("\n\nThese criteria are witnessed once, by a test kept out of "
             "every commit:\n" + listed
             + f"The factory ignores `{DIRECTORY}/`: write each file there and "
@@ -41,8 +43,10 @@ def implementer_brief(criteria):
 
 def reviewer_brief(criteria):
     listed = _listed(criteria)
-    if not listed:
-        return ""
+    return reviewer_text(listed) if listed else ""
+
+
+def reviewer_text(listed):
     return ("These criteria are witnessed once:\n" + listed
             + "Each file is in the worktree but in no commit. Read it and "
             "run it there by the verify line that names it, and cite it as "

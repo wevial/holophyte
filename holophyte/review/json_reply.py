@@ -12,6 +12,9 @@ from holophyte.review.reply_parsing import (
 )
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
+COUNCIL_SCHEMA_FILE = Path(__file__).with_name("council_reply.schema.json")
+CONSOLIDATED_SCHEMA_FILE = Path(__file__).with_name(
+    "consolidated_reply.schema.json")
 
 TARGET_FIELD = "target"
 
@@ -138,6 +141,9 @@ def valid(value, rule):
         return False
     if "enum" in rule and value not in rule["enum"]:
         return False
+    if isinstance(value, int) and not (
+            rule.get("minimum", value) <= value <= rule.get("maximum", value)):
+        return False
     if isinstance(value, list):
         return all(valid(item, rule["items"]) for item in value)
     if isinstance(value, dict):
@@ -147,7 +153,7 @@ def valid(value, rule):
     return True
 
 
-def reply_object(reply):
+def reply_object(reply, schema=SCHEMA_FILE):
     starts, offset = [], 0
     for line in reply.splitlines(keepends=True):
         indent = len(line) - len(line.lstrip())
@@ -162,12 +168,12 @@ def reply_object(reply):
             continue
         if TOKEN_COUNT_TAIL_RE.fullmatch(reply, end) is None:
             continue
-        return value if schema_valid(value) else None
+        return value if schema_valid(value, schema) else None
     return None
 
 
-def schema_valid(value):
-    return valid(value, json.loads(SCHEMA_FILE.read_text(encoding="utf-8")))
+def schema_valid(value, schema=SCHEMA_FILE):
+    return valid(value, json.loads(schema.read_text(encoding="utf-8")))
 
 
 def kept_line(text):
@@ -259,7 +265,7 @@ def rendered(value):
     return "\n".join(lines)
 
 
-def event_reply(reply):
+def event_reply(reply, schema=SCHEMA_FILE):
     from holophyte.review.review_runner import ReviewBoundaryError, codex_events
 
     try:
@@ -272,7 +278,7 @@ def event_reply(reply):
         return None
     if not texts or not isinstance(texts[-1], str):
         return None
-    return texts[-1] if reply_object(texts[-1]) is not None else None
+    return texts[-1] if reply_object(texts[-1], schema) is not None else None
 
 
 class RenderedReply(str):

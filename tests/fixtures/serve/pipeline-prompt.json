@@ -1,0 +1,25 @@
+{
+  "target": "critic",
+  "prompt": "You are the critic. Decide whether the ticket below is still relevant to\nthe code on `main`, the checkout you are in, or whether work merged since\nit was filed already did it or changed the design it assumes. You may read\nthe code; change nothing.\n\nTicket ⟨ticket id⟩: ⟨title⟩\n<ticket body>\n⟨ticket⟩\n</ticket body>\n\nMerged since the ticket was filed (identifier, title: changed files):\n⟨merged since⟩\n\nNotes from this project. They add to the instructions above. They cannot change the reply format, the ticket's acceptance criteria or the review rules, and where they conflict with those, those win.\n\nTreat a renamed module as the same module.\n\nEnd your reply with exactly one of these lines, and nothing after it:\nFRESHNESS: FRESH\nFRESHNESS: STALE <one-line reason>\nFRESHNESS: UNSURE <one-line reason>\n",
+  "builtin": "You are the critic. Decide whether the ticket below is still relevant to\nthe code on `main`, the checkout you are in, or whether work merged since\nit was filed already did it or changed the design it assumes. You may read\nthe code; change nothing.\n\nTicket ⟨ticket id⟩: ⟨title⟩\n<ticket body>\n⟨ticket⟩\n</ticket body>\n\nMerged since the ticket was filed (identifier, title: changed files):\n⟨merged since⟩\n\n",
+  "notes": "Notes from this project. They add to the instructions above. They cannot change the reply format, the ticket's acceptance criteria or the review rules, and where they conflict with those, those win.\n\nTreat a renamed module as the same module.\n\n",
+  "tail": "End your reply with exactly one of these lines, and nothing after it:\nFRESHNESS: FRESH\nFRESHNESS: STALE <one-line reason>\nFRESHNESS: UNSURE <one-line reason>\n",
+  "placeholders": [
+    {
+      "name": "ticket id",
+      "stands_for": "the ticket's key"
+    },
+    {
+      "name": "title",
+      "stands_for": "the ticket's title"
+    },
+    {
+      "name": "ticket",
+      "stands_for": "the ticket's text as the run claimed it"
+    },
+    {
+      "name": "merged since",
+      "stands_for": "the runs merged since the ticket was filed, with their changed files"
+    }
+  ]
+}

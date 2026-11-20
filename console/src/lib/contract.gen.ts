@@ -862,6 +862,53 @@ export const pipelineNumbersSchema = z.looseObject({
 });
 export type PipelineNumbers = z.infer<typeof pipelineNumbersSchema>;
 
+export const promptPlaceholderSchema = z.looseObject({
+  name: z.string(),
+  stands_for: z.string(),
+});
+export type PromptPlaceholder = z.infer<typeof promptPlaceholderSchema>;
+
+export const pipelinePromptSchema = z.looseObject({
+  target: z.enum(["implement", "review", "trim", "critic", "pr_writer", "babysit_reply"]),
+  prompt: z.string(),
+  builtin: z.string(),
+  notes: z.string(),
+  tail: z.string(),
+  placeholders: z.array(promptPlaceholderSchema),
+});
+export type PipelinePrompt = z.infer<typeof pipelinePromptSchema>;
+
+export const harnessProbeSchema = z.looseObject({
+  ok: z.boolean(),
+  at_ms: z.int(),
+  why: z.string().nullable(),
+  seat: z.string(),
+});
+export type HarnessProbe = z.infer<typeof harnessProbeSchema>;
+
+export const harnessModelSchema = z.looseObject({
+  id: z.string(),
+  source: z.enum(["curated", "configured"]),
+});
+export type HarnessModel = z.infer<typeof harnessModelSchema>;
+
+export const harnessSchema = z.looseObject({
+  name: z.string(),
+  binary: z.string(),
+  path: z.string().nullable(),
+  found: z.boolean(),
+  configured: z.boolean(),
+  seats: z.array(z.string()),
+  probe: harnessProbeSchema.nullable(),
+  models: z.array(harnessModelSchema),
+});
+export type Harness = z.infer<typeof harnessSchema>;
+
+export const harnessesSchema = z.looseObject({
+  harnesses: z.array(harnessSchema),
+});
+export type Harnesses = z.infer<typeof harnessesSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),
@@ -995,7 +1042,8 @@ export type FlowReverted = z.infer<typeof flowRevertedSchema>;
 
 export const flowSchema = z.looseObject({
   now: z.int(),
-  weeks: z.array(flowWeekSchema),
+  weeks: z.array(flowWeekSchema).optional(),
+  buckets: z.array(flowWeekSchema).optional(),
   phases: z.record(z.string(), z.number()),
   waits: flowWaitsSchema,
   reverted: flowRevertedSchema.nullable(),

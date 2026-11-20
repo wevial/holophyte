@@ -51,12 +51,17 @@ def brief(conn, run_id, branch, head):
     earlier = escalated_from(conn, run_id)
     if earlier is None or not earlier["last"]:
         return ""
+    return escalation_text(earlier["run"], earlier["profile"],
+                           earlier["reason"], branch, head[:12])
+
+
+def escalation_text(run, profile, reason, branch, head):
     return (
-        f"The factory escalated this ticket to you: run {earlier['run']} on "
-        f"the implementer profile {earlier['profile']} failed with: "
-        f"{earlier['reason']}\n"
+        f"The factory escalated this ticket to you: run {run} on "
+        f"the implementer profile {profile} failed with: "
+        f"{reason}\n"
         f"The branch {branch} holds that run's commits at its head, "
-        f"{head[:12]}. Decide whether to build on them or restart from main. "
+        f"{head}. Decide whether to build on them or restart from main. "
         "To restart, first commit a change that returns the tree to main's, "
         "then do the new work on top; never reset, rebase or otherwise "
         "rewrite the branch's history, because the factory only "

@@ -1,0 +1,154 @@
+{
+  "harnesses": [
+    {
+      "binary": "claude",
+      "configured": false,
+      "found": true,
+      "models": [
+        {
+          "id": "opus",
+          "source": "curated"
+        },
+        {
+          "id": "sonnet",
+          "source": "curated"
+        },
+        {
+          "id": "haiku",
+          "source": "curated"
+        },
+        {
+          "id": "claude-model-under-test",
+          "source": "configured"
+        }
+      ],
+      "name": "claude",
+      "path": "/srv/holo/bin/claude",
+      "probe": {
+        "at_ms": 1750000000000,
+        "ok": false,
+        "seat": "trimmer",
+        "why": "exit 1"
+      },
+      "seats": [
+        "implementer",
+        "trimmer"
+      ]
+    },
+    {
+      "binary": "claude",
+      "configured": false,
+      "found": true,
+      "models": [
+        {
+          "id": "opus",
+          "source": "curated"
+        },
+        {
+          "id": "sonnet",
+          "source": "curated"
+        },
+        {
+          "id": "haiku",
+          "source": "curated"
+        }
+      ],
+      "name": "claude-sdk",
+      "path": "/srv/holo/bin/claude",
+      "probe": null,
+      "seats": []
+    },
+    {
+      "binary": "/srv/holo/tools/codex-stable",
+      "configured": true,
+      "found": true,
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "source": "curated"
+        },
+        {
+          "id": "gpt-6-luna",
+          "source": "curated"
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "source": "curated"
+        }
+      ],
+      "name": "codex",
+      "path": "/srv/holo/tools/codex-stable",
+      "probe": null,
+      "seats": []
+    },
+    {
+      "binary": "/srv/holo/gone/cursor-agent",
+      "configured": true,
+      "found": false,
+      "models": [
+        {
+          "id": "grok-4.7-high",
+          "source": "curated"
+        }
+      ],
+      "name": "cursor",
+      "path": "/srv/holo/gone/cursor-agent",
+      "probe": null,
+      "seats": []
+    },
+    {
+      "binary": "devin",
+      "configured": false,
+      "found": false,
+      "models": [
+        {
+          "id": "swe-2-high",
+          "source": "curated"
+        },
+        {
+          "id": "swe-2-max",
+          "source": "curated"
+        }
+      ],
+      "name": "devin",
+      "path": null,
+      "probe": null,
+      "seats": []
+    },
+    {
+      "binary": "t3",
+      "configured": false,
+      "found": false,
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "source": "curated"
+        },
+        {
+          "id": "gpt-6-luna",
+          "source": "curated"
+        },
+        {
+          "id": "gpt-6.1-sol",
+          "source": "curated"
+        },
+        {
+          "id": "opus",
+          "source": "curated"
+        },
+        {
+          "id": "sonnet",
+          "source": "curated"
+        },
+        {
+          "id": "haiku",
+          "source": "curated"
+        }
+      ],
+      "name": "t3",
+      "path": null,
+      "probe": null,
+      "seats": []
+    }
+  ]
+}

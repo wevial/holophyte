@@ -120,6 +120,15 @@ You may still shorten a test's body:
 """
 
 
+def trim_goal(base, commands, tests, notes, protected):
+    return (TRIM_BRIEF.format(base=base, commands=commands, tests=tests)
+            + notes + TRIM_TAIL.format(protected=protected))
+
+
+def protected_brief(listed):
+    return PROTECTED_BRIEF.format(files=listed) if listed else ""
+
+
 PASSES = ("delete", "merge", "flatten", "comments", "tests")
 
 
