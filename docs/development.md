@@ -618,8 +618,10 @@ Each module, one line:
   pipeline as a versioned document of typed stages, read from the project's
   config with its primary seat labels.
 - `holophyte/stages/record.py` — pins a run's pipeline after its profile:
-  inherited by a continuation, resolved fresh otherwise; a store write that
-  fails leaves a `stage_record_failed` event and never stops the run.
+  inherited by a continuation, resolved fresh otherwise; `Attempt` and
+  `skip()` record the implement, trim, verify and review attempts with the
+  roles the pinned document gives each stage; a store write that fails
+  leaves a `stage_record_failed` event and never stops the run.
 - `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
   and records a run's implementer profile, and scopes the run's project to it.
 - `holophyte/loop/complexity.py` — the complexity question a claimed run
@@ -1090,6 +1092,9 @@ The store is its own package:
 - `store/pipelines.py` — `pin_pipeline()` and `inherit_pipeline()`: one
   `pipelines` revision per distinct redacted document of a project, and the
   run's `pipelineId` set once.
+- `store/stages.py` — `open_stage()`, `close_stage()` and `skip_stage()`: a
+  run's `stageAttempts`, numbered per stage, each closed with the agent
+  seconds, tokens and cost of its roles' turns recorded while it was open.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3

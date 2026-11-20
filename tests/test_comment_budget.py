@@ -379,6 +379,7 @@ PINNED = {
     "store/notes.py": 1,
     "store/operate.py": 20,
     "store/pipelines.py": 1,
+    "store/stages.py": 1,
     "store/operator_notes.py": 3,
     "store/project_paths.py": 1,
     "store/read.py": 7,

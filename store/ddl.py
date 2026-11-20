@@ -252,6 +252,31 @@ CREATE TABLE IF NOT EXISTS pipelines (
     UNIQUE (projectId, digest)
 );
 
+-- stageAttempts: one attempt of a pipeline stage within a run; `outcome`
+-- and `edge` stay NULL while it is open, `openSeq` is the run's highest
+-- event seq when it opened.
+CREATE TABLE IF NOT EXISTS stageAttempts (
+    id           INTEGER PRIMARY KEY,
+    runId        INTEGER NOT NULL REFERENCES runs (id),
+    stageId      TEXT    NOT NULL,
+    attempt      INTEGER NOT NULL CHECK (attempt > 0),
+    startedAt    INTEGER NOT NULL,
+    endedAt      INTEGER,
+    inputSha     TEXT,
+    outputSha    TEXT,
+    outcome      TEXT
+        {_enums.check_clause('outcome', _enums.StageOutcome)},
+    edge         TEXT
+        {_enums.check_clause('edge', _enums.StageEdge)},
+    openSeq      INTEGER NOT NULL,
+    agentSeconds REAL,
+    inputTokens  INTEGER,
+    outputTokens INTEGER,
+    costUsd      REAL,
+    detail       TEXT    NOT NULL DEFAULT '{{}}',  -- JSON object, redacted
+    UNIQUE (runId, stageId, attempt)
+);
+
 -- reviewRounds: one bot review pass within a run (state-model §2).
 CREATE TABLE IF NOT EXISTS reviewRounds (
     id                  INTEGER PRIMARY KEY,

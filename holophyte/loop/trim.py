@@ -38,12 +38,14 @@ from holophyte.review.briefs import _changed_files
 from holophyte.review.criterion_ids import numbered
 from holophyte.review.reply_parsing import test_names
 from holophyte.review.witness_precheck import named_files
+from holophyte.stages import record
 
 LINE_FLOOR = 50
 TEST_RATIO = 3
 TEST_LINE_FLOOR = 60
 TEST_DIRS = {"tests", "test", "__tests__", "spec"}
 TEST_NAMES = ("test_*", "*_test.*", "*.test.*", "*.spec.*")
+TIMED_OUT = "the turn timed out"
 SOURCE_SUFFIXES = {".py", ".go", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx",
                    ".mts", ".cts"}
 
@@ -52,6 +54,7 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
          contracts, criteria=()):
     config = trim_config(project)
     if not config.enabled:
+        record.skip(conn, run_id, "trim", "[trim] enabled = false", sha)
         return sha
     before = _changed_lines(wt)
     green = partial(_green, project, conn, run_id, beat_s, wt, verify_cmd,
@@ -60,7 +63,18 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
                           before, green)
     if reason:
         _record(project, conn, run_id, "skipped", reason, [], [], before, before)
+        record.skip(conn, run_id, "trim", reason, sha)
         return sha
+    with record.Attempt(conn, run_id, "trim", sha, {}, wt=wt) as attempt:
+        head, outcome, reason, ended = _trimmed(
+            project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
+            criteria, config, before, green)
+        attempt.close(*ended, head, trim=outcome, reason=reason)
+    return head
+
+
+def _trimmed(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
+             criteria, config, before, green):
     untracked = _untracked(wt)
     protected = _protected(conn, run_id, wt, base_sha, sha, criteria)
     goal = TRIM_BRIEF.format(base=base_sha,
@@ -70,7 +84,8 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
                                  files="\n".join(f"- `{path}`"
                                                   for path in protected))
                              if protected else "")
-    out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min, goal)
+    out, reason, ended = _ended_turn(project, conn, run_id, beat_s, wt,
+                                     config.budget_min, goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
     commits = _commits(wt, sha)
     reason = reason or _malformed(wt, sha, commits)
@@ -83,7 +98,7 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
                else "reverted" if reason else "nothing")
     _record(project, conn, run_id, outcome, reason, kept, dropped, before,
             _changed_lines(wt), out)
-    return sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt), outcome, reason, ended
 
 
 def _skip_reason(project, conn, run_id, wt, budget_min, sha, lines, green):
@@ -117,20 +132,31 @@ def _is_test(path):
 
 
 def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
+    out, reason, _ = _ended_turn(project, conn, run_id, beat_s, wt, budget_min,
+                                 goal)
+    return out, reason
+
+
+def _ended_turn(project, conn, run_id, beat_s, wt, budget_min, goal):
     try:
         out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
                                 goal, role="trim", merges=False)
     except InfraFailure as error:
         return (getattr(error, "output", "") or str(error),
-                f"the route failed: {error}")
+                f"the route failed: {error}", ("error", "next"))
     except (OSError, RuntimeError) as error:
-        return str(error), f"the route could not start: {error}"
+        return (str(error), f"the route could not start: {error}",
+                ("fail", "next"))
     if timed_out:
-        return out, "the turn timed out"
+        return out, TIMED_OUT, ("fail", "next")
+    return (*_judged_turn(out), ("pass", "next"))
+
+
+def _judged_turn(out):
     outage = failed_turn(out) and outage_reason(getattr(out, "command", ""), out)
     if outage:
         return out, f"the route failed: {outage}"
-    if _killed_by_signal(out, timed_out):
+    if _killed_by_signal(out, False):
         return out, f"the turn was killed by a signal (exit {out.exit_code})"
     if getattr(out, "exit_code", 0):
         return out, f"the turn exited with status {out.exit_code}"

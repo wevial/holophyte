@@ -29,6 +29,7 @@ import store.run_reads
 import store.schema
 import store.scout_thread
 import store.scouts
+import store.stages
 import store.steer_notes
 import store.stories
 import store.story_proposals
@@ -379,6 +380,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                  # its document or inherited by a continuation.
                                  (store.pipelines, ["inherit_pipeline",
                                                     "pin_pipeline"]),
+                                 # Each stage attempt of a run, opened and
+                                 # closed or recorded skipped.
+                                 (store.stages, ["close_stage", "open_stage",
+                                                 "skip_stage"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",
