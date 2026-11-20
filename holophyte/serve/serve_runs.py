@@ -735,17 +735,19 @@ def run_stages(project, text):
 
 SECRETS_SEEN = {}
 SECRETS_SEEN_LOCK = threading.Lock()
+READ_FILE = object()
 
 
-def current_secrets(project, *snapshots):
+def current_secrets(project, *snapshots, on_disk=READ_FILE):
     from holophyte.config.reader import load_config
     from holophyte.redact import known_secrets
     found = frozenset().union(*map(known_secrets, snapshots))
-    try:
-        on_disk = load_config(project.config_path)
-    except (SystemExit, ValueError, OSError):
-        on_disk = None
-    else:
+    if on_disk is READ_FILE:
+        try:
+            on_disk = load_config(project.config_path)
+        except (SystemExit, ValueError, OSError):
+            on_disk = None
+    if on_disk is not None:
         found |= known_secrets(project.config()) | known_secrets(on_disk)
     with SECRETS_SEEN_LOCK:
         seen = SECRETS_SEEN.setdefault(str(project.config_path), set())

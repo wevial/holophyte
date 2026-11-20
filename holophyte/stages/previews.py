@@ -2,7 +2,14 @@
 import re
 
 from holophyte.agents.harness import ORCHESTRATION_BRIEFS
-from holophyte.babysit.maintainer_notes import requeue_text, unresolved_text
+from holophyte.babysit.maintainer_notes import (
+    HINT_PREFIX,
+    PREFIX,
+    amended_text,
+    note_text,
+    requeue_text,
+    unresolved_text,
+)
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import merge_config
@@ -10,6 +17,7 @@ from holophyte.config.pipeline_settings import pipeline_notes
 from holophyte.config.review_settings import review_config
 from holophyte.loop.claim import conflict_brief
 from holophyte.loop.contradiction import brief_text
+from holophyte.loop.escalation import escalation_text
 from holophyte.loop.implement import (
     _commands_brief,
     implement_goal,
@@ -47,17 +55,25 @@ STANDS_FOR = {
     "unresolved findings": "that round's findings, one line each",
     "findings cut": "a line saying the findings were cut to length; empty"
                     " when they were not",
-    "escalation": "the factory's escalation of the ticket from a failed"
-                  " implementer profile; empty unless it escalated",
-    "hints": "the maintainer's hints waiting for the ticket; empty when none"
-             " wait",
+    "escalated run": "the run that failed on an implementer profile before"
+                     " the factory escalated the ticket",
+    "profile": "that run's implementer profile",
+    "failure": "why that run failed",
+    "branch head": "the commit at the branch's head, abbreviated",
+    "hint id": "the id of a maintainer's hint waiting for this turn",
+    "hint author": "who wrote that hint",
+    "hint": "that hint's text",
+    "amended criteria": "the acceptance criteria as the maintainer's"
+                        " amendments leave them, one line each",
+    "steer note id": "the id of a maintainer's steering note waiting for"
+                     " this turn",
+    "steer author": "who wrote that note",
+    "steer note": "that note's text, less the criteria edits it makes",
     "reproduction commit": "the commit a reproduce turn made with a failing"
                            " test",
     "failing command": "the verify command that test makes fail",
     "witnessed-once tests": "each criterion witnessed once and its"
                             " uncommitted test file, one line each",
-    "steering": "the maintainer's steering notes waiting for this turn;"
-                " empty when none wait",
     "candidate commit": "the commit under review",
     "base ref": "the run's frozen base ref",
     "candidate ref": "the run's candidate ref",
@@ -127,9 +143,14 @@ def implement(project, slot):
                      s("requeue note"),
                      unresolved_text(s("last round"), s("unresolved findings"),
                                      s("findings cut")))
-        + s("escalation") + s("hints")
+        + escalation_text(s("escalated run"), s("profile"), s("failure"),
+                          s("branch"), s("branch head"))
+        + note_text(HINT_PREFIX, s("hint id"), s("hint author"), s("hint"))
+        + "\n\n"
         + Reproduction(s("reproduction commit"), s("failing command")).opening(),
-        s("steering"), slot,
+        (amended_text(s("amended criteria")) + "\n\n"
+         + note_text(PREFIX, s("steer note id"), s("steer author"),
+                     s("steer note"))).lstrip() + "\n\n", slot,
         s("ticket"), _commands_brief(project, s("verify commands")),
         ORCHESTRATION_BRIEFS[orchestration_mode(project, "")[0]],
         capture_text(merge_config(project), s("ticket id"),

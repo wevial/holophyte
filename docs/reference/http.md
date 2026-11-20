@@ -1219,8 +1219,9 @@ run puts there. Text from the project's config that happens to hold
 stand-ins with no text between them may each be empty in a real run. The
 preview renders a run where every part is present: a ticket with criteria
 and verify commands that passed, a resumed branch whose merge of main
-stopped on conflicts, a requeue with unresolved findings, a reproduction
-commit, a criterion witnessed once, a witness pre-check that found gaps, a
+stopped on conflicts, a requeue with unresolved findings, an escalation
+from an implementer profile, a waiting hint and an amending steering note,
+a reproduction commit, a criterion witnessed once, a witness pre-check that found gaps, a
 later review round with trim commits that record a trade-off, a
 test-heavy diff for trim, a ticket with evidence states, an approved
 design, a pull request template and a convention file. Config gates hold:
@@ -1234,7 +1235,7 @@ note is rendered in, its fixed frame then the note, or empty when the
 project sets no note for `KEY`, and `tail` the fixed text after it that
 a note cannot change: the reply format, the review rules or the ticket
 itself, by target. Every string is redacted with the project's known
-secrets; a config file that cannot be read or parsed, or a note the
+secrets and, as regular expressions, its `[merge] private_patterns`; a config file that cannot be read or parsed, or a note the
 config refuses, makes the route answer 503 carrying `error`. `target` and
 the stand-ins are never redacted, so `placeholders` always matches
 `prompt`.

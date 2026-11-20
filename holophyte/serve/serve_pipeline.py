@@ -11,7 +11,7 @@ import store.read
 from holophyte.admission import project_of
 from holophyte.config.config_tables import board_config
 from holophyte.config.pipeline_settings import NOTE_TARGETS
-from holophyte.redact import values_held
+from holophyte.redact import REDACTED, values_held
 from holophyte.serve.serve_runs import current_secrets
 from holophyte.stages import previews, standard
 from store.pipelines import pipeline_revision
@@ -33,7 +33,7 @@ def pipeline(project, query):
     if not re.fullmatch(r"\d{1,3}", days) or not 1 <= int(days) <= MAX_DAYS:
         return 400, {"error": f"days takes a whole number from 1 to"
                               f" {MAX_DAYS}, not {days!r}"}
-    return config_held(project, lambda fresh, secrets: answered(
+    return config_held(project, lambda fresh, secrets, _private: answered(
         project, fresh, int(days), secrets))
 
 
@@ -42,8 +42,8 @@ def pipeline_prompt(project, target):
         return 404, {"error": "no prompt takes notes by that name; the"
                               " [pipeline.notes] keys are"
                               f" {', '.join(NOTE_TARGETS)}"}
-    return config_held(project, lambda fresh, secrets: prompt_answered(
-        fresh, target, secrets))
+    return config_held(project, lambda fresh, secrets, private:
+                       prompt_answered(fresh, target, secrets, private))
 
 
 def config_held(project, answer):
@@ -55,12 +55,22 @@ def config_held(project, answer):
         reads = [read.config() for read, patterns in ((fresh, own),
                                                       (later, also))
                  if patterns is not None]
+        private = compiled((own or []) + (also or []))
         with values_held((own or []) + (also or [])):
-            secrets = current_secrets(project, *reads)
-            if secrets is None or len(reads) < 2:
+            secrets = current_secrets(
+                project, *reads,
+                on_disk=later.config() if also is not None else None)
+            if secrets is None or len(reads) < 2 or private is None:
                 return 503, {"error": "the project config cannot be read, so"
                                       " its pipeline cannot be resolved"}
-            return answer(fresh, secrets)
+            return answer(fresh, secrets, private)
+
+
+def compiled(patterns):
+    try:
+        return [re.compile(pattern) for pattern in patterns]
+    except re.error:
+        return None
 
 
 def readable_patterns(project):
@@ -70,12 +80,16 @@ def readable_patterns(project):
         return None
 
 
-def prompt_answered(fresh, target, secrets):
+def prompt_answered(fresh, target, secrets, private):
+    def scrub(text):
+        text = standard.scrubbed(text, secrets)
+        for pattern in private:
+            text = pattern.sub(REDACTED, text)
+        return text
     try:
-        body = previews.preview(fresh, target, lambda text: standard.scrubbed(
-            text, secrets))
+        body = previews.preview(fresh, target, scrub)
     except (SystemExit, ValueError) as error:
-        named = standard.scrubbed(setting_named(fresh, error), secrets)
+        named = scrub(setting_named(fresh, error))
         return 503, {"error": "the project config does not resolve to a"
                               f" prompt{named}"}
     return 200, body

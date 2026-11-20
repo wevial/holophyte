@@ -47,8 +47,11 @@ def amended_ticket(conn, run_id, ticket, url):
 
 def steer_text(note):
     prefix = HINT_PREFIX if note.kind == steer_notes.HINT else PREFIX
-    return (f"{prefix}\nsteer note {note.id} by {note.author}:\n{note.note}\n"
-            f"{PRIVATE}")
+    return note_text(prefix, note.id, note.author, note.note)
+
+
+def note_text(prefix, note_id, author, text):
+    return f"{prefix}\nsteer note {note_id} by {author}:\n{text}\n{PRIVATE}"
 
 
 def carry_amendments(conn, run_id, ticket):
@@ -89,7 +92,11 @@ def _criteria_block(conn, run_id):
         elif (row["steerNoteId"], number) in reasons:
             reason = reasons[row["steerNoteId"], number]
             lines.append(f"- C{number} dropped" + (f": {reason}" if reason else ""))
-    return "\n\nAmended acceptance criteria:\n" + "\n".join(lines)
+    return amended_text("\n".join(lines))
+
+
+def amended_text(lines):
+    return "\n\nAmended acceptance criteria:\n" + lines
 
 
 def take_hints(conn, run_id):

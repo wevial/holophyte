@@ -183,6 +183,16 @@ class PromptRouteTests(ServeTestCase):
         self.assertEqual(code, 503)
         self.assertIn("cannot be read", body["error"])
 
+    def test_a_private_pattern_redacts_as_a_regular_expression(self):
+        body = self.answer("review", '[merge]\nprivate_patterns ='
+                           ' ["private[.]synthetic[.]invalid"]\n'
+                           + notes_table(review="Ping private.synthetic.invalid"
+                                                " before merging."))
+
+        self.assertEqual(body["notes"],
+                         f"{FRAME}\n\nPing [redacted] before merging.\n\n")
+        self.assertNotIn("private.synthetic.invalid", json.dumps(body))
+
     def test_a_private_pattern_matching_the_key_keeps_the_target(self):
         body = self.answer("pr_writer",
                            '[merge]\nprivate_patterns = ["pr_writer"]\n')
@@ -201,7 +211,7 @@ class PromptRouteTests(ServeTestCase):
                       body["prompt"])
         self.assertIn("turn.\n⟨evidence states⟩", body["prompt"])
 
-    def test_implement_opens_with_the_conflict_requeue_and_reproduction_rules(self):
+    def test_implement_opens_with_each_conditional_opening_rule(self):
         body = self.answer("implement", notes_table(implement=REVIEW_NOTE))
 
         self.assertIn("stopped on conflicts in: ⟨conflicted files⟩. Resolve each"
@@ -213,6 +223,13 @@ class PromptRouteTests(ServeTestCase):
                       " that makes the ticket's verify fail at `⟨failing"
                       " command⟩`. Build the fix on top of that commit and keep"
                       " the test.", body["builtin"])
+        self.assertIn("never reset, rebase or otherwise rewrite the branch's"
+                      " history", body["builtin"])
+        self.assertIn("Maintainer's hint for this turn (advice, not part of the"
+                      " contract):\nsteer note ⟨hint id⟩", body["builtin"])
+        self.assertIn("Amended acceptance criteria:\n⟨amended criteria⟩\n\n"
+                      "Maintainer's instruction (amends the ticket where they"
+                      " conflict):\nsteer note ⟨steer note id⟩", body["builtin"])
 
     def test_implement_shows_the_subagent_brief_the_project_configures(self):
         body = self.answer("implement", '[agents.implementer]\n'
