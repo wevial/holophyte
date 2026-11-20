@@ -301,7 +301,7 @@ class MediaTests(unittest.TestCase):
             pr_media.prepare(self.target, self.repo, 'KO-530')
             self.assertEqual(produce.call_count, 2)
         git_dir = Path(self.git('rev-parse', '--absolute-git-dir'))
-        receipts = list(git_dir.glob('pr-media-*'))
+        receipts = list(git_dir.glob('pr-media-*.txt'))
         self.assertEqual(len(receipts), 2)
         for receipt in receipts:
             self.assertNotIn('secret', receipt.name + receipt.read_text())

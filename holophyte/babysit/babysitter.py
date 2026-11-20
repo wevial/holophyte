@@ -13,7 +13,7 @@ from holophyte.babysit.adjudicator_outage import adjudicate_or_park
 from holophyte.babysit.babysit_steps import record_step
 from holophyte.babysit.bot_threads import route_bot_threads
 from holophyte.babysit.check_fix import CheckFix, fix_checks_or_park, reads_green
-from holophyte.babysit.covering_fix import fix_or_park
+from holophyte.babysit.covering_fix import fix_covering, fix_or_park
 from holophyte.babysit.description_review import (
     TAG_BRIEF,
     fix_summary,
@@ -580,10 +580,7 @@ def _review_fix(project, conn, run_id, provider, task_id, branch, wt, sha,
     goal, why = fix_or_park(project, conn, run_id, provider, task_id, sha, pull,
                             ticket, (verdict, decision, unwitnessed, rnd), fix_note)
     if goal is not None:
-        fixed = _fix_threads(project, conn, run_id, provider, task_id, branch,
-                             wt, sha, beat_s, pull, (), None, ticket, verify_cmd,
-                             contracts, budget_min, rnd, review_follows=True, goal=goal,
-                             reviewed_by_caller=True, notes=notes)
+        fixed = fix_covering(review, contracts, budget_min, rnd, goal, notes)
         return _review_fix(project, conn, run_id, provider, task_id, branch, wt,
                            fixed, None, beat_s, pull, ticket, verify_cmd,
                            contracts, criteria, budget_min=budget_min,
