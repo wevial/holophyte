@@ -198,26 +198,24 @@ def release(run):
     if conn is None or run_id is None:
         return
     parked = guarded(conn, run_id, "stage_read", lambda: conn.execute(
-        "SELECT s.id, s.runId, s.startedAt, s.inputSha FROM stageAttempts s"
+        "SELECT s.id, s.runId, s.inputSha FROM stageAttempts s"
         " JOIN runs old ON old.id = s.runId JOIN runs current"
         " ON current.ticketId = old.ticketId WHERE current.id = ?"
         " AND old.id != current.id AND s.stageId = 'waiting'"
         " AND s.endedAt IS NULL", (run_id,)).fetchall())
-    for attempt_id, parked_run, opened, sha in ([] if parked is REFUSED
-                                                else parked):
+    for attempt_id, parked_run, sha in [] if parked is REFUSED else parked:
         guarded(conn, run_id, "close_stage", lambda: _released(
-            conn, attempt_id, parked_run, opened, sha))
+            conn, attempt_id, parked_run, sha))
 
 
-def _released(conn, attempt_id, parked_run, opened, sha):
+def _released(conn, attempt_id, parked_run, sha):
     marks = ", ".join("?" * len(RELEASES))
     row = conn.execute(
         'SELECT i.id, i."action", i.source, i.actor, i.at FROM interventions i'
         " JOIN runs r ON r.id = i.runId WHERE i.runId = ?"
         " AND r.outcome = 'abandoned'"
-        f' AND i."action" IN ({marks}) AND i.at BETWEEN ? AND r.endedAt'
-        " ORDER BY i.at DESC, i.id DESC LIMIT 1",
-        (parked_run, *RELEASES, opened)).fetchone()
+        f' AND i."action" IN ({marks}) ORDER BY i.id DESC LIMIT 1',
+        (parked_run, *RELEASES)).fetchone()
     if row is None:
         return
     intervention, action, source, actor, at = row

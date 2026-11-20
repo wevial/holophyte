@@ -35,6 +35,7 @@ import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert
 import holophyte.stages.record  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.operator_notes  # noqa: E402 - after the sys.path insert
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
@@ -56,10 +57,10 @@ class StageQueries:
                            f" WHERE \"action\" = '{action}'")
         return at
 
-    def released(self, action):
+    def released(self, action, now=None):
         with store.open(str(self.project.store_path)) as conn:
             ticket = store.read.ticket_by_identifier(conn, "KO-131")
-            getattr(store, action)(conn, ticket.id, "go on")
+            getattr(store, action)(conn, ticket.id, "go on", now=now)
 
 
 class GateAndApprovalParkTests(StageQueries, LoopFixture):
@@ -117,6 +118,9 @@ class GateAndApprovalParkTests(StageQueries, LoopFixture):
 
 
 class CheckParkTests(StageQueries, cases.BabysitHelpers, MergeModeFixture):
+    def setUp(self):
+        super().setUp()
+        self.enterContext(patch.dict(os.environ, {"GIT_ALLOW_PROTOCOL": "file"}))
     UNIT = {"name": "unit", "status": "completed", "conclusion": "failure",
             "html_url": "https://github.com/example/repo/actions/runs/5/job/42",
             "id": 42, "app": {"slug": "github-actions"}}
@@ -157,6 +161,36 @@ class CheckParkTests(StageQueries, cases.BabysitHelpers, MergeModeFixture):
         (_, _, outcome, edge, _, _, ended, _) = self.attempts("waiting", 1)[0]
         self.assertEqual((outcome, edge, ended),
                          ("fail", "on_fail", self.release_at("babysit")))
+
+    def parked_ready(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route(states=[self.pr_state()])
+        self.loop(Commit("work"), APPROVE, Idle(""), provider=self.provider())
+
+    def test_a_note_sent_after_an_approve_is_the_release_that_closes_it(self):
+        self.parked_ready()
+        self.released("approve")
+        with store.open(str(self.project.store_path)) as conn:
+            store.operator_notes.add_note(conn, 1, "drop the subheader",
+                                          "maintainer")
+
+        self.loop(Commit("apply the note"), Idle(""), provider=self.provider())
+
+        (_, _, outcome, edge, _, _, ended, _), = self.attempts("waiting", 1)
+        self.assertEqual((outcome, edge, ended),
+                         ("fail", "on_fail", self.release_at("operator_note")))
+
+    def test_a_babysit_stamped_before_the_park_still_closes_it(self):
+        self.parked_ready()
+        (opened,), = self.read("SELECT startedAt FROM stageAttempts"
+                               " WHERE stageId = 'waiting'")
+        self.released("babysit", now=opened - 5000)
+
+        self.loop(provider=self.provider())
+
+        (_, _, outcome, edge, _, _, ended, _), = self.attempts("waiting", 1)
+        self.assertEqual((outcome, edge, ended),
+                         ("fail", "on_fail", opened - 5000))
 
     def test_a_thread_quoting_the_approval_wording_waits_as_a_thread(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
