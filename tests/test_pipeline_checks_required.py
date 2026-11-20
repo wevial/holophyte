@@ -19,14 +19,16 @@ from holophyte.loop import review_round, stop  # noqa: E402
 
 
 class RequiredCheckTests(CheckRuns):
+    def configure_required(self, stage, after, commands, config=UNTRIMMED):
+        self.configure(config + check_table(stage, after, commands, "required"))
+
     def rounds(self):
         return [(rnd, verdict, json.loads(findings)) for rnd, verdict, findings
                 in self.read("SELECT round, verdict, findings FROM reviewRounds"
                              " ORDER BY round")]
 
     def test_a_lint_failure_reaches_the_fix_and_the_fixed_candidate_merges(self):
-        self.configure(UNTRIMMED
-                       + check_table("lint", "implement", ["sh lint.sh"], "required"))
+        self.configure_required("lint", "implement", ["sh lint.sh"])
         broken = ("printf 'old output%01200d\\n' 0\n"
                   "echo 'trailing whitespace'\nexit 23\n")
         fake, _ = self.loop(Commit("work", "lint.sh", broken), APPROVE,
@@ -72,16 +74,15 @@ class RequiredCheckTests(CheckRuns):
         self.assertIn(("failure", "loop"), oracle[1])
 
         self.fresh()
-        self.configure(UNTRIMMED
-                       + check_table("lint", "implement", [failure], "required"))
+        self.configure_required("lint", "implement", [failure])
         self.loop(Commit("work"), APPROVE, first_fix, APPROVE, next_fix)
         self.assertEqual(terminal_record(), oracle)
         self.assertEqual([row[2][0]["path"] for row in self.rounds()], ["lint", "lint"])
 
     def test_timed_out_check_on_the_trimmed_head_blocks_the_first_round(self):
-        commands = ["tail -1 work.txt", "exec sleep 10"]
-        self.configure("[trim]\nbudget_min = 1\n[verify]\ntimeout_sec = 1\n"
-                       + check_table("tidy", "trim", commands, "required"))
+        self.configure_required(
+            "tidy", "trim", ["tail -1 work.txt", "exec sleep 10"],
+            config="[trim]\nbudget_min = 1\n[verify]\ntimeout_sec = 1\n")
         self.loop(TrimTurn(Commit("work", "work.txt", lines(60)),
                            Commit("tests", "test_work.py", WITNESS)),
                   TrimTurn(Commit("trim: delete", "work.txt", lines(40))),
@@ -99,7 +100,7 @@ class RequiredCheckTests(CheckRuns):
     def test_an_unreadable_config_after_trim_preserves_the_failure(self):
         config = shlex.quote(str(self.project.config_path))
         commands = [f"printf '\\377' > {config}", "echo missing docs", "exit 19"]
-        self.configure(UNTRIMMED + check_table("docs", "trim", commands, "required"))
+        self.configure_required("docs", "trim", commands)
         fake, _ = self.loop(Commit("work"), APPROVE, Idle())
 
         self.assertEqual(fake.roles, ["implement", "review", "implement"])
@@ -109,12 +110,10 @@ class RequiredCheckTests(CheckRuns):
         self.assertEqual([finding["path"] for finding in first[2]], ["docs"])
 
     def test_passing_required_check_preserves_the_review_cycle(self):
-        script = (Commit("work"), REQUEST_CHANGES, Commit("fix"), APPROVE)
-
-        def cycle(config):
-            self.configure(UNTRIMMED + config)
+        def cycle():
             with patch.dict(os.environ, GIT_DATES):
-                fake, _ = self.loop(*script)
+                fake, _ = self.loop(Commit("work"), REQUEST_CHANGES,
+                                    Commit("fix"), APPROVE)
             self.assertEqual(fake.roles, ["implement", "review", "implement", "review"])
             self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
             ledger = []
@@ -127,18 +126,18 @@ class RequiredCheckTests(CheckRuns):
                                " WHERE kind = 'phase_change' ORDER BY seq")
             return [turn.goal for turn in fake.turns], self.rounds(), phases, ledger
 
-        plain = cycle("")
+        self.configure(UNTRIMMED)
+        plain = cycle()
 
         self.fresh()
-        checked = cycle(check_table("lint", "implement", ["true"], "required"))
+        self.configure_required("lint", "implement", ["true"])
+        self.assertEqual(cycle(), plain)
         self.assertEqual([(row[4]["round"], row[2:4]) for row in self.attempts()
                           if row[0] == "lint"],
                          [(1, ("pass", "next")), (2, ("pass", "next"))])
-        self.assertEqual(checked, plain)
 
     def test_pausing_a_resumed_fix_preserves_the_failed_check_for_review(self):
-        self.configure(UNTRIMMED + check_table("lint", "implement",
-                                               ["test -f fixed"], "required"))
+        self.configure_required("lint", "implement", ["test -f fixed"])
         self.loop(Commit("work"), PauseReply(self.db, APPROVE))
         stop.command(self.project, "KO-131", None, resume=True)
 
