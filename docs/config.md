@@ -291,9 +291,10 @@ model   = "gemini-4-neon-xhigh"
 ```
 
 Each turn runs `agy -p --model MODEL --dangerously-skip-permissions
---output-format json GOAL` and returns the CLI's JSON. Host implementer
-turns record its `conversation_id`. A resumed fix adds `--conversation ID`
-before the goal. Container fix rounds currently start fresh.
+--output-format json GOAL`. The adapter reads the reply text from `response`
+and the session ID from `conversation_id`. The turn output keeps the full JSON.
+Host implementer turns record the session ID and pass `--conversation ID`
+before the goal on a resumed fix. Container fix rounds currently start fresh.
 
 Under container isolation the launcher finds
 `agy` on the host's `PATH`, mounts it read-only at `/opt/agy/bin/agy`, and

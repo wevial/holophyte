@@ -315,13 +315,20 @@ class Agy(Adapter):
     def resume(self, binary, options, session, role):
         return [*self.turn(binary, options, role), "--conversation", session]
 
-    def reported_session(self, binary, output, role, run):
+    @staticmethod
+    def reply(output):
         try:
             reply = json.loads(output)
         except ValueError:
-            return None
-        session = reply.get("conversation_id") if isinstance(reply, dict) else None
-        return session if isinstance(session, str) else None
+            return None, None
+        if not isinstance(reply, dict):
+            return None, None
+        response, session = reply.get("response"), reply.get("conversation_id")
+        return (response if isinstance(response, str) else None,
+                session if isinstance(session, str) else None)
+
+    def reported_session(self, binary, output, role, run):
+        return self.reply(output)[1]
 
 
 class Cursor(Adapter):

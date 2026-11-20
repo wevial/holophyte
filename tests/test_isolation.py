@@ -431,7 +431,8 @@ class IsolationTests(GoRaceCases, IsolationCase):
         self.target.path = main
         release = self.fake_codex_release()
         binary = release / "agy"
-        binary.touch(mode=0o755)
+        binary.write_text('#!/bin/sh\nprintf "%s" "$PATH"\n')
+        binary.chmod(0o755)
         login = Path(".gemini/antigravity-cli/antigravity-oauth-token")
         host_login = self.root / login
         host_login.parent.mkdir(parents=True)
@@ -471,7 +472,11 @@ class IsolationTests(GoRaceCases, IsolationCase):
             mounts = [command[i + 1] for i, flag in enumerate(command)
                       if flag == "--volume"]
             self.assertIn(f"{binary}:/opt/agy/bin/agy:ro", mounts)
-            self.assertIn('PATH="/opt/agy/bin:$PATH" exec "$@"', command)
+            turn = command[command.index(route.image) + 1:]
+            self.assertEqual(turn[-len(argv):], argv)
+            turn[-len(argv)] = str(binary)
+            path = subprocess.check_output(turn, cwd=cwd, env=env, text=True)
+            self.assertEqual(path.split(os.pathsep)[0], "/opt/agy/bin")
             parents = [Path(vol.split(":")[0]) for vol in mounts
                        if vol.endswith(f":{target.parent}:rw")]
             self.assertEqual(len(parents), 1)

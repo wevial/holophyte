@@ -653,6 +653,22 @@ class AgyImplementerTests(unittest.TestCase):
                         SystemExit, rf"\[agents\.implementer\] {key}\b"):
                     holophyte.config.checks.check_config(self.target)
 
+    def test_agy_extracts_the_reply_and_resumes_its_conversation_before_the_goal(self):
+        self.target.config_path.write_text(
+            '[agents.implementer]\nharness = "agy"\nmodel = "gemini-4-neon-xhigh"\n')
+        seat = holophyte.agents.harness.seat(self.target, "implement")
+        output = '{"conversation_id":"c-1","status":"SUCCESS","response":"done"}'
+        response, _ = seat.adapter.reply(output)
+        session = seat.reported_session(output)
+        self.assertEqual((response, session), ("done", "c-1"))
+        binary = Path(os.environ["PATH"].split(os.pathsep)[0]) / "agy"
+        fake_harness(binary, self.calls, output, 0)
+        holophyte.agents.roles.agent(self.target, "implement", "fix the finding",
+                                     self.repo, argv=seat.resume(session))
+        self.assertEqual(json.loads(self.calls.read_text()), [
+            "-p", "--model", "gemini-4-neon-xhigh", "--dangerously-skip-permissions",
+            "--output-format", "json", "--conversation", "c-1", "fix the finding"])
+
 
 class ContainerImplementerTests(unittest.TestCase):
     """A table implementer under `implementer_isolation = "container"`, its
