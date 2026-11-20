@@ -138,9 +138,8 @@ class CheckParkTests(StageQueries, cases.BabysitHelpers, MergeModeFixture):
         self.assertIsNone(outcome)
         detail = json.loads(detail)
         self.assertIn("check fix rounds are used up", detail["reason"])
-        self.assertEqual((detail["kind"], detail["approve"]),
-                         (park_kind, "human"))
-        self.assertNotEqual(detail["kind"], "approval")
+        self.assertEqual((park_kind, detail["kind"], detail["approve"]),
+                         ("pull_request", "pull_request", "human"))
 
         self.released("babysit")
         self.loop(Commit("fix: test_3"), Commit("fix: test_4"),

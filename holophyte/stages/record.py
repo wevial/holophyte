@@ -154,7 +154,7 @@ class Deferred(Attempt):
 
 
 def verified_last(conn, run_id, sha):
-    if conn is None or run_id is None:
+    if conn is None or run_id is None or sha is None:
         return False
     rows = guarded(conn, run_id, "stage_read", lambda: conn.execute(
         "SELECT stageId, outcome, outputSha FROM stageAttempts WHERE runId = ?"
