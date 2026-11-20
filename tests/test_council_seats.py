@@ -10,10 +10,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import signal
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +26,7 @@ from unittest.mock import patch
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
+import test_review_runner  # noqa: E402 - after the sys.path insert
 from fake_agent import (  # noqa: E402 - after the sys.path insert above
     APPROVE,
     IMPLEMENT,
@@ -163,11 +168,30 @@ class CouncilAgent(FakeAgent):
         return reply
 
 
+class ProbedContainer:
+    """The review container as a startup probe meets it: it answers the
+    probe with the checkout's commit, or fails to start for a model that is
+    down."""
+
+    def __init__(self, down=()):
+        self.down = set(down)
+        self.probed = []
+
+    def __call__(self, **turn):
+        self.probed.append(turn["model"])
+        if turn["model"] in self.down:
+            raise review_runner.ReviewBoundaryError(
+                f"{turn['model']} is unreachable")
+        return f"ready {turn['candidate_sha']}"
+
+
 class CouncilFixture(LoopFixture):
-    def run_council(self, config, *script, seats, barrier=None):
+    def run_council(self, config, *script, seats, barrier=None, down=()):
         self.configure(config)
         fake = CouncilAgent(*script, seats=seats, barrier=barrier)
-        return self.loop(fake=fake)[0]
+        self.container = ProbedContainer(down)
+        with patch.object(review_runner, "run_review", self.container):
+            return self.loop(fake=fake)[0]
 
     def seats(self, *columns):
         return self.read(f"SELECT {', '.join(columns)} FROM councilSeats"
@@ -244,6 +268,7 @@ class CouncilRoundTests(CouncilFixture):
         self.assertEqual(self.read(
             "SELECT inputTokens, outputTokens FROM stageAttempts"
             " WHERE stageId = 'review'"), [(4600, 460)])
+        self.assertEqual(self.findings(1), [])
 
     def test_an_approval_and_a_request_merge_to_changes_with_the_union(self):
         fake = self.run_council(
@@ -318,6 +343,87 @@ class CouncilRoundTests(CouncilFixture):
         self.assertEqual(sorted((f["path"], f["line"]) for f in self.findings(1)),
                          [("README.md", 1), ("tests/test_thing.py", 2)])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_stored_finding_keeps_its_own_path_over_one_its_message_cites(self):
+        unpinned = ("Dockerfile", 7, "the base image is unpinned, unlike the "
+                    "one README.md:12 names")
+        self.run_council(council(ASTRA, OPUS), Commit("work"), seats={
+            "gpt-6-astra": [Answer("APPROVE", 9, (unpinned,))],
+            "opus": [Answer("APPROVE", 8, (unpinned,))]})
+
+        self.assertEqual(self.findings(1), [
+            {"path": "Dockerfile", "line": 7, "severity": "p1",
+             "category": "correctness", "message": unpinned[2]}])
+
+    def test_a_seat_down_at_its_startup_probe_is_missing_and_not_dispatched(self):
+        fake = self.run_council(
+            council(ASTRA, OPUS, LUNA), Commit("work"), down={"opus"}, seats={
+                "gpt-6-astra": [Answer("APPROVE", 9)],
+                "gpt-6-luna": [Answer("APPROVE", 8)]})
+
+        self.assertEqual(sorted(self.container.probed),
+                         ["gpt-6-astra", "gpt-6-luna", "opus"])
+        self.assertEqual(sorted(turn.model for turn in fake.seat_turns),
+                         ["gpt-6-astra", "gpt-6-luna"])
+        [(status, reason)] = self.read(
+            "SELECT status, reason FROM councilSeats WHERE seat = 2")
+        self.assertEqual(status, "missing")
+        self.assertTrue(reason.startswith("startup probe failed: "), reason)
+        self.assertIn("opus is unreachable", reason)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+
+SEATS_UNDER_SIGNAL = """
+import functools
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from holophyte.review import council, review_runner
+scratch = Path(sys.argv[2])
+review_runner.SCRATCH_ROOT = scratch / "reviews"
+review_runner.CODEX_AUTH = scratch / "auth.json"
+review = functools.partial(
+    review_runner.run_review, repo=Path(sys.argv[3]), base_sha=sys.argv[4],
+    candidate_sha=sys.argv[5], prompt="review")
+council.together([review, review])
+"""
+
+
+class CouncilSignalTests(unittest.TestCase):
+    def test_a_stop_signal_removes_every_running_seat_container(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        _, env = test_review_runner.docker_shim(root)
+        log = Path(env["HOLOPHYTE_DOCKER_LOG"])
+        base, candidate = test_review_runner.two_commit_repo(root / "repo")
+        (root / "auth.json").write_text("{}")
+        process = subprocess.Popen(
+            [sys.executable, "-c", SEATS_UNDER_SIGNAL, str(HERE.parent),
+             str(root), str(root / "repo"), base, candidate],
+            env={**os.environ, **env}, start_new_session=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(
+            test_review_runner.ContainerLifetimeTests._end_session, process)
+
+        def runs():
+            lines = log.read_text().splitlines() if log.exists() else []
+            return [line.split()[line.split().index("--name") + 1]
+                    for line in lines if line.startswith("run ")]
+        deadline = time.monotonic() + 30
+        while len(runs()) < 2 and process.poll() is None:
+            self.assertLess(time.monotonic(), deadline, "seats never started")
+            time.sleep(0.05)
+        if process.poll() is not None:
+            self.fail(f"seats ended before the signal: {process.communicate()[1]}")
+        time.sleep(0.2)
+
+        process.send_signal(signal.SIGTERM)
+        _, stderr = process.communicate(timeout=30)
+
+        self.assertEqual(process.returncode, -signal.SIGTERM, stderr)
+        recorded = log.read_text().splitlines()
+        for name in runs():
+            self.assertIn(f"rm --force {name}", recorded)
 
 
 class CouncilSeatFailureTests(CouncilFixture):
@@ -435,10 +541,34 @@ class CouncilSeatFailureTests(CouncilFixture):
             "SELECT inputTokens, outputTokens FROM stageAttempts").fetchall(),
             [(1923, 98)])
 
+    def test_real_seat_turns_together_on_one_store_connection_all_answer(self):
+        conn, run = self.a_run()
+        barrier = threading.Barrier(2, timeout=10)
+
+        def container(**turn):
+            barrier.wait()
+            return Answer("APPROVE", 9).play("")
+        seats = [CouncilSeat(*ASTRA), CouncilSeat(*OPUS)]
+        with patch.object(review_runner, "run_review", side_effect=container):
+            for rnd in range(1, 21):
+                holophyte.review.council.run_round(
+                    self.project, conn, run, self.target, self.base,
+                    self.base, holophyte.review.council.reply_brief(""), rnd,
+                    seats, [(1, "Given the thing, when it runs, then it works")],
+                    roles.agent)
+
+        self.assertEqual(conn.execute(
+            "SELECT status, COUNT(*) FROM councilSeats GROUP BY status"
+        ).fetchall(), [("answered", 40)])
+
     def test_a_claude_seat_out_of_schema_retries_is_unreadable_after_two(self):
         conn, run = self.a_run()
         native = json.dumps({"type": "result", "is_error": True,
-                             "subtype": "error_max_structured_output_retries"})
+                             "subtype": "error_max_structured_output_retries",
+                             "usage": {"input_tokens": 200,
+                                       "output_tokens": 20},
+                             "total_cost_usd": 0.01})
+        attempt = store.stages.open_stage(conn, run, "review", self.base)
 
         def container(**turn):
             if turn["harness"] == "codex":
@@ -454,10 +584,15 @@ class CouncilSeatFailureTests(CouncilFixture):
                 [(1, "Given the thing, when it runs, then it works")],
                 roles.agent)
 
+        store.stages.close_stage(conn, attempt, "error", "end",
+                                 roles=("review",))
         self.assertEqual(raised.exception.failure_kind, "review_route")
         self.assertEqual(
             [call.kwargs["harness"] for call in run_review.call_args_list
              ].count("claude"), 2)
+        self.assertEqual(conn.execute(
+            "SELECT inputTokens, outputTokens, costUsd FROM stageAttempts"
+        ).fetchall(), [(400, 40, 0.02)])
         self.assertEqual(conn.execute(
             "SELECT seat, status FROM councilSeats ORDER BY seat").fetchall(),
             [(1, "answered"), (2, "unreadable")])

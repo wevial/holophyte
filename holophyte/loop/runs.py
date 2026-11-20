@@ -58,8 +58,9 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None, on_interrupt=None,
     if conn is None or run_id is None:
         yield
         return
-    (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
-               if row[1] == "main"]
+    with getattr(conn, "_lock", nullcontext()):
+        (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
+                   if row[1] == "main"]
     stop = threading.Event()
     swept = []  # the ended row's (outcome, reason), set once by the beat
     thread = threading.Thread(
@@ -80,12 +81,13 @@ def heartbeat_while(conn, run_id, interval_s, on_swept=None, on_interrupt=None,
         stop.set()
         thread.join()
     # One more beat after the join: a run ended since the timer's last beat.
-    if not swept and not store.heartbeat(conn, run_id):
-        swept.append(_ending_of(conn, run_id))
     from holophyte.loop.stop import Aborted, abort_requested, end_aborted
-    if swept[:1] == [ABORT] or not swept and abort_requested(conn, run_id):
-        end_aborted(conn, run_id)
-        swept.clear()
+    with getattr(conn, "_lock", nullcontext()):
+        if not swept and not store.heartbeat(conn, run_id):
+            swept.append(_ending_of(conn, run_id))
+        if swept[:1] == [ABORT] or not swept and abort_requested(conn, run_id):
+            end_aborted(conn, run_id)
+            swept.clear()
     if isinstance(failure, Aborted):
         raise failure
     if swept:

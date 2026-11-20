@@ -468,6 +468,10 @@ def parse_claude_output(
             else "Claude printed no JSON result")
         error.schema_refused = (isinstance(reply, dict) and reply.get(
             "subtype") == "error_max_structured_output_retries")
+        if isinstance(reply, dict):
+            from holophyte.agents.agent_output import claude_usage
+
+            error.usage = claude_usage(reply)
         raise error
     from holophyte.review.json_reply import COUNCIL_SCHEMA_FILE, schema_valid
 
@@ -581,15 +585,34 @@ def _remove_container(name: str, *, env=None) -> None:
         )
 
 
+_LIVE: set[str] = set()
+_LIVE_LOCK = threading.RLock()
+
+
 @contextlib.contextmanager
 def _removing_on_signal(name: str):
+    with _LIVE_LOCK:
+        _LIVE.add(name)
+    try:
+        with removing_on_signal():
+            yield
+    finally:
+        with _LIVE_LOCK:
+            _LIVE.discard(name)
+
+
+@contextlib.contextmanager
+def removing_on_signal():
     """Signals install only from the main thread; elsewhere `finally` alone removes."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
 
     def handler(signum, frame):
-        _remove_container(name)
+        with _LIVE_LOCK:
+            names = sorted(_LIVE)
+        for name in names:
+            _remove_container(name)
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
 

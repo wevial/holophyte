@@ -472,6 +472,8 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
         failure.output = getattr(e, "output", "")
         failure.command = profile
         failure.service_tier = tier
+        if getattr(e, "usage", None) is not None:
+            failure.usage = e.usage
         raise failure from e
     except subprocess.TimeoutExpired as e:
         e.service_tier = tier

@@ -64,6 +64,7 @@ class ActiveRoutes:
         self.writer_failed = False
         self.trimmer_failed = False
         self.critic_failed = False
+        self.council_down = {}
         self.stream = None
         self.project = project
         self.profiles = {}

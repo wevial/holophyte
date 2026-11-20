@@ -69,7 +69,6 @@ from holophyte.review.reply_parsing import (
     cited_approval,
     criteria_findings,
     follow_up_lines,
-    parse_findings,
     stale_approvals,
     without_follow_ups,
     without_refuted,
@@ -220,7 +219,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
                  route=getattr(verdict, "council_route", None),
-                 structured_findings=parse_findings(verdict) if seats else None,
+                 structured_findings=getattr(verdict, "council_findings", None),
                  adversary=blocking + red + private,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
     attempt.note(decision=decision, findings=len(consolidate.primary_findings(

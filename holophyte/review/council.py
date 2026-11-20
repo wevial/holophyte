@@ -9,20 +9,29 @@ from functools import partial
 from time import monotonic, time
 
 import store.council
+from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import family_label
 from holophyte.config.reader import adversary_credential
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import safe_print as print
+from holophyte.review import review_runner
 from holophyte.review.json_reply import (
     COUNCIL_SCHEMA_FILE,
     REPLY_BRIEF,
     RenderedReply,
     SchemaBrief,
+    candidate_path,
+    kept_line,
+    message_line,
     rendered,
     reply_object,
     retry_brief,
 )
-from holophyte.review.reply_parsing import cited_approval, criteria_statuses
+from holophyte.review.reply_parsing import (
+    cited_approval,
+    criteria_statuses,
+    unparsed_path,
+)
 from store.working import working
 
 QUORUM = 2
@@ -64,6 +73,9 @@ def ask(project, conn, run_id, wt, base_sha, sha, prompt, run_agent, number,
         return Seat(number, family_label(route), status, started,
                     int(time() * 1000), round(monotonic() - clock, 3), value,
                     reason)
+    down = routes(project).council_down.get(number)
+    if down is not None:
+        return ended("missing", reason=f"startup probe failed: {down}")
     goal = prompt
     for _ in range(2):
         try:
@@ -93,10 +105,11 @@ def together(asks):
                                 args=(at, contextvars.copy_context(), turn),
                                 name=f"council-seat-{at + 1}")
                for at, turn in enumerate(asks)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    with review_runner.removing_on_signal():
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
     if errors:
         raise errors[0]
     return results
@@ -135,6 +148,7 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
     value = merged([seat.value for seat in answered], criteria, wt, sha)
     reply = RenderedReply(rendered(value))
     reply.json_reply = value
+    reply.council_findings = stored_findings(value["findings"])
     reply.council_route = "council " + ", ".join(seat.route
                                                  for seat in answered)
     return reply, value["verdict"], ""
@@ -152,6 +166,21 @@ def merged(values, criteria, wt, sha):
             "follow_ups": union(values, "follow_ups"),
             "scope": merged_scope(values),
             "refuted": union(values, "refuted")}
+
+
+def stored_findings(findings):
+    stored = []
+    for finding in findings:
+        message = message_line(finding["message"])
+        path = ("PR description" if finding["target"] == "description" else
+                candidate_path(kept_line(finding["path"])))
+        entry = {"path": path or unparsed_path(message),
+                 "severity": finding["severity"], "message": message,
+                 "category": finding["category"]}
+        if finding["line"] is not None and finding["line"] > 0:
+            entry["line"] = finding["line"]
+        stored.append(entry)
+    return stored
 
 
 def union(values, field, key=None):
