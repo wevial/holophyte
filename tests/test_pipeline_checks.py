@@ -427,10 +427,14 @@ class AdvisoryCheckTests(CheckRuns):
         (attempt,) = [row for row in self.attempts() if row[0] == "pages"]
         self.assertEqual(attempt[2:4], ("pass", "next"))
 
-    def test_a_check_leaves_the_index_dirty_untracked_and_ignored_files_as_found(self):
+    def ignore_outputs(self):
         (self.target / ".gitignore").write_text("*.out\n")
         self.git("add", ".gitignore")
-        self.git("commit", "-q", "-m", "ignore outputs")
+        with patch.dict(os.environ, GIT_DATES):
+            self.git("commit", "-q", "-m", "ignore outputs")
+
+    def test_a_check_leaves_the_index_dirty_untracked_and_ignored_files_as_found(self):
+        self.ignore_outputs()
         (self.target / "README.md").write_text("base\ndirty\n")
         (self.target / "draft.txt").write_text("a draft\n")
         (self.target / "old.out").write_text("kept\n")
@@ -447,9 +451,63 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual((self.target / "README.md").read_text(),
                          "base\ndirty\n")
         self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
+        self.assertEqual((self.target / "old.out").read_text(), "kept\n")
         self.assertFalse((self.target / "artifact.out").exists())
         self.assertEqual(found["restored"],
-                         ["README.md", "artifact.out", "draft.txt"])
+                         ["README.md", "artifact.out", "draft.txt", "old.out"])
+
+    def test_a_check_that_deletes_an_ignored_artifact_leaves_verify_passing(self):
+        class BuildsArtifact(Commit):
+            def play(self, cwd, turn):
+                (cwd / "build.out").write_text("built\n")
+                return super().play(cwd, turn)
+
+        self.ignore_outputs()
+        script = (BuildsArtifact("the scripted work"), REQUEST_CHANGES,
+                  BuildsArtifact("the scripted fix"), APPROVE)
+        needs = "[verify]\nalways = ['test -f build.out']\n"
+        plain = self.walked(needs, *script)
+        self.fresh()
+        self.ignore_outputs()
+        cleaned = self.walked(needs + check_table(
+            "clean", "implement", ["rm build.out", "exit 1"], "advisory"),
+            *script)
+
+        self.assertEqual(cleaned, plain)
+        self.assertEqual(cleaned[3], [("merged",)])
+        cleans = [row for row in self.attempts() if row[0] == "clean"]
+        self.assertEqual([(row[2], row[3], row[4]["restored"])
+                          for row in cleans],
+                         [("fail", "next", ["build.out"])] * 2)
+
+    def test_an_unreadable_staged_edit_is_put_back_with_the_index(self):
+        status = self.git("status", "--porcelain")
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["echo edit >> README.md", "git add README.md",
+                         "chmod 000 README.md", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertEqual((self.target / "README.md").read_text(), "base\n")
+        self.assertEqual(self.git("status", "--porcelain"), status)
+        self.assertEqual(found["restored"], ["README.md"])
+
+    def test_a_snapshot_that_cannot_read_a_draft_closes_error_scrubbed(self):
+        draft = self.target / "draft-snapshot-credential-7.txt"
+        draft.write_text("a draft\n")
+        draft.chmod(0)
+        self.addCleanup(draft.chmod, 0o644)
+        marker = self.target.parent / "ran.marker"
+
+        outcome, found = checks.ran(self.project, {
+            "commands": [f"touch {shlex.quote(str(marker))}"],
+            "secrets": frozenset({"snapshot-credential-7"})}, self.target)
+
+        self.assertEqual(outcome, "error")
+        self.assertIn(REDACTED, found["error"])
+        self.assertNotIn("credential-7", json.dumps(found))
+        self.assertFalse(marker.exists())
 
     def test_a_check_puts_back_retargeted_symlinks_and_changed_modes(self):
         (self.target / "other.txt").write_text("other\n")

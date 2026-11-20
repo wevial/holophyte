@@ -1,6 +1,7 @@
 """A project's `[[pipeline.check]]` stages run on a candidate and recorded."""
 import os
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -85,21 +86,31 @@ def skip_reason(check, wt, base_sha, sha):
 
 
 def ran(project, check, wt):
-    snapshot = Snapshot(wt)
     try:
-        outcome, found = _outcome(project, check, wt)
-    finally:
-        restored, failed = _restored(snapshot)
-    if failed is not None:
-        outcome, found = "error", {**found, "check_outcome": outcome,
-                                   "restore_error": failed}
-    found = {key: scrubbed_output(value, check["secrets"])
+        snapshot = Snapshot(wt)
+    except Exception as error:
+        outcome, found = "error", {"error": str(error)}
+    else:
+        try:
+            outcome, found = _outcome(project, check, wt)
+        finally:
+            restored, failed = _restored(snapshot)
+        if failed is not None:
+            outcome, found = "error", {**found, "check_outcome": outcome,
+                                       "restore_error": failed}
+        if restored:
+            found["restored"] = restored
+    return outcome, _scrubbed(found, check["secrets"])
+
+
+def _scrubbed(found, secrets):
+    found = {key: scrubbed_output(value, secrets)
              if key in ("output", "error", "restore_error") else value
              for key, value in found.items()}
-    if restored:
-        found["restored"] = [scrubbed_output(path, check["secrets"])
-                             for path in restored]
-    return outcome, found
+    if "restored" in found:
+        found["restored"] = [scrubbed_output(path, secrets)
+                             for path in found["restored"]]
+    return found
 
 
 def _restored(snapshot):
@@ -139,7 +150,7 @@ def scrubbed_output(text, secrets):
 
 class Snapshot:
     """The index, tracked modes, the content, mode or link target of each path
-    that differs from HEAD, and which ignored files exist; ignored rewrites stay."""
+    that differs from HEAD, and a copy of each ignored file or link."""
 
     def __init__(self, wt):
         self.wt = Path(wt)
@@ -148,26 +159,49 @@ class Snapshot:
         self.files = {path: _state(self.wt / path) for path in _outside(wt)}
         self.modes = _modes(wt)
         self.ignored = _ignored(wt)
+        self.saved = tempfile.TemporaryDirectory(prefix="holo-check-")
+        try:
+            self.kept = {path: _kept(self.wt / path, Path(self.saved.name, path))
+                         for path in self.ignored}
+        except BaseException:
+            self.saved.cleanup()
+            raise
 
     def restore(self):
+        failed, restored = [], set()
+        try:
+            self._restore_paths(failed, restored)
+        except Exception as error:
+            failed.append(str(error))
+        finally:
+            try:
+                if self.staged is not None:
+                    _put(self.index, self.staged)
+            except Exception as error:
+                failed.append(f"index: {error}")
+            self.saved.cleanup()
+        if failed:
+            raise OSError("could not restore " + "; ".join(failed))
+        return sorted(restored)
+
+    def _restore_paths(self, failed, restored):
         changed = sorted(path for path in _outside(self.wt) | set(self.files)
-                         if _state(self.wt / path) != self.files.get(path))
+                         if _differs(self.wt / path, self.files.get(path)))
         changed += sorted(path for path, mode in self.modes.items()
                           if path not in changed and path not in self.files
                           and _mode(self.wt / path) not in (None, mode))
         added = sorted(_ignored(self.wt) - self.ignored)
-        failed = []
+        moved = sorted(path for path, kept in self.kept.items()
+                       if kept is not None
+                       and _signature(self.wt / path) != kept)
         for path, put in [(path, self._drop) for path in added] + [
-                (path, self._put_back) for path in changed]:
+                (path, self._put_back) for path in changed] + [
+                (path, self._put_kept) for path in moved]:
             try:
                 put(path)
+                restored.add(path)
             except Exception as error:
                 failed.append(f"{path}: {error}")
-        if self.staged is not None:
-            _put(self.index, self.staged)
-        if failed:
-            raise OSError("could not restore " + "; ".join(failed))
-        return sorted(changed + added)
 
     def _drop(self, path):
         (self.wt / path).unlink(missing_ok=True)
@@ -183,6 +217,15 @@ class Snapshot:
         _git(self.wt, "restore", "--source=HEAD", "--worktree", "--", path)
         if self.modes.get(path) is not None:
             os.chmod(target, self.modes[path])
+
+    def _put_kept(self, path):
+        kept, target = self.kept[path], self.wt / path
+        if kept[0] == "link":
+            _put(target, kept)
+            return
+        with Path(self.saved.name, path).open("rb") as copy:
+            _replace(target, kept[-1],
+                     lambda out: shutil.copyfileobj(copy, out))
 
 
 def _git(wt, *args):
@@ -240,18 +283,61 @@ def _state(path):
     return None
 
 
+def _differs(path, kept):
+    try:
+        info = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return kept is not None
+    if kept is None:
+        return True
+    if stat.S_ISREG(info.st_mode) and kept[0] == "file" \
+            and stat.S_IMODE(info.st_mode) != kept[2]:
+        return True
+    try:
+        return _state(path) != kept
+    except OSError:
+        return True
+
+
+def _signature(path):
+    try:
+        info = path.lstat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    if stat.S_ISLNK(info.st_mode):
+        return "link", os.readlink(path)
+    if stat.S_ISREG(info.st_mode):
+        return ("file", info.st_ino, info.st_size, info.st_mtime_ns,
+                info.st_ctime_ns, stat.S_IMODE(info.st_mode))
+    return None
+
+
+def _kept(path, copy):
+    signature = _signature(path)
+    if signature is not None and signature[0] == "file":
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, copy, follow_symlinks=False)
+    return signature
+
+
 def _put(target, state):
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_symlink() or state[0] == "link":
-        target.unlink(missing_ok=True)
     if state[0] == "link":
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.unlink(missing_ok=True)
         os.symlink(state[1], target)
         return
+    _replace(target, state[2], lambda out: out.write(state[1]))
+
+
+def _replace(target, mode, write):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink():
+        target.unlink()
     handle, staging = tempfile.mkstemp(dir=target.parent, prefix=".holo-")
     try:
         with os.fdopen(handle, "wb") as out:
-            out.write(state[1])
-        os.chmod(staging, state[2])
+            write(out)
+        os.chmod(staging, mode)
         os.replace(staging, target)
     except BaseException:
         Path(staging).unlink(missing_ok=True)
