@@ -10,6 +10,7 @@ from time import time
 import store
 import store.tickets
 from holophyte.serve.contract import History
+from holophyte.serve.serve_history import Flow
 from tests.phase_fixture import advance_phase, finish_run, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 from tests.test_serve_contract import walk
@@ -417,6 +418,74 @@ class FlowTests(ServeTestCase):
         code, _, body = self.request("GET", f"/flow?until={later}")
         self.assertEqual(code, 400)
         self.assertIn("until", body["error"])
+
+
+class FlowBucketTests(ServeTestCase):
+    UNTIL = 1794009600000
+    MERGES_BY_DAYS_AGO = {1: 2, 3: 1, 4: 3, 5: 1, 7: 1, 8: 2, 10: 1}
+
+    def seed_merges(self):
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            n = 0
+            for days_ago, count in self.MERGES_BY_DAYS_AGO.items():
+                for _ in range(count):
+                    n += 1
+                    merged = self.UNTIL - days_ago * DAY + 3 * 60 * MIN
+                    ticket = store.tickets.mirror_ticket(
+                        conn, project, linear_issue_id=f"issue-{n}",
+                        linear_identifier=f"KO-{n}", title=f"ticket {n}")
+                    run = store.claim(conn, project, ticket, now=merged - MIN)
+                    finish_run(conn, run, "merged", now=merged)
+        finally:
+            conn.close()
+        self.start()
+
+    def flow(self, query):
+        code, _, body = self.request("GET", f"/flow?{query}&until={self.UNTIL}")
+        self.assertEqual(code, 200, body)
+        walk(body, Flow, "flow")
+        return body
+
+    def test_seven_daily_buckets_count_each_days_merges_in_day_order(self):
+        self.seed_merges()
+        body = self.flow("days=7&bucket=day")
+        self.assertNotIn("weeks", body)
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["buckets"]],
+            [(self.UNTIL - 7 * DAY, 1), (self.UNTIL - 6 * DAY, 0),
+             (self.UNTIL - 5 * DAY, 1), (self.UNTIL - 4 * DAY, 3),
+             (self.UNTIL - 3 * DAY, 1), (self.UNTIL - 2 * DAY, 0),
+             (self.UNTIL - DAY, 2)])
+
+    def test_weeks_still_answers_weekly_rows_under_weeks(self):
+        self.seed_merges()
+        body = self.flow("weeks=6")
+        self.assertNotIn("buckets", body)
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["weeks"]],
+            [(self.UNTIL - (6 - index) * 7 * DAY, merged)
+             for index, merged in enumerate((0, 0, 0, 0, 3, 8))])
+
+    def test_weekly_buckets_over_days_not_a_whole_week_shorten_the_oldest(self):
+        self.seed_merges()
+        body = self.flow("days=10&bucket=week")
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["buckets"]],
+            [(self.UNTIL - 10 * DAY, 3), (self.UNTIL - 7 * DAY, 8)])
+
+    def test_days_or_bucket_outside_the_allowed_values_is_400_naming_them(self):
+        self.seed()
+        self.start()
+        for query, named in (("days=0", "from 1 to 182"),
+                             ("days=183", "from 1 to 182"),
+                             ("days=30&bucket=month", "one of day, week")):
+            with self.subTest(query=query):
+                code, _, body = self.request("GET", f"/flow?{query}")
+                self.assertEqual(code, 400)
+                self.assertIn(named, body["error"])
 
 
 class FlowRevertTests(ServeTestCase):

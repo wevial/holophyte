@@ -1,4 +1,6 @@
-import type { Flow, FlowHours } from "../lib/contract.gen";
+import type { Flow, FlowHours, FlowWeek } from "../lib/contract.gen";
+
+export type FlowBucket = "day" | "week";
 
 export const WAIT_WORDS: Record<string, string> = {
   pending_checks: "Parked for PR checks",
@@ -35,9 +37,13 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
+function flowRows(flow: Flow): FlowWeek[] {
+  return flow.buckets ?? flow.weeks ?? [];
+}
+
 /** The median of a flow's weekly round medians, its weeks without a merge left out. */
 function flowRounds(flow: Flow): number | null {
-  return median(flow.weeks.flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median])));
+  return median(flowRows(flow).flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median])));
 }
 
 function addInto(into: Record<string, number>, from: Record<string, unknown>) {
@@ -56,7 +62,7 @@ export function flowNumbers(flows: Flow[]): FlowNumbers {
   let revertedMerged = 0;
   let revertedKnown = flows.length > 0;
   for (const flow of flows) {
-    for (const week of flow.weeks) {
+    for (const week of flowRows(flow)) {
       merged += week.merged;
       interventions += week.interventions;
       hours.working += week.hours.working;
@@ -96,12 +102,13 @@ export function flowNumbers(flows: Flow[]): FlowNumbers {
 const DAY_MONTH = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long" });
 
 export function flowSpan(flows: Flow[]): string | null {
-  const starts = flows.flatMap((flow) => (flow.weeks[0] ? [flow.weeks[0].start_ms] : []));
+  const starts = flows.flatMap((flow) => (flowRows(flow)[0] ? [flowRows(flow)[0]!.start_ms] : []));
   if (starts.length === 0) return null;
-  const weeks = Math.max(...flows.map((flow) => flow.weeks.length));
-  const count = COUNT_WORDS[weeks] ?? String(weeks);
-  const end = Math.max(...flows.map((flow) => flow.now)) - 1;
-  return `${count} ${weeks === 1 ? "week" : "weeks"}, ${DAY_MONTH.format(Math.min(...starts))} to ${DAY_MONTH.format(end)}`;
+  const start = Math.min(...starts);
+  const end = Math.max(...flows.map((flow) => flow.now));
+  const days = Math.round((end - start) / 86_400_000);
+  const count = COUNT_WORDS[days] ?? String(days);
+  return `${count} ${days === 1 ? "day" : "days"}, ${DAY_MONTH.format(start)} to ${DAY_MONTH.format(end - 1)}`;
 }
 
 export function oneDecimal(value: number): string {
@@ -146,7 +153,7 @@ export interface FlowWeekly {
  *  its weeks back from its own clock. A week with no merges has no share,
  *  rounds or per-merge ratio. */
 export function flowWeekly(flows: Flow[]): FlowWeekly {
-  const count = Math.max(0, ...flows.map((flow) => flow.weeks.length));
+  const count = Math.max(0, ...flows.map((flow) => flowRows(flow).length));
   const weekly: FlowWeekly = {
     starts: [],
     merged: [],
@@ -160,7 +167,7 @@ export function flowWeekly(flows: Flow[]): FlowWeekly {
     interventionsPerMerge: [],
   };
   for (let index = 0; index < count; index += 1) {
-    const weeks = flows.map((flow) => flow.weeks.at(index - count)).filter((week) => week != null);
+    const weeks = flows.map((flow) => flowRows(flow).at(index - count)).filter((week) => week != null);
     const merged = weeks.reduce((sum, week) => sum + week.merged, 0);
     const interventions = weeks.reduce((sum, week) => sum + week.interventions, 0);
     const waiting = weeks.reduce((sum, week) => sum + week.hours.waiting + week.hours.operator, 0);
@@ -186,7 +193,8 @@ export function weekLabel(start: number): string {
   return MONTH_DAY.format(start);
 }
 
-export function weekRange(start: number): string {
+export function weekRange(start: number, bucket: FlowBucket = "week"): string {
+  if (bucket === "day") return MONTH_DAY.format(start);
   const first = new Date(start);
   const last = new Date(start);
   last.setDate(last.getDate() + 6);
@@ -237,12 +245,12 @@ interface WeeklyChange {
 }
 
 /** The latest week against the one before it, or null when either is unknown. */
-export function weeklyChange(values: (number | null)[], better: Better, unit: string): WeeklyChange | null {
+export function weeklyChange(values: (number | null)[], better: Better, unit: string, bucket: FlowBucket = "week"): WeeklyChange | null {
   const latest = values.at(-1);
   const before = values.at(-2);
   if (latest == null || before == null) return null;
   const delta = Math.round((latest - before) * 10) / 10;
   const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
   const tone = delta === 0 ? "flat" : (delta > 0) === (better === "more") ? "good" : "bad";
-  return { text: `${sign}${Math.abs(delta)}${unit} vs the week before`, tone };
+  return { text: `${sign}${Math.abs(delta)}${unit} vs the ${bucket} before`, tone };
 }

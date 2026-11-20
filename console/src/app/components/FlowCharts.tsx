@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { weekLabel, weeklyChange, weekRange, type Better, type Tip } from "../flow";
+import { weekLabel, weeklyChange, weekRange, type Better, type FlowBucket, type Tip } from "../flow";
 
 const STEPS = [1, 2, 5, 10];
 const BAR_SHARE = 0.6;
@@ -62,9 +62,12 @@ interface ChartProps {
   title: string;
   note: string;
   starts: number[];
+  bucket?: FlowBucket;
   format: (value: number) => string;
   tip: (value: number, index: number) => Tip;
 }
+
+const AXIS_LABELS = 14;
 
 function edge(index: number, count: number): string {
   if (index === 0) return "-translate-x-3";
@@ -86,12 +89,13 @@ function Tooltip({ range, tip, style, align }: { range: string; tip: Tip; style:
   );
 }
 
-function Chart({ title, note, starts, format, tip, top, values, none, children }: ChartProps & { top: number; values: (number | null)[]; none: string; children: (active: number | null) => ReactNode }) {
+function Chart({ title, note, starts, bucket, format, tip, top, values, none, children }: ChartProps & { top: number; values: (number | null)[]; none: string; children: (active: number | null) => ReactNode }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const active = hovered ?? focused;
   const ticks = [top, top / 2, 0];
   const count = values.length;
+  const labelEvery = Math.ceil(count / AXIS_LABELS);
   const spoken = values.map((value, index) => `${weekLabel(starts[index]!)} ${value == null ? none : format(value)}`).join(", ");
   const activeValue = active == null ? null : values[active];
   return (
@@ -121,7 +125,7 @@ function Chart({ title, note, starts, format, tip, top, values, none, children }
                 key={index}
                 type="button"
                 data-point={index}
-                aria-label={`${weekRange(starts[index]!)}: ${said}, ${context}`}
+                aria-label={`${weekRange(starts[index]!, bucket)}: ${said}, ${context}`}
                 onMouseEnter={() => setHovered(index)}
                 onMouseLeave={() => setHovered(null)}
                 onFocus={() => setFocused(index)}
@@ -132,13 +136,13 @@ function Chart({ title, note, starts, format, tip, top, values, none, children }
             );
           })}
           {active != null && activeValue != null && (
-            <Tooltip range={weekRange(starts[active]!)} tip={tip(activeValue, active)} style={place(active, count, activeValue, top)} align={edge(active, count)} />
+            <Tooltip range={weekRange(starts[active]!, bucket)} tip={tip(activeValue, active)} style={place(active, count, activeValue, top)} align={edge(active, count)} />
           )}
         </div>
         <span />
         <div aria-hidden="true" className="flex">
-          {starts.map((start) => (
-            <span key={start} className="flex-1 text-center font-mono text-[10.5px] text-ink-3">{weekLabel(start)}</span>
+          {starts.map((start, index) => (
+            <span key={start} className="flex-1 text-center font-mono text-[10.5px] text-ink-3">{index % labelEvery === 0 && weekLabel(start)}</span>
           ))}
         </div>
       </div>
@@ -267,9 +271,9 @@ const TONES = { good: "text-live", bad: "text-accent", flat: "text-ink-3" };
 
 export type TrendNumber = keyof typeof TRENDS;
 
-export function Change({ number, values }: { number: TrendNumber; values: (number | null)[] }) {
+export function Change({ number, values, bucket }: { number: TrendNumber; values: (number | null)[]; bucket?: FlowBucket }) {
   const { better, unit } = TRENDS[number];
-  const change = weeklyChange(values, better, unit);
+  const change = weeklyChange(values, better, unit, bucket);
   if (change == null) return null;
   return <span data-change={number} className={`font-sans text-[12px] ${TONES[change.tone]}`}>{change.text}</span>;
 }

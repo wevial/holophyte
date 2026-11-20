@@ -486,14 +486,14 @@ non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
 `error` naming the parameter and any value it got. An `until` at or before
 `since` is 400 with `"until must be after since"`.
 
-## `GET /flow?weeks=N&until=MS`
+## `GET /flow?days=N&bucket=day|week&until=MS`
 
-The project's flow week by week: how much the factory merged and where its
-run time went. The console's Flow page reads it.
+The project's flow day by day or week by week: how much the factory
+merged and where its run time went. The console's Flow page reads it.
 
 ```json
 {"now": 1750000000000,
- "weeks": [
+ "buckets": [
   {"start_ms": 1749395200000, "merged": 2, "rounds_median": 1.5,
    "interventions": 3,
    "hours": {"working": 4.25, "waiting": 6.0, "operator": 1.5}}],
@@ -506,11 +506,20 @@ run time went. The console's Flow page reads it.
  "reverted": {"count": 0, "merged": 7}}
 ```
 
-`weeks` holds one entry per seven-day window ending at `now`, oldest
-first; `weeks` defaults to 6 and runs from 1 to 26. `now` is `until`, the
-end of the last week in epoch milliseconds, or the daemon's clock without
-one; phase changes after it are left out. Each entry's
-`start_ms` opens its window, `merged` counts the runs merged in it,
+`buckets` holds one entry per day or seven-day window ending at `now`,
+oldest first, over the last `days` days. `days` runs from 1 to 182 and
+defaults to 30; `bucket` is `day` or `week`, and without it `day` up to 31
+days and `week` beyond. A `week` span that is not a whole number of weeks
+leaves its oldest entry shorter, opening at the span's start.
+
+Asked with `weeks=N` and neither `days` nor `bucket`, as older consoles
+ask, it answers the entries under `weeks` instead of `buckets`, one per
+seven-day window ending at `now`; `weeks` defaults to 6 and runs from 1
+to 26. Asked with none of the three, it answers the 6 weeks.
+
+`now` is `until`, the end of the last entry in epoch milliseconds, or the
+daemon's clock without one; phase changes after it are left out. Each
+entry's `start_ms` opens its window, `merged` counts the runs merged in it,
 `rounds_median` is the median review round count of those runs (null with
 none), and `interventions` counts the store's interventions in it. `hours`
 splits the run time of the runs started in the window, read from their
@@ -519,20 +528,23 @@ phase changes: `working` (`working`, `verifying`, `reviewing`,
 other phase but the ended ones), each stay running to the next change, the
 run's end, or `now` for an open run.
 
-`phases` is the hours per phase over all the weeks. `waits` is the hours
-over all the weeks by why the run waited: time in `awaiting_merge_approval`
+`phases` is the hours per phase over all the entries. `waits` is the hours
+over all the entries by why the run waited: time in `awaiting_merge_approval`
 and `blocked_on_operator`, grouped by the note of the phase change that
 entered it, plus `merge_gate` time entered after a "behind main" merge
 refusal. The groups are `pending_checks`, `checks_failing`, `thread`,
 `rounds_used`, `behind_main`, `main_red`, `approval` and `other`.
 
-`reverted` counts the same merges as `weeks`: `merged` is the sum of the
-weekly `merged` values, and `count` is those whose merge commit a `git
+`reverted` counts the same merges as the entries: `merged` is the sum of
+their `merged` values, and `count` is those whose merge commit a `git
 revert` on `main` reverted within 14 days. A merge with no recorded merge
 commit counts as not reverted. It is null when `git log main` fails.
 
-A `weeks` that is not an integer from 1 to 26, or an `until` that is not
-an integer or is later than the daemon's clock, is 400 with an `error`.
+A `weeks` that is not an integer from 1 to 26, a `days` that is not an
+integer from 1 to 182, a `bucket` other than `day` or `week`, `weeks`
+asked with `days` or `bucket`, or an `until` that is not an integer or is
+later than the daemon's clock, is 400 with an `error` naming the allowed
+values.
 
 ## `GET /runs/N`
 

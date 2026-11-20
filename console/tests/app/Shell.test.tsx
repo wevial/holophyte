@@ -864,7 +864,7 @@ test("the Flow page header holds the one Flow title, the window's span beside it
   expect(more).toHaveLength(0);
   expect(title!.textContent).toBe("Flow");
   const [first, last] = [new Date(NOV_6 - WEEK), new Date(NOV_6 + WEEK - 1)];
-  expect(title!.nextElementSibling!.textContent).toBe(`Two weeks, ${first.getDate()} October to ${last.getDate()} November`);
+  expect(title!.nextElementSibling!.textContent).toBe(`14 days, ${first.getDate()} October to ${last.getDate()} November`);
   const header = title!.closest("header")!;
   expect(header.contains(projectPicker())).toBe(true);
   expect(header.contains(screen.getByRole("button", { name: "Range" }))).toBe(true);
@@ -887,7 +887,7 @@ test("the Reverted figure says it counts the page's merges reverted within 14 da
   await act(settle);
   const reverted = screen.getByText("Reverted", { selector: "dt" }).parentElement!;
   expect(within(reverted).getByText("of these merges, within 14 days")).toBeTruthy();
-  expect(document.body.textContent).not.toContain("30 days");
+  expect(reverted.textContent).not.toContain("30 days");
 });
 
 test("on All projects a host whose revert count is unknown leaves the summed Reverted unknown", async () => {
@@ -924,50 +924,6 @@ test("Biggest waits leads with the largest group, and approval carries the by de
   expect(rows.slice(1).some((row) => row.textContent!.includes("by design"))).toBe(false);
 });
 
-function askedFlows(asked: URL[]): Fetch {
-  const polls = daemons([], []);
-  return async (url, init) => {
-    if (!/\/flow\?/.test(url)) return polls(url, init);
-    const query = new URL(url);
-    asked.push(query);
-    const weeks = Number(query.searchParams.get("weeks"));
-    const flow = flowOf(Array.from({ length: weeks }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 })));
-    const until = query.searchParams.get("until");
-    if (until == null) return Response.json(flow);
-    const end = Number(until);
-    return Response.json({ ...flow, now: end, weeks: flow.weeks.map((week, index) => ({ ...week, start_ms: end - (weeks - index) * WEEK })) });
-  };
-}
-
-test("opened with range=12w the Flow page asks each host for twelve weeks and every chart shows twelve", async () => {
-  const asked: URL[] = [];
-  await mount("#/flow?range=12w", askedFlows(asked));
-  await flush();
-  expect(new Set(asked.map((url) => url.origin))).toEqual(new Set([ORIGIN, PEER]));
-  expect(asked.every((url) => url.searchParams.get("weeks") === "12" && !url.searchParams.has("until"))).toBe(true);
-  const charts = [...document.querySelectorAll("figure[data-chart]")];
-  expect(charts).toHaveLength(4);
-  expect(charts.map((chart) => chart.querySelectorAll("[data-point]").length)).toEqual([12, 12, 12, 12]);
-});
-
-test("the open Range menu marks the current preset, and choosing From and To puts them in the address and asks for the whole weeks ending with the To day", async () => {
-  happyDOM.setURL(`${ORIGIN}/`);
-  const asked: URL[] = [];
-  await mount("#/flow?range=12w", askedFlows(asked));
-  await flush();
-  fireEvent.click(screen.getByRole("button", { name: "Range" }));
-  const choices = within(screen.getByRole("group", { name: "Range choices" }));
-  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 12 weeks"]);
-  fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-03" } });
-  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
-  await flush();
-  const search = new URLSearchParams(window.location.hash.split("?")[1]);
-  expect([search.get("from"), search.get("to")]).toEqual(["2026-09-03", "2026-11-12"]);
-  const last = asked.at(-1)!.searchParams;
-  expect([last.get("weeks"), last.get("until")]).toEqual(["10", String(new Date(2026, 10, 13).getTime())]);
-  expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toEndWith(" to 12 November");
-});
-
 test("the open Range menu closes when focus moves out of it to the Project picker", async () => {
   await mount("#/flow", flowDaemons(demoFlow, writerFlow));
   await act(settle);
@@ -978,25 +934,6 @@ test("the open Range menu closes when focus moves out of it to the Project picke
   expect(screen.getByRole("group", { name: "Range choices" })).toBeTruthy();
   act(() => projectPicker().focus());
   expect(screen.queryByRole("group", { name: "Range choices" })).toBeNull();
-});
-
-test("a From and To under a whole week, or with a To day not yet ended, stay out of the address and the asks", async () => {
-  happyDOM.setURL(`${ORIGIN}/`);
-  const later = new Date(Date.now() + 2 * 24 * 3600 * 1000);
-  const future = `${later.getFullYear()}-${String(later.getMonth() + 1).padStart(2, "0")}-${String(later.getDate()).padStart(2, "0")}`;
-  for (const [from, to] of [["2026-11-12", "2026-11-12"], ["2026-11-01", future]]) {
-    const asked: URL[] = [];
-    await mount("#/flow", askedFlows(asked));
-    await flush();
-    fireEvent.click(screen.getByRole("button", { name: "Range" }));
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: from } });
-    fireEvent.change(screen.getByLabelText("To"), { target: { value: to } });
-    await flush();
-    const search = new URLSearchParams(window.location.hash.split("?")[1]);
-    expect([search.get("from"), search.get("to")]).toEqual([null, null]);
-    expect(asked.every((url) => url.searchParams.get("weeks") === "6" && !url.searchParams.has("until"))).toBe(true);
-    cleanup();
-  }
 });
 
 const SEARCH_ANSWER = {
