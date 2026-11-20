@@ -103,3 +103,67 @@ class Reverted(TypedDict):
     by: str | None
     sha: str | None
     reason: str | None
+
+
+DetailValue = str | int | float | bool | list[str] | None
+
+
+class PipelineStage(TypedDict):
+    id: str
+    type: Literal["build", "check"]
+    group: Literal["ticket", "candidate", "factory"]
+    roles: list[str]
+    seat: NotRequired[str | None]
+    profile: NotRequired[str | None]
+    switch: NotRequired[bool]
+    effort: NotRequired[str | None]
+    adversary: NotRequired[bool]
+    commands: NotRequired[dict[str, list[str]]]
+    paths: NotRequired[list[str]]
+    cap: NotRequired[int]
+    approve: NotRequired[str]
+
+
+class PipelineMerge(TypedDict):
+    mode: str
+    approve: str
+
+
+class Pipeline(TypedDict):
+    id: int
+    name: str
+    revision: int
+    format: int
+    merge: PipelineMerge
+    stages: list[PipelineStage]
+
+
+class StageAttempt(TypedDict):
+    stage: str
+    attempt: int
+    started_ms: int
+    ended_ms: int | None
+    input_sha: str | None
+    output_sha: str | None
+    outcome: Literal["pass", "fail", "skipped", "error"] | None
+    edge: Literal["next", "on_fail", "again", "park", "end"] | None
+    seconds: float | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+    detail: dict[str, DetailValue]
+
+
+class RunLane(TypedDict):
+    run: int
+    attempt: int
+    outcome: str | None
+    pipeline_revision: int | None
+    attempts: list[StageAttempt]
+
+
+class RunStages(TypedDict):
+    run: int
+    pipeline: Pipeline | None
+    attempts: list[StageAttempt]
+    lanes: list[RunLane]

@@ -1,10 +1,27 @@
 """Each attempt of a pipeline stage within a run and the agent turns it owns."""
 import json
 import time
+from typing import NamedTuple
 
 from holophyte.redact import redact_document
 
-from .schema import _transaction
+from .schema import _has_table, _transaction
+
+
+class StageAttempt(NamedTuple):
+    stage: str
+    attempt: int
+    started_ms: int
+    ended_ms: int | None
+    input_sha: str | None
+    output_sha: str | None
+    outcome: str | None
+    edge: str | None
+    seconds: float | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost_usd: float | None
+    detail: dict
 
 
 def _now(now):
@@ -80,3 +97,19 @@ def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None):
             " VALUES (?, ?, ?, ?, ?, ?, ?, 'skipped', 'next', ?, ?)",
             (run_id, stage_id, attempt, now, now, sha, sha, seq,
              _document({"reason": reason}))).lastrowid
+
+
+def stage_attempts(conn, run_ids):
+    run_ids = tuple(run_ids)
+    found = {run_id: [] for run_id in run_ids}
+    if not run_ids or not _has_table(conn, "stageAttempts"):
+        return found
+    rows = conn.execute(
+        "SELECT runId, stageId, attempt, startedAt, endedAt, inputSha,"
+        " outputSha, outcome, edge, agentSeconds, inputTokens, outputTokens,"
+        " costUsd, detail FROM stageAttempts"
+        f" WHERE runId IN ({', '.join('?' * len(run_ids))})"
+        " ORDER BY startedAt, id", run_ids)
+    for run_id, *row, detail in rows:
+        found[run_id].append(StageAttempt(*row, json.loads(detail)))
+    return found
