@@ -45,7 +45,7 @@ from holophyte.config.pipeline_settings import (  # noqa: E402
     STANDARD_STAGES,
     pipeline_checks,
 )
-from holophyte.stages import checks, standard  # noqa: E402
+from holophyte.stages import checks, record, standard  # noqa: E402
 
 # Fixed commit times, so two fixtures' candidates have the same shas.
 GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
@@ -237,18 +237,18 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(len(lints), 2)
         for rnd, at in enumerate(lints, 1):
             _, sha, outcome, edge, detail = attempts[at]
-            following = attempts[at + 1:]
-            verify = next(row for row in following if row[0] == "verify")
-            review = next(row for row in following if row[0] == "review")
+            review = next(row for row in attempts[at + 1:]
+                          if row[0] == "review")
+            verified = [row[1] for row in attempts
+                        if row[0] == "verify" and row[4]["round"] == rnd]
             self.assertEqual((outcome, edge), ("fail", "next"))
             self.assertEqual(detail["exit_status"], 1)
             self.assertEqual(detail["round"], rnd)
-            self.assertIn("scripted-", detail["output"])
+            self.assertRegex(detail["output"], r"(?m)^scripted-\d+\.txt$")
             self.assertNotIn("START", detail["output"])
-            self.assertEqual(attempts[at + 1][0], "verify")
-            self.assertEqual(sha, verify[1])
-            self.assertEqual(sha, review[1])
-            self.assertEqual(review[4]["round"], rnd)
+            self.assertEqual((review[1], review[4]["round"]), (sha, rnd))
+            self.assertEqual(verified, [sha])
+        self.assertEqual(attempts[lints[0] + 1][0], "verify")
 
     def test_a_passing_advisory_check_records_pass(self):
         self.walked(check_table("lint", "implement", ["echo clean"],
@@ -306,25 +306,97 @@ class AdvisoryCheckTests(CheckRuns):
             "SELECT detail FROM stageAttempts")
         self.assertNotIn("rotated-credential-2", json.dumps(stored))
 
-    def test_a_pinned_command_the_config_no_longer_holds_closes_error(self):
+    def test_a_command_edited_after_the_pin_runs_as_pinned(self):
         config = self.db.parent / "config.toml"
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)
-        markers = Path(held.name)
-        self.configure(UNTRIMMED)
+        marker = Path(held.name) / "said"
 
-        def say(name):
-            return UNTRIMMED + check_table(
-                "say", "implement", [f"touch {markers / name}"], "advisory")
+        def say(credential):
+            return (UNTRIMMED + f'[extras]\napi_token = "{credential}"\n'
+                    + check_table("say", "implement",
+                                  [f"echo {credential} > {marker}"],
+                                  "advisory"))
 
-        self.loop(EditsConfig(config, say("pinned")), APPROVE,
-                  EditsConfig(config, say("edited")), APPROVE,
-                  provider=StubProvider(a_task(1), a_task(2)))
+        self.configure(say("pinned-credential-1"))
+        self.loop(EditsConfig(config, say("edited-credential-2")), APPROVE)
 
-        (attempt,) = [row for row in self.attempts(2) if row[0] == "say"]
+        (attempt,) = [row for row in self.attempts() if row[0] == "say"]
+        self.assertEqual(attempt[2], "pass")
+        self.assertEqual(marker.read_text(), "pinned-credential-1\n")
+
+    def test_a_redacted_command_this_process_did_not_pin_closes_error(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        marker = Path(held.name) / "said"
+
+        class Forgets(Commit):
+            def play(self, cwd, turn):
+                record.PINNED_CHECKS.clear()
+                return super().play(cwd, turn)
+
+        self.walked('[extras]\napi_token = "forgotten-credential-3"\n'
+                    + check_table("say", "implement", [
+                        f"echo forgotten-credential-3 > {marker}"],
+                        "advisory"), Forgets("the scripted work"), APPROVE)
+
+        (attempt,) = [row for row in self.attempts() if row[0] == "say"]
         self.assertEqual(attempt[2:4], ("error", "next"))
-        self.assertIn("no longer holds", attempt[4]["error"])
-        self.assertEqual(list(markers.iterdir()), [])
+        self.assertIn("did not pin", attempt[4]["error"])
+        self.assertFalse(marker.exists())
+
+    def test_a_credential_cut_by_the_runners_key_line_limit_leaves_no_fragment(self):
+        secret = "cut-credential-0123456789"
+        self.walked(f'[extras]\napi_token = "{secret}"\n' + check_table(
+            "lint", "implement",
+            [f"echo Error {'x' * 280}{secret}; exit 1"], "advisory"),
+            Commit("the scripted work"), APPROVE)
+
+        (lint,) = [row for row in self.attempts() if row[0] == "lint"]
+        self.assertEqual(lint[2], "fail")
+        self.assertIn("x" * 280, lint[4]["output"])
+        for size in range(8, len(secret) + 1):
+            self.assertNotIn(secret[:size], lint[4]["output"])
+            self.assertNotIn(secret[-size:], lint[4]["output"])
+
+    def test_a_check_that_edits_the_worktree_leaves_the_run_unchanged(self):
+        plain = self.walked("", *self.SCRIPT)
+        unchecked = self.attempts()
+        self.fresh()
+        edited = self.walked(check_table("regen", "implement", [
+            "echo regenerated >> README.md", "touch generated.txt", "exit 1"],
+            "advisory"), *self.SCRIPT)
+
+        self.assertEqual(edited, plain)
+        attempts = self.attempts()
+        self.assertEqual([row for row in attempts if row[0] != "regen"],
+                         unchecked)
+        self.assertEqual([row[4]["restored"] for row in attempts
+                          if row[0] == "regen"],
+                         [["README.md", "generated.txt"]] * 2)
+        self.assertEqual(self.git("show", "main:README.md"), "base\n")
+
+    def test_a_glob_a_credential_would_redact_still_matches_its_paths(self):
+        class DocsCommit(Commit):
+            def play(self, cwd, turn):
+                (cwd / "docs").mkdir(exist_ok=True)
+                return super().play(cwd, turn)
+
+        self.walked('[extras]\napi_token = "docs"\n' + check_table(
+            "pages", "implement", ["true"], "advisory", ["docs/**"]),
+            DocsCommit("the docs", "docs/guide.md"), APPROVE)
+
+        (attempt,) = [row for row in self.attempts() if row[0] == "pages"]
+        self.assertEqual(attempt[2:4], ("pass", "next"))
+
+    def test_a_command_that_exits_127_after_starting_closes_fail(self):
+        self.walked(check_table("lint", "implement",
+                                ["echo started; exit 127"], "advisory"),
+                    Commit("the scripted work"), APPROVE)
+
+        (lint,) = [row for row in self.attempts() if row[0] == "lint"]
+        self.assertEqual(lint[2:4], ("fail", "next"))
+        self.assertEqual(lint[4]["exit_status"], 127)
 
     def test_a_command_that_cannot_start_closes_error(self):
         self.walked(check_table("lint", "implement", ["no-such-linter-here"],

@@ -354,21 +354,10 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
     return ok, out
 
 
-def _round_checks(project, conn, run_id, beat_s, wt, base_sha, rnd, checked):
-    head = record.head(conn, run_id, wt)
-    if (rnd, head) in checked:
-        return
-    checked.add((rnd, head))
+def _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd):
     record.checks_guarded(conn, run_id, lambda: stage_checks.run(
-        project, conn, run_id, beat_s, wt, base_sha, head, "implement",
+        project, conn, run_id, beat_s, wt, base_sha, sha, "implement",
         round=rnd))
-
-
-def _checked_verify(project, conn, run_id, beat_s, wt, base_sha, ticket,
-                    verify_cmd, contracts, rnd, checked):
-    _round_checks(project, conn, run_id, beat_s, wt, base_sha, rnd, checked)
-    return _verify(project, conn, run_id, beat_s, wt, base_sha, ticket,
-                   verify_cmd, contracts, rnd)
 
 
 def _close_verify(attempt, ok, out):
@@ -430,7 +419,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     mode = review_mode(project)
     rnd = pending.get("rnd", 1) - 1
     claimed = verify_cmd
-    checked, rechecking = set(), False
+    rechecking = False
     for rnd in range(pending.get("rnd", 1), cap + 1):
         sha, pending = _steer_at_top(project, conn, run_id, beat_s, wt,
                                      budget_min, ticket, sha, pending)
@@ -448,8 +437,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" branch {branch} preserved at {sha[:12]}")
         if rechecking or pending.get("phase") not in ("reviewing",
                                                       "addressing"):
-            _round_checks(project, conn, run_id, beat_s, wt, base_sha, rnd,
-                          checked)
+            _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha,
+                          rnd)
         rechecking = False
         sha, ok, out, witness = _prepared(
             project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
@@ -530,9 +519,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             fixing.close_at_head("pass", "next")
         sha = fix_self_check.after_fix(
             project, conn, run_id, beat_s, wt, budget_min, reviewed, sha, head,
-            verify_cmd, partial(_checked_verify, project, conn, run_id, beat_s,
-                                wt, base_sha, reviewed, verify_cmd, contracts,
-                                rnd + 1, checked))
+            verify_cmd, partial(_verify, project, conn, run_id, beat_s, wt,
+                                base_sha, reviewed, verify_cmd, contracts,
+                                rnd + 1))
     return sha, rnd, False
 
 

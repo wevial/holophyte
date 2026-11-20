@@ -3,7 +3,11 @@ import json
 from time import time
 
 import store
-from holophyte.config.pipeline_settings import current_notes, pinned_checks
+from holophyte.config.pipeline_settings import (
+    STANDARD_STAGES,
+    current_notes,
+    pinned_checks,
+)
 from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.runs import RunSwept
@@ -14,6 +18,7 @@ from store import pipelines, stages
 FAILED = "stage_record_failed"
 REFUSED = object()
 RESTORED = "restored"
+PINNED_CHECKS = {}
 RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
             "operator_note": ("fail", "on_fail")}
 
@@ -70,10 +75,25 @@ def _resolved(run):
                     lambda: current_notes(run.project))
     checks = guarded(conn, run_id, "pipeline_checks",
                      lambda: pinned_checks(run.project))
+    raw, shown = ((), ()) if checks is REFUSED else checks
     document = standard.resolve(run.project, row and row[1]["profile"],
-                                None if notes is REFUSED else notes,
-                                () if checks is REFUSED else checks)
-    return pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
+                                None if notes is REFUSED else notes, shown)
+    pinned = pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
+    stored = dict(pipelines.run_pipelines(conn, [run_id]).get(run_id) or {})
+    stored.pop("id", None), stored.pop("revision", None)
+    if stored == json.loads(json.dumps(document)):
+        PINNED_CHECKS[_store_run(conn, run_id)] = list(raw)
+    return pinned
+
+
+def _store_run(conn, run_id):
+    (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
+               if row[1] == "main"]
+    return path, run_id
+
+
+def pinned_raw_checks(conn, run_id):
+    return PINNED_CHECKS.get(_store_run(conn, run_id))
 
 
 def notes_block(project, conn, run_id, target):
@@ -202,6 +222,9 @@ def verified_last(conn, run_id, sha):
     if rows is REFUSED:
         return False
     for row in rows:
+        stage_id, _, output = tuple(row)
+        if output == sha and stage_id not in STANDARD_STAGES:
+            continue
         if tuple(row)[::2] != ("implement", sha):
             return tuple(row) == ("verify", "pass", sha)
     return False
