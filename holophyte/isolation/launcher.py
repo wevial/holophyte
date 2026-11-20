@@ -200,26 +200,22 @@ def readonly_volume(source, destination):
     return ["--volume", f"{source}:{destination}:ro"]
 
 
-def agy_mount_flags():
+def agy_mount_flags(route, task, project, scratch, stack):
     found = shutil.which("agy")
     if not found:
         raise RuntimeError("agy executable missing from PATH")
-    source = Path(found).resolve(strict=True)
-    return readonly_volume(source, f"{AGY_BIN}/agy")
-
-
-def agy_login_flags(route, task, project, scratch, stack):
+    flags = readonly_volume(Path(found).resolve(strict=True), f"{AGY_BIN}/agy")
     destination = PurePosixPath("/home/implementer", AGY_LOGIN)
     configured = PurePosixPath(route.credential.get("destination", "/"))
     if not CREDENTIAL_NEEDED.get() or configured == destination:
-        return []
+        return flags
     login = {"file": str(Path.home() / AGY_LOGIN), "destination": str(destination)}
     if configured.parent == destination.parent:
         stage_credential(login, scratch)
-        return []
+        return flags
     login_dir = stack.enter_context(
         credential_copy(replace(route, credential=login), task, project))
-    return ["--volume", f"{login_dir}:{destination.parent}:rw"]
+    return flags + ["--volume", f"{login_dir}:{destination.parent}:rw"]
 
 
 def codex_mount_flags():
@@ -478,8 +474,7 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
           checkout as (workspace, git_env), around(workspace)):
         agy_flags = []
         if argv[:1] == ["agy"]:
-            agy_flags = agy_mount_flags()
-            agy_flags += agy_login_flags(route, worktree, project, scratch, staged)
+            agy_flags = agy_mount_flags(route, worktree, project, scratch, staged)
             argv = ["/bin/sh", "-c", f'PATH="{AGY_BIN}:$PATH" exec "$@"', "agy", *argv]
         command, host_env = container_command(
             route, workspace, dict(env or {}, **git_env), argv, name, mounts,
