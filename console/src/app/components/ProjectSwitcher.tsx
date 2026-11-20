@@ -304,6 +304,12 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
             onMouseDown={(event) => {
               if (event.target !== event.currentTarget.querySelector("input")) event.preventDefault();
             }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || event.defaultPrevented) return;
+              event.preventDefault();
+              handle.api.setOpen(false, { event: event.nativeEvent });
+              buttonRef.current?.focus();
+            }}
           >
             <Title className="sr-only">Switch project</Title>
             <label htmlFor={findId} className="sr-only">

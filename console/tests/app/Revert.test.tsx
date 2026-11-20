@@ -107,7 +107,7 @@ async function revertFromRunPage() {
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
-const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
+const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void; setViewport: (viewport: { width: number }) => void } }).happyDOM;
 
 beforeAll(() => happyDOM.setURL(`${DEMO}/`));
 beforeEach(() => {
@@ -462,6 +462,29 @@ test("a preview answered after Raw log opened and closed again opens no dialog",
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+});
+
+test("a preview answered after the narrow-width sidebar drawer opened and closed again opens no dialog", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  const fake = daemon(true, async () => {
+    await held;
+    return Response.json(PREVIEW);
+  });
+  happyDOM.setViewport({ width: 390 });
+  try {
+    await mount("#/runs/demo/9", fake.fetchImpl);
+    await revertFromRunPage();
+    await act(async () => void fireEvent.keyDown(document, { key: "\\", ctrlKey: true }));
+    expect(screen.getByRole("dialog", { name: "Sidebar" })).toBeTruthy();
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+    await act(async () => release());
+    for (let round = 0; round < 4; round += 1) await act(settle);
+    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+  } finally {
+    happyDOM.setViewport({ width: 1024 });
+  }
 });
 
 test("Copy link on a plain-HTTP origin copies the run's link through a selection and says so", async () => {
