@@ -289,17 +289,24 @@ harness = "agy"
 model   = "gemini-4-neon-xhigh"
 ```
 
-Each turn runs `agy -p --model MODEL --dangerously-skip-permissions
---output-format json GOAL`. The adapter reads the reply text from `response`
+Each turn runs `agy --model MODEL --dangerously-skip-permissions
+--output-format json -p GOAL`. The adapter reads the reply text from `response`
 and the session ID from `conversation_id`. The turn output keeps the full JSON.
 Host implementer turns record the session ID and pass `--conversation ID`
-before the goal on a resumed fix. Container fix rounds currently start fresh.
+on a resumed fix. The factory currently skips recording this ID for container turns.
 
 An isolated agy turn mounts the host's `agy` from `PATH` read-only at
-`/opt/agy/bin/agy` and prepends `/opt/agy/bin` to its `PATH`. The launcher copies
-`~/.gemini/antigravity-cli/antigravity-oauth-token` to the same relative path
-in the turn's temporary home. Antigravity can refresh the copy until the
-launcher removes it at the end of the turn.
+`/opt/agy/bin/agy` and prepends `/opt/agy/bin` to its `PATH`. A writable turn
+mounts a private directory (mode 0700) from the project's state directory at
+`/home/implementer/.gemini`. Each task worktree has its own directory, so a
+later turn with the conversation ID can read the saved conversation. Before
+each launch the launcher copies `~/.gemini/antigravity-cli/antigravity-oauth-token`
+to the same path under the container home with mode 0600. Antigravity can
+refresh its copy while the host login stays unchanged. A read-only launch
+uses a temporary login copy. On a writable turn, a file supplied by
+`implementer_credential` under `~/.gemini` is staged inside the same mount
+and removed at the end of the turn. If it supplies the login itself, the
+launcher uses that file as the login source.
 
 `[agents.reviewer] harness = "devin"` (and the same for `adjudicator`) runs
 in the same throwaway candidate checkout as

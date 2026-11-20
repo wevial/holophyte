@@ -17,7 +17,7 @@ class IsolationRealTests(IsolationCase):
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
-    def test_real_agy_implementer_reads_and_refreshes_only_its_login_copy(self):
+    def test_real_agy_turns_persist_conversations_and_refresh_only_the_login_copy(self):
         import json
 
         from holophyte.config.agent_settings import agent_command
@@ -36,20 +36,31 @@ class IsolationRealTests(IsolationCase):
         binary = self.root / "agy"
         binary.write_text(
             '#!/bin/sh\nset -eu\n'
+            'mkdir -p "$HOME/.gemini/config/projects"\n'
             'cd "$HOME/.gemini/antigravity-cli"\n'
+            'mkdir -p conversations\n'
+            'if test -f conversations/c-1; then\n'
+            '  history=$(cat conversations/c-1)\n'
+            'else\n'
+            '  history=new\n'
+            '  echo first-turn > conversations/c-1\n'
+            'fi\n'
             'login=$(cat antigravity-oauth-token)\n'
             'echo refreshed > next && mv next antigravity-oauth-token\n'
             'printf \'{"conversation_id":"c-1","status":"SUCCESS",'
-            '"response":"%s"}\\n\' "$login"\n')
+            '"response":"%s %s"}\\n\' "$login" "$history"\n')
         binary.chmod(0o755)
         path = f"{self.root}{os.pathsep}{os.environ['PATH']}"
         with patch.dict(os.environ, {"HOME": str(home), "PATH": path}):
-            cmd = agent_command(self.target, "implement", "Read the login")
-            code, output = launcher.launch(launcher.turn_route(self.target, cmd),
-                                           worktree, {}, cmd, project=self.target)
-        self.assertEqual(code, 0, output)
-        self.assertEqual(json.loads(output), {
-            "conversation_id": "c-1", "status": "SUCCESS", "response": "fixture-login"})
+            cmd = agent_command(self.target, "implement", "Read the conversation")
+            route = launcher.turn_route(self.target, cmd)
+            for history in ("new", "first-turn"):
+                code, output = launcher.launch(route, worktree, {}, cmd,
+                                               project=self.target, keep_session=True)
+                self.assertEqual(code, 0, output)
+                self.assertEqual(json.loads(output), {
+                    "conversation_id": "c-1", "status": "SUCCESS",
+                    "response": f"fixture-login {history}"})
         self.assertEqual(login.read_text(), "fixture-login")
 
     @unittest.skipUnless(

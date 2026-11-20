@@ -454,16 +454,22 @@ class IsolationTests(GoRaceCases, IsolationCase):
                 route = launcher.turn_route(self.target, argv)
                 _, mounts = self.recorded_volumes(lambda: launcher.launch(
                     route, worktree, {}, argv, project=self.target))
-                self.assertFalse(any("/opt/agy/" in vol or ".gemini/" in vol
+                self.assertFalse(any("/opt/agy/" in vol or "/.gemini" in vol
                                      for vol in mounts))
 
-    def test_agy_turn_mounts_the_host_binary_and_a_private_login(self):
+    def test_agy_mounts_the_host_binary_and_a_private_gemini_home_per_worktree(self):
         from holophyte.isolation import launcher
+        from holophyte.isolation.isolation_git import git
 
         worktree, binary, host_login = self.agy_project()
-        target = Path("/home/implementer") / host_login.relative_to(self.root)
+        other = self.root / "other"
+        git(self.target.path, "worktree", "add", "-qb", "other", str(other))
+        target = Path("/home/implementer/.gemini")
+        login = Path("antigravity-cli/antigravity-oauth-token")
         sibling = self.root / "provider.json"
         sibling.write_text("provider")
+        provider = {"file": str(sibling),
+                    "destination": str(target / login.with_name("key"))}
         argv = ["agy", "-p", "goal"]
 
         def run(command, cwd, timeout, *, env):
@@ -475,26 +481,36 @@ class IsolationTests(GoRaceCases, IsolationCase):
             turn[-len(argv)] = str(binary)
             path = subprocess.check_output(turn, cwd=cwd, env=env, text=True)
             self.assertEqual(path.split(os.pathsep)[0], "/opt/agy/bin")
-            [parent] = [Path(vol.split(":")[0]) for vol in mounts
-                        if vol.endswith(f":{target.parent}:rw")]
-            copy = parent / target.name
+            volumes = [vol.split(":") for vol in mounts]
+            gemini = [volume for volume in volumes
+                      if Path(volume[1]).is_relative_to(target)]
+            self.assertEqual([volume[1:] for volume in gemini], [[str(target), "rw"]])
+            home = Path(gemini[0][0])
+            self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+            copy = home / login
             self.assertFalse(copy.samefile(host_login))
+            self.assertEqual(copy.read_bytes(), b"host-login")
             self.assertEqual(copy.stat().st_mode & 0o777, 0o600)
+            copy.write_bytes(b"refreshed")
             if credential:
-                self.assertEqual((parent / "key").read_text(), "provider")
-            return 0, copy.read_text()
+                self.assertEqual(copy.with_name("key").read_text(), "provider")
+            return 0, str(home)
 
         with (patch.object(launcher, "image_ready"),
               patch.object(launcher.review_runner, "_remove_container"),
               patch.object(launcher, "run_capped", side_effect=run)):
-            for credential in ({}, {"file": str(sibling),
-                                    "destination": str(target.with_name("key"))}):
-                with self.subTest(credential=credential):
-                    self.table["agents"]["implementer_credential"] = credential
-                    route = launcher.turn_route(self.target, argv)
-                    self.assertEqual(launcher.launch(route, worktree, {}, argv,
-                                                     project=self.target),
-                                     (0, "host-login"))
+            homes = []
+            for task, credential in ((worktree, {}), (worktree, provider), (other, {})):
+                self.table["agents"]["implementer_credential"] = credential
+                route = launcher.turn_route(self.target, argv)
+                code, home = launcher.launch(route, task, {}, argv, project=self.target,
+                                             keep_session=True)
+                self.assertEqual(code, 0)
+                self.assertFalse((Path(home) / login.with_name("key")).exists())
+                homes.append(home)
+        self.assertEqual(homes[0], homes[1])
+        self.assertNotEqual(homes[1], homes[2])
+        self.assertEqual(host_login.read_bytes(), b"host-login")
 
     def test_agy_launch_requires_the_host_executable(self):
         from holophyte.isolation import launcher
