@@ -156,25 +156,30 @@ def _run_stages(run, task):
     elif test and not test.failing:
         sha, unreproduced = test.sha, True
     else:
-        sha, unreproduced = _implement(
-            project, conn, run_id, task_id, task, branch, wt, fresh and not test,
-            beat_s, test.sha if test else start_sha, ticket, verify_cmd,
-            budget_min, conflicts=conflicts, criteria=criteria,
-            opening=maintainer_notes.requeue_context(conn, run_id)
-            + escalation.brief(conn, run_id, branch,
-                               test.sha if test else start_sha)
-            + maintainer_notes.take_hints(conn, run_id)
-            + (test.opening() if test else ""),
-            shadow=None if resume or not cut else shadow_starter(
-                project, conn, run_id, ticket=ticket,
-                criteria=numbered(conn, run_id, criteria),
-                task_id=task_id, verify=verify_cmd, contracts=contracts,
-                branch=branch), provider=provider)
+        before = test.sha if test else start_sha
+        with record.Attempt(conn, run_id, "implement", before,
+                            {"kind": "first"}) as attempt:
+            sha, unreproduced = _implement(
+                project, conn, run_id, task_id, task, branch, wt,
+                fresh and not test, beat_s, before, ticket, verify_cmd,
+                budget_min, conflicts=conflicts, criteria=criteria,
+                opening=maintainer_notes.requeue_context(conn, run_id)
+                + escalation.brief(conn, run_id, branch, before)
+                + maintainer_notes.take_hints(conn, run_id)
+                + (test.opening() if test else ""),
+                shadow=None if resume or not cut else shadow_starter(
+                    project, conn, run_id, ticket=ticket,
+                    criteria=numbered(conn, run_id, criteria),
+                    task_id=task_id, verify=verify_cmd, contracts=contracts,
+                    branch=branch), provider=provider)
+            attempt.close("pass", "next", sha)
         sha = steer_turn(project, conn, run_id, beat_s, wt, budget_min, ticket,
                          sha, timed=_timed, check_cap=_check_run_cap) or sha
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts, criteria)
+        else:
+            record.skip(conn, run_id, "trim", "the bug was not reproduced", sha)
 
     cap = _review_cap(project, conn, run_id, provider, task_id, wt)
     sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(

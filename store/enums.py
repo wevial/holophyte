@@ -308,6 +308,21 @@ class ThreadMode(str, Enum):
     ANSWER = 'answer'
 
 
+class StageOutcome(str, Enum):
+    PASS = 'pass'
+    FAIL = 'fail'
+    SKIPPED = 'skipped'
+    ERROR = 'error'
+
+
+class StageEdge(str, Enum):
+    NEXT = 'next'
+    ON_FAIL = 'on_fail'
+    AGAIN = 'again'
+    PARK = 'park'
+    END = 'end'
+
+
 class FiringMode(str, Enum):
     DRY_RUN = 'dry_run'
     ACT = 'act'
@@ -375,6 +390,8 @@ CONSTRAINED_COLUMNS = {
     ('automationFirings', 'mode'): FiringMode,
     ('automationFirings', 'state'): FiringState,
     ('automationPauses', 'actor'): PauseActor,
+    ('stageAttempts', 'outcome'): StageOutcome,
+    ('stageAttempts', 'edge'): StageEdge,
 }
 
 

@@ -89,6 +89,11 @@ DOCUMENTED_COLUMNS = {
         "id", "projectId", "name", "revision", "format", "digest", "document",
         "createdAt",
     },
+    "stageAttempts": {
+        "id", "runId", "stageId", "attempt", "startedAt", "endedAt",
+        "inputSha", "outputSha", "outcome", "edge", "openSeq", "agentSeconds",
+        "inputTokens", "outputTokens", "costUsd", "detail",
+    },
     "ledger": {
         "id", "runId", "ticketId", "at", "kind", "text", "source",
     },

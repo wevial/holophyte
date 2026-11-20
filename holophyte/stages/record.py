@@ -2,10 +2,11 @@
 import json
 
 import store
+from holophyte.loop.gates import InfraFailure
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
 from holophyte.stages import standard
-from store import pipelines
+from store import pipelines, stages
 
 FAILED = "stage_record_failed"
 REFUSED = object()
@@ -56,3 +57,55 @@ def predecessor(conn, run_id):
         " AND old.id != current.id ORDER BY old.attempt DESC LIMIT 1",
         (run_id,)).fetchone()
     return previous
+
+
+def stage_roles(conn, run_id, stage_id):
+    row = conn.execute(
+        "SELECT p.document FROM runs r JOIN pipelines p ON p.id = r.pipelineId"
+        " WHERE r.id = ?", (run_id,)).fetchone()
+    found = [stage for stage in json.loads(row[0])["stages"]
+             if stage["id"] == stage_id] if row else []
+    return found[0]["roles"] if found else ()
+
+
+class Attempt:
+    def __init__(self, conn, run_id, stage_id, sha, detail):
+        self.conn, self.run_id, self.stage_id = conn, run_id, stage_id
+        self.sha, self.detail, self.closed = sha, dict(detail), False
+        self.id = None
+        if conn is not None and run_id is not None:
+            self.id = guarded(conn, run_id, "open_stage",
+                              lambda: stages.open_stage(conn, run_id, stage_id,
+                                                        sha, self.detail))
+
+    @property
+    def recording(self):
+        return self.id not in (None, REFUSED) and not self.closed
+
+    def note(self, **detail):
+        self.detail.update(detail)
+
+    def close(self, outcome, edge, sha=None, **detail):
+        self.detail.update(detail)
+        if not self.recording:
+            return
+        self.closed = True
+        conn, run_id = self.conn, self.run_id
+        guarded(conn, run_id, "close_stage", lambda: stages.close_stage(
+            conn, self.id, outcome, edge, sha,
+            stage_roles(conn, run_id, self.stage_id), self.detail))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, kind, error, trace):
+        if error is not None:
+            self.close("error" if isinstance(error, InfraFailure) else "fail",
+                       "end", error=str(error))
+        return False
+
+
+def skip(conn, run_id, stage_id, reason, sha=None):
+    if conn is not None and run_id is not None:
+        guarded(conn, run_id, "skip_stage",
+                lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))

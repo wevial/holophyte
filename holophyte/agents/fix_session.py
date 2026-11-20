@@ -15,6 +15,7 @@ from holophyte.loop.follow_ups import pending_prompt
 from holophyte.loop.gates import RunFailure, sh
 from holophyte.redact import safe_print as print
 from holophyte.review import criterion_ids
+from holophyte.stages import record as stage_record
 from holophyte.tickets import ticket_template
 
 
@@ -91,7 +92,8 @@ def fix_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, verdict, sha,
              'are held to, acceptance criteria included:\n\n'
              f'{ticket}\n\n' + findings)
     return _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha,
-                         findings, fresh, timed=timed, check_cap=check_cap)
+                         findings, fresh, timed=timed, check_cap=check_cap,
+                         kind='fix')
 
 
 def steer_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
@@ -107,7 +109,8 @@ def steer_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
     print(f'[holo2] steer turn: carrying the maintainer\'s notes at {sha[:12]}')
     _, timed_out = _session_turn(target, conn, run_id, beat_s, wt, budget_min,
                                  sha, ask, fresh, timed=timed,
-                                 check_cap=check_cap, record=False)
+                                 check_cap=check_cap, kind='steer',
+                                 record=False)
     head = sh(['git', 'rev-parse', 'HEAD'], cwd=wt)
     if timed_out:
         raise RunFailure(f'steer turn timed out; work kept at {head[:12]}',
@@ -134,7 +137,8 @@ def witness_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
     print(f'[holo2] witness turn: {len(gaps)} gaps at {sha[:12]}')
     _, timed_out = _session_turn(target, conn, run_id, beat_s, wt, budget_min,
                                  sha, ask, fresh, timed=timed,
-                                 check_cap=check_cap, record=False)
+                                 check_cap=check_cap, kind='witness',
+                                 record=False)
     head = sh(['git', 'rev-parse', 'HEAD'], cwd=wt)
     if timed_out:
         raise RunFailure(f'witness turn timed out; work kept at {head[:12]}',
@@ -158,7 +162,8 @@ def self_check_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
     print(f'[holo2] fix self-check turn: {len(failures)} failures at {sha[:12]}')
     _, timed_out = _session_turn(target, conn, run_id, beat_s, wt, budget_min,
                                  sha, ask, fresh, timed=timed,
-                                 check_cap=check_cap, record=False)
+                                 check_cap=check_cap, kind='self_check',
+                                 record=False)
     head = sh(['git', 'rev-parse', 'HEAD'], cwd=wt)
     if timed_out:
         raise RunFailure(f'fix self-check turn timed out; work kept at '
@@ -167,7 +172,21 @@ def self_check_turn(target, conn, run_id, beat_s, wt, budget_min, ticket, sha,
 
 
 def _session_turn(target, conn, run_id, beat_s, wt, budget_min, sha, resumed,
-                  fresh, *, timed, check_cap, record=True):
+                  fresh, *, timed, check_cap, kind, record=True):
+    with stage_record.Attempt(conn, run_id, 'implement', sha,
+                              {'kind': kind}) as attempt:
+        output, timed_out = _session_turns(
+            target, conn, run_id, beat_s, wt, budget_min, sha, resumed, fresh,
+            timed=timed, check_cap=check_cap, record=record)
+        if attempt.recording:
+            attempt.close('fail' if timed_out else 'pass',
+                          'end' if timed_out else 'next',
+                          sh(['git', 'rev-parse', 'HEAD'], cwd=wt))
+    return output, timed_out
+
+
+def _session_turns(target, conn, run_id, beat_s, wt, budget_min, sha, resumed,
+                   fresh, *, timed, check_cap, record):
     arm = select_arm(loop_config(target).fix_session, run_id)
     argv, reason = (resume_argv(target, conn, run_id)
                     if arm == 'resume' else (None, None))

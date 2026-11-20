@@ -12,6 +12,7 @@ from holophyte.agents.roles import agent
 from holophyte.board.projection import ledger
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import loop_config, verify_config
+from holophyte.config.review_settings import review_config
 from holophyte.loop import (
     contradiction,
     fix_self_check,
@@ -70,6 +71,7 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
+from holophyte.stages import record
 from holophyte.tickets import ticket_template, witness_once
 
 
@@ -176,7 +178,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
-            leaks=(), witness="", branch=None):
+            leaks=(), witness="", branch=None, attempt=None):
     base_sha = review_base(wt, base_sha, sha)
     criteria = numbered(conn, run_id, criteria)
     round_started = int(time() * 1000)
@@ -184,6 +186,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     _record_mode(conn, run_id, mode, rnd)
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
+    if attempt is not None and plan:
+        attempt.note(adversary="ran")
     earlier = earlier_rounds_brief(conn, run_id, wt, rnd, criteria)
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
@@ -251,6 +255,37 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     return leak_guard.with_findings(verdict, private), decision, findings
 
 
+def _recorded_review(project, conn, run_id, provider, task_id, wt, beat_s,
+                     base_sha, sha, ticket, verify_cmd, criteria, mode, rnd, ok,
+                     out, stale, leaks, witness, branch):
+    adversary_on = review_config(project).adversary
+    with record.Attempt(conn, run_id, "review", sha,
+                        {"round": rnd, "adversary": "not_planned"
+                         if adversary_on else "off"}) as attempt:
+        verdict, decision, findings = _review(
+            project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
+            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
+            witness, branch, attempt=attempt)
+        attempt.close(*_review_edge(conn, run_id, verdict, decision, findings,
+                                    ok, out), sha, decision=decision,
+                      findings=len(findings))
+    return verdict, decision, findings
+
+
+def _review_edge(conn, run_id, verdict, decision, findings, ok, out):
+    if verdict is None:
+        return "fail", "again"
+    if decision == "APPROVE" and not findings:
+        if ok:
+            return ("pass", "again") if steer_pending(conn, run_id) else (
+                "pass", "next")
+        if verify_timed_out(out):
+            return "fail", "end"
+    if ok and stale_approvals(decision, findings):
+        return "fail", "again"
+    return "fail", "on_fail"
+
+
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
               pending, ok, out, verify_cmd, witness):
     if pending.get("stale"):
@@ -288,6 +323,18 @@ def _round_contract(conn, run_id, ticket, claimed, pending):
 
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
             contracts, rnd):
+    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    with record.Attempt(conn, run_id, "verify", head,
+                        {"round": rnd}) as attempt:
+        ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
+                           verify_cmd, contracts, rnd)
+        attempt.close("pass" if ok else "fail", "next", head,
+                      timed_out=bool(not ok and verify_timed_out(out)))
+    return ok, out
+
+
+def _checked(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
+             contracts, rnd):
     with heartbeat_while(conn, run_id, beat_s):
         ok, out = run_verify(verify_cmd, wt, contracts,
                              verify_config(project).timeout_sec,
@@ -368,7 +415,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         if pending.get("phase") == "addressing":
             verdict = pending["verdict"]
         else:
-            verdict, decision, unwitnessed = _review(
+            verdict, decision, unwitnessed = _recorded_review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 reviewed, verify_cmd, criteria, mode, rnd, ok, out,
                 pending.get("stale", ()), leaks, witness, branch)
