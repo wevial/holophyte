@@ -11,6 +11,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -25,6 +26,7 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 from serve_fixture import ServeTestCase  # noqa: E402
 
+import holophyte.serve.serve_pipeline  # noqa: E402 - after the sys.path insert
 from holophyte.serve.serve_pipeline import pipeline_prompt  # noqa: E402
 
 FIXTURE = HERE / "fixtures" / "serve" / "pipeline-prompt.json"
@@ -191,6 +193,15 @@ class PromptRouteTests(ServeTestCase):
                       body["prompt"])
         self.assertIn("turn.\n⟨evidence states⟩", body["prompt"])
 
+    def test_implement_shows_the_subagent_brief_the_project_configures(self):
+        body = self.answer("implement", '[agents.implementer]\n'
+                           'harness = "claude"\norchestration = "subagents"\n')
+
+        self.assertIn("You may orchestrate subagents for this ticket.",
+                      body["tail"])
+        self.assertNotIn("orchestration",
+                         {entry["name"] for entry in body["placeholders"]})
+
     def test_a_private_pattern_matching_a_stand_in_leaves_it_listed(self):
         body = self.answer("review", '[merge]\nprivate_patterns = ["⟨base ref⟩"]\n')
 
@@ -206,6 +217,27 @@ class PromptRouteTests(ServeTestCase):
         code, _, body = self.request("GET", "/pipeline/prompts/review")
         self.assertEqual(code, 503)
         self.assertIn("error", body)
+
+    def test_a_credential_in_the_rendered_snapshot_stays_redacted_across_a_save(self):
+        secret = "lin_api_snapshot_only_0123"
+        self.start("")
+        config = self.db.parent / "config.toml"
+        config.write_text(f'[linear]\napi_key = "{secret}"\n[merge]\n'
+                          f'pr_style = "Cite {secret} in the title."\n')
+        snapshot = holophyte.serve.serve_pipeline.own_patterns
+
+        def saved_after_snapshot(project):
+            patterns = snapshot(project)
+            config.write_text("")
+            return patterns
+
+        with mock.patch.object(holophyte.serve.serve_pipeline, "own_patterns",
+                               saved_after_snapshot):
+            code, _, body = self.request("GET", "/pipeline/prompts/pr_writer")
+
+        self.assertEqual(code, 200, body)
+        self.assertIn("Cite [redacted] in the title.", body["builtin"])
+        self.assertNotIn(secret, json.dumps(body))
 
     def test_the_critic_answer_keeps_the_pinned_contract(self):
         body = self.answer("critic", notes_table(

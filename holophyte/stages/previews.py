@@ -1,12 +1,17 @@
 """Each note target's prompt as the next run would send it, stand-ins for run parts."""
 import re
 
+from holophyte.agents.harness import ORCHESTRATION_BRIEFS
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import merge_config
 from holophyte.config.review_settings import review_config
 from holophyte.loop.contradiction import brief_text
-from holophyte.loop.implement import _commands_brief, implement_goal
+from holophyte.loop.implement import (
+    _commands_brief,
+    implement_goal,
+    orchestration_mode,
+)
 from holophyte.loop.review_round import review_text, verify_text
 from holophyte.loop.trim_brief import TESTS_BRIEF, protected_brief, trim_goal
 from holophyte.pr.mockup import design_text
@@ -68,8 +73,6 @@ STANDS_FOR = {
     "trim commits": "the trim turn's commits in the reviewed range",
     "trade-offs": "the Trade-off lines the trim commits record, quoted",
     "evidence": "the candidate's UI capture and the approved design",
-    "orchestration": "the subagent brief for the orchestration the ticket or"
-                     " project asks for",
     "evidence states": "the ticket's evidence states, one line each",
     "design": "the approved design's images and boards in the worktree",
     "test lines": "the test lines the run's diff adds",
@@ -102,7 +105,7 @@ def implement(project, slot):
     return implement_goal(
         s("merge conflicts"), s("requeue context"), s("steering"), slot,
         s("ticket"), _commands_brief(project, s("verify commands")),
-        s("orchestration"),
+        ORCHESTRATION_BRIEFS[orchestration_mode(project, "")[0]],
         capture_text(merge_config(project), s("ticket id"),
                      s("evidence states"), False),
         design_text(s("design")),

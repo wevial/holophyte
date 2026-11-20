@@ -669,7 +669,7 @@ def _commands_brief(project, verify_cmd):
             f"above." if listed else "")
 
 
-def _orchestration(project, conn, run_id, ticket):
+def orchestration_mode(project, ticket):
     requested, source = ticket_template.parse(ticket).orchestration, "ticket"
     if requested not in ticket_template.ORCHESTRATION_MODES:
         table = config_table(project, "agents").get("implementer")
@@ -682,6 +682,11 @@ def _orchestration(project, conn, run_id, ticket):
     mode = requested
     if mode not in supported:
         mode = "subagents" if "subagents" in supported else "off"
+    return mode, requested, source
+
+
+def _orchestration(project, conn, run_id, ticket):
+    mode, requested, source = orchestration_mode(project, ticket)
     if conn is not None and run_id is not None:
         summary = f"orchestration: {mode}" + (
             f" ({requested} requested; the route cannot run it)"
