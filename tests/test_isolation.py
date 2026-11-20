@@ -524,6 +524,32 @@ class IsolationTests(GoRaceCases, IsolationCase):
                     if vol.endswith(":/home/implementer/.gemini:rw"))
         return launch, Path(home)
 
+    def test_agy_rejects_login_ancestors_and_preserves_saved_conversations(self):
+        from holophyte.isolation import launcher
+
+        worktree, _, host_login = self.agy_project()
+        _, home = self.first_agy_turn(worktree)
+        conversation = home / "antigravity-cli/conversations/first"
+        conversation.parent.mkdir()
+        conversation.write_text("saved")
+        gemini = Path("/home/implementer/.gemini")
+        login_dir = gemini / "antigravity-cli"
+
+        def turn(destination):
+            self.table["agents"]["implementer_credential"] = {
+                "file": str(host_login), "destination": str(destination)}
+            route = launcher.turn_route(self.target, ["agy"])
+            return launcher.launch(route, worktree, {}, ["agy"], project=self.target)
+
+        for directory in (login_dir, gemini):
+            with self.subTest(directory=directory):
+                with self.assertRaisesRegex(SystemExit, "implementer_credential"):
+                    self.recorded_volumes(lambda: turn(directory))
+                self.assertEqual(conversation.read_text(), "saved")
+
+        self.recorded_volumes(lambda: turn(login_dir / host_login.name))
+        self.assertEqual(conversation.read_text(), "saved")
+
     def test_agy_repairs_a_locked_login_parent_and_directory_at_the_token_path(self):
         worktree, _, host_login = self.agy_project()
         launch, home = self.first_agy_turn(worktree)

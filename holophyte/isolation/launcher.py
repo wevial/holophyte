@@ -132,6 +132,11 @@ def validate_credential(value):
                 and destination != Path("/home/implementer")
             )
         )
+        if valid and destination in AGY_LOGIN_DESTINATION.parents:
+            raise SystemExit(
+                f"[agents] implementer_credential destination {destination} "
+                "is a directory required by the agy login"
+            )
     else:
         valid = valid and not value
     if not valid:
@@ -193,6 +198,7 @@ def file_mount_flags(mounts):
 CODEX_BIN = "/opt/codex/bin"
 AGY_BIN = "/opt/agy/bin"
 AGY_LOGIN = PurePosixPath(".gemini/antigravity-cli/antigravity-oauth-token")
+AGY_LOGIN_DESTINATION = PurePosixPath("/home/implementer", AGY_LOGIN)
 GEMINI_HOME = PurePosixPath("/home/implementer/.gemini")
 
 
@@ -259,7 +265,7 @@ def install_gemini_credential(home, destination, scratch, *, temporary):
 
 
 def agy_login_flags(route, task, project, scratch, stack):
-    destination = PurePosixPath("/home/implementer", AGY_LOGIN)
+    destination = AGY_LOGIN_DESTINATION
     configured = PurePosixPath(route.credential.get("destination", "/"))
     if not CREDENTIAL_NEEDED.get():
         return route, []

@@ -301,9 +301,11 @@ mount `/home/implementer/.gemini` from a private per-worktree directory
 Each launch copies `~/.gemini/antigravity-cli/antigravity-oauth-token` to the
 same path under the container home (mode 0600). Antigravity can refresh its
 copy without changing the host login. Read-only turns use a temporary copy.
-Writable turns stage any `implementer_credential` file destined for `~/.gemini`
+Writable turns stage any `implementer_credential` file destined for a path under `~/.gemini`
 inside the mount and remove it at turn end. A file destined for the login
-path supplies the login for that turn.
+path supplies the login for that turn. Credential validation rejects
+`/home/implementer/.gemini` and `/home/implementer/.gemini/antigravity-cli`
+as file destinations because agy needs both directories.
 
 `[agents.reviewer] harness = "devin"` (and the same for `adjudicator`) runs
 in the same throwaway candidate checkout as
