@@ -8,10 +8,14 @@ from holophyte.redact import redact_document
 from .schema import _has_table, _transaction
 
 
-def pin_pipeline(conn, run_id, name, document, now=None):
+def _canonical(document):
     canonical = json.dumps(redact_document(document), sort_keys=True,
                            separators=(",", ":"), allow_nan=False)
-    digest = hashlib.sha256(canonical.encode()).hexdigest()
+    return canonical, hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def pin_pipeline(conn, run_id, name, document, now=None):
+    canonical, digest = _canonical(document)
     if now is None:
         now = int(time.time() * 1000)
     with _transaction(conn):
@@ -66,3 +70,12 @@ def run_pipelines(conn, run_ids):
     return {run_id: {**json.loads(document), "id": pipeline_id,
                      "revision": revision}
             for run_id, pipeline_id, revision, document in rows}
+
+
+def pipeline_revision(conn, project_id, document):
+    if project_id is None or not _has_table(conn, "pipelines"):
+        return None
+    row = conn.execute(
+        "SELECT revision FROM pipelines WHERE projectId = ? AND digest = ?",
+        (project_id, _canonical(document)[1])).fetchone()
+    return None if row is None else row[0]

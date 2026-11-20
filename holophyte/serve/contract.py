@@ -5,6 +5,7 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 
 from holophyte.scout.scout_contract import ScoutDetail, ScoutRoutes, Scouts
 from holophyte.serve.contract_emit import ClientDefault, check, render, write
+from holophyte.serve.contract_pipeline import PipelineNumbers
 from holophyte.serve.contract_pr import PullRequestFacts, WaitsOn
 from holophyte.serve.contract_prefs import Prefs
 from holophyte.serve.contract_routes import (
@@ -951,6 +952,7 @@ ROUTES = {
     "run-turns": (RunTurns, "GET /runs/N/turns"),
     "run-transcript": (Transcript, "GET /runs/N/turns/T/transcript"),
     "run-stages": (RunStages, "GET /runs/N/stages"),
+    "pipeline": (PipelineNumbers, "GET /pipeline"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
     "flow": (Flow, "GET /flow"),

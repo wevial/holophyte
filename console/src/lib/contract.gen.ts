@@ -819,6 +819,49 @@ export const runStagesSchema = z.looseObject({
 });
 export type RunStages = z.infer<typeof runStagesSchema>;
 
+export const currentPipelineSchema = z.looseObject({
+  name: z.string(),
+  format: z.int(),
+  revision: z.int().nullable(),
+  merge: pipelineMergeSchema,
+  stages: z.array(pipelineStageSchema),
+});
+export type CurrentPipeline = z.infer<typeof currentPipelineSchema>;
+
+export const pipelineWindowSchema = z.looseObject({
+  days: z.int(),
+  since_ms: z.int(),
+});
+export type PipelineWindow = z.infer<typeof pipelineWindowSchema>;
+
+export const stageOutcomesSchema = z.looseObject({
+  pass: z.int(),
+  fail: z.int(),
+  skipped: z.int(),
+  error: z.int(),
+});
+export type StageOutcomes = z.infer<typeof stageOutcomesSchema>;
+
+export const stageNumbersSchema = z.looseObject({
+  id: z.string(),
+  in_pipeline: z.boolean(),
+  attempts: z.int(),
+  median_seconds: z.number().nullable(),
+  median_tokens: z.number().nullable(),
+  median_cost_usd: z.number().nullable(),
+  fail_rate: z.number().nullable(),
+  findings_fixed: z.int(),
+  outcomes: stageOutcomesSchema,
+});
+export type StageNumbers = z.infer<typeof stageNumbersSchema>;
+
+export const pipelineNumbersSchema = z.looseObject({
+  pipeline: currentPipelineSchema,
+  window: pipelineWindowSchema,
+  stages: z.array(stageNumbersSchema),
+});
+export type PipelineNumbers = z.infer<typeof pipelineNumbersSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),

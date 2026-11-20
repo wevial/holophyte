@@ -1,0 +1,132 @@
+{
+  "pipeline": {
+    "format": 1,
+    "merge": {
+      "approve": "auto",
+      "mode": "local"
+    },
+    "name": "Holophyte standard",
+    "revision": null,
+    "stages": [
+      {
+        "group": "ticket",
+        "id": "critic",
+        "roles": [],
+        "seat": null,
+        "switch": false,
+        "type": "check"
+      },
+      {
+        "group": "candidate",
+        "id": "implement",
+        "profile": null,
+        "roles": [
+          "implement"
+        ],
+        "seat": "claude claude-model-under-test",
+        "type": "build"
+      },
+      {
+        "group": "candidate",
+        "id": "trim",
+        "roles": [
+          "trim"
+        ],
+        "seat": "claude claude-model-under-test",
+        "switch": true,
+        "type": "build"
+      },
+      {
+        "commands": {
+          "always": [],
+          "before_merge": []
+        },
+        "group": "candidate",
+        "id": "verify",
+        "roles": [],
+        "type": "check"
+      },
+      {
+        "adversary": false,
+        "effort": "high",
+        "group": "candidate",
+        "id": "review",
+        "roles": [
+          "review",
+          "adjudicate",
+          "adversary",
+          "consolidate"
+        ],
+        "seat": "codex gpt-review-under-test",
+        "type": "check"
+      },
+      {
+        "group": "factory",
+        "id": "merge_gate",
+        "roles": [],
+        "type": "check"
+      },
+      {
+        "approve": "auto",
+        "group": "factory",
+        "id": "waiting",
+        "roles": [],
+        "type": "check"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "attempts": 7,
+      "fail_rate": 0.0,
+      "findings_fixed": 0,
+      "id": "implement",
+      "in_pipeline": true,
+      "median_cost_usd": null,
+      "median_seconds": 30.0,
+      "median_tokens": null,
+      "outcomes": {
+        "error": 0,
+        "fail": 0,
+        "pass": 7,
+        "skipped": 0
+      }
+    },
+    {
+      "attempts": 1,
+      "fail_rate": 0.0,
+      "findings_fixed": 0,
+      "id": "verify",
+      "in_pipeline": true,
+      "median_cost_usd": null,
+      "median_seconds": 30.0,
+      "median_tokens": null,
+      "outcomes": {
+        "error": 0,
+        "fail": 0,
+        "pass": 1,
+        "skipped": 0
+      }
+    },
+    {
+      "attempts": 11,
+      "fail_rate": 0.7777777777777778,
+      "findings_fixed": 14,
+      "id": "review",
+      "in_pipeline": true,
+      "median_cost_usd": 1.5,
+      "median_seconds": 25.0,
+      "median_tokens": 455.0,
+      "outcomes": {
+        "error": 1,
+        "fail": 7,
+        "pass": 1,
+        "skipped": 2
+      }
+    }
+  ],
+  "window": {
+    "days": 30,
+    "since_ms": 1
+  }
+}

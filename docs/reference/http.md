@@ -1102,6 +1102,63 @@ Under the host daemon, such a project resolves to no `[serve] name`, so
 and never reaches this route. `N` parses as on `/runs/N`: a non-integer is 400, an
 integer with no run is 404 carrying `run`. The route writes nothing.
 
+## `GET /pipeline`
+
+```json
+{"pipeline": {"name": "Holophyte standard", "format": 1, "revision": 2,
+   "merge": {"mode": "local", "approve": "auto"},
+   "stages": [
+     {"id": "review", "type": "check", "group": "candidate",
+      "roles": ["review", "adjudicate", "adversary", "consolidate"],
+      "seat": "codex gpt-review", "effort": "high", "adversary": false}]},
+ "window": {"days": 30, "since_ms": 1750000000000},
+ "stages": [
+   {"id": "review", "in_pipeline": true, "attempts": 5,
+    "median_seconds": 20.0, "median_tokens": 300, "median_cost_usd": 1.0,
+    "fail_rate": 0.5, "findings_fixed": 3,
+    "outcomes": {"pass": 1, "fail": 2, "skipped": 1, "error": 1}}]}
+```
+
+The project's pipeline as its config file resolves it at the request, and
+what each stage cost and caught over the last `days` days. It is served
+whatever `[serve] config_edit` says, behind the read token, and writes
+nothing.
+
+`pipeline` is the resolved document in the shape `/runs/N/stages` serves a
+pinned one, without its row `id`: `name`, `format`, `merge` and `stages`,
+each stage with its `id`, `type`, `group`, `roles` and the settings it
+resolved: `seat`, `profile`, `switch`, `effort`, `adversary`, `commands`
+(`always` and `before_merge`), `paths`, `cap` and `approve`. The config file is read again at each request, so an edit is
+served before any run pins it. `revision` is the stored revision a run
+of the project (the `[board] team`'s row, else the row at this path)
+pinned this same document under, or null when no run has pinned it yet.
+A `[board] team` whose row belongs to another repository path serves no
+revision and no stage numbers.
+
+`window` names the `days` asked (`?days=N`, 30 when absent) and `since_ms`,
+the epoch milliseconds the window opens at. `days` outside 1 to 365, or not
+a whole number, is 400 carrying `error`.
+
+`stages` holds one entry per stage id with a closed attempt started inside
+the window, in document order, then any ids the document no longer holds,
+by name; `in_pipeline` says which. Numbers count this project's runs
+only, across every pipeline revision. `attempts` counts the closed attempts, skipped included; an
+attempt still open counts nowhere. `outcomes` counts them by `pass`,
+`fail`, `skipped` and `error`. `median_seconds` is the median wall time of
+the attempts not skipped, `median_tokens` the median of their input plus
+output tokens, and `median_cost_usd` the median price over those that
+reported one; each is null over no values. `fail_rate` is fails over pass,
+fail and error attempts, null when there are none. `findings_fixed` sums
+the `findings` of each attempt that failed along its `on_fail` edge and
+whose run's next attempt was a build stage ending at a new commit.
+
+A project with no store answers the document with `revision` null and an
+empty `stages`. Every string is redacted with the project's known secrets,
+as on `/runs/N/stages`; a config file that cannot be read or parsed, or
+a setting the pipeline cannot resolve, makes the route answer 503 carrying
+`error`, which names the setting, redacted like the rest of the answer,
+but never its value.
+
 ## `GET /ledger?since=MS`
 
 ```json

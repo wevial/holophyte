@@ -1,5 +1,6 @@
 """Each attempt of a pipeline stage within a run and the agent turns it owns."""
 import json
+import statistics
 import time
 from typing import NamedTuple
 
@@ -113,3 +114,59 @@ def stage_attempts(conn, run_ids):
     for run_id, *row, detail in rows:
         found[run_id].append(StageAttempt(*row, json.loads(detail)))
     return found
+
+
+def stage_numbers(conn, project_id, since_ms, builds):
+    if project_id is None or not _has_table(conn, "stageAttempts"):
+        return {}
+    rows = conn.execute(
+        "SELECT s.runId, s.stageId, s.startedAt, s.endedAt, s.inputSha,"
+        " s.outputSha, s.outcome, s.edge, s.inputTokens, s.outputTokens,"
+        " s.costUsd, s.detail FROM stageAttempts s"
+        " JOIN runs r ON r.id = s.runId"
+        " WHERE r.projectId = ? AND s.startedAt >= ?"
+        " ORDER BY s.runId, s.startedAt, s.id",
+        (project_id, since_ms)).fetchall()
+    found = {}
+    for at, (run_id, stage_id, started, ended, _, _, outcome, edge,
+             input_tokens, output_tokens, cost, detail) in enumerate(rows):
+        if ended is None:
+            continue
+        tally = found.setdefault(stage_id, _Tally())
+        tally.outcomes[outcome] = tally.outcomes.get(outcome, 0) + 1
+        if outcome != "skipped":
+            tally.seconds.append((ended - started) / 1000)
+            if input_tokens is not None or output_tokens is not None:
+                tally.tokens.append((input_tokens or 0) + (output_tokens or 0))
+            if cost is not None:
+                tally.costs.append(cost)
+        if (outcome, edge) == ("fail", "on_fail") and _fixed(
+                rows[at + 1:at + 2], run_id, builds):
+            tally.findings_fixed += json.loads(detail).get("findings") or 0
+    return {stage_id: tally.numbers() for stage_id, tally in found.items()}
+
+
+def _fixed(following, run_id, builds):
+    return any(row[0] == run_id and row[1] in builds and row[5] is not None
+               and row[5] != row[4] for row in following)
+
+
+class _Tally:
+    def __init__(self):
+        self.outcomes, self.seconds, self.tokens, self.costs = {}, [], [], []
+        self.findings_fixed = 0
+
+    def numbers(self):
+        counts = {outcome: self.outcomes.get(outcome, 0)
+                  for outcome in ("pass", "fail", "skipped", "error")}
+        judged = counts["pass"] + counts["fail"] + counts["error"]
+        return {"attempts": sum(self.outcomes.values()),
+                "median_seconds": _median(self.seconds),
+                "median_tokens": _median(self.tokens),
+                "median_cost_usd": _median(self.costs),
+                "fail_rate": counts["fail"] / judged if judged else None,
+                "findings_fixed": self.findings_fixed, "outcomes": counts}
+
+
+def _median(values):
+    return statistics.median(values) if values else None
