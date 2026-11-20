@@ -18,6 +18,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,10 +51,14 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.council  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
-from holophyte.agents import roles  # noqa: E402
+from holophyte.agents import fallback, roles  # noqa: E402
+from holophyte.agents.agent_routes import reset, routes  # noqa: E402
+from holophyte.agents.probes import REVIEW_PROBE_GOAL  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
 from holophyte.config.review_settings import CouncilSeat  # noqa: E402
+from holophyte.loop import pool  # noqa: E402
 from holophyte.loop.gates import InfraFailure  # noqa: E402
+from holophyte.redact import REDACTED, values_held  # noqa: E402
 from holophyte.review import review_runner  # noqa: E402
 
 ASTRA = ("codex", "gpt-6-astra", "high")
@@ -115,11 +120,10 @@ class OutOfRange:
 
 @dataclass(frozen=True)
 class RouteDown:
-    """A seat whose review container fails to run."""
+    """A seat whose review container exits non-zero."""
 
     def play(self, goal):
-        raise InfraFailure("reviewer route failed for review: the container "
-                           "exited 125", "review_route")
+        raise review_runner.ReviewBoundaryError("the container exited 125")
 
 
 @dataclass(frozen=True)
@@ -131,65 +135,70 @@ class SeatTurn:
     candidate_sha: str
 
 
-class CouncilAgent(FakeAgent):
-    """The scripted agent, answering each council seat's turn from that
-    seat's own queue, keyed by model, and recording its `agent_turn` usage
-    the way the real `agent()` does."""
-
-    def __init__(self, *script, seats=None, barrier=None):
-        super().__init__(*script)
-        self.seat_steps = {model: list(steps)
-                           for model, steps in (seats or {}).items()}
-        self.seat_turns = []
-        self.barrier = barrier
-
-    def __call__(self, target, role, goal, cwd, **kwargs):
-        route = kwargs.get("family_route")
-        if route is None:
-            return super().__call__(target, role, goal, cwd, **kwargs)
-        with self.lock:
-            steps = self.seat_steps.get(route["model"])
-            if role != "review" or not steps:
-                raise ScriptError(f"no seat step for a {role!r} turn on "
-                                  f"{route['model']}")
-            step = steps.pop(0)
-            self.seat_turns.append(SeatTurn(
-                route["harness"], route["model"], str(goal),
-                kwargs.get("base_sha"), kwargs.get("candidate_sha")))
-        if self.barrier is not None:
-            self.barrier.wait()
-        reply = step.play(str(goal))
-        conn, run_id = kwargs.get("conn"), kwargs.get("run_id")
-        if conn is not None and run_id is not None:
-            store.record_event(conn, run_id, "agent_turn", f"{role} turn ended",
-                               level="detail", payload=json.dumps(
-                                   {"role": role, "seconds": 1,
-                                    "usage": USAGE[route["model"]]}))
-        return reply
+def provider_output(harness, text, usage):
+    """What the review container prints for a reply, in its harness's shape."""
+    if harness == "codex":
+        return "\n".join(json.dumps(event) for event in (
+            {"type": "item.completed",
+             "item": {"type": "command_execution", "exit_code": 0}},
+            {"type": "item.completed",
+             "item": {"type": "agent_message", "text": text}},
+            {"type": "turn.completed", "usage": usage}))
+    return json.dumps({"type": "result", "subtype": "success",
+                       "is_error": False, "result": text, "usage": usage})
 
 
-class ProbedContainer:
-    """The review container as a startup probe meets it: it answers the
-    probe with the checkout's commit, or fails to start for a model that is
-    down."""
+class Container:
+    """The review container: it answers a startup probe with the checkout's
+    commit, or fails to start for a model that is down, and answers each
+    seat's turn from that seat's own queue, keyed by model, as its harness
+    prints it."""
 
-    def __init__(self, down=()):
-        self.down = set(down)
-        self.probed = []
+    def __init__(self, seats=None, down=(), barrier=None):
+        self.steps = {model: list(steps)
+                      for model, steps in (seats or {}).items()}
+        self.down, self.barrier = set(down), barrier
+        self.probed, self.seat_turns = [], []
+        self.lock = threading.Lock()
 
     def __call__(self, **turn):
-        self.probed.append(turn["model"])
-        if turn["model"] in self.down:
-            raise review_runner.ReviewBoundaryError(
-                f"{turn['model']} is unreachable")
-        return f"ready {turn['candidate_sha']}"
+        harness, model = turn["harness"], turn["model"]
+        if turn["prompt"] == REVIEW_PROBE_GOAL:
+            self.probed.append(model)
+            if model in self.down:
+                raise review_runner.ReviewBoundaryError(
+                    f"{model} is unreachable")
+            return f"ready {turn['candidate_sha']}"
+        with self.lock:
+            steps = self.steps.get(model)
+            if not steps:
+                raise ScriptError(f"no seat step for a turn on {model}")
+            step = steps.pop(0)
+            self.seat_turns.append(SeatTurn(
+                harness, model, turn["prompt"], turn["base_sha"],
+                turn["candidate_sha"]))
+        if self.barrier is not None:
+            self.barrier.wait()
+        return review_runner.PARSERS[harness](provider_output(
+            harness, step.play(turn["prompt"]), USAGE[model]), None)[0]
+
+
+class CouncilAgent(FakeAgent):
+    """The scripted agent, handing each council seat's turn to the real
+    `agent()`."""
+
+    def __call__(self, target, role, goal, cwd, **kwargs):
+        if kwargs.get("family_route") is None:
+            return super().__call__(target, role, goal, cwd, **kwargs)
+        return roles.agent(target, role, goal, cwd, **kwargs)
 
 
 class CouncilFixture(LoopFixture):
     def run_council(self, config, *script, seats, barrier=None, down=()):
         self.configure(config)
-        fake = CouncilAgent(*script, seats=seats, barrier=barrier)
-        self.container = ProbedContainer(down)
+        self.container = Container(seats, down, barrier)
+        fake = CouncilAgent(*script)
+        fake.seat_turns = self.container.seat_turns
         with patch.object(review_runner, "run_review", self.container):
             return self.loop(fake=fake)[0]
 
@@ -355,6 +364,35 @@ class CouncilRoundTests(CouncilFixture):
             {"path": "Dockerfile", "line": 7, "severity": "p1",
              "category": "correctness", "message": unpinned[2]}])
 
+    def test_a_registered_value_in_a_finding_is_stored_redacted(self):
+        leaked = ("README.md", 1, "the token council-dummy-credential-7 is "
+                  "printed")
+        with values_held(["council-dummy-credential-7"]):
+            self.run_council(council(ASTRA, OPUS), Commit("work"), seats={
+                "gpt-6-astra": [Answer("APPROVE", 9, (leaked,))],
+                "opus": [Answer("APPROVE", 8)]})
+
+        [(findings,)] = self.read("SELECT findings FROM reviewRounds")
+        self.assertNotIn("council-dummy-credential-7", findings)
+        self.assertIn(REDACTED, findings)
+
+    def test_a_finding_keeps_its_own_path_through_the_adversary_handoff(self):
+        unpinned = ("Dockerfile", 7, "the base image is unpinned, unlike the "
+                    "one README.md:12 names")
+        fake = self.run_council(
+            council(ASTRA, OPUS).replace(UNTRIMMED, ADVERSARY_ON),
+            Change("change", "poetry.lock", "locked\n"),
+            Attack("Nothing broke.\nADVERSARY: DONE"),
+            Change("fix", "src/app.py", "fixed\n"), seats={
+                "gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (unpinned,)),
+                                Answer("APPROVE", 9)],
+                "opus": [Answer("APPROVE", 8), Answer("APPROVE", 9)]})
+
+        fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
+        self.assertIn("1. Dockerfile:7 [p1]", fix.goal)
+        self.assertNotIn("README.md:12 [p1]", fix.goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_a_seat_down_at_its_startup_probe_is_missing_and_not_dispatched(self):
         fake = self.run_council(
             council(ASTRA, OPUS, LUNA), Commit("work"), down={"opus"}, seats={
@@ -425,6 +463,46 @@ class CouncilSignalTests(unittest.TestCase):
         for name in runs():
             self.assertIn(f"rm --force {name}", recorded)
 
+    def test_a_failed_removal_still_removes_the_rest_and_ends_by_the_signal(self):
+        removed = []
+
+        def remove(name):
+            removed.append(name)
+            if name == "holophyte-review-a":
+                raise review_runner.ReviewBoundaryError("it still exists")
+        with patch.object(review_runner, "_remove_container", remove), \
+                patch.object(review_runner, "_LIVE",
+                             {"holophyte-review-a", "holophyte-review-b"}), \
+                patch.object(review_runner.os, "kill") as kill:
+            with review_runner.removing_on_signal():
+                signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
+
+        self.assertEqual(removed, ["holophyte-review-a", "holophyte-review-b"])
+        kill.assert_called_once_with(os.getpid(), signal.SIGTERM)
+
+    def test_a_container_stays_registered_until_its_removal_ends(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        _, env = test_review_runner.docker_shim(root)
+        base, candidate = test_review_runner.two_commit_repo(root / "repo")
+        (root / "auth.json").write_text("{}")
+        real_remove, live = review_runner._remove_container, []
+
+        def remove(name, **kwargs):
+            live.append(name in review_runner._LIVE)
+            real_remove(name, **kwargs)
+        with patch.dict(os.environ, env), \
+                patch.object(review_runner, "SCRATCH_ROOT", root / "reviews"), \
+                patch.object(review_runner, "CODEX_AUTH", root / "auth.json"), \
+                patch.object(review_runner, "_remove_container", remove), \
+                self.assertRaises(subprocess.TimeoutExpired):
+            review_runner.run_review(repo=root / "repo", base_sha=base,
+                                     candidate_sha=candidate, prompt="review",
+                                     timeout=1)
+
+        self.assertEqual(live, [True])
+        self.assertEqual(review_runner._LIVE, set())
+
 
 class CouncilSeatFailureTests(CouncilFixture):
     def a_run(self):
@@ -435,6 +513,41 @@ class CouncilSeatFailureTests(CouncilFixture):
         ticket = store.mirror_ticket(conn, project, linear_issue_id="i-1",
                                      linear_identifier="KO-1", title="t")
         return conn, store.claim(conn, project, ticket)
+
+    def test_a_seat_probe_that_cannot_launch_leaves_only_that_seat_down(self):
+        self.configure(council(ASTRA, OPUS, ("claude", "sonnet", "high")))
+
+        def container(**turn):
+            if turn["harness"] == "codex":
+                raise FileNotFoundError(2, "No such file", "auth.json")
+            return f"ready {turn['candidate_sha']}"
+        with patch.object(review_runner, "run_review",
+                          side_effect=container) as run_review:
+            fallback.probe_council(self.project)
+
+        self.assertEqual([call.kwargs["model"]
+                          for call in run_review.call_args_list],
+                         ["gpt-6-astra", "opus", "sonnet"])
+        down = routes(self.project).council_down
+        self.assertEqual(list(down), [1])
+        self.assertIn("auth.json", down[1])
+
+    def test_a_pooled_worker_inherits_the_schedulers_failed_seat_probes(self):
+        self.configure(council(ASTRA, OPUS, LUNA))
+        routes(self.project).council_down = {2: "claude opus: unreachable"}
+        spawned = {}
+
+        def spawn(argv, env, stdin):
+            spawned.update(env)
+            return types.SimpleNamespace(pid=1)
+        with patch.object(pool, "SPAWN", spawn):
+            pool._spawn_worker(self.project, 1)
+        reset(self.project)
+        with patch.dict(os.environ, spawned, clear=True):
+            pool.inherit_council(self.project)
+
+        self.assertEqual(routes(self.project).council_down,
+                         {2: "claude opus: unreachable"})
 
     def test_a_failed_route_leaves_its_seat_missing_and_the_others_decide(self):
         fake = self.run_council(

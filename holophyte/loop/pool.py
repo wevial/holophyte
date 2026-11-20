@@ -1,4 +1,5 @@
 import contextlib
+import json
 import os
 import signal
 import sqlite3
@@ -31,6 +32,7 @@ WORKER_HANDOFF = 6
 WORKER_SLOT_ENV = "HOLOPHYTE_WORKER"
 CRITIC_DOWN_ENV = "HOLOPHYTE_CRITIC_DOWN"
 CRITIC_FALLBACK_ENV = "HOLOPHYTE_CRITIC_FALLBACK"
+COUNCIL_DOWN_ENV = "HOLOPHYTE_COUNCIL_DOWN"
 SPAWN = subprocess.Popen
 
 
@@ -83,6 +85,7 @@ def worker(target, provider):
     configured = target.config().get("agents") or {}
     reset(target)
     inherit_critic(target)
+    inherit_council(target)
     try:
         if any(k in configured for k in ("writer", "trimmer", *AGENT_FALLBACK_KEYS,
                                          *REVIEW_FALLBACK_KEYS)):
@@ -95,6 +98,14 @@ def worker(target, provider):
     finally:
         reset(target)
     return gate_build.replace_into_gate(result.run_id)
+
+
+def inherit_council(target):
+    from holophyte.agents.agent_routes import routes
+
+    down = json.loads(os.environ.get(COUNCIL_DOWN_ENV) or "{}")
+    routes(target).council_down = {int(number): diagnostic
+                                   for number, diagnostic in down.items()}
 
 
 def inherit_critic(target):
@@ -544,8 +555,10 @@ def _spawn_worker(target, slot):
 
     program, argv = reexec_command()
     env = dict(os.environ, **{WORKER_SLOT_ENV: str(slot)})
-    for key in (CRITIC_DOWN_ENV, CRITIC_FALLBACK_ENV):
+    for key in (CRITIC_DOWN_ENV, CRITIC_FALLBACK_ENV, COUNCIL_DOWN_ENV):
         env.pop(key, None)
+    if routes(target).council_down:
+        env[COUNCIL_DOWN_ENV] = json.dumps(routes(target).council_down)
     if routes(target).critic_failed:
         env[CRITIC_DOWN_ENV] = "1"
     if "critic" in routes(target).commands:

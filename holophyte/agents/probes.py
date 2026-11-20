@@ -273,7 +273,7 @@ def container_probe(project, seat, route, timeout=None):
         except subprocess.TimeoutExpired:
             return ProbeResult(cmd, None, "", cap, seat=seat,
                                expected_commit=sha)
-        except review_runner.ReviewBoundaryError as failed:
+        except (review_runner.ReviewBoundaryError, OSError) as failed:
             return ProbeResult(cmd, None, getattr(failed, "output", ""), cap,
                                launch_error=str(failed), seat=seat,
                                expected_commit=sha)

@@ -267,7 +267,9 @@ def fixing(decision, findings, ok, out):
 
 
 def primary_findings(verdict, decision, unwitnessed):
-    asked = parse_findings(verdict) if decision == "REQUEST_CHANGES" else []
+    structured = getattr(verdict, "council_findings", None)
+    asked = ((parse_findings(verdict) if structured is None else structured)
+             if decision == "REQUEST_CHANGES" else [])
     return asked + unwitnessed
 
 

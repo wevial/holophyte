@@ -13,6 +13,7 @@ from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import family_label
 from holophyte.config.reader import adversary_credential
 from holophyte.loop.gates import InfraFailure
+from holophyte.redact import redact_document
 from holophyte.redact import safe_print as print
 from holophyte.review import review_runner
 from holophyte.review.json_reply import (
@@ -180,7 +181,7 @@ def stored_findings(findings):
         if finding["line"] is not None and finding["line"] > 0:
             entry["line"] = finding["line"]
         stored.append(entry)
-    return stored
+    return redact_document(stored)
 
 
 def union(values, field, key=None):

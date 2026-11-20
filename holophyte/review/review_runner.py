@@ -611,10 +611,13 @@ def removing_on_signal():
     def handler(signum, frame):
         with _LIVE_LOCK:
             names = sorted(_LIVE)
-        for name in names:
-            _remove_container(name)
-        signal.signal(signum, signal.SIG_DFL)
-        os.kill(os.getpid(), signum)
+        try:
+            for name in names:
+                with contextlib.suppress(Exception):
+                    _remove_container(name)
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
 
     previous = {sig: signal.signal(sig, handler) for sig in REMOVAL_SIGNALS}
     try:
@@ -729,20 +732,21 @@ def run_review(
             credential=credential,
             reply_schema=reply_schema,
         )
-        try:
-            with _removing_on_signal(name):
+        with _removing_on_signal(name):
+            try:
                 result = _run(command, timeout=timeout, on_start=on_start,
                               check=codex is not None)
-        except ReviewBoundaryError as error:
-            if getattr(error, "returncode", None) is not None:
-                error.exit_status = error.returncode
-                error.tail = error.output[-EVIDENCE_TAIL:]
-                error.line = unparsed_line(error.stdout)
-            raise
-        finally:
-            _remove_container(name)
-            if _fingerprint(staged.path, run_id) != staged.fingerprint:
-                raise ReviewBoundaryError("staged candidate changed during review")
+            except ReviewBoundaryError as error:
+                if getattr(error, "returncode", None) is not None:
+                    error.exit_status = error.returncode
+                    error.tail = error.output[-EVIDENCE_TAIL:]
+                    error.line = unparsed_line(error.stdout)
+                raise
+            finally:
+                _remove_container(name)
+                if _fingerprint(staged.path, run_id) != staged.fingerprint:
+                    raise ReviewBoundaryError(
+                        "staged candidate changed during review")
         if "PREFLIGHT_OK" not in result.stderr:
             raise ReviewBoundaryError(
                 "review preflight did not complete: "

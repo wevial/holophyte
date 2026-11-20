@@ -168,7 +168,8 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
         _record_startup_probe(project, provider, probe)
         if not probe.ok:
             return False
-    probe_council(project)
+    if critic:
+        probe_council(project)
     probe_writer(project, activate=activate)
     probe_trimmer(project, provider, activate=activate)
     if critic:
