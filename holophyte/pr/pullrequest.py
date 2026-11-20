@@ -168,7 +168,8 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                      f"\n{style}")
     for name, text in babysitter.conventions(wt):
         parts.append(f"The repository's {name}:\n\n{text}")
-    parts.append(f"The ticket:\n\n{body or task}")
+    parts.append(record.notes_block(project, conn, run_id, "pr_writer")
+                 + f"The ticket:\n\n{body or task}")
     parts.append(f"The diff against {ref} (`git diff {ref}...HEAD`):\n\n"
                  f"```diff\n{diff}\n```")
     if refresh is not None:
