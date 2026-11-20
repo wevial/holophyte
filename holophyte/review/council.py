@@ -1,4 +1,4 @@
-"""A council review round: every seat on one prompt, merged strictest-wins."""
+"""A council review round: every seat on one prompt, then one consolidator rules."""
 import contextvars
 import json
 import posixpath
