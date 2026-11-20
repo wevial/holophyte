@@ -113,8 +113,7 @@ class ChecksConfigTests(LoopFixture):
         self.configure(check_table("lint", "implement", ["ruff check ."],
                                    "advisory")
                        + check_table("docs", "trim", ["make docs", "true"],
-                                     "off", ["docs/**"])
-                       + check_table("types", "implement", ["mypy ."], "required"))
+                                     "off", ["docs/**"]))
 
         check_config(self.project)
 
@@ -122,9 +121,7 @@ class ChecksConfigTests(LoopFixture):
             {"id": "lint", "after": "implement", "mode": "advisory",
              "commands": ["ruff check ."], "paths": []},
             {"id": "docs", "after": "trim", "mode": "off",
-             "commands": ["make docs", "true"], "paths": ["docs/**"]},
-            {"id": "types", "after": "implement", "mode": "required",
-             "commands": ["mypy ."], "paths": []}])
+             "commands": ["make docs", "true"], "paths": ["docs/**"]}])
 
     def test_a_bad_entry_stops_the_load_naming_the_entry(self):
         good = check_table("first", "implement", ["true"], "advisory")
@@ -159,6 +156,14 @@ class ChecksConfigTests(LoopFixture):
         ids = [stage["id"] for stage in standard.resolve(self.project)["stages"]]
 
         self.assertEqual(sorted(ids), sorted(STANDARD_STAGES))
+
+    def test_required_mode_loads_and_is_preserved(self):
+        self.configure(check_table("types", "implement", ["mypy ."], "required"))
+
+        check_config(self.project)
+
+        check, = pipeline_checks(self.project)
+        self.assertEqual(check["mode"], "required")
 
 
 class CheckRuns(LoopFixture):
