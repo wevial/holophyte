@@ -102,7 +102,7 @@ export function flowNumbers(flows: Flow[]): FlowNumbers {
 const DAY_MONTH = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long" });
 
 export function flowSpan(flows: Flow[]): string | null {
-  const starts = flows.flatMap((flow) => (flowRows(flow)[0] ? [flowRows(flow)[0]!.start_ms] : []));
+  const starts = flows.flatMap((flow) => flowRows(flow)[0]?.start_ms ?? []);
   if (starts.length === 0) return null;
   const start = Math.min(...starts);
   const end = Math.max(...flows.map((flow) => flow.now));

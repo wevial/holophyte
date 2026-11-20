@@ -303,7 +303,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
   const { open, setOpen, close, box, button } = usePopover(false);
   const [draft, setDraft] = useState({ from: "", to: "" });
   const custom = search.from != null && search.to != null;
-  const preset = presetOf(search.range).value;
+  const preset = presetOf(search.range);
   const field = "h-[30px] w-36 min-w-0 rounded-button border-0 bg-selected px-2 font-mono text-[12.5px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
   const toggle = () => {
     setDraft({ from: search.from ?? "", to: search.to ?? "" });
@@ -320,14 +320,14 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
     }}>
       <button ref={button} type="button" aria-label="Range" aria-haspopup="true" aria-expanded={open} onClick={toggle}
         className="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-        {custom ? dayRangeLabel(search.from, search.to) : presetOf(preset).label}
+        {custom ? dayRangeLabel(search.from, search.to) : preset.label}
         <span className="flex text-ink-3"><DropIcon /></span>
       </button>
       {open && (
         <div role="group" aria-label="Range choices" className={`absolute top-full right-0 z-20 mt-1 flex w-[220px] flex-col gap-1 p-1 ${MENU}`}>
           <div className="flex flex-col">
             {RANGES.map((each) => {
-              const on = !custom && preset === each.value;
+              const on = !custom && preset === each;
               return (
                 <button key={each.value} type="button" aria-pressed={on}
                   onClick={() => {
