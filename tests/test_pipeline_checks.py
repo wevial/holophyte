@@ -675,16 +675,24 @@ class AdvisoryCheckTests(CheckRuns):
 
 
 class SkippedCheckTests(CheckRuns):
-    def test_path_filter_matches_candidate_changes_with_a_foreign_git_dir(self):
+    def test_path_filter_uses_the_candidate_review_base_with_a_foreign_git_dir(self):
         other = self.target.parent / "other.git"
         self.git("init", "--bare", str(other))
+        (self.target / "docs").mkdir()
+        (self.target / "docs" / "guide.md").write_text("from main\n")
+        self.git("add", "docs/guide.md")
+        self.git("commit", "-qm", "update docs on main")
+        self.git("checkout", "-qb", "candidate")
         (self.target / "README.md").write_text("updated\n")
         self.git("commit", "-qam", "update readme")
         head = self.git("rev-parse", "HEAD").strip()
-        check = {"mode": "advisory", "paths": ["README.md"]}
 
         with patch.dict(os.environ, {"GIT_DIR": str(other)}):
-            self.assertIsNone(checks.skip_reason(check, self.target, self.base, head))
+            readme = {"mode": "advisory", "paths": ["README.md"]}
+            docs = {"mode": "advisory", "paths": ["docs/**"]}
+            self.assertIsNone(checks.skip_reason(readme, self.target, self.base, head))
+            reason = checks.skip_reason(docs, self.target, self.base, head)
+            self.assertIn("docs/**", reason or "")
 
     def test_an_unmatched_path_condition_and_mode_off_skip_without_running(self):
         held = tempfile.TemporaryDirectory()
