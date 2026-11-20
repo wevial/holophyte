@@ -14,12 +14,14 @@ from holophyte.agents.agent_output import (
     claude_json_turn,
     claude_marked_error,
 )
+from holophyte.agents.harness import Codex
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.files import RangeError, main_base
 from holophyte.loop.gates import InfraFailure, run_capped, sh
 from holophyte.pr.mockup import release_review_carry, review_carry
 from holophyte.redact import safe_print as print
 from holophyte.review import review_runner
+from holophyte.review.json_reply import event_reply
 
 PUBLISHING = threading.Lock()
 
@@ -130,7 +132,16 @@ def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
         return timed_out
     output = AgentOutput(output.strip(), command, exit_code=code)
     output.is_error = claude_json_turn(cmd) and claude_marked_error(output)
+    final = event_reply(output) if codex_json_turn(cmd) else None
+    if final is None:
+        return output
+    output = AgentOutput(final, command, exit_code=code)
+    output.is_error = False
     return output
+
+
+def codex_json_turn(argv):
+    return Codex.exec_command(argv) is not None and "--json" in argv[:-1]
 
 
 # What `codex exec resume` prints for an id it has no rollout for.

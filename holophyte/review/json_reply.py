@@ -272,13 +272,11 @@ def event_reply(reply):
         return None
     if not texts or not isinstance(texts[-1], str):
         return None
-    return reply_object(texts[-1])
+    return texts[-1] if reply_object(texts[-1]) is not None else None
 
 
 def read_reply(reply):
     value = reply_object(reply)
-    if value is None:
-        value = event_reply(reply)
     if value is None:
         return reply, "markdown"
     text = rendered(value)
