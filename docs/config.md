@@ -2233,12 +2233,14 @@ becomes a `check` stage in the pinned pipeline document, right after its
 Build stage (`implement` or `trim`), in config order; with no entry the
 document, its digest and its revision are the same as without the array. A
 check runs its commands, joined with `&&`, with the verify runner under
-`[verify] timeout_sec`, in a throwaway clone of the task repository,
-checked out detached at the head it checks, with no remote and refs of its
-own, and removed afterwards whatever the command returned, so the task
-worktree, its index, its refs and its worktree list are never touched;
+`[verify] timeout_sec`, in a throwaway repository holding its own copy of
+the task repository's objects and refs (branches such as `main`,
+remote-tracking refs and tags) and its Git identity, checked out detached at
+the head it checks, with no remote, and removed afterwards whatever the
+command returned, so the task worktree, its index, its refs and its
+worktree list are never touched and a container route can mount it alone;
 files the head does not commit, ignored build output included, are not in
-that clone, and neither is the repository's local config. It
+it, and neither is the rest of the repository's local config. It
 records a stage attempt under its `id`: `pass` or `fail` with edge `next`,
 the exit status and the output's tail in its detail, and `timed_out` when
 the timeout ended it. It closes `error` when the command could not start,

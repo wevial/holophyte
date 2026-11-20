@@ -42,23 +42,25 @@ def _next_attempt(conn, run_id, stage_id, open_seq=None):
     return attempt, seq if open_seq is None else open_seq
 
 
-def _document(detail):
-    return json.dumps(redact_document(dict(detail or {})), sort_keys=True)
+def _document(detail, verbatim=()):
+    detail = dict(detail or {})
+    kept = {key: detail.pop(key) for key in verbatim if key in detail}
+    return json.dumps({**redact_document(detail), **kept}, sort_keys=True)
 
 
 def open_stage(conn, run_id, stage_id, input_sha=None, detail=None, now=None,
-               open_seq=None):
+               open_seq=None, verbatim=()):
     with _transaction(conn):
         attempt, seq = _next_attempt(conn, run_id, stage_id, open_seq)
         return conn.execute(
             "INSERT INTO stageAttempts (runId, stageId, attempt, startedAt,"
             " inputSha, openSeq, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (run_id, stage_id, attempt, _now(now), input_sha, seq,
-             _document(detail))).lastrowid
+             _document(detail, verbatim))).lastrowid
 
 
 def close_stage(conn, attempt_id, outcome, edge, output_sha=None, roles=(),
-                detail=None, now=None):
+                detail=None, now=None, verbatim=()):
     roles = list(roles)
     with _transaction(conn):
         row = conn.execute(
@@ -85,7 +87,8 @@ def close_stage(conn, attempt_id, outcome, edge, output_sha=None, roles=(),
             " costUsd = ?, detail = ? WHERE id = ?",
             (_now(now), output_sha, outcome, edge, seconds, input_tokens,
              output_tokens, cost,
-             _document({**json.loads(stored), **(detail or {})}), attempt_id))
+             _document({**json.loads(stored), **(detail or {})}, verbatim),
+             attempt_id))
 
 
 def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None,

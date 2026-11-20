@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shlex
+import subprocess
 import sys
 import tempfile
 import time
@@ -48,6 +49,7 @@ from holophyte.config.pipeline_settings import (  # noqa: E402
     pinned_checks,
     pipeline_checks,
 )
+from holophyte.isolation import launcher  # noqa: E402
 from holophyte.loop.stop import command  # noqa: E402
 from holophyte.redact import REDACTED, values_held  # noqa: E402
 from holophyte.stages import checks, record, standard  # noqa: E402
@@ -451,6 +453,61 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
 
+    def test_a_check_sees_the_task_repositorys_branches_from_a_linked_worktree(self):
+        task = self.target.parent / "task"
+        self.git("worktree", "add", "-qb", "task", str(task))
+        (task / "work.txt").write_text("work\n")
+        self.git("add", "work.txt", cwd=task)
+        self.git("commit", "-qm", "work", cwd=task)
+        head = self.git("rev-parse", "HEAD", cwd=task).strip()
+
+        outcome, found = checks.ran(
+            self.project, {"commands": ["git rev-parse main",
+                                        "git diff --check main...HEAD"],
+                           "secrets": frozenset()}, task, head)
+
+        self.assertEqual((outcome, found["exit_status"]), ("pass", 0))
+        self.assertEqual(found["output"], self.git("rev-parse", "main"))
+
+    def in_container(self, writable, commands):
+        """Run a check on a container route whose `docker run` runs the
+        command in the mounted checkout with the task repository's objects
+        out of reach and only the container's Git config."""
+        objects = Path(self.git("rev-parse", "--git-common-dir").strip())
+        objects = (self.target / objects / "objects").resolve()
+
+        def docker(command, workspace, timeout, env=None, **_):
+            objects.rename(objects.with_name("hidden"))
+            try:
+                done = subprocess.run(
+                    command[-1], shell=True, cwd=workspace, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    env={**env, "PATH": os.environ["PATH"]})
+            finally:
+                objects.with_name("hidden").rename(objects)
+            return done.returncode, done.stdout
+
+        route = launcher.Route(backend="container", writable=writable)
+        with patch.object(launcher, "route_for", return_value=route), \
+                patch.object(launcher, "image_ready"), \
+                patch.object(launcher, "run_capped", side_effect=docker), \
+                patch("holophyte.review.review_runner._remove_container"), \
+                patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": os.devnull,
+                                        "GIT_CONFIG_NOSYSTEM": "1"}):
+            return self.ran(commands)
+
+    def test_a_read_only_container_route_runs_git_in_a_self_contained_checkout(self):
+        outcome, found = self.in_container(False, ["git cat-file -t HEAD"])
+
+        self.assertEqual((outcome, found["exit_status"]), ("pass", 0))
+        self.assertEqual(found["output"], "commit\n")
+
+    def test_a_writable_container_route_takes_the_task_repositorys_identity(self):
+        outcome, found = self.in_container(True, ["echo executed"])
+
+        self.assertEqual((outcome, found["exit_status"]), ("pass", 0))
+        self.assertEqual(found["output"], "executed\n")
+
     def test_a_background_child_cannot_write_after_the_check_returns(self):
         marker = self.target.parent / "late.marker"
         outcome, _ = self.ran([f"(sleep 0.5; echo late > {marker})"
@@ -481,7 +538,7 @@ class AdvisoryCheckTests(CheckRuns):
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)
         markers = Path(held.name)
-        with values_held(["off", "implement", "docs/"]):
+        with values_held(["off", "implement", "docs/", "advisory"]):
             self.walked(check_table("dormant", "implement",
                                     [f"touch {markers / 'dormant'}"], "off")
                         + check_table("pages", "implement",
@@ -507,6 +564,7 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(found["pages"][2], "skipped")
         self.assertIn("docs/**", found["pages"][4]["reason"])
         self.assertEqual(found["lint"][2:4], ("pass", "next"))
+        self.assertEqual(found["lint"][4]["mode"], "advisory")
         self.assertEqual(sorted(path.name for path in markers.iterdir()),
                          ["lint"])
 

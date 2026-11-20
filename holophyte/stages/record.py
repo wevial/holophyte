@@ -129,9 +129,10 @@ def stage_roles(conn, run_id, stage_id):
 
 
 class Attempt:
-    def __init__(self, conn, run_id, stage_id, sha, detail, wt=None):
+    def __init__(self, conn, run_id, stage_id, sha, detail, wt=None,
+                 verbatim=()):
         self.conn, self.run_id, self.stage_id = conn, run_id, stage_id
-        self.sha, self.wt = sha, wt
+        self.sha, self.wt, self.verbatim = sha, wt, verbatim
         self.detail, self.closed = dict(detail), False
         self.id = None
         if conn is not None and run_id is not None:
@@ -140,7 +141,8 @@ class Attempt:
     def _open(self, **mark):
         conn, run_id = self.conn, self.run_id
         return guarded(conn, run_id, "open_stage", lambda: stages.open_stage(
-            conn, run_id, self.stage_id, self.sha, self.detail, **mark))
+            conn, run_id, self.stage_id, self.sha, self.detail,
+            verbatim=self.verbatim, **mark))
 
     @property
     def recording(self):
@@ -157,7 +159,8 @@ class Attempt:
         conn, run_id = self.conn, self.run_id
         guarded(conn, run_id, "close_stage", lambda: stages.close_stage(
             conn, self.id, outcome, edge, sha,
-            stage_roles(conn, run_id, self.stage_id), self.detail))
+            stage_roles(conn, run_id, self.stage_id), self.detail,
+            verbatim=self.verbatim))
 
     def __enter__(self):
         return self

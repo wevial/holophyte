@@ -25,6 +25,7 @@ from store import pipelines
 OUTPUT_TAIL = 1000
 FRAGMENT = 8
 GROUP_GRACE_S = 2.0
+IDENTITY = ("user.name", "user.email")
 UNLAUNCHED = re.compile(
     r"^(?:\S*/)?(?:ba|da|z)?sh: (?:line )?(?:\d+: )?.+: "
     r"(?:command not found|not found|Permission denied|cannot execute.*)$")
@@ -40,7 +41,7 @@ def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
             continue
         with record.Attempt(conn, run_id, check["id"], sha,
                             {**detail, "mode": check["mode"]},
-                            wt=wt) as attempt, \
+                            wt=wt, verbatim=("mode",)) as attempt, \
                 heartbeat_while(conn, run_id, beat_s):
             outcome, found = _ran_bound(project, check, wt, sha)
             attempt.close(outcome, "next", sha, **found)
@@ -86,10 +87,7 @@ def ran(project, check, wt, sha):
     held = tempfile.mkdtemp(prefix="holo-check-")
     tree = Path(held, "checkout")
     try:
-        _git(held, "clone", "--shared", "--no-checkout", "--quiet", str(wt),
-             str(tree))
-        _git(tree, "remote", "remove", "origin")
-        _git(tree, "checkout", "--detach", "--quiet", sha)
+        _checkout(wt, tree, sha)
         outcome, found = _outcome(project, check, tree)
     except Exception as error:
         outcome, found = "error", {"error": str(error)}
@@ -100,6 +98,19 @@ def ran(project, check, wt, sha):
     return outcome, {key: scrubbed_output(value, check["secrets"])
                      if key in ("output", "error", "cleanup_error") else value
                      for key, value in found.items()}
+
+
+def _checkout(wt, tree, sha):
+    _git(tree.parent, "-c", "init.templateDir=", "init", "--quiet", str(tree))
+    _git(tree, "fetch", "--quiet", "--no-tags", "--no-write-fetch-head",
+         "--update-head-ok", str(Path(wt).resolve()), "+refs/*:refs/*")
+    for key in IDENTITY:
+        value = subprocess.run(["git", "config", "--get", key], cwd=wt,
+                               capture_output=True, text=True,
+                               env=git_environment()).stdout.strip()
+        if value:
+            _git(tree, "config", key, value)
+    _git(tree, "checkout", "--detach", "--quiet", sha)
 
 
 def _removed(held):
