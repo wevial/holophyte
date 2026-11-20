@@ -337,6 +337,19 @@ class StageRecordingTests(LoopFixture):
             ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
         self.assertEqual(self.shas("verify", 3), (fixed, fixed))
 
+    def test_a_cached_rerun_whose_baseline_runs_again_is_recorded(self):
+        task = dict(a_task(), verify="touch scratch.txt")
+        self.run_loop('[verify]\nalways = ["rm -f scratch.txt"]\n' + UNTRIMMED,
+                      Commit("work"), REQUEST_CHANGES, Commit("fix"), APPROVE,
+                      task=task)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        fixed = self.git("rev-parse", "main^2").strip()
+        self.assertEqual(self.outcomes()[4:], [
+            ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
+            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
+        self.assertEqual(self.shas("verify", 3), (fixed, fixed))
+
     def cached_rerun(self, ends):
         real, calls, self.ran = holophyte.loop.review_round._checked, [], None
 

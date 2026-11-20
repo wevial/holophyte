@@ -552,6 +552,13 @@ def cached_pass(run_id, cmd, cwd, timeout=None):
     return bool(cmd) and _pass_key(run_id, cmd, cwd, timeout) in _PASSES
 
 
+_LAUNCHED = [0]
+
+
+def commands_launched():
+    return _LAUNCHED[0]
+
+
 def _verify_command(project, command, cwd, timeout, on_start=None):
     from holophyte.isolation import launcher
 
@@ -594,6 +601,7 @@ def _run_command(cmd, cwd, timeout, project, on_start=None):
         for text in lines)
     clauses = lines if block else split_and_clauses(cmd)
     marked = bool(clauses) and len(clauses) > 1
+    _LAUNCHED[0] += 1
     try:
         returncode, out = _verify_command(
             project,

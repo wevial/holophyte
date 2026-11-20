@@ -25,6 +25,7 @@ from holophyte.loop.gates import (
     InfraFailure,
     RunFailure,
     cached_pass,
+    commands_launched,
     run_verify,
     sh,
     timed_out,
@@ -333,11 +334,12 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if record.verified_last(conn, run_id, head) and cached_pass(
             run_id, verify_cmd, wt, verify_config(project).timeout_sec):
+        launched = commands_launched()
         with record.Deferred(conn, run_id, "verify", head, {"round": rnd},
                              wt=wt) as rerun:
             ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha,
                                ticket, verify_cmd, contracts, rnd)
-            if not ok:
+            if not ok or commands_launched() != launched:
                 _close_verify(rerun.opened(), ok, out)
         return ok, out
     with record.Attempt(conn, run_id, "verify", head, {"round": rnd},
