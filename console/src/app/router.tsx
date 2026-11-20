@@ -12,7 +12,7 @@ import { defaultPollDeps, type PollDeps } from "../lib/poll";
 import { applyTextSize, useHeaderEffect, useTextSize } from "./appearance";
 import { CommandPalette } from "./components/CommandPalette";
 import { Haze } from "./components/Haze";
-import { Sidebar, TitleBar, useSidebarFold } from "./components/Sidebar";
+import { Sidebar, SidebarDrawer, TitleBar, useSidebarFold } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { TokenPrompt } from "./components/TokenPrompt";
 import { validateFindingsSearch } from "./findings";
@@ -65,7 +65,7 @@ function Shell() {
       <div data-shell="" className="flex min-h-screen flex-col bg-side text-ink min-[720px]:h-screen min-[720px]:overflow-hidden">
         <TitleBar {...sidebar} />
         <div className="flex flex-1 flex-col min-[720px]:min-h-0 min-[720px]:flex-row">
-          <Sidebar folded={sidebar.folded} />
+          {sidebar.narrow ? sidebar.drawer && <SidebarDrawer onClose={sidebar.closeDrawer} /> : <Sidebar folded={sidebar.folded} />}
           <main className="relative isolate min-w-0 flex-1 bg-canvas min-[720px]:overflow-y-auto min-[720px]:rounded-tl-[10px] min-[720px]:shadow-[0_0_0_1px_var(--rule-2)]">
             <TokenPrompt />
             <Outlet />

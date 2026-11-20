@@ -1229,3 +1229,85 @@ test("Confirm sweeps only the daemons its confirm named, though another answers 
   await flush();
   expect(posts).toEqual([`${ORIGIN}/actions/run-sweep`]);
 });
+
+async function atWidth(width: number, check: () => Promise<void>) {
+  happyDOM.setViewport({ width });
+  try {
+    await check();
+  } finally {
+    happyDOM.setViewport({ width: 1024 });
+  }
+}
+
+const drawer = () => screen.queryByRole("dialog", { name: "Sidebar" });
+const openSidebar = () => screen.getByRole("button", { name: /^(Open|Close) sidebar$/ });
+
+test("at 390px the page loads with no sidebar nav and the panel button opens a drawer holding every page link unfolded, though the fold is stored", async () => {
+  await atWidth(390, async () => {
+    localStorage.setItem("holophyte.next.rail", "folded");
+    await mount("#/runs");
+    expect(screen.queryByRole("navigation", { name: "Pages" })).toBeNull();
+    expect(drawer()).toBeNull();
+    expect(childNames(titleBar())).toEqual(["Open sidebar", "holophyte"]);
+    expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(openSidebar());
+    expect(openSidebar().getAttribute("aria-expanded")).toBe("true");
+    const nav = within(drawer()!).getByRole("navigation", { name: "Pages" });
+    expect(pages().map((link) => link.textContent)).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow"]);
+    expect(nav.closest("[role=dialog]")).toBe(drawer());
+    expect(within(drawer()!).getByRole("group", { name: "Theme" })).toBeTruthy();
+  });
+});
+
+test("at 390px the open drawer closes on a nav link, the dimmed page or Escape, each time returning focus to the panel button", async () => {
+  await atWidth(390, async () => {
+    await mount("#/");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toBe("Runs");
+    const closes: [string, () => void][] = [
+      ["link", () => fireEvent.click(within(drawer()!).getByRole("link", { name: "Runs" }))],
+      ["scrim", () => fireEvent.click(document.querySelector("[data-scrim]")!)],
+      ["escape", () => fireEvent.keyDown(document, { key: "Escape" })],
+    ];
+    for (const [way, close] of closes) {
+      fireEvent.click(openSidebar());
+      expect(drawer()).not.toBeNull();
+      await act(async () => close());
+      await act(settle);
+      expect([way, drawer()]).toEqual([way, null]);
+      expect(document.activeElement).toBe(openSidebar());
+      expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
+      if (way === "link") expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Runs");
+    }
+  });
+});
+
+test("at 1280px the sidebar sits beside the page, and the panel button and Cmd+backslash fold it with the fold remembered", async () => {
+  await atWidth(1280, async () => {
+    await mount("#/");
+    expect(drawer()).toBeNull();
+    expect(Array.from(titleBar().nextElementSibling!.children)).toEqual([aside(), screen.getByRole("main")]);
+    expect(pages().map((link) => link.textContent)).toEqual(["Overview", "Runs", "Tickets", "Findings", "Scouts", "Flow"]);
+    fireEvent.click(toggle());
+    expect(toggle().getAttribute("aria-label")).toBe("Expand sidebar");
+    expect(pages().map((link) => link.textContent)).toEqual(["", "", "", "", "", ""]);
+    cleanup();
+
+    await mount("#/");
+    expect(toggle().getAttribute("aria-label")).toBe("Expand sidebar");
+    fireEvent.keyDown(document, { key: "\\", metaKey: true });
+    expect(toggle().getAttribute("aria-label")).toBe("Collapse sidebar");
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(drawer()).toBeNull();
+  });
+});
+
+test("at 390px the Runs state tabs keep one row that scrolls sideways, no tab wrapping its label", async () => {
+  await atWidth(390, async () => {
+    await mount("#/runs");
+    const row = screen.getByRole("group", { name: "Run states" });
+    for (const name of ["max-[720px]:flex-nowrap", "max-[720px]:overflow-x-auto"]) expect(row.classList.contains(name)).toBe(true);
+    const tabs = within(row).getAllByRole("button");
+    expect(tabs.map((tab) => tab.textContent!.split(" ")[0])).toEqual(["All", "Active", "Merged", "Failed", "Abandoned"]);
+    for (const tab of tabs) for (const name of ["max-[720px]:shrink-0", "max-[720px]:whitespace-nowrap"]) expect(tab.classList.contains(name)).toBe(true);
+  });
+});
