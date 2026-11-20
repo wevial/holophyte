@@ -55,11 +55,11 @@ def config_held(project, answer):
         reads = [read.config() for read, patterns in ((fresh, own),
                                                       (later, also))
                  if patterns is not None]
-        private = compiled((own or []) + (also or []))
         with values_held((own or []) + (also or [])):
             secrets = current_secrets(
                 project, *reads,
                 on_disk=later.config() if also is not None else None)
+            private = compiled((own or []) + (also or []))
             if secrets is None or len(reads) < 2 or private is None:
                 return 503, {"error": "the project config cannot be read, so"
                                       " its pipeline cannot be resolved"}
@@ -69,7 +69,7 @@ def config_held(project, answer):
 def compiled(patterns):
     try:
         return [re.compile(pattern) for pattern in patterns]
-    except re.error:
+    except (re.error, OverflowError, RecursionError):
         return None
 
 

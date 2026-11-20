@@ -193,6 +193,15 @@ class PromptRouteTests(ServeTestCase):
                          f"{FRAME}\n\nPing [redacted] before merging.\n\n")
         self.assertNotIn("private.synthetic.invalid", json.dumps(body))
 
+    def test_a_private_pattern_that_does_not_compile_answers_503_with_json(self):
+        for pattern in ("private(", "a{4294967296}"):
+            with self.subTest(pattern=pattern):
+                self.start(f'[merge]\nprivate_patterns = ["{pattern}"]\n')
+                code, _, body = self.request("GET", "/pipeline/prompts/review")
+
+                self.assertEqual(code, 503)
+                self.assertIn("cannot be read", body["error"])
+
     def test_a_private_pattern_matching_the_key_keeps_the_target(self):
         body = self.answer("pr_writer",
                            '[merge]\nprivate_patterns = ["pr_writer"]\n')
