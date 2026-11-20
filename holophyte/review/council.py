@@ -365,8 +365,8 @@ def raisers(found, ids):
 def shared_places(found):
     seats = {}
     for who, finding, _ in found.values():
-        if who.startswith("seat") and spot(finding):
-            seats.setdefault(spot(finding), set()).add(who)
+        if who.startswith("seat") and (at := spot(finding)):
+            seats.setdefault(at, set()).add(who)
     return {at for at, who in seats.items() if len(who) >= 2}
 
 
