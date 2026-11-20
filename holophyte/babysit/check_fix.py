@@ -115,18 +115,20 @@ def fix_checks_or_park(run, beat_s, pull, state, ticket, verify_cmd, contracts,
     print(f"[holo2] checks failed on {pull.url}"
           f" ({', '.join(check.name for check in failed)}); check fix round"
           f" {number} of {cap}")
-    detail = {"round": number, "cap": cap,
-              "checks": [check.name for check in failed], "group": group}
-    sha = record.fix_round(
-        run.conn, run.run_id, "check_fix", run.sha, detail, run.wt,
-        lambda: _fix_threads(
+
+    def fix():
+        return _fix_threads(
             run.project, run.conn, run.run_id, run.provider, run.task_id,
             run.branch, run.wt, run.sha, beat_s, pull, (), None, ticket,
             verify_cmd, contracts, run.budget_min, pass_no,
             review_follows=True,
             goal=check_fix_brief(pull, failed, logs, ticket, group,
                                  (number, cap)),
-            no_commit_why=why, reviewed=reviewed, notes=state.notes))
+            no_commit_why=why, reviewed=reviewed, notes=state.notes)
+    sha = fix() if group is not None else record.fix_round(
+        run.conn, run.run_id, "check_fix", run.sha,
+        {"round": number, "cap": cap,
+         "checks": [check.name for check in failed]}, run.wt, fix)
     return sha, _just_pushed_state(run.project, run.conn, run.run_id,
                                    run.provider, run.task_id, run.branch, sha,
                                    beat_s, pull, reviewed)

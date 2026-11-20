@@ -605,10 +605,25 @@ def _execution_fingerprint(project):
 
 
 def prepare(project, wt, task_id, record_note=None, evidence_states=(),
-            evidence_files=(), ui_change=None):
+            evidence_files=(), ui_change=None, seen=None):
     """Keep the receipt in the worktree's git directory, outside candidate files."""
     return _prepare(project, wt, task_id, record_note, evidence_states,
-                    evidence_files, ui_change)[0]
+                    evidence_files, ui_change, seen)[0]
+
+
+def _skip_reason(cfg, wt, task_id, ui_change, evidence_states, paths=True):
+    if not cfg.ui_paths:
+        return '[merge] ui_paths is unset'
+    if paths and not matches(wt, cfg.ui_paths):
+        return 'the change touches no UI path'
+    if not _wants_capture(cfg, wt, task_id, ui_change, evidence_states):
+        return 'the ticket asks for no UI capture'
+    return None
+
+
+def _tell(seen, **found):
+    if seen is not None:
+        seen.update(found)
 
 
 def _stamp(section, sha):
@@ -634,12 +649,14 @@ def _receipt(project, wt, task_id, evidence_states, evidence_files=()):
 
 
 def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files,
-             ui_change=None):
+             ui_change=None, seen=None):
     cfg = merge_config(project)
-    if (not cfg.ui_paths or not matches(wt, cfg.ui_paths)
-            or not _wants_capture(cfg, wt, task_id, ui_change, evidence_states)):
+    skipped = _skip_reason(cfg, wt, task_id, ui_change, evidence_states)
+    if skipped:
+        _tell(seen, skipped=skipped)
         return '', ''
     receipt, head = _receipt(project, wt, task_id, evidence_states, evidence_files)
+    _tell(seen, receipt=receipt, fresh=not receipt.exists())
     note = receipt.with_suffix('.note')
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
@@ -674,7 +691,11 @@ def capture_failure(project, wt, task_id, evidence_states, evidence_files=(),
     if not _wants_capture(merge_config(project), wt, task_id, ui_change,
                           evidence_states):
         return None
-    receipt = _receipt(project, wt, task_id, evidence_states, evidence_files)[0]
+    return failure_at(
+        _receipt(project, wt, task_id, evidence_states, evidence_files)[0])
+
+
+def failure_at(receipt):
     failed, kind, log = (receipt.with_suffix(suffix)
                          for suffix in ('.failed', '.kind', '.log'))
     if not failed.exists():
@@ -704,10 +725,12 @@ def _seen(project, wt, task_id, evidence, evidence_states, evidence_files):
 
 
 def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=(),
-            evidence_files=(), ui_change=None):
+            evidence_files=(), ui_change=None, seen=None):
     cfg = merge_config(project)
-    if (not cfg.ui_paths
-            or not _wants_capture(cfg, wt, task_id, ui_change, evidence_states)):
+    skipped = _skip_reason(cfg, wt, task_id, ui_change, evidence_states,
+                           paths=False)
+    if skipped:
+        _tell(seen, skipped=skipped)
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
@@ -716,7 +739,7 @@ def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=()
         unquoted = QUOTED.sub('', evidence)
         return seen or (unquoted if unquoted != evidence else None)
     section, failure = _prepare(project, wt, task_id, record_note, evidence_states,
-                                evidence_files, ui_change)
+                                evidence_files, ui_change, seen)
     if not section:
         return None
     if not failure or not evidence:

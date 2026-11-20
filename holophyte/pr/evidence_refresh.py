@@ -7,45 +7,27 @@ from holophyte.stages import record
 from holophyte.tickets import ticket_template
 
 
-def captured(project, conn, run_id, wt, task_id, parsed, capture, sha=None,
-             fixable=False):
+def captured(conn, run_id, wt, capture, sha=None, fixable=False):
     if conn is None or run_id is None:
-        return capture()
+        return capture(None)
     sha = sha or record.head(conn, run_id, wt)
+    seen = {}
     with record.Deferred(conn, run_id, "capture", sha, {}, wt) as attempt:
-        taken = capture()
-    found = record.guarded(conn, run_id, "stage_read", lambda: _capture_outcome(
-        project, wt, task_id, parsed, fixable))
-    if found in (None, record.REFUSED) or record.repeats(conn, run_id, "capture", sha,
-                                                   *found):
-        return taken
-    outcome, edge, detail = found
-    if outcome == "skipped":
-        record.skip(conn, run_id, "capture", detail["reason"], sha)
-    else:
-        attempt.opened().close(outcome, edge, sha, **detail)
+        taken = capture(seen)
+    if "skipped" in seen:
+        if not record.repeats(conn, run_id, "capture", sha, "skipped", "next",
+                              {"reason": seen["skipped"]}):
+            record.skip(conn, run_id, "capture", seen["skipped"], sha)
+    elif seen.get("fresh"):
+        found = record.guarded(conn, run_id, "stage_read", lambda: _outcome(
+            seen["receipt"], fixable))
+        if found is not record.REFUSED:
+            attempt.opened().close(found[0], found[1], sha, **found[2])
     return taken
 
 
-def _capture_outcome(project, wt, task_id, parsed, fixable):
-    cfg = merge_config(project)
-    reason = ("[merge] ui_paths is unset" if not cfg.ui_paths
-              else "[merge] ui_capture is unset" if not cfg.ui_capture.strip()
-              else "the change touches no UI path"
-              if not pr_media.matches(wt, cfg.ui_paths)
-              else "the ticket asks for no UI capture"
-              if not pr_media._wants_capture(cfg, wt, task_id, parsed.ui_change,
-                                             parsed.evidence_states)
-              else None)
-    if reason is not None:
-        return "skipped", "next", {"reason": reason}
-    receipt = pr_media._receipt(project, wt, task_id, parsed.evidence_states,
-                                parsed.evidence_files)[0]
-    if not receipt.exists():
-        return None
-    failure = pr_media.capture_failure(
-        project, wt, task_id, parsed.evidence_states, parsed.evidence_files,
-        ui_change=parsed.ui_change)
+def _outcome(receipt, fixable):
+    failure = pr_media.failure_at(receipt)
     if failure is None:
         return "pass", "next", {}
     edge = "on_fail" if fixable and failure.kind == "capture" else "next"
@@ -56,24 +38,20 @@ def _capture_outcome(project, wt, task_id, parsed, fixable):
 
 def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha,
                      beat_s, fixable=False):
-    parsed = ticket_template.parse(ticket)
-    return captured(project, conn, run_id, wt, task_id, parsed, lambda: _publish(
-        project, conn, run_id, task_id, wt, pull, parsed, sha, beat_s), sha,
-        fixable)
-
-
-def _publish(project, conn, run_id, task_id, wt, pull, parsed, sha, beat_s):
     if not merge_config(project).ui_paths:
         return None
+    parsed = ticket_template.parse(ticket)
     states, files = parsed.evidence_states, parsed.evidence_files
     endpoint = f"repos/{pull.repo}/pulls/{pull.number}"
     with heartbeat_while(conn, run_id, beat_s):
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
         evidence = github.split_pr_body(body)[2]
-        section = pr_media.refresh(
+        section = captured(conn, run_id, wt, lambda seen: pr_media.refresh(
             project, wt, task_id, evidence, evidence_states=states,
             evidence_files=files, ui_change=parsed.ui_change,
-            record_note=lambda text: ledger(conn, run_id, task_id, "note", text, None))
+            record_note=lambda text: ledger(conn, run_id, task_id, "note",
+                                            text, None), seen=seen),
+            sha, fixable)
         failure = pr_media.capture_failure(project, wt, task_id, states, files,
                                            ui_change=parsed.ui_change)
         if section is None or section.rstrip() == evidence.rstrip():
@@ -86,8 +64,8 @@ def _publish(project, conn, run_id, task_id, wt, pull, parsed, sha, beat_s):
     for note in notes:
         ledger(conn, run_id, task_id, "note", note, None)
     if failure:
-        captured = pr_media.CAPTURED.search(evidence)
-        old = captured[1] if captured else "an earlier commit"
+        stamped = pr_media.CAPTURED.search(evidence)
+        old = stamped[1] if stamped else "an earlier commit"
         text = (f"Evidence on {pull.url}: kept the capture at {old}, marked stale;"
                 f" capturing {sha[:12]} failed: {' '.join(failure.sentence.split())}")
     else:

@@ -8,7 +8,7 @@ from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import pr_media
-from holophyte.pr.evidence_refresh import publish_evidence
+from holophyte.pr.evidence_refresh import captured, publish_evidence
 from holophyte.redact import safe_print as print
 from holophyte.stages import record
 from holophyte.tickets import ticket_template
@@ -87,9 +87,10 @@ def fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
             reviewed_by_caller=True, notes=notes))
     parsed = ticket_template.parse(ticket)
     with heartbeat_while(conn, run_id, beat_s):
-        pr_media.prepare(project, wt, task_id, evidence_states=parsed.evidence_states,
-                         evidence_files=parsed.evidence_files,
-                         ui_change=parsed.ui_change)
+        captured(conn, run_id, wt, lambda seen: pr_media.prepare(
+            project, wt, task_id, evidence_states=parsed.evidence_states,
+            evidence_files=parsed.evidence_files, ui_change=parsed.ui_change,
+            seen=seen), fixed)
     again = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
                              fixed, beat_s)
     if again is not None and again.kind != "infra":

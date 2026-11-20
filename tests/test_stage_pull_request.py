@@ -20,12 +20,14 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402 - after the sys.path insert above
 import test_babysit_capture_fix as capture_cases  # noqa: E402
+import test_merge_queue as queue_cases  # noqa: E402
 from fake_agent import APPROVE, Commit, FakeAgent, Idle, Reply  # noqa: E402
 from loop_fixture import MergeModeFixture  # noqa: E402
 from test_covering_fix_round import NEW_FINDING, changes  # noqa: E402
 from test_stage_recording import USAGE, Metered  # noqa: E402
 
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
 
 FAILING = "FAIL: test_a (tests.test_y.Case.test_a)\n"
@@ -53,6 +55,10 @@ class PullRequestStages(cases.BabysitHelpers, MergeModeFixture):
         on every later head; returns the heads in the order they were read."""
         self.configure('[merge]\nmode = "pr"\n' + merge)
         self.fake_route()
+        self.enterContext(patch.object(
+            holophyte.pr.pr_status, "main_rules", return_value=[
+                {"type": "required_status_checks", "parameters": {
+                    "required_status_checks": [{"context": "unit"}]}}]))
         self.enterContext(patch.object(holophyte.pr.github, "SLEEP"))
         heads, ids = [], iter(range(42, 10**4))
 
@@ -90,6 +96,7 @@ class CheckFixStageTests(PullRequestStages):
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         failing, fixed = heads
+        self.assertEqual(self.pushed()[-1][1], fixed)
         (attempt,) = self.attempts("check_fix")
         self.assertEqual(attempt[:6],
                          ("check_fix", 1, "pass", "next", failing, fixed))
@@ -125,6 +132,23 @@ class CheckFixStageTests(PullRequestStages):
             "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'"
             " AND level = 'detail'")}
         self.assertIn("open_stage", writes)
+
+
+class MergeGroupFixTests(PullRequestStages):
+    land = queue_cases.MergeQueueTests.land
+    enqueued = queue_cases.MergeQueueTests.enqueued
+
+    def test_a_merge_group_repair_records_no_check_fix_attempt(self):
+        self.land([queue_cases.queue_read(),
+                   queue_cases.queue_read(queued=False),
+                   queue_cases.queue_read(queued=False, merged=True)],
+                  steps=(Commit("fix: the unit failure"), APPROVE, Idle("")),
+                  groups=[[queue_cases.group_run("failure")]],
+                  group_runs=[queue_cases.UNIT])
+
+        self.assertEqual(len(self.enqueued()), 2)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.attempts("check_fix"), [])
 
 
 class CoveringFixStageTests(PullRequestStages):
