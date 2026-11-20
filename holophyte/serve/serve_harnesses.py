@@ -70,18 +70,18 @@ def configured_seats(agents):
                     for name, value in profiles.items()]
     seats = []
     for seat, value in entries:
-        name, model = seat_route(seat, value)
-        if name is not None:
-            seats.append((seat, name, model))
+        seats += [(seat, name, model) for name, model in seat_routes(seat, value)
+                  if name is not None]
     return seats
 
 
-def seat_route(seat, value):
+def seat_routes(seat, value):
     if isinstance(value, dict):
         name = value.get("harness", "codex" if seat == "critic" else None)
         model = value.get("model")
-        return name, model if isinstance(model, str) and model else None
-    return command_adapter(value), None
+        return [(name, model if isinstance(model, str) and model else None)]
+    commands = value if isinstance(value, list) else [value]
+    return [(command_adapter(command), None) for command in commands]
 
 
 def command_adapter(command):

@@ -106,16 +106,18 @@ class HarnessesTests(ServeTestCase):
         self.assertEqual((found["codex"]["seats"], found["codex"]["probe"]),
                          ([], None))
 
-    def test_a_command_string_seat_and_its_fallback_probe_count(self):
+    def test_command_string_seats_and_their_fallback_probe_count(self):
         self.start(self.config(
             '[agents]\nreviewer = "codex exec -m gpt-6-astra"\n'
-            f'reviewer_fallback = "{self.root}/opt/cursor-agent -p"\n'))
+            f'reviewer_fallback = ["{self.root}/opt/cursor-agent -p",'
+            ' "claude -p"]\n'))
         record_probe(self.project, ProbeResult(
             ["cursor-agent"], 0, "ready", 90, seat="reviewer"), True, 9, 10)
         found = self.answer()
         self.assertEqual(found["codex"]["seats"], ["reviewer"])
         self.assertIsNone(found["codex"]["probe"])
         self.assertEqual(found["cursor"]["seats"], ["reviewer_fallback"])
+        self.assertEqual(found["claude"]["seats"], ["reviewer_fallback"])
         self.assertEqual(found["cursor"]["probe"], {
             "ok": True, "at_ms": 10_000, "why": None,
             "seat": "reviewer_fallback"})
