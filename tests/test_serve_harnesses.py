@@ -106,6 +106,13 @@ class HarnessesTests(ServeTestCase):
         self.assertEqual((found["codex"]["seats"], found["codex"]["probe"]),
                          ([], None))
 
+    def test_a_later_probe_of_an_earlier_listed_seat_is_the_newest(self):
+        self.two_claude_seats()
+        self.record("implementer", True, 1_700_000_200)
+        self.assertEqual(self.answer()["claude"]["probe"], {
+            "ok": True, "at_ms": 1_700_000_200_000, "why": None,
+            "seat": "implementer"})
+
     def test_command_string_seats_name_their_harness_model_and_probe(self):
         self.start(self.config(
             '[agents]\nreviewer = "codex exec -m gpt-6-astra"\n'
@@ -123,16 +130,29 @@ class HarnessesTests(ServeTestCase):
                          {"id": "gpt-5.6-sol", "source": "configured"})
         self.assertNotIn("gpt-5.6-sol", ADAPTERS["codex"].models)
 
+    def test_a_codex_config_override_names_the_seats_model(self):
+        self.start(self.config(
+            '[agents]\nreviewer = "codex exec -c \'model=\\"gpt-5.6-sol\\"\'"\n'
+            'adversary = "codex exec --config=model=gpt-6-mars"\n'))
+        configured = [model["id"] for model in self.answer()["codex"]["models"]
+                      if model["source"] == "configured"]
+        self.assertEqual(configured, ["gpt-5.6-sol", "gpt-6-mars"])
+
     def test_a_fallback_list_over_several_harnesses_serves_no_probe(self):
         self.start(self.config(
             f'[agents]\nreviewer_fallback = ["{self.root}/opt/cursor-agent -p",'
+            ' "claude -p"]\n'
+            f'adjudicator_fallback = ["{self.root}/opt/review-wrapper",'
             ' "claude -p"]\n'))
-        record_probe(self.project, ProbeResult(
-            ["cursor-agent"], 0, "ready", 90, seat="reviewer"), True, 9, 10)
+        for seat in ("reviewer", "adjudicator"):
+            record_probe(self.project, ProbeResult(
+                ["wrapper"], 0, "ready", 90, seat=seat), True, 9, 10)
         found = self.answer()
-        for name in ("cursor", "claude"):
-            self.assertEqual((found[name]["seats"], found[name]["probe"]),
-                             (["reviewer_fallback"], None))
+        self.assertEqual(found["cursor"]["seats"], ["reviewer_fallback"])
+        self.assertEqual(found["claude"]["seats"],
+                         ["reviewer_fallback", "adjudicator_fallback"])
+        self.assertIsNone(found["cursor"]["probe"])
+        self.assertIsNone(found["claude"]["probe"])
 
     def test_an_unreadable_config_answers_503(self):
         self.start(self.config())

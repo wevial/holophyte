@@ -5,6 +5,7 @@ import dataclasses
 import os
 import shlex
 import shutil
+import tomllib
 
 from holophyte.agents.harness import ADAPTERS, PROFILES_KEY, SHADOW_KEY
 from holophyte.agents.probe_log import last_probes
@@ -66,14 +67,13 @@ def harness(adapter, paths, seats, probes):
 def configured_seats(agents, paths):
     keys = [key + suffix for key in AGENT_CONFIG_KEYS.values()
             for suffix in ("", FALLBACK)] + [SHADOW_KEY]
-    entries = [(key, agents.get(key)) for key in keys]
+    entries = [(key, agents[key]) for key in keys if key in agents]
     profiles = agents.get(PROFILES_KEY)
     if isinstance(profiles, dict):
         entries += [(f"{PROFILES_KEY}.{name}", value)
                     for name, value in profiles.items()]
     return [(seat, name, model) for seat, value in entries
-            for name, model in seat_routes(seat, value, paths)
-            if name is not None]
+            for name, model in seat_routes(seat, value, paths)]
 
 
 def seat_routes(seat, value, paths):
@@ -108,11 +108,26 @@ def command_adapter(executable, paths):
 
 def command_model(words):
     for at, word in enumerate(words):
+        following = words[at + 1] if at + 1 < len(words) else None
         if word.startswith("--model="):
             return word.partition("=")[2] or None
-        if word in ("-m", "--model") and at + 1 < len(words):
-            return words[at + 1]
+        if word in ("-m", "--model"):
+            return following
+        if word.startswith("--config="):
+            following, word = word.partition("=")[2], "-c"
+        if word in ("-c", "--config") and following is not None:
+            key, held, value = following.partition("=")
+            if held and key.strip() == "model":
+                return config_value(value.strip())
     return None
+
+
+def config_value(value):
+    try:
+        parsed = tomllib.loads(f"value = {value}")["value"]
+    except tomllib.TOMLDecodeError:
+        return value or None
+    return parsed if isinstance(parsed, str) and parsed else None
 
 
 def newest_probe(seats, probes):
