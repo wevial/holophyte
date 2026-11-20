@@ -1,4 +1,4 @@
-"""Store writes recording what a run ran under; none of them may stop the run."""
+"""The store write recording the pipeline a run ran under; it may not stop the run."""
 import json
 
 import store
@@ -10,24 +10,20 @@ from store import pipelines
 FAILED = "stage_record_failed"
 
 
-def guarded(conn, run_id, write, record):
+def pin(run):
+    if run.conn is None or run.run_id is None:
+        return
     try:
-        return record()
+        _pin(run)
     except (Exception, SystemExit) as error:
         try:
             store.record_event(
-                conn, run_id, FAILED, f"{write} not recorded: {error}",
-                level="detail",
-                payload=json.dumps({"write": write, "error": repr(error)}))
+                run.conn, run.run_id, FAILED,
+                f"pin_pipeline not recorded: {error}", level="detail",
+                payload=json.dumps({"write": "pin_pipeline",
+                                    "error": repr(error)}))
         except Exception:
             pass
-        return None
-
-
-def pin(run):
-    if run.conn is None or run.run_id is None:
-        return None
-    return guarded(run.conn, run.run_id, "pin_pipeline", lambda: _pin(run))
 
 
 def _pin(run):

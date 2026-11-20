@@ -8,12 +8,10 @@ from holophyte.redact import redact_document
 from .schema import _transaction
 
 
-def pin_pipeline(conn, run_id, name, document, now=None):
+def pin_pipeline(conn, run_id, name, document):
     canonical = json.dumps(redact_document(document), sort_keys=True,
                            separators=(",", ":"), allow_nan=False)
     digest = hashlib.sha256(canonical.encode()).hexdigest()
-    if now is None:
-        now = int(time.time() * 1000)
     with _transaction(conn):
         row = conn.execute("SELECT projectId, pipelineId FROM runs WHERE id = ?",
                            (run_id,)).fetchone()
@@ -35,7 +33,7 @@ def pin_pipeline(conn, run_id, name, document, now=None):
                 "INSERT INTO pipelines (projectId, name, revision, format,"
                 " digest, document, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (project_id, name, revision, document.get("format"), digest,
-                 canonical, now)).lastrowid
+                 canonical, int(time.time() * 1000))).lastrowid
         conn.execute("UPDATE runs SET pipelineId = ? WHERE id = ?",
                      (pipeline_id, run_id))
     return pipeline_id
