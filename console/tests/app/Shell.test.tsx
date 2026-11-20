@@ -1432,3 +1432,34 @@ test("at 390px Escape in the drawer's project switcher closes the switcher and l
     expect(screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer())).toHaveLength(1);
   });
 });
+
+test("at 390px Escape closes the open drawer though focus sits on the title bar's home link, returning focus to the panel button", async () => {
+  await atWidth(390, async () => {
+    await mount("#/");
+    fireEvent.click(openSidebar());
+    await act(async () => homeLink().focus());
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    expect(drawer()).toBeNull();
+    expect(document.activeElement).toBe(openSidebar());
+  });
+});
+
+test("at 390px over an open Filter and sort, Escape closes the drawer's project switcher alone, then the drawer, leaving Filter and sort open", async () => {
+  await atWidth(390, async () => {
+    await mount("#/runs");
+    await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Filter and sort/ })));
+    const filters = () => screen.queryByRole("dialog", { name: "Filter and sort" });
+    expect(filters()).not.toBeNull();
+    fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true });
+    await act(async () => void fireEvent.click(within(drawer()!).getByRole("button", { name: /Switch project$/ })));
+    await act(async () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox").focus());
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    await act(settle);
+    expect(screen.queryByRole("dialog", { name: "Switch project" })).toBeNull();
+    expect([drawer() != null, drawer()?.contains(document.activeElement), filters() != null]).toEqual([true, true, true]);
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    expect(drawer()).toBeNull();
+    expect(document.activeElement).toBe(openSidebar());
+    expect(filters()).not.toBeNull();
+  });
+});

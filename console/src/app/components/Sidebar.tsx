@@ -575,7 +575,7 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
 
 const inPopup = (target: EventTarget | null, drawer: HTMLElement | null) => {
   const popup = target instanceof Element ? target.closest('[role="dialog"]') : null;
-  return popup != null && popup !== drawer;
+  return popup != null && popup !== drawer && drawer?.contains(popup) === true;
 };
 
 export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose: () => void; back: string | null }) {
@@ -586,10 +586,9 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
     if (!open) return;
     box.current?.focus();
     const keep = (event: KeyboardEvent) => {
-      const target = event.target as Node;
-      if (target !== document.body && !box.current?.contains(target)) return;
       if (inPopup(event.target, box.current)) return;
       trap(event, box.current, () => live.current());
+      if (event.key === "Escape") event.stopPropagation();
     };
     document.addEventListener("keydown", keep, true);
     return () => document.removeEventListener("keydown", keep, true);
@@ -598,7 +597,7 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
     <div
       hidden={!open}
       onKeyDown={(event) => {
-        if (!event.metaKey && !event.ctrlKey && !inPopup(event.target, box.current)) event.stopPropagation();
+        if (!event.metaKey && !event.ctrlKey) event.stopPropagation();
       }}
       className="fixed inset-x-0 top-[30px] bottom-0 z-50"
     >
