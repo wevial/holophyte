@@ -252,6 +252,7 @@ CREATE TABLE IF NOT EXISTS reviewRounds (
     reviewerModel       TEXT    NOT NULL,
     startedAt           INTEGER NOT NULL,
     endedAt             INTEGER,
+    reply               TEXT,  -- the schema-checked JSON reply, else NULL
     UNIQUE (runId, round)
 );
 

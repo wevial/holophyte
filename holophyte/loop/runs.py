@@ -12,6 +12,7 @@ from holophyte.agents.roles import agent_route
 from holophyte.redact import safe_print as print
 from holophyte.review import review_runner
 from holophyte.review.criterion_ids import numbered
+from holophyte.review.json_reply import json_reply
 from holophyte.review.reply_parsing import (
     criteria_findings,
     criteria_statuses,
@@ -250,7 +251,8 @@ def record_round(target, conn, run_id, rnd, role, reply, verify_cmd, ok, out,
                                   findings=findings,
                                   verification_results=results,
                                   started_at=started_at,
-                                  ended_at=int(time() * 1000))
+                                  ended_at=int(time() * 1000),
+                                  reply=json_reply(reply))
         if then is not None:
             then()
 

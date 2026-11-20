@@ -4,12 +4,14 @@ import store
 from holophyte.board.projection import ledger
 from holophyte.loop.gates import sh
 from holophyte.review.briefs import main_merge_base
+from holophyte.review.json_reply import TARGET_FIELD, finding_line
 from holophyte.review.reply_parsing import (
     FINDING_CATEGORIES,
     SCOPE_LINE_RE,
     without_criteria,
     without_refuted,
 )
+from holophyte.review.round_account import recorded_account
 
 LEAD = (r"^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*)?(?:[\[(]?\s*"
         r"(?:p[0-3]|nit|blocker|major|minor)\s*[\])]?\s*"
@@ -38,14 +40,26 @@ TAG_BRIEF = ("List each blocker as its own item, and tag one about the pull"
              ' `path: "PR description"`.\n')
 
 
-def description_findings(verdict, decision, unwitnessed):
+def description_findings(verdict, decision, unwitnessed, account=None):
     """The blockers, when every one of them is about the PR description."""
-    if decision != "REQUEST_CHANGES" or unwitnessed:
+    replied = account is not None and account.verdict is not None
+    if (account.verdict if replied else decision) != "REQUEST_CHANGES" or unwitnessed:
+        return []
+    if replied:
+        findings = account.findings
+        if findings and all(f[TARGET_FIELD] == "description" for f in findings):
+            return [finding_line(finding) for finding in findings]
         return []
     findings = _blocker_items(verdict)
     if findings and all(DESCRIPTION_SUBJECT_RE.match(item) for item in findings):
         return findings
     return []
+
+
+def round_description_findings(conn, run_id, outcome):
+    verdict, decision, unwitnessed, rnd = outcome
+    return description_findings(verdict, decision, unwitnessed,
+                                recorded_account(conn, run_id, rnd))
 
 
 def without_description(verdict):
@@ -134,9 +148,11 @@ def fix_summary(answered, wt, reviewed, sha):
 
 
 def rereviewed(covering_review, review, outcome, fix_note, budget_min, answered):
-    described = description_findings(*outcome[:3])
+    conn, run_id = review[1:3]
+    described = round_description_findings(conn, run_id, outcome)
     if not described or not rewrite_description(
             *review[:12], budget_min, answered, described):
         return outcome, fix_note
     outcome = covering_review(*review)
-    return outcome, None if description_findings(*outcome[:3]) else fix_note
+    return outcome, (None if round_description_findings(conn, run_id, outcome)
+                     else fix_note)

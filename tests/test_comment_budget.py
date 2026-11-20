@@ -270,6 +270,7 @@ PINNED = {
     "holophyte/review/moved_landmarks.py": 0,
     "holophyte/review/reply_parsing.py": 11,
     "holophyte/review/reproduce.py": 1,
+    "holophyte/review/round_account.py": 0,
     "holophyte/review/review_runner.py": 13,
     "holophyte/review/skipped_tests.py": 0,
     "holophyte/review/review_session.py": 2,

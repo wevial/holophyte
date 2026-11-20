@@ -16,6 +16,7 @@ from holophyte.config.config_tables import MERGE_KEYS, loop_config, merge_config
 from holophyte.config.project import worktree_path
 from holophyte.files import GIT_TIMEOUT, RangeError, git, touched_files
 from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
+from holophyte.review.round_account import round_account
 from holophyte.serve import day_log
 from store.operator_notes import round_notes
 from store.steer_notes import chain_notes
@@ -357,7 +358,8 @@ def run_rounds(conn, project, run_id, judgements=None):
              "reviewer_model": r.reviewerModel,
              **split_instructions(json.loads(r.findings), bot_logins),
              "operator_notes": round_notes(conn, run_id, r.round),
-             "criteria": (final_criteria(r, judged) if r.round > cap
+             "criteria": (reply_criteria(r, judged) if r.reply is not None
+                          else final_criteria(r, judged) if r.round > cap
                           else round_criteria(judged.get(r.round, [])))}
             for r in store.read.rounds_of(conn, run_id)]
 
@@ -368,24 +370,28 @@ def round_criteria(entries):
             for c in sorted(entries, key=lambda c: c["n"])]
 
 
-CRITERION_FINDING = re.compile(r"^CRITERION C(\d+): (.+?) \u2014 (.*)")
-
-
 def final_criteria(final, judged):
     if final.verdict == "error":
         return []
     newest = next(iter(judged.values()), [])
     verdicts = {c["n"]: dict(c, status="met", note="")
                 for c in round_criteria(newest)}
-    for finding in json.loads(final.findings):
-        found = (CRITERION_FINDING.match(finding.get("message", ""))
-                 if finding.get("path") == store.CRITERIA_PATH else None)
-        if found is not None:
-            n = int(found[1])
-            verdicts[n] = {"id": f"C{n}", "n": n,
-                           "status": found[2].replace(" ", "_"),
-                           "note": found[3]}
+    verdicts.update((c["n"], c) for c in round_account(final).criteria)
     return [verdicts[n] for n in sorted(verdicts)]
+
+
+def reply_criteria(recorded, judged):
+    own = {c["n"]: c for c in round_criteria(judged.get(recorded.round, []))}
+    served = {}
+    for c in round_account(recorded).criteria:
+        if own and c["n"] not in own:
+            continue
+        checked = own.get(c["n"], c)
+        downgraded = c["status"] == "met" and checked["status"] != "met"
+        served[c["n"]] = checked if downgraded else c
+    for n, c in own.items():
+        served.setdefault(n, c)
+    return [served[n] for n in sorted(served)]
 
 
 def served_precheck(prechecks):

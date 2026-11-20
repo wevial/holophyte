@@ -5,8 +5,8 @@ import store
 import store.read
 from holophyte.babysit.description_review import (
     LEAD,
-    description_findings,
     hold_for_pr_text,
+    round_description_findings,
     text_review,
     without_description,
     without_description_items,
@@ -39,7 +39,7 @@ def fix_or_park(project, conn, run_id, provider, task_id, sha, pull, ticket,
                " recorded re-review, even if reviewRoundCap is spent.", provider)
         return fix_goal(pull, ticket, verdict, "Operator babysit note",
                         fix_note), None
-    described = description_findings(verdict, decision, unwitnessed)
+    described = round_description_findings(conn, run_id, outcome)
     if described:
         return None, (f"{asked}; not merged. Review findings about the pull"
                       " request description, left with the PR-text writer:\n"
