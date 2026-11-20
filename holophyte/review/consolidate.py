@@ -254,11 +254,23 @@ def second_pass(merged, ask):
     return final, record
 
 
-def council_inputs(answered, adversary):
+HELD = "held"
+HELD_SEVERITY_RE = re.compile(r"\[(p[0-2])\]")
+HELD_BRIEF = (" A finding raised by held is a description finding an earlier "
+              "round holds for the PR-text writer: refute it with the reason "
+              "it no longer applies to withdraw it, or it stays held.")
+
+
+def council_inputs(answered, adversary, held=()):
     raised = [(f"seat {seat.number}", finding, None, None)
               for seat in answered for finding in seat.value["findings"]]
     raised += [("adversary", _council_finding(item), item["evidence"], found)
                for item, found in zip(items([], adversary), adversary)]
+    raised += [(HELD, {"path": None, "line": None,
+                       "severity": (HELD_SEVERITY_RE.search(line) or
+                                    [None, "p1"])[1],
+                       "category": "docs", "target": "description",
+                       "message": line}, None, None) for line in held]
     return {f"F{n}": entry for n, entry in enumerate(raised, 1)}
 
 
@@ -310,7 +322,9 @@ def council_brief(seated, found, criteria, sha):
         "is one JSON object that the turn's output schema checks: verdict, "
         "criteria, findings, follow_ups, scope and refuted, with the fields "
         "the seats' replies use, plus raised_by on each finding and refuted "
-        "entry.")
+        "entry."
+        + (HELD_BRIEF if any(who == HELD for who, *_ in found.values())
+           else ""))
     return SchemaBrief(text, text, text)
 
 

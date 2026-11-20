@@ -276,7 +276,10 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
                  criteria, adversarial, run_agent):
     seated = verdict.council_seats
     answered = [seat for seat in seated if seat.status == "answered"]
-    found = consolidate.council_inputs(answered, adversarial or [])
+    found = consolidate.council_inputs(
+        answered, adversarial or [],
+        held_text(conn, run_id).splitlines()
+        if merge_config(project).mode == "pr" else ())
     route, label = consolidator_route(project)
     goal = consolidate.council_brief(seated, found, criteria, sha)
     down = consolidator_down(project, route, label)
@@ -290,13 +293,12 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "council_unconsolidated", summary)
         return verdict, verdict.json_reply["verdict"]
-    final, concerns, judged = ruled(conn, run_id, rnd, value, answered, found,
-                                    criteria, wt, sha)
+    final, concerns, withdrawn = ruled(conn, run_id, rnd, value, answered,
+                                       found, criteria, wt, sha)
     reply = council_reply(final, seated)
     reply.consolidated_by = label
     reply.council_concerns = concerns
-    reply.description_ruled = any(
-        found[name][1]["target"] == "description" for name in judged)
+    reply.withdrawn = withdrawn
     return reply, final["verdict"]
 
 
@@ -346,11 +348,18 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
 
 def json_lines(output):
     return "\n".join(line for line in output.splitlines()
-                     if line.lstrip().startswith("{"))
+                     if isinstance(json_object(line), dict))
+
+
+def json_object(line):
+    try:
+        return json.loads(line)
+    except ValueError:
+        return None
 
 
 def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
-    kept, covered = [], set()
+    kept, covered, merged = [], set(), set()
     for finding in value["findings"]:
         named = [name for name in dict.fromkeys(finding["raised_by"])
                  if name in found]
@@ -358,7 +367,10 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
         if not ids:
             continue
         covered.update(ids)
+        if all(held(found, name) for name in ids):
+            continue
         kept.append(dict(finding, raised_by=raisers(found, ids)))
+        merged.update(name for name in ids if held(found, name))
     shared = shared_places(found)
     dropped, refuted = set(), []
     for entry in value["refuted"]:
@@ -382,13 +394,19 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
              "criteria": judged, "findings": kept,
              "follow_ups": value["follow_ups"],
              "scope": ruled_scope(value, answered), "refuted": refuted}
-    return final, concerns, covered | dropped
+    return final, concerns, [found[name][1]["message"] for name in found
+                             if name in merged | dropped and held(found, name)]
+
+
+def held(found, name):
+    return found[name][0] == consolidate.HELD
 
 
 def unaccounted(found, accounted):
     left = {}
-    for name, (_, finding, evidence, _) in found.items():
-        if name not in accounted and evidence != "concern":
+    for name, (who, finding, evidence, _) in found.items():
+        if (name not in accounted and evidence != "concern"
+                and who != consolidate.HELD):
             left.setdefault(spot(finding) or name, []).append(name)
     return left
 
@@ -482,18 +500,21 @@ def held_line(finding):
                          "message": finding["message"]})
 
 
-def held_description(conn, run_id, verdict, findings, rulings, superseding):
-    lines = list(dict.fromkeys(
-        [held_line(finding) for finding in findings] + rulings))
+def held_description(conn, run_id, verdict, findings, rulings, settled):
+    settle(conn, run_id, settled)
     pending = held_text(conn, run_id).splitlines()
-    hold_for_pr_text(conn, run_id,
-                     [line for line in lines if line not in pending])
-    if superseding and conn is not None and run_id is not None:
-        for line in pending:
-            if line not in lines:
-                store.record_event(conn, run_id, SETTLED_KIND, line,
-                                   level="detail")
+    hold_for_pr_text(conn, run_id, [
+        line for line in dict.fromkeys(
+            [held_line(finding) for finding in findings] + rulings)
+        if line not in pending])
     return without_description(verdict)[0]
+
+
+def settle(conn, run_id, lines):
+    if conn is None or run_id is None:
+        return
+    for line in dict.fromkeys(lines):
+        store.record_event(conn, run_id, SETTLED_KIND, line, level="detail")
 
 
 def held_text(conn, run_id):

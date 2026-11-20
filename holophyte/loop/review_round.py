@@ -217,10 +217,11 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
     if seats:
-        verdict, decision = council.consolidated(
-            project, conn, run_id, wt, base_sha, sha, rnd, verdict, criteria,
-            consolidate.adversary_findings(conn, run_id, rnd) if plan else None,
-            agent)
+        with heartbeat_while(conn, run_id, beat_s):
+            verdict, decision = council.consolidated(
+                project, conn, run_id, wt, base_sha, sha, rnd, verdict,
+                criteria, consolidate.adversary_findings(conn, run_id, rnd)
+                if plan else None, agent)
         attempt.note(council=council.detail(verdict))
     consolidated_by = getattr(verdict, "consolidated_by", None)
     if consolidated_by:
@@ -278,15 +279,17 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     if consolidated_by and verdict.council_concerns:
         consolidate.handed_on(project, conn, run_id, provider, task_id, rnd, [],
                               verdict.council_concerns, False, None)
+    held = council.held_here(project, verdict)
+    asked = consolidate.primary_findings(verdict, decision, unwitnessed)
+    kept = stuck_review.kept_findings(asked, ruling)
+    settled = [council.held_line(finding) for finding in asked if held
+               and council.described(finding) and finding not in kept]
+    settled += getattr(verdict, "withdrawn", [])
     if ruling is not None and ruling.settled_all:
+        council.settle(conn, run_id, settled)
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
-    held = council.held_here(project, verdict)
-    asked = consolidate.primary_findings(verdict, decision, unwitnessed)
-    superseding = (getattr(verdict, "description_ruled", False)
-                   or any(map(council.described, asked)))
-    kept = stuck_review.kept_findings(asked, ruling)
     described = [finding for finding in kept
                  if held and council.described(finding)]
     undescribed = [finding for finding in kept if finding not in described]
@@ -298,7 +301,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         fixed, ruled = council.split_fixes(fixed)
         verdict = council.held_description(
             conn, run_id, verdict + stuck_review.fix_brief(fixed), described,
-            ruled, superseding)
+            ruled, settled)
         if (described or ruled) and not (red or private or undescribed):
             decision, findings = "APPROVE", []
             attempt.note(decision=decision)

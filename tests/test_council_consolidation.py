@@ -15,6 +15,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,6 +92,7 @@ class Ruling:
     refuted: tuple = ()
     criterion: str = "met"
     witness: str | None = WITNESS
+    severity: str = "p1"
 
     def play(self, goal):
         return json.dumps({
@@ -98,7 +100,8 @@ class Ruling:
             "criteria": [{"id": "C1", "status": self.criterion,
                           "reason": "the named test runs the thing",
                           "witness": self.witness}],
-            "findings": [{"path": path, "line": line, "severity": "p1",
+            "findings": [{"path": path, "line": line,
+                          "severity": self.severity,
                           "category": "correctness", "target": target,
                           "message": message, "raised_by": list(raised_by)}
                          for path, line, message, raised_by, target
@@ -121,11 +124,11 @@ class Undecodable:
 
 
 @dataclass(frozen=True)
-class Prose:
-    """A consolidator reply that is no JSON object."""
+class OffSchema:
+    """A well-formed consolidator reply carrying a field its schema forbids."""
 
     def play(self, goal):
-        return "I merged the seats' findings; F1 and F2 are one defect."
+        return json.dumps(dict(json.loads(Ruling().play(goal)), score=7))
 
 
 class Panel(Container):
@@ -336,6 +339,26 @@ class ConsolidatedRoundTests(Consolidated):
         self.assertEqual(self.round_rows(), [(1, "pass", CONSOLIDATED_BY)])
         self.assertEqual(len([turn for turn in fake.turns
                               if turn.role == IMPLEMENT]), 1)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_the_run_keeps_beating_while_the_consolidator_is_probed(self):
+        beats = []
+
+        def slow_probe(project, route):
+            before = self.read("SELECT lastHeartbeat FROM runs")
+            time.sleep(1)
+            beats.append((before, self.read("SELECT lastHeartbeat FROM runs")))
+        with patch("holophyte.agents.probes.probe_council_consolidator",
+                   slow_probe):
+            self.run_panel(
+                "[supervisor]\nheartbeat_stale_min = 0.005\n"
+                + council(ASTRA, OPUS), Commit("work"),
+                seats={"gpt-6-astra": [Answer("APPROVE", 9)],
+                       "opus": [Answer("APPROVE", 8)]},
+                rulings=[Ruling()])
+
+        [([(before,)], [(after,)])] = beats
+        self.assertGreater(after, before)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_consolidator_whose_probe_fails_is_never_sent_the_candidate(self):
@@ -661,6 +684,8 @@ class UnconsolidatedTests(Consolidated):
         script = ("import json, sys\n"
                   "print('WARN codex_core::config: a diagnostic',"
                   " file=sys.stderr, flush=True)\n"
+                  "print(json.dumps({'level': 'warn', 'fields': ['a']},"
+                  " indent=2), file=sys.stderr, flush=True)\n"
                   f"for event in {events!r}:\n"
                   "    print(json.dumps(event), flush=True)\n")
 
@@ -676,7 +701,7 @@ class UnconsolidatedTests(Consolidated):
     def test_a_consolidator_reply_unreadable_twice_leaves_the_merge(self):
         self.run_panel(
             council(ASTRA, OPUS), Commit("work"), Commit("fix"),
-            seats=self.SEATS, rulings=[Prose(), Prose(), Ruling()])
+            seats=self.SEATS, rulings=[OffSchema(), OffSchema(), Ruling()])
 
         self.assertEqual(self.round_rows()[0], (1, "changes_requested", None))
         [(summary, _, _)] = self.events("council_unconsolidated")
@@ -689,6 +714,7 @@ class UnconsolidatedTests(Consolidated):
 
 WRITTEN = Idle("TITLE: Add the thing\n\nThe thing is now added.\n")
 DESCRIBED = (None, None, "the description never says the thing is added")
+UNSAID = (None, None, "the description never names the new option")
 
 
 @dataclass(frozen=True)
@@ -718,15 +744,19 @@ class Describing:
     path: str | None = None
     line: int | None = None
     severity: str = "p1"
+    message: str = DESCRIBED[2]
 
-    def play(self, goal):
+    def value(self, goal):
         value = self.answer.value(goal)
         value["verdict"] = "REQUEST_CHANGES"
         value["findings"].append({
             "path": self.path, "line": self.line, "severity": self.severity,
             "category": "docs", "target": "description",
-            "message": DESCRIBED[2]})
-        return json.dumps(value)
+            "message": self.message})
+        return value
+
+    def play(self, goal):
+        return json.dumps(self.value(goal))
 
 
 class DescriptionFindingTests(MergeModeFixture, Consolidated):
@@ -852,6 +882,26 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
         self.assertNotIn(DESCRIBED[2], writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    def test_a_ruling_dropping_every_finding_withdraws_the_description(self):
+        self.fake_route(states=[self.pr_state()])
+        fake = self.run_panel(
+            self.PR + "[loop]\nreview_rounds = 3\n" + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"),
+            Reply("THREAD 1: DROP -- the base line is read by the loader\n"
+                  "THREAD 2: DROP -- the description already says it"),
+            WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [Describing(Answer(
+                "REQUEST_CHANGES", 4, (SHARED,)))] * 2 + [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)] * 3},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*SHARED, ("F1",), "code"),
+                (*DESCRIBED, ("F2",), "description")))] * 2 + [Ruling()])
+
+        [writer] = self.writer(fake)
+        self.assertNotIn(DESCRIBED[2], writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_a_restored_description_finding_the_adjudicator_drops_skips_it(self):
         self.fake_route(states=[self.pr_state()])
         fake = self.run_panel(
@@ -920,7 +970,35 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
         self.assertNotIn(DESCRIBED[2], writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
-    def test_a_later_round_refuting_a_held_description_finding_withdraws_it(self):
+    def test_refuting_one_held_description_finding_keeps_the_other(self):
+        self.fake_route(states=[self.pr_state()])
+        fake = self.run_panel(
+            self.PR + council(ASTRA, OPUS), Commit("work"), Commit("fix"),
+            WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [
+                Describing(Describing(Answer("REQUEST_CHANGES", 4, (OTHER,))),
+                           message=UNSAID[2]),
+                Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8), Answer("APPROVE", 9)]},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*OTHER, ("F1",), "code"),
+                (*DESCRIBED, ("F2",), "description"),
+                (*UNSAID, ("F3",), "description"))),
+                Ruling(refuted=((DESCRIBED[2], "the diff says it",
+                                 ("F1",)),))])
+
+        brief = self.panel.consolidations[1][2]
+        self.assertIn("F1, raised by held:", brief)
+        self.assertIn("F2, raised by held:", brief)
+        self.assertEqual([row[:2] for row in self.round_rows()[:2]],
+                         [(1, "changes_requested"), (2, "pass")])
+        [writer] = self.writer(fake)
+        self.assertNotIn(DESCRIBED[2], writer)
+        self.assertIn(UNSAID[2], writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_held_description_finding_kept_again_does_not_block(self):
         self.fake_route(states=[self.pr_state()])
         fake = self.run_panel(
             self.PR + council(ASTRA, OPUS), Commit("work"), Commit("fix"),
@@ -928,17 +1006,41 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
             provider=StubProvider(dict(a_task(), body=VALID_BODY)),
             seats={"gpt-6-astra": [
                 Describing(Answer("REQUEST_CHANGES", 4, (OTHER,))),
-                Describing(Answer("APPROVE", 9))],
+                Answer("APPROVE", 9)],
                    "opus": [Answer("APPROVE", 8), Answer("APPROVE", 9)]},
             rulings=[Ruling("REQUEST_CHANGES", findings=(
                 (*OTHER, ("F1",), "code"),
-                (*DESCRIBED, ("F2",), "description"))),
-                Ruling(refuted=((DESCRIBED[2], "the diff says it",
-                                 ("F1",)),))])
+                (*DESCRIBED, ("F2",), "description")), severity="p0"),
+                Ruling(findings=((*DESCRIBED, ("F1",), "description"),))])
 
+        self.assertRegex(self.panel.consolidations[1][2],
+                         r"F1, raised by held: +\[p0\]")
         self.assertEqual([row[:2] for row in self.round_rows()[:2]],
                          [(1, "changes_requested"), (2, "pass")])
         [writer] = self.writer(fake)
+        self.assertEqual(writer.count(DESCRIBED[2]), 1)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_held_description_finding_merged_into_a_new_one_is_replaced(self):
+        self.fake_route(states=[self.pr_state()])
+        reworded = (None, None, "the description omits that the thing is added")
+        fake = self.run_panel(
+            self.PR + council(ASTRA, OPUS), Commit("work"), Commit("fix"),
+            WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [
+                Describing(Answer("REQUEST_CHANGES", 4, (OTHER,))),
+                Describing(Answer("APPROVE", 9), message=reworded[2])],
+                   "opus": [Answer("APPROVE", 8)] * 2},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*OTHER, ("F1",), "code"),
+                (*DESCRIBED, ("F2",), "description"))),
+                Ruling("REQUEST_CHANGES", findings=(
+                    (*reworded, ("F1", "F2"), "description"),),
+                       severity="p0")])
+
+        [writer] = self.writer(fake)
+        self.assertIn(reworded[2], writer)
         self.assertNotIn(DESCRIBED[2], writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
