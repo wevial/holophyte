@@ -1,21 +1,24 @@
 """A project's `[[pipeline.check]]` stages run on a candidate and recorded."""
 import io
+import json
 import os
 import re
 import signal
 import subprocess
 import tempfile
 import time
+from contextvars import ContextVar
 from pathlib import Path
 
 from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import verify_config
 from holophyte.config.pipeline_settings import check_secrets, current_checks
 from holophyte.isolation.isolation_git import git
+from holophyte.isolation.launcher import SignalExit
 from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import REDACTED, outbound
-from holophyte.review.blast_radius import matching
+from holophyte.review.blast_radius import continued_runs, matching
 from holophyte.review.briefs import _changed_files
 from holophyte.stages import record
 from store import pipelines
@@ -28,26 +31,118 @@ UNLAUNCHED = re.compile(
     r"(?:command not found|not found|Permission denied|cannot execute.*)$")
 UNBOUND = ("this check's pinned commands hold a redacted value this process "
            "did not pin, so it cannot run them")
+_trim_findings = ContextVar("trim_check_findings", default=None)
 
 
-def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
-    for check in configured(project, conn, run_id, after):
-        reason = skip_reason(check, wt, base_sha, sha)
-        if reason:
-            record.skip(conn, run_id, check["id"], reason, sha, verbatim=True)
-            continue
-        with record.Attempt(conn, run_id, check["id"], sha,
-                            {**detail, "mode": check["mode"]},
-                            wt=wt, verbatim=("mode",)) as attempt, \
-                heartbeat_while(conn, run_id, beat_s):
-            outcome, found = _ran_bound(project, check, wt, sha)
-            attempt.close(outcome, "next", sha, **found)
+def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, *,
+        required_only=False, **detail):
+    findings = []
+    if after == "trim":
+        _trim_findings.set((wt, conn, run_id, findings))
+    elif detail.get("round") == 1:
+        findings.extend(_after_trim(conn, run_id, wt))
+    entries = []
+    record.checks_guarded(conn, run_id, lambda: entries.extend(
+        configured(project, conn, run_id, after)))
+    for check in entries:
+        if not required_only or check["mode"] == "required":
+            record.checks_guarded(conn, run_id, lambda: _run_one(
+                project, conn, run_id, beat_s, wt, base_sha, sha, check,
+                detail, findings))
+    return findings
 
 
-def _ran_bound(project, check, wt, sha):
-    if check["commands"] is None:
+def _after_trim(conn, run_id, wt):
+    held = _trim_findings.get()
+    if held and held[:3] == (wt, conn, run_id):
+        return held[3]
+    if conn is None or run_id is None:
+        return []
+    for previous in reversed(continued_runs(conn, run_id)):
+        trim = conn.execute("SELECT MAX(id) FROM stageAttempts"
+                            " WHERE runId = ? AND stageId = 'trim'", (previous,))
+        if (last_trim := trim.fetchone()[0]) is not None:
+            return [json.loads(row[0]) for row in conn.execute(
+                "SELECT json_extract(detail, '$.finding') FROM stageAttempts"
+                " WHERE runId = ? AND id > ? AND json_type(detail, '$.finding')"
+                " = 'object' ORDER BY id", (previous, last_trim))]
+    return []
+
+
+def _run_one(project, conn, run_id, beat_s, wt, base_sha, sha, check, detail,
+             findings):
+    reason = skip_reason(check, wt, base_sha, sha)
+    if reason:
+        record.skip(conn, run_id, check["id"], reason, sha, verbatim=True)
+        return
+    with record.Attempt(conn, run_id, check["id"], sha,
+                        {**detail, "mode": check["mode"]},
+                        wt=wt, verbatim=("mode",)) as attempt, \
+            heartbeat_while(conn, run_id, beat_s):
+        outcome, found = _ran_bound(project, conn, run_id, check, wt, sha)
+        blocking = check["mode"] == "required" and outcome != "pass"
+        if blocking:
+            finding = _finding(check, found)
+            findings.append(finding)
+            if check["after"] == "trim":
+                found["finding"] = finding
+        attempt.close(outcome, "on_fail" if blocking else "next", sha, **found)
+
+
+def _finding(check, result):
+    command = outbound(" && ".join(check["commands"]), check["secrets"])
+    name = outbound(check["id"], check["secrets"])
+    status = result.get("exit_status")
+    title = f"required check {name} failed: {command}"
+    if result.get("timed_out"):
+        title += " (timed out)"
+    elif status is not None:
+        title += f" (exit {status})"
+    tail = result.get("output") or result.get("error")
+    return {"path": name, "line": None, "severity": "p1", "title": title,
+            "message": f"{title}\n{tail}" if tail else title}
+
+
+def _prior_result(conn, run_id, stage_id, sha):
+    for previous in reversed(continued_runs(conn, run_id)):
+        row = conn.execute(
+            "SELECT s.id, s.outcome, s.detail FROM stageAttempts s"
+            " JOIN runs r ON r.id = s.runId"
+            " WHERE s.runId = ?"
+            " AND r.pipelineId = (SELECT pipelineId FROM runs WHERE id = ?)"
+            " AND s.stageId = ? AND s.inputSha = ? AND s.outputSha = ?"
+            " AND s.outcome IN ('pass', 'fail', 'error')"
+            " AND s.edge IN ('next', 'on_fail')"
+            " AND json_extract(s.detail, '$.error') IS NOT ?"
+            " ORDER BY s.id DESC LIMIT 1",
+            (previous, run_id, stage_id, sha, sha, UNBOUND)).fetchone()
+        if row:
+            attempt_id, outcome, detail = row
+            stored = json.loads(detail)
+            result = {key: stored[key] for key in
+                      ("exit_status", "timed_out", "output", "error", "cleanup_error")
+                      if key in stored}
+            result["reused_attempt"] = stored.get("reused_attempt", attempt_id)
+            return outcome, result
+    return None
+
+
+def _ran_bound(project, conn, run_id, check, wt, sha):
+    if check.get("redacted"):
+        if check["mode"] == "required":
+            previous = record.guarded(conn, run_id, "stage_read", lambda: _prior_result(
+                conn, run_id, check["id"], sha))
+            if previous is not None and previous is not record.REFUSED:
+                return previous
         return "error", {"error": UNBOUND}
-    return ran(project, check, wt, sha)
+    try:
+        return ran(project, check, wt, sha)
+    except SignalExit:
+        raise
+    except SystemExit as error:
+        if check["mode"] != "required":
+            raise
+        return "error", {"error": scrubbed_output(str(error), check["secrets"])}
 
 
 def configured(project, conn, run_id, after):
@@ -63,9 +158,7 @@ def configured(project, conn, run_id, after):
     if len(raw) == len(stages):
         return [{**check, "id": stage["id"], "secrets": secrets | held}
                 for stage, check in zip(stages, raw) if check["after"] == after]
-    return [{"id": stage["id"], "after": stage["after"], "mode": stage["mode"],
-             "paths": stage.get("paths") or [], "secrets": secrets,
-             "commands": None if stage.get("redacted") else stage["commands"]}
+    return [{**stage, "paths": stage.get("paths") or [], "secrets": secrets}
             for stage in stages if stage["after"] == after]
 
 

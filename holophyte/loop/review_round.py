@@ -113,8 +113,9 @@ def _verify_findings(verify_cmd, ok, out):
              "message": f"{title}\n{last}" if last else title}]
 
 
-def _with_report(verdict, red, out):
-    return f"{verdict}\n\n{out}" if red else verdict
+def _with_report(verdict, red, out, checks):
+    parts = ([out] if red else []) + [finding["message"] for finding in checks]
+    return "\n\n".join([verdict, *parts]) if parts else verdict
 
 
 def _changed_lines(wt):
@@ -197,7 +198,7 @@ def review_text(project, sha, refs, ticket, mode, place, notes, *, verify,
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
-            witness, branch, attempt):
+            witness, branch, attempt, checks):
     base_sha = review_base(wt, base_sha, sha)
     criteria = numbered(conn, run_id, criteria)
     round_started = int(time() * 1000)
@@ -242,18 +243,19 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     red = _verify_findings(verify_cmd, ok, out)
     leak_guard.record(conn, run_id, leaks)
     private = leak_guard.review_findings(leaks)
+    factory_findings = red + checks + private
     record_round(project, conn, run_id, rnd, "review", verdict, verify_cmd,
                  ok, out,
                  started_at=round_started, criteria=criteria, root=wt,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
                  route=getattr(verdict, "council_route", None),
                  structured_findings=getattr(verdict, "council_findings", None),
-                 adversary=blocking + red + private,
+                 adversary=blocking + factory_findings,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
     if consolidated_by and conn is not None:
         store.council.record_consolidator(conn, run_id, rnd, consolidated_by)
     attempt.note(decision=decision, findings=len(consolidate.primary_findings(
-        verdict, decision, blocking + red + private)))
+        verdict, decision, blocking + factory_findings)))
     if decision == "REQUEST_CHANGES" and conn is not None:
         capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
@@ -268,7 +270,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     if unwitnessed:
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed; treating as REQUEST_CHANGES")
-    findings = unwitnessed + blocking + red + private
+    findings = unwitnessed + blocking + factory_findings
     attempt.note(findings=len(consolidate.primary_findings(verdict, decision,
                                                            findings)))
     fixing = consolidate.fixing(decision, findings, ok, out)
@@ -279,7 +281,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         consolidate.adversary_findings(conn, run_id, rnd) if plan else None,
         ruling)
     primary = stuck_review.kept_findings(consolidate.primary_findings(
-        verdict, decision, unwitnessed + red + private), ruling)
+        verdict, decision, unwitnessed + factory_findings), ruling)
     handed = (adversarial is not None and (adversarial or not seats)
               and not consolidated_by and consolidate.handed_on(
                   project, conn, run_id, provider, task_id, rnd, primary,
@@ -299,7 +301,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                and council.described(finding)
                and finding not in kept]
     council.settle(conn, run_id, settled + getattr(verdict, "withdrawn", []))
-    if ruling is not None and ruling.settled_all:
+    if ruling is not None and ruling.settled_all and not checks:
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
@@ -308,14 +310,14 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     undescribed = [finding for finding in kept if finding not in described]
     verdict = _with_report(
         handed or stuck_review.without_dropped(verdict, undescribed, ruling),
-        red, out)
+        red, out, checks)
     fixed = ruling.fixed if ruling is not None else []
     if held:
         fixed, ruled = council.split_fixes(fixed)
         verdict = council.held_description(
             conn, run_id, verdict + stuck_review.fix_brief(fixed), described,
             ruled)
-        if (described or ruled) and not (red or private or undescribed):
+        if (described or ruled) and not (red or checks or private or undescribed):
             decision, findings = "APPROVE", []
             attempt.note(decision=decision)
     else:
@@ -325,7 +327,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
 
 def _recorded_review(project, conn, run_id, provider, task_id, wt, beat_s,
                      base_sha, sha, ticket, verify_cmd, criteria, mode, rnd, ok,
-                     out, stale, leaks, witness, branch):
+                     out, stale, leaks, witness, branch, checks):
     adversary_on = review_config(project).adversary
     with record.Attempt(conn, run_id, "review", sha,
                         {"round": rnd, "adversary": "not_planned"
@@ -333,7 +335,7 @@ def _recorded_review(project, conn, run_id, provider, task_id, wt, beat_s,
         verdict, decision, findings = _review(
             project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
-            witness, branch, attempt)
+            witness, branch, attempt, checks)
     return verdict, decision, findings, attempt
 
 
@@ -412,13 +414,14 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
 
 
 def _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
-                  checked):
-    if sha is None or (rnd, sha) in checked:
-        return
-    checked.add((rnd, sha))
-    record.checks_guarded(conn, run_id, lambda: stage_checks.run(
-        project, conn, run_id, beat_s, wt, base_sha, sha, "implement",
-        round=rnd))
+                  checked, required_only=False):
+    key = (rnd, sha)
+    if sha is not None and key not in checked:
+        findings = checked[key] = []
+        record.checks_guarded(conn, run_id, lambda: findings.extend(stage_checks.run(
+            project, conn, run_id, beat_s, wt, base_sha, sha, "implement",
+            round=rnd, required_only=required_only)))
+    return checked.get(key, [])
 
 
 def _verifier(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
@@ -429,6 +432,14 @@ def _verifier(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
         return _verify(project, conn, run_id, beat_s, wt, base_sha, ticket,
                        verify_cmd, contracts, rnd)
     return verify
+
+
+def _review_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
+                   checked, pending):
+    if pending.get("check_sha") == sha:
+        return pending["check_findings"]
+    return _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
+                         checked, required_only=True)
 
 
 def _close_verify(attempt, ok, out):
@@ -491,7 +502,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     mode = review_mode(project)
     rnd = pending.get("rnd", 1) - 1
     claimed = verify_cmd
-    rechecking, checked = False, set()
+    rechecking, checked = False, {}
     for rnd in range(pending.get("rnd", 1), cap + 1):
         sha, pending = _steer_at_top(project, conn, run_id, beat_s, wt,
                                      budget_min, ticket, sha, pending)
@@ -516,9 +527,11 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd,
             pending, checked)
         leaks = leak_guard.branch_leaks(project, wt, sha)
+        checks = _review_checks(project, conn, run_id, beat_s, wt, base_sha, sha,
+                                rnd, checked, pending)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
-                 verify_cmd=verify_cmd,
+                 verify_cmd=verify_cmd, check_sha=sha, check_findings=checks,
                  **({"stale": pending["stale"]} if "stale" in pending else {}),
                  witness=witness)
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
@@ -529,7 +542,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             verdict, decision, unwitnessed, attempt = _recorded_review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 reviewed, verify_cmd, criteria, mode, rnd, ok, out,
-                pending.get("stale", ()), leaks, witness, branch)
+                pending.get("stale", ()), leaks, witness, branch, checks)
             with attempt:
                 if verdict is None:
                     attempt.close("fail", "again", sha)
@@ -579,7 +592,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             _check_run_cap(project, conn, run_id, budget_min, sha)
         attempt.close("fail", "on_fail", sha)
         boundary(conn, run_id, "addressing", rnd=rnd, ok=ok,
-                 out=str(out), verdict=verdict, verify_cmd=verify_cmd)
+                 out=str(out), verdict=verdict, verify_cmd=verify_cmd,
+                 check_sha=sha, check_findings=checks)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         with record.Attempt(conn, run_id, "implement", sha, {"kind": "fix"},
@@ -593,6 +607,15 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             verify_cmd, _verifier(project, conn, run_id, beat_s, wt, base_sha,
                                   reviewed, verify_cmd, contracts, rnd + 1,
                                   checked))
+    checks = _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha,
+                           cap + 1, checked, required_only=True)
+    if checks:
+        report = "\n\n".join(finding["message"] for finding in checks)
+        summary = f"Required check failed after {cap} review rounds (the run's cap)"
+        ledger(conn, run_id, task_id, "failure",
+               f"{summary}; branch {branch} preserved at {sha}\n\n{report}", provider)
+        raise RunFailure(f"{summary}; {checks[0]['title']}; branch {branch}"
+                         f" preserved at {sha[:12]}", "verify")
     return sha, rnd, False
 
 

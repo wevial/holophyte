@@ -157,16 +157,13 @@ class ChecksConfigTests(LoopFixture):
 
         self.assertEqual(sorted(ids), sorted(STANDARD_STAGES))
 
-    def test_the_required_mode_is_refused_as_not_available_yet(self):
-        self.configure(check_table("types", "implement", ["mypy ."],
-                                   "required"))
+    def test_required_mode_loads_and_is_preserved(self):
+        self.configure(check_table("types", "implement", ["mypy ."], "required"))
 
-        with self.assertRaises(SystemExit) as stopped:
-            check_config(self.project)
+        check_config(self.project)
 
-        message = str(stopped.exception)
-        self.assertIn("[[pipeline.check]] types", message)
-        self.assertIn("mode required is not available yet", message)
+        check, = pipeline_checks(self.project)
+        self.assertEqual(check["mode"], "required")
 
 
 class CheckRuns(LoopFixture):
