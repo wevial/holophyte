@@ -335,6 +335,30 @@ class CouncilSeatFailureTests(CouncilFixture):
         activate.assert_not_called()
 
 
+    def test_a_seat_turn_records_an_agent_turn_under_role_review(self):
+        self.configure("")
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, "team-1", str(self.target))
+        ticket = store.mirror_ticket(conn, project, linear_issue_id="i-1",
+                                     linear_identifier="KO-1", title="t")
+        run = store.claim(conn, project, ticket)
+        reply = Answer("APPROVE", 9).play("")
+        with patch.object(review_runner, "run_review", return_value=reply):
+            answered = roles.agent(
+                self.project, "review", "goal", self.target,
+                base_sha=self.base, candidate_sha=self.base, conn=conn,
+                run_id=run, family_route={"harness": "claude", "model": "opus",
+                                          "effort": "high", "credential": None})
+
+        self.assertEqual(str(answered), reply)
+        [(payload,)] = conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_turn'").fetchall()
+        turn = json.loads(payload)
+        self.assertEqual((turn["role"], turn["label"], turn["route"]),
+                         ("review", "claude opus", "primary"))
+
+
 class CouncilMigrationTests(unittest.TestCase):
     def test_a_previous_version_store_gains_the_council_seats_table(self):
         with tempfile.TemporaryDirectory() as directory:

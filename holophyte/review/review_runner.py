@@ -244,7 +244,8 @@ SCHEMA_FLAGS = {"codex": f"--output-schema {REPLY_SCHEMA} ",
                 "claude": f'--json-schema "$(cat {REPLY_SCHEMA})" '}
 
 
-def exec_script(harness: str, multi_agent: bool, reply_schema: bool) -> str:
+def exec_script(harness: str, multi_agent: bool,
+                reply_schema: bool | Path) -> str:
     script = CLAUDE_EXEC if harness == "claude" else CODEX_EXEC.replace(
         "SWITCH", "enable" if multi_agent else "disable")
     return script.replace("SCHEMA", SCHEMA_FLAGS[harness] if reply_schema else "")
