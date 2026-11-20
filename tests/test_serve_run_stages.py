@@ -225,6 +225,17 @@ class RunStagesTests(ServeTestCase):
         self.assertEqual(body["attempts"][0]["detail"]["error"],
                          "push refused for [redacted]")
 
+    def test_a_secret_configured_after_the_daemon_binds_is_redacted(self):
+        run = self.claim(self.ticket("KO-46"), T0)
+        self.attempt(run, "implement", T0 + MIN, ("fail", "end", T0 + 2 * MIN),
+                     detail={"error": f"push refused for {SECRET}"})
+        self.conn.commit()
+        self.start(CONFIG)
+        (self.db.parent / "config.toml").write_text(
+            CONFIG + f"\n[extra]\napi_key = '{SECRET}'\n")
+        self.assertEqual(self.stages(run)["attempts"][0]["detail"]["error"],
+                         "push refused for [redacted]")
+
     def test_a_store_from_before_stage_recording_answers_no_pipeline(self):
         run = self.claim(self.ticket("KO-45"), T0)
         self.conn.commit()

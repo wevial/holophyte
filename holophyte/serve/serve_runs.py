@@ -702,7 +702,6 @@ def transcript_window(entries, turn):
 
 
 def run_stages(project, text):
-    from holophyte.redact import known_secrets
     from holophyte.stages.standard import scrubbed
     failed, run = locate_run(project, text)
     if failed is not None:
@@ -726,7 +725,17 @@ def run_stages(project, text):
                        "attempts": [attempt._asdict()
                                     for attempt in attempts[lane.id]]}
                       for lane in lanes]}
-    return 200, scrubbed(body, known_secrets(project.config()))
+    return 200, scrubbed(body, current_secrets(project))
+
+
+def current_secrets(project):
+    from holophyte.config.reader import load_config
+    from holophyte.redact import known_secrets
+    try:
+        on_disk = load_config(project.config_path)
+    except SystemExit:
+        on_disk = {}
+    return known_secrets(project.config()) | known_secrets(on_disk)
 
 
 def served_pipeline(pinned):

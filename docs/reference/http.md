@@ -1092,7 +1092,8 @@ lane. Each lane carries its `run` id, its `attempt` number, its `outcome`
 pinned none) and its own `attempts` in the same shape.
 
 Every string is redacted with the project's known secrets, as on
-`/runs/N/turns`. `N` parses as on `/runs/N`: a non-integer is 400, an
+`/runs/N/turns`, including any the config file holds at the request
+though it changed after the daemon started. `N` parses as on `/runs/N`: a non-integer is 400, an
 integer with no run is 404 carrying `run`. The route writes nothing.
 
 ## `GET /ledger?since=MS`
