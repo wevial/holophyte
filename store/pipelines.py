@@ -5,7 +5,7 @@ import time
 
 from holophyte.redact import redact_document
 
-from .schema import _transaction
+from .schema import _has_table, _transaction
 
 
 def pin_pipeline(conn, run_id, name, document, now=None):
@@ -56,6 +56,9 @@ def inherit_pipeline(conn, run_id, from_run_id):
 
 
 def run_pipelines(conn, run_ids):
+    run_ids = tuple(run_ids)
+    if not run_ids or not _has_table(conn, "pipelines"):
+        return {}
     rows = conn.execute(
         "SELECT r.id, p.id, p.revision, p.document FROM runs r"
         " JOIN pipelines p ON p.id = r.pipelineId"

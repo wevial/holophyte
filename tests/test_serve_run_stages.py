@@ -35,7 +35,7 @@ review_effort = "high"
 harness = "claude"
 model = "claude-model-under-test"
 """
-SECRET = "stage-secret-value-0123456789"
+SECRET = 'stage-secret-"value"-0123456789'
 FIXTURE = Path(__file__).parent / "fixtures" / "serve" / "run-stages.json"
 
 
@@ -213,16 +213,29 @@ class RunStagesTests(ServeTestCase):
         self.attempt(run, "implement", T0 + MIN, ("fail", "end", T0 + 2 * MIN),
                      detail={"error": f"push refused for {SECRET}"})
         self.conn.commit()
-        reader = sqlite3.connect(str(self.db))
-        self.addCleanup(reader.close)
-        (stored,) = reader.execute(
-            "SELECT p.document || s.detail FROM pipelines p, stageAttempts s"
-        ).fetchone()
-        self.assertEqual(stored.count(SECRET), 2)
-        self.start(CONFIG + f'\n[extra]\napi_key = "{SECRET}"\n')
+        (document, detail), = self.conn.execute(
+            "SELECT p.document, s.detail FROM pipelines p, stageAttempts s")
+        self.assertEqual((json.loads(document)["stages"][1]["seat"],
+                          json.loads(detail)["error"]),
+                         (f"claude {SECRET}", f"push refused for {SECRET}"))
+        self.start(CONFIG + f"\n[extra]\napi_key = '{SECRET}'\n")
         body = self.stages(run)
-        self.assertNotIn(SECRET, self.raw_body)
         self.assertEqual(body["pipeline"]["stages"][1]["seat"],
                          "claude [redacted]")
         self.assertEqual(body["attempts"][0]["detail"]["error"],
                          "push refused for [redacted]")
+
+    def test_a_store_from_before_stage_recording_answers_no_pipeline(self):
+        run = self.claim(self.ticket("KO-45"), T0)
+        self.conn.commit()
+        legacy = sqlite3.connect(str(self.db))
+        legacy.executescript("DROP TABLE stageAttempts;\n"
+                             "ALTER TABLE runs DROP COLUMN pipelineId;\n"
+                             "DROP TABLE pipelines;\n"
+                             "PRAGMA user_version = 71;\n")
+        legacy.close()
+        self.start()
+        self.assertEqual(self.stages(run), {"run": run, "pipeline": None,
+                                            "attempts": [], "lanes": []})
+        (version,) = self.conn.execute("PRAGMA user_version").fetchone()
+        self.assertEqual(version, 71)

@@ -497,6 +497,11 @@ def _widen_interventions_action(conn):
         conn.execute("ALTER TABLE interventions_new RENAME TO interventions")
 
 
+def _has_table(conn, name):
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                        " AND name = ?", (name,)).fetchone() is not None
+
+
 @contextlib.contextmanager
 def _transaction(conn):
     with getattr(conn, "_lock", contextlib.nullcontext()):
