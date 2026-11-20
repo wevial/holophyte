@@ -186,8 +186,6 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     _record_mode(conn, run_id, mode, rnd)
     record_tier(project, conn, run_id, wt, base_sha, sha, ticket, rnd)
     plan = adversary.planned(project, conn, run_id, wt, base_sha, sha, rnd)
-    if attempt is not None and plan:
-        attempt.note(adversary="ran")
     earlier = earlier_rounds_brief(conn, run_id, wt, rnd, criteria)
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
@@ -200,6 +198,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                     run_id, run_agent=agent, review_round=rnd),
             plan and partial(adversary.attack, project, conn, run_id, wt,
                              base_sha, ticket, plan, agent))
+    if attempt is not None and plan:
+        attempt.note(adversary="ran")
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
     approved = cited_approval(verdict, wt, sha)
