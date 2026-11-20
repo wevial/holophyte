@@ -1,6 +1,6 @@
 {
   "project": "/repo",
-  "schema_version": 71,
+  "schema_version": 72,
   "admission": "enabled",
   "hold_note": null,
   "workers": 1,

@@ -24,6 +24,7 @@ Each module, one line:
 - `holophyte/cli/__init__.py` — the `cli` package; empty.
 - `holophyte/scout/__init__.py` — the `scout` package; empty.
 - `holophyte/automation/__init__.py` — the `automation` package; empty.
+- `holophyte/stages/__init__.py` — the `stages` package; empty.
 - `holophyte/cli/cli_project.py` — project registration, listing and admission commands.
 - `holophyte/cli/cli_story.py` — the `--file-story SLUG`, `--approve-story KEY-n`
   and `--witness-pass KEY-n` options and their dispatch.
@@ -613,6 +614,12 @@ Each module, one line:
   order, from the worktree to the merge or the pull request.
 - `holophyte/loop/implement.py` — the implement stage and the timed agent turn
   under its scaled budget, the run cap and the transport retry.
+- `holophyte/stages/standard.py` — `resolve()`: the "Holophyte standard"
+  pipeline as a versioned document of typed stages, read from the project's
+  config with its primary seat labels.
+- `holophyte/stages/record.py` — pins a run's pipeline after its profile:
+  inherited by a continuation, resolved fresh otherwise; a store write that
+  fails leaves a `stage_record_failed` event and never stops the run.
 - `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
   and records a run's implementer profile, and scopes the run's project to it.
 - `holophyte/loop/complexity.py` — the complexity question a claimed run
@@ -1080,6 +1087,9 @@ The store is its own package:
 - `store/schema.py` — the schema, its migration ladder and the
   connection (`open`/`init`/`transaction`), re-exported from the package.
 - `store/ddl.py` — the table and index DDL the schema module creates.
+- `store/pipelines.py` — `pin_pipeline()` and `inherit_pipeline()`: one
+  `pipelines` revision per distinct redacted document of a project, and the
+  run's `pipelineId` set once.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3

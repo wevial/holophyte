@@ -335,6 +335,10 @@ PINNED = {
     "holophyte/serve/server.py": 14,
     "holophyte/serve/views.py": 6,
 
+    "holophyte/stages/__init__.py": 0,
+    "holophyte/stages/record.py": 1,
+    "holophyte/stages/standard.py": 1,
+
     "holophyte/story/__init__.py": 0,
     "holophyte/story/proposal_decisions.py": 1,
     "holophyte/story/story_approval.py": 4,
@@ -374,6 +378,7 @@ PINNED = {
     "store/launch_backoff.py": 2,
     "store/notes.py": 1,
     "store/operate.py": 20,
+    "store/pipelines.py": 1,
     "store/operator_notes.py": 3,
     "store/project_paths.py": 1,
     "store/read.py": 7,

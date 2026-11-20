@@ -83,6 +83,11 @@ DOCUMENTED_COLUMNS = {
         "host",
         # Store-owned: the ticket revision the run was claimed at (KO-733).
         "revision", "storyGeneration",
+        "pipelineId",
+    },
+    "pipelines": {
+        "id", "projectId", "name", "revision", "format", "digest", "document",
+        "createdAt",
     },
     "ledger": {
         "id", "runId", "ticketId", "at", "kind", "text", "source",

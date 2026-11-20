@@ -234,7 +234,22 @@ CREATE TABLE IF NOT EXISTS runs (
     prSeenPreviewUrl  TEXT,
     prSeenScreenshots TEXT,
     prSeenVideos      TEXT,
+    pipelineId        INTEGER REFERENCES pipelines (id),
     UNIQUE (ticketId, attempt)
+);
+
+-- pipelines: one revision of a project's resolved pipeline document, shared
+-- by every run claimed under the same document.
+CREATE TABLE IF NOT EXISTS pipelines (
+    id        INTEGER PRIMARY KEY,
+    projectId INTEGER NOT NULL REFERENCES projects (id),
+    name      TEXT    NOT NULL,
+    revision  INTEGER NOT NULL CHECK (revision > 0),
+    format    INTEGER NOT NULL,
+    digest    TEXT    NOT NULL,  -- sha256 of the canonical document
+    document  TEXT    NOT NULL,  -- canonical JSON, sorted keys
+    createdAt INTEGER NOT NULL,
+    UNIQUE (projectId, digest)
 );
 
 -- reviewRounds: one bot review pass within a run (state-model §2).
