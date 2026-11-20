@@ -8,7 +8,7 @@ from holophyte.config.review_settings import review_config
 from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import _commands_brief, implement_goal
 from holophyte.loop.review_round import review_text, verify_text
-from holophyte.loop.trim_brief import protected_brief, test_heavy_brief, trim_goal
+from holophyte.loop.trim_brief import TESTS_BRIEF, protected_brief, trim_goal
 from holophyte.pr.mockup import design_text
 from holophyte.pr.pr_media import capture_text
 from holophyte.pr.pullrequest import pr_text_goal
@@ -137,7 +137,8 @@ def trim(project, slot):
     s = stand_in
     return trim_goal(s("base commit"),
                      _commands_brief(project, s("verify commands")).strip(),
-                     test_heavy_brief(s("test lines"), s("code lines")), slot,
+                     TESTS_BRIEF.format(tests=s("test lines"),
+                                        code=s("code lines")), slot,
                      protected_brief(s("protected files")))
 
 
@@ -167,7 +168,7 @@ RENDERS = {"implement": implement, "review": review, "trim": trim,
            "babysit_reply": babysit_reply}
 
 
-def preview(project, target, scrub=str):
+def preview(project, target, scrub):
     rendered = RENDERS[target](project, SLOT)
     held = dict.fromkeys(MARKED.findall(rendered))
     builtin, tail = (shown(part, scrub) for part in rendered.split(SLOT))

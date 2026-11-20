@@ -27,9 +27,9 @@ from holophyte.loop.implement import (
 from holophyte.loop.review_round import _changed_lines
 from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.trim_brief import (
+    TESTS_BRIEF,
     pass_name,
     protected_brief,
-    test_heavy_brief,
     trim_goal,
 )
 from holophyte.redact import known_secrets, redact_prose
@@ -119,7 +119,7 @@ def _tests_brief(wt, base_sha):
     tests = sum(added for path, (added, _) in counts.items() if _is_test(path))
     code = sum(added for path, (added, _) in counts.items() if not _is_test(path))
     if tests >= TEST_LINE_FLOOR and tests > TEST_RATIO * code:
-        return test_heavy_brief(tests, code)
+        return TESTS_BRIEF.format(tests=tests, code=code)
     return ""
 
 

@@ -168,7 +168,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 
 def review_text(project, sha, refs, ticket, mode, place, notes, *, verify,
                 criteria, witness, stale, earlier, tests, scope, trim,
-                evidence, seated=False):
+                evidence, seated):
     schema_tail = (f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
                    "guardrail follow_up.")
     brief = council.reply_brief(schema_tail) if seated else reply_brief(
