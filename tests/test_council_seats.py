@@ -70,6 +70,7 @@ USAGE = {"gpt-6-astra": {"input_tokens": 1200, "output_tokens": 120},
          "gpt-6-luna": {"input_tokens": 500, "output_tokens": 50}}
 SHARED = ("README.md", 1, "the base line is never read back")
 OTHER = ("tests/test_thing.py", 2, "the test asserts nothing")
+CONSOLIDATOR = "You are the READ-ONLY consolidator of a review council."
 FIXED_DATES = {"GIT_AUTHOR_DATE": "2026-01-02T03:04:05+00:00",
                "GIT_COMMITTER_DATE": "2026-01-02T03:04:05+00:00"}
 
@@ -152,9 +153,10 @@ def provider_output(harness, text, usage):
 
 class Container:
     """The review container: it answers a startup probe with the checkout's
-    commit, or fails to start for a model that is down, and answers each
-    seat's turn from that seat's own queue, keyed by model, as its harness
-    prints it."""
+    commit, or fails to start for a model that is down, fails a council
+    consolidator's turn so the round takes the strictest-wins merge, and
+    answers each seat's turn from that seat's own queue, keyed by model, as
+    its harness prints it."""
 
     def __init__(self, seats=None, down=(), barrier=None):
         self.steps = {model: list(steps)
@@ -171,6 +173,8 @@ class Container:
                 raise review_runner.ReviewBoundaryError(
                     f"{model} is unreachable")
             return f"ready {turn['candidate_sha']}"
+        if turn["prompt"].startswith(CONSOLIDATOR):
+            raise review_runner.ReviewBoundaryError("the consolidator is down")
         with self.lock:
             steps = self.steps.get(model)
             if not steps:
@@ -283,7 +287,8 @@ class CouncilRoundTests(CouncilFixture):
         self.assertEqual(sorted(
             (turn["role"], turn["label"]) for (turn,) in (
                 (json.loads(payload),) for (payload,) in self.read(
-                    "SELECT payload FROM runEvents WHERE kind = 'agent_turn'"))),
+                    "SELECT payload FROM runEvents WHERE kind = 'agent_turn'"))
+            if turn["role"] == "review"),
             [("review", "claude opus"), ("review", "codex gpt-6-astra")])
 
     def test_an_approval_and_a_request_merge_to_changes_with_the_union(self):
@@ -369,7 +374,8 @@ class CouncilRoundTests(CouncilFixture):
 
         self.assertEqual(self.findings(1), [
             {"path": "Dockerfile", "line": 7, "severity": "p1",
-             "category": "correctness", "message": unpinned[2]}])
+             "category": "correctness", "message": unpinned[2],
+             "target": "code"}])
 
     def test_a_registered_value_in_a_finding_is_stored_redacted(self):
         leaked = ("README.md", 1, "the token council-dummy-credential-7 is "
@@ -390,7 +396,7 @@ class CouncilRoundTests(CouncilFixture):
             council(ASTRA, OPUS).replace(UNTRIMMED, ADVERSARY_ON),
             Change("change", "poetry.lock", "locked\n"),
             Attack("- src/app.py:4 [p2] a symlink may slip by\n"
-                   "EVIDENCE: concern\nADVERSARY: DONE"), Consolidate(),
+                   "EVIDENCE: concern\nADVERSARY: DONE"),
             Change("fix", "src/app.py", "fixed\n"), seats={
                 "gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (unpinned,)),
                                 Answer("APPROVE", 9)],
@@ -407,7 +413,7 @@ class CouncilRoundTests(CouncilFixture):
         concern = ("- src/app.py:4 [p2] a symlink may slip by\n"
                    "EVIDENCE: concern\nADVERSARY: DONE")
         for side in (("Nothing broke.\nADVERSARY: DONE",),
-                     (concern, Consolidate())):
+                     (concern,)):
             with self.subTest(adversary=side[0][:20]):
                 fixture = CouncilFixture()
                 fixture.setUp()
@@ -433,7 +439,7 @@ class CouncilRoundTests(CouncilFixture):
                 "gpt-6-astra": [Answer("APPROVE", 9)],
                 "gpt-6-luna": [Answer("APPROVE", 8)]})
 
-        self.assertEqual(sorted(self.container.probed),
+        self.assertEqual(sorted(set(self.container.probed)),
                          ["gpt-6-astra", "gpt-6-luna", "opus"])
         self.assertEqual(sorted(turn.model for turn in fake.seat_turns),
                          ["gpt-6-astra", "gpt-6-luna"])
@@ -816,7 +822,7 @@ class CouncilMigrationTests(unittest.TestCase):
 
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
                              (store.schema.SCHEMA_VERSION,))
-            self.assertEqual(store.schema.SCHEMA_VERSION, 74)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 75)
             self.assertEqual(store.schema.READABLE_FROM, 50)
             store.council.record_seat(conn, run, 1, 1, "codex gpt-6-astra",
                                       "missing", started_at=1, ended_at=2,

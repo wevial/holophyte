@@ -13,6 +13,8 @@ from holophyte.review.reply_parsing import (
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
 COUNCIL_SCHEMA_FILE = Path(__file__).with_name("council_reply.schema.json")
+CONSOLIDATED_SCHEMA_FILE = Path(__file__).with_name(
+    "consolidated_reply.schema.json")
 
 TARGET_FIELD = "target"
 
@@ -263,7 +265,7 @@ def rendered(value):
     return "\n".join(lines)
 
 
-def event_reply(reply):
+def event_reply(reply, schema=SCHEMA_FILE):
     from holophyte.review.review_runner import ReviewBoundaryError, codex_events
 
     try:
@@ -276,7 +278,7 @@ def event_reply(reply):
         return None
     if not texts or not isinstance(texts[-1], str):
         return None
-    return texts[-1] if reply_object(texts[-1]) is not None else None
+    return texts[-1] if reply_object(texts[-1], schema) is not None else None
 
 
 class RenderedReply(str):

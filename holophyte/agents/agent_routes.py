@@ -66,6 +66,7 @@ class ActiveRoutes:
         self.critic_failed = False
         self.council_down = {}
         self.council_checked = {}
+        self.consolidator_checked = {}
         self.stream = None
         self.project = project
         self.profiles = {}

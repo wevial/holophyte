@@ -31,6 +31,7 @@ from holophyte.pr.evidence_refresh import captured
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from holophyte.review.briefs import main_ref
+from holophyte.review.council import held_text
 from holophyte.stages import record
 from holophyte.tickets import ticket_template
 from store import operator_notes
@@ -180,8 +181,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
         project, branch, task_id, task, _pr_template(wt),
         babysitter.conventions(wt),
         record.notes_block(project, conn, run_id, "pr_writer"), body or task,
-        ref, diff, _refresh_parts(project, *refresh) if refresh is not None
-        else ())
+        ref, diff, _writer_extra(project, conn, run_id, refresh))
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
     if conn is not None and run_id is not None:
@@ -221,6 +221,14 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     notes = note_privacy.private_texts(conn, run_id)
     return (note_privacy.withhold(title, notes),
             note_privacy.withhold(text, notes))
+
+
+def _writer_extra(project, conn, run_id, refresh):
+    if refresh is not None:
+        return _refresh_parts(project, *refresh)
+    if held := held_text(conn, run_id):
+        return ["the review says the description must cover:\n\n" + held]
+    return []
 
 
 def _refresh_parts(project, current, answered, review):
