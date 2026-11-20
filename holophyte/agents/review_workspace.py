@@ -1,5 +1,6 @@
 import codecs
 import contextlib
+import contextvars
 import json
 import os
 import re
@@ -120,8 +121,11 @@ def review_worktrees(repo, env=None):
         yield Path(raw)
 
 
+STDERR_APART = contextvars.ContextVar("stderr_apart", default=False)
+
+
 def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
-    if role != "consolidate":
+    if not STDERR_APART.get():
         return captured_review(cmd, cwd, cap, env, role, command, on_start)
     with tempfile.TemporaryFile("w+", errors="replace") as diagnostics:
         output = captured_review(cmd, cwd, cap, env, role, command, on_start,

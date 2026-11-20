@@ -3,6 +3,8 @@ import contextvars
 import json
 import posixpath
 import re
+import shlex
+import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
@@ -14,6 +16,7 @@ import store
 import store.council
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import argv_label, family_label
+from holophyte.agents.review_workspace import STDERR_APART
 from holophyte.babysit.description_review import (
     PR_TEXT_REVIEW_KIND,
     hold_for_pr_text,
@@ -59,7 +62,6 @@ UNREASONED = "dropped without a reason"
 DESCRIBED = "PR description"
 SETTLED_KIND = "pr_text_settled"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
-CHECKED_PATH_RE = re.compile(r"[\w.-]+(?:/[\w.-]+)*\.\w+")
 TURN_FAILURES = (InfraFailure, OSError, subprocess.SubprocessError,
                  UnicodeError)
 
@@ -280,8 +282,7 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
     answered = [seat for seat in seated if seat.status == "answered"]
     found = consolidate.council_inputs(
         answered, adversarial or [],
-        held_text(conn, run_id).splitlines()
-        if merge_config(project).mode == "pr" else ())
+        held_text(conn, run_id).splitlines() if pr_mode(project) else ())
     route, label = consolidator_route(project)
     goal = consolidate.council_brief(seated, found, criteria, sha)
     down = consolidator_down(project, route, label)
@@ -325,6 +326,7 @@ def consolidator_down(project, route, label):
 def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
                        run_agent):
     for _ in range(2):
+        apart = STDERR_APART.set(True)
         try:
             reply = run_agent(project, "consolidate",
                               goal if route else str(goal), wt,
@@ -335,6 +337,8 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
             if not getattr(failure.__cause__, "schema_refused", False):
                 return None, f"the consolidator's route failed: {failure}"
             reply = ""
+        finally:
+            STDERR_APART.reset(apart)
         if getattr(reply, "timed_out", False) or getattr(reply, "exit_code", 0):
             return None, ("the consolidator's route failed: "
                           + ("timed out" if getattr(reply, "timed_out", False)
@@ -362,26 +366,26 @@ def json_object(line):
 
 def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
     kept, covered, merged = [], set(), set()
-    for finding in value["findings"]:
-        named = [name for name in dict.fromkeys(finding["raised_by"])
-                 if name in found]
-        ids = [name for name in named if name not in covered]
-        if not ids:
-            continue
+    credited = credits([finding["raised_by"] for finding in value["findings"]],
+                       found)
+    for finding, ids in zip(value["findings"], credited):
         covered.update(ids)
-        if all(held(found, name) for name in ids):
-            continue
-        kept.append(dict(finding, raised_by=raisers(found, ids)))
-        merged.update(name for name in ids if held(found, name))
+        if ids and not all(held(found, name) for name in ids):
+            kept.append(dict(finding, raised_by=raisers(found, ids)))
+            merged.update(name for name in ids if held(found, name))
     shared = shared_places(found)
     dropped, refuted = set(), []
     for entry in value["refuted"]:
-        ids = [name for name in dict.fromkeys(entry["raised_by"])
-               if name in found and name not in covered
+        named = [name for name in dict.fromkeys(entry["raised_by"])
+                 if name in found]
+        ids = [name for name in named if name not in covered
                and spot(found[name][1]) not in shared]
         if ids and entry["reason"].strip():
             dropped.update(ids)
-            refuted.append(dict(entry, raised_by=raisers(found, ids)))
+            refuted.append(dict(entry, raised_by=raisers(found, ids)) | (
+                {} if ids == named else {"finding": "; ".join(
+                    message_line(found[name][1]["message"])
+                    for name in ids)}))
     for at, ids in unaccounted(found, covered | dropped).items():
         finding = restored(found, ids)
         kept.append(finding)
@@ -398,6 +402,16 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
              "scope": ruled_scope(value, answered), "refuted": refuted}
     return final, concerns, [found[name][1]["message"] for name in found
                              if name in merged | dropped and held(found, name)]
+
+
+def credits(citations, found):
+    named = [[name for name in dict.fromkeys(cited) if name in found]
+             for cited in citations]
+    credited, covered = [[] for _ in named], set()
+    for at in sorted(range(len(named)), key=lambda at: -len(named[at])):
+        credited[at] = [name for name in named[at] if name not in covered]
+        covered.update(credited[at])
+    return credited
 
 
 def held(found, name):
@@ -470,10 +484,18 @@ def ruled_criteria(value, answered, criteria, wt, sha):
 def named_witness(witness, wt):
     if WITNESS_TEST_RE.search(witness or ""):
         return True
+    try:
+        words = shlex.split((witness or "").strip().strip("`"))
+    except ValueError:
+        return False
     root = Path(wt).resolve()
-    return any((root / token).resolve().is_relative_to(root)
-               and (root / token).is_file()
-               for token in CHECKED_PATH_RE.findall(witness or ""))
+    files = [word for word in words[1:]
+             if (root / word).resolve().is_relative_to(root)
+             and (root / word).is_file()]
+    return (bool(files) and shutil.which(words[0]) is not None
+            and all(word in files or word.startswith("-")
+                    or words[at].startswith("-")
+                    for at, word in enumerate(words[1:])))
 
 
 def ruled_scope(value, answered):
@@ -498,7 +520,11 @@ def seat_detail(seated, consolidated_by):
 
 def held_here(project, verdict):
     return (getattr(verdict, "consolidated_by", None) is not None
-            and merge_config(project).mode == "pr")
+            and pr_mode(project))
+
+
+def pr_mode(project):
+    return merge_config(project).mode == "pr"
 
 
 def described(finding):
@@ -511,8 +537,7 @@ def held_line(finding):
                          "message": finding["message"]})
 
 
-def held_description(conn, run_id, verdict, findings, rulings, settled):
-    settle(conn, run_id, settled)
+def held_description(conn, run_id, verdict, findings, rulings):
     pending = held_text(conn, run_id).splitlines()
     hold_for_pr_text(conn, run_id, [
         line for line in dict.fromkeys(

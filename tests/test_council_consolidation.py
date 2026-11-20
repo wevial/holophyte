@@ -68,6 +68,10 @@ from holophyte.agents import roles  # noqa: E402
 from holophyte.agents.agent_output import AgentOutput  # noqa: E402
 from holophyte.agents.agent_turns import family_label  # noqa: E402
 from holophyte.agents.probes import REVIEW_PROBE_GOAL  # noqa: E402
+from holophyte.agents.review_workspace import (  # noqa: E402
+    STDERR_APART,
+    configured_review,
+)
 from holophyte.loop.gates import run_capped  # noqa: E402
 from holophyte.loop.stop import command  # noqa: E402
 from holophyte.review import review_runner  # noqa: E402
@@ -139,6 +143,7 @@ class Panel(Container):
         super().__init__(seats, down)
         self.rulings, self.faults = list(rulings), set(faults)
         self.consolidations, self.tiers, self.probe_tiers = [], [], {}
+        self.apart = []
 
     def __call__(self, **turn):
         turn.setdefault("harness", "codex")
@@ -152,6 +157,7 @@ class Panel(Container):
         with self.lock:
             self.consolidations.append(
                 (turn["harness"], turn["model"], turn["prompt"]))
+            self.apart.append(STDERR_APART.get())
             self.tiers.append(turn.get("service_tier"))
             step = self.rulings.pop(0)
         return review_runner.PARSERS[turn["harness"]](provider_output(
@@ -239,6 +245,45 @@ class ConsolidatedRoundTests(Consolidated):
         fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
         self.assertIn(SHARED[2], fix.goal)
         self.assertNotIn(REWORDED[2], fix.goal)
+
+    def test_a_merged_finding_after_a_lone_one_is_still_held_once(self):
+        fake = self.run_panel(
+            council(ASTRA, OPUS), Commit("work"), Commit("fix"),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (SHARED,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("REQUEST_CHANGES", 5, (REWORDED,)),
+                            Answer("APPROVE", 9)]},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*REWORDED, ("F2",), "code"),
+                (*SHARED, ("F1", "F2"), "code"))), Ruling()])
+
+        self.assertEqual(
+            [(f["message"], f["raised_by"]) for f in self.findings(1)],
+            [(SHARED[2], ["seat 1", "seat 2"])])
+        fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
+        self.assertNotIn(REWORDED[2], fix.goal)
+
+    def test_a_grouped_refutation_records_only_the_finding_it_drops(self):
+        retry = ("README.md", 1, "the retry limit is never enforced")
+        again = ("README.md", 1, "retries go on past the configured limit")
+        flaky = ("tests/test_thing.py", 2, "the test sleeps and is flaky")
+        self.run_panel(
+            council(ASTRA, OPUS, LUNA), Commit("work"), Commit("fix"),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (retry,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("REQUEST_CHANGES", 5, (again,)),
+                            Answer("APPROVE", 9)],
+                   "gpt-6-luna": [Answer("REQUEST_CHANGES", 5, (flaky,)),
+                                  Answer("APPROVE", 9)]},
+            rulings=[Ruling(refuted=((retry[2], "neither one blocks",
+                                      ("F1", "F2", "F3")),)), Ruling()])
+
+        [kept] = self.findings(1)
+        self.assertEqual(kept["raised_by"], ["seat 1", "seat 2"])
+        [refuted] = self.reply(1)["refuted"]
+        self.assertEqual((refuted["finding"], refuted["raised_by"],
+                          refuted["reason"]),
+                         (flaky[2], ["seat 3"], "neither one blocks"))
 
     def test_two_defects_kept_apart_at_one_line_both_reach_the_fix(self):
         closed = ("README.md", 1, "the file handle is never closed")
@@ -516,6 +561,12 @@ class ConsolidatedRoundTests(Consolidated):
     def test_a_seats_unmet_criterion_outlasts_a_check_on_a_missing_file(self):
         self.unmet_outlasts("bash -n scripts/missing.sh")
 
+    def test_a_seats_unmet_criterion_outlasts_prose_naming_a_file(self):
+        self.unmet_outlasts("See README.md for background")
+
+    def test_prose_led_by_an_installed_program_is_no_check(self):
+        self.unmet_outlasts("more detail in README.md")
+
     def test_a_check_on_a_candidate_file_witnesses_over_a_seats_unmet(self):
         self.run_panel(
             council(ASTRA, OPUS), Commit("work"),
@@ -545,6 +596,14 @@ class ConsolidatedRoundTests(Consolidated):
         fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
         self.assertIn("CRITERION C1: not met", fix.goal)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_the_council_consolidator_reads_its_reply_apart_from_stderr(self):
+        self.run_panel(council(ASTRA, OPUS), Commit("work"),
+                       seats={"gpt-6-astra": [Answer("APPROVE", 9)],
+                              "opus": [Answer("APPROVE", 8)]},
+                       rulings=[Ruling()])
+
+        self.assertEqual(self.panel.apart, [True])
 
     def test_the_review_attempt_records_each_seat_and_the_consolidator(self):
         self.run_panel(
@@ -735,6 +794,23 @@ class UnconsolidatedTests(Consolidated):
         self.assertEqual([f["message"] for f in self.findings(1)], [SHARED[2]])
         self.assertIsNotNone(self.round_rows()[0][2])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_consolidator_commands_stderr_is_kept_apart_only_when_asked(self):
+        command = [sys.executable, "-c",
+                   "import sys; print('{}', flush=True);"
+                   " print('warn', file=sys.stderr)"]
+
+        def output():
+            return str(configured_review(command, self.target, 30, None,
+                                         "consolidate", "consolidator"))
+        merged = output()
+        apart = STDERR_APART.set(True)
+        try:
+            alone = output()
+        finally:
+            STDERR_APART.reset(apart)
+
+        self.assertEqual((merged, alone), ("{}\nwarn", "{}"))
 
     def test_a_consolidator_reply_unreadable_twice_leaves_the_merge(self):
         self.run_panel(
@@ -940,7 +1016,7 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
         self.assertNotIn(DESCRIBED[2], writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
-    def test_a_dropped_rewording_withdraws_the_earlier_held_wording(self):
+    def test_a_dropped_rewording_merged_with_the_held_wording_withdraws_both(self):
         self.fake_route(states=[self.pr_state()])
         reworded = "the description omits that the thing is added"
         fake = self.run_panel(
@@ -960,12 +1036,63 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
                 (*DESCRIBED, ("F2",), "description"))),
                 Ruling("REQUEST_CHANGES", findings=(
                     (*SHARED, ("F1",), "code"),
-                    (None, None, reworded, ("F2",), "description"))),
+                    (None, None, reworded, ("F2", "F3"), "description"))),
                 Ruling()])
 
         [writer] = self.writer(fake)
         self.assertNotIn(DESCRIBED[2], writer)
         self.assertNotIn(reworded, writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_dropping_a_new_description_finding_keeps_an_unrelated_held_one(self):
+        self.fake_route(states=[self.pr_state()])
+        examples = "the description shows no example of the new flag"
+        fake = self.run_panel(
+            self.PR + "[loop]\nreview_rounds = 3\n" + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"),
+            Reply("THREAD 1: FIX -- the base line is still never read\n"
+                  "THREAD 2: DROP -- the flag needs no example"),
+            Commit("fix again"), WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [
+                Describing(Answer("REQUEST_CHANGES", 4, (SHARED,))),
+                Describing(Answer("REQUEST_CHANGES", 4, (SHARED,)),
+                           message=examples), Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)] * 3},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*SHARED, ("F1",), "code"),
+                (*DESCRIBED, ("F2",), "description"))),
+                Ruling("REQUEST_CHANGES", findings=(
+                    (*SHARED, ("F1",), "code"),
+                    (None, None, examples, ("F2",), "description"))),
+                Ruling()])
+
+        [writer] = self.writer(fake)
+        self.assertIn(DESCRIBED[2], writer)
+        self.assertNotIn(examples, writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_drop_in_a_fallen_back_round_withdraws_the_held_finding(self):
+        self.fake_route(states=[self.pr_state()])
+        fake = self.run_panel(
+            self.PR + "[loop]\nreview_rounds = 3\n" + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"),
+            Reply("THREAD 1: FIX -- the base line is still never read\n"
+                  "THREAD 2: DROP -- the description already says it"),
+            Commit("fix again"), WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [Describing(Answer(
+                "REQUEST_CHANGES", 4, (SHARED,)))] * 2 + [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)] * 3},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*SHARED, ("F1",), "code"),
+                (*DESCRIBED, ("F2",), "description"))), RouteDown(),
+                Ruling()])
+
+        self.assertEqual([row[2] for row in self.round_rows()[:3]],
+                         [CONSOLIDATED_BY, None, CONSOLIDATED_BY])
+        [writer] = self.writer(fake)
+        self.assertNotIn(DESCRIBED[2], writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_restored_description_finding_the_adjudicator_drops_skips_it(self):
@@ -1168,7 +1295,7 @@ class ConsolidationMigrationTests(unittest.TestCase):
 
 
 class UnsetCouncilTests(unittest.TestCase):
-    def walk(self, *patches):
+    def walk(self, *patches, consolidation=Consolidate()):
         fixture = CouncilFixture()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -1179,7 +1306,7 @@ class UnsetCouncilTests(unittest.TestCase):
             try:
                 fake, _ = fixture.loop(
                     Change("change", "poetry.lock", "locked\n"),
-                    REQUEST_CHANGES, Attack(CONCERN), Consolidate(),
+                    REQUEST_CHANGES, Attack(CONCERN), consolidation,
                     Change("fix", "src/app.py", "fixed\n"), APPROVE)
             finally:
                 for started in patches:
@@ -1212,6 +1339,17 @@ class UnsetCouncilTests(unittest.TestCase):
         for key in plain:
             with self.subTest(key=key):
                 self.assertEqual(raising[key], plain[key])
+
+    def test_the_legacy_consolidator_turn_keeps_stderr_merged(self):
+        seen = []
+
+        class Watched(Consolidate):
+            def play(self, cwd, turn):
+                seen.append(STDERR_APART.get())
+                return super().play(cwd, turn)
+        self.walk(consolidation=Watched())
+
+        self.assertEqual(seen, [False])
 
 
 if __name__ == "__main__":
