@@ -47,7 +47,7 @@ FIXTURES = ROOT / "tests" / "fixtures" / "serve"
 ANSWERS = ("status", "attention", "host-status", "host-attention", "prefs",
            "run-detail", "run-detail-unestimated", "run-merge-ready",
            "run-merge-bypassable", "run-asks", "run-files", "run-turns",
-           "run-transcript", "run-stages",
+           "run-transcript", "run-stages", "pipeline",
            "shipped", "history", "holds", "ledger", "findings", "board", "ticket",
            "story", "ticket-check", "ticket-search", "scouts", "scout",
            "scout-routes", "merge-queue")
@@ -146,7 +146,8 @@ class GeneratedFilesTests(unittest.TestCase):
                              "attention", "board", "findings", "flow", "history",
                              "holds",
                              "host-attention", "host-status", "ledger",
-                             "merge-queue", "path-matches", "peers", "prefs",
+                             "merge-queue", "path-matches", "peers",
+                             "pipeline", "prefs",
                              "run-asks",
                              "run-detail", "run-files",
                              "run-merge", "run-stages", "run-transcript",

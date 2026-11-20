@@ -555,6 +555,9 @@ Each module, one line:
 - `holophyte/serve/serve_runs.py` — the daemon's run and ledger read routes
   (KO-395): `/runs`, `/shipped`, `/ledger`, `/runs/N`, `/runs/N/ledger`
   and `/runs/N/files`, their query parsers and the origin-link pair.
+- `holophyte/serve/serve_pipeline.py` — the daemon's `GET /pipeline`:
+  the pipeline the project's config resolves to now, its pinned revision,
+  and each stage's numbers over a window of days.
 - `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
   does not hold: a `park` row for each park waiting on the maintainer and a
   `failure` row for each failed run with no `failure` ledger row.
@@ -595,6 +598,8 @@ Each module, one line:
 - `holophyte/serve/contract_run.py` — a run's review round as `/runs/N`
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
+- `holophyte/serve/contract_pipeline.py` — the current pipeline and its
+  stages' numbers `GET /pipeline` answers, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.
