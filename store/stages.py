@@ -100,10 +100,7 @@ def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None):
 
 
 def stage_attempts(conn, run_ids):
-    run_ids = tuple(run_ids)
     found = {run_id: [] for run_id in run_ids}
-    if not run_ids:
-        return found
     rows = conn.execute(
         "SELECT runId, stageId, attempt, startedAt, endedAt, inputSha,"
         " outputSha, outcome, edge, agentSeconds, inputTokens, outputTokens,"
