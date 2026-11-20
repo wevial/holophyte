@@ -13,7 +13,7 @@ from holophyte.serve.contract_routes import (
     SeatProbes,
 )
 from holophyte.serve.contract_routes import RouteProbe as RouteProbe
-from holophyte.serve.contract_run import Precheck, Reverted, Round
+from holophyte.serve.contract_run import Precheck, Reverted, Round, RunStages
 from holophyte.serve.contract_search import Search
 from holophyte.serve.serve_history import Flow
 from holophyte.serve.serve_merge_queue import MergeQueue
@@ -950,6 +950,7 @@ ROUTES = {
     "run-files": (RunFiles, "GET /runs/N/files"),
     "run-turns": (RunTurns, "GET /runs/N/turns"),
     "run-transcript": (Transcript, "GET /runs/N/turns/T/transcript"),
+    "run-stages": (RunStages, "GET /runs/N/stages"),
     "shipped": (Shipped, "GET /shipped"),
     "history": (History, "GET /history"),
     "flow": (Flow, "GET /flow"),

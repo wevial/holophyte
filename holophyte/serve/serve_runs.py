@@ -19,6 +19,8 @@ from holophyte.loop.pool_handoff import workers_on_previous_build  # noqa: F401
 from holophyte.review.round_account import round_account
 from holophyte.serve import day_log
 from store.operator_notes import round_notes
+from store.pipelines import run_pipelines
+from store.stages import stage_attempts
 from store.steer_notes import chain_notes
 from store.working import agent_work, chain_work, effective_work, verify_work
 
@@ -35,6 +37,7 @@ REMOTE_SHAPES = (
 RUN_PATH = re.compile(r"^/runs/([^/]+)$")
 RUN_FILES_PATH = re.compile(r"^/runs/([^/]+)/files$")
 RUN_LEDGER_PATH = re.compile(r"^/runs/([^/]+)/ledger$")
+RUN_STAGES_PATH = re.compile(r"^/runs/([^/]+)/stages$")
 # What `int()` accepts, less its leniencies: whitespace and underscores.
 RUN_ID = re.compile(r"^([+-]?)0*(\d+)$")
 SQLITE_MAX_INT = 2**63 - 1
@@ -696,3 +699,38 @@ def transcript_window(entries, turn):
     started = ended - seconds * 1000
     return [entry for entry in entries if entry['at_ms'] is None
             or started - 2000 <= entry['at_ms'] <= ended + 2000]
+
+
+def run_stages(project, text):
+    from holophyte.redact import known_secrets, outbound
+    failed, run = locate_run(project, text)
+    if failed is not None:
+        return failed
+    conn = store.read.open_readonly(project.store_path)
+    try:
+        lanes = [store.read.run_detail(conn, link.id)
+                 for link in store.read.run_chains(conn, [run.id])[run.id]
+                 if link.id != run.id]
+        ids = [lane.id for lane in lanes] + [run.id]
+        pinned = run_pipelines(conn, ids)
+        attempts = stage_attempts(conn, ids)
+    finally:
+        conn.close()
+    body = {"run": run.id, "pipeline": served_pipeline(pinned.get(run.id)),
+            "attempts": [attempt._asdict() for attempt in attempts[run.id]],
+            "lanes": [{"run": lane.id, "attempt": lane.attempt,
+                       "outcome": lane.outcome,
+                       "pipeline_revision": pinned.get(lane.id, {}).get(
+                           "revision"),
+                       "attempts": [attempt._asdict()
+                                    for attempt in attempts[lane.id]]}
+                      for lane in lanes]}
+    return 200, json.loads(outbound(json.dumps(body),
+                                    known_secrets(project.config())))
+
+
+def served_pipeline(pinned):
+    if pinned is None:
+        return None
+    return {key: pinned[key] for key in ("id", "name", "revision", "format",
+                                         "merge", "stages")}

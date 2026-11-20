@@ -53,3 +53,16 @@ def inherit_pipeline(conn, run_id, from_run_id):
         conn.execute("UPDATE runs SET pipelineId = ? WHERE id = ?"
                      " AND pipelineId IS NULL", (pipeline_id, run_id))
     return pipeline_id
+
+
+def run_pipelines(conn, run_ids):
+    run_ids = tuple(run_ids)
+    if not run_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT r.id, p.id, p.revision, p.document FROM runs r"
+        " JOIN pipelines p ON p.id = r.pipelineId"
+        f" WHERE r.id IN ({', '.join('?' * len(run_ids))})", run_ids)
+    return {run_id: {**json.loads(document), "id": pipeline_id,
+                     "revision": revision}
+            for run_id, pipeline_id, revision, document in rows}

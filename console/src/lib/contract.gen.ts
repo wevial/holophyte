@@ -752,6 +752,73 @@ export const transcriptSchema = z.looseObject({
 });
 export type Transcript = z.infer<typeof transcriptSchema>;
 
+export const pipelineMergeSchema = z.looseObject({
+  mode: z.string(),
+  approve: z.string(),
+});
+export type PipelineMerge = z.infer<typeof pipelineMergeSchema>;
+
+export const pipelineStageSchema = z.looseObject({
+  id: z.string(),
+  type: z.enum(["build", "check"]),
+  group: z.enum(["ticket", "candidate", "factory"]),
+  roles: z.array(z.string()),
+  seat: z.string().nullable().optional(),
+  profile: z.string().nullable().optional(),
+  switch: z.boolean().optional(),
+  effort: z.string().nullable().optional(),
+  adversary: z.boolean().optional(),
+  commands: z.record(z.string(), z.array(z.string())).optional(),
+  paths: z.array(z.string()).optional(),
+  cap: z.int().optional(),
+  approve: z.string().optional(),
+});
+export type PipelineStage = z.infer<typeof pipelineStageSchema>;
+
+export const pipelineSchema = z.looseObject({
+  id: z.int(),
+  name: z.string(),
+  revision: z.int(),
+  format: z.int(),
+  merge: pipelineMergeSchema,
+  stages: z.array(pipelineStageSchema),
+});
+export type Pipeline = z.infer<typeof pipelineSchema>;
+
+export const stageAttemptSchema = z.looseObject({
+  stage: z.string(),
+  attempt: z.int(),
+  started_ms: z.int(),
+  ended_ms: z.int().nullable(),
+  input_sha: z.string().nullable(),
+  output_sha: z.string().nullable(),
+  outcome: z.enum(["pass", "fail", "skipped", "error"]).nullable(),
+  edge: z.enum(["next", "on_fail", "again", "park", "end"]).nullable(),
+  seconds: z.number().nullable(),
+  input_tokens: z.int().nullable(),
+  output_tokens: z.int().nullable(),
+  cost_usd: z.number().nullable(),
+  detail: z.record(z.string(), z.union([z.string(), z.int(), z.number(), z.boolean(), z.array(z.string())]).nullable()),
+});
+export type StageAttempt = z.infer<typeof stageAttemptSchema>;
+
+export const runLaneSchema = z.looseObject({
+  run: z.int(),
+  attempt: z.int(),
+  outcome: z.string().nullable(),
+  pipeline_revision: z.int().nullable(),
+  attempts: z.array(stageAttemptSchema),
+});
+export type RunLane = z.infer<typeof runLaneSchema>;
+
+export const runStagesSchema = z.looseObject({
+  run: z.int(),
+  pipeline: pipelineSchema.nullable(),
+  attempts: z.array(stageAttemptSchema),
+  lanes: z.array(runLaneSchema),
+});
+export type RunStages = z.infer<typeof runStagesSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),

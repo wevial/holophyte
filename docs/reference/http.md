@@ -1034,6 +1034,67 @@ A run with no entries answers an empty list. `N` parses as on
 `/runs/N`: a non-integer is 400, an integer with no run is 404 carrying
 `run`. Nothing here is rendered; the endpoint serves the rows.
 
+## `GET /runs/N/stages`
+
+```json
+{"run": 3,
+ "pipeline": {"id": 2, "name": "Holophyte standard", "revision": 2,
+   "format": 1, "merge": {"mode": "local", "approve": "auto"},
+   "stages": [
+     {"id": "implement", "type": "build", "group": "candidate",
+      "roles": ["implement"], "seat": "claude opus", "profile": "sonnet"},
+     {"id": "verify", "type": "check", "group": "candidate", "roles": [],
+      "commands": {"always": ["ruff check ."], "before_merge": []}}]},
+ "attempts": [
+   {"stage": "implement", "attempt": 1, "started_ms": 1750002460000,
+    "ended_ms": 1750002520000, "input_sha": "bbbb…", "output_sha": "cccc…",
+    "outcome": "pass", "edge": "next", "seconds": 50.5,
+    "input_tokens": 1200, "output_tokens": 300, "cost_usd": 0.25,
+    "detail": {"kind": "first"}}],
+ "lanes": [
+   {"run": 2, "attempt": 2, "outcome": "failed", "pipeline_revision": 1,
+    "attempts": []}]}
+```
+
+Everything a graph of run N draws from, read from the store and written
+nowhere. `run` is N.
+
+`pipeline` is the pipeline document run N was claimed with, as pinned:
+`id` is its row, `revision` counts the project's distinct documents from 1,
+`name` and `format` are the document's own, `merge` its `mode` and
+`approve`, and `stages` its stages in pipeline order. Each stage carries its
+`id`, its `type` (`build` or `check`), its `group` (`ticket`, `candidate` or
+`factory`) and the agent `roles` whose turns it owns, plus the settings that
+stage resolved: `seat` (the route label, null when the seat is unset),
+`profile`, `switch`, `effort`, `adversary`, `commands` (`always` and
+`before_merge`), `paths`, `cap` and `approve`. `pipeline` is null for a run
+claimed before pipelines were recorded.
+
+`attempts` lists run N's stage attempts in start order, ties broken by
+record order. Each carries its `stage` id, its `attempt` number within that
+stage, `started_ms` and `ended_ms` in epoch milliseconds, the commit it
+started from (`input_sha`) and ended at (`output_sha`), its `outcome`
+(`pass`, `fail`, `skipped` or `error`) and the `edge` it left by (`next`,
+`on_fail`, `again`, `park` or `end`). An attempt still open, such as a
+`waiting` park, has `ended_ms`, `outcome` and `edge` null. `seconds` is
+the agent seconds of the stage's own roles' turns, and `input_tokens`,
+`output_tokens` and `cost_usd` their usage, each null when none was
+recorded; wall time is `ended_ms - started_ms`. `detail` is the stored
+JSON object the stage recorded, such as a verify or review attempt's
+`round`, a skipped attempt's `reason`, or a `waiting` attempt's `kind`
+(`approval` when it waits on a human's approval). A run with no attempts
+answers an empty list.
+
+`lanes` are the other runs of N's chain, oldest first: its ticket's runs
+since the last merge before N, as on `/runs/N`. A run after N is not a
+lane. Each lane carries its `run` id, its `attempt` number, its `outcome`
+(null while it is live), the `pipeline_revision` it pinned (null when it
+pinned none) and its own `attempts` in the same shape.
+
+Every string is redacted with the project's known secrets, as on
+`/runs/N/turns`. `N` parses as on `/runs/N`: a non-integer is 400, an
+integer with no run is 404 carrying `run`. The route writes nothing.
+
 ## `GET /ledger?since=MS`
 
 ```json

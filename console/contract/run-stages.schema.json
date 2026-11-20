@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunStages",
+  "description": "GET /runs/N/stages",
+  "$ref": "#/$defs/RunStages",
+  "$defs": {
+    "PipelineMerge": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "approve": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "approve"
+      ],
+      "additionalProperties": true
+    },
+    "PipelineStage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "build",
+            "check"
+          ]
+        },
+        "group": {
+          "enum": [
+            "ticket",
+            "candidate",
+            "factory"
+          ]
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "seat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "switch": {
+          "type": "boolean"
+        },
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adversary": {
+          "type": "boolean"
+        },
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cap": {
+          "type": "integer"
+        },
+        "approve": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "group",
+        "roles"
+      ],
+      "additionalProperties": true
+    },
+    "Pipeline": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "format": {
+          "type": "integer"
+        },
+        "merge": {
+          "$ref": "#/$defs/PipelineMerge"
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PipelineStage"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "revision",
+        "format",
+        "merge",
+        "stages"
+      ],
+      "additionalProperties": true
+    },
+    "StageAttempt": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "started_ms": {
+          "type": "integer"
+        },
+        "ended_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_sha": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "pass",
+                "fail",
+                "skipped",
+                "error"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "edge": {
+          "anyOf": [
+            {
+              "enum": [
+                "next",
+                "on_fail",
+                "again",
+                "park",
+                "end"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "output_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "type": "object",
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "stage",
+        "attempt",
+        "started_ms",
+        "ended_ms",
+        "input_sha",
+        "output_sha",
+        "outcome",
+        "edge",
+        "seconds",
+        "input_tokens",
+        "output_tokens",
+        "cost_usd",
+        "detail"
+      ],
+      "additionalProperties": true
+    },
+    "RunLane": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "attempt": {
+          "type": "integer"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pipeline_revision": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StageAttempt"
+          }
+        }
+      },
+      "required": [
+        "run",
+        "attempt",
+        "outcome",
+        "pipeline_revision",
+        "attempts"
+      ],
+      "additionalProperties": true
+    },
+    "RunStages": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "type": "integer"
+        },
+        "pipeline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pipeline"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StageAttempt"
+          }
+        },
+        "lanes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RunLane"
+          }
+        }
+      },
+      "required": [
+        "run",
+        "pipeline",
+        "attempts",
+        "lanes"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,195 @@
+{
+  "run": 3,
+  "pipeline": {
+    "id": 1,
+    "name": "Holophyte standard",
+    "revision": 2,
+    "format": 1,
+    "merge": {
+      "approve": "auto",
+      "mode": "local"
+    },
+    "stages": [
+      {
+        "group": "ticket",
+        "id": "critic",
+        "roles": [],
+        "seat": null,
+        "switch": false,
+        "type": "check"
+      },
+      {
+        "group": "candidate",
+        "id": "implement",
+        "profile": "sonnet",
+        "roles": [
+          "implement"
+        ],
+        "seat": "claude claude-model-under-test",
+        "type": "build"
+      },
+      {
+        "group": "candidate",
+        "id": "trim",
+        "roles": [
+          "trim"
+        ],
+        "seat": "claude claude-model-under-test",
+        "switch": true,
+        "type": "build"
+      },
+      {
+        "commands": {
+          "always": [],
+          "before_merge": []
+        },
+        "group": "candidate",
+        "id": "verify",
+        "roles": [],
+        "type": "check"
+      },
+      {
+        "adversary": false,
+        "effort": "high",
+        "group": "candidate",
+        "id": "review",
+        "roles": [
+          "review",
+          "adjudicate",
+          "adversary",
+          "consolidate"
+        ],
+        "seat": "codex gpt-review-under-test",
+        "type": "check"
+      },
+      {
+        "group": "factory",
+        "id": "merge_gate",
+        "roles": [],
+        "type": "check"
+      },
+      {
+        "approve": "auto",
+        "group": "factory",
+        "id": "waiting",
+        "roles": [],
+        "type": "check"
+      }
+    ]
+  },
+  "attempts": [
+    {
+      "stage": "implement",
+      "attempt": 1,
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "input_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "output_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "outcome": "pass",
+      "edge": "next",
+      "seconds": 50.5,
+      "input_tokens": 1200,
+      "output_tokens": 300,
+      "cost_usd": 0.25,
+      "detail": {
+        "kind": "first"
+      }
+    },
+    {
+      "stage": "trim",
+      "attempt": 1,
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "input_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "output_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "outcome": "skipped",
+      "edge": "next",
+      "seconds": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "cost_usd": null,
+      "detail": {
+        "reason": "[trim] enabled = false"
+      }
+    },
+    {
+      "stage": "verify",
+      "attempt": 1,
+      "started_ms": 1750000000000,
+      "ended_ms": 1750000000000,
+      "input_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "output_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "outcome": "pass",
+      "edge": "next",
+      "seconds": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "cost_usd": null,
+      "detail": {
+        "round": 1
+      }
+    },
+    {
+      "stage": "review",
+      "attempt": 1,
+      "started_ms": 1750000000000,
+      "ended_ms": null,
+      "input_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "output_sha": null,
+      "outcome": null,
+      "edge": null,
+      "seconds": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "cost_usd": null,
+      "detail": {
+        "adversary": "off",
+        "round": 1
+      }
+    }
+  ],
+  "lanes": [
+    {
+      "run": 2,
+      "attempt": 2,
+      "outcome": "failed",
+      "pipeline_revision": 1,
+      "attempts": [
+        {
+          "stage": "implement",
+          "attempt": 1,
+          "started_ms": 1750000000000,
+          "ended_ms": 1750000000000,
+          "input_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "output_sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "outcome": "pass",
+          "edge": "next",
+          "seconds": null,
+          "input_tokens": null,
+          "output_tokens": null,
+          "cost_usd": null,
+          "detail": {
+            "kind": "first"
+          }
+        },
+        {
+          "stage": "verify",
+          "attempt": 1,
+          "started_ms": 1750000000000,
+          "ended_ms": 1750000000000,
+          "input_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "output_sha": "cccccccccccccccccccccccccccccccccccccccc",
+          "outcome": "fail",
+          "edge": "end",
+          "seconds": null,
+          "input_tokens": null,
+          "output_tokens": null,
+          "cost_usd": null,
+          "detail": {
+            "round": 1
+          }
+        }
+      ]
+    }
+  ]
+}
