@@ -1187,16 +1187,20 @@ missing, or null.
 `seats` names each configured seat that runs on the harness: the
 `[agents]` seats, their `_fallback` routes, `implementer_shadow` and each
 `implementer_profiles.NAME`; a seat given as a command string counts for
-the harness its first word names. `probe` is the newest probe
-`route-probes.json` records among those seats: `ok`, `at_ms`, `why` (null
-when it passed) and the `seat` it came from; null when no seat uses the
-harness or none has been probed.
+the harness whose `[harnesses]` path, name or binary its first word is.
+`probe` is the newest probe `route-probes.json` records among those seats:
+`ok`, `at_ms`, `why` (null when it passed) and the `seat` it came from; null
+when no seat uses the harness or none has been probed. A seat whose routes
+span several harnesses, such as a `reviewer_fallback` list, lends its probe
+to none of them, since the record does not say which harness answered.
 
 `models` lists each model the harness offers as `id` and `source`: the
 adapter's curated list (`curated`), then each model a seat on the harness
-configures that the list lacks (`configured`). Every string is redacted
-with the project's known secrets; a config file that cannot be read makes
-the route answer 503 carrying `error`.
+configures that the list lacks (`configured`): a table's `model`, or a
+command string's `--model` or `-m` argument. `t3` lists the models of the
+providers it runs, `codex` and `claude`. Every string is redacted with the
+project's known secrets; a config file that cannot be read, parsed or
+decoded makes the route answer 503 carrying `error`.
 
 ## `GET /ledger?since=MS`
 

@@ -33,7 +33,7 @@ class HarnessesTests(ServeTestCase):
         super().setUp()
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        self.codex = self.stub(self.root / "tools" / "codex")
+        self.codex = self.stub(self.root / "tools" / "codex-stable")
         self.on_path = self.stub(self.bin / "claude")
         self.missing = self.root / "gone" / "cursor-agent"
         path = patch.dict(os.environ, {"PATH": str(self.bin)})
@@ -106,21 +106,45 @@ class HarnessesTests(ServeTestCase):
         self.assertEqual((found["codex"]["seats"], found["codex"]["probe"]),
                          ([], None))
 
-    def test_command_string_seats_and_their_fallback_probe_count(self):
+    def test_command_string_seats_name_their_harness_model_and_probe(self):
         self.start(self.config(
             '[agents]\nreviewer = "codex exec -m gpt-6-astra"\n'
-            f'reviewer_fallback = ["{self.root}/opt/cursor-agent -p",'
+            f'adjudicator_fallback = "{self.codex} exec --model gpt-5.6-sol"\n'))
+        for seat in ("reviewer", "adjudicator"):
+            record_probe(self.project, ProbeResult(
+                ["codex"], 0, "ready", 90, seat=seat), seat == "adjudicator",
+                9, 10 if seat == "reviewer" else 20)
+        codex = self.answer()["codex"]
+        self.assertEqual(codex["seats"], ["reviewer", "adjudicator_fallback"])
+        self.assertEqual(codex["probe"], {"ok": True, "at_ms": 20_000,
+                                          "why": None,
+                                          "seat": "adjudicator_fallback"})
+        self.assertEqual(codex["models"][-1],
+                         {"id": "gpt-5.6-sol", "source": "configured"})
+        self.assertNotIn("gpt-5.6-sol", ADAPTERS["codex"].models)
+
+    def test_a_fallback_list_over_several_harnesses_serves_no_probe(self):
+        self.start(self.config(
+            f'[agents]\nreviewer_fallback = ["{self.root}/opt/cursor-agent -p",'
             ' "claude -p"]\n'))
         record_probe(self.project, ProbeResult(
             ["cursor-agent"], 0, "ready", 90, seat="reviewer"), True, 9, 10)
         found = self.answer()
-        self.assertEqual(found["codex"]["seats"], ["reviewer"])
-        self.assertIsNone(found["codex"]["probe"])
-        self.assertEqual(found["cursor"]["seats"], ["reviewer_fallback"])
-        self.assertEqual(found["claude"]["seats"], ["reviewer_fallback"])
-        self.assertEqual(found["cursor"]["probe"], {
-            "ok": True, "at_ms": 10_000, "why": None,
-            "seat": "reviewer_fallback"})
+        for name in ("cursor", "claude"):
+            self.assertEqual((found[name]["seats"], found[name]["probe"]),
+                             (["reviewer_fallback"], None))
+
+    def test_an_unreadable_config_answers_503(self):
+        self.start(self.config())
+        config = self.db.parent / "config.toml"
+        config.write_bytes(b'[agents]\nreviewer = "\xff"\n')
+        code, _, body = self.request("GET", "/harnesses")
+        self.assertEqual(code, 503)
+        self.assertIn("config cannot be read", body["error"])
+        config.unlink()
+        config.mkdir()
+        code, _, body = self.request("GET", "/harnesses")
+        self.assertEqual(code, 503)
 
     def test_a_seats_model_outside_the_curated_list_is_listed_as_configured(self):
         self.two_claude_seats()
@@ -141,8 +165,8 @@ class HarnessesTests(ServeTestCase):
             "why": "exit 1: lin_api_harness_secret rejected"}}}
         (self.project.holo_dir / "route-probes.json").write_text(
             json.dumps(snapshot))
-        self.answer()
-        self.assertNotIn("lin_api_harness_secret", self.raw_body)
+        self.assertEqual(self.answer()["claude"]["probe"]["why"],
+                         "exit 1: [redacted] rejected")
 
     def test_the_pinned_fixture_is_the_answer(self):
         self.two_claude_seats()

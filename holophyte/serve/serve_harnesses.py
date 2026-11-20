@@ -20,14 +20,14 @@ def harnesses(project, query):
     fresh = dataclasses.replace(project, _config=None)
     try:
         config = fresh.config()
-    except SystemExit:
+    except (SystemExit, OSError, ValueError):
         config = None
     agents = table(config, "agents")
     paths = table(config, "harnesses")
     if agents is None or paths is None:
         return 503, {"error": "the project config cannot be read, so its"
                               " harnesses cannot be listed"}
-    seats = configured_seats(agents)
+    seats = configured_seats(agents, paths)
     probes = last_probes(fresh)
     body = {"harnesses": [harness(adapter, paths, seats, probes)
                           for adapter in ADAPTERS.values()]}
@@ -54,13 +54,16 @@ def harness(adapter, paths, seats, probes):
     used = [(seat, model) for seat, name, model in seats
             if name == adapter.name]
     named = list(dict.fromkeys(seat for seat, _ in used))
+    own = [seat for seat in named
+           if {name for each, name, _ in seats if each == seat}
+           == {adapter.name}]
     return {"name": adapter.name, "binary": binary, "path": path,
             "found": found, "configured": configured, "seats": named,
-            "probe": newest_probe(named, probes),
+            "probe": newest_probe(own, probes),
             "models": models(adapter, [model for _, model in used])}
 
 
-def configured_seats(agents):
+def configured_seats(agents, paths):
     keys = [key + suffix for key in AGENT_CONFIG_KEYS.values()
             for suffix in ("", FALLBACK)] + [SHADOW_KEY]
     entries = [(key, agents.get(key)) for key in keys]
@@ -69,30 +72,47 @@ def configured_seats(agents):
         entries += [(f"{PROFILES_KEY}.{name}", value)
                     for name, value in profiles.items()]
     return [(seat, name, model) for seat, value in entries
-            for name, model in seat_routes(seat, value) if name is not None]
+            for name, model in seat_routes(seat, value, paths)
+            if name is not None]
 
 
-def seat_routes(seat, value):
+def seat_routes(seat, value, paths):
     if isinstance(value, dict):
         name = value.get("harness", "codex" if seat == "critic" else None)
         model = value.get("model")
         return [(name, model if isinstance(model, str) and model else None)]
     commands = value if isinstance(value, list) else [value]
-    return [(command_adapter(command), None) for command in commands]
+    return [command_route(command, paths) for command in commands]
 
 
-def command_adapter(command):
+def command_route(command, paths):
     try:
         words = shlex.split(command) if isinstance(command, str) else []
     except ValueError:
-        return None
+        return None, None
     if not words:
-        return None
-    word = os.path.basename(words[0])
+        return None, None
+    return command_adapter(words[0], paths), command_model(words[1:])
+
+
+def command_adapter(executable, paths):
+    word = os.path.basename(executable)
+    for adapter in ADAPTERS.values():
+        if paths.get(adapter.harness_key) == executable:
+            return adapter.name
     if word in ADAPTERS:
         return word
     return next((adapter.name for adapter in ADAPTERS.values()
                  if adapter.binary == word), None)
+
+
+def command_model(words):
+    for at, word in enumerate(words):
+        if word.startswith("--model="):
+            return word.partition("=")[2] or None
+        if word in ("-m", "--model") and at + 1 < len(words):
+            return words[at + 1]
+    return None
 
 
 def newest_probe(seats, probes):

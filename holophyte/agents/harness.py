@@ -246,6 +246,7 @@ class Devin(Adapter):
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
     orchestrations = frozenset({"subagents"})
+    models = ("swe-2-high", "swe-2-max")
     LIST_TIMEOUT = 60
 
     # Print mode fails in a directory Devin has never trusted.
@@ -304,6 +305,7 @@ class Cursor(Adapter):
     requires = frozenset({"model"})
     refuses = frozenset({"effort"})
     resumes = False
+    models = ("grok-4.7-high",)
 
     def turn(self, binary, options, role):
         # --force runs git without a prompt; --trust accepts the fresh checkout.
@@ -328,6 +330,7 @@ class T3(Adapter):
     requires = frozenset({"model", *T3_KEYS})
     refuses = frozenset({"effort"})
     resumes = False
+    models = Codex.models + Claude.models
 
     def turn(self, binary, options, role):
         return [binary, "thread", "start", options["project"], "--worktree",
