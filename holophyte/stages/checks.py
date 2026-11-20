@@ -17,6 +17,7 @@ from holophyte.config.pipeline_settings import (
     check_secrets,
     current_checks,
 )
+from holophyte.isolation.isolation_git import git_environment
 from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import REDACTED, outbound
@@ -129,7 +130,8 @@ def _opened(root):
 
 
 def _git(wt, *args):
-    done = subprocess.run(["git", *args], cwd=wt, capture_output=True)
+    done = subprocess.run(["git", *args], cwd=wt, capture_output=True,
+                          env=git_environment())
     if done.returncode != 0:
         raise OSError(f"git {args[0]} {args[1] if len(args) > 1 else ''}"
                       f" failed: {done.stderr.decode(errors='replace').strip()}")
@@ -141,7 +143,8 @@ def _outcome(project, check, wt):
     try:
         status, out = _verify_command(project, " && ".join(check["commands"]),
                                       wt, verify_config(project).timeout_sec,
-                                      on_start=lambda proc: _held(proc, started))
+                                      on_start=lambda proc: _held(proc, started),
+                                      own_repository=True)
     except subprocess.TimeoutExpired as expired:
         return "fail", {"exit_status": None, "timed_out": True,
                         "output": _text(expired.output)}

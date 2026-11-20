@@ -559,12 +559,16 @@ def commands_launched():
     return _LAUNCHED[0]
 
 
-def _verify_command(project, command, cwd, timeout, on_start=None):
+def _verify_command(project, command, cwd, timeout, on_start=None, *,
+                    own_repository=False):
     from holophyte.isolation import launcher
+    from holophyte.isolation.isolation_git import git_environment
 
     route = launcher.route_for(project) if project is not None else launcher.Route()
     argv = ['/bin/sh', '-c', command] if route.backend == 'container' else command
     env = launcher.environment(project) if project is not None else None
+    if own_repository and route.backend == 'none':
+        env = git_environment()
     carry = carry_directories(project) if project is not None else None
     return launcher.launch(route, cwd, env, argv, timeout=timeout, runner=run_capped,
                             carry=carry, on_start=on_start)

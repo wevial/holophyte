@@ -428,6 +428,24 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
         self.assertEqual(len(self.git("worktree", "list").splitlines()), 1)
 
+    def test_git_location_variables_do_not_steer_a_check_to_the_task_repository(self):
+        (self.target / "README.md").write_text("base\ndirty\n")
+        files, head = self.files(), self.git("rev-parse", "HEAD")
+        status = self.git("status", "--porcelain", "--ignored")
+        git_dir = self.git("rev-parse", "--absolute-git-dir").strip()
+        steered = {"GIT_DIR": git_dir, "GIT_WORK_TREE": str(self.target),
+                   "GIT_INDEX_FILE": str(Path(git_dir, "index"))}
+
+        with patch.dict(os.environ, steered):
+            outcome, found = self.ran([
+                "touch generated.txt", "git add -A",
+                "git commit -qm checked", "exit 1"])
+
+        self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
+        self.assertEqual(self.files(), files)
+        self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
     def test_a_background_child_cannot_write_after_the_check_returns(self):
         marker = self.target.parent / "late.marker"
         outcome, _ = self.ran([f"(sleep 0.5; echo late > {marker})"
