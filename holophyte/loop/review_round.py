@@ -330,14 +330,29 @@ def _round_contract(conn, run_id, ticket, claimed, pending):
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
             contracts, rnd):
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    if record.verified_last(conn, run_id, head):
+        ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
+                           verify_cmd, contracts, rnd)
+        if not ok:
+            _recorded_verify(conn, run_id, wt, head, rnd, ok, out)
+        return ok, out
     with record.Attempt(conn, run_id, "verify", head, {"round": rnd},
                         wt=wt) as attempt:
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
-        attempt.close_at_head("pass" if ok else "fail", "next",
-                              timed_out=not ok and (timed_out(out)
-                                                    or verify_timed_out(out)))
+        _close_verify(attempt, ok, out)
     return ok, out
+
+
+def _recorded_verify(conn, run_id, wt, head, rnd, ok, out):
+    attempt = record.Attempt(conn, run_id, "verify", head, {"round": rnd}, wt=wt)
+    _close_verify(attempt, ok, out)
+
+
+def _close_verify(attempt, ok, out):
+    attempt.close_at_head("pass" if ok else "fail", "next",
+                          timed_out=not ok and (timed_out(out)
+                                                or verify_timed_out(out)))
 
 
 def _checked(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,

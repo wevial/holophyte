@@ -197,8 +197,9 @@ class StageRecordingTests(LoopFixture):
             ("implement", 1, "pass", "next"), ("trim", 1, "skipped", "next"),
             ("verify", 1, "pass", "next"), ("review", 1, "fail", "on_fail"),
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
-            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
+            ("review", 2, "pass", "next")])
         self.assertEqual(recorded[4][4]["kind"], "fix")
+        self.assertEqual(self.shas("verify", 2), (fixed, fixed))
         self.assertEqual(self.shas("review", 1)[0], implemented)
         self.assertEqual(self.shas("implement", 2), (implemented, fixed))
         self.assertEqual(self.shas("review", 2)[0], fixed)

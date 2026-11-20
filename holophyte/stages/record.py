@@ -119,6 +119,15 @@ class Attempt:
         return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
 
 
+def verified_last(conn, run_id, sha):
+    if conn is None or run_id is None:
+        return False
+    row = guarded(conn, run_id, "stage_read", lambda: conn.execute(
+        "SELECT stageId, outcome, outputSha FROM stageAttempts WHERE runId = ?"
+        " ORDER BY id DESC LIMIT 1", (run_id,)).fetchone())
+    return row not in (None, REFUSED) and tuple(row) == ("verify", "pass", sha)
+
+
 def skip(conn, run_id, stage_id, reason, sha=None):
     if conn is not None and run_id is not None:
         guarded(conn, run_id, "skip_stage",
