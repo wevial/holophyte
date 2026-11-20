@@ -82,6 +82,8 @@ PRE_CHECKS_DOCUMENT = {
          "type": "check"},
         {"approve": "auto", "group": "factory", "id": "waiting", "roles": [],
          "type": "check"}]}
+COMMITS = ("git -c user.name=Check -c user.email=check@example.invalid"
+           " commit -qm checked")
 FAILING_LINT = ["printf 'START%01200d\\n' 0", "ls scripted-*.txt", "exit 1"]
 
 
@@ -416,16 +418,19 @@ class AdvisoryCheckTests(CheckRuns):
         (self.target / "draft.txt").write_text("a draft\n")
         files, head = self.files(), self.git("rev-parse", "HEAD")
         status = self.git("status", "--porcelain", "--ignored")
+        refs = self.git("for-each-ref")
 
         outcome, found = self.ran([
             "cat README.md", "echo more >> README.md", "touch generated.txt",
-            "git add -A", "git commit -qm checked", "exit 1"])
+            "git add -A", COMMITS, "git tag check-side-effect",
+            "git branch check-branch", "exit 1"])
 
         self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
         self.assertEqual(found["output"], "base\n")
         self.assertEqual(self.files(), files)
         self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(self.git("for-each-ref"), refs)
         self.assertEqual(len(self.git("worktree", "list").splitlines()), 1)
 
     def test_git_location_variables_do_not_steer_a_check_to_the_task_repository(self):
@@ -439,7 +444,7 @@ class AdvisoryCheckTests(CheckRuns):
         with patch.dict(os.environ, steered):
             outcome, found = self.ran([
                 "touch generated.txt", "git add -A",
-                "git commit -qm checked", "exit 1"])
+                COMMITS, "exit 1"])
 
         self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
         self.assertEqual(self.files(), files)
@@ -476,19 +481,44 @@ class AdvisoryCheckTests(CheckRuns):
         held = tempfile.TemporaryDirectory()
         self.addCleanup(held.cleanup)
         markers = Path(held.name)
-        with values_held(["off", "implement"]):
+        with values_held(["off", "implement", "docs/"]):
             self.walked(check_table("dormant", "implement",
                                     [f"touch {markers / 'dormant'}"], "off")
+                        + check_table("pages", "implement",
+                                      [f"touch {markers / 'pages'}"],
+                                      "advisory", ["docs/**"])
                         + check_table("lint", "implement",
                                       [f"touch {markers / 'lint'}"],
                                       "advisory"),
-                        Commit("the scripted work"), APPROVE)
+                        Forgets("the scripted work"), APPROVE)
 
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        (document,) = self.read("SELECT p.document FROM runs r"
+                                " JOIN pipelines p ON p.id = r.pipelineId")
+        pinned = {stage["id"]: stage for stage in
+                  json.loads(document[0])["stages"]}
+        self.assertEqual(
+            [(pinned[stage_id]["after"], pinned[stage_id]["mode"],
+              pinned[stage_id]["paths"]) for stage_id in ("dormant", "pages")],
+            [("implement", "off", []), ("implement", "advisory", ["docs/**"])])
         found = {row[0]: row for row in self.attempts()}
-        self.assertEqual(found["dormant"][2], "skipped")
+        self.assertEqual(found["dormant"][2:5],
+                         ("skipped", "next", {"reason": "mode off"}))
+        self.assertEqual(found["pages"][2], "skipped")
+        self.assertIn("docs/**", found["pages"][4]["reason"])
         self.assertEqual(found["lint"][2:4], ("pass", "next"))
         self.assertEqual(sorted(path.name for path in markers.iterdir()),
                          ["lint"])
+
+    def test_a_registered_stage_id_keeps_the_pin_of_a_run_without_checks(self):
+        with values_held(["implement"]):
+            self.walked("", Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(self.read("SELECT count(*) FROM runs"
+                                   " WHERE pipelineId IS NOT NULL"), [(1,)])
+        self.assertEqual(self.read("SELECT summary FROM runEvents"
+                                   " WHERE kind = 'stage_record_failed'"), [])
 
     def test_a_literal_redaction_marker_runs_without_the_pinning_process(self):
         self.walked(check_table("say", "implement", ["echo '[redacted]'"],

@@ -2233,17 +2233,19 @@ becomes a `check` stage in the pinned pipeline document, right after its
 Build stage (`implement` or `trim`), in config order; with no entry the
 document, its digest and its revision are the same as without the array. A
 check runs its commands, joined with `&&`, with the verify runner under
-`[verify] timeout_sec`, in a throwaway detached worktree added at the head
-it checks and removed afterwards whatever the command returned, so the task
-worktree, its index and its refs are never touched; files the head does
-not commit, ignored build output included, are not in that worktree. It
+`[verify] timeout_sec`, in a throwaway clone of the task repository,
+checked out detached at the head it checks, with no remote and refs of its
+own, and removed afterwards whatever the command returned, so the task
+worktree, its index, its refs and its worktree list are never touched;
+files the head does not commit, ignored build output included, are not in
+that clone, and neither is the repository's local config. It
 records a stage attempt under its `id`: `pass` or `fail` with edge `next`,
 the exit status and the output's tail in its detail, and `timed_out` when
 the timeout ended it. It closes `error` when the command could not start,
 an exit of 126 or 127 the shell reports as a command not found or not
 executable included; a command that ran and exited 127 closes `fail`.
 Every process left in the command's process group is ended before the
-worktree is removed, and a worktree that could not be removed is named
+clone is removed, and a clone that could not be removed is named
 under `cleanup_error`. The output's tail is the command's own output, every
 line kept, bytes that are not UTF-8 replaced, with credentials redacted.
 
@@ -2256,10 +2258,11 @@ only, and a run that continues one in the same process takes them over.
 Selection by `after`, the `mode off` skip and the path condition read the
 pinned stage, so a run picked up again by another process still skips as
 pinned; a check that would run but whose pinned stage is marked `redacted`
-without its original commands in memory, or whose pinned `mode` the store
-redacted, closes `error` without running.
+without its original commands in memory closes `error` without running.
 The store also redacts registered environment values in the pinned
-document and in every stage attempt it records.
+document and in every stage attempt it records, except a check stage's
+`id`, `after`, `mode` and `paths` and the reason a check was skipped,
+which it keeps as written.
 
 A check after `implement` runs before each verify a review round starts,
 once per round and head: at the top of the round after its steer, before

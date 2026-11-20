@@ -12,11 +12,7 @@ from pathlib import Path
 
 from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import verify_config
-from holophyte.config.pipeline_settings import (
-    CHECK_MODES,
-    check_secrets,
-    current_checks,
-)
+from holophyte.config.pipeline_settings import check_secrets, current_checks
 from holophyte.isolation.isolation_git import git_environment
 from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
@@ -34,14 +30,13 @@ UNLAUNCHED = re.compile(
     r"(?:command not found|not found|Permission denied|cannot execute.*)$")
 UNBOUND = ("this check's pinned commands hold a redacted value this process "
            "did not pin, so it cannot run them")
-UNREAD = "this check's pinned mode is not one of advisory, off"
 
 
 def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
     for check in configured(project, conn, run_id, after):
         reason = skip_reason(check, wt, base_sha, sha)
         if reason:
-            record.skip(conn, run_id, check["id"], reason, sha)
+            record.skip(conn, run_id, check["id"], reason, sha, verbatim=True)
             continue
         with record.Attempt(conn, run_id, check["id"], sha,
                             {**detail, "mode": check["mode"]},
@@ -52,8 +47,6 @@ def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
 
 
 def _ran_bound(project, check, wt, sha):
-    if check["mode"] not in CHECK_MODES:
-        return "error", {"error": UNREAD}
     if check["commands"] is None:
         return "error", {"error": UNBOUND}
     return ran(project, check, wt, sha)
@@ -91,14 +84,17 @@ def skip_reason(check, wt, base_sha, sha):
 
 def ran(project, check, wt, sha):
     held = tempfile.mkdtemp(prefix="holo-check-")
-    tree = Path(held, "worktree")
+    tree = Path(held, "checkout")
     try:
-        _git(wt, "worktree", "add", "--detach", "--quiet", str(tree), sha)
+        _git(held, "clone", "--shared", "--no-checkout", "--quiet", str(wt),
+             str(tree))
+        _git(tree, "remote", "remove", "origin")
+        _git(tree, "checkout", "--detach", "--quiet", sha)
         outcome, found = _outcome(project, check, tree)
     except Exception as error:
         outcome, found = "error", {"error": str(error)}
     finally:
-        left = _removed(wt, tree, held)
+        left = _removed(held)
     if left is not None:
         found["cleanup_error"] = left
     return outcome, {key: scrubbed_output(value, check["secrets"])
@@ -106,18 +102,12 @@ def ran(project, check, wt, sha):
                      for key, value in found.items()}
 
 
-def _removed(wt, tree, held):
+def _removed(held):
     try:
-        _git(wt, "worktree", "remove", "--force", "--force", str(tree))
-    except Exception:
-        pass
-    try:
-        if Path(held).exists():
-            _opened(held)
-            shutil.rmtree(held)
-        _git(wt, "worktree", "prune")
+        _opened(held)
+        shutil.rmtree(held)
     except Exception as error:
-        return f"could not remove the check's worktree {held}: {error}"
+        return f"could not remove the check's checkout {held}: {error}"
     return None
 
 

@@ -88,8 +88,11 @@ def close_stage(conn, attempt_id, outcome, edge, output_sha=None, roles=(),
              _document({**json.loads(stored), **(detail or {})}), attempt_id))
 
 
-def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None):
+def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None,
+               verbatim=False):
     now = _now(now)
+    detail = (json.dumps({"reason": reason}) if verbatim
+              else _document({"reason": reason}))
     with _transaction(conn):
         attempt, seq = _next_attempt(conn, run_id, stage_id)
         return conn.execute(
@@ -97,7 +100,7 @@ def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None):
             " endedAt, inputSha, outputSha, outcome, edge, openSeq, detail)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, 'skipped', 'next', ?, ?)",
             (run_id, stage_id, attempt, now, now, sha, sha, seq,
-             _document({"reason": reason}))).lastrowid
+             detail)).lastrowid
 
 
 def stage_attempts(conn, run_ids):

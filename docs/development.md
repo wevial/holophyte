@@ -629,7 +629,7 @@ Each module, one line:
 - `holophyte/stages/checks.py` — the project's `[[pipeline.check]]` stages
   after one Build stage, read from the run's pinned pipeline: each skipped
   for `mode off` or an unmatched path condition, else its commands run
-  with the verify runner in a throwaway detached worktree at the head, and
+  with the verify runner in a throwaway clone at the head, and
   recorded as a stage attempt with its output scrubbed of credentials.
 - `holophyte/stages/notes.py` — the notes block a prompt carries: the
   project's note for one target in its fixed frame, read from the run's

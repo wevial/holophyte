@@ -12,7 +12,6 @@ from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.runs import RunSwept
 from holophyte.loop.stop import resumes
-from holophyte.redact import redact_document
 from holophyte.stages import notes, standard
 from store import pipelines, stages
 
@@ -87,10 +86,10 @@ def _resolved(run):
     raw, shown, secrets = ((), (), frozenset()) if checks is REFUSED else checks
     document = standard.resolve(run.project, row and row[1]["profile"],
                                 None if notes is REFUSED else notes, shown)
+    (unpinned,) = conn.execute("SELECT pipelineId IS NULL FROM runs"
+                               " WHERE id = ?", (run_id,)).fetchone()
     pinned = pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
-    stored = dict(pipelines.run_pipelines(conn, [run_id]).get(run_id) or {})
-    stored.pop("id", None), stored.pop("revision", None)
-    if stored == redact_document(json.loads(json.dumps(document))):
+    if unpinned:
         PINNED_CHECKS[_store_run(conn, run_id)] = (list(raw), secrets)
     return pinned
 
@@ -239,10 +238,10 @@ def verified_last(conn, run_id, sha):
     return False
 
 
-def skip(conn, run_id, stage_id, reason, sha=None):
+def skip(conn, run_id, stage_id, reason, sha=None, verbatim=False):
     if conn is not None and run_id is not None:
-        guarded(conn, run_id, "skip_stage",
-                lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))
+        guarded(conn, run_id, "skip_stage", lambda: stages.skip_stage(
+            conn, run_id, stage_id, reason, sha, verbatim=verbatim))
 
 
 def repeats(conn, run_id, stage_id, sha, outcome, edge, detail):
