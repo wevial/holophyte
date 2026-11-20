@@ -166,15 +166,13 @@ class PinnedChecksTests(CheckRuns):
                          ["implement", "lint", "trim", "docs"])
         by_id = {stage["id"]: stage for stage in pinned["stages"]}
         self.assertEqual(
-            {key: by_id["lint"][key] for key in
-             ("type", "after", "mode", "commands", "paths")},
-            {"type": "check", "after": "implement", "mode": "advisory",
-             "commands": ["true"], "paths": []})
-        self.assertEqual(
-            {key: by_id["docs"][key] for key in
-             ("type", "after", "mode", "commands", "paths")},
-            {"type": "check", "after": "trim", "mode": "off",
-             "commands": ["make docs"], "paths": ["docs/**"]})
+            {stage_id: {key: by_id[stage_id][key] for key in
+                        ("type", "after", "mode", "commands", "paths")}
+             for stage_id in ("lint", "docs")},
+            {"lint": {"type": "check", "after": "implement", "mode": "advisory",
+                      "commands": ["true"], "paths": []},
+             "docs": {"type": "check", "after": "trim", "mode": "off",
+                      "commands": ["make docs"], "paths": ["docs/**"]}})
         self.assertEqual(
             {**pinned, "stages": [stage for stage in pinned["stages"]
                                   if stage["id"] not in ("lint", "docs")]},
