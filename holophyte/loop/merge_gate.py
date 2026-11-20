@@ -263,7 +263,8 @@ def merge_conflict_goal(branch, pull, conflicts):
 def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                 beat_s, sha, verify_cmd, contracts, ticket, budget_min,
                 sync_main=True):
-    with record.Attempt(conn, run_id, "merge_gate", sha, {}) as attempt:
+    with record.Attempt(conn, run_id, "merge_gate", sha, {},
+                        wt=wt) as attempt:
         try:
             ok, gated = _gate(project, conn, run_id, provider, task_id,
                               issue_id, branch, wt, beat_s, sha, verify_cmd,

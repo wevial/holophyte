@@ -35,6 +35,7 @@ import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert
 import holophyte.stages.record  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.console_asks  # noqa: E402 - after the sys.path insert above
 import store.operator_notes  # noqa: E402 - after the sys.path insert
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
@@ -105,6 +106,26 @@ class GateAndApprovalParkTests(StageQueries, LoopFixture):
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
                          [(1, "abandoned"), (2, "merged")])
 
+    def test_a_gate_failing_after_merging_main_ends_at_the_merged_head(self):
+        self.configure('[verify]\nbefore_merge = ["exit 1"]\n' + UNTRIMMED)
+        fixture = self
+
+        class MainMovesDuringReview:
+            role = APPROVE.role
+
+            def play(self, cwd, turn):
+                fixture.git("commit", "--allow-empty", "-qm", "main moved on")
+                return APPROVE.play(cwd, turn)
+        self.loop(Commit("work"), MainMovesDuringReview())
+
+        branch = self.git("rev-parse", BRANCH).strip()
+        (_, _, outcome, edge, input_sha, output_sha, _, _), = \
+            self.attempts("merge_gate")
+        self.assertEqual((outcome, edge), ("fail", "end"))
+        self.assertEqual(self.git("rev-parse", f"{BRANCH}^1").strip(),
+                         input_sha)
+        self.assertEqual(output_sha, branch)
+
     def test_a_before_merge_command_failing_at_the_gate_ends_the_gate(self):
         self.configure('[verify]\nbefore_merge = ["exit 1"]\n' + UNTRIMMED)
         self.loop(Commit("work"), APPROVE)
@@ -128,6 +149,10 @@ class CheckParkTests(StageQueries, cases.BabysitHelpers, MergeModeFixture):
     def red_on_every_head(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
         self.fake_route()
+        self.enterContext(patch.object(
+            holophyte.pr.pr_status, "main_rules", return_value=[
+                {"type": "required_status_checks", "parameters": {
+                    "required_status_checks": [{"context": "unit"}]}}]))
         self.enterContext(patch.object(holophyte.pr.github, "SLEEP"))
         heads, ids = [], iter(range(42, 10**4))
 
@@ -191,6 +216,19 @@ class CheckParkTests(StageQueries, cases.BabysitHelpers, MergeModeFixture):
         (_, _, outcome, edge, _, _, ended, _), = self.attempts("waiting", 1)
         self.assertEqual((outcome, edge, ended),
                          ("fail", "on_fail", opened - 5000))
+
+    def test_an_answered_console_ask_parks_again_as_an_approval(self):
+        self.parked_ready()
+        with store.open(str(self.project.store_path)) as conn:
+            store.console_asks.ask(conn, 1, "Can a guest be renamed?",
+                                   "maintainer")
+        self.serve(self.pr_state())
+
+        self.loop(Reply("Yes: src/app.py:30."), provider=self.provider())
+
+        self.assertEqual(
+            [(run, json.loads(detail)["kind"]) for run, *_, detail
+             in self.attempts("waiting")], [(1, "approval"), (2, "approval")])
 
     def test_a_thread_quoting_the_approval_wording_waits_as_a_thread(self):
         self.configure('[merge]\nmode = "pr"\napprove = "human"\n')

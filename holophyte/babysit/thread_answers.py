@@ -27,6 +27,7 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
     from holophyte.babysit import babysitter
     from holophyte.loop.review_round import agent, sh
     from holophyte.pr.pullrequest import _park_on_pr
+    from holophyte.stages import record
     with heartbeat_while(conn, run_id, beat_s):
         threads = tuple(thread_mentions.triaged(threads, ticket, target.config(),
                                                 conn, run_id))
@@ -69,7 +70,7 @@ def answer_asks(target, conn, run_id, provider, task_id, branch, wt, sha,
         why = previous_park_reason(conn, run_id, branch)
         if why is not None:
             _park_on_pr(target, conn, run_id, provider, task_id, branch, sha, pull,
-                        why, (), reviewed=reviewed)
+                        why, (), reviewed=reviewed, ready=record.RESTORED)
     return remaining
 
 

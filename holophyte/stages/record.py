@@ -11,6 +11,7 @@ from store import pipelines, stages
 
 FAILED = "stage_record_failed"
 REFUSED = object()
+RESTORED = "restored"
 RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
             "operator_note": ("fail", "on_fail")}
 
@@ -188,9 +189,21 @@ def _park_detail(conn, run_id, approve, ready):
         "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
         " 'phase_change' ORDER BY seq DESC LIMIT 1", (run_id,)).fetchone()
     reason = summary.partition(": ")[2]
+    if ready == RESTORED:
+        ready = _waited_for_approval(conn, run_id)
     if approve == "human" and ready:
         kind = "approval"
     return {"kind": kind, "reason": reason, "approve": approve}
+
+
+def _waited_for_approval(conn, run_id):
+    row = conn.execute(
+        "SELECT json_extract(s.detail, '$.kind') FROM stageAttempts s"
+        " JOIN runs old ON old.id = s.runId JOIN runs current"
+        " ON current.ticketId = old.ticketId WHERE current.id = ?"
+        " AND s.stageId = 'waiting' ORDER BY s.id DESC LIMIT 1",
+        (run_id,)).fetchone()
+    return row is not None and row[0] == "approval"
 
 
 def release(run):
