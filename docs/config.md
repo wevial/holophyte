@@ -2245,8 +2245,11 @@ check changed, removed or added is put back or removed, a file with the
 bytes copied before the check, a tracked file Git was told to assume
 unchanged or skip included, a path absent before the check stays absent,
 HEAD and its branch are moved back to the commit they named, the index is
-put back, and the paths it touched are listed under `restored`. The output's tail is the command's own output, every line
-kept, with credentials redacted.
+put back, and the paths it touched are listed under `restored`. Before
+the worktree is put back, every process left in the command's process group
+is ended, and a directory the check made unreadable is opened to be
+compared, then given back its mode. The output's tail is the command's own output, every line
+kept, bytes that are not UTF-8 replaced, with credentials redacted.
 
 A run runs the checks it pinned, never an edit made after the pin. The
 pinned document holds each check's id, commands and globs with credentials
@@ -2258,7 +2261,11 @@ the path condition use those original entries. When the process holds no
 original for a check, such as a run picked up again by another process, the
 pinned `mode` and `paths` still decide the `mode off` and path skips; when
 the store redacted either, the current config's entry decides them if it
-pins to the same stage, redactions included; a
+pins to the same stage, redactions included. Without such an entry, a
+`redacted` stage's `selectors` hold its `after` and `mode` as their
+positions in `implement, trim` and `advisory, off`, and a redacted glob is
+matched with each credential the process knows put back in its place, every
+fill that redacts to the pinned glob counting; a
 check that would run but whose pinned stage is marked `redacted`, or whose
 `after` or `mode` no longer reads as one of its values, closes `error`
 without running. The

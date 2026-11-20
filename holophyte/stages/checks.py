@@ -1,10 +1,13 @@
 """A project's `[[pipeline.check]]` stages run on a candidate and recorded."""
+import io
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 from holophyte.agents.review_workspace import review_base
@@ -27,6 +30,8 @@ from store import pipelines
 OUTPUT_TAIL = 1000
 PINNED_KEYS = ("id", "after", "mode", "commands", "paths")
 FRAGMENT = 8
+FILLS = 256
+GROUP_GRACE_S = 2.0
 UNLAUNCHED = re.compile(
     r"^(?:\S*/)?(?:ba|da|z)?sh: (?:line )?(?:\d+: )?.+: "
     r"(?:command not found|not found|Permission denied|cannot execute.*)$")
@@ -84,26 +89,55 @@ def _pinned_selectors(project, stages):
 
 
 def unbound(stage, secrets, original=None):
-    selectors = original or stage
+    selectors = original or _pinned(stage)
     mode = selectors["mode"] if selectors["mode"] in CHECK_MODES else None
     paths = selectors.get("paths") or []
-    globbed = original is not None or not (
-        stage.get("redacted") and any(REDACTED in glob for glob in paths))
+    exact = original is not None or not stage.get("redacted")
     runnable = (not stage.get("redacted") and selectors["after"] in CHECK_AFTER
                 and mode is not None)
     return {**stage, "stage": stage["id"], "secrets": secrets,
-            "after": selectors["after"], "mode": mode,
-            "paths": paths if globbed else None,
+            "after": selectors["after"], "mode": mode, "paths": paths,
+            "globs": paths if exact else [
+                glob for path in paths for glob in _filled(path, secrets)],
             "commands": stage["commands"] if runnable else None}
+
+
+def _pinned(stage):
+    held = stage.get("selectors") or {}
+    return {"after": _chosen(CHECK_AFTER, held.get("after"), stage["after"]),
+            "mode": _chosen(CHECK_MODES, held.get("mode"), stage["mode"]),
+            "paths": stage.get("paths") or []}
+
+
+def _chosen(values, index, shown):
+    if isinstance(index, int) and 0 <= index < len(values):
+        return values[index]
+    return shown
+
+
+def _filled(glob, secrets):
+    holes = glob.count(REDACTED)
+    if not holes:
+        return [glob]
+    parts = glob.split(REDACTED)
+    fills = [parts[0]]
+    if len(secrets) ** holes <= FILLS:
+        for part in parts[1:]:
+            fills = [fill + secret + part for fill in fills
+                     for secret in secrets]
+    found = [fill for fill in fills if REDACTED not in fill
+             and outbound(fill, secrets) == glob]
+    return found or ["*".join(parts)]
 
 
 def skip_reason(check, wt, base_sha, sha):
     if check["mode"] == "off":
         return "mode off"
+    globs = check.get("globs", check["paths"])
     if not check["paths"]:
         return None
     changed = _changed_files(wt, review_base(wt, base_sha, sha), sha)
-    if any(matching(path, check["paths"]) for path in changed):
+    if any(matching(path, globs) for path in changed):
         return None
     return f"no changed file matches {', '.join(check['paths'])}"
 
@@ -144,14 +178,19 @@ def _restored(snapshot):
 
 
 def _outcome(project, check, wt):
+    started = []
     try:
         status, out = _verify_command(project, " && ".join(check["commands"]),
-                                      wt, verify_config(project).timeout_sec)
+                                      wt, verify_config(project).timeout_sec,
+                                      on_start=lambda proc: _held(proc, started))
     except subprocess.TimeoutExpired as expired:
         return "fail", {"exit_status": None, "timed_out": True,
                         "output": _text(expired.output)}
     except Exception as error:
         return "error", {"error": str(error)}
+    finally:
+        for proc in started:
+            _end_group(proc.pid)
     out = _text(out)
     if status == 0:
         return "pass", {"exit_status": 0, "output": out}
@@ -159,6 +198,23 @@ def _outcome(project, check, wt):
     unlaunched = status in (126, 127) and bool(UNLAUNCHED.match(last))
     return "error" if unlaunched else "fail", {
         "exit_status": status, "timed_out": False, "output": out}
+
+
+def _held(proc, started):
+    started.append(proc)
+    if isinstance(proc.stdout, io.TextIOWrapper):
+        proc.stdout.reconfigure(errors="replace")
+
+
+def _end_group(group):
+    deadline = time.monotonic() + GROUP_GRACE_S
+    try:
+        os.killpg(group, signal.SIGKILL)
+        while time.monotonic() < deadline:
+            os.killpg(group, 0)
+            time.sleep(0.02)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def _text(out):
@@ -186,6 +242,7 @@ class Snapshot:
         self.branch = _branch(wt)
         self.head = _git(wt, "rev-parse", "--verify", "HEAD")
         self.staged = _state(self.index)
+        self.root = stat.S_IMODE(self.wt.stat().st_mode)
         self.found = _walk(self.wt)
         self.saved = tempfile.mkdtemp(prefix="holo-check-")
         try:
@@ -201,6 +258,7 @@ class Snapshot:
 
     def restore(self):
         failed, restored = [], set()
+        os.chmod(self.wt, self.root | stat.S_IRWXU)
         try:
             self._restore_head()
         except Exception as error:
@@ -215,6 +273,10 @@ class Snapshot:
                     _put(self.index, self.staged)
             except Exception as error:
                 failed.append(f"index: {error}")
+        try:
+            os.chmod(self.wt, self.root)
+        except Exception as error:
+            failed.append(f"worktree: {error}")
         if failed:
             raise OSError("could not restore " + "; ".join(failed)
                           + f"; the saved copies are kept in {self.saved}")
@@ -229,21 +291,26 @@ class Snapshot:
         _git(self.wt, "symbolic-ref", "HEAD", self.branch)
 
     def _restore_paths(self, failed, restored):
-        now = _walk(self.wt)
+        opened = {}
+        now = _walk(self.wt, opened)
         added = sorted((path for path in now if path not in self.found),
                        key=_depth, reverse=True)
         changed = sorted((path for path, kept in self.found.items()
                           if now.get(path) != kept), key=_depth)
         folders = [path for path in changed if self.found[path][0] == "dir"]
+        closing = sorted({*folders, *(path for path in opened
+                                      if path in self.found)},
+                         key=_depth, reverse=True)
         steps = ([(path, self._open_folder) for path in folders]
                  + [(path, self._remove) for path in added]
                  + [(path, self._put_back) for path in changed
                     if path not in folders]
-                 + [(path, self._close_folder) for path in reversed(folders)])
+                 + [(path, self._close_folder) for path in closing])
         for path, step in steps:
             try:
                 step(path)
-                restored.add(path)
+                if step != self._close_folder or path in folders:
+                    restored.add(path)
             except Exception as error:
                 failed.append(f"{path}: {error}")
 
@@ -289,18 +356,28 @@ def _depth(path):
     return path.count("/")
 
 
-def _walk(root):
+def _walk(root, opened=None):
     found = {}
-    for top, dirs, files in os.walk(root):
+    for top, dirs, files in os.walk(root, onerror=_unlisted):
         here = Path(top)
         links = [name for name in dirs if (here / name).is_symlink()]
         dirs[:] = [name for name in dirs
                    if name != ".git" and name not in links]
         for name in files + links + dirs:
             signature = _signature(here / name) if name != ".git" else None
-            if signature is not None:
-                found[(here / name).relative_to(root).as_posix()] = signature
+            if signature is None:
+                continue
+            path = (here / name).relative_to(root).as_posix()
+            found[path] = signature
+            if (opened is not None and signature[0] == "dir"
+                    and signature[1] & stat.S_IRWXU != stat.S_IRWXU):
+                os.chmod(here / name, signature[1] | stat.S_IRWXU)
+                opened[path] = signature[1]
     return found
+
+
+def _unlisted(error):
+    raise error
 
 
 def _state(path):

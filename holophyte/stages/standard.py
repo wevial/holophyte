@@ -3,6 +3,7 @@ from holophyte.agents.agent_turns import argv_label, route_labels
 from holophyte.agents.harness import critic_seat
 from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.config_tables import merge_config, trim_config, verify_config
+from holophyte.config.pipeline_settings import CHECK_AFTER, CHECK_MODES
 from holophyte.config.review_settings import review_config
 from holophyte.redact import known_secrets, outbound
 
@@ -51,7 +52,7 @@ def resolve(project, profile=None, notes=None, checks=()):
             stage(check["id"], "check", "candidate", after=after,
                   mode=check["mode"], commands=check["commands"],
                   paths=check["paths"],
-                  **({"redacted": True} if check.get("redacted") else {}))
+                  **(_selectors(check) if check.get("redacted") else {}))
             for check in checks if check["after"] == after]
     document = {"format": FORMAT, "name": NAME,
                 "merge": {"mode": merge.mode, "approve": merge.approve},
@@ -59,6 +60,12 @@ def resolve(project, profile=None, notes=None, checks=()):
     if notes:
         document["notes"] = notes
     return scrubbed(document, known_secrets(project.config()))
+
+
+def _selectors(check):
+    return {"redacted": True,
+            "selectors": {"after": CHECK_AFTER.index(check["after"]),
+                          "mode": CHECK_MODES.index(check["mode"])}}
 
 
 def scrubbed(value, secrets):

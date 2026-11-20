@@ -14,6 +14,7 @@ import shlex
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -525,6 +526,41 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(self.git("status", "--porcelain"), status)
         self.assertEqual(found["restored"], ["README.md"])
 
+    def test_a_file_a_check_adds_to_a_directory_it_locks_is_removed(self):
+        (self.target / "cache").mkdir()
+        (self.target / "cache" / "kept.txt").write_text("kept\n")
+        mode = (self.target / "cache").stat().st_mode & 0o777
+        self.addCleanup(os.chmod, self.target / "cache", 0o755)
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["touch cache/generated", "chmod 000 cache", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertEqual((self.target / "cache").stat().st_mode & 0o777, mode)
+        self.assertEqual(sorted(path.name for path in
+                                (self.target / "cache").iterdir()),
+                         ["kept.txt"])
+        self.assertEqual(found["restored"], ["cache", "cache/generated"])
+
+    def test_a_background_child_cannot_write_after_the_check_returns(self):
+        outcome, _ = checks.ran(self.project, {
+            "commands": ["(sleep 0.5; echo late > README.md)"
+                         " >/dev/null 2>&1 & exit 1"],
+            "secrets": frozenset()}, self.target)
+        time.sleep(1.5)
+
+        self.assertEqual(outcome, "fail")
+        self.assertEqual((self.target / "README.md").read_text(), "base\n")
+
+    def test_output_that_is_not_utf8_keeps_the_exit_status_and_tail(self):
+        outcome, found = checks.ran(self.project, {
+            "commands": ["printf 'bad \\377 byte\\n'", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
+        self.assertEqual(found["output"], "bad \ufffd byte\n")
+
     def test_the_tail_is_the_commands_own_output_scrubbed(self):
         line = ('127.0.0.1 - - [20/Nov/2026:10:00:00 +0000]'
                 ' "GET /health?token=access-credential-8 HTTP/1.1" 500 12')
@@ -605,13 +641,13 @@ class AdvisoryCheckTests(CheckRuns):
 
     def test_a_restore_that_fails_keeps_the_saved_copies(self):
         (self.target / "draft.txt").write_text("a draft\n")
-        self.addCleanup(lambda: (self.target / "stuck").exists()
-                        and (self.target / "stuck").chmod(0o755))
 
-        outcome, found = checks.ran(self.project, {
-            "commands": ["echo overwritten > draft.txt", "mkdir stuck",
-                         "touch stuck/inner", "chmod 555 stuck", "exit 1"],
-            "secrets": frozenset()}, self.target)
+        with patch.object(checks.Snapshot, "_remove",
+                          side_effect=PermissionError("removal refused")):
+            outcome, found = checks.ran(self.project, {
+                "commands": ["echo overwritten > draft.txt", "mkdir stuck",
+                             "touch stuck/inner", "exit 1"],
+                "secrets": frozenset()}, self.target)
 
         self.assertEqual((outcome, found["check_outcome"]), ("error", "fail"))
         self.assertIn("stuck/inner", found["restore_error"])
@@ -876,6 +912,38 @@ class SkippedCheckTests(CheckRuns):
                         + check_table("dormant", "implement",
                                       touch("dormant"), "off"),
                         Forgets("the scripted work"), APPROVE)
+
+        found = {row[0]: row for row in self.attempts()}
+        self.assertEqual(found["pages"][2], "skipped")
+        self.assertIn(f"{REDACTED}/**", found["pages"][4]["reason"])
+        self.assertEqual(found["dormant"][2], "skipped")
+        self.assertEqual(found["dormant"][4], {"reason": f"mode {REDACTED}"})
+        self.assertEqual(list(markers.iterdir()), [])
+
+    def test_a_redacted_check_dropped_from_the_config_still_skips(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        markers = Path(held.name)
+        extras = '[extras]\napi_token = "skipped-credential-11"\n'
+
+        def touch(name):
+            return [f"touch {markers / name} skipped-credential-11"]
+
+        class DropsChecks(Commit):
+            def play(inner, cwd, turn):
+                (cwd / "src").mkdir(exist_ok=True)
+                record.PINNED_CHECKS.clear()
+                (self.db.parent / "config.toml").write_text(UNTRIMMED + extras)
+                return super().play(cwd, turn)
+
+        with values_held(["off", "docs"]):
+            self.walked(extras + check_table("pages", "implement",
+                                             touch("pages"), "advisory",
+                                             ["docs/**"])
+                        + check_table("dormant", "implement",
+                                      touch("dormant"), "off"),
+                        DropsChecks("the scripted work", "src/app.py"),
+                        APPROVE)
 
         found = {row[0]: row for row in self.attempts()}
         self.assertEqual(found["pages"][2], "skipped")
