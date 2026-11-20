@@ -436,8 +436,6 @@ def _verifier(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
 
 def _review_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
                    checked, pending):
-    if pending.get("phase") == "addressing":
-        return []
     if pending.get("check_sha") == sha:
         return pending["check_findings"]
     return _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
@@ -594,7 +592,8 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             _check_run_cap(project, conn, run_id, budget_min, sha)
         attempt.close("fail", "on_fail", sha)
         boundary(conn, run_id, "addressing", rnd=rnd, ok=ok,
-                 out=str(out), verdict=verdict, verify_cmd=verify_cmd)
+                 out=str(out), verdict=verdict, verify_cmd=verify_cmd,
+                 check_sha=sha, check_findings=checks)
         pending = {}
         set_phase(conn, run_id, "addressing", f"round {rnd}: addressing findings")
         with record.Attempt(conn, run_id, "implement", sha, {"kind": "fix"},

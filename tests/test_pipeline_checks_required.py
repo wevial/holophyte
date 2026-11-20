@@ -1,13 +1,21 @@
 import json
+import os
+import re
+import shlex
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle  # noqa: E402
 from loop_fixture import UNTRIMMED, StubProvider, a_task  # noqa: E402
-from test_pipeline_checks import CheckRuns, check_table  # noqa: E402
+from pause_fixture import PauseReply  # noqa: E402
+from test_pipeline_checks import GIT_DATES, CheckRuns, check_table  # noqa: E402
 from test_pipeline_notes import WITNESS, TrimTurn, lines  # noqa: E402
+
+import store  # noqa: E402
+from holophyte.loop import review_round, stop  # noqa: E402
 
 
 class RequiredCheckTests(CheckRuns):
@@ -88,18 +96,64 @@ class RequiredCheckTests(CheckRuns):
         self.assertEqual(tidy[2:4], ("fail", "on_fail"))
         self.assertTrue(tidy[4]["timed_out"])
 
+    def test_an_unreadable_config_after_trim_preserves_the_failure(self):
+        config = shlex.quote(str(self.project.config_path))
+        commands = [f"printf '\\377' > {config}", "echo missing docs", "exit 19"]
+        self.configure(UNTRIMMED + check_table("docs", "trim", commands, "required"))
+        fake, _ = self.loop(Commit("work"), APPROVE, Idle())
+
+        self.assertEqual(fake.roles, ["implement", "review", "implement"])
+        self.assertIn("missing docs", fake.turns[-1].goal)
+        first, = self.rounds()
+        self.assertEqual(first[:2], (1, "changes_requested"))
+        self.assertEqual([finding["path"] for finding in first[2]], ["docs"])
+
     def test_passing_required_check_preserves_the_review_cycle(self):
         script = (Commit("work"), REQUEST_CHANGES, Commit("fix"), APPROVE)
-        plain = self.walked("", *script)
-        rounds = self.rounds()
-        self.assertEqual(len(plain[0]), 4)
-        self.assertEqual(plain[3], [("merged",)])
+
+        def cycle(config):
+            self.configure(UNTRIMMED + config)
+            with patch.dict(os.environ, GIT_DATES):
+                fake, _ = self.loop(*script)
+            self.assertEqual(fake.roles, ["implement", "review", "implement", "review"])
+            self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+            ledger = []
+            for kind, source, text in self.read(
+                    "SELECT kind, source, text FROM ledger ORDER BY id"):
+                if kind == "merge":
+                    text = re.sub(r"(?m)^actual: \d+\.\d+ min", "actual: N min", text)
+                ledger.append((kind, source, text))
+            phases = self.read("SELECT summary FROM runEvents"
+                               " WHERE kind = 'phase_change' ORDER BY seq")
+            return [turn.goal for turn in fake.turns], self.rounds(), phases, ledger
+
+        plain = cycle("")
 
         self.fresh()
-        checked = self.walked(check_table("lint", "implement", ["true"], "required"),
-                              *script)
+        checked = cycle(check_table("lint", "implement", ["true"], "required"))
         self.assertEqual([(row[4]["round"], row[2:4]) for row in self.attempts()
                           if row[0] == "lint"],
                          [(1, ("pass", "next")), (2, ("pass", "next"))])
-        self.assertEqual(self.rounds(), rounds)
         self.assertEqual(checked, plain)
+
+    def test_pausing_a_resumed_fix_preserves_the_failed_check_for_review(self):
+        self.configure(UNTRIMMED + check_table("lint", "implement",
+                                               ["test -f fixed"], "required"))
+        self.loop(Commit("work"), PauseReply(self.db, APPROVE))
+        stop.command(self.project, "KO-131", None, resume=True)
+
+        def pause_before_review(conn, run_id, phase, **state):
+            if phase == "reviewing":
+                store.pause(conn, run_id, "inspect the candidate")
+            stop.boundary(conn, run_id, phase, **state)
+
+        with patch.object(review_round, "boundary", side_effect=pause_before_review):
+            self.loop()
+        self.assertEqual(self.read("SELECT resumePhase FROM runs ORDER BY id"),
+                         [("addressing",), ("reviewing",)])
+        stop.command(self.project, "KO-131", None, resume=True)
+        fake, _ = self.loop(APPROVE, Commit("repair lint", "fixed", "ok\n"), APPROVE)
+
+        self.assertEqual(fake.roles, ["review", "implement", "review"])
+        self.assertIn("test -f fixed", fake.turns[1].goal)
+        self.assertIn("repair lint", self.subjects())

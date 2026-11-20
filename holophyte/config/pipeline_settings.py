@@ -61,7 +61,7 @@ def current_checks(project):
 def check_secrets(project):
     try:
         disk = known_secrets(load_config(project.config_path))
-    except SystemExit:
+    except (OSError, UnicodeError, SystemExit):
         disk = frozenset()
     return disk | known_secrets(project.config())
 

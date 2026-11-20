@@ -41,7 +41,10 @@ def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, *,
         _trim_findings.set((wt, conn, run_id, findings))
     elif detail.get("round") == 1:
         findings.extend(_after_trim(conn, run_id, wt))
-    for check in configured(project, conn, run_id, after):
+    entries = []
+    record.checks_guarded(conn, run_id, lambda: entries.extend(
+        configured(project, conn, run_id, after)))
+    for check in entries:
         if not required_only or check["mode"] == "required":
             record.checks_guarded(conn, run_id, lambda: _run_one(
                 project, conn, run_id, beat_s, wt, base_sha, sha, check,
