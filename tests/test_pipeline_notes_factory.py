@@ -44,6 +44,12 @@ REPLY_FORMAT = ("Answer with exactly one line `TITLE: ...` (the title alone,"
                 " under")
 PROBE = f"#!{sys.executable}\nprint('ready')\n"
 QUESTION = "@holophyte ask: Why is the thing added here?"
+FRESHNESS_TAIL = ("End your reply with exactly one of these lines, and nothing"
+                  " after it:\nFRESHNESS: FRESH\n"
+                  "FRESHNESS: STALE <one-line reason>\n"
+                  "FRESHNESS: UNSURE <one-line reason>\n")
+WALK = ["claimed -> working", "working -> verifying", "verifying -> reviewing",
+        "reviewing -> merge_gate", "merge_gate -> merging", "merging -> done"]
 WRITTEN = Idle("TITLE: Add the thing\n\nThe thing is now added.\n")
 ANSWER = Reply("Because the ticket asks for it: scripted-2.txt:1.")
 
@@ -103,11 +109,16 @@ class FactoryNotesPromptTests(FactoryNotesRun):
             with self.subTest(target=target):
                 text, prompt = NOTES[target], noted[target]
                 self.assertNotIn(FRAME, plain[target])
+                self.assertEqual(prompt.count(text), 1)
+                self.assertEqual(prompt.count(block(text)), 1)
                 start = prompt.index(block(text))
                 self.assertEqual(prompt[:start] + prompt[start + len(block(text)):],
                                  plain[target])
                 self.assertTrue(plain[target][start:].startswith(tail),
                                 plain[target][start:start + 80])
+        critic = noted["critic"]
+        self.assertEqual(critic[critic.index(block(NOTES["critic"]))
+                                + len(block(NOTES["critic"])):], FRESHNESS_TAIL)
         writer = noted["pr_writer"]
         order = [writer.index(STYLE), writer.index(block(NOTES["pr_writer"])),
                  writer.index("The thing, added."), writer.index("```diff\n")]
@@ -123,6 +134,9 @@ class FailedFactoryNotesTests(FactoryNotesRun):
             broken = self.walked(notes_table(**NOTES))
 
         self.assertEqual(plain[4], [("merged",)])
+        self.assertEqual([summary.split(":")[0] for (summary,) in plain[2]],
+                         WALK)
+        self.assertEqual([kind for kind, _ in plain[3]].count("merge"), 1)
         self.assertEqual(broken, plain)
         self.assertEqual([call.args[3] for call in read.call_args_list],
                          ["critic", "implement", "review", "pr_writer",
