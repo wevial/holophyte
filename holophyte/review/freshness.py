@@ -34,6 +34,7 @@ from holophyte.review.landmarks import (
     placeholder,
     symbol_findings,
 )
+from holophyte.stages import record
 from holophyte.tickets import ticket_template
 
 STALE_HEADING = "Not claimed: this ticket is out of date with main"
@@ -59,6 +60,8 @@ Ticket {identifier}: {title}
 Merged since the ticket was filed (identifier, title: changed files):
 {merges}
 
+"""
+CRITIC_TAIL = """\
 End your reply with exactly one of these lines, and nothing after it:
 FRESHNESS: FRESH
 FRESHNESS: STALE <one-line reason>
@@ -430,7 +433,8 @@ def critic_brief(conn, project, task):
     return CRITIC_BRIEF.format(
         identifier=task["id"], title=task.get("title", ""),
         body=(task.get("body") or "").strip(),
-        merges="\n".join(merges) or "- none")
+        merges="\n".join(merges) or "- none") + record.notes_block(
+            project, conn, None, "critic") + CRITIC_TAIL
 
 
 def parse_freshness(output):
