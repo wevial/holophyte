@@ -862,6 +862,37 @@ export const pipelineNumbersSchema = z.looseObject({
 });
 export type PipelineNumbers = z.infer<typeof pipelineNumbersSchema>;
 
+export const harnessProbeSchema = z.looseObject({
+  ok: z.boolean(),
+  at_ms: z.int(),
+  why: z.string().nullable(),
+  seat: z.string(),
+});
+export type HarnessProbe = z.infer<typeof harnessProbeSchema>;
+
+export const harnessModelSchema = z.looseObject({
+  id: z.string(),
+  source: z.enum(["curated", "configured"]),
+});
+export type HarnessModel = z.infer<typeof harnessModelSchema>;
+
+export const harnessSchema = z.looseObject({
+  name: z.string(),
+  binary: z.string(),
+  path: z.string().nullable(),
+  found: z.boolean(),
+  configured: z.boolean(),
+  seats: z.array(z.string()),
+  probe: harnessProbeSchema.nullable(),
+  models: z.array(harnessModelSchema),
+});
+export type Harness = z.infer<typeof harnessSchema>;
+
+export const harnessesSchema = z.looseObject({
+  harnesses: z.array(harnessSchema),
+});
+export type Harnesses = z.infer<typeof harnessesSchema>;
+
 export const shippedRowSchema = z.looseObject({
   id: z.int(),
   ticket: z.string(),

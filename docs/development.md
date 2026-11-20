@@ -560,6 +560,9 @@ Each module, one line:
 - `holophyte/serve/serve_pipeline.py` — the daemon's `GET /pipeline`:
   the pipeline the project's config resolves to now, its pinned revision,
   and each stage's numbers over a window of days.
+- `holophyte/serve/serve_harnesses.py` — the daemon's `GET /harnesses`:
+  each registered harness, the binary it would run and whether the host
+  has it, the seats on it, their newest probe and the models it offers.
 - `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
   does not hold: a `park` row for each park waiting on the maintainer and a
   `failure` row for each failed run with no `failure` ledger row.
@@ -601,7 +604,8 @@ Each module, one line:
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
 - `holophyte/serve/contract_pipeline.py` — the current pipeline and its
-  stages' numbers `GET /pipeline` answers, as the contract declares them.
+  stages' numbers `GET /pipeline` answers, and the harnesses
+  `GET /harnesses` answers, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.

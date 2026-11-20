@@ -1159,6 +1159,50 @@ a setting the pipeline cannot resolve, makes the route answer 503 carrying
 `error`, which names the setting, redacted like the rest of the answer,
 but never its value.
 
+## `GET /harnesses`
+
+```json
+{"harnesses": [
+  {"name": "claude", "binary": "claude", "path": "/usr/local/bin/claude",
+   "found": true, "configured": false, "seats": ["implementer", "trimmer"],
+   "probe": {"ok": false, "at_ms": 1750000000000, "why": "exit 1",
+             "seat": "trimmer"},
+   "models": [{"id": "opus", "source": "curated"},
+              {"id": "claude-custom", "source": "configured"}]}]}
+```
+
+Each harness the factory has an adapter for, in registration order
+(`claude`, `claude-sdk`, `codex`, `cursor`, `devin`, `t3`). It is served
+behind the read token, reads the config file again at each request, and
+starts no process: no probe and no harness CLI runs to answer it.
+
+`name` is the harness as a seat's `harness` names it. `binary` is what the
+factory would run: the `[harnesses]` entry's absolute path when one is set
+(`configured` true), else the bare binary name looked up on `PATH`. `found`
+says whether that path, or the `PATH` lookup, names an executable file, as
+the daemon's host sees it; a container image may still supply a binary the
+host lacks. `path` is the file found, the configured path when it is
+missing, or null.
+
+`seats` names each configured seat that runs on the harness: the
+`[agents]` seats, their `_fallback` routes, `implementer_shadow` and each
+`implementer_profiles.NAME`; a seat given as a command string counts for
+the harness whose `[harnesses]` path, name or binary its first word is.
+`probe` is the newest probe `route-probes.json` records among those seats:
+`ok`, `at_ms`, `why` (null when it passed) and the `seat` it came from; null
+when no seat uses the harness or none has been probed. A seat whose routes
+span several harnesses, or hold a command no harness is known by (a
+`reviewer_fallback` list can), lends its probe to none of them, since the record does not say which harness answered.
+
+`models` lists each model the harness offers as `id` and `source`: the
+adapter's curated list (`curated`), then each model a seat on the harness
+configures that the list lacks (`configured`): a table's `model`, or a
+command string's `--model` or `-m` argument, else its `-c`/`--config`
+`model=` override, attached values included, the last of each winning. `t3` lists the models of the
+providers it runs, `codex` and `claude`. Every string is redacted with the
+project's known secrets; a config file that cannot be read, parsed or
+decoded makes the route answer 503 carrying `error`.
+
 ## `GET /ledger?since=MS`
 
 ```json
