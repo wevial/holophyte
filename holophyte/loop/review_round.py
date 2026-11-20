@@ -609,11 +609,6 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                                   checked))
     checks = _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha,
                            cap + 1, checked, required_only=True)
-    _require_passing_checks(conn, run_id, provider, task_id, branch, sha, cap, checks)
-    return sha, rnd, False
-
-
-def _require_passing_checks(conn, run_id, provider, task_id, branch, sha, cap, checks):
     if checks:
         report = "\n\n".join(finding["message"] for finding in checks)
         summary = f"Required check failed after {cap} review rounds (the run's cap)"
@@ -621,6 +616,7 @@ def _require_passing_checks(conn, run_id, provider, task_id, branch, sha, cap, c
                f"{summary}; branch {branch} preserved at {sha}\n\n{report}", provider)
         raise RunFailure(f"{summary}; {checks[0]['title']}; branch {branch}"
                          f" preserved at {sha[:12]}", "verify")
+    return sha, rnd, False
 
 
 def _fix_round(project, conn, run_id, provider, task_id, branch, wt, beat_s,
