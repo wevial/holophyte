@@ -107,6 +107,23 @@ class StandardDocumentTests(ConfigTestCase):
 
         self.assertEqual(efforts, ["medium", "xhigh"])
 
+    def test_a_reviewer_command_records_the_effort_each_config_spelling_sets(self):
+        commands = {
+            "--config": "codex --config model_reasoning_effort={} exec -m m",
+            "--config=": "codex --config=model_reasoning_effort={} exec -m m",
+            "-c": "codex exec -c model_reasoning_effort={} -m m",
+        }
+        for spelling, command in commands.items():
+            efforts = []
+            for effort in ("medium", "xhigh"):
+                self.locate(f'[agents]\nreviewer = "{command.format(effort)}"\n')
+                review, = [stage for stage in
+                           standard.resolve(self.project)["stages"]
+                           if stage["id"] == "review"]
+                efforts.append(review["effort"])
+            with self.subTest(spelling=spelling):
+                self.assertEqual(efforts, ["medium", "xhigh"])
+
     def test_a_local_project_holds_no_pull_request_stage(self):
         document = self.resolved("local")
 

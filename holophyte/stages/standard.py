@@ -66,9 +66,18 @@ def review_effort(project):
     argv = agent_command(project, "review", "")
     if argv is None:
         return review_route(project)[1]
-    for flag, value in zip(argv, argv[1:]):
+    for flag, value in options(argv[1:]):
         if flag == "--effort":
             return value
-        if flag == "-c" and value.startswith(EFFORT_SETTING):
-            return value.removeprefix(EFFORT_SETTING)
+        if flag in ("-c", "--config") and value.startswith(EFFORT_SETTING):
+            return value.removeprefix(EFFORT_SETTING).strip("\"'")
     return None
+
+
+def options(argv):
+    for at, word in enumerate(argv):
+        flag, joined, value = word.partition("=")
+        if joined and flag.startswith("--"):
+            yield flag, value
+        elif at + 1 < len(argv):
+            yield word, argv[at + 1]
