@@ -177,8 +177,8 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
 
 
 def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
-            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale=(),
-            leaks=(), witness="", branch=None, attempt=None):
+            ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
+            witness, branch, attempt):
     base_sha = review_base(wt, base_sha, sha)
     criteria = numbered(conn, run_id, criteria)
     round_started = int(time() * 1000)
@@ -198,7 +198,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                     run_id, run_agent=agent, review_round=rnd),
             plan and partial(adversary.attack, project, conn, run_id, wt,
                              base_sha, ticket, plan, agent))
-    if attempt is not None and plan:
+    if plan:
         attempt.note(adversary="ran")
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
@@ -265,7 +265,7 @@ def _recorded_review(project, conn, run_id, provider, task_id, wt, beat_s,
         verdict, decision, findings = _review(
             project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
-            witness, branch, attempt=attempt)
+            witness, branch, attempt)
         attempt.close(*_review_edge(conn, run_id, verdict, decision, findings,
                                     ok, out), sha, decision=decision,
                       findings=len(findings))

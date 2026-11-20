@@ -71,7 +71,7 @@ def stage_roles(conn, run_id, stage_id):
 class Attempt:
     def __init__(self, conn, run_id, stage_id, sha, detail):
         self.conn, self.run_id, self.stage_id = conn, run_id, stage_id
-        self.sha, self.detail, self.closed = sha, dict(detail), False
+        self.detail, self.closed = dict(detail), False
         self.id = None
         if conn is not None and run_id is not None:
             self.id = guarded(conn, run_id, "open_stage",
