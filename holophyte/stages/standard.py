@@ -1,13 +1,14 @@
 """The "Holophyte standard" pipeline as a document resolved from the config."""
 from holophyte.agents.agent_turns import argv_label, route_labels
 from holophyte.agents.harness import critic_seat
-from holophyte.config.agent_settings import review_route
+from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.config_tables import merge_config, trim_config, verify_config
 from holophyte.config.review_settings import review_config
 from holophyte.redact import known_secrets, outbound
 
 NAME = "Holophyte standard"
 FORMAT = 1
+EFFORT_SETTING = "model_reasoning_effort="
 REVIEW_ROLES = ["review", "adjudicate", "adversary", "consolidate"]
 
 
@@ -27,7 +28,7 @@ def resolve(project, profile=None):
               commands={"always": list(verify.always),
                         "before_merge": list(verify.before_merge)}),
         stage("review", "check", "candidate", REVIEW_ROLES,
-              seat=labels["reviewer"], effort=review_route(project)[1],
+              seat=labels["reviewer"], effort=review_effort(project),
               adversary=review_config(project).adversary),
         stage("merge_gate", "check", "factory"),
     ]
@@ -59,3 +60,15 @@ def critic_label(project, seat):
         return None
     return outbound(argv_label(seat.turn("")[:-1]),
                     known_secrets(project.config()))
+
+
+def review_effort(project):
+    argv = agent_command(project, "review", "")
+    if argv is None:
+        return review_route(project)[1]
+    for flag, value in zip(argv, argv[1:]):
+        if flag == "--effort":
+            return value
+        if flag == "-c" and value.startswith(EFFORT_SETTING):
+            return value.removeprefix(EFFORT_SETTING)
+    return None

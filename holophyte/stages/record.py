@@ -1,4 +1,4 @@
-"""The store write recording the pipeline a run ran under; it may not stop the run."""
+"""Store writes recording what a run ran under; none of them may stop the run."""
 import json
 
 import store
@@ -8,31 +8,42 @@ from holophyte.stages import standard
 from store import pipelines
 
 FAILED = "stage_record_failed"
+REFUSED = object()
 
 
-def pin(run):
-    if run.conn is None or run.run_id is None:
-        return
+def guarded(conn, run_id, write, record):
     try:
-        _pin(run)
+        return record()
     except (Exception, SystemExit) as error:
         try:
             store.record_event(
-                run.conn, run.run_id, FAILED,
-                f"pin_pipeline not recorded: {error}", level="detail",
-                payload=json.dumps({"write": "pin_pipeline",
-                                    "error": repr(error)}))
+                conn, run_id, FAILED, f"{write} not recorded: {error}",
+                level="detail",
+                payload=json.dumps({"write": write, "error": repr(error)}))
         except Exception:
             pass
+        return REFUSED
 
 
-def _pin(run):
+def pin(run):
     conn, run_id = run.conn, run.run_id
-    if resumes(run):
-        inherited = pipelines.inherit_pipeline(conn, run_id,
-                                               predecessor(conn, run_id))
-        if inherited is not None:
-            return inherited
+    if conn is None or run_id is None:
+        return
+    inherited = guarded(conn, run_id, "inherit_pipeline",
+                        lambda: _inherited(run))
+    if inherited is None:
+        guarded(conn, run_id, "pin_pipeline", lambda: _resolved(run))
+
+
+def _inherited(run):
+    conn, run_id = run.conn, run.run_id
+    if not resumes(run):
+        return None
+    return pipelines.inherit_pipeline(conn, run_id, predecessor(conn, run_id))
+
+
+def _resolved(run):
+    conn, run_id = run.conn, run.run_id
     row = latest_profile(conn, run_id)
     document = standard.resolve(run.project, row and row[1]["profile"])
     return pipelines.pin_pipeline(conn, run_id, standard.NAME, document)

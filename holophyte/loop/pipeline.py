@@ -64,7 +64,8 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
         run = run or claimed_run(
             project, task, conn, run_id, provider, clock=monotonic)
         run = profiled_run(run, task)
-        record.pin(run)
+        if not task.get("_gate"):
+            record.pin(run)
         return _run_stages(run, task)
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused

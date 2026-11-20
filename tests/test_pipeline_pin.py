@@ -96,6 +96,17 @@ class StandardDocumentTests(ConfigTestCase):
         self.assertEqual(stages["capture"]["paths"], ["console/**"])
         self.assertEqual(stages["waiting"]["approve"], "human")
 
+    def test_a_reviewer_seat_records_the_effort_its_command_runs_at(self):
+        efforts = []
+        for effort in ("medium", "xhigh"):
+            self.locate('[agents.reviewer]\nharness = "codex"\n'
+                        f'model = "gpt-review-under-test"\neffort = "{effort}"\n')
+            review, = [stage for stage in standard.resolve(self.project)["stages"]
+                       if stage["id"] == "review"]
+            efforts.append(review["effort"])
+
+        self.assertEqual(efforts, ["medium", "xhigh"])
+
     def test_a_local_project_holds_no_pull_request_stage(self):
         document = self.resolved("local")
 
@@ -152,6 +163,26 @@ class PinnedPipelineTests(LoopFixture):
         self.assertEqual(self.pins(), [(1, 1), (2, 1)])
         self.assertEqual(self.read("SELECT COUNT(*) FROM pipelines"), [(1,)])
 
+    def test_a_refused_inheritance_names_the_inherit_and_pins_nothing(self):
+        self.configure('[merge]\napprove = "human"\n' + UNTRIMMED)
+        self.loop(Commit("the scripted work"), APPROVE)
+        with sqlite3.connect(self.db) as conn:
+            store.approve(conn, 1, "merge it")
+        refused = sqlite3.OperationalError("database is locked")
+
+        with patch.object(store.pipelines, "inherit_pipeline",
+                          side_effect=refused):
+            self.loop()
+
+        self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
+                         [(1, "abandoned"), (2, "merged")])
+        self.assertEqual(self.pins(), [(1, 1), (2, None)])
+        (summary, payload), = self.read(
+            "SELECT summary, payload FROM runEvents"
+            " WHERE kind = 'stage_record_failed'")
+        self.assertIn("inherit_pipeline", summary)
+        self.assertEqual(json.loads(payload)["write"], "inherit_pipeline")
+
     def worker(self, *script, build, env=()):
         fake = FakeAgent(*script)
         with no_agent_processes(), \
@@ -166,7 +197,7 @@ class PinnedPipelineTests(LoopFixture):
                 patch.object(sys, "stdout", io.StringIO()):
             return holophyte.loop.pool.worker(self.project, self.provider)
 
-    def test_a_gate_reexec_keeps_the_pipeline_its_run_already_had(self):
+    def reexecuted(self):
         self.configure(UNTRIMMED)
         self.provider = StubProvider(a_task(1))
         (self.target / "store").mkdir()
@@ -177,6 +208,10 @@ class PinnedPipelineTests(LoopFixture):
         head = self.git("rev-parse", "HEAD").strip()
         with patch.object(holophyte.loop.gate_build, "EXEC", lambda *a: None):
             self.worker(Commit("the scripted work"), APPROVE, build=self.base)
+        return head
+
+    def test_a_gate_reexec_keeps_the_pipeline_its_run_already_had(self):
+        head = self.reexecuted()
         (before,), = self.read("SELECT pipelineId FROM runs")
         self.configure(TRIMMED)
 
@@ -186,6 +221,19 @@ class PinnedPipelineTests(LoopFixture):
         self.assertEqual(self.read("SELECT pipelineId, outcome FROM runs"),
                          [(before, "merged")])
         self.assertEqual(self.read("SELECT COUNT(*) FROM pipelines"), [(1,)])
+
+    def test_a_gate_reexec_after_a_refused_pin_pins_nothing(self):
+        refused = sqlite3.OperationalError("database is locked")
+        with patch.object(store.pipelines, "pin_pipeline", side_effect=refused):
+            head = self.reexecuted()
+        self.configure(TRIMMED)
+
+        rc = self.worker(build=head, env={"HOLOPHYTE_GATE_RUN": "1"})
+
+        self.assertEqual(rc, holophyte.loop.pool.WORKER_MERGED)
+        self.assertEqual(self.read("SELECT pipelineId, outcome FROM runs"),
+                         [(None, "merged")])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM pipelines"), [(0,)])
 
 
 class FailedPinTests(LoopFixture):
@@ -219,6 +267,32 @@ class FailedPinTests(LoopFixture):
         (summary, payload), = broken[3]
         self.assertIn("pin_pipeline", summary)
         self.assertEqual(json.loads(payload)["write"], "pin_pipeline")
+
+
+class PinPipelineStoreTests(unittest.TestCase):
+    def test_a_document_seen_again_keeps_its_first_revision_and_time(self):
+        with tempfile.TemporaryDirectory() as directory:
+            conn = store.open(Path(directory) / "store.db")
+            self.addCleanup(conn.close)
+            project = store.ensure_project(conn, "team-1", "/repo-1")
+            runs = []
+            for number in (1, 2, 3):
+                ticket = store.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{number}",
+                    linear_identifier=f"KO-{number}", title="candidate")
+                runs.append(store.claim(conn, project, ticket))
+            first = {"format": 1, "stages": [{"id": "trim", "switch": False}]}
+            second = {"format": 1, "stages": [{"id": "trim", "switch": True}]}
+
+            store.pipelines.pin_pipeline(conn, runs[0], "n", first, now=123)
+            store.pipelines.pin_pipeline(conn, runs[1], "n", second, now=456)
+            store.pipelines.pin_pipeline(conn, runs[2], "n", first, now=789)
+
+            self.assertEqual(conn.execute(
+                "SELECT r.id, p.revision, p.createdAt FROM runs r"
+                " JOIN pipelines p ON p.id = r.pipelineId ORDER BY r.id"
+            ).fetchall(), [(runs[0], 1, 123), (runs[1], 2, 456),
+                           (runs[2], 1, 123)])
 
 
 class PipelineMigrationTests(unittest.TestCase):
