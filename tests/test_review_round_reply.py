@@ -62,10 +62,14 @@ class RoundReplyTests(ServeTestCase):
         store.record_review_round(self.conn, self.run, 1, "changes_requested",
                                   "reviewer")
 
-    def final_round(self, reply, root=None):
-        record_round(None, self.conn, self.run, 2, "review", reply, None, True,
-                     "", criteria=[FIRST, SECOND], route="reviewer", root=root)
+    def final_round(self, reply, root=None, criteria=(FIRST, SECOND)):
+        self.record(2, reply, root=root, criteria=criteria)
         return self.served()
+
+    def record(self, rnd, reply, root=None, criteria=(FIRST, SECOND)):
+        record_round(None, self.conn, self.run, rnd, "review", reply, None,
+                     True, "", criteria=list(criteria), route="reviewer",
+                     root=root)
 
     def served(self):
         self.conn.commit()
@@ -83,7 +87,7 @@ class RoundReplyTests(ServeTestCase):
             findings=[decoy]))
         self.assertEqual(reply_format, "json")
 
-        body = self.final_round(reply)
+        body = self.final_round(reply, criteria=())
 
         self.assertEqual(body["rounds"][1]["criteria"], [
             {"id": "C1", "n": 1, "status": "met",
@@ -111,6 +115,38 @@ class RoundReplyTests(ServeTestCase):
         self.assertEqual(body["rounds"][1]["criteria"], [
             {key: c[key] for key in ("id", "n", "status", "note")}
             for c in body["criteria"]])
+
+    def test_a_criterion_quoted_in_the_refuted_section_is_not_judged(self):
+        reply, _ = read_reply(json.dumps({
+            **json.loads(json_reply(
+                ("C1", "met", "requeued", "tests/test_a.py::T::test_one"))),
+            "refuted": [{"finding": "CRITERION C2: not met \u2014 no loop",
+                         "reason": "the loop is named now"}]}))
+
+        body = self.final_round(reply)
+
+        unjudged = {"id": "C2", "n": 2, "status": "unwitnessed",
+                    "note": "no CRITERION line in the reply"}
+        self.assertEqual(body["rounds"][1]["criteria"][1], unjudged)
+        self.assertEqual(
+            {key: body["criteria"][1][key] for key in unjudged}, unjudged)
+
+    def test_a_later_judgement_leaves_an_earlier_json_round_its_own_criteria(self):
+        reply, _ = read_reply(json_reply(
+            ("C1", "met", "requeued", "tests/test_a.py::T::test_one"),
+            ("C2", "not_met", "no loop", None)))
+        self.record(2, reply)
+        store.record_event(
+            self.conn, self.run, "criteria", "review round 3", level="detail",
+            payload=json.dumps({"round": 3, "criteria": [
+                {"n": 1, "status": "met", "note": "ok", "text": FIRST}]}))
+        store.record_review_round(self.conn, self.run, 3, "pass", "reviewer")
+
+        body = self.served()
+
+        self.assertEqual(body["rounds"][1]["criteria"][1],
+                         {"id": "C2", "n": 2, "status": "not_met",
+                          "note": "no loop"})
 
     def test_a_stored_reply_holds_no_registered_secret(self):
         reply, _ = read_reply(json_reply(

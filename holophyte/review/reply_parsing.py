@@ -693,8 +693,17 @@ def _shown(root, sha, path):
     return shown.stdout.decode(errors="replace") if shown.returncode == 0 else None
 
 
+def judged_block(reply):
+    value = getattr(reply, "json_reply", None)
+    if value is None:
+        return criteria_block(reply)
+    from holophyte.review.round_account import reply_criterion
+    entries = filter(None, map(reply_criterion, value["criteria"]))
+    return {e["n"]: (e["status"].replace("_", " "), e["note"]) for e in entries}
+
+
 def _judged_criteria(reply, criteria, root, approved_range):
-    block = criteria_block(reply)
+    block = judged_block(reply)
     for n, criterion in numbered(None, None, criteria):
         status, note = block.get(n, ("unwitnessed", UNWITNESSED_NOTE))
         stale, resolved = [], []
