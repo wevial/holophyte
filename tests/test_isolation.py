@@ -475,14 +475,13 @@ class IsolationTests(GoRaceCases, IsolationCase):
             turn[-len(argv)] = str(binary)
             path = subprocess.check_output(turn, cwd=cwd, env=env, text=True)
             self.assertEqual(path.split(os.pathsep)[0], "/opt/agy/bin")
-            parents = [Path(vol.split(":")[0]) for vol in mounts
-                       if vol.endswith(f":{target.parent}:rw")]
-            self.assertEqual(len(parents), 1)
-            copy = parents[0] / target.name
+            [parent] = [Path(vol.split(":")[0]) for vol in mounts
+                        if vol.endswith(f":{target.parent}:rw")]
+            copy = parent / target.name
             self.assertFalse(copy.samefile(host_login))
             self.assertEqual(copy.stat().st_mode & 0o777, 0o600)
             if credential:
-                self.assertEqual((parents[0] / "key").read_text(), "provider")
+                self.assertEqual((parent / "key").read_text(), "provider")
             return 0, copy.read_text()
 
         with (patch.object(launcher, "image_ready"),
