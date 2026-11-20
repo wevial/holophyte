@@ -437,7 +437,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     beat_s = sweep_config(project).heartbeat_stale_ms / 2000
     try:
         with heartbeat_while(conn, run_id, beat_s, on_swept=kill):
-            output = AgentOutput(review_runner.run_review(
+            reviewed = review_runner.run_review(
                 repo=Path(cwd),
                 run_id=run_id,
                 base_sha=base_sha,
@@ -450,7 +450,10 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
                 **turn,
                 **options,
                 **kept,
-            ), profile)
+            )
+            output = AgentOutput(reviewed, profile)
+        if getattr(reviewed, "usage", None) is not None:
+            output.usage = reviewed.usage
         output.service_tier = tier
         for session in sessions:
             record_review_session(conn, run_id, session, role,

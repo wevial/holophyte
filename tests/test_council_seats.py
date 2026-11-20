@@ -44,8 +44,10 @@ import holophyte.review.council  # noqa: E402 - after the sys.path insert
 import store  # noqa: E402 - after the sys.path insert above
 import store.council  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
+import store.stages  # noqa: E402 - after the sys.path insert above
 from holophyte.agents import roles  # noqa: E402
 from holophyte.config.checks import check_config  # noqa: E402
+from holophyte.config.review_settings import CouncilSeat  # noqa: E402
 from holophyte.loop.gates import InfraFailure  # noqa: E402
 from holophyte.review import review_runner  # noqa: E402
 
@@ -74,7 +76,8 @@ class Answer:
     verdict: str
     score: int
     findings: tuple = ()
-    criterion: str = "met"
+    criterion: str | None = "met"
+    witness: str = "tests/test_thing.py::test_it_works"
 
     def value(self, goal):
         listed = SCOPE_LIST_RE.search(goal)
@@ -82,7 +85,7 @@ class Answer:
             "verdict": self.verdict, "score": self.score,
             "criteria": [{"id": "C1", "status": self.criterion,
                           "reason": "the named test runs the thing",
-                          "witness": "tests/test_thing.py::test_it_works"}],
+                          "witness": self.witness}] if self.criterion else [],
             "findings": [{"path": path, "line": line, "severity": "p1",
                           "category": "correctness", "target": "code",
                           "message": message}
@@ -98,11 +101,11 @@ class Answer:
 
 
 @dataclass(frozen=True)
-class Garbled:
-    """A seat reply that is no JSON object at all."""
+class OutOfRange:
+    """A well-formed seat reply whose score the council schema refuses."""
 
     def play(self, goal):
-        return "Looks fine to me.\nVERDICT: APPROVE"
+        return json.dumps(dict(Answer("APPROVE", 9).value(goal), score=11))
 
 
 @dataclass(frozen=True)
@@ -178,9 +181,10 @@ class CouncilFixture(LoopFixture):
 
 class CouncilConfigTests(CouncilFixture):
     def test_a_two_seat_council_loads_and_the_pinned_review_stage_lists_it(self):
-        fake = self.run_council(council(ASTRA, OPUS), Commit("work"), seats={
-            "gpt-6-astra": [Answer("APPROVE", 9)],
-            "opus": [Answer("APPROVE", 8)]})
+        fake = self.run_council(
+            council(ASTRA, ("claude", "opus", "medium")), Commit("work"),
+            seats={"gpt-6-astra": [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)]})
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual({(turn.harness, turn.model) for turn in fake.seat_turns},
@@ -192,7 +196,7 @@ class CouncilConfigTests(CouncilFixture):
                     if stage["id"] == "review"]
         self.assertEqual(review["council"], [
             {"harness": "codex", "model": "gpt-6-astra", "effort": "high"},
-            {"harness": "claude", "model": "opus", "effort": "high"}])
+            {"harness": "claude", "model": "opus", "effort": "medium"}])
 
     def test_one_seat_an_unknown_harness_or_an_empty_model_stops_the_load(self):
         cases = [
@@ -222,6 +226,7 @@ class CouncilRoundTests(CouncilFixture):
         first, second = fake.seat_turns
         self.assertEqual((first.base_sha, first.candidate_sha, first.goal),
                          (second.base_sha, second.candidate_sha, second.goal))
+        self.assertEqual(first.base_sha, self.base)
         self.assertEqual(first.candidate_sha,
                          self.git("rev-parse", "main^2").strip())
         self.assertIn("score", first.goal)
@@ -273,8 +278,58 @@ class CouncilRoundTests(CouncilFixture):
                          ["unwitnessed"])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    def test_a_criterion_every_seat_omits_requests_changes_and_reaches_the_fix(self):
+        fake = self.run_council(
+            council(ASTRA, OPUS), Commit("work"), Commit("fix"), seats={
+                "gpt-6-astra": [Answer("APPROVE", 9, criterion=None),
+                                Answer("APPROVE", 9)],
+                "opus": [Answer("APPROVE", 8, criterion=None),
+                         Answer("APPROVE", 9)]})
+
+        [(verdict, reply)] = self.read(
+            "SELECT verdict, reply FROM reviewRounds WHERE round = 1")
+        self.assertEqual(verdict, "changes_requested")
+        self.assertEqual(json.loads(reply)["verdict"], "REQUEST_CHANGES")
+        fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
+        self.assertIn("CRITERION C1: unwitnessed", fix.goal)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_met_claim_naming_no_real_test_fails_in_either_seat_order(self):
+        real = Answer("APPROVE", 9).value("")
+        unreal = Answer("APPROVE", 9,
+                        witness="tests/test_thing.py::test_never_written"
+                        ).value("")
+        criteria = [(1, "Given the thing, when it runs, then it works")]
+        for order in ((real, unreal), (unreal, real)):
+            with self.subTest(first=order[0]["criteria"][0]["witness"]):
+                value = holophyte.review.council.merged(
+                    list(order), criteria, self.target, self.base)
+                self.assertEqual(value["verdict"], "REQUEST_CHANGES")
+                self.assertEqual([c["status"] for c in value["criteria"]],
+                                 ["unwitnessed"])
+
+    def test_two_approving_seats_store_each_of_their_findings_on_the_pass(self):
+        self.run_council(council(ASTRA, OPUS), Commit("work"), seats={
+            "gpt-6-astra": [Answer("APPROVE", 9, (SHARED,))],
+            "opus": [Answer("APPROVE", 8, (OTHER,))]})
+
+        self.assertEqual(self.read("SELECT verdict FROM reviewRounds"),
+                         [("pass",)])
+        self.assertEqual(sorted((f["path"], f["line"]) for f in self.findings(1)),
+                         [("README.md", 1), ("tests/test_thing.py", 2)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
 
 class CouncilSeatFailureTests(CouncilFixture):
+    def a_run(self):
+        self.configure("")
+        conn = store.open(self.db)
+        self.addCleanup(conn.close)
+        project = store.ensure_project(conn, "team-1", str(self.target))
+        ticket = store.mirror_ticket(conn, project, linear_issue_id="i-1",
+                                     linear_identifier="KO-1", title="t")
+        return conn, store.claim(conn, project, ticket)
+
     def test_a_failed_route_leaves_its_seat_missing_and_the_others_decide(self):
         fake = self.run_council(
             council(ASTRA, OPUS, LUNA), Commit("work"), seats={
@@ -298,7 +353,7 @@ class CouncilSeatFailureTests(CouncilFixture):
     def test_a_seat_unreadable_twice_fails_a_two_seat_round_as_review_route(self):
         fake = self.run_council(council(ASTRA, OPUS), Commit("work"), seats={
             "gpt-6-astra": [Answer("APPROVE", 9)],
-            "opus": [Garbled(), Garbled()]})
+            "opus": [OutOfRange(), OutOfRange()]})
 
         [(outcome, kind, reason)] = self.read(
             "SELECT outcome, failureKind, outcomeReason FROM runs")
@@ -335,28 +390,77 @@ class CouncilSeatFailureTests(CouncilFixture):
         activate.assert_not_called()
 
 
-    def test_a_seat_turn_records_an_agent_turn_under_role_review(self):
-        self.configure("")
-        conn = store.open(self.db)
-        self.addCleanup(conn.close)
-        project = store.ensure_project(conn, "team-1", str(self.target))
-        ticket = store.mirror_ticket(conn, project, linear_issue_id="i-1",
-                                     linear_identifier="KO-1", title="t")
-        run = store.claim(conn, project, ticket)
-        reply = Answer("APPROVE", 9).play("")
-        with patch.object(review_runner, "run_review", return_value=reply):
-            answered = roles.agent(
-                self.project, "review", "goal", self.target,
-                base_sha=self.base, candidate_sha=self.base, conn=conn,
-                run_id=run, family_route={"harness": "claude", "model": "opus",
-                                          "effort": "high", "credential": None})
+    def test_a_seat_turn_records_its_provider_usage_under_role_review(self):
+        conn, run = self.a_run()
+        value = Answer("APPROVE", 9).value("")
+        outputs = {
+            "codex": "\n".join(json.dumps(event) for event in (
+                {"type": "item.completed",
+                 "item": {"type": "command_execution", "exit_code": 0}},
+                {"type": "item.completed",
+                 "item": {"type": "agent_message", "text": json.dumps(value)}},
+                {"type": "turn.completed",
+                 "usage": {"input_tokens": 1800, "cached_input_tokens": 600,
+                           "output_tokens": 90}})),
+            "claude": json.dumps({
+                "type": "result", "subtype": "success", "is_error": False,
+                "result": "reviewed", "structured_output": value,
+                "usage": {"input_tokens": 100, "cache_read_input_tokens": 23,
+                          "output_tokens": 8},
+                "total_cost_usd": 0.02})}
 
-        self.assertEqual(str(answered), reply)
-        [(payload,)] = conn.execute(
-            "SELECT payload FROM runEvents WHERE kind = 'agent_turn'").fetchall()
-        turn = json.loads(payload)
-        self.assertEqual((turn["role"], turn["label"], turn["route"]),
-                         ("review", "claude opus", "primary"))
+        def container(**turn):
+            return review_runner.PARSERS[turn["harness"]](
+                outputs[turn["harness"]], None)[0]
+        attempt = store.stages.open_stage(conn, run, "review", self.base)
+        with patch.object(review_runner, "run_review", side_effect=container):
+            for harness, model in (("codex", "gpt-6-astra"), ("claude", "opus")):
+                answered = roles.agent(
+                    self.project, "review", "goal", self.target,
+                    base_sha=self.base, candidate_sha=self.base, conn=conn,
+                    run_id=run, family_route={"harness": harness,
+                                              "model": model, "effort": "high",
+                                              "credential": None})
+                self.assertEqual(json.loads(answered), value)
+        store.stages.close_stage(conn, attempt, "pass", "next",
+                                 roles=("review",))
+
+        turns = [json.loads(payload) for (payload,) in conn.execute(
+            "SELECT payload FROM runEvents WHERE kind = 'agent_turn'"
+            " ORDER BY seq")]
+        self.assertEqual([(t["role"], t["label"], t["route"]) for t in turns],
+                         [("review", "codex gpt-6-astra", "primary"),
+                          ("review", "claude opus", "primary")])
+        self.assertEqual(conn.execute(
+            "SELECT inputTokens, outputTokens FROM stageAttempts").fetchall(),
+            [(1923, 98)])
+
+    def test_a_claude_seat_out_of_schema_retries_is_unreadable_after_two(self):
+        conn, run = self.a_run()
+        native = json.dumps({"type": "result", "is_error": True,
+                             "subtype": "error_max_structured_output_retries"})
+
+        def container(**turn):
+            if turn["harness"] == "codex":
+                return Answer("APPROVE", 9).play("")
+            return review_runner.parse_claude_output(native, None)
+        seats = [CouncilSeat(*ASTRA), CouncilSeat(*OPUS)]
+        with patch.object(review_runner, "run_review",
+                          side_effect=container) as run_review, \
+                self.assertRaises(InfraFailure) as raised:
+            holophyte.review.council.run_round(
+                self.project, conn, run, self.target, self.base, self.base,
+                holophyte.review.council.reply_brief(""), 1, seats,
+                [(1, "Given the thing, when it runs, then it works")],
+                roles.agent)
+
+        self.assertEqual(raised.exception.failure_kind, "review_route")
+        self.assertEqual(
+            [call.kwargs["harness"] for call in run_review.call_args_list
+             ].count("claude"), 2)
+        self.assertEqual(conn.execute(
+            "SELECT seat, status FROM councilSeats ORDER BY seat").fetchall(),
+            [(1, "answered"), (2, "unreadable")])
 
 
 class CouncilMigrationTests(unittest.TestCase):

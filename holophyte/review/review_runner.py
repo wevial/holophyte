@@ -415,13 +415,20 @@ def provider_error(output: str) -> str | None:
     return "\n".join(messages) or None
 
 
+class ReviewMessage(str):
+    usage = None
+
+
 def parse_codex_output(
     output: str, verdicts: Sequence[str] | None = REVIEW_VERDICTS
 ) -> tuple[str, str | None]:
     """Read trusted CLI JSONL events, not model-controlled transcript strings."""
     command_succeeded = False
     messages: list[str] = []
+    usage = None
     for event in codex_events(output):
+        if event.get("type") == "turn.completed":
+            usage = event.get("usage")
         if event.get("type") != "item.completed":
             continue
         item = event.get("item", {})
@@ -433,7 +440,12 @@ def parse_codex_output(
         raise ReviewBoundaryError("reviewer produced no successful command event")
     if not messages:
         raise ReviewBoundaryError("reviewer produced no final message event")
-    message = messages[-1]
+    message = ReviewMessage(messages[-1])
+    if isinstance(usage, dict):
+        from holophyte.agents.agent_output import count
+
+        message.usage = dict(input_tokens=count(usage.get("input_tokens")),
+                             output_tokens=count(usage.get("output_tokens")))
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)
@@ -454,6 +466,8 @@ def parse_claude_output(
         error = ReviewBoundaryError(
             f"Claude turn failed: {detail}" if detail
             else "Claude printed no JSON result")
+        error.schema_refused = (isinstance(reply, dict) and reply.get(
+            "subtype") == "error_max_structured_output_retries")
         raise error
     from holophyte.review.json_reply import COUNCIL_SCHEMA_FILE, schema_valid
 
@@ -462,6 +476,10 @@ def parse_claude_output(
             schema_valid(structured) or not isinstance(message, str)
             or schema_valid(structured, COUNCIL_SCHEMA_FILE)):
         message = json.dumps(structured)
+    from holophyte.agents.agent_output import claude_usage
+
+    message = ReviewMessage(message)
+    message.usage = claude_usage(reply)
     if verdicts is None:
         return message, None
     return message, terminal_verdict(message, verdicts)

@@ -22,12 +22,13 @@ from holophyte.review.json_reply import (
     reply_object,
     retry_brief,
 )
+from holophyte.review.reply_parsing import cited_approval, criteria_statuses
+from store.working import working
 
 QUORUM = 2
 SCORE_BRIEF = (" Also give score: your score for the candidate as it stands, an "
                "integer from 0 (not mergeable) to 10 (ready to merge).")
 UNREADABLE = "reply failed the council reply schema twice"
-UNJUDGED = "not every council seat judged this criterion"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
 
 
@@ -70,7 +71,9 @@ def ask(project, conn, run_id, wt, base_sha, sha, prompt, run_agent, number,
                               candidate_sha=sha, conn=conn, run_id=run_id,
                               family_route=route)
         except (InfraFailure, OSError, subprocess.SubprocessError) as failure:
-            return ended("missing", reason=str(failure))
+            if not getattr(failure.__cause__, "schema_refused", False):
+                return ended("missing", reason=str(failure))
+            reply = ""
         value = reply_object(str(reply), COUNCIL_SCHEMA_FILE)
         if value is not None:
             return ended("answered", value)
@@ -111,10 +114,11 @@ def record(conn, run_id, rnd, seat):
 
 
 def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
-              run_agent):
-    seated = together([partial(ask, project, conn, run_id, wt, base_sha, sha,
-                               prompt, run_agent, number, seat)
-                       for number, seat in enumerate(seats, 1)])
+              criteria, run_agent):
+    with working(conn, run_id):
+        seated = together([partial(ask, project, conn, run_id, wt, base_sha,
+                                   sha, prompt, run_agent, number, seat)
+                           for number, seat in enumerate(seats, 1)])
     absent = []
     for seat in seated:
         record(conn, run_id, rnd, seat)
@@ -128,7 +132,7 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
             f"council review had {len(answered)} of {len(seated)} seats "
             f"answer, under the quorum of {QUORUM}: {'; '.join(absent)}; "
             f"candidate preserved at {sha}", "review_route")
-    value = merged([seat.value for seat in answered])
+    value = merged([seat.value for seat in answered], criteria, wt, sha)
     reply = RenderedReply(rendered(value))
     reply.json_reply = value
     reply.council_route = "council " + ", ".join(seat.route
@@ -136,12 +140,12 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
     return reply, value["verdict"], ""
 
 
-def merged(values):
-    criteria = merged_criteria(values)
+def merged(values, criteria, wt, sha):
+    judged = merged_criteria(values, criteria, wt, sha)
     approve = (all(value["verdict"] == "APPROVE" for value in values)
-               and all(entry["status"] == "met" for entry in criteria))
+               and all(entry["status"] == "met" for entry in judged))
     return {"verdict": "APPROVE" if approve else "REQUEST_CHANGES",
-            "criteria": criteria,
+            "criteria": judged,
             "findings": union(values, "findings", lambda finding: (
                 finding["path"], finding["line"], finding["severity"],
                 finding["message"])),
@@ -161,22 +165,29 @@ def union(values, field, key=None):
     return kept
 
 
-def criterion_key(entry):
-    number = re.search(r"\d+", entry["id"])
-    return f"C{int(number[0])}" if number else entry["id"].strip()
-
-
-def merged_criteria(values):
-    given = [{criterion_key(entry): entry for entry in value["criteria"]}
-             for value in values]
+def checked(value, criteria, wt, sha):
+    text = rendered(value)
+    statuses = criteria_statuses(text, criteria, wt,
+                                 approved_range=cited_approval(text, wt, sha))
+    given = {f"C{int(number[0])}": entry for entry in value["criteria"]
+             if (number := re.search(r"\d+", entry["id"]))}
     kept = []
-    for key in dict.fromkeys(key for entries in given for key in entries):
-        judged = [entries[key] for entries in given if key in entries]
-        strictest = min(judged, key=lambda entry: RANKS[entry["status"]])
-        if strictest["status"] == "met" and len(judged) < len(given):
-            strictest = dict(strictest, status="unwitnessed", reason=UNJUDGED,
-                             witness=None)
-        kept.append(strictest)
+    for entry in statuses:
+        own = given.get(f"C{entry['n']}", {})
+        status = entry["status"] if entry["status"] in RANKS else "unwitnessed"
+        kept.append((entry["n"], status, own["reason"] if status == "met"
+                     else entry["note"], own.get("witness")))
+    return kept
+
+
+def merged_criteria(values, criteria, wt, sha):
+    seats = [checked(value, criteria, wt, sha) for value in values]
+    kept = []
+    for judged in zip(*seats):
+        n, status, note, witness = min(
+            judged, key=lambda entry: RANKS[entry[1]])
+        kept.append({"id": f"C{n}", "status": status, "reason": note,
+                     "witness": witness})
     return kept
 
 
