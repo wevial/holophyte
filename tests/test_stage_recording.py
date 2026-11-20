@@ -350,6 +350,20 @@ class StageRecordingTests(LoopFixture):
             ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
         self.assertEqual(self.shas("verify", 3), (fixed, fixed))
 
+    def test_a_self_check_that_leaves_head_unchanged_records_no_cached_rerun(self):
+        self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
+                      Commit("fix\n\nADDRESS: tests/test_thing.py:1 a blocker"),
+                      Idle(), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(
+            [(stage, attempt, outcome, detail.get("kind"))
+             for stage, attempt, outcome, _, detail in
+             self.attempts()][4:], [
+                ("implement", 2, "pass", "fix"), ("verify", 2, "pass", None),
+                ("implement", 3, "pass", "self_check"),
+                ("review", 2, "pass", None)])
+
     def cached_rerun(self, ends):
         real, calls, self.ran = holophyte.loop.review_round._checked, [], None
 

@@ -148,10 +148,15 @@ class Deferred(Attempt):
 def verified_last(conn, run_id, sha):
     if conn is None or run_id is None:
         return False
-    row = guarded(conn, run_id, "stage_read", lambda: conn.execute(
+    rows = guarded(conn, run_id, "stage_read", lambda: conn.execute(
         "SELECT stageId, outcome, outputSha FROM stageAttempts WHERE runId = ?"
-        " ORDER BY id DESC LIMIT 1", (run_id,)).fetchone())
-    return row not in (None, REFUSED) and tuple(row) == ("verify", "pass", sha)
+        " ORDER BY id DESC", (run_id,)).fetchall())
+    if rows is REFUSED:
+        return False
+    for row in rows:
+        if tuple(row)[::2] != ("implement", sha):
+            return tuple(row) == ("verify", "pass", sha)
+    return False
 
 
 def skip(conn, run_id, stage_id, reason, sha=None):
