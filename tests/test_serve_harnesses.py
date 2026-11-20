@@ -82,6 +82,7 @@ class HarnessesTests(ServeTestCase):
              "codex": (True, str(self.codex), True),
              "cursor": (False, str(self.missing), True),
              "devin": (False, None, False),
+             "agy": (False, None, False),
              "t3": (False, None, False)})
         self.assertEqual(found["codex"]["binary"], str(self.codex))
         self.assertEqual(found["claude"]["binary"], "claude")

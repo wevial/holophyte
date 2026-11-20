@@ -17,6 +17,45 @@ class IsolationRealTests(IsolationCase):
         os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
         "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
     )
+    def test_real_agy_implementer_reads_and_refreshes_only_its_login_copy(self):
+        import json
+
+        from holophyte.config.agent_settings import agent_command
+        from holophyte.isolation import launcher
+
+        if not shutil.which("docker"):
+            self.skipTest("Docker absent")
+        self.target.path, worktree = self.make_worktree()
+        self.table["agents"] = {"implementer_isolation": "container",
+                                "implementer": {"harness": "agy",
+                                                "model": "gemini-4-neon-xhigh"}}
+        home = self.root / "host-home"
+        login = home / ".gemini/antigravity-cli/antigravity-oauth-token"
+        login.parent.mkdir(parents=True)
+        login.write_text("fixture-login")
+        binary = self.root / "agy"
+        binary.write_text(
+            '#!/bin/sh\nset -eu\n'
+            'cd "$HOME/.gemini/antigravity-cli"\n'
+            'login=$(cat antigravity-oauth-token)\n'
+            'echo refreshed > next && mv next antigravity-oauth-token\n'
+            'printf \'{"conversation_id":"c-1","status":"SUCCESS",'
+            '"response":"%s"}\\n\' "$login"\n')
+        binary.chmod(0o755)
+        path = f"{self.root}{os.pathsep}{os.environ['PATH']}"
+        with patch.dict(os.environ, {"HOME": str(home), "PATH": path}):
+            cmd = agent_command(self.target, "implement", "Read the login")
+            code, output = launcher.launch(launcher.turn_route(self.target, cmd),
+                                           worktree, {}, cmd, project=self.target)
+        self.assertEqual(code, 0, output)
+        self.assertEqual(json.loads(output), {
+            "conversation_id": "c-1", "status": "SUCCESS", "response": "fixture-login"})
+        self.assertEqual(login.read_text(), "fixture-login")
+
+    @unittest.skipUnless(
+        os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+        "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+    )
     def test_real_codex_implementer_runs_the_host_release_read_only(self):
         from holophyte.isolation import launcher
 

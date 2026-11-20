@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from holophyte.agents.agent_output import json_line
 from holophyte.review import review_runner
 from holophyte.review.json_reply import SCHEMA_FILE
 from holophyte.tickets.ticket_template import ORCHESTRATION_MODES
@@ -298,6 +299,36 @@ class Devin(Adapter):
                 "--respect-workspace-trust", "false"]
 
 
+class Agy(Adapter):
+    name = "agy"
+    roles = frozenset(WRITING_ROLES)
+    requires = frozenset({"model"})
+    refuses = frozenset({"effort"})
+    models = ("gemini-4-neon-xhigh",)
+
+    def turn(self, binary, options, role):
+        return [binary, "-p", "--model", options["model"],
+                "--dangerously-skip-permissions", "--output-format", "json"]
+
+    def session(self, argv):
+        return None
+
+    def resume(self, binary, options, session, role):
+        return [*self.turn(binary, options, role), "--conversation", session]
+
+    @staticmethod
+    def reply(output):
+        reply = json_line(output)
+        if not isinstance(reply, dict):
+            return None, None
+        response, session = reply.get("response"), reply.get("conversation_id")
+        return (response if isinstance(response, str) else None,
+                session if isinstance(session, str) else None)
+
+    def reported_session(self, binary, output, role, run):
+        return self.reply(output)[1]
+
+
 class Cursor(Adapter):
     name = "cursor"
     binary = "cursor-agent"
@@ -342,7 +373,7 @@ class T3(Adapter):
 
 
 ADAPTERS = {adapter.name: adapter for adapter in (Claude(), ClaudeSdk(), Codex(),
-                                                  Cursor(), Devin(), T3())}
+                                                  Cursor(), Devin(), Agy(), T3())}
 
 
 @dataclass(frozen=True)
