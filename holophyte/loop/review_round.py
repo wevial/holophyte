@@ -283,10 +283,12 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
     held = council.held_here(project, verdict)
-    kept = stuck_review.kept_findings(consolidate.primary_findings(
-        verdict, decision, unwitnessed), ruling)
+    asked = consolidate.primary_findings(verdict, decision, unwitnessed)
+    kept = stuck_review.kept_findings(asked, ruling)
     described = [finding for finding in kept
                  if held and council.described(finding)]
+    settled = [finding for finding in asked if held
+               and council.described(finding) and finding not in kept]
     verdict = _with_report(
         handed or stuck_review.without_dropped(
             verdict, [finding for finding in kept if finding not in described],
@@ -298,7 +300,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     verdict += fixes
     if held:
         verdict = council.held_description(conn, run_id, verdict, described,
-                                           ruled)
+                                           ruled, settled)
         if (described or ruled) and not red and not private and not [
                 finding for finding in kept if finding not in described]:
             decision, findings = "APPROVE", []

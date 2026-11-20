@@ -1,6 +1,7 @@
 """A council review round: every seat on one prompt, merged strictest-wins."""
 import contextvars
 import json
+import posixpath
 import re
 import subprocess
 import threading
@@ -39,6 +40,7 @@ from holophyte.review.json_reply import (
     retry_brief,
 )
 from holophyte.review.reply_parsing import (
+    WITNESS_TEST_RE,
     cited_approval,
     criteria_statuses,
     unparsed_path,
@@ -53,6 +55,7 @@ UNCONSOLIDATED = "reply failed the consolidated reply schema twice"
 SHARED = "raised by two or more seats at the same path and line"
 UNREASONED = "dropped without a reason"
 DESCRIBED = "PR description"
+SETTLED_KIND = "pr_text_settled"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
 
 
@@ -97,7 +100,8 @@ def ask(project, conn, run_id, wt, base_sha, sha, prompt, run_agent, number,
             reply = run_agent(project, "review", goal, wt, base_sha=base_sha,
                               candidate_sha=sha, conn=conn, run_id=run_id,
                               family_route=route)
-        except (InfraFailure, OSError, subprocess.SubprocessError) as failure:
+        except (InfraFailure, OSError, subprocess.SubprocessError,
+                UnicodeError) as failure:
             if not getattr(failure.__cause__, "schema_refused", False):
                 return ended("missing", reason=str(failure))
             reply = ""
@@ -296,9 +300,14 @@ def consolidator_down(project, route, label):
 
     checked = routes(project).consolidator_checked
     if label not in checked:
-        probe = probe_council_consolidator(project, route)
-        checked[label] = ("" if probe is None or probe.ok
-                          else probe_diagnostic(project, probe))
+        try:
+            probe = probe_council_consolidator(project, route)
+            checked[label] = ("" if probe is None or probe.ok
+                              else probe_diagnostic(project, probe))
+        except (InfraFailure, OSError, RuntimeError, ValueError,
+                subprocess.SubprocessError) as failure:
+            checked[label] = ("[holo2] council consolidator probe could not "
+                              f"run: {failure}")
         if checked[label]:
             print(checked[label])
     return checked[label]
@@ -333,15 +342,13 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
 def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
     kept, covered = [], set()
     for finding in value["findings"]:
-        ids = [name for name in dict.fromkeys(finding["raised_by"])
-               if name in found]
+        named = [name for name in dict.fromkeys(finding["raised_by"])
+                 if name in found]
+        ids = [name for name in named if name not in covered]
+        if named and not ids:
+            continue
         covered.update(ids)
-        finding = dict(finding, raised_by=raisers(found, ids))
-        twin = next((other for other in kept if twins(other, finding)), None)
-        if twin is None:
-            kept.append(finding)
-        else:
-            absorb(twin, finding["severity"], finding["raised_by"])
+        kept.append(dict(finding, raised_by=raisers(found, ids)))
     shared = shared_places(found)
     dropped, refuted = set(), []
     for entry in value["refuted"]:
@@ -353,11 +360,6 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
             refuted.append(dict(entry, raised_by=raisers(found, ids)))
     for at, ids in unaccounted(found, covered | dropped).items():
         finding = restored(found, ids)
-        twin = next((other for other in kept
-                     if at in shared and twins(other, finding)), None)
-        if twin is not None:
-            absorb(twin, finding["severity"], finding["raised_by"])
-            continue
         kept.append(finding)
         record_kept(conn, run_id, rnd, finding,
                     SHARED if at in shared else UNREASONED)
@@ -370,21 +372,6 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
             "criteria": judged, "findings": kept,
             "follow_ups": value["follow_ups"],
             "scope": ruled_scope(value, answered), "refuted": refuted}, concerns
-
-
-def seats_of(finding):
-    return {who for who in finding["raised_by"] if who.startswith("seat")}
-
-
-def twins(kept, finding):
-    return (spot(kept) is not None and spot(kept) == spot(finding)
-            and bool(seats_of(kept)) and bool(seats_of(finding))
-            and not seats_of(kept) & seats_of(finding))
-
-
-def absorb(kept, severity, raised_by):
-    kept.update(severity=min(kept["severity"], severity),
-                raised_by=list(dict.fromkeys(kept["raised_by"] + raised_by)))
 
 
 def unaccounted(found, accounted):
@@ -407,7 +394,7 @@ def spot(finding):
     path = candidate_path(kept_line(finding["path"]))
     if not path or finding["line"] is None or finding["line"] <= 0:
         return None
-    return path, finding["line"]
+    return posixpath.normpath(path), finding["line"]
 
 
 def raisers(found, ids):
@@ -442,7 +429,7 @@ def ruled_criteria(value, answered, criteria, wt, sha):
         worst = min(theirs, key=lambda entry: RANKS[entry[1]])
         n, status, note, witness = (
             worst if worst[1] != "met"
-            and not (own[1] == "met" and kept_line(own[3]))
+            and not (own[1] == "met" and WITNESS_TEST_RE.search(own[3] or ""))
             else own)
         kept.append({"id": f"C{n}", "status": status, "reason": note,
                      "witness": witness})
@@ -478,17 +465,28 @@ def described(finding):
     return isinstance(finding, dict) and finding.get("path") == DESCRIBED
 
 
-def held_description(conn, run_id, verdict, findings, rulings=()):
-    hold_for_pr_text(conn, run_id, [finding_line(
-        {"target": "description", "severity": finding["severity"],
-         "message": finding["message"]}) for finding in findings]
-        + list(rulings))
+def held_line(finding):
+    return finding_line({"target": "description",
+                         "severity": finding["severity"],
+                         "message": finding["message"]})
+
+
+def held_description(conn, run_id, verdict, findings, rulings=(),
+                     settled=()):
+    hold_for_pr_text(conn, run_id,
+                     [held_line(finding) for finding in findings]
+                     + list(rulings))
+    if conn is not None and run_id is not None:
+        for finding in settled:
+            store.record_event(conn, run_id, SETTLED_KIND, held_line(finding),
+                               level="detail")
     return without_description(verdict)[0]
 
 
 def split_fixes(fixes):
     lines = fixes.split("\n")
-    described = [line for line in lines if line.startswith(f"- {DESCRIBED}")]
+    described = [line for line in lines
+                 if line.startswith(f"- {DESCRIBED}: FIX -- ")]
     rest = [line for line in lines if line not in described]
     if not any(line.startswith("- ") for line in rest):
         return "", described

@@ -32,6 +32,7 @@ from holophyte.pr.evidence_refresh import captured
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from holophyte.review.briefs import main_ref
+from holophyte.review.council import SETTLED_KIND
 from holophyte.stages import record
 from holophyte.tickets import ticket_template
 from store import operator_notes
@@ -230,8 +231,12 @@ def _held_text_review(conn, run_id):
             " FROM runs WHERE ticketId = current.ticketId"
             " AND attempt < current.attempt)", (runs[-1],)).fetchone():
         runs.append(row[0])
-    return "\n".join(filter(None, (pending_text_review(conn, run)
-                                   for run in reversed(runs))))
+    settled = {summary for run in runs for (summary,) in conn.execute(
+        "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
+        (run, SETTLED_KIND))}
+    return "\n".join(line for run in reversed(runs)
+                     for line in pending_text_review(conn, run).splitlines()
+                     if line not in settled)
 
 
 def _refresh_parts(project, current, answered, review):

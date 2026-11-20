@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -64,6 +65,7 @@ import store  # noqa: E402 - after the sys.path insert above
 import store.schema  # noqa: E402 - after the sys.path insert above
 from holophyte.agents import roles  # noqa: E402
 from holophyte.agents.agent_turns import family_label  # noqa: E402
+from holophyte.agents.probes import REVIEW_PROBE_GOAL  # noqa: E402
 from holophyte.loop.stop import command  # noqa: E402
 from holophyte.review import review_runner  # noqa: E402
 from holophyte.review.json_reply import SCHEMA_RETRY  # noqa: E402
@@ -106,6 +108,17 @@ class Ruling:
 
 
 @dataclass(frozen=True)
+class Undecodable:
+    """A turn whose process prints bytes that are not UTF-8."""
+
+    def play(self, goal):
+        subprocess.run([sys.executable, "-c",
+                        "import sys; sys.stdout.buffer.write(b'\\xe9\\xe0')"],
+                       capture_output=True, text=True, check=False)
+        raise AssertionError("the output decoded")
+
+
+@dataclass(frozen=True)
 class Prose:
     """A consolidator reply that is no JSON object."""
 
@@ -117,13 +130,18 @@ class Panel(Container):
     """The review container with a consolidator: a consolidator turn is
     answered from its own queue and kept with its route and prompt."""
 
-    def __init__(self, seats, rulings, down=()):
+    def __init__(self, seats, rulings, down=(), faults=()):
         super().__init__(seats, down)
-        self.rulings = list(rulings)
-        self.consolidations, self.tiers = [], []
+        self.rulings, self.faults = list(rulings), set(faults)
+        self.consolidations, self.tiers, self.probe_tiers = [], [], {}
 
     def __call__(self, **turn):
         turn.setdefault("harness", "codex")
+        if turn["prompt"] == REVIEW_PROBE_GOAL:
+            if "service_tier" in turn:
+                self.probe_tiers[turn["model"]] = turn["service_tier"]
+            if turn["model"] in self.faults:
+                Undecodable().play(turn["prompt"])
         if not turn["prompt"].startswith(CONSOLIDATOR):
             return super().__call__(**turn)
         with self.lock:
@@ -148,9 +166,9 @@ class RealConsolidator(CouncilAgent):
 
 class Consolidated(CouncilFixture):
     def run_panel(self, config, *script, seats, rulings, down=(),
-                  provider=None, fake=None):
+                  provider=None, fake=None, faults=()):
         self.configure(config)
-        self.panel = Panel(seats, rulings, down)
+        self.panel = Panel(seats, rulings, down, faults)
         fake = fake or CouncilAgent(*script)
         with patch.object(review_runner, "run_review", self.panel):
             return self.loop(fake=fake, provider=provider)[0]
@@ -199,24 +217,7 @@ class ConsolidatedRoundTests(Consolidated):
             "REQUEST_CHANGES", 5, (REWORDED,)).value(seat_goals["opus"]))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
-    def test_a_kept_report_and_its_refuted_twin_are_held_once(self):
-        self.run_panel(
-            council(ASTRA, OPUS), Commit("work"), Commit("fix"),
-            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (SHARED,)),
-                                   Answer("APPROVE", 9)],
-                   "opus": [Answer("REQUEST_CHANGES", 5, (REWORDED,)),
-                            Answer("APPROVE", 9)]},
-            rulings=[Ruling("REQUEST_CHANGES",
-                            findings=((*SHARED, ("F1",), "code"),),
-                            refuted=((REWORDED[2], "already covered by F1",
-                                      ("F2",)),)), Ruling()])
-
-        self.assertEqual(
-            [(f["path"], f["line"], f["message"], f["raised_by"])
-             for f in self.findings(1)],
-            [("README.md", 1, SHARED[2], ["seat 1", "seat 2"])])
-
-    def test_two_kept_reports_of_one_defect_are_held_once(self):
+    def test_a_report_cited_by_two_kept_findings_is_held_once(self):
         fake = self.run_panel(
             council(ASTRA, OPUS), Commit("work"), Commit("fix"),
             seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (SHARED,)),
@@ -224,8 +225,8 @@ class ConsolidatedRoundTests(Consolidated):
                    "opus": [Answer("REQUEST_CHANGES", 5, (REWORDED,)),
                             Answer("APPROVE", 9)]},
             rulings=[Ruling("REQUEST_CHANGES", findings=(
-                (*SHARED, ("F1",), "code"), (*REWORDED, ("F2",), "code"))),
-                Ruling()])
+                (*SHARED, ("F1", "F2"), "code"),
+                (*REWORDED, ("F2",), "code"))), Ruling()])
 
         self.assertEqual(
             [(f["message"], f["raised_by"]) for f in self.findings(1)],
@@ -233,6 +234,69 @@ class ConsolidatedRoundTests(Consolidated):
         fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
         self.assertIn(SHARED[2], fix.goal)
         self.assertNotIn(REWORDED[2], fix.goal)
+
+    def test_two_defects_kept_apart_at_one_line_both_reach_the_fix(self):
+        closed = ("README.md", 1, "the file handle is never closed")
+        locale = ("README.md", 1, "the read depends on the locale encoding")
+        fake = self.run_panel(
+            council(ASTRA, OPUS), Commit("work"), Commit("fix"),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (closed,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("REQUEST_CHANGES", 5, (locale,)),
+                            Answer("APPROVE", 9)]},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*closed, ("F1",), "code"), (*locale, ("F2",), "code"))),
+                Ruling()])
+
+        self.assertEqual(
+            [(f["message"], f["raised_by"]) for f in self.findings(1)],
+            [(closed[2], ["seat 1"]), (locale[2], ["seat 2"])])
+        fix = [turn for turn in fake.turns if turn.role == IMPLEMENT][1]
+        self.assertIn(closed[2], fix.goal)
+        self.assertIn(locale[2], fix.goal)
+
+    def test_a_shared_finding_refuted_beside_a_third_seats_survives(self):
+        retry = ("README.md", 1, "the retry limit is never enforced")
+        again = ("README.md", 1, "retries go on past the configured limit")
+        handle = ("README.md", 1, "the file handle leaks")
+        self.run_panel(
+            council(ASTRA, OPUS, LUNA), Commit("work"), Commit("fix"),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (retry,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("REQUEST_CHANGES", 5, (again,)),
+                            Answer("APPROVE", 9)],
+                   "gpt-6-luna": [Answer("REQUEST_CHANGES", 5, (handle,)),
+                                  Answer("APPROVE", 9)]},
+            rulings=[Ruling("REQUEST_CHANGES",
+                            findings=((*handle, ("F3",), "code"),),
+                            refuted=((retry[2], "the loop is bounded",
+                                      ("F1", "F2")),)), Ruling()])
+
+        kept, restored = self.findings(1)
+        self.assertEqual((kept["message"], kept["raised_by"]),
+                         (handle[2], ["seat 3"]))
+        self.assertTrue(restored["message"].startswith(retry[2]))
+        self.assertEqual(restored["raised_by"], ["seat 1", "seat 2"])
+        [(summary, _, _)] = self.events("council_kept")
+        self.assertIn(retry[2], summary)
+
+    def test_two_spellings_of_one_path_count_as_one_shared_place(self):
+        dotted = ("./README.md", 1, REWORDED[2])
+        self.run_panel(
+            council(ASTRA, OPUS), Commit("work"), Commit("fix"),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (SHARED,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("REQUEST_CHANGES", 5, (dotted,)),
+                            Answer("APPROVE", 9)]},
+            rulings=[Ruling(refuted=((SHARED[2], "a style point",
+                                      ("F1", "F2")),)), Ruling()])
+
+        self.assertEqual(self.round_rows()[0],
+                         (1, "changes_requested", CONSOLIDATED_BY))
+        self.assertEqual([f["raised_by"] for f in self.findings(1)],
+                         [["seat 1", "seat 2"]])
+        [(summary, _, _)] = self.events("council_kept")
+        self.assertIn(SHARED[2], summary)
 
     def test_a_shared_finding_dropped_beside_another_kept_there_survives(self):
         leak = ("README.md", 1, "the file handle is never closed")
@@ -279,6 +343,35 @@ class ConsolidatedRoundTests(Consolidated):
         self.assertIn("gpt-6-nova is unreachable", summaries[0])
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    def test_a_consolidator_probe_that_cannot_decode_leaves_the_merge(self):
+        self.run_panel(
+            '[agents]\nreview_model = "gpt-6-nova"\n' + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"), faults={"gpt-6-nova"},
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (SHARED,)),
+                                   Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8), Answer("APPROVE", 9)]},
+            rulings=[])
+
+        self.assertEqual(self.panel.consolidations, [])
+        self.assertEqual(self.round_rows(), [
+            (1, "changes_requested", None), (2, "pass", None)])
+        summary = self.events("council_unconsolidated")[0][0]
+        self.assertIn("probe could not run", summary)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_seat_whose_output_cannot_decode_is_missing_beside_quorum(self):
+        self.run_panel(
+            council(ASTRA, OPUS, LUNA), Commit("work"),
+            seats={"gpt-6-astra": [Answer("APPROVE", 9)],
+                   "opus": [Undecodable()],
+                   "gpt-6-luna": [Answer("APPROVE", 7)]},
+            rulings=[Ruling()])
+
+        self.assertEqual(self.seats("seat", "status"), [
+            (1, "answered"), (2, "missing"), (3, "answered")])
+        self.assertEqual(self.round_rows(), [(1, "pass", CONSOLIDATED_BY)])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_the_consolidator_keeps_the_configured_review_service_tier(self):
         self.run_panel(
             '[agents]\nreview_service_tier = "priority"\n'
@@ -288,6 +381,7 @@ class ConsolidatedRoundTests(Consolidated):
             rulings=[Ruling()])
 
         self.assertEqual(self.panel.tiers, ["priority"])
+        self.assertEqual(self.panel.probe_tiers, {"gpt-6-astra": "priority"})
         self.assertEqual(self.round_rows(), [(1, "pass", CONSOLIDATED_BY)])
 
     def test_a_lone_finding_dropped_with_a_reason_lets_the_round_approve(self):
@@ -378,6 +472,9 @@ class ConsolidatedRoundTests(Consolidated):
     def test_a_seats_unmet_criterion_outlasts_a_blank_witness(self):
         self.unmet_outlasts("  ")
 
+    def test_a_seats_unmet_criterion_outlasts_a_placeholder_witness(self):
+        self.unmet_outlasts("(no test named)")
+
     def unmet_outlasts(self, witness):
         fake = self.run_panel(
             council(ASTRA, OPUS), Commit("work"), Commit("fix"),
@@ -417,6 +514,7 @@ class ConsolidatedRoundTests(Consolidated):
             "consolidated_by": CONSOLIDATED_BY})
         [(_, _, brief)] = self.panel.consolidations
         self.assertIn("Seat 2 (claude opus) did not vote, missing:", brief)
+        self.assertIn("run at least one read-only command", brief)
         self.assertIn("the container exited 125", brief)
 
 
@@ -691,6 +789,47 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
         self.assertIn("the description still omits it", writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
+    def test_a_description_finding_the_adjudicator_drops_skips_the_writer(self):
+        self.fake_route(states=[self.pr_state()])
+        fake = self.run_panel(
+            self.PR + "[loop]\nreview_rounds = 3\n" + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"),
+            Reply("THREAD 1: FIX -- the base line is still never read\n"
+                  "THREAD 2: DROP -- the description already says it"),
+            Commit("fix again"), WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (SHARED,))] * 2
+                   + [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)] * 3},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*SHARED, ("F1",), "code"),
+                (*DESCRIBED, (), "description")))] * 2 + [Ruling()])
+
+        [writer] = self.writer(fake)
+        self.assertNotIn(DESCRIBED[2], writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_code_path_named_like_the_description_keeps_its_ruling(self):
+        self.fake_route(states=[self.pr_state()])
+        handler = ("PR descriptions/app.py", 3, "the handler leaks a socket")
+        fake = self.run_panel(
+            self.PR + "[loop]\nreview_rounds = 3\n" + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"),
+            Reply("THREAD 1: FIX -- the handler still leaks"),
+            Commit("fix again"), WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (handler,))] * 2
+                   + [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)] * 3},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*handler, ("F1",), "code"),))] * 2 + [Ruling()])
+
+        fix = [turn.goal for turn in fake.turns if turn.role == IMPLEMENT][2]
+        self.assertIn("the handler still leaks", fix)
+        [writer] = self.writer(fake)
+        self.assertNotIn("the handler still leaks", writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def test_a_pause_at_the_merge_gate_carries_the_description_finding(self):
         self.fake_route(states=[self.pr_state()])
         self.run_panel(
@@ -768,14 +907,15 @@ class UnsetCouncilTests(unittest.TestCase):
             "prompts": [(turn.role, turn.goal) for turn in fake.turns
                         if turn.role in ("review", "consolidate")],
             "rounds": fixture.read(
-                "SELECT runId, round, verificationResults, verdict, findings,"
-                " findingsFingerprint, reviewerModel, reply, consolidatedBy"
-                " FROM reviewRounds ORDER BY round"),
+                "SELECT id, runId, round, verificationResults, verdict,"
+                " findings, findingsFingerprint, reviewerModel, reply,"
+                " consolidatedBy FROM reviewRounds ORDER BY round"),
             "phases": fixture.read("SELECT summary FROM runEvents"
                                    " WHERE kind = 'phase_change' ORDER BY seq"),
-            "ledger": [(kind, MINUTES_RE.sub("N min", text))
-                       for kind, text in fixture.read(
-                           "SELECT kind, text FROM ledger ORDER BY id")],
+            "ledger": [(*row, MINUTES_RE.sub("N min", text))
+                       for *row, text in fixture.read(
+                           "SELECT id, runId, ticketId, kind, source, text"
+                           " FROM ledger ORDER BY id")],
             "outcome": fixture.read("SELECT outcome FROM runs")}
 
     def test_a_raising_consolidation_changes_nothing_while_the_table_is_unset(self):
