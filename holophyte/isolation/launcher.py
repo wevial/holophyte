@@ -393,6 +393,10 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     return command + [route.image, *argv], host_env
 
 
+class SignalExit(SystemExit):
+    pass
+
+
 @contextlib.contextmanager
 def unwinding_on_signal(name):
     """Unwind cleanup (including Git restoration) before terminating."""
@@ -402,7 +406,7 @@ def unwinding_on_signal(name):
 
     def stop(signum, frame):
         review_runner._remove_container(name, env={"PATH": os.defpath})
-        raise SystemExit(128 + signum)
+        raise SignalExit(128 + signum)
 
     previous = {sig: signal.signal(sig, stop) for sig in review_runner.REMOVAL_SIGNALS}
     try:

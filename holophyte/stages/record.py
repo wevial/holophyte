@@ -8,6 +8,8 @@ from holophyte.config.pipeline_settings import (
     current_notes,
     pinned_checks,
 )
+from holophyte.isolation.isolation_git import git_environment
+from holophyte.isolation.launcher import SignalExit
 from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.runs import RunSwept
@@ -26,6 +28,8 @@ RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
 def guarded(conn, run_id, write, record):
     try:
         return record()
+    except SignalExit:
+        raise
     except (Exception, SystemExit) as error:
         try:
             store.record_event(
@@ -182,7 +186,7 @@ class Attempt:
     def head(self):
         if self.wt is None or not self.wt.exists():
             return self.sha
-        return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
+        return sh(["git", "rev-parse", "HEAD"], cwd=self.wt, env=git_environment())
 
 
 def fix_round(conn, run_id, stage_id, sha, detail, wt, fix):
@@ -197,8 +201,8 @@ def fix_round(conn, run_id, stage_id, sha, detail, wt, fix):
 
 
 def head(conn, run_id, wt):
-    found = guarded(conn, run_id, "stage_head",
-                    lambda: sh(["git", "rev-parse", "HEAD"], cwd=wt))
+    found = guarded(conn, run_id, "stage_head", lambda: sh(
+        ["git", "rev-parse", "HEAD"], cwd=wt, env=git_environment()))
     return None if found is REFUSED else found
 
 

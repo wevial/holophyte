@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -94,6 +95,10 @@ class Forgets(Commit):
     def play(self, cwd, turn):
         record.PINNED_CHECKS.clear()
         return super().play(cwd, turn)
+
+
+def shell_path(path):
+    return shlex.quote(str(path))
 
 
 def check_table(stage_id, after, commands, mode, paths=None):
@@ -324,7 +329,7 @@ class AdvisoryCheckTests(CheckRuns):
         self.configure(UNTRIMMED + '[extras]\napi_token = "old-credential-1"\n')
         rotated = (UNTRIMMED + '[extras]\napi_token = "rotated-credential-2"\n'
                    + check_table("say", "implement", [
-                       f"echo rotated-credential-2 | tee {marker}"],
+                       f"echo rotated-credential-2 | tee {shell_path(marker)}"],
                        "advisory"))
 
         self.loop(EditsConfig(config, rotated), APPROVE,
@@ -349,7 +354,7 @@ class AdvisoryCheckTests(CheckRuns):
         def say(credential):
             return (UNTRIMMED + f'[extras]\napi_token = "{credential}"\n'
                     + check_table("say", "implement",
-                                  [f"echo {credential} > {marker}"],
+                                  [f"echo {credential} > {shell_path(marker)}"],
                                   "advisory"))
 
         self.configure(say("pinned-credential-1"))
@@ -366,7 +371,7 @@ class AdvisoryCheckTests(CheckRuns):
 
         self.walked('[extras]\napi_token = "forgotten-credential-3"\n'
                     + check_table("say", "implement", [
-                        f"echo forgotten-credential-3 > {marker}"],
+                        f"echo forgotten-credential-3 > {shell_path(marker)}"],
                         "advisory"), Forgets("the scripted work"), APPROVE)
 
         (attempt,) = [row for row in self.attempts() if row[0] == "say"]
@@ -497,6 +502,19 @@ class AdvisoryCheckTests(CheckRuns):
                 self.assertNotEqual(checkout, self.target)
                 self.assertFalse(checkout.exists())
 
+    def test_a_container_stop_signal_propagates_after_removing_the_checkout(self):
+        self.configure('[agents]\nimplementer_isolation = "container"\n')
+        worktrees = self.git("worktree", "list", "--porcelain")
+        with patch.object(launcher, "image_ready"), \
+                patch.object(launcher.review_runner, "_remove_container"), \
+                patch.object(launcher, "run_capped", side_effect=lambda *a, **kw:
+                             signal.raise_signal(signal.SIGTERM)):
+            with self.assertRaises(SystemExit) as stopped:
+                record.checks_guarded(None, None, lambda: self.ran(["true"]))
+
+        self.assertEqual(stopped.exception.code, 128 + signal.SIGTERM)
+        self.assertEqual(self.git("worktree", "list", "--porcelain"), worktrees)
+
     @unittest.skipUnless(os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
                          "set HOLOPHYTE_TEST_DOCKER=1 for container integration")
     def test_git_in_the_verify_container_can_read_the_check_head_and_packed_refs(self):
@@ -515,7 +533,7 @@ class AdvisoryCheckTests(CheckRuns):
 
     def test_a_background_child_cannot_write_after_the_check_returns(self):
         marker = self.target.parent / "late.marker"
-        outcome, _ = self.ran([f"(sleep 0.5; echo late > {marker})"
+        outcome, _ = self.ran([f"(sleep 0.5; echo late > {shell_path(marker)})"
                                " >/dev/null 2>&1 & exit 1"])
         time.sleep(1.5)
 
@@ -545,12 +563,12 @@ class AdvisoryCheckTests(CheckRuns):
         markers = Path(held.name)
         with values_held(["off", "implement", "docs/", "advisory"]):
             self.walked(check_table("dormant", "implement",
-                                    [f"touch {markers / 'dormant'}"], "off")
+                                    [f"touch {shell_path(markers / 'dormant')}"], "off")
                         + check_table("pages", "implement",
-                                      [f"touch {markers / 'pages'}"],
+                                      [f"touch {shell_path(markers / 'pages')}"],
                                       "advisory", ["docs/**"])
                         + check_table("lint", "implement",
-                                      [f"touch {markers / 'lint'}"],
+                                      [f"touch {shell_path(markers / 'lint')}"],
                                       "advisory"),
                         Forgets("the scripted work"), APPROVE)
 
@@ -597,7 +615,7 @@ class AdvisoryCheckTests(CheckRuns):
         marker = Path(held.name) / "said"
         self.configure(UNTRIMMED + '[extras]\napi_token = "resumed-credential-4"\n'
                        + check_table("say", "implement", [
-                           f"echo resumed-credential-4 > {marker}"],
+                           f"echo resumed-credential-4 > {shell_path(marker)}"],
                            "advisory"))
         self.loop(PausingCommit(self.db, Commit("the scripted work")))
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("paused",)])
@@ -675,9 +693,19 @@ class AdvisoryCheckTests(CheckRuns):
 
 
 class SkippedCheckTests(CheckRuns):
+    def test_an_unknown_round_head_records_no_implement_checks(self):
+        with patch.object(record, "head", return_value=None):
+            self.walked(check_table("lint", "implement", ["true"], "advisory")
+                        + check_table("docs", "implement", ["true"], "off"),
+                        Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual([row for row in self.attempts()
+                          if row[0] in ("lint", "docs")], [])
+
     def test_path_filter_uses_the_candidate_review_base_with_a_foreign_git_dir(self):
         other = self.target.parent / "other.git"
-        self.git("init", "--bare", str(other))
+        self.git("clone", "--bare", ".", str(other))
         (self.target / "docs").mkdir()
         (self.target / "docs" / "guide.md").write_text("from main\n")
         self.git("add", "docs/guide.md")
@@ -688,10 +716,13 @@ class SkippedCheckTests(CheckRuns):
         head = self.git("rev-parse", "HEAD").strip()
 
         with patch.dict(os.environ, {"GIT_DIR": str(other)}):
+            candidate = record.head(None, None, self.target)
+            self.assertEqual(candidate, head)
             readme = {"mode": "advisory", "paths": ["README.md"]}
             docs = {"mode": "advisory", "paths": ["docs/**"]}
-            self.assertIsNone(checks.skip_reason(readme, self.target, self.base, head))
-            reason = checks.skip_reason(docs, self.target, self.base, head)
+            self.assertIsNone(checks.skip_reason(
+                readme, self.target, self.base, candidate))
+            reason = checks.skip_reason(docs, self.target, self.base, candidate)
             self.assertIn("docs/**", reason or "")
 
     def test_an_unmatched_path_condition_and_mode_off_skip_without_running(self):
@@ -700,7 +731,7 @@ class SkippedCheckTests(CheckRuns):
         markers = Path(held.name)
 
         def touch(name):
-            return [f"touch {markers / name}"]
+            return [f"touch {shell_path(markers / name)}"]
 
         self.walked(check_table("docs", "implement", touch("docs"), "advisory",
                                 ["docs/**"])
@@ -725,7 +756,7 @@ class SkippedCheckTests(CheckRuns):
         markers = Path(held.name)
 
         def touch(name):
-            return [f"touch {markers / name} skipped-credential-9"]
+            return [f"touch {shell_path(markers / name)} skipped-credential-9"]
 
         self.walked('[extras]\napi_token = "skipped-credential-9"\n'
                     + check_table("docs", "implement", touch("docs"),
@@ -790,6 +821,17 @@ class WitnessRepairCheckTests(witness_fixture.RunningRepo):
 
 class FailedChecksTests(CheckRuns):
     SCRIPT = AdvisoryCheckTests.SCRIPT
+
+    def test_a_launch_configuration_refusal_is_recorded_and_review_continues(self):
+        refusal = "invalid implementer isolation"
+        with patch.object(checks, "_verify_command", side_effect=SystemExit(refusal)):
+            self.walked(check_table("lint", "implement", ["true"], "advisory"),
+                        Commit("the scripted work"), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        (lint,) = [row for row in self.attempts() if row[0] == "lint"]
+        self.assertEqual(lint[2], "fail")
+        self.assertEqual(lint[4]["error"], refusal)
 
     def test_a_raising_checks_module_sends_the_prompts_of_a_run_without_checks(self):
         plain = self.walked("", *self.SCRIPT)

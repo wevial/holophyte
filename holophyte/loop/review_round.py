@@ -413,7 +413,7 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
 
 def _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
                   checked):
-    if (rnd, sha) in checked:
+    if sha is None or (rnd, sha) in checked:
         return
     checked.add((rnd, sha))
     record.checks_guarded(conn, run_id, lambda: stage_checks.run(
