@@ -15,6 +15,8 @@ from holophyte.stages.standard import scrubbed
 
 HARNESSES_PATH = "/harnesses"
 FALLBACK = "_fallback"
+MODEL_OPTIONS = {"--model": "model", "-m": "model", "--config": "config",
+                 "-c": "config"}
 
 
 def harnesses(project, query):
@@ -107,19 +109,29 @@ def command_adapter(executable, paths):
 
 
 def command_model(words):
-    for at, word in enumerate(words):
-        following = words[at + 1] if at + 1 < len(words) else None
-        if word.startswith("--model="):
-            return word.partition("=")[2] or None
-        if word in ("-m", "--model"):
-            return following
-        if word.startswith("--config="):
-            following, word = word.partition("=")[2], "-c"
-        if word in ("-c", "--config") and following is not None:
-            key, held, value = following.partition("=")
-            if held and key.strip() == "model":
-                return config_value(value.strip())
-    return None
+    found = {}
+    at = 0
+    while at < len(words):
+        kind, value, at = option_value(words, at)
+        if kind == "config" and value is not None:
+            key, held, value = value.partition("=")
+            value = config_value(value.strip()) if held and (
+                key.strip() == "model") else None
+        if kind is not None and value:
+            found[kind] = value
+    return found.get("model") or found.get("config")
+
+
+def option_value(words, at):
+    word = words[at]
+    for option, kind in MODEL_OPTIONS.items():
+        if word == option:
+            following = words[at + 1] if at + 1 < len(words) else None
+            return kind, following, at + 2
+        attached = option + "=" if option.startswith("--") else option
+        if word.startswith(attached):
+            return kind, word[len(attached):], at + 1
+    return None, None, at + 1
 
 
 def config_value(value):

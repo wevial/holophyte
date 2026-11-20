@@ -130,29 +130,40 @@ class HarnessesTests(ServeTestCase):
                          {"id": "gpt-5.6-sol", "source": "configured"})
         self.assertNotIn("gpt-5.6-sol", ADAPTERS["codex"].models)
 
-    def test_a_codex_config_override_names_the_seats_model(self):
-        self.start(self.config(
-            '[agents]\nreviewer = "codex exec -c \'model=\\"gpt-5.6-sol\\"\'"\n'
-            'adversary = "codex exec --config=model=gpt-6-mars"\n'))
-        configured = [model["id"] for model in self.answer()["codex"]["models"]
-                      if model["source"] == "configured"]
-        self.assertEqual(configured, ["gpt-5.6-sol", "gpt-6-mars"])
+    def test_a_codex_commands_model_options_name_the_seats_model(self):
+        commands = {
+            "-c 'model=\\\"gpt-5.6-sol\\\"'": "gpt-5.6-sol",
+            "--config=model=gpt-6-mars": "gpt-6-mars",
+            "-cmodel=gpt-6-mars": "gpt-6-mars",
+            "-mgpt-5.6-sol": "gpt-5.6-sol",
+            "-c model=gpt-6-mars --model gpt-5.6-sol": "gpt-5.6-sol",
+            "--model gpt-5.6-sol -c model=gpt-6-mars": "gpt-5.6-sol",
+        }
+        self.start(self.config())
+        for options, model in commands.items():
+            with self.subTest(options=options):
+                (self.db.parent / "config.toml").write_text(self.config(
+                    f'[agents]\nreviewer = "codex exec {options}"\n'))
+                codex = self.answer()["codex"]
+                self.assertEqual(codex["seats"], ["reviewer"])
+                self.assertEqual(
+                    [entry["id"] for entry in codex["models"]
+                     if entry["source"] == "configured"], [model])
 
-    def test_a_fallback_list_over_several_harnesses_serves_no_probe(self):
-        self.start(self.config(
-            f'[agents]\nreviewer_fallback = ["{self.root}/opt/cursor-agent -p",'
-            ' "claude -p"]\n'
-            f'adjudicator_fallback = ["{self.root}/opt/review-wrapper",'
-            ' "claude -p"]\n'))
-        for seat in ("reviewer", "adjudicator"):
-            record_probe(self.project, ProbeResult(
-                ["wrapper"], 0, "ready", 90, seat=seat), True, 9, 10)
-        found = self.answer()
-        self.assertEqual(found["cursor"]["seats"], ["reviewer_fallback"])
-        self.assertEqual(found["claude"]["seats"],
-                         ["reviewer_fallback", "adjudicator_fallback"])
-        self.assertIsNone(found["cursor"]["probe"])
-        self.assertIsNone(found["claude"]["probe"])
+    def test_a_fallback_list_over_several_routes_serves_no_probe(self):
+        self.start(self.config())
+        record_probe(self.project, ProbeResult(
+            ["wrapper"], 0, "ready", 90, seat="reviewer"), True, 9, 10)
+        for first in ("opt/cursor-agent -p", "opt/review-wrapper"):
+            with self.subTest(first=first):
+                (self.db.parent / "config.toml").write_text(self.config(
+                    f'[agents]\nreviewer_fallback = ["{self.root}/{first}",'
+                    ' "claude -p"]\n'))
+                found = self.answer()
+                self.assertEqual(
+                    (found["claude"]["seats"], found["claude"]["probe"]),
+                    (["reviewer_fallback"], None))
+                self.assertIsNone(found["cursor"]["probe"])
 
     def test_an_unreadable_config_answers_503(self):
         self.start(self.config())

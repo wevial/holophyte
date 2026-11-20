@@ -1191,15 +1191,14 @@ the harness whose `[harnesses]` path, name or binary its first word is.
 `probe` is the newest probe `route-probes.json` records among those seats:
 `ok`, `at_ms`, `why` (null when it passed) and the `seat` it came from; null
 when no seat uses the harness or none has been probed. A seat whose routes
-span several harnesses, or a command no harness is known by, such as a
-`reviewer_fallback` list, lends its probe
-to none of them, since the record does not say which harness answered.
+span several harnesses, or hold a command no harness is known by (a
+`reviewer_fallback` list can), lends its probe to none of them, since the record does not say which harness answered.
 
 `models` lists each model the harness offers as `id` and `source`: the
 adapter's curated list (`curated`), then each model a seat on the harness
 configures that the list lacks (`configured`): a table's `model`, or a
-command string's `--model` or `-m` argument, or its
-`-c`/`--config` `model=` override. `t3` lists the models of the
+command string's `--model` or `-m` argument, else its `-c`/`--config`
+`model=` override, attached values included, the last of each winning. `t3` lists the models of the
 providers it runs, `codex` and `claude`. Every string is redacted with the
 project's known secrets; a config file that cannot be read, parsed or
 decoded makes the route answer 503 carrying `error`.
