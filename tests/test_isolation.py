@@ -454,47 +454,152 @@ class IsolationTests(GoRaceCases, IsolationCase):
                 route = launcher.turn_route(self.target, argv)
                 _, mounts = self.recorded_volumes(lambda: launcher.launch(
                     route, worktree, {}, argv, project=self.target))
-                self.assertFalse(any("/opt/agy/" in vol or ".gemini/" in vol
+                self.assertFalse(any("/opt/agy/" in vol or "/.gemini" in vol
                                      for vol in mounts))
 
-    def test_agy_turn_mounts_the_host_binary_and_a_private_login(self):
+    def test_agy_mounts_the_host_binary_and_a_private_gemini_home_per_worktree(self):
         from holophyte.isolation import launcher
+        from holophyte.isolation.isolation_git import git
 
         worktree, binary, host_login = self.agy_project()
-        target = Path("/home/implementer") / host_login.relative_to(self.root)
+        other = self.root / "other"
+        git(self.target.path, "worktree", "add", "-qb", "other", str(other))
+        target = Path("/home/implementer/.gemini")
+        login = Path("antigravity-cli/antigravity-oauth-token")
         sibling = self.root / "provider.json"
         sibling.write_text("provider")
+        provider = {"file": str(sibling),
+                    "destination": str(target / login.with_name("key"))}
         argv = ["agy", "-p", "goal"]
 
         def run(command, cwd, timeout, *, env):
-            mounts = [command[i + 1] for i, flag in enumerate(command)
+            mounts = [command[i + 1].split(":") for i, flag in enumerate(command)
                       if flag == "--volume"]
-            self.assertIn(f"{binary}:/opt/agy/bin/agy:ro", mounts)
+            self.assertIn([str(binary), "/opt/agy/bin/agy", "ro"], mounts)
             turn = command[command.index(route.image) + 1:]
             self.assertEqual(turn[-len(argv):], argv)
             turn[-len(argv)] = str(binary)
             path = subprocess.check_output(turn, cwd=cwd, env=env, text=True)
             self.assertEqual(path.split(os.pathsep)[0], "/opt/agy/bin")
-            [parent] = [Path(vol.split(":")[0]) for vol in mounts
-                        if vol.endswith(f":{target.parent}:rw")]
-            copy = parent / target.name
+            gemini = [vol for vol in mounts if Path(vol[1]).is_relative_to(target)]
+            self.assertEqual([volume[1:] for volume in gemini], [[str(target), "rw"]])
+            home = Path(gemini[0][0])
+            self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+            copy = home / login
             self.assertFalse(copy.samefile(host_login))
+            self.assertEqual(copy.read_bytes(), b"host-login")
             self.assertEqual(copy.stat().st_mode & 0o777, 0o600)
+            copy.write_bytes(b"refreshed")
             if credential:
-                self.assertEqual((parent / "key").read_text(), "provider")
-            return 0, copy.read_text()
+                self.assertEqual(copy.with_name("key").read_text(), "provider")
+                copy.parent.chmod(0o500)
+            return 0, str(home)
 
         with (patch.object(launcher, "image_ready"),
               patch.object(launcher.review_runner, "_remove_container"),
               patch.object(launcher, "run_capped", side_effect=run)):
-            for credential in ({}, {"file": str(sibling),
-                                    "destination": str(target.with_name("key"))}):
-                with self.subTest(credential=credential):
-                    self.table["agents"]["implementer_credential"] = credential
-                    route = launcher.turn_route(self.target, argv)
-                    self.assertEqual(launcher.launch(route, worktree, {}, argv,
-                                                     project=self.target),
-                                     (0, "host-login"))
+            homes = []
+            for task, credential in ((worktree, {}), (worktree, provider), (other, {})):
+                self.table["agents"]["implementer_credential"] = credential
+                route = launcher.turn_route(self.target, argv)
+                code, home = launcher.launch(route, task, {}, argv, project=self.target,
+                                             keep_session=True)
+                self.assertEqual(code, 0)
+                self.assertFalse((Path(home) / login.with_name("key")).exists())
+                homes.append(home)
+        self.assertEqual(homes[0], homes[1])
+        self.assertNotEqual(homes[1], homes[2])
+        self.assertEqual(host_login.read_bytes(), b"host-login")
+
+    def first_agy_turn(self, worktree, credential=None):
+        from holophyte.isolation import launcher
+
+        route = launcher.Route("container", credential=credential or {})
+
+        def launch():
+            return launcher.launch(route, worktree, {}, ["agy"], project=self.target)
+
+        _, mounts = self.recorded_volumes(launch)
+        home = next(vol.split(":")[0] for vol in mounts
+                    if vol.endswith(":/home/implementer/.gemini:rw"))
+        return launch, Path(home)
+
+    def test_agy_rejects_login_ancestors_and_preserves_saved_conversations(self):
+        from holophyte.isolation import launcher
+
+        worktree, _, host_login = self.agy_project()
+        _, home = self.first_agy_turn(worktree)
+        conversation = home / "antigravity-cli/conversations/first"
+        conversation.parent.mkdir()
+        conversation.write_text("saved")
+        gemini = Path("/home/implementer/.gemini")
+        login_dir = gemini / "antigravity-cli"
+
+        def turn(destination):
+            self.table["agents"]["implementer_credential"] = {
+                "file": str(host_login), "destination": str(destination)}
+            route = launcher.turn_route(self.target, ["agy"])
+            return launcher.launch(route, worktree, {}, ["agy"], project=self.target)
+
+        for directory in (login_dir, gemini):
+            with self.subTest(directory=directory):
+                with self.assertRaisesRegex(SystemExit, "implementer_credential"):
+                    self.recorded_volumes(lambda: turn(directory))
+                self.assertEqual(conversation.read_text(), "saved")
+
+        self.recorded_volumes(lambda: turn(login_dir / host_login.name))
+        self.assertEqual(conversation.read_text(), "saved")
+
+    def test_agy_repairs_a_locked_login_parent_and_directory_at_the_token_path(self):
+        worktree, _, host_login = self.agy_project()
+        launch, home = self.first_agy_turn(worktree)
+        copy = home / "antigravity-cli" / host_login.name
+        conversation = copy.parent / "conversations" / "first"
+        conversation.parent.mkdir()
+        conversation.write_text("saved")
+        copy.unlink()
+        copy.mkdir()
+        (copy / "stale").touch()
+        self.addCleanup(copy.parent.chmod, 0o700)
+        for mode in (0o500, 0):
+            with self.subTest(mode=mode):
+                copy.parent.chmod(mode)
+                self.recorded_volumes(launch)
+                self.assertEqual(copy.read_bytes(), b"host-login")
+                self.assertEqual(conversation.read_text(), "saved")
+                copy.write_text("refreshed")
+
+    def test_agy_replaces_a_linked_login_directory_without_touching_its_target(self):
+        worktree, _, host_login = self.agy_project()
+        launch, home = self.first_agy_turn(worktree)
+        parent = home / "antigravity-cli"
+        shutil.rmtree(parent)
+        outside = self.root / "outside"
+        outside.mkdir(mode=0o500)
+        parent.symlink_to(outside)
+        self.recorded_volumes(launch)
+        self.assertFalse(parent.is_symlink())
+        self.assertEqual((parent / host_login.name).read_bytes(), b"host-login")
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o500)
+
+    def test_agy_returns_turn_work_after_a_directory_replaces_a_staged_credential(self):
+        worktree, _, host_login = self.agy_project()
+        launch, home = self.first_agy_turn(worktree, {
+            "file": str(host_login), "destination": "/home/implementer/.gemini/key"})
+        staged = home / "key"
+
+        def turn(clone):
+            self.assertEqual(staged.read_bytes(), b"host-login")
+            staged.unlink()
+            staged.mkdir()
+            (staged / "replacement").touch()
+            staged.chmod(0)
+            (clone / "result").write_text("completed turn")
+
+        self.recorded_volumes(launch, turn)
+        self.assertEqual((worktree / "result").read_text(), "completed turn")
+        self.assertFalse(staged.exists())
 
     def test_agy_launch_requires_the_host_executable(self):
         from holophyte.isolation import launcher
