@@ -132,6 +132,7 @@ PINNED = {
     "holophyte/config/checks.py": 2,
     "holophyte/config/config_tables.py": 4,
     "holophyte/config/locks.py": 1,
+    "holophyte/config/pipeline_settings.py": 0,
     "holophyte/config/project.py": 6,
     "holophyte/config/reader.py": 2,
     "holophyte/config/review_settings.py": 0,
@@ -338,6 +339,7 @@ PINNED = {
     "holophyte/serve/views.py": 6,
 
     "holophyte/stages/__init__.py": 0,
+    "holophyte/stages/notes.py": 1,
     "holophyte/stages/record.py": 1,
     "holophyte/stages/standard.py": 1,
 

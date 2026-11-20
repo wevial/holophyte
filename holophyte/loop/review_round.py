@@ -147,7 +147,7 @@ def _evidence_brief(project, wt, task_id, ticket):
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
-                 witness="", earlier=""):
+                 witness="", earlier="", notes=""):
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
         f"{review_refs(run_id)[0]} as the frozen base and "
@@ -167,6 +167,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + scope_brief(wt, ticket, base_sha, sha)
         + trim_brief(wt, base_sha, sha)
         + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
+        + notes
         + reply_brief(
             project,
             "Do not modify anything. End your reply with exactly one line:\n"
@@ -193,7 +194,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     prompt = round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                           verify_cmd, criteria, mode, ok, out, stale,
                           witness=witness,
-                          earlier=earlier + stuck_review.settled(conn, run_id))
+                          earlier=earlier + stuck_review.settled(conn, run_id),
+                          notes=record.notes_block(project, conn, run_id,
+                                                   "review"))
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,

@@ -12,7 +12,7 @@ EFFORT_KEY = "model_reasoning_effort"
 REVIEW_ROLES = ["review", "adjudicate", "adversary", "consolidate"]
 
 
-def resolve(project, profile=None):
+def resolve(project, profile=None, notes=None):
     labels = route_labels(project)
     merge = merge_config(project)
     verify = verify_config(project)
@@ -45,9 +45,12 @@ def resolve(project, profile=None):
                   cap=merge.capture_fix_rounds),
         ]
     stages.append(stage("waiting", "check", "factory", approve=merge.approve))
-    return scrubbed({"format": FORMAT, "name": NAME,
-                     "merge": {"mode": merge.mode, "approve": merge.approve},
-                     "stages": stages}, known_secrets(project.config()))
+    document = {"format": FORMAT, "name": NAME,
+                "merge": {"mode": merge.mode, "approve": merge.approve},
+                "stages": stages}
+    if notes:
+        document["notes"] = notes
+    return scrubbed(document, known_secrets(project.config()))
 
 
 def scrubbed(value, secrets):
