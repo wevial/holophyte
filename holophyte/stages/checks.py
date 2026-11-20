@@ -13,47 +13,49 @@ from pathlib import Path
 from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import verify_config
 from holophyte.config.pipeline_settings import (
-    CHECK_AFTER,
     CHECK_MODES,
     check_secrets,
     current_checks,
-    pinned_checks,
 )
 from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
-from holophyte.redact import REDACTED, outbound, redact_document
+from holophyte.redact import REDACTED, outbound
 from holophyte.review.blast_radius import matching
 from holophyte.review.briefs import _changed_files
 from holophyte.stages import record
 from store import pipelines
 
 OUTPUT_TAIL = 1000
-PINNED_KEYS = ("id", "after", "mode", "commands", "paths")
 FRAGMENT = 8
-FILLS = 256
 GROUP_GRACE_S = 2.0
 UNLAUNCHED = re.compile(
     r"^(?:\S*/)?(?:ba|da|z)?sh: (?:line )?(?:\d+: )?.+: "
     r"(?:command not found|not found|Permission denied|cannot execute.*)$")
-UNBOUND = ("this check's pinned text holds a redacted value this process did "
-           "not pin, so it cannot run it")
+UNBOUND = ("this check's pinned commands hold a redacted value this process "
+           "did not pin, so it cannot run them")
+UNREAD = "this check's pinned mode is not one of advisory, off"
 
 
 def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
     for check in configured(project, conn, run_id, after):
         reason = skip_reason(check, wt, base_sha, sha)
         if reason:
-            record.skip(conn, run_id, check["stage"],
-                        scrubbed_output(reason, check["secrets"]), sha)
+            record.skip(conn, run_id, check["id"], reason, sha)
             continue
-        with record.Attempt(conn, run_id, check["stage"], sha,
-                            {**detail, "mode": check["mode"] or REDACTED},
+        with record.Attempt(conn, run_id, check["id"], sha,
+                            {**detail, "mode": check["mode"]},
                             wt=wt) as attempt, \
                 heartbeat_while(conn, run_id, beat_s):
-            outcome, found = (ran(project, check, wt)
-                              if check["commands"] is not None
-                              else ("error", {"error": UNBOUND}))
+            outcome, found = _ran_bound(project, check, wt, sha)
             attempt.close(outcome, "next", sha, **found)
+
+
+def _ran_bound(project, check, wt, sha):
+    if check["mode"] not in CHECK_MODES:
+        return "error", {"error": UNREAD}
+    if check["commands"] is None:
+        return "error", {"error": UNBOUND}
+    return ran(project, check, wt, sha)
 
 
 def configured(project, conn, run_id, after):
@@ -62,119 +64,76 @@ def configured(project, conn, run_id, after):
     if conn is not None and run_id is not None:
         pinned = pipelines.run_pipelines(conn, [run_id]).get(run_id)
     if not pinned:
-        return [{**check, "stage": check["id"], "secrets": secrets}
+        return [{**check, "secrets": secrets}
                 for check in current_checks(project) if check["after"] == after]
     stages = [stage for stage in pinned.get("stages", []) if "after" in stage]
     raw, held = record.pinned_raw_checks(conn, run_id) or ((), frozenset())
     if len(raw) == len(stages):
-        return [{**check, "stage": stage["id"], "secrets": secrets | held}
+        return [{**check, "id": stage["id"], "secrets": secrets | held}
                 for stage, check in zip(stages, raw) if check["after"] == after]
-    selectors = _pinned_selectors(project, stages)
-    found = [unbound(stage, secrets, selectors[at])
-             for at, stage in enumerate(stages)]
-    return [check for check in found
-            if check["after"] == after or check["after"] not in CHECK_AFTER]
-
-
-def _pinned_selectors(project, stages):
-    try:
-        raw, shown, _ = pinned_checks(project)
-    except (Exception, SystemExit):
-        raw, shown = (), ()
-    forms = [redact_document({key: display[key] for key in PINNED_KEYS})
-             for display in shown]
-    return [next((check for check, form in zip(raw, forms)
-                  if form == {key: stage.get(key) for key in PINNED_KEYS}),
-                 None) for stage in stages]
-
-
-def unbound(stage, secrets, original=None):
-    selectors = original or _pinned(stage)
-    mode = selectors["mode"] if selectors["mode"] in CHECK_MODES else None
-    paths = selectors.get("paths") or []
-    exact = original is not None or not stage.get("redacted")
-    runnable = (not stage.get("redacted") and selectors["after"] in CHECK_AFTER
-                and mode is not None)
-    return {**stage, "stage": stage["id"], "secrets": secrets,
-            "after": selectors["after"], "mode": mode, "paths": paths,
-            "globs": paths if exact else [
-                glob for path in paths for glob in _filled(path, secrets)],
-            "commands": stage["commands"] if runnable else None}
-
-
-def _pinned(stage):
-    held = stage.get("selectors") or {}
-    return {"after": _chosen(CHECK_AFTER, held.get("after"), stage["after"]),
-            "mode": _chosen(CHECK_MODES, held.get("mode"), stage["mode"]),
-            "paths": stage.get("paths") or []}
-
-
-def _chosen(values, index, shown):
-    if isinstance(index, int) and 0 <= index < len(values):
-        return values[index]
-    return shown
-
-
-def _filled(glob, secrets):
-    holes = glob.count(REDACTED)
-    if not holes:
-        return [glob]
-    parts = glob.split(REDACTED)
-    fills = [parts[0]]
-    if len(secrets) ** holes <= FILLS:
-        for part in parts[1:]:
-            fills = [fill + secret + part for fill in fills
-                     for secret in secrets]
-    found = [fill for fill in fills if REDACTED not in fill
-             and outbound(fill, secrets) == glob]
-    return found or ["*".join(parts)]
+    return [{"id": stage["id"], "after": stage["after"], "mode": stage["mode"],
+             "paths": stage.get("paths") or [], "secrets": secrets,
+             "commands": None if stage.get("redacted") else stage["commands"]}
+            for stage in stages if stage["after"] == after]
 
 
 def skip_reason(check, wt, base_sha, sha):
     if check["mode"] == "off":
         return "mode off"
-    globs = check.get("globs", check["paths"])
     if not check["paths"]:
         return None
     changed = _changed_files(wt, review_base(wt, base_sha, sha), sha)
-    if any(matching(path, globs) for path in changed):
+    if any(matching(path, check["paths"]) for path in changed):
         return None
     return f"no changed file matches {', '.join(check['paths'])}"
 
 
-def ran(project, check, wt):
+def ran(project, check, wt, sha):
+    held = tempfile.mkdtemp(prefix="holo-check-")
+    tree = Path(held, "worktree")
     try:
-        snapshot = Snapshot(wt)
+        _git(wt, "worktree", "add", "--detach", "--quiet", str(tree), sha)
+        outcome, found = _outcome(project, check, tree)
     except Exception as error:
         outcome, found = "error", {"error": str(error)}
-    else:
-        try:
-            outcome, found = _outcome(project, check, wt)
-        finally:
-            restored, failed = _restored(snapshot)
-        if failed is not None:
-            outcome, found = "error", {**found, "check_outcome": outcome,
-                                       "restore_error": failed}
-        if restored:
-            found["restored"] = restored
-    return outcome, _scrubbed(found, check["secrets"])
+    finally:
+        left = _removed(wt, tree, held)
+    if left is not None:
+        found["cleanup_error"] = left
+    return outcome, {key: scrubbed_output(value, check["secrets"])
+                     if key in ("output", "error", "cleanup_error") else value
+                     for key, value in found.items()}
 
 
-def _scrubbed(found, secrets):
-    found = {key: scrubbed_output(value, secrets)
-             if key in ("output", "error", "restore_error") else value
-             for key, value in found.items()}
-    if "restored" in found:
-        found["restored"] = [scrubbed_output(path, secrets)
-                             for path in found["restored"]]
-    return found
-
-
-def _restored(snapshot):
+def _removed(wt, tree, held):
     try:
-        return snapshot.restore(), None
+        _git(wt, "worktree", "remove", "--force", "--force", str(tree))
+    except Exception:
+        pass
+    try:
+        if Path(held).exists():
+            _opened(held)
+            shutil.rmtree(held)
+        _git(wt, "worktree", "prune")
     except Exception as error:
-        return [], str(error)
+        return f"could not remove the check's worktree {held}: {error}"
+    return None
+
+
+def _opened(root):
+    for top, dirs, _ in os.walk(root):
+        for name in dirs:
+            path = Path(top, name)
+            if not path.is_symlink():
+                os.chmod(path, stat.S_IMODE(path.stat().st_mode) | stat.S_IRWXU)
+
+
+def _git(wt, *args):
+    done = subprocess.run(["git", *args], cwd=wt, capture_output=True)
+    if done.returncode != 0:
+        raise OSError(f"git {args[0]} {args[1] if len(args) > 1 else ''}"
+                      f" failed: {done.stderr.decode(errors='replace').strip()}")
+    return done.stdout.decode().strip()
 
 
 def _outcome(project, check, wt):
@@ -230,209 +189,3 @@ def scrubbed_output(text, secrets):
             for part in (secret[:size], secret[-size:]):
                 text = text.replace(part, REDACTED)
     return text[-OUTPUT_TAIL:]
-
-
-class Snapshot:
-    """HEAD, the index, and each directory, link and file in the worktree,
-    with a copy of every file's bytes."""
-
-    def __init__(self, wt):
-        self.wt = Path(wt)
-        self.index = Path(wt, _git(wt, "rev-parse", "--git-path", "index"))
-        self.branch = _branch(wt)
-        self.head = _git(wt, "rev-parse", "--verify", "HEAD")
-        self.staged = _state(self.index)
-        self.root = stat.S_IMODE(self.wt.stat().st_mode)
-        self.found = _walk(self.wt)
-        self.saved = tempfile.mkdtemp(prefix="holo-check-")
-        try:
-            for path, signature in self.found.items():
-                if signature[0] == "file":
-                    copy = Path(self.saved, path)
-                    copy.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(self.wt / path, copy,
-                                    follow_symlinks=False)
-        except BaseException:
-            shutil.rmtree(self.saved, ignore_errors=True)
-            raise
-
-    def restore(self):
-        failed, restored = [], set()
-        os.chmod(self.wt, self.root | stat.S_IRWXU)
-        try:
-            self._restore_head()
-        except Exception as error:
-            failed.append(f"HEAD: {error}")
-        try:
-            self._restore_paths(failed, restored)
-        except Exception as error:
-            failed.append(str(error))
-        finally:
-            try:
-                if self.staged is not None:
-                    _put(self.index, self.staged)
-            except Exception as error:
-                failed.append(f"index: {error}")
-        try:
-            os.chmod(self.wt, self.root)
-        except Exception as error:
-            failed.append(f"worktree: {error}")
-        if failed:
-            raise OSError("could not restore " + "; ".join(failed)
-                          + f"; the saved copies are kept in {self.saved}")
-        shutil.rmtree(self.saved, ignore_errors=True)
-        return sorted(restored)
-
-    def _restore_head(self):
-        if self.branch is None:
-            _git(self.wt, "update-ref", "--no-deref", "HEAD", self.head)
-            return
-        _git(self.wt, "update-ref", self.branch, self.head)
-        _git(self.wt, "symbolic-ref", "HEAD", self.branch)
-
-    def _restore_paths(self, failed, restored):
-        opened = {}
-        now = _walk(self.wt, opened)
-        added = sorted((path for path in now if path not in self.found),
-                       key=_depth, reverse=True)
-        changed = sorted((path for path, kept in self.found.items()
-                          if now.get(path) != kept), key=_depth)
-        folders = [path for path in changed if self.found[path][0] == "dir"]
-        closing = sorted({*folders, *(path for path in opened
-                                      if path in self.found)},
-                         key=_depth, reverse=True)
-        steps = ([(path, self._open_folder) for path in folders]
-                 + [(path, self._remove) for path in added]
-                 + [(path, self._put_back) for path in changed
-                    if path not in folders]
-                 + [(path, self._close_folder) for path in closing])
-        for path, step in steps:
-            try:
-                step(path)
-                if step != self._close_folder or path in folders:
-                    restored.add(path)
-            except Exception as error:
-                failed.append(f"{path}: {error}")
-
-    def _open_folder(self, path):
-        target = self.wt / path
-        if target.is_symlink() or (target.exists() and not target.is_dir()):
-            target.unlink()
-        target.mkdir(exist_ok=True)
-        os.chmod(target, self.found[path][1] | stat.S_IRWXU)
-
-    def _close_folder(self, path):
-        os.chmod(self.wt / path, self.found[path][1])
-
-    def _remove(self, path):
-        target = self.wt / path
-        if target.is_dir() and not target.is_symlink():
-            shutil.rmtree(target)
-        else:
-            target.unlink(missing_ok=True)
-
-    def _put_back(self, path):
-        target, kept = self.wt / path, self.found[path]
-        if kept[0] == "link":
-            _put(target, kept)
-            return
-        with Path(self.saved, path).open("rb") as copy:
-            _replace(target, kept[-1],
-                     lambda out: shutil.copyfileobj(copy, out))
-
-
-def _git(wt, *args):
-    return subprocess.run(["git", *args], cwd=wt, capture_output=True,
-                          check=True).stdout.decode().strip()
-
-
-def _branch(wt):
-    named = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=wt,
-                           capture_output=True)
-    return named.stdout.decode().strip() if named.returncode == 0 else None
-
-
-def _depth(path):
-    return path.count("/")
-
-
-def _walk(root, opened=None):
-    found = {}
-    for top, dirs, files in os.walk(root, onerror=_unlisted):
-        here = Path(top)
-        links = [name for name in dirs if (here / name).is_symlink()]
-        dirs[:] = [name for name in dirs
-                   if name != ".git" and name not in links]
-        for name in files + links + dirs:
-            signature = _signature(here / name) if name != ".git" else None
-            if signature is None:
-                continue
-            path = (here / name).relative_to(root).as_posix()
-            found[path] = signature
-            if (opened is not None and signature[0] == "dir"
-                    and signature[1] & stat.S_IRWXU != stat.S_IRWXU):
-                os.chmod(here / name, signature[1] | stat.S_IRWXU)
-                opened[path] = signature[1]
-    return found
-
-
-def _unlisted(error):
-    raise error
-
-
-def _state(path):
-    try:
-        info = path.lstat()
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    if stat.S_ISLNK(info.st_mode):
-        return "link", os.readlink(path)
-    if stat.S_ISREG(info.st_mode):
-        return "file", path.read_bytes(), stat.S_IMODE(info.st_mode)
-    return None
-
-
-def _signature(path):
-    try:
-        info = path.lstat()
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    if stat.S_ISLNK(info.st_mode):
-        return "link", os.readlink(path)
-    if stat.S_ISDIR(info.st_mode):
-        return "dir", stat.S_IMODE(info.st_mode)
-    if stat.S_ISREG(info.st_mode):
-        return ("file", info.st_ino, info.st_size, info.st_mtime_ns,
-                info.st_ctime_ns, stat.S_IMODE(info.st_mode))
-    return None
-
-
-def _put(target, state):
-    if state[0] == "link":
-        target.parent.mkdir(parents=True, exist_ok=True)
-        _clear_directory(target)
-        target.unlink(missing_ok=True)
-        os.symlink(state[1], target)
-        return
-    _replace(target, state[2], lambda out: out.write(state[1]))
-
-
-def _replace(target, mode, write):
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.is_symlink():
-        target.unlink()
-    _clear_directory(target)
-    handle, staging = tempfile.mkstemp(dir=target.parent, prefix=".holo-")
-    try:
-        with os.fdopen(handle, "wb") as out:
-            write(out)
-        os.chmod(staging, mode)
-        os.replace(staging, target)
-    except BaseException:
-        Path(staging).unlink(missing_ok=True)
-        raise
-
-
-def _clear_directory(target):
-    if target.is_dir() and not target.is_symlink():
-        shutil.rmtree(target)

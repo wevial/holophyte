@@ -3,7 +3,6 @@ from holophyte.agents.agent_turns import argv_label, route_labels
 from holophyte.agents.harness import critic_seat
 from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.config_tables import merge_config, trim_config, verify_config
-from holophyte.config.pipeline_settings import CHECK_AFTER, CHECK_MODES
 from holophyte.config.review_settings import review_config
 from holophyte.redact import known_secrets, outbound
 
@@ -46,26 +45,22 @@ def resolve(project, profile=None, notes=None, checks=()):
                   cap=merge.capture_fix_rounds),
         ]
     stages.append(stage("waiting", "check", "factory", approve=merge.approve))
+    document = {"format": FORMAT, "name": NAME,
+                "merge": {"mode": merge.mode, "approve": merge.approve},
+                "stages": stages}
+    if notes:
+        document["notes"] = notes
+    document = scrubbed(document, known_secrets(project.config()))
+    stages = document["stages"]
     for after in ("trim", "implement"):
         at = next(at for at, found in enumerate(stages) if found["id"] == after)
         stages[at + 1:at + 1] = [
             stage(check["id"], "check", "candidate", after=after,
                   mode=check["mode"], commands=check["commands"],
                   paths=check["paths"],
-                  **(_selectors(check) if check.get("redacted") else {}))
+                  **({"redacted": True} if check.get("redacted") else {}))
             for check in checks if check["after"] == after]
-    document = {"format": FORMAT, "name": NAME,
-                "merge": {"mode": merge.mode, "approve": merge.approve},
-                "stages": stages}
-    if notes:
-        document["notes"] = notes
-    return scrubbed(document, known_secrets(project.config()))
-
-
-def _selectors(check):
-    return {"redacted": True,
-            "selectors": {"after": CHECK_AFTER.index(check["after"]),
-                          "mode": CHECK_MODES.index(check["mode"])}}
+    return document
 
 
 def scrubbed(value, secrets):

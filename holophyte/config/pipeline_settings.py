@@ -74,10 +74,9 @@ def pinned_checks(project):
     secrets = known_secrets(config) | known_secrets(project.config())
     shown = []
     for check in raw:
-        display = {**check, "id": outbound(check["id"], secrets),
-                   **{key: [outbound(value, secrets) for value in check[key]]
-                      for key in ("commands", "paths")}}
-        shown.append({**display, "redacted": redact_document(display) != check})
+        commands = [outbound(command, secrets) for command in check["commands"]]
+        shown.append({**check, "commands": commands,
+                      "redacted": redact_document(commands) != check["commands"]})
     return raw, shown, secrets
 
 

@@ -11,7 +11,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import sys
 import tempfile
 import time
@@ -386,41 +385,8 @@ class AdvisoryCheckTests(CheckRuns):
             self.assertNotIn(secret[:size], lint[4]["output"])
             self.assertNotIn(secret[-size:], lint[4]["output"])
 
-    def test_a_check_that_edits_the_worktree_leaves_the_run_unchanged(self):
-        plain = self.walked("", *self.SCRIPT)
-        unchecked = self.attempts()
-        self.fresh()
-        edited = self.walked(check_table("regen", "implement", [
-            "echo regenerated >> README.md", "touch generated.txt", "exit 1"],
-            "advisory"), *self.SCRIPT)
-
-        self.assertEqual(edited, plain)
-        attempts = self.attempts()
-        self.assertEqual([row for row in attempts if row[0] != "regen"],
-                         unchecked)
-        self.assertEqual([row[4]["restored"] for row in attempts
-                          if row[0] == "regen"],
-                         [["README.md", "generated.txt"]] * 2)
-        self.assertEqual(self.git("show", "main:README.md"), "base\n")
-
-    def test_a_check_that_only_narrows_a_tracked_files_mode_leaves_verify_passing(self):
-        readable = ('[verify]\nalways = [\'[ -n "$(find README.md -perm'
-                    ' -o=r)" ]\']\n')
-        plain = self.walked(readable, *self.SCRIPT)
-        self.fresh()
-        narrowed = self.walked(readable + check_table(
-            "lint", "implement", ["chmod 600 README.md", "exit 1"],
-            "advisory"), *self.SCRIPT)
-
-        self.assertEqual(narrowed, plain)
-        self.assertEqual(narrowed[3], [("merged",)])
-        lints = [row for row in self.attempts() if row[0] == "lint"]
-        self.assertEqual([(row[2], row[3], row[4]["restored"])
-                          for row in lints],
-                         [("fail", "next", ["README.md"])] * 2)
-
-    def test_a_glob_a_credential_would_redact_still_matches_its_paths(self):
-        class DocsCommit(Commit):
+    def test_a_glob_a_credential_would_redact_is_pinned_verbatim_and_matches(self):
+        class DocsCommit(Forgets):
             def play(self, cwd, turn):
                 (cwd / "docs").mkdir(exist_ok=True)
                 return super().play(cwd, turn)
@@ -432,131 +398,47 @@ class AdvisoryCheckTests(CheckRuns):
         (attempt,) = [row for row in self.attempts() if row[0] == "pages"]
         self.assertEqual(attempt[2:4], ("pass", "next"))
 
-    def ignore_outputs(self):
-        (self.target / ".gitignore").write_text("*.out\n")
-        self.git("add", ".gitignore")
-        with patch.dict(os.environ, GIT_DATES):
-            self.git("commit", "-q", "-m", "ignore outputs")
+    def ran(self, commands, secrets=frozenset()):
+        return checks.ran(self.project, {"commands": commands,
+                                         "secrets": secrets},
+                          self.target, self.git("rev-parse", "HEAD").strip())
 
-    def test_a_check_leaves_the_index_dirty_untracked_and_ignored_files_as_found(self):
-        self.ignore_outputs()
+    def files(self):
+        return {path.relative_to(self.target).as_posix(): path.read_bytes()
+                for path in self.target.rglob("*")
+                if ".git" not in path.relative_to(self.target).parts
+                and path.is_file()}
+
+    def test_a_failing_check_that_edits_files_leaves_the_task_worktree_unchanged(self):
         (self.target / "README.md").write_text("base\ndirty\n")
+        (self.target / "staged.txt").write_text("staged\n")
+        self.git("add", "staged.txt")
         (self.target / "draft.txt").write_text("a draft\n")
-        (self.target / "old.out").write_text("kept\n")
+        files, head = self.files(), self.git("rev-parse", "HEAD")
         status = self.git("status", "--porcelain", "--ignored")
 
-        outcome, found = checks.ran(self.project, {
-            "commands": ["echo more >> README.md", "git add -A",
-                         "echo changed > old.out", "touch artifact.out",
-                         "rm draft.txt", "exit 1"],
-            "secrets": frozenset()}, self.target)
+        outcome, found = self.ran([
+            "cat README.md", "echo more >> README.md", "touch generated.txt",
+            "git add -A", "git commit -qm checked", "exit 1"])
 
-        self.assertEqual(outcome, "fail")
+        self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
+        self.assertEqual(found["output"], "base\n")
+        self.assertEqual(self.files(), files)
         self.assertEqual(self.git("status", "--porcelain", "--ignored"), status)
-        self.assertEqual((self.target / "README.md").read_text(),
-                         "base\ndirty\n")
-        self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
-        self.assertEqual((self.target / "old.out").read_text(), "kept\n")
-        self.assertFalse((self.target / "artifact.out").exists())
-        self.assertEqual(found["restored"],
-                         ["README.md", "artifact.out", "draft.txt", "old.out"])
-
-    def test_a_check_that_deletes_an_ignored_artifact_leaves_verify_passing(self):
-        class BuildsArtifact(Commit):
-            def play(self, cwd, turn):
-                (cwd / "build.out").write_text("built\n")
-                return super().play(cwd, turn)
-
-        self.ignore_outputs()
-        script = (BuildsArtifact("the scripted work"), REQUEST_CHANGES,
-                  BuildsArtifact("the scripted fix"), APPROVE)
-        needs = "[verify]\nalways = ['test -f build.out']\n"
-        plain = self.walked(needs, *script)
-        self.fresh()
-        self.ignore_outputs()
-        cleaned = self.walked(needs + check_table(
-            "clean", "implement", ["rm build.out", "exit 1"], "advisory"),
-            *script)
-
-        self.assertEqual(cleaned, plain)
-        self.assertEqual(cleaned[3], [("merged",)])
-        cleans = [row for row in self.attempts() if row[0] == "clean"]
-        self.assertEqual([(row[2], row[3], row[4]["restored"])
-                          for row in cleans],
-                         [("fail", "next", ["build.out"])] * 2)
-
-    def test_an_unreadable_staged_edit_is_put_back_with_the_index(self):
-        status = self.git("status", "--porcelain")
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["echo edit >> README.md", "git add README.md",
-                         "chmod 000 README.md", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual((self.target / "README.md").read_text(), "base\n")
-        self.assertEqual(self.git("status", "--porcelain"), status)
-        self.assertEqual(found["restored"], ["README.md"])
-
-    def test_a_file_a_check_hides_from_git_and_rewrites_is_put_back(self):
-        for flag in ("--assume-unchanged", "--skip-worktree"):
-            with self.subTest(flag=flag):
-                outcome, found = checks.ran(self.project, {
-                    "commands": [f"git update-index {flag} README.md",
-                                 "echo hidden > README.md", "exit 1"],
-                    "secrets": frozenset()}, self.target)
-
-                self.assertEqual(outcome, "fail")
-                self.assertEqual((self.target / "README.md").read_text(),
-                                 "base\n")
-                self.assertEqual(self.git("ls-files", "-v", "README.md"),
-                                 "H README.md\n")
-                self.assertEqual(found["restored"], ["README.md"])
-
-    def test_a_tracked_file_deleted_before_a_check_stays_deleted(self):
-        (self.target / "README.md").unlink()
-        status = self.git("status", "--porcelain")
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["git checkout -- README.md", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertFalse((self.target / "README.md").exists())
-        self.assertEqual(self.git("status", "--porcelain"), status)
-        self.assertEqual(found["restored"], ["README.md"])
-
-    def test_a_file_a_check_adds_to_a_directory_it_locks_is_removed(self):
-        (self.target / "cache").mkdir()
-        (self.target / "cache" / "kept.txt").write_text("kept\n")
-        mode = (self.target / "cache").stat().st_mode & 0o777
-        self.addCleanup(os.chmod, self.target / "cache", 0o755)
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["touch cache/generated", "chmod 000 cache", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual((self.target / "cache").stat().st_mode & 0o777, mode)
-        self.assertEqual(sorted(path.name for path in
-                                (self.target / "cache").iterdir()),
-                         ["kept.txt"])
-        self.assertEqual(found["restored"], ["cache", "cache/generated"])
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual(len(self.git("worktree", "list").splitlines()), 1)
 
     def test_a_background_child_cannot_write_after_the_check_returns(self):
-        outcome, _ = checks.ran(self.project, {
-            "commands": ["(sleep 0.5; echo late > README.md)"
-                         " >/dev/null 2>&1 & exit 1"],
-            "secrets": frozenset()}, self.target)
+        marker = self.target.parent / "late.marker"
+        outcome, _ = self.ran([f"(sleep 0.5; echo late > {marker})"
+                               " >/dev/null 2>&1 & exit 1"])
         time.sleep(1.5)
 
         self.assertEqual(outcome, "fail")
-        self.assertEqual((self.target / "README.md").read_text(), "base\n")
+        self.assertFalse(marker.exists())
 
     def test_output_that_is_not_utf8_keeps_the_exit_status_and_tail(self):
-        outcome, found = checks.ran(self.project, {
-            "commands": ["printf 'bad \\377 byte\\n'", "exit 1"],
-            "secrets": frozenset()}, self.target)
+        outcome, found = self.ran(["printf 'bad \\377 byte\\n'", "exit 1"])
 
         self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
         self.assertEqual(found["output"], "bad \ufffd byte\n")
@@ -565,158 +447,12 @@ class AdvisoryCheckTests(CheckRuns):
         line = ('127.0.0.1 - - [20/Nov/2026:10:00:00 +0000]'
                 ' "GET /health?token=access-credential-8 HTTP/1.1" 500 12')
 
-        outcome, found = checks.ran(self.project, {
-            "commands": [f"echo {shlex.quote(line)}", "exit 1"],
-            "secrets": frozenset({"access-credential-8"})}, self.target)
+        outcome, found = self.ran([f"echo {shlex.quote(line)}", "exit 1"],
+                                  frozenset({"access-credential-8"}))
 
         self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
         self.assertEqual(found["output"], line.replace(
             "access-credential-8", REDACTED) + "\n")
-
-    def test_a_snapshot_that_cannot_read_a_draft_closes_error_scrubbed(self):
-        draft = self.target / "draft-snapshot-credential-7.txt"
-        draft.write_text("a draft\n")
-        draft.chmod(0)
-        self.addCleanup(draft.chmod, 0o644)
-        marker = self.target.parent / "ran.marker"
-
-        outcome, found = checks.ran(self.project, {
-            "commands": [f"touch {shlex.quote(str(marker))}"],
-            "secrets": frozenset({"snapshot-credential-7"})}, self.target)
-
-        self.assertEqual(outcome, "error")
-        self.assertIn(REDACTED, found["error"])
-        self.assertNotIn("credential-7", json.dumps(found))
-        self.assertFalse(marker.exists())
-
-    def test_a_check_puts_back_retargeted_symlinks_and_changed_modes(self):
-        (self.target / "other.txt").write_text("other\n")
-        self.git("add", "other.txt")
-        self.git("commit", "-q", "-m", "another file")
-        (self.target / "link").symlink_to("README.md")
-        (self.target / "draft.sh").write_text("echo draft\n")
-        (self.target / "draft.sh").chmod(0o644)
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["ln -sfn other.txt link", "chmod 755 draft.sh",
-                         "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual(os.readlink(self.target / "link"), "README.md")
-        self.assertEqual((self.target / "other.txt").read_text(), "other\n")
-        self.assertEqual((self.target / "draft.sh").stat().st_mode & 0o777,
-                         0o644)
-        self.assertEqual(found["restored"], ["draft.sh", "link"])
-
-    def test_a_read_only_staged_draft_is_put_back_with_the_index(self):
-        (self.target / "draft.txt").write_text("a draft\n")
-        (self.target / "draft.txt").chmod(0o644)
-        status = self.git("status", "--porcelain")
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["echo edit >> draft.txt", "chmod 444 draft.txt",
-                         "git add draft.txt", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
-        self.assertEqual((self.target / "draft.txt").stat().st_mode & 0o777,
-                         0o644)
-        self.assertEqual(self.git("status", "--porcelain"), status)
-        self.assertEqual(found["restored"], ["draft.txt"])
-
-    def test_a_draft_a_check_turns_into_a_directory_is_put_back(self):
-        (self.target / "draft.txt").write_text("a draft\n")
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["git add draft.txt", "rm draft.txt",
-                         "mkdir -p draft.txt/inner", "touch draft.txt/inner/x",
-                         "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
-        self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
-
-    def test_a_restore_that_fails_keeps_the_saved_copies(self):
-        (self.target / "draft.txt").write_text("a draft\n")
-
-        with patch.object(checks.Snapshot, "_remove",
-                          side_effect=PermissionError("removal refused")):
-            outcome, found = checks.ran(self.project, {
-                "commands": ["echo overwritten > draft.txt", "mkdir stuck",
-                             "touch stuck/inner", "exit 1"],
-                "secrets": frozenset()}, self.target)
-
-        self.assertEqual((outcome, found["check_outcome"]), ("error", "fail"))
-        self.assertIn("stuck/inner", found["restore_error"])
-        kept = Path(re.search(r"kept in (\S+)$",
-                              found["restore_error"]).group(1))
-        self.addCleanup(shutil.rmtree, kept, True)
-        self.assertEqual((kept / "draft.txt").read_text(), "a draft\n")
-
-    def test_a_commit_a_check_makes_leaves_head_and_files_as_snapshotted(self):
-        head = self.git("rev-parse", "HEAD")
-        branch = self.git("symbolic-ref", "HEAD")
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["echo committed > README.md",
-                         "git commit -qam committed",
-                         "git commit -q --allow-empty -m empty",
-                         "git checkout -q --detach", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual(self.git("rev-parse", "HEAD"), head)
-        self.assertEqual(self.git("symbolic-ref", "HEAD"), branch)
-        self.assertEqual((self.target / "README.md").read_text(), "base\n")
-        self.assertEqual(self.git("status", "--porcelain"), "")
-
-    def test_a_working_copy_git_would_check_out_differently_keeps_its_bytes(self):
-        (self.target / ".gitattributes").write_text("README.md text eol=crlf\n")
-        self.git("add", ".gitattributes")
-        with patch.dict(os.environ, GIT_DATES):
-            self.git("commit", "-q", "-m", "crlf checkouts")
-        self.assertEqual(self.git("status", "--porcelain"), "")
-
-        outcome, _ = checks.ran(self.project, {
-            "commands": ["echo rewritten > README.md", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertEqual((self.target / "README.md").read_bytes(), b"base\n")
-
-    def test_a_directory_a_check_removes_or_creates_is_put_back(self):
-        (self.target / "cache").mkdir()
-        (self.target / "locked").mkdir(mode=0o750)
-        self.addCleanup(os.chmod, self.target / "locked", 0o755)
-
-        outcome, found = checks.ran(self.project, {
-            "commands": ["rmdir cache", "mkdir -p generated/deep",
-                         "chmod 500 locked", "exit 1"],
-            "secrets": frozenset()}, self.target)
-
-        self.assertEqual(outcome, "fail")
-        self.assertTrue((self.target / "cache").is_dir())
-        self.assertFalse((self.target / "generated").exists())
-        self.assertEqual((self.target / "locked").stat().st_mode & 0o777,
-                         0o750)
-        self.assertEqual(found["restored"],
-                         ["cache", "generated", "generated/deep", "locked"])
-
-    def test_a_failed_restore_closes_error_and_keeps_the_checks_result(self):
-        with patch.object(checks.Snapshot, "restore",
-                          side_effect=OSError("restore refused")):
-            outcome, found = checks.ran(self.project, {
-                "commands": ["echo clean"], "secrets": frozenset()},
-                self.target)
-
-        self.assertEqual(outcome, "error")
-        self.assertEqual((found["check_outcome"], found["exit_status"]),
-                         ("pass", 0))
-        self.assertIn("clean", found["output"])
-        self.assertIn("restore refused", found["restore_error"])
 
     def test_a_registered_value_in_a_selector_neither_runs_nor_drops_a_check(self):
         held = tempfile.TemporaryDirectory()
@@ -763,28 +499,6 @@ class AdvisoryCheckTests(CheckRuns):
         (attempt,) = [row for row in self.attempts(2) if row[0] == "say"]
         self.assertEqual(attempt[2], "pass")
         self.assertEqual(marker.read_text(), "resumed-credential-4\n")
-
-    def test_a_rotated_glob_and_restored_path_are_scrubbed_from_the_store(self):
-        config = self.db.parent / "config.toml"
-        self.configure(UNTRIMMED)
-        rotated = (UNTRIMMED + '[extras]\napi_token = "glob-credential-5"\n'
-                   + check_table("paths", "implement", ["true"], "advisory",
-                                 ["glob-credential-5/**"])
-                   + check_table("report", "implement", [
-                       "touch report-glob-credential-5.txt", "exit 1"],
-                       "advisory"))
-
-        self.loop(EditsConfig(config, rotated), APPROVE,
-                  Commit("second"), APPROVE,
-                  provider=StubProvider(a_task(1), a_task(2)))
-
-        found = {row[0]: row for row in self.attempts(2)}
-        self.assertEqual(found["paths"][2], "skipped")
-        self.assertEqual(found["report"][2], "fail")
-        self.assertEqual(len(found["report"][4]["restored"]), 1)
-        stored = json.dumps(self.read("SELECT detail FROM stageAttempts")
-                            + self.read("SELECT payload FROM runEvents"))
-        self.assertNotIn("glob-credential-5", stored)
 
     def test_a_credential_only_the_pin_saw_is_scrubbed_after_a_rotation(self):
         config = self.db.parent / "config.toml"
@@ -895,61 +609,6 @@ class SkippedCheckTests(CheckRuns):
         self.assertIn("docs/**", found["docs"][4]["reason"])
         self.assertEqual(found["dormant"][2], "skipped")
         self.assertEqual(found["dormant"][4], {"reason": "mode off"})
-        self.assertEqual(list(markers.iterdir()), [])
-
-    def test_a_redacted_mode_or_glob_without_its_original_still_skips(self):
-        held = tempfile.TemporaryDirectory()
-        self.addCleanup(held.cleanup)
-        markers = Path(held.name)
-
-        def touch(name):
-            return [f"touch {markers / name} skipped-credential-10"]
-
-        with values_held(["off", "docs"]):
-            self.walked('[extras]\napi_token = "skipped-credential-10"\n'
-                        + check_table("pages", "implement", touch("pages"),
-                                      "advisory", ["docs/**"])
-                        + check_table("dormant", "implement",
-                                      touch("dormant"), "off"),
-                        Forgets("the scripted work"), APPROVE)
-
-        found = {row[0]: row for row in self.attempts()}
-        self.assertEqual(found["pages"][2], "skipped")
-        self.assertIn(f"{REDACTED}/**", found["pages"][4]["reason"])
-        self.assertEqual(found["dormant"][2], "skipped")
-        self.assertEqual(found["dormant"][4], {"reason": f"mode {REDACTED}"})
-        self.assertEqual(list(markers.iterdir()), [])
-
-    def test_a_redacted_check_dropped_from_the_config_still_skips(self):
-        held = tempfile.TemporaryDirectory()
-        self.addCleanup(held.cleanup)
-        markers = Path(held.name)
-        extras = '[extras]\napi_token = "skipped-credential-11"\n'
-
-        def touch(name):
-            return [f"touch {markers / name} skipped-credential-11"]
-
-        class DropsChecks(Commit):
-            def play(inner, cwd, turn):
-                (cwd / "src").mkdir(exist_ok=True)
-                record.PINNED_CHECKS.clear()
-                (self.db.parent / "config.toml").write_text(UNTRIMMED + extras)
-                return super().play(cwd, turn)
-
-        with values_held(["off", "docs"]):
-            self.walked(extras + check_table("pages", "implement",
-                                             touch("pages"), "advisory",
-                                             ["docs/**"])
-                        + check_table("dormant", "implement",
-                                      touch("dormant"), "off"),
-                        DropsChecks("the scripted work", "src/app.py"),
-                        APPROVE)
-
-        found = {row[0]: row for row in self.attempts()}
-        self.assertEqual(found["pages"][2], "skipped")
-        self.assertIn(f"{REDACTED}/**", found["pages"][4]["reason"])
-        self.assertEqual(found["dormant"][2], "skipped")
-        self.assertEqual(found["dormant"][4], {"reason": f"mode {REDACTED}"})
         self.assertEqual(list(markers.iterdir()), [])
 
 class StaleRereviewCheckTests(unittest.TestCase):

@@ -2232,45 +2232,34 @@ A project's own Check stages, one `[[pipeline.check]]` entry each. Each
 becomes a `check` stage in the pinned pipeline document, right after its
 Build stage (`implement` or `trim`), in config order; with no entry the
 document, its digest and its revision are the same as without the array. A
-check runs its commands, joined with `&&`, in the task worktree with the
-verify runner under `[verify] timeout_sec`, and records a stage attempt
-under its `id`: `pass` or `fail` with edge `next`, the exit status and the
-output's tail in its detail, and `timed_out` when the timeout ended it. It
-closes `error` when the command could not start, an exit of 126 or 127 the
-shell reports as a command not found or not executable included; a command
-that ran and exited 127 closes `fail`. A check leaves the worktree as it
-found it: the worktree is compared with a snapshot taken before the check,
-not with what Git reports after it, so every directory, file or link the
-check changed, removed or added is put back or removed, a file with the
-bytes copied before the check, a tracked file Git was told to assume
-unchanged or skip included, a path absent before the check stays absent,
-HEAD and its branch are moved back to the commit they named, the index is
-put back, and the paths it touched are listed under `restored`. Before
-the worktree is put back, every process left in the command's process group
-is ended, and a directory the check made unreadable is opened to be
-compared, then given back its mode. The output's tail is the command's own output, every line
-kept, bytes that are not UTF-8 replaced, with credentials redacted.
+check runs its commands, joined with `&&`, with the verify runner under
+`[verify] timeout_sec`, in a throwaway detached worktree added at the head
+it checks and removed afterwards whatever the command returned, so the task
+worktree, its index and its refs are never touched; files the head does
+not commit, ignored build output included, are not in that worktree. It
+records a stage attempt under its `id`: `pass` or `fail` with edge `next`,
+the exit status and the output's tail in its detail, and `timed_out` when
+the timeout ended it. It closes `error` when the command could not start,
+an exit of 126 or 127 the shell reports as a command not found or not
+executable included; a command that ran and exited 127 closes `fail`.
+Every process left in the command's process group is ended before the
+worktree is removed, and a worktree that could not be removed is named
+under `cleanup_error`. The output's tail is the command's own output, every
+line kept, bytes that are not UTF-8 replaced, with credentials redacted.
 
 A run runs the checks it pinned, never an edit made after the pin. The
-pinned document holds each check's id, commands and globs with credentials
-redacted, and marks a stage `redacted` when that changed it; the process
-that pinned a run keeps the original entries, and the credentials it
-scrubbed them with, in memory only, and a run that continues one in the
-same process takes them over. Selection by `after`, the `mode off` skip and
-the path condition use those original entries. When the process holds no
-original for a check, such as a run picked up again by another process, the
-pinned `mode` and `paths` still decide the `mode off` and path skips; when
-the store redacted either, the current config's entry decides them if it
-pins to the same stage, redactions included. Without such an entry, a
-`redacted` stage's `selectors` hold its `after` and `mode` as their
-positions in `implement, trim` and `advisory, off`, and a redacted glob is
-matched with each credential the process knows put back in its place, every
-fill that redacts to the pinned glob counting; a
-check that would run but whose pinned stage is marked `redacted`, or whose
-`after` or `mode` no longer reads as one of its values, closes `error`
-without running. The
-store also redacts registered environment values in every stage attempt it
-records, so a skip reason can read `mode [redacted]`.
+pinned document holds each check's `id`, `after`, `mode` and `paths` as
+written, and its commands with credentials redacted, marking the stage
+`redacted` when that changed them; the process that pinned a run keeps the
+original commands, and the credentials it scrubbed them with, in memory
+only, and a run that continues one in the same process takes them over.
+Selection by `after`, the `mode off` skip and the path condition read the
+pinned stage, so a run picked up again by another process still skips as
+pinned; a check that would run but whose pinned stage is marked `redacted`
+without its original commands in memory, or whose pinned `mode` the store
+redacted, closes `error` without running.
+The store also redacts registered environment values in the pinned
+document and in every stage attempt it records.
 
 A check after `implement` runs before each verify a review round starts,
 once per round and head: at the top of the round after its steer, before
@@ -2283,9 +2272,9 @@ bug was not reproduced runs no check after `trim`, and none during its
 evidence check; once it hands on to ordinary review rounds, its checks
 after `implement` run there. An advisory check's output goes only into its
 attempt: no prompt, ledger entry or finding carries it, and the run goes on
-whatever it returns. Its output, error, skip reason and restored paths are
-scrubbed of every credential either config file or the pin held, cut
-fragments of one included. A check whose read or run fails records
+whatever it returns. Its output and errors are scrubbed of every
+credential either config file or the pin held, cut fragments of one
+included. A check whose read or run fails records
 `stage_record_failed` and never stops the run; a refused entry is named
 without its rejected values.
 
