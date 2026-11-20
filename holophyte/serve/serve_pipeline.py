@@ -32,17 +32,16 @@ def pipeline(project, query):
         return 400, {"error": f"days takes a whole number from 1 to"
                               f" {MAX_DAYS}, not {days!r}"}
     days = int(days)
-    secrets = current_secrets(project)
-    if secrets is None:
-        return 503, {"error": "the project config cannot be read, so its"
-                              " pipeline cannot be resolved"}
     fresh = dataclasses.replace(project, _config=None)
     try:
         own = own_patterns(fresh)
-    except SystemExit as error:
-        return 503, {"error": "the project config does not resolve to a"
-                              f" pipeline{setting_without_value(fresh, error)}"}
-    with RESOLVING, values_held(own):
+    except SystemExit:
+        own = None
+    with RESOLVING, values_held(own or ()):
+        secrets = current_secrets(project)
+        if secrets is None or own is None:
+            return 503, {"error": "the project config cannot be read, so its"
+                                  " pipeline cannot be resolved"}
         return answered(project, fresh, days, secrets)
 
 
@@ -51,8 +50,9 @@ def answered(project, fresh, days, secrets):
         document = standard.resolve(fresh)
         board = board_config(fresh)
     except (SystemExit, ValueError) as error:
+        named = standard.scrubbed(setting_named(fresh, error), secrets)
         return 503, {"error": "the project config does not resolve to a"
-                              f" pipeline{setting_without_value(fresh, error)}"}
+                              f" pipeline{named}"}
     since_ms = int(time() * 1000) - days * DAY_MS
     revision, numbers = None, {}
     if project.store_path.exists():
@@ -94,26 +94,19 @@ def served_project(conn, project, board):
     return row[0]
 
 
-def setting_without_value(project, error):
-    text = str(error)
-    for prefix in (f"[holo2] {project.config_path}: ",
-                   f"{project.config_path}: "):
-        if text.startswith(prefix):
-            found = SETTING.match(text[len(prefix):])
-            break
-    else:
-        return ""
-    if found is None:
-        return ""
-    table, key = found.groups()
+def setting_named(project, error):
+    text = str(error).replace(str(project.config_path), "")
     try:
-        value = project.config()
+        config = project.config()
     except SystemExit:
         return ""
-    for part in table.split("."):
-        if not isinstance(value, dict) or part not in value:
-            return ""
-        value = value[part]
-    named = (f"[{table}] {key}" if isinstance(value, dict) and key in value
-             else f"[{table}]")
-    return f": check {named}"
+    for found in SETTING.finditer(text):
+        table, key = found.groups()
+        value = config
+        for part in table.split("."):
+            value = value.get(part) if isinstance(value, dict) else None
+        if value is None:
+            continue
+        held = isinstance(value, dict) and key in value
+        return f": check [{table}]" + (f" {key}" if held else "")
+    return ""

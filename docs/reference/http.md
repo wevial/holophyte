@@ -1156,7 +1156,8 @@ A project with no store answers the document with `revision` null and an
 empty `stages`. Every string is redacted with the project's known secrets,
 as on `/runs/N/stages`; a config file that cannot be read or parsed, or
 a setting the pipeline cannot resolve, makes the route answer 503 carrying
-`error`, which names the setting but never its value.
+`error`, which names the setting, redacted like the rest of the answer,
+but never its value.
 
 ## `GET /ledger?since=MS`
 

@@ -285,14 +285,32 @@ class ConfigErrorTests(ServeTestCase):
             path=self.target, holo_dir=state, store_path=state / "store.db",
             config_path=state / "config.toml",
             worktrees=self.root / "repo.worktrees")
+        isolation = CONFIG.replace(
+            "[agents]\n", '[agents]\nimplementer_isolation = '
+            '{ backend = "container", writable = "yes" }\n')
         for config, named in ((CONFIG + '[trim]\nenabled = "sk-0123"\n',
                                ": check [trim] enabled"),
-                              ("trim = false\n" + CONFIG, ": check [trim]")):
+                              ("trim = false\n" + CONFIG, ": check [trim]"),
+                              (isolation,
+                               ": check [agents] implementer_isolation")):
             with self.subTest(config=named):
                 project.config_path.write_text(config)
                 code, body = pipeline(project, "")
                 self.assertEqual(code, 503)
                 self.assertTrue(body["error"].endswith(named), body["error"])
+
+
+    def test_a_private_pattern_in_the_named_setting_is_redacted(self):
+        (self.db.parent / "config.toml").write_text(
+            CONFIG + '[merge]\nprivate_patterns = ["acme-internal"]\n'
+            '[agents.implementer_profiles.acme-internal]\n'
+            'harness = "no-such-harness"\nmodel = "m"\n')
+        project = holophyte.config.project.Project.locate(self.target)
+        code, body = pipeline(project, "")
+        self.assertEqual(code, 503)
+        self.assertIn("[agents.implementer_profiles.[redacted]]",
+                      body["error"])
+        self.assertNotIn("acme-internal", json.dumps(body))
 
 
 class SharedProcessTests(ServeTestCase):
