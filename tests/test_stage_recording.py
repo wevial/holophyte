@@ -24,6 +24,7 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     Commit,
     FakeAgent,
+    Idle,
     Reply,
     block_until_killed,
 )
@@ -40,6 +41,7 @@ from test_reproduce_first import (  # noqa: E402 - after the sys.path insert
     bug_task,
 )
 
+import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert
 import store  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
 from holophyte.loop.gates import InfraFailure  # noqa: E402
@@ -106,6 +108,15 @@ class RouteFails:
 
     def play(self, cwd, turn):
         raise InfraFailure("the trimmer route did not start")
+
+
+class AdversaryRouteFails:
+    """An adversary turn whose route fails as infrastructure."""
+
+    role = "adversary"
+
+    def play(self, cwd, turn):
+        raise InfraFailure("the adversary route did not start", "review_route")
 
 
 class StageRecordingTests(LoopFixture):
@@ -242,6 +253,88 @@ class StageRecordingTests(LoopFixture):
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual(self.outcomes()[2:4], [
             ("verify", 1, "fail", "next"), ("review", 1, "fail", "on_fail")])
+
+
+class TerminalReviewEdgeTests(LoopFixture):
+    def run_loop(self, config, *script, task=None):
+        self.configure(config)
+        return self.loop(fake=Metered(*script),
+                         provider=StubProvider(task or a_task()))[0]
+
+    def reviews(self):
+        return [(attempt, outcome, edge, json.loads(detail))
+                for attempt, outcome, edge, detail in self.read(
+                    "SELECT attempt, outcome, edge, detail FROM stageAttempts"
+                    " WHERE stageId = 'review' ORDER BY attempt")]
+
+    def stale(self):
+        return Reply(f"CRITERION 1: met \u2014 approval at {self.base[:12]};"
+                     " tests/test_thing.py::test_it_works\nVERDICT: APPROVE")
+
+    def test_a_second_stale_only_approval_ends_the_run(self):
+        work = Commit("work", "tests/test_thing.py",
+                      "def test_it_works():\n    assert True\n")
+        self.run_loop(UNTRIMMED, work, self.stale(), self.stale())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual([review[:3] for review in self.reviews()],
+                         [(1, "fail", "again"), (2, "fail", "end")])
+
+    def test_a_fix_turn_the_run_cap_refuses_ends_the_run(self):
+        self.configure("[supervisor]\nrun_cap = 3\n" + UNTRIMMED)
+        real = holophyte.loop.review_round.set_phase
+
+        def aged(conn, run_id, phase, note=None):
+            if phase == "reviewing":
+                with store.transaction(conn):
+                    conn.execute("UPDATE runs SET workingMs = ? WHERE id = ?",
+                                 (70 * 60 * 1000, run_id))
+            return real(conn, run_id, phase, note)
+
+        with patch.object(holophyte.loop.review_round, "set_phase", aged):
+            self.loop(fake=Metered(Commit("work"), REQUEST_CHANGES),
+                      provider=StubProvider(dict(a_task(), budget_min=30)))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual([review[:3] for review in self.reviews()],
+                         [(1, "fail", "end")])
+
+    def test_an_adversary_failure_keeps_the_primary_decision_and_count(self):
+        self.run_loop("[review]\nadversary = true\n" + UNTRIMMED,
+                      Commit("work", "poetry.lock"), TWO_BLOCKERS,
+                      AdversaryRouteFails())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        (_, outcome, edge, detail), = self.reviews()
+        self.assertEqual((outcome, edge), ("error", "end"))
+        self.assertEqual(
+            (detail["decision"], detail["findings"], detail["adversary"]),
+            ("REQUEST_CHANGES", 2, "ran"))
+
+    def test_a_verify_that_times_out_on_its_rerun_records_the_timeout(self):
+        marker = self.target.parent / "first-run"
+        task = dict(a_task(), verify=f"test -e {marker} || {{ touch {marker};"
+                    " exit 1; }; sleep 5")
+        self.run_loop("[verify]\ntimeout_sec = 1\n" + UNTRIMMED,
+                      Commit("work"), APPROVE, Idle(), task=task)
+
+        (detail,) = [json.loads(detail) for (detail,) in self.read(
+            "SELECT detail FROM stageAttempts WHERE stageId = 'verify'"
+            " AND attempt = 1")]
+        self.assertIs(detail["timed_out"], True)
+
+    def test_an_idle_first_turn_records_its_attempt_without_a_refusal(self):
+        self.run_loop(UNTRIMMED, Idle())
+
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "no_commits")])
+        self.assertEqual(self.read(
+            "SELECT stageId, outcome, edge, inputSha, outputSha"
+            " FROM stageAttempts"),
+            [("implement", "fail", "end", self.base, self.base)])
+        self.assertEqual(self.read("SELECT COUNT(*) FROM runEvents"
+                                   " WHERE kind = 'stage_record_failed'"),
+                         [(0,)])
 
 
 class RefusedStageWritesTests(LoopFixture):

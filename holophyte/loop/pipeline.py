@@ -91,6 +91,10 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
         return REEXEC
 
 
+def _head(wt, before):
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt) if wt.exists() else before
+
+
 def _ticket_text(project, conn, run_id, title, body):
     ticket = f"{title}\n\n{body}" if body else title
     if conn is not None:
@@ -163,8 +167,7 @@ def _run_stages(run, task):
         before = test.sha if test else start_sha
         with record.Attempt(conn, run_id, "implement", before,
                             {"kind": "first"},
-                            head=partial(sh, ["git", "rev-parse", "HEAD"],
-                                         cwd=wt)) as attempt:
+                            head=partial(_head, wt, before)) as attempt:
             sha, unreproduced = _implement(
                 project, conn, run_id, task_id, task, branch, wt,
                 fresh and not test, beat_s, before, ticket, verify_cmd,

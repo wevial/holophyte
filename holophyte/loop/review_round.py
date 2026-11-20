@@ -22,6 +22,7 @@ from holophyte.loop import (
 from holophyte.loop.claim import merge_conflicts
 from holophyte.loop.follow_ups import capture_review
 from holophyte.loop.gates import (
+    TIMEOUT_HEAD,
     InfraFailure,
     RunFailure,
     run_verify,
@@ -194,8 +195,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     with heartbeat_while(conn, run_id, beat_s):
         (verdict, decision, first_reply), attacked = adversary.beside(
             conn, run_id,
-            partial(_review_reply, project, prompt, wt, base_sha, sha, conn,
-                    run_id, run_agent=agent, review_round=rnd),
+            _decided(attempt, partial(_review_reply, project, prompt, wt,
+                                      base_sha, sha, conn, run_id,
+                                      run_agent=agent, review_round=rnd)),
             plan and _ran(attempt, partial(adversary.attack, project, conn,
                                            run_id, wt, base_sha, ticket, plan,
                                            agent)))
@@ -269,9 +271,16 @@ def _recorded_review(project, conn, run_id, provider, task_id, wt, beat_s,
             project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
             witness, branch, attempt)
-        attempt.close(*_review_edge(conn, run_id, verdict, decision, findings,
-                                    ok, out), sha)
-    return verdict, decision, findings
+    return verdict, decision, findings, attempt
+
+
+def _decided(attempt, primary):
+    def run():
+        verdict, decision, first_reply = primary()
+        attempt.note(decision=decision, findings=len(
+            consolidate.primary_findings(verdict, decision, [])))
+        return verdict, decision, first_reply
+    return run
 
 
 def _ran(attempt, attack):
@@ -281,20 +290,6 @@ def _ran(attempt, attack):
         finally:
             attempt.note(adversary="ran")
     return run
-
-
-def _review_edge(conn, run_id, verdict, decision, findings, ok, out):
-    if verdict is None:
-        return "fail", "again"
-    if decision == "APPROVE" and not findings:
-        if ok:
-            return ("pass", "again") if steer_pending(conn, run_id) else (
-                "pass", "next")
-        if verify_timed_out(out):
-            return "fail", "end"
-    if ok and stale_approvals(decision, findings):
-        return "fail", "again"
-    return "fail", "on_fail"
 
 
 def _rereview(conn, run_id, provider, task_id, branch, sha, rnd, stale,
@@ -340,10 +335,7 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
         attempt.close("pass" if ok else "fail", "next", head,
-                      timed_out=not ok and any(
-                          verify_timed_out(row.get("output", ""))
-                          for row in getattr(out, "results", None)
-                          or [{"output": str(out)}]))
+                      timed_out=not ok and TIMEOUT_HEAD in str(out))
     return ok, out
 
 
@@ -428,51 +420,59 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
         set_phase(conn, run_id, "reviewing", f"round {rnd} review")
         if pending.get("phase") == "addressing":
             verdict = pending["verdict"]
+            attempt = record.Attempt(None, None, "review", sha, {})
         else:
-            verdict, decision, unwitnessed = _recorded_review(
+            verdict, decision, unwitnessed, attempt = _recorded_review(
                 project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 reviewed, verify_cmd, criteria, mode, rnd, ok, out,
                 pending.get("stale", ()), leaks, witness, branch)
-            if verdict is None:
-                ledger(conn, run_id, task_id, "round",
-                       f"Round {rnd}: REQUEST_CHANGES, every finding settled by"
-                       " the adjudicator -> review again", provider)
-                boundary(conn, run_id, "verifying", rnd=rnd + 1)
-                pending = {}
-                continue
-            if ok and not unwitnessed and decision == "APPROVE":
-                if steer_pending(conn, run_id):
-                    sha, pending = _steer_approved(
-                        project, conn, run_id, provider, task_id, wt, beat_s,
-                        sha, ticket, budget_min, rnd, verdict), {}
+            with attempt:
+                if verdict is None:
+                    attempt.close("fail", "again", sha)
+                    ledger(conn, run_id, task_id, "round",
+                           f"Round {rnd}: REQUEST_CHANGES, every finding settled by"
+                           " the adjudicator -> review again", provider)
+                    boundary(conn, run_id, "verifying", rnd=rnd + 1)
+                    pending = {}
                     continue
-                stop_if_requested(conn, run_id, "merge_gate")
-                ledger(conn, run_id, task_id, "round",
-                       f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
-                       provider)
-                return sha, rnd, True
-            if (not ok and not unwitnessed and decision == "APPROVE"
-                    and verify_timed_out(out)):
-                # A fix turn cannot shorten a command the ticket requires.
-                head = str(out).splitlines()[0].removeprefix("[verify] FAILED: ")
-                print(f"[holo2] round {rnd}: {head} and the review approved; "
-                      f"no fix round. Leaving branch {branch} at {sha}.")
-                ledger(conn, run_id, task_id, "round",
-                       f"Round {rnd}: APPROVE, but the verify timed out; no fix "
-                       f"round, branch {branch} preserved at {sha}\n\n{out}",
-                       provider)
-                raise RunFailure(failure_reason.verify(
-                    out, verify_cmd, f"{head} and the review approved, so no "
-                    f"fix round was run; branch {branch} preserved at "
-                    f"{sha[:12]}"))
-            stale = stale_approvals(decision, unwitnessed) if ok else []
-            if stale:
-                pending = _rereview(conn, run_id, provider, task_id, branch,
-                                    sha, rnd, stale, pending, ok, out,
-                                    verify_cmd, witness)
-                continue
+                if ok and not unwitnessed and decision == "APPROVE":
+                    if steer_pending(conn, run_id):
+                        attempt.close("pass", "again", sha)
+                        sha, pending = _steer_approved(
+                            project, conn, run_id, provider, task_id, wt, beat_s,
+                            sha, ticket, budget_min, rnd, verdict), {}
+                        continue
+                    attempt.close("pass", "next", sha)
+                    stop_if_requested(conn, run_id, "merge_gate")
+                    ledger(conn, run_id, task_id, "round",
+                           f"Round {rnd}: APPROVE\nReviewer verdict:\n{verdict}",
+                           provider)
+                    return sha, rnd, True
+                if (not ok and not unwitnessed and decision == "APPROVE"
+                        and verify_timed_out(out)):
+                    # A fix turn cannot shorten a command the ticket requires.
+                    head = str(out).splitlines()[0].removeprefix("[verify] FAILED: ")
+                    print(f"[holo2] round {rnd}: {head} and the review approved; "
+                          f"no fix round. Leaving branch {branch} at {sha}.")
+                    ledger(conn, run_id, task_id, "round",
+                           f"Round {rnd}: APPROVE, but the verify timed out; no fix "
+                           f"round, branch {branch} preserved at {sha}\n\n{out}",
+                           provider)
+                    raise RunFailure(failure_reason.verify(
+                        out, verify_cmd, f"{head} and the review approved, so no "
+                        f"fix round was run; branch {branch} preserved at "
+                        f"{sha[:12]}"))
+                stale = stale_approvals(decision, unwitnessed) if ok else []
+                if stale:
+                    pending = _rereview(conn, run_id, provider, task_id, branch,
+                                        sha, rnd, stale, pending, ok, out,
+                                        verify_cmd, witness)
+                    attempt.close("fail", "again", sha)
+                    continue
 
-        _check_run_cap(project, conn, run_id, budget_min, sha)
+        with attempt:
+            _check_run_cap(project, conn, run_id, budget_min, sha)
+        attempt.close("fail", "on_fail", sha)
         boundary(conn, run_id, "addressing", rnd=rnd, ok=ok,
                  out=str(out), verdict=verdict, verify_cmd=verify_cmd)
         pending = {}
