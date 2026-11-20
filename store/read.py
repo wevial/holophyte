@@ -541,7 +541,7 @@ class RunRound:
     verdict: str
     reviewerModel: str
     findings: str
-    reply: str | None = None
+    reply: str | None
 
 
 def rounds_of(conn, run_id):
