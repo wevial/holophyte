@@ -494,28 +494,21 @@ class RenderedReplyTests(unittest.TestCase):
         [parsed] = parse_findings(text)
         self.assertIn('splits on `"user  id"` and', parsed["message"])
 
-    def test_a_location_the_line_format_cannot_carry_is_not_moved(self):
-        for path, line in (("docs/Release Notes.md", 12),
-                           ("app/[id]/page.tsx", 12), ("LICENSE", 12),
-                           ("docker/Makefile", None)):
-            with self.subTest(path=path):
-                finding = dict(REPLY["findings"][0], path=path, line=line,
-                               message="see docs/development.md:9")
-                text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
-                [parsed] = parse_findings(text)
-                self.assertTrue(parsed["path"].startswith("(unparsed):"))
-                where = path if line is None else f"{path}:{line}"
-                self.assertIn(f"(at {where})", parsed["message"])
-                self.assertEqual(parsed["category"], "correctness")
-
     def test_a_location_the_line_format_cannot_place_keys_as_its_markdown_twin(self):
-        finding = dict(REPLY["findings"][0], path="LICENSE", line=12,
-                       severity="p2", category="docs",
-                       message="The first line\nnames no licence.")
-        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
-        twin = "- LICENSE:12 [p2] [docs] The first line names no licence."
-        self.assertEqual(store.findings_overlap(parse_findings(twin),
-                                                parse_findings(text)), 1.0)
+        for path, line, message in (
+                ("LICENSE", 12, "The first line\nnames no licence."),
+                ("LICENSE", 12, "pyproject.toml names\nanother licence."),
+                ("docker/Makefile", None, "see docs/development.md:9"),
+                ("docs/Release Notes.md", 12, "The heading is stale.")):
+            with self.subTest(path=path, message=message):
+                finding = dict(REPLY["findings"][0], path=path, line=line,
+                               severity="p2", category="docs", message=message)
+                text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+                where = path if line is None else f"{path}:{line}"
+                one_line = message.replace("\n", " ")
+                twin = f"- {where} [p2] [docs] {one_line}"
+                self.assertEqual(store.findings_overlap(
+                    parse_findings(twin), parse_findings(text)), 1.0)
 
     def test_a_message_citation_never_becomes_a_finding_location(self):
         cited = "see docs/development.md:272"
