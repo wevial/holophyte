@@ -8,7 +8,7 @@ from holophyte.redact import known_secrets, outbound
 
 NAME = "Holophyte standard"
 FORMAT = 1
-EFFORT_SETTING = "model_reasoning_effort="
+EFFORT_KEY = "model_reasoning_effort"
 REVIEW_ROLES = ["review", "adjudicate", "adversary", "consolidate"]
 
 
@@ -45,9 +45,19 @@ def resolve(project, profile=None):
                   cap=merge.capture_fix_rounds),
         ]
     stages.append(stage("waiting", "check", "factory", approve=merge.approve))
-    return {"format": FORMAT, "name": NAME,
-            "merge": {"mode": merge.mode, "approve": merge.approve},
-            "stages": stages}
+    return scrubbed({"format": FORMAT, "name": NAME,
+                     "merge": {"mode": merge.mode, "approve": merge.approve},
+                     "stages": stages}, known_secrets(project.config()))
+
+
+def scrubbed(value, secrets):
+    if isinstance(value, str):
+        return outbound(value, secrets)
+    if isinstance(value, dict):
+        return {key: scrubbed(item, secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [scrubbed(item, secrets) for item in value]
+    return value
 
 
 def stage(stage_id, kind, group, roles=(), **settings):
@@ -66,12 +76,15 @@ def review_effort(project):
     argv = agent_command(project, "review", "")
     if argv is None:
         return review_route(project)[1]
+    effort = None
     for flag, value in options(argv[1:]):
+        key, assigned, setting = value.partition("=")
         if flag == "--effort":
-            return value
-        if flag in ("-c", "--config") and value.startswith(EFFORT_SETTING):
-            return value.removeprefix(EFFORT_SETTING).strip("\"'")
-    return None
+            effort = value
+        elif (flag in ("-c", "--config") and assigned
+              and key.strip() == EFFORT_KEY):
+            effort = setting.strip().strip("\"'")
+    return effort
 
 
 def options(argv):

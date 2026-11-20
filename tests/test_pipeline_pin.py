@@ -112,6 +112,9 @@ class StandardDocumentTests(ConfigTestCase):
             "--config": "codex --config model_reasoning_effort={} exec -m m",
             "--config=": "codex --config=model_reasoning_effort={} exec -m m",
             "-c": "codex exec -c model_reasoning_effort={} -m m",
+            "spaced": "codex exec -c 'model_reasoning_effort = {}' -m m",
+            "overridden": "codex exec -c model_reasoning_effort=low"
+                          " -c model_reasoning_effort={} -m m",
         }
         for spelling, command in commands.items():
             efforts = []
@@ -123,6 +126,18 @@ class StandardDocumentTests(ConfigTestCase):
                 efforts.append(review["effort"])
             with self.subTest(spelling=spelling):
                 self.assertEqual(efforts, ["medium", "xhigh"])
+
+    def test_a_credential_in_a_verify_command_is_not_in_the_document(self):
+        with patch.dict(os.environ, {"GH_TOKEN": "ghp-synthetic-credential"}):
+            self.locate('[verify]\nbefore_merge = '
+                        '["curl -H ghp-synthetic-credential example.invalid"]\n')
+            document = standard.resolve(self.project)
+
+        self.assertNotIn("ghp-synthetic-credential", json.dumps(document))
+        verify, = [stage for stage in document["stages"]
+                   if stage["id"] == "verify"]
+        self.assertEqual(len(verify["commands"]["before_merge"]), 1)
+        self.assertIn("example.invalid", verify["commands"]["before_merge"][0])
 
     def test_a_local_project_holds_no_pull_request_stage(self):
         document = self.resolved("local")
@@ -156,9 +171,9 @@ class PinnedPipelineTests(LoopFixture):
     def test_a_requeued_run_pins_the_changed_config(self):
         self.configure(UNTRIMMED)
         self.loop(Boom())
+        self.configure(TRIMMED)
         with sqlite3.connect(self.db) as conn:
             store.requeue(conn, 1, "try again")
-        self.configure(TRIMMED)
 
         self.loop(Commit("the scripted work"), APPROVE)
 
@@ -169,9 +184,9 @@ class PinnedPipelineTests(LoopFixture):
     def test_a_resumed_approved_candidate_keeps_the_parked_runs_pipeline(self):
         self.configure('[merge]\napprove = "human"\n' + UNTRIMMED)
         self.loop(Commit("the scripted work"), APPROVE)
+        self.configure('[merge]\napprove = "human"\n' + TRIMMED)
         with sqlite3.connect(self.db) as conn:
             store.approve(conn, 1, "merge it")
-        self.configure('[merge]\napprove = "human"\n' + TRIMMED)
 
         self.loop()
 

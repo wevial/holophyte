@@ -424,7 +424,7 @@ class ArchitectureTruthTests(unittest.TestCase):
                        "storyDecisions", "storyWitnesses", "ticketNotes",
                        "ticketRevisions", "witnessResults"}
 
-    def test_data_page_lists_every_table_a_fresh_store_creates(self):
+    def test_data_page_table_rows_name_every_table_but_the_pinned_omissions(self):
         import tempfile
 
         import store
