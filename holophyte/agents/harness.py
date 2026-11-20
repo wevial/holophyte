@@ -307,14 +307,18 @@ class Agy(Adapter):
     models = ("gemini-4-neon-xhigh",)
 
     def turn(self, binary, options, role):
-        return [binary, "-p", "--model", options["model"],
+        return [*self.flags(binary, options), "-p"]
+
+    @staticmethod
+    def flags(binary, options):
+        return [binary, "--model", options["model"],
                 "--dangerously-skip-permissions", "--output-format", "json"]
 
     def session(self, argv):
         return None
 
     def resume(self, binary, options, session, role):
-        return [*self.turn(binary, options, role), "--conversation", session]
+        return [*self.flags(binary, options), "--conversation", session, "-p"]
 
     @staticmethod
     def reply(output):
