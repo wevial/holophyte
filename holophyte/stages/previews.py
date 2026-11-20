@@ -3,11 +3,12 @@ import re
 
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
+from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import _commands_brief, implement_goal
 from holophyte.loop.review_round import review_text
-from holophyte.loop.trim_brief import trim_goal
+from holophyte.loop.trim_brief import protected_brief, trim_goal
 from holophyte.pr.pullrequest import pr_text_goal
-from holophyte.review.briefs import follow_up_place
+from holophyte.review.briefs import criteria_text, follow_up_place, named_tests_text
 from holophyte.review.freshness import critic_text
 from holophyte.stages import notes
 
@@ -26,8 +27,12 @@ STANDS_FOR = {
     "ticket id": "the ticket's key",
     "title": "the ticket's title",
     "ticket": "the ticket's text as the run claimed it",
-    "criteria": "the ticket's numbered acceptance criteria, with the rules"
-                " for accounting for each",
+    "criteria": "the ticket's acceptance criteria, one line each as C1, C2"
+                " and so on",
+    "criterion id": "the last criterion's id, such as C3",
+    "named tests": "the tests defined in the test files the criteria name",
+    "witnessed once": "the criteria witnessed once by an uncommitted test,"
+                      " with the rules for those tests; empty when none is",
     "verify commands": "the ticket's verify commands",
     "verify output": "whether the ticket's verify commands and the project's"
                      " baseline passed, and their output",
@@ -61,11 +66,11 @@ STANDS_FOR = {
     "thread": "the review thread: where it sits, its author and its comments",
     "question": "the question asked",
 }
-STAND_IN = re.compile("⟨([^⟩]+)⟩")
+MARKED = re.compile("\x01([^\x01]+)\x01")
 
 
 def stand_in(name):
-    return f"⟨{name}⟩"
+    return f"\x01{name}\x01"
 
 
 def implement(project, slot):
@@ -73,7 +78,8 @@ def implement(project, slot):
     return implement_goal(
         s("merge conflicts"), s("requeue context"), s("steering"), slot,
         s("ticket"), _commands_brief(project, s("verify commands")),
-        s("orchestration"), s("evidence capture"), s("design"), s("criteria"))
+        s("orchestration"), s("evidence capture"), s("design"),
+        brief_text(s("criteria")) + s("witnessed once"))
 
 
 def review(project, slot):
@@ -81,7 +87,11 @@ def review(project, slot):
     return review_text(
         project, s("candidate commit"), (s("base ref"), s("candidate ref")),
         s("ticket"), review_mode(project), follow_up_place([s("criteria")]),
-        slot, verify=s("verify output"), criteria=s("criteria"),
+        slot, verify=s("verify output"),
+        criteria=criteria_text(s("criteria"), s("criterion id"),
+                               "REQUEST_CHANGES", named_tests_text(
+                                   s("named tests")))
+        + s("witnessed once"),
         witness=s("witness pre-check"), stale=s("stale approvals"),
         earlier=s("earlier rounds"), tests=s("test rules"), scope=s("scope"),
         trim=s("trim commits"), evidence=s("evidence"))
@@ -91,7 +101,7 @@ def trim(project, slot):
     s = stand_in
     return trim_goal(s("base commit"),
                      _commands_brief(project, s("verify commands")).strip(),
-                     s("tests"), slot, s("protected files"))
+                     s("tests"), slot, protected_brief(s("protected files")))
 
 
 def critic(project, slot):
@@ -121,10 +131,11 @@ RENDERS = {"implement": implement, "review": review, "trim": trim,
 
 
 def preview(project, target):
-    builtin, tail = RENDERS[target](project, SLOT).split(SLOT)
+    rendered = RENDERS[target](project, SLOT)
+    held = dict.fromkeys(MARKED.findall(rendered))
+    builtin, tail = (MARKED.sub(r"⟨\1⟩", part)
+                     for part in rendered.split(SLOT))
     block = notes.block(project, None, None, target)
-    held = dict.fromkeys(found.group(1) for found
-                         in STAND_IN.finditer(builtin + SLOT + tail))
     return {"target": target, "prompt": builtin + block + tail,
             "builtin": builtin, "notes": block, "tail": tail,
             "placeholders": [{"name": name, "stands_for": STANDS_FOR[name]}

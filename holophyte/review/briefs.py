@@ -297,8 +297,13 @@ def _named_tests_brief(wt, criteria):
 
     if wt is None:
         return ""
-    listing = test_name_listing(wt, [path for files in named_files(
-        [_witness_clause(text) for _, text in criteria]) for path in files])
+    return named_tests_text(test_name_listing(wt, [
+        path for files in named_files([_witness_clause(text)
+                                       for _, text in criteria])
+        for path in files]))
+
+
+def named_tests_text(listing):
     if not listing:
         return ""
     return ("The test files these criteria name define exactly these tests; "
@@ -310,8 +315,12 @@ def criteria_brief(criteria, refused="REQUEST_CHANGES", wt=None):
     if not criteria:
         return ""
     pairs = numbered(None, None, criteria)
-    listed = "\n".join(f"C{n}. {c}" for n, c in pairs)
-    example = f"C{pairs[-1][0]}"
+    return criteria_text("\n".join(f"C{n}. {c}" for n, c in pairs),
+                         f"C{pairs[-1][0]}", refused,
+                         _named_tests_brief(wt, pairs))
+
+
+def criteria_text(listed, example, refused, named):
     return (f"Acceptance criteria, numbered:\n{listed}\n\n"
             "Before the VERDICT line, account for every criterion with "
             "exactly one line each, in this form:\n"
@@ -326,7 +335,7 @@ def criteria_brief(criteria, refused="REQUEST_CHANGES", wt=None):
             "quote inside a test name with a backslash, `\\\"`.\n"
             "A criterion marked not met or unwitnessed, or left out of this "
             f"list, is a blocker: the round is {refused} regardless of "
-            "the verdict line.\n\n" + _named_tests_brief(wt, pairs))
+            "the verdict line.\n\n" + named)
 
 
 def witness_brief(gaps, unnamed, when):

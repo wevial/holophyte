@@ -1184,9 +1184,13 @@ run's.
 The prompt is rendered through the same text builder the loop calls, so
 everything the builder fixes is the loop's own text. Each part a run
 supplies (the ticket, its criteria, the diff, verify output, earlier review
-rounds, a thread) is a stand-in written `⟨name⟩`. `placeholders` lists
-each stand-in `prompt` holds, in order of first appearance, as its `name`
-and `stands_for`, a sentence saying what a run puts there. Adjacent
+rounds, a thread) is a stand-in written `⟨name⟩`; where a part comes with
+rules, such as the criteria's CRITERION lines or trim's protected test
+files, the rules are rendered and only the run's own listing is a
+stand-in. `placeholders` lists each stand-in `prompt` holds, in order of
+first appearance, as its `name` and `stands_for`, a sentence saying what a
+run puts there. Text from the project's config that happens to hold
+`⟨…⟩` is shown as written and is never a stand-in. Adjacent
 stand-ins with no text between them may each be empty in a real run. The
 preview renders a run where every part is present: a ticket with criteria
 and verify commands, a pull request template and a convention file. A run

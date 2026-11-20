@@ -125,6 +125,10 @@ def trim_goal(base, commands, tests, notes, protected):
             + notes + TRIM_TAIL.format(protected=protected))
 
 
+def protected_brief(listed):
+    return PROTECTED_BRIEF.format(files=listed) if listed else ""
+
+
 PASSES = ("delete", "merge", "flatten", "comments", "tests")
 
 
