@@ -65,7 +65,7 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
         _record(project, conn, run_id, "skipped", reason, [], [], before, before)
         record.skip(conn, run_id, "trim", reason, sha)
         return sha
-    with record.Attempt(conn, run_id, "trim", sha, {}) as attempt:
+    with record.Attempt(conn, run_id, "trim", sha, {}, wt=wt) as attempt:
         head, outcome, reason, ended = _trimmed(
             project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
             criteria, config, before, green)
@@ -143,10 +143,10 @@ def _ended_turn(project, conn, run_id, beat_s, wt, budget_min, goal):
                                 goal, role="trim", merges=False)
     except InfraFailure as error:
         return (getattr(error, "output", "") or str(error),
-                f"the route failed: {error}", ("error", "end"))
+                f"the route failed: {error}", ("error", "next"))
     except (OSError, RuntimeError) as error:
         return (str(error), f"the route could not start: {error}",
-                ("fail", "end"))
+                ("fail", "next"))
     if timed_out:
         return out, TIMED_OUT, ("fail", "next")
     return (*_judged_turn(out), ("pass", "next"))

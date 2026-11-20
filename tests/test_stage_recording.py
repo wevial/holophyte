@@ -230,12 +230,12 @@ class StageRecordingTests(LoopFixture):
         self.assertEqual(detail["reason"],
                          "diff of 49 changed lines is under 50")
 
-    def test_a_trim_whose_route_fails_closes_as_an_error(self):
+    def test_a_trim_whose_route_fails_closes_as_an_error_and_the_run_goes_on(self):
         self.run_loop(TRIMMED, Commit("work", "work.txt", lines(60)),
                       RouteFails(), APPROVE)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
-        self.assertIn(("trim", 1, "error", "end"), self.outcomes())
+        self.assertIn(("trim", 1, "error", "next"), self.outcomes())
 
     def test_an_unreproduced_bug_records_its_trim_skipped(self):
         self.configure(TRIMMED)
