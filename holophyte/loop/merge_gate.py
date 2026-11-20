@@ -384,7 +384,7 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
     store.park(conn, run_id, "awaiting_merge_approval",
                f"approved and verified; {branch} at {sha[:12]} waits for"
                f" {HUMAN_MERGE}", candidate_sha=sha)
-    record.waiting(conn, run_id, sha, lambda: "human")
+    record.waiting(conn, run_id, sha, lambda: "human", ready=True)
     print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
           " awaiting merge approval")
     ledger(conn, run_id, task_id, "note",

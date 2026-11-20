@@ -7,6 +7,7 @@ Run: python3 -m unittest discover -s tests -p 'test_stage_parks.py' -v
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -19,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 import babysit_fixture as cases  # noqa: E402 - after the sys.path insert above
-from fake_agent import APPROVE, Commit, Idle  # noqa: E402
+from fake_agent import APPROVE, Commit, Idle, Reply  # noqa: E402
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     BRANCH,
     UNTRIMMED,
@@ -31,10 +32,13 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 
 import holophyte.loop.review_round  # noqa: E402 - after the sys.path insert
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert
 import holophyte.stages.record  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
 import store.read  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
+import store.tickets  # noqa: E402 - after the sys.path insert above
+from holophyte.loop.gates import HUMAN_MERGE  # noqa: E402 - after the insert
 
 HUMAN = '[merge]\nmode = "local"\napprove = "human"\n' + UNTRIMMED
 
@@ -87,9 +91,14 @@ class GateAndApprovalParkTests(StageQueries, LoopFixture):
         self.released("approve")
         self.loop()
 
-        (_, _, outcome, edge, _, _, ended, _), = self.attempts("waiting")
+        (_, _, outcome, edge, _, _, ended, closed), = self.attempts("waiting")
         self.assertEqual((outcome, edge, ended),
                          ("pass", "next", self.release_at("approve")))
+        (intervention, actor), = self.read(
+            "SELECT id, actor FROM interventions WHERE \"action\" = 'approve'")
+        self.assertEqual(
+            {key: json.loads(closed)[key] for key in ("actor", "intervention")},
+            {"actor": actor, "intervention": intervention})
         self.assertEqual([row[:4] for row in self.attempts("merge_gate", 2)],
                          [(2, 1, "pass", "next")])
         self.assertEqual(self.read("SELECT id, outcome FROM runs ORDER BY id"),
@@ -149,6 +158,46 @@ class CheckParkTests(StageQueries, cases.BabysitHelpers, MergeModeFixture):
         self.assertEqual((outcome, edge, ended),
                          ("fail", "on_fail", self.release_at("babysit")))
 
+    def test_a_thread_quoting_the_approval_wording_waits_as_a_thread(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        quoting = ("", None, "k", HUMAN_MERGE)
+        self.fake_route(states=[self.pr_state([quoting])])
+        self.loop(Commit("work"), APPROVE, Idle(""),
+                  Reply("THREAD 1: HUMAN -- a question for the operator"),
+                  provider=self.provider())
+
+        (detail,), = self.read("SELECT detail FROM stageAttempts"
+                               " WHERE stageId = 'waiting'")
+        self.assertEqual(self.read("SELECT parkKind FROM runs"), [("thread",)])
+        self.assertEqual(json.loads(detail)["kind"], "thread")
+
+    def test_a_park_closed_by_a_github_merge_stays_open_after_a_reopen(self):
+        self.configure('[merge]\nmode = "pr"\napprove = "human"\n')
+        self.fake_route()
+        self.loop(Commit("work"), APPROVE, Idle(""), provider=self.provider())
+        merged = {"state": "MERGED", "merged": True,
+                  "mergeCommit": {"oid": self.MERGE_SHA},
+                  "mergedBy": {"login": "coworker"}}
+        real = holophyte.pr.github.graphql
+
+        def graphql(target, pull, query, variables):
+            if "mergedBy" not in query:
+                return real(target, pull, query, variables)
+            return {"repository": {"pullRequest": merged}}
+        with patch.object(holophyte.pr.pr_status, "graphql", graphql):
+            self.loop(provider=StubProvider())
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        with store.open(str(self.project.store_path)) as conn:
+            ticket = store.read.ticket_by_identifier(conn, "KO-131")
+            store.tickets.reopen_merged(conn, ticket.id)
+
+        self.loop(Commit("work again"), APPROVE, Idle(""),
+                  provider=self.provider())
+
+        self.assertEqual(len(self.read("SELECT id FROM runs")), 2)
+        (_, _, outcome, edge, _, _, ended, _), = self.attempts("waiting", 1)
+        self.assertEqual((outcome, edge, ended), (None, None, None))
+
 
 class LostHead:
     """A worktree whose HEAD names a branch that does not exist when its
@@ -167,6 +216,12 @@ class LostHead:
 
 class UnrecordedRunTests(StageQueries, LoopFixture):
     REFUSED = sqlite3.OperationalError("database is locked")
+
+    def setUp(self):
+        super().setUp()
+        stamp = "2026-01-01T00:00:00+0000"
+        self.enterContext(patch.dict(os.environ, {
+            "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}))
 
     def walked(self):
         phases = [summary for (summary,) in self.read(

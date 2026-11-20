@@ -3,7 +3,7 @@ import json
 from time import time
 
 import store
-from holophyte.loop.gates import HUMAN_MERGE, InfraFailure, sh
+from holophyte.loop.gates import InfraFailure, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
 from holophyte.stages import standard
@@ -173,22 +173,22 @@ def skip(conn, run_id, stage_id, reason, sha=None):
                 lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))
 
 
-def waiting(conn, run_id, sha, approve):
+def waiting(conn, run_id, sha, approve, ready=False):
     if conn is None or run_id is None:
         return
     detail = guarded(conn, run_id, "stage_read",
-                     lambda: _park_detail(conn, run_id, approve()))
+                     lambda: _park_detail(conn, run_id, approve(), ready))
     Attempt(conn, run_id, "waiting", sha, {} if detail is REFUSED else detail)
 
 
-def _park_detail(conn, run_id, approve):
+def _park_detail(conn, run_id, approve, ready):
     (kind,) = conn.execute("SELECT parkKind FROM runs WHERE id = ?",
                            (run_id,)).fetchone()
     (summary,) = conn.execute(
         "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
         " 'phase_change' ORDER BY seq DESC LIMIT 1", (run_id,)).fetchone()
     reason = summary.partition(": ")[2]
-    if approve == "human" and HUMAN_MERGE in reason:
+    if approve == "human" and ready:
         kind = "approval"
     return {"kind": kind, "reason": reason, "approve": approve}
 
@@ -212,11 +212,15 @@ def release(run):
 def _released(conn, attempt_id, parked_run, opened, sha):
     marks = ", ".join("?" * len(RELEASES))
     row = conn.execute(
-        'SELECT "action", source, at FROM interventions WHERE runId = ?'
-        f' AND "action" IN ({marks}) AND at >= ? ORDER BY at DESC, id DESC'
-        " LIMIT 1", (parked_run, *RELEASES, opened)).fetchone()
+        'SELECT i.id, i."action", i.source, i.actor, i.at FROM interventions i'
+        " JOIN runs r ON r.id = i.runId WHERE i.runId = ?"
+        " AND r.outcome = 'abandoned'"
+        f' AND i."action" IN ({marks}) AND i.at BETWEEN ? AND r.endedAt'
+        " ORDER BY i.at DESC, i.id DESC LIMIT 1",
+        (parked_run, *RELEASES, opened)).fetchone()
     if row is None:
         return
-    action, source, at = row
+    intervention, action, source, actor, at = row
     stages.close_stage(conn, attempt_id, *RELEASES[action], sha, (),
-                       {"release": action, "source": source}, now=at)
+                       {"release": action, "source": source, "actor": actor,
+                        "intervention": intervention}, now=at)

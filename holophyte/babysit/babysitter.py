@@ -386,7 +386,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 pass_no, refreshes = pass_no - 1, refreshes + 1
                 continue
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                    _ready(released, sha), (), reviewed=reviewed)
+                    _ready(released, sha), (), reviewed=reviewed, ready=True)
     return _at_the_cap(replace(run, sha=sha), beat_s, pull, pushed_state,
                        reviewed, refresh, refreshes == merge.pr_main_refreshes)
 

@@ -543,7 +543,7 @@ def _landed_pr(conn, run_id, provider, task_id, task, branch, url, merge_sha,
 
 def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                 why, threads, reviewed=None, park_kind="pull_request",
-                held=False, approval=None):
+                held=False, approval=None, ready=False):
     """Delayed updatedAt bumps alone cannot trigger another pass."""
     from holophyte.babysit.babysit_steps import record_step
     record_step(conn, run_id, "parked")
@@ -569,7 +569,7 @@ def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                                    level="detail",
                                    payload=json.dumps({"sha": sha}))
         record.waiting(conn, run_id, sha,
-                       lambda: merge_config(project).approve)
+                       lambda: merge_config(project).approve, ready)
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"
