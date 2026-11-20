@@ -12,5 +12,8 @@ def block(project, conn, run_id, target):
     if conn is not None and run_id is not None:
         pinned = pipelines.run_pipelines(conn, [run_id]).get(run_id)
     notes = pinned.get("notes", {}) if pinned else current_notes(project)
-    text = notes.get(target, "")
+    return framed(notes.get(target, ""))
+
+
+def framed(text):
     return f"{FRAME}\n\n{text}\n\n" if text else ""

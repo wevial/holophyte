@@ -11,7 +11,7 @@ import store.read
 from holophyte.admission import project_of
 from holophyte.config.config_tables import board_config
 from holophyte.config.pipeline_settings import NOTE_TARGETS
-from holophyte.redact import known_secrets, values_held
+from holophyte.redact import values_held
 from holophyte.serve.serve_runs import current_secrets
 from holophyte.stages import previews, standard
 from store.pipelines import pipeline_revision
@@ -53,11 +53,12 @@ def config_held(project, answer):
     except (SystemExit, OSError, ValueError):
         own = None
     with RESOLVING, values_held(own or ()):
-        secrets = current_secrets(project)
-        if secrets is None or own is None:
+        secrets = (None if own is None
+                   else current_secrets(project, fresh.config()))
+        if secrets is None:
             return 503, {"error": "the project config cannot be read, so its"
                                   " pipeline cannot be resolved"}
-        return answer(fresh, secrets | known_secrets(fresh.config()))
+        return answer(fresh, secrets)
 
 
 def prompt_answered(fresh, target, secrets):

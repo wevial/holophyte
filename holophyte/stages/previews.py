@@ -5,6 +5,7 @@ from holophyte.agents.harness import ORCHESTRATION_BRIEFS
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import merge_config
+from holophyte.config.pipeline_settings import pipeline_notes
 from holophyte.config.review_settings import review_config
 from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import (
@@ -175,7 +176,7 @@ def preview(project, target, scrub):
     rendered = RENDERS[target](project, SLOT)
     held = dict.fromkeys(MARKED.findall(rendered))
     builtin, tail = (shown(part, scrub) for part in rendered.split(SLOT))
-    block = scrub(notes.block(project, None, None, target))
+    block = scrub(notes.framed(pipeline_notes(project).get(target, "")))
     return {"target": target, "prompt": builtin + block + tail,
             "builtin": builtin, "notes": block, "tail": tail,
             "placeholders": [{"name": name,

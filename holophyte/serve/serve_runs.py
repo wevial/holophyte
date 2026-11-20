@@ -737,7 +737,7 @@ SECRETS_SEEN = {}
 SECRETS_SEEN_LOCK = threading.Lock()
 
 
-def current_secrets(project):
+def current_secrets(project, *snapshots):
     from holophyte.config.reader import load_config
     from holophyte.redact import known_secrets
     try:
@@ -745,6 +745,8 @@ def current_secrets(project):
     except (SystemExit, ValueError, OSError):
         return None
     found = known_secrets(project.config()) | known_secrets(on_disk)
+    for snapshot in snapshots:
+        found |= known_secrets(snapshot)
     with SECRETS_SEEN_LOCK:
         seen = SECRETS_SEEN.setdefault(str(project.config_path), set())
         seen |= found

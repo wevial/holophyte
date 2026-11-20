@@ -218,26 +218,43 @@ class PromptRouteTests(ServeTestCase):
         self.assertEqual(code, 503)
         self.assertIn("error", body)
 
-    def test_a_credential_in_the_rendered_snapshot_stays_redacted_across_a_save(self):
-        secret = "lin_api_snapshot_only_0123"
-        self.start("")
+    def saved_after_snapshot(self, before, after):
+        """Request the review prompt with `before` on disk, saving
+        `after` once the route has read the snapshot it renders."""
         config = self.db.parent / "config.toml"
-        config.write_text(f'[linear]\napi_key = "{secret}"\n[merge]\n'
-                          f'pr_style = "Cite {secret} in the title."\n')
+        config.write_text(before)
         snapshot = holophyte.serve.serve_pipeline.own_patterns
 
-        def saved_after_snapshot(project):
+        def save_then(project):
             patterns = snapshot(project)
-            config.write_text("")
+            config.write_text(after)
             return patterns
 
         with mock.patch.object(holophyte.serve.serve_pipeline, "own_patterns",
-                               saved_after_snapshot):
-            code, _, body = self.request("GET", "/pipeline/prompts/pr_writer")
+                               save_then):
+            return self.request("GET", "/pipeline/prompts/review")
 
+    def test_a_credential_only_in_the_rendered_snapshot_stays_redacted_after(self):
+        secret = "lin_api_snapshot_only_0123"
+        style = f'[merge]\npr_style = "Cite {secret} in the title."\n'
+        self.start("")
+        self.saved_after_snapshot(
+            f'[linear]\napi_key = "{secret}"\n' + style, style)
+
+        code, _, body = self.request("GET", "/pipeline/prompts/pr_writer")
         self.assertEqual(code, 200, body)
         self.assertIn("Cite [redacted] in the title.", body["builtin"])
         self.assertNotIn(secret, json.dumps(body))
+
+    def test_a_note_saved_with_its_private_pattern_mid_request_is_not_shown(self):
+        private = "Project Larkspur"
+        self.start("")
+        code, _, body = self.saved_after_snapshot(
+            "", f'[merge]\nprivate_patterns = ["{private}"]\n'
+            + notes_table(review=f"Mention {private} in each finding."))
+
+        self.assertEqual(code, 200, body)
+        self.assertNotIn(private, json.dumps(body))
 
     def test_the_critic_answer_keeps_the_pinned_contract(self):
         body = self.answer("critic", notes_table(
