@@ -9,7 +9,6 @@ import store.read
 from holophyte import leak_guard, note_privacy
 from holophyte.automation import merge_hold
 from holophyte.babysit import babysitter, maintainer_notes
-from holophyte.babysit.description_review import pending_text_review
 from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import board_mode, merge_config, sweep_config
 from holophyte.host.reconcile import _pr_seen
@@ -32,7 +31,7 @@ from holophyte.pr.evidence_refresh import captured
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from holophyte.review.briefs import main_ref
-from holophyte.review.council import SETTLED_KIND
+from holophyte.review.council import held_text
 from holophyte.stages import record
 from holophyte.tickets import ticket_template
 from store import operator_notes
@@ -176,7 +175,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                  f"```diff\n{diff}\n```")
     if refresh is not None:
         parts.extend(_refresh_parts(project, *refresh))
-    elif held := _held_text_review(conn, run_id):
+    elif held := held_text(conn, run_id):
         parts.append("the review says the description must cover:\n\n" + held)
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
@@ -218,25 +217,6 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     notes = note_privacy.private_texts(conn, run_id)
     return (note_privacy.withhold(title, notes),
             note_privacy.withhold(text, notes))
-
-
-def _held_text_review(conn, run_id):
-    if conn is None or run_id is None:
-        return ""
-    runs = [run_id]
-    while row := conn.execute(
-            "SELECT old.id FROM runs old JOIN runs current"
-            " ON old.ticketId = current.ticketId WHERE current.id = ?"
-            " AND old.outcome = 'paused' AND old.attempt = (SELECT MAX(attempt)"
-            " FROM runs WHERE ticketId = current.ticketId"
-            " AND attempt < current.attempt)", (runs[-1],)).fetchone():
-        runs.append(row[0])
-    settled = {summary for run in runs for (summary,) in conn.execute(
-        "SELECT summary FROM runEvents WHERE runId = ? AND kind = ?",
-        (run, SETTLED_KIND))}
-    return "\n".join(line for run in reversed(runs)
-                     for line in pending_text_review(conn, run).splitlines()
-                     if line not in settled)
 
 
 def _refresh_parts(project, current, answered, review):

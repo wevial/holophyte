@@ -374,7 +374,8 @@ class CouncilRoundTests(CouncilFixture):
 
         self.assertEqual(self.findings(1), [
             {"path": "Dockerfile", "line": 7, "severity": "p1",
-             "category": "correctness", "message": unpinned[2]}])
+             "category": "correctness", "message": unpinned[2],
+             "target": "code"}])
 
     def test_a_registered_value_in_a_finding_is_stored_redacted(self):
         leaked = ("README.md", 1, "the token council-dummy-credential-7 is "

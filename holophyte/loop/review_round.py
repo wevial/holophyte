@@ -284,25 +284,26 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                     stuck_review.kept_findings(private, ruling))
     held = council.held_here(project, verdict)
     asked = consolidate.primary_findings(verdict, decision, unwitnessed)
+    superseding = (getattr(verdict, "description_ruled", False)
+                   or any(map(council.described, asked)))
     kept = stuck_review.kept_findings(asked, ruling)
     described = [finding for finding in kept
                  if held and council.described(finding)]
-    settled = [finding for finding in asked if held
-               and council.described(finding) and finding not in kept]
     undescribed = [finding for finding in kept if finding not in described]
     verdict = _with_report(
         handed or stuck_review.without_dropped(verdict, undescribed, ruling),
         red, out)
-    fixes = ruling.fixes if ruling is not None else ""
+    fixed = ruling.fixed if ruling is not None else []
     if held:
-        fixes, ruled = council.split_fixes(fixes)
-        verdict = council.held_description(conn, run_id, verdict + fixes,
-                                           described, ruled, settled)
+        fixed, ruled = council.split_fixes(fixed)
+        verdict = council.held_description(
+            conn, run_id, verdict + stuck_review.fix_brief(fixed), described,
+            ruled, superseding)
         if (described or ruled) and not (red or private or undescribed):
             decision, findings = "APPROVE", []
             attempt.note(decision=decision)
     else:
-        verdict += fixes
+        verdict += stuck_review.fix_brief(fixed)
     return leak_guard.with_findings(verdict, private), decision, findings
 
 

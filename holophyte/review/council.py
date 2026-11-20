@@ -14,6 +14,7 @@ import store.council
 from holophyte.agents.agent_routes import routes
 from holophyte.agents.agent_turns import argv_label, family_label
 from holophyte.babysit.description_review import (
+    PR_TEXT_REVIEW_KIND,
     hold_for_pr_text,
     without_description,
 )
@@ -203,7 +204,8 @@ def stored_findings(findings):
                 candidate_path(kept_line(finding["path"])))
         entry = {"path": path or unparsed_path(message),
                  "severity": finding["severity"], "message": message,
-                 "category": finding["category"]}
+                 "category": finding["category"],
+                 "target": finding["target"]}
         if finding["line"] is not None and finding["line"] > 0:
             entry["line"] = finding["line"]
         if "raised_by" in finding:
@@ -288,11 +290,13 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "council_unconsolidated", summary)
         return verdict, verdict.json_reply["verdict"]
-    final, concerns = ruled(conn, run_id, rnd, value, answered, found,
-                            criteria, wt, sha)
+    final, concerns, judged = ruled(conn, run_id, rnd, value, answered, found,
+                                    criteria, wt, sha)
     reply = council_reply(final, seated)
     reply.consolidated_by = label
     reply.council_concerns = concerns
+    reply.description_ruled = any(
+        found[name][1]["target"] == "description" for name in judged)
     return reply, final["verdict"]
 
 
@@ -331,12 +335,18 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
             return None, ("the consolidator's route failed: "
                           + ("timed out" if getattr(reply, "timed_out", False)
                              else f"exited {reply.exit_code}"))
-        text = event_reply(str(reply), CONSOLIDATED_SCHEMA_FILE) or str(reply)
+        text = (event_reply(json_lines(str(reply)), CONSOLIDATED_SCHEMA_FILE)
+                or str(reply))
         value = reply_object(text, CONSOLIDATED_SCHEMA_FILE)
         if value is not None:
             return value, None
         goal = retry_brief(goal)
     return None, f"the consolidator's {UNCONSOLIDATED}"
+
+
+def json_lines(output):
+    return "\n".join(line for line in output.splitlines()
+                     if line.lstrip().startswith("{"))
 
 
 def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
@@ -345,7 +355,7 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
         named = [name for name in dict.fromkeys(finding["raised_by"])
                  if name in found]
         ids = [name for name in named if name not in covered]
-        if named and not ids:
+        if not ids:
             continue
         covered.update(ids)
         kept.append(dict(finding, raised_by=raisers(found, ids)))
@@ -368,10 +378,11 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
                 and name not in covered | dropped]
     judged = ruled_criteria(value, answered, criteria, wt, sha)
     approve = not kept and all(entry["status"] == "met" for entry in judged)
-    return {"verdict": "APPROVE" if approve else "REQUEST_CHANGES",
-            "criteria": judged, "findings": kept,
-            "follow_ups": value["follow_ups"],
-            "scope": ruled_scope(value, answered), "refuted": refuted}, concerns
+    final = {"verdict": "APPROVE" if approve else "REQUEST_CHANGES",
+             "criteria": judged, "findings": kept,
+             "follow_ups": value["follow_ups"],
+             "scope": ruled_scope(value, answered), "refuted": refuted}
+    return final, concerns, covered | dropped
 
 
 def unaccounted(found, accounted):
@@ -394,7 +405,7 @@ def spot(finding):
     path = candidate_path(kept_line(finding["path"]))
     if not path or finding["line"] is None or finding["line"] <= 0:
         return None
-    return posixpath.normpath(path), finding["line"]
+    return finding["target"], posixpath.normpath(path), finding["line"]
 
 
 def raisers(found, ids):
@@ -462,7 +473,7 @@ def held_here(project, verdict):
 
 
 def described(finding):
-    return isinstance(finding, dict) and finding.get("path") == DESCRIBED
+    return isinstance(finding, dict) and finding.get("target") == "description"
 
 
 def held_line(finding):
@@ -471,21 +482,47 @@ def held_line(finding):
                          "message": finding["message"]})
 
 
-def held_description(conn, run_id, verdict, findings, rulings, settled):
+def held_description(conn, run_id, verdict, findings, rulings, superseding):
+    lines = list(dict.fromkeys(
+        [held_line(finding) for finding in findings] + rulings))
+    pending = held_text(conn, run_id).splitlines()
     hold_for_pr_text(conn, run_id,
-                     [held_line(finding) for finding in findings] + rulings)
-    if conn is not None and run_id is not None:
-        for finding in settled:
-            store.record_event(conn, run_id, SETTLED_KIND, held_line(finding),
-                               level="detail")
+                     [line for line in lines if line not in pending])
+    if superseding and conn is not None and run_id is not None:
+        for line in pending:
+            if line not in lines:
+                store.record_event(conn, run_id, SETTLED_KIND, line,
+                                   level="detail")
     return without_description(verdict)[0]
 
 
-def split_fixes(fixes):
-    lines = fixes.split("\n")
-    described = [line for line in lines
-                 if line.startswith(f"- {DESCRIBED}: FIX -- ")]
-    rest = [line for line in lines if line not in described]
-    if not any(line.startswith("- ") for line in rest):
-        return "", described
-    return "\n".join(rest), described
+def held_text(conn, run_id):
+    if conn is None or run_id is None:
+        return ""
+    runs = [run_id]
+    while row := conn.execute(
+            "SELECT old.id FROM runs old JOIN runs current"
+            " ON old.ticketId = current.ticketId WHERE current.id = ?"
+            " AND old.outcome = 'paused' AND old.attempt = (SELECT MAX(attempt)"
+            " FROM runs WHERE ticketId = current.ticketId"
+            " AND attempt < current.attempt)", (runs[-1],)).fetchone():
+        runs.append(row[0])
+    held = {}
+    for kind, summary in conn.execute(
+            "SELECT kind, summary FROM runEvents WHERE runId IN"
+            f" ({', '.join('?' * len(runs))}) AND kind IN (?, ?, 'pr_text_sha')"
+            " ORDER BY id", (*runs, PR_TEXT_REVIEW_KIND, SETTLED_KIND)):
+        if kind == PR_TEXT_REVIEW_KIND:
+            held.update(dict.fromkeys(summary.splitlines()))
+        elif kind == SETTLED_KIND:
+            held.pop(summary, None)
+        else:
+            held.clear()
+    return "\n".join(held)
+
+
+def split_fixes(fixed):
+    return ([(finding, reason) for finding, reason in fixed
+             if not described(finding)],
+            [f"- {DESCRIBED}: FIX -- {reason}" for finding, reason in fixed
+             if described(finding)])
