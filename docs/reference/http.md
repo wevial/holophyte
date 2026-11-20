@@ -1093,10 +1093,13 @@ pinned none) and its own `attempts` in the same shape.
 
 Every string is redacted with the project's known secrets, as on
 `/runs/N/turns`, including any the config file holds at the request
-though it changed after the daemon started, and any the daemon has read
-before, so a rotated value stays hidden. When the config file cannot be
-read or parsed, the route answers 503 carrying `error` and `run` and
-serves no stages. `N` parses as on `/runs/N`: a non-integer is 400, an
+though it changed after the daemon started, and any an earlier request
+of this route read, so a value rotated after that request stays hidden.
+On a project daemon, a config file that cannot be read or parsed makes
+the route answer 503 carrying `error` and `run`, serving no stages.
+Under the host daemon, such a project resolves to no `[serve] name`, so
+`/projects/NAME/runs/N/stages` is the registry's 404 for an unknown name
+and never reaches this route. `N` parses as on `/runs/N`: a non-integer is 400, an
 integer with no run is 404 carrying `run`. The route writes nothing.
 
 ## `GET /ledger?since=MS`
