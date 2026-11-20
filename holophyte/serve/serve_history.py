@@ -203,34 +203,24 @@ def history_row(project, run, now, max_rounds, origin, reverted):
             "reverted": reverted}
 
 
-def parse_weeks(query):
-    text = parse_filter(query, "weeks")
+def parse_count(query, name, default, cap):
+    text = parse_filter(query, name)
     if text is None:
-        return FLOW_WEEKS
-    if not INTEGER.fullmatch(text) or not 1 <= int(text) <= FLOW_WEEKS_CAP:
-        raise ValueError(f"weeks must be an integer from 1 to"
-                         f" {FLOW_WEEKS_CAP}, got {text!r}")
-    return int(text)
-
-
-def parse_days(query):
-    text = parse_filter(query, "days")
-    if text is None:
-        return FLOW_DAYS
-    if not INTEGER.fullmatch(text) or not 1 <= int(text) <= FLOW_DAYS_CAP:
-        raise ValueError(f"days must be an integer from 1 to"
-                         f" {FLOW_DAYS_CAP}, got {text!r}")
+        return default
+    if not INTEGER.fullmatch(text) or not 1 <= int(text) <= cap:
+        raise ValueError(f"{name} must be an integer from 1 to"
+                         f" {cap}, got {text!r}")
     return int(text)
 
 
 def parse_flow_window(query):
     bucket = parse_filter(query, "bucket", tuple(BUCKET_MS))
     if parse_filter(query, "days") is None and bucket is None:
-        weeks = parse_weeks(query)
+        weeks = parse_count(query, "weeks", FLOW_WEEKS, FLOW_WEEKS_CAP)
         return "weeks", weeks * WEEK_MS, WEEK_MS
     if parse_filter(query, "weeks") is not None:
         raise ValueError("weeks cannot be combined with days or bucket")
-    days = parse_days(query)
+    days = parse_count(query, "days", FLOW_DAYS, FLOW_DAYS_CAP)
     if bucket is None:
         bucket = "day" if days <= FLOW_DAILY_CAP else "week"
     return "buckets", days * DAY_MS, BUCKET_MS[bucket]
