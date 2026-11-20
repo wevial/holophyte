@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import sys
 import tempfile
 import unittest
@@ -588,7 +589,7 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(self.git("status", "--porcelain"), status)
         self.assertEqual(found["restored"], ["draft.txt"])
 
-    def test_a_path_that_cannot_be_put_back_still_restores_the_index(self):
+    def test_a_draft_a_check_turns_into_a_directory_is_put_back(self):
         (self.target / "draft.txt").write_text("a draft\n")
 
         outcome, found = checks.ran(self.project, {
@@ -597,9 +598,41 @@ class AdvisoryCheckTests(CheckRuns):
                          "exit 1"],
             "secrets": frozenset()}, self.target)
 
-        self.assertEqual((outcome, found["check_outcome"]), ("error", "fail"))
-        self.assertIn("draft.txt", found["restore_error"])
+        self.assertEqual(outcome, "fail")
+        self.assertEqual((self.target / "draft.txt").read_text(), "a draft\n")
         self.assertEqual(self.git("diff", "--cached", "--name-only"), "")
+
+    def test_a_draft_that_cannot_be_put_back_keeps_its_saved_copy(self):
+        notes = self.target / "notes"
+        notes.mkdir()
+        (notes / "draft.txt").write_text("a draft\n")
+        self.addCleanup(notes.chmod, 0o755)
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["echo overwritten > notes/draft.txt",
+                         "chmod 555 notes", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual((outcome, found["check_outcome"]), ("error", "fail"))
+        self.assertIn("notes/draft.txt", found["restore_error"])
+        kept = Path(re.search(r"kept in (\S+)$",
+                              found["restore_error"]).group(1))
+        self.addCleanup(shutil.rmtree, kept, True)
+        self.assertEqual((kept / "notes" / "draft.txt").read_text(),
+                         "a draft\n")
+
+    def test_a_clean_file_a_check_commits_is_put_back_as_snapshotted(self):
+        head = self.git("rev-parse", "HEAD")
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["echo committed > README.md",
+                         "git commit -qam committed", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertNotEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertEqual((self.target / "README.md").read_text(), "base\n")
+        self.assertEqual(self.git("diff", "--name-only"), "")
 
     def test_a_failed_restore_closes_error_and_keeps_the_checks_result(self):
         with patch.object(checks.Snapshot, "restore",

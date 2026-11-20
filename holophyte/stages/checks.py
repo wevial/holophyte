@@ -167,16 +167,16 @@ class Snapshot:
         self.staged = _state(self.index)
         self.clean = _clean(wt)
         self.found = _walk(self.wt)
-        self.saved = tempfile.TemporaryDirectory(prefix="holo-check-")
+        self.saved = tempfile.mkdtemp(prefix="holo-check-")
         try:
             for path, signature in self.found.items():
                 if signature[0] == "file" and path not in self.clean:
-                    copy = Path(self.saved.name, path)
+                    copy = Path(self.saved, path)
                     copy.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(self.wt / path, copy,
                                     follow_symlinks=False)
         except BaseException:
-            self.saved.cleanup()
+            shutil.rmtree(self.saved, ignore_errors=True)
             raise
 
     def restore(self):
@@ -191,9 +191,10 @@ class Snapshot:
                     _put(self.index, self.staged)
             except Exception as error:
                 failed.append(f"index: {error}")
-            self.saved.cleanup()
         if failed:
-            raise OSError("could not restore " + "; ".join(failed))
+            raise OSError("could not restore " + "; ".join(failed)
+                          + f"; the saved copies are kept in {self.saved}")
+        shutil.rmtree(self.saved, ignore_errors=True)
         return sorted(restored)
 
     def _restore_paths(self, failed, restored):
@@ -216,11 +217,12 @@ class Snapshot:
             _put(target, kept)
         elif path in self.clean:
             content = subprocess.run(
-                ["git", "cat-file", "--filters", f"HEAD:{path}"], cwd=self.wt,
+                ["git", "cat-file", "--filters", f"--path={path}",
+                 self.clean[path]], cwd=self.wt,
                 capture_output=True, check=True).stdout
             _replace(target, kept[-1], lambda out: out.write(content))
         else:
-            with Path(self.saved.name, path).open("rb") as copy:
+            with Path(self.saved, path).open("rb") as copy:
                 _replace(target, kept[-1],
                          lambda out: shutil.copyfileobj(copy, out))
 
@@ -239,9 +241,15 @@ def _listed(wt, *args):
 def _clean(wt):
     looked = {entry[2:] for entry in _listed(wt, "ls-files", "-z", "-v")
               if entry.startswith("H ")}
-    return looked - _listed(
+    clean = looked - _listed(
         wt, "ls-files", "-z", "--modified", "--deleted") - _listed(
         wt, "diff", "--cached", "--name-only", "-z", "HEAD")
+    blobs = {}
+    for entry in _listed(wt, "ls-files", "-z", "--stage"):
+        staged, path = entry.split("\t", 1)
+        if path in clean:
+            blobs[path] = staged.split()[1]
+    return blobs
 
 
 def _walk(root):
@@ -286,6 +294,7 @@ def _signature(path):
 def _put(target, state):
     if state[0] == "link":
         target.parent.mkdir(parents=True, exist_ok=True)
+        _clear_directory(target)
         target.unlink(missing_ok=True)
         os.symlink(state[1], target)
         return
@@ -296,6 +305,7 @@ def _replace(target, mode, write):
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.is_symlink():
         target.unlink()
+    _clear_directory(target)
     handle, staging = tempfile.mkstemp(dir=target.parent, prefix=".holo-")
     try:
         with os.fdopen(handle, "wb") as out:
@@ -305,3 +315,8 @@ def _replace(target, mode, write):
     except BaseException:
         Path(staging).unlink(missing_ok=True)
         raise
+
+
+def _clear_directory(target):
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
