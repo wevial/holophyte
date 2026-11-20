@@ -545,9 +545,11 @@ class RunRound:
 
 
 def rounds_of(conn, run_id):
+    reply = ("reply" if "reply" in {row[1] for row in conn.execute(
+        "PRAGMA table_info(reviewRounds)")} else "NULL")
     rows = conn.execute(
         "SELECT round, startedAt, endedAt, verdict, reviewerModel, findings,"
-        " reply FROM reviewRounds WHERE runId = ? ORDER BY round",
+        f" {reply} FROM reviewRounds WHERE runId = ? ORDER BY round",
         (run_id,)).fetchall()
     return [RunRound(round=row[0], startedAt=row[1], endedAt=row[2],
                      verdict=row[3], reviewerModel=row[4], findings=row[5],

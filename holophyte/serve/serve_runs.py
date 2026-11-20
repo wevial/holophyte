@@ -378,8 +378,15 @@ def final_criteria(final, judged):
     unlisted = (dict(status="met", note="") if account.verdict is None
                 else dict(status="unwitnessed", note=UNWITNESSED_NOTE))
     verdicts = {c["n"]: dict(c, **unlisted) for c in round_criteria(newest)}
-    verdicts.update((c["n"], c) for c in account.criteria
-                    if c["n"] in verdicts or not newest)
+    if account.verdict is None:
+        verdicts.update((c["n"], c) for c in account.criteria)
+        return [verdicts[n] for n in sorted(verdicts)]
+    checked = {c["n"]: c for c in round_criteria(judged.get(final.round, []))}
+    for c in account.criteria:
+        if c["n"] in verdicts or not newest:
+            downgraded = c["status"] == "met" and checked.get(
+                c["n"], c)["status"] != "met"
+            verdicts[c["n"]] = checked[c["n"]] if downgraded else c
     return [verdicts[n] for n in sorted(verdicts)]
 
 

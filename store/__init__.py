@@ -545,7 +545,8 @@ def record_review_round(conn, run_id, round_number, verdict, reviewer_model,
         "verification results",
         _redact_document(_document_argument(
             "verification results", verification_results)))
-    reply_json = None if reply is None else _json_document("reply", reply)
+    reply_json = (None if reply is None
+                  else _json_document("reply", _redact_document(reply)))
     if started_at is None:
         started_at = int(time.time() * 1000)
     with _transaction(conn):
