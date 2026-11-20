@@ -116,6 +116,21 @@
       "seats": []
     },
     {
+      "binary": "agy",
+      "configured": false,
+      "found": false,
+      "models": [
+        {
+          "id": "gemini-4-neon-xhigh",
+          "source": "curated"
+        }
+      ],
+      "name": "agy",
+      "path": null,
+      "probe": null,
+      "seats": []
+    },
+    {
       "binary": "t3",
       "configured": false,
       "found": false,

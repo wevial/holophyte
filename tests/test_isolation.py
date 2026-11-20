@@ -426,6 +426,85 @@ class IsolationTests(GoRaceCases, IsolationCase):
                 self.assertNotIn("codex", " ".join(command))
                 self.assertEqual(command[-2:], ["claude", "-p"])
 
+    def agy_project(self):
+        self.target.path, worktree = self.make_worktree()
+        release = self.fake_codex_release()
+        binary = release / "agy"
+        binary.write_text('#!/bin/sh\nprintf "%s" "$PATH"\n')
+        binary.chmod(0o755)
+        host_login = self.root / ".gemini/antigravity-cli/antigravity-oauth-token"
+        host_login.parent.mkdir(parents=True)
+        host_login.write_text("host-login")
+        self.table["agents"].update(
+            implementer_isolation="container",
+            implementer={"harness": "agy", "model": "gemini-4-neon-xhigh"},
+        )
+        path = f"{release}{os.pathsep}{os.environ['PATH']}"
+        self.enterContext(patch.dict(os.environ, {"HOME": str(self.root),
+                                                  "PATH": path}))
+        return worktree, binary, host_login
+
+    def test_claude_and_codex_turns_in_an_agy_project_get_no_agy_mounts(self):
+        from holophyte.isolation import launcher
+
+        worktree, _, _ = self.agy_project()
+        for program in ("claude", "codex"):
+            with self.subTest(program=program):
+                argv = [program, "-p", "goal"]
+                route = launcher.turn_route(self.target, argv)
+                _, mounts = self.recorded_volumes(lambda: launcher.launch(
+                    route, worktree, {}, argv, project=self.target))
+                self.assertFalse(any("/opt/agy/" in vol or ".gemini/" in vol
+                                     for vol in mounts))
+
+    def test_agy_turn_mounts_the_host_binary_and_a_private_login(self):
+        from holophyte.isolation import launcher
+
+        worktree, binary, host_login = self.agy_project()
+        target = Path("/home/implementer") / host_login.relative_to(self.root)
+        sibling = self.root / "provider.json"
+        sibling.write_text("provider")
+        argv = ["agy", "-p", "goal"]
+
+        def run(command, cwd, timeout, *, env):
+            mounts = [command[i + 1] for i, flag in enumerate(command)
+                      if flag == "--volume"]
+            self.assertIn(f"{binary}:/opt/agy/bin/agy:ro", mounts)
+            turn = command[command.index(route.image) + 1:]
+            self.assertEqual(turn[-len(argv):], argv)
+            turn[-len(argv)] = str(binary)
+            path = subprocess.check_output(turn, cwd=cwd, env=env, text=True)
+            self.assertEqual(path.split(os.pathsep)[0], "/opt/agy/bin")
+            [parent] = [Path(vol.split(":")[0]) for vol in mounts
+                        if vol.endswith(f":{target.parent}:rw")]
+            copy = parent / target.name
+            self.assertFalse(copy.samefile(host_login))
+            self.assertEqual(copy.stat().st_mode & 0o777, 0o600)
+            if credential:
+                self.assertEqual((parent / "key").read_text(), "provider")
+            return 0, copy.read_text()
+
+        with (patch.object(launcher, "image_ready"),
+              patch.object(launcher.review_runner, "_remove_container"),
+              patch.object(launcher, "run_capped", side_effect=run)):
+            for credential in ({}, {"file": str(sibling),
+                                    "destination": str(target.with_name("key"))}):
+                with self.subTest(credential=credential):
+                    self.table["agents"]["implementer_credential"] = credential
+                    route = launcher.turn_route(self.target, argv)
+                    self.assertEqual(launcher.launch(route, worktree, {}, argv,
+                                                     project=self.target),
+                                     (0, "host-login"))
+
+    def test_agy_launch_requires_the_host_executable(self):
+        from holophyte.isolation import launcher
+
+        route = launcher.Route("container", writable=False)
+        with (patch.dict(os.environ, {"PATH": str(self.root), "HOME": str(self.root)}),
+              self.assertRaisesRegex(RuntimeError, "agy executable missing from PATH")):
+            self.recorded_volumes(lambda: launcher.launch(
+                route, self.root, {}, ["agy", "-p", "goal"]))
+
     def test_codex_fallback_mounts_the_host_release_read_only(self):
         from holophyte.isolation import launcher
 
