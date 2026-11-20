@@ -106,40 +106,48 @@ class StageNumbersTests(ServeTestCase):
                                      [stage], now=started + took)
 
     def seed_reviews(self):
-        """Three judged reviews of 10, 20 and 40 s, a 20 s error, two skips,
-        an open review and one older than the window; the first fail's fix
-        commits, the second's makes no commit."""
+        """Judged reviews of 5, 10, 20, 30 and 40 s, a 60 s error, two
+        skips, an open review and one older than the window. Only the 10 s
+        fail's on_fail is next followed by a build that commits; the 20 s
+        fail's fix makes no commit, the 5 s fail leaves by `end`, and the
+        30 s fail is next followed by a check that moves the commit."""
         run = self.run_of("KO-1")
         start = self.now - 10 * 60 * MIN
-        self.attempt(run, "review", start, 10 * SEC, ("fail", "on_fail"),
-                     detail={"findings": 3},
-                     usage={"input_tokens": 100, "output_tokens": 50,
-                            "cost_usd": 0.5})
-        self.attempt(run, "implement", start + MIN, 30 * SEC, ("pass", "next"),
-                     sha=(SHA["candidate"], SHA["fixed"]))
-        self.attempt(run, "review", start + 2 * MIN, 20 * SEC,
-                     ("fail", "on_fail"), detail={"findings": 2},
-                     usage={"input_tokens": 200, "output_tokens": 100})
-        self.attempt(run, "implement", start + 3 * MIN, 30 * SEC,
-                     ("pass", "next"), sha=(SHA["fixed"], SHA["fixed"]))
-        self.attempt(run, "review", start + 4 * MIN, 40 * SEC,
-                     ("pass", "next"),
-                     usage={"input_tokens": 400, "output_tokens": 200,
-                            "cost_usd": 1.5})
+        moved = (SHA["candidate"], SHA["fixed"])
+        steps = [
+            ("review", 10, ("fail", "on_fail"), None, {"findings": 3},
+             {"input_tokens": 100, "output_tokens": 50, "cost_usd": 0.5}),
+            ("implement", 30, ("pass", "next"), moved, None, None),
+            ("review", 20, ("fail", "on_fail"), None, {"findings": 2},
+             {"input_tokens": 200, "output_tokens": 400}),
+            ("implement", 30, ("pass", "next"), None, None, None),
+            ("review", 5, ("fail", "end"), None, {"findings": 7},
+             {"input_tokens": 300, "output_tokens": 10, "cost_usd": 1.0}),
+            ("implement", 30, ("pass", "next"), moved, None, None),
+            ("review", 30, ("fail", "on_fail"), None, {"findings": 4}, None),
+            ("verify", 30, ("pass", "next"), moved, None, None),
+            ("implement", 30, ("pass", "next"), moved, None, None),
+            ("review", 40, ("pass", "next"), None, None, {"cost_usd": 4.0}),
+        ]
+        for minute, (stage, took, closed, sha, detail, usage) in enumerate(
+                steps):
+            self.attempt(run, stage, start + minute * MIN, took * SEC, closed,
+                         sha or (SHA["candidate"], SHA["candidate"]), detail,
+                         usage)
         other = self.run_of("KO-2")
-        self.attempt(other, "review", start + 5 * MIN, 20 * SEC,
+        self.attempt(other, "review", start + 20 * MIN, 60 * SEC,
                      ("error", "end"))
-        for minute in (6, 7):
+        for minute in (21, 22):
             store.stages.skip_stage(self.conn, other, "review", "not needed",
                                     now=start + minute * MIN)
-        self.attempt(other, "review", start + 8 * MIN)
+        self.attempt(other, "review", start + 23 * MIN)
         stale = self.run_of("KO-3")
         self.attempt(stale, "review", self.now - 40 * DAY, 90 * SEC,
                      ("fail", "on_fail"), detail={"findings": 9},
                      usage={"input_tokens": 9000, "output_tokens": 9000,
                             "cost_usd": 9.0})
         self.attempt(stale, "implement", self.now - 40 * DAY + MIN, SEC,
-                     ("pass", "next"), sha=(SHA["candidate"], SHA["fixed"]))
+                     ("pass", "next"), sha=moved)
         self.conn.commit()
 
     def answer(self, query=""):
@@ -153,10 +161,10 @@ class StageNumbersTests(ServeTestCase):
         review, = [stage for stage in self.answer()["stages"]
                    if stage["id"] == "review"]
         self.assertEqual(review, {
-            "id": "review", "in_pipeline": True, "attempts": 6,
-            "median_seconds": 20, "median_tokens": 300,
-            "median_cost_usd": 1.0, "fail_rate": 0.5, "findings_fixed": 3,
-            "outcomes": {"pass": 1, "fail": 2, "skipped": 2, "error": 1}})
+            "id": "review", "in_pipeline": True, "attempts": 8,
+            "median_seconds": 25, "median_tokens": 310,
+            "median_cost_usd": 1.0, "fail_rate": 4 / 6, "findings_fixed": 3,
+            "outcomes": {"pass": 1, "fail": 4, "skipped": 2, "error": 1}})
 
     def test_the_pinned_fixture_is_the_review_answer(self):
         self.seed_reviews()
@@ -194,7 +202,7 @@ class StageNumbersTests(ServeTestCase):
                           for stage in self.answer()["stages"]],
                          [("verify", 3)])
 
-    def test_another_projects_attempts_in_a_shared_store_count_nowhere(self):
+    def test_a_sibling_projects_attempts_and_revision_are_never_served(self):
         other = store.tickets.ensure_project(self.conn, "team-2",
                                              self.root / "other")
         ticket = store.tickets.mirror_ticket(
@@ -204,9 +212,20 @@ class StageNumbersTests(ServeTestCase):
             verification_commands=["echo ok"], time_box_ms=60 * MIN)
         store.tickets.transition(self.conn, ticket, "in_flight")
         run = store.claim(self.conn, other, ticket)
+        current = holophyte.config.project.Project.locate(self.target)
+        store.pipelines.pin_pipeline(self.conn, run, standard.NAME,
+                                     standard.resolve(current))
         self.attempt(run, "review", self.now - MIN, SEC, ("fail", "end"))
         self.conn.commit()
-        self.assertEqual(self.answer()["stages"], [])
+        for name, board in (
+                ("no board", ""),
+                ("the sibling's team",
+                 '[board]\nteam = "team-2"\nproject_id = "board-2"\n')):
+            with self.subTest(config=name):
+                (self.db.parent / "config.toml").write_text(CONFIG + board)
+                body = self.answer()
+                self.assertEqual((body["pipeline"]["revision"],
+                                  body["stages"]), (None, []))
 
     def test_the_revision_is_the_configured_boards_project_row(self):
         board = '[board]\nteam = "team-2"\nproject_id = "board-2"\n'
@@ -220,13 +239,15 @@ class StageNumbersTests(ServeTestCase):
         self.conn.commit()
         self.assertEqual(self.answer()["pipeline"]["revision"], 1)
 
-    def test_a_setting_the_pipeline_cannot_resolve_is_503_naming_it(self):
+    def test_a_setting_the_pipeline_cannot_resolve_is_503_naming_only_it(self):
+        credential = "ghp-synthetic-credential-0123456789"
         (self.db.parent / "config.toml").write_text(
-            CONFIG + '[trim]\nenabled = "false"\n')
+            CONFIG + f'[trim]\nenabled = "{credential}"\n')
         self.start()
         code, _, body = self.request("GET", "/pipeline")
         self.assertEqual(code, 503)
-        self.assertIn("trim", body["error"])
+        self.assertIn("[trim] enabled", body["error"])
+        self.assertNotIn(credential, self.raw_body)
 
     def test_days_outside_1_to_365_is_400_naming_the_range(self):
         self.start()

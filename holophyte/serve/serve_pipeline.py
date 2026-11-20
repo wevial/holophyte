@@ -12,12 +12,14 @@ from holophyte.config.config_tables import board_config
 from holophyte.serve.serve_runs import current_secrets
 from holophyte.stages import standard
 from store.pipelines import pipeline_revision
+from store.project_paths import canonical_projects
 from store.stages import stage_numbers
 
 PIPELINE_PATH = "/pipeline"
 DEFAULT_DAYS = 30
 MAX_DAYS = 365
 DAY_MS = 24 * 60 * 60 * 1000
+SETTING = re.compile(r"\[[A-Za-z0-9_.-]+\]( [A-Za-z0-9_]+)?")
 
 
 def pipeline(project, query):
@@ -36,8 +38,8 @@ def pipeline(project, query):
         document = standard.resolve(fresh)
         board = board_config(fresh)
     except (SystemExit, ValueError) as error:
-        return 503, {"error": f"the project config does not resolve to a"
-                              f" pipeline: {error}"}
+        return 503, {"error": "the project config does not resolve to a"
+                              f" pipeline{setting_without_value(error)}"}
     since_ms = int(time() * 1000) - days * DAY_MS
     revision, numbers = None, {}
     if project.store_path.exists():
@@ -64,4 +66,12 @@ def served_project(conn, project, board):
         return project_of(conn, project)
     row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
                        (board.team,)).fetchone()
-    return None if row is None else row[0]
+    if row is None or canonical_projects(conn).get(row[0]) != str(
+            project.path.resolve()):
+        return None
+    return row[0]
+
+
+def setting_without_value(error):
+    found = SETTING.search(str(error).removeprefix("[holo2] "))
+    return "" if found is None else f": check {found.group(0)}"

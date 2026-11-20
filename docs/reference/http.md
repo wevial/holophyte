@@ -1132,6 +1132,8 @@ resolved: `seat`, `profile`, `switch`, `effort`, `adversary`, `commands`
 served before any run pins it. `revision` is the stored revision a run
 of the project (the `[board] team`'s row, else the row at this path)
 pinned this same document under, or null when no run has pinned it yet.
+A `[board] team` whose row belongs to another repository path serves no
+revision and no stage numbers.
 
 `window` names the `days` asked (`?days=N`, 30 when absent) and `since_ms`,
 the epoch milliseconds the window opens at. `days` outside 1 to 365, or not
@@ -1154,7 +1156,7 @@ A project with no store answers the document with `revision` null and an
 empty `stages`. Every string is redacted with the project's known secrets,
 as on `/runs/N/stages`; a config file that cannot be read or parsed, or
 a setting the pipeline cannot resolve, makes the route answer 503 carrying
-`error`.
+`error`, which names the setting but never its value.
 
 ## `GET /ledger?since=MS`
 
