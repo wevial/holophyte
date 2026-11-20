@@ -343,11 +343,14 @@ Each module, one line:
 - `holophyte/review/council.py` — a council review round under
   `[[review.council]]`: every seat in parallel on the round's prompt with the
   `council_reply.schema.json` reply brief, one retry for a reply the schema
-  refuses, each seat's `councilSeats` row, the two-seat quorum and the
-  strictest-wins merge of the answering seats' replies.
+  refuses, each seat's `councilSeats` row, the two-seat quorum, the
+  consolidator's turn over the seats' replies and the adversary's findings
+  (`consolidated_reply.schema.json`), the split-vote rule applied to its reply,
+  and the strictest-wins merge it falls back to.
 - `holophyte/review/consolidate.py` — one findings list for a fix turn after an
   adversarial pass: the exact merge, the consolidator's merges and order, the
-  three-concern cap, the held concerns and the high-path raise.
+  three-concern cap, the held concerns and the high-path raise; and a council
+  round's numbered inputs and consolidator brief.
 - `holophyte/review/stale_approval.py` — a review left only stale cited
   approvals: the `stale_approval_rereview` event, and the failure when the
   review again at that head still cites one.
@@ -1125,7 +1128,8 @@ The store is its own package:
   run's `stageAttempts`, numbered per stage, each closed with the agent
   seconds, tokens and cost of its roles' turns recorded while it was open.
 - `store/council.py` — `record_seat()`: one reviewer seat's row in a council
-  review round, its reply and reason redacted.
+  review round, its reply and reason redacted; `record_consolidator()`: the
+  consolidator's route on a consolidated round.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3

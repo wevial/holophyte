@@ -37,7 +37,7 @@ RULINGS_EVENT = "review_rulings"
 SETTLED = "Settled by the adjudicator, not a blocker:"
 COMMITS_RE = re.compile(r"^BEGIN UNTRUSTED COMMIT MESSAGES\n(.*?)\n"
                         r"END UNTRUSTED COMMIT MESSAGES$", re.M | re.S)
-Ruling = namedtuple("Ruling", ("dropped", "fixes", "settled_all"))
+Ruling = namedtuple("Ruling", ("dropped", "fixed", "settled_all"))
 
 
 def _key(finding):
@@ -247,18 +247,23 @@ def _item(finding):
     return f"- {_where(finding)} [{finding['severity']}] {message}"
 
 
-def _ruled(findings, ruled):
-    dropped = _dropped(ruled)
+def fix_brief(fixed):
     fixes = "".join(f"- {_where(finding)}: FIX -- {reason}\n"
-                    for finding, (word, reason) in ruled if word == "FIX")
-    left = [finding for finding in findings if isinstance(finding, dict)
-            and finding.get("evidence_only") is not True
-            and _identity(finding) not in dropped]
-    return Ruling(dropped, fixes and (
+                    for finding, reason in fixed)
+    return fixes and (
         "\n\nThe review repeated these findings from the round before, and "
         "the adjudicator ruled them blockers against the ticket. Answer each "
         "ADDRESS and fix it; a FOLLOW_UP or DECLINE on them does not stand:\n"
-        + fixes), not left)
+        + fixes)
+
+
+def _ruled(findings, ruled):
+    dropped = _dropped(ruled)
+    left = [finding for finding in findings if isinstance(finding, dict)
+            and finding.get("evidence_only") is not True
+            and _identity(finding) not in dropped]
+    return Ruling(dropped, [(finding, reason) for finding, (word, reason)
+                            in ruled if word == "FIX"], not left)
 
 
 def _adjudications(conn, run_id):

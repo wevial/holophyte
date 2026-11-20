@@ -354,9 +354,9 @@ class PipelineMigrationTests(unittest.TestCase):
             self.assertEqual(conn.execute(
                 "SELECT outcome, pipelineId FROM runs").fetchall(),
                 [("failed", None)])
-            self.assertEqual(store.schema.SCHEMA_VERSION, 74)
+            self.assertEqual(store.schema.SCHEMA_VERSION, 75)
             self.assertEqual(conn.execute("PRAGMA user_version").fetchone(),
-                             (74,))
+                             (75,))
             self.assertEqual(store.schema.READABLE_FROM, 50)
 
 

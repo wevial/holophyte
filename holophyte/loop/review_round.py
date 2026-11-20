@@ -4,6 +4,7 @@ from functools import partial
 from time import time
 
 import store
+import store.council
 import store.read
 from holophyte import failure_reason, leak_guard
 from holophyte.agents.fix_session import steer_turn
@@ -213,7 +214,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                                                    "review"),
                           seated=bool(seats))
     primary = (partial(council.run_round, project, conn, run_id, wt, base_sha,
-                       sha, prompt, rnd, seats, criteria, agent) if seats else
+                       sha, prompt, rnd, seats, criteria, agent,
+                       lambda detail: attempt.note(council=detail))
+               if seats else
                partial(_review_reply, project, prompt, wt, base_sha, sha, conn,
                        run_id, run_agent=agent, review_round=rnd))
     with heartbeat_while(conn, run_id, beat_s):
@@ -224,6 +227,16 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                                            agent)))
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
+    if seats:
+        with heartbeat_while(conn, run_id, beat_s):
+            verdict, decision = council.consolidated(
+                project, conn, run_id, wt, base_sha, sha, rnd, verdict,
+                criteria, consolidate.adversary_findings(conn, run_id, rnd)
+                if plan else None, agent)
+        attempt.note(council=council.detail(verdict))
+    consolidated_by = getattr(verdict, "consolidated_by", None)
+    if consolidated_by:
+        blocking = []
     approved = cited_approval(verdict, wt, sha)
     red = _verify_findings(verify_cmd, ok, out)
     leak_guard.record(conn, run_id, leaks)
@@ -236,6 +249,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  structured_findings=getattr(verdict, "council_findings", None),
                  adversary=blocking + red + private,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
+    if consolidated_by and conn is not None:
+        store.council.record_consolidator(conn, run_id, rnd, consolidated_by)
     attempt.note(decision=decision, findings=len(consolidate.primary_findings(
         verdict, decision, blocking + red + private)))
     if decision == "REQUEST_CHANGES" and conn is not None:
@@ -265,23 +280,45 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     primary = stuck_review.kept_findings(consolidate.primary_findings(
         verdict, decision, unwitnessed + red + private), ruling)
     handed = (adversarial is not None and (adversarial or not seats)
-              and consolidate.handed_on(
+              and not consolidated_by and consolidate.handed_on(
                   project, conn, run_id, provider, task_id, rnd, primary,
                   adversarial, fixing,
-                  partial(agent, project, "consolidate", cwd=wt,
-                          base_sha=base_sha, candidate_sha=sha,
-                          timeout=consolidate.TIMEOUT, conn=conn,
-                          run_id=run_id)))
+                  None if seats else partial(
+                      agent, project, "consolidate", cwd=wt,
+                      base_sha=base_sha, candidate_sha=sha,
+                      timeout=consolidate.TIMEOUT, conn=conn, run_id=run_id)))
+    if consolidated_by and verdict.council_concerns:
+        consolidate.handed_on(project, conn, run_id, provider, task_id, rnd, [],
+                              verdict.council_concerns, False, None)
+    held = council.held_here(project, verdict)
+    asked = consolidate.primary_findings(verdict, decision, unwitnessed)
+    kept = stuck_review.kept_findings(asked, ruling)
+    settled = [council.held_line(finding) for finding in asked
+               if seats and council.pr_mode(project)
+               and council.described(finding)
+               and finding not in kept]
+    council.settle(conn, run_id, settled + getattr(verdict, "withdrawn", []))
     if ruling is not None and ruling.settled_all:
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
+    described = [finding for finding in kept
+                 if held and council.described(finding)]
+    undescribed = [finding for finding in kept if finding not in described]
     verdict = _with_report(
-        handed or stuck_review.without_dropped(
-            verdict, stuck_review.kept_findings(consolidate.primary_findings(
-                verdict, decision, unwitnessed), ruling), ruling),
+        handed or stuck_review.without_dropped(verdict, undescribed, ruling),
         red, out)
-    verdict += ruling.fixes if ruling is not None else ""
+    fixed = ruling.fixed if ruling is not None else []
+    if held:
+        fixed, ruled = council.split_fixes(fixed)
+        verdict = council.held_description(
+            conn, run_id, verdict + stuck_review.fix_brief(fixed), described,
+            ruled)
+        if (described or ruled) and not (red or private or undescribed):
+            decision, findings = "APPROVE", []
+            attempt.note(decision=decision)
+    else:
+        verdict += stuck_review.fix_brief(fixed)
     return leak_guard.with_findings(verdict, private), decision, findings
 
 

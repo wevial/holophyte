@@ -260,7 +260,17 @@ def probe_council_seat(project, number, route, timeout=None):
     return probe
 
 
-def container_probe(project, seat, route, timeout=None):
+def probe_council_consolidator(project, route, timeout=None):
+    if route is None:
+        return probe_seat(project, "consolidate", timeout=timeout)
+    started = time.time()
+    probe = container_probe(project, "council consolidator", route, timeout,
+                            review_tier(project))
+    record_probe(project, probe, False, started, time.time())
+    return probe
+
+
+def container_probe(project, seat, route, timeout=None, service_tier=None):
     cmd, cap = [route["harness"], "--model", route["model"]], timeout or PROBE_TIMEOUT
     with tempfile.TemporaryDirectory(prefix="holophyte-probe-") as scratch:
         sh(["git", "clone", "--shared", "--quiet", str(project.path), scratch])
@@ -269,7 +279,8 @@ def container_probe(project, seat, route, timeout=None):
         try:
             out = review_runner.run_review(
                 repo=Path(scratch), base_sha=sha, candidate_sha=sha,
-                prompt=REVIEW_PROBE_GOAL, timeout=cap, verdicts=None, **route)
+                prompt=REVIEW_PROBE_GOAL, timeout=cap, verdicts=None, **route,
+                **({"service_tier": service_tier} if service_tier else {}))
         except subprocess.TimeoutExpired:
             return ProbeResult(cmd, None, "", cap, seat=seat,
                                expected_commit=sha)

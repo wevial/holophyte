@@ -8,7 +8,9 @@ from holophyte.board.projection import ledger
 from holophyte.loop.gates import InfraFailure, verify_timed_out
 from holophyte.redact import safe_print as print
 from holophyte.review.blast_radius import continued_runs, high_path
+from holophyte.review.json_reply import SchemaBrief
 from holophyte.review.reply_parsing import (
+    FINDING_CATEGORIES,
     UNPARSED_PATH,
     parse_findings,
     stale_approvals,
@@ -252,6 +254,81 @@ def second_pass(merged, ask):
     return final, record
 
 
+HELD = "held"
+HELD_SEVERITY_RE = re.compile(r"\[(p[0-2])\]")
+HELD_BRIEF = (" A finding raised by held is a description finding an earlier "
+              "round holds for the PR-text writer: refute it with the reason "
+              "it no longer applies to withdraw it, or it stays held.")
+
+
+def council_inputs(answered, adversary, held=()):
+    raised = [(f"seat {seat.number}", finding, None, None)
+              for seat in answered for finding in seat.value["findings"]]
+    raised += [("adversary", _council_finding(item), item["evidence"], found)
+               for item, found in zip(items([], adversary), adversary)]
+    raised += [(HELD, {"path": None, "line": None,
+                       "severity": (HELD_SEVERITY_RE.search(line) or
+                                    [None, "p1"])[1],
+                       "category": "docs", "target": "description",
+                       "message": line}, None, None) for line in held]
+    return {f"F{n}": entry for n, entry in enumerate(raised, 1)}
+
+
+def _council_finding(item):
+    return {"path": item["path"], "line": item["line"],
+            "severity": "p2" if item["severity"] == "nit" else item["severity"],
+            "category": (item["category"] if item["category"]
+                         in FINDING_CATEGORIES else "correctness"),
+            "target": "code",
+            "message": "\n".join(item["messages"] + item["notes"])}
+
+
+def _council_vote(seat):
+    head = f"Seat {seat.number} ({seat.route})"
+    if seat.status != "answered":
+        return f"{head} did not vote, {seat.status}: {seat.reason}"
+    return f"{head}:\n{json.dumps(seat.value, sort_keys=True)}"
+
+
+def council_brief(seated, found, criteria, sha):
+    listed = "\n".join(
+        f"{name}, raised by {who}: {_where(finding['path'] or '', finding['line'])}"
+        f" [{finding['severity']}]{f' evidence {evidence}' if evidence else ''}"
+        f" {' '.join(finding['message'].split())}"
+        for name, (who, finding, evidence, _) in found.items()) or "(none)"
+    text = (
+        "You are the READ-ONLY consolidator of a review council. Its seats "
+        f"reviewed commit {sha} against the ticket's acceptance criteria:\n\n"
+        + "\n".join(f"C{n}. {criterion}" for n, criterion in criteria)
+        + "\n\nEach seat's reply follows as numbered JSON.\n\n"
+        + "\n\n".join(map(_council_vote, seated))
+        + "\n\nEvery finding the seats and the adversarial reviewer raised, "
+        f"by id:\n{listed}\n\n"
+        "Give the council's one authoritative round. Keep each finding that "
+        "blocks the candidate, merge the findings that report one defect in "
+        "different words into one, and list in its raised_by the id of every "
+        "finding above it covers; a finding that repeats another is merged "
+        "that way, never refuted. Drop a finding only as a refuted entry "
+        "naming its ids in raised_by, with the reason it does not block. A "
+        "finding two or more seats raised at the same path and line is kept "
+        "even if you drop it, and so is one you neither keep nor drop, except "
+        "an adversary finding with evidence concern, which blocks only if you "
+        "keep it. A "
+        "criterion a seat marks not_met or unwitnessed stays so unless you "
+        "name the test or check that witnesses it. Before you reply, run at "
+        "least one "
+        "read-only command in the candidate checkout, such as `git show "
+        "--stat HEAD`, to check what the seats claim. Do not modify anything."
+        " Your reply "
+        "is one JSON object that the turn's output schema checks: verdict, "
+        "criteria, findings, follow_ups, scope and refuted, with the fields "
+        "the seats' replies use, plus raised_by on each finding and refuted "
+        "entry."
+        + (HELD_BRIEF if any(who == HELD for who, *_ in found.values())
+           else ""))
+    return SchemaBrief(text, text, text)
+
+
 def capped(final, fixing):
     concerns = [item for item in final if concern(item)]
     sent = {id(item) for item in concerns[:CONCERN_CAP]} if fixing else set()
@@ -346,7 +423,7 @@ def handed_on(project, conn, run_id, provider, task_id, rnd, primary,
     record = {"round": rnd, "pass1_in": len(found), "pass1_out": len(merged),
               "pass2": "skipped", "merges": [], "ignored": []}
     final = merged
-    if fix and len(merged) >= 2:
+    if fix and ask is not None and len(merged) >= 2:
         final, outcome = second_pass(merged, ask)
         record.update(outcome)
     sent, held = capped(final, fix)
