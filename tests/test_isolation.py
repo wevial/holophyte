@@ -499,13 +499,11 @@ class IsolationTests(GoRaceCases, IsolationCase):
     def test_agy_launch_requires_the_host_executable(self):
         from holophyte.isolation import launcher
 
+        route = launcher.Route("container", writable=False)
         with (patch.dict(os.environ, {"PATH": str(self.root), "HOME": str(self.root)}),
-              patch.object(launcher, "image_ready"),
-              patch.object(launcher.review_runner, "_remove_container"),
-              patch.object(launcher, "run_capped"),
               self.assertRaisesRegex(RuntimeError, "agy executable missing from PATH")):
-            launcher.launch(launcher.Route("container", writable=False), self.root, {},
-                            ["agy", "-p", "goal"])
+            self.recorded_volumes(lambda: launcher.launch(
+                route, self.root, {}, ["agy", "-p", "goal"]))
 
     def test_codex_fallback_mounts_the_host_release_read_only(self):
         from holophyte.isolation import launcher
