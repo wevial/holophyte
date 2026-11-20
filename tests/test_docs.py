@@ -419,6 +419,26 @@ class ArchitectureTruthTests(unittest.TestCase):
         self.assertIsNotNone(printed, "data.md prints no schema version")
         self.assertEqual(int(printed.group(1)), store.schema.SCHEMA_VERSION)
 
+    # Tables the page has never listed; one leaves this set when it is listed.
+    UNLISTED_TABLES = {"gapLayers", "stories", "storyChildren",
+                       "storyDecisions", "storyWitnesses", "ticketNotes",
+                       "ticketRevisions", "witnessResults"}
+
+    def test_data_page_table_rows_name_every_table_but_the_pinned_omissions(self):
+        import tempfile
+
+        import store
+        with tempfile.TemporaryDirectory() as directory:
+            conn = store.open(Path(directory) / "store.db")
+            created = {name for (name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+                " AND name NOT LIKE 'sqlite_%'")}
+            conn.close()
+        text = (self.ARCH / "data.md").read_text()
+        listed = set(re.findall(r"^\| `(\w+)` \|", text, re.MULTILINE))
+        self.assertEqual(created - listed, self.UNLISTED_TABLES)
+        self.assertEqual(listed - created, set())
+
     def test_serve_unit_names_the_bearer_token_as_its_boundary(self):
         unit = (ROOT / "deploy" / "holophyte-serve@.service").read_text()
         self.assertIn("bearer token", unit)

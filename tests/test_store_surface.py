@@ -23,6 +23,7 @@ import store.criteria
 import store.follow_ups
 import store.gap_layers
 import store.operate
+import store.pipelines
 import store.read
 import store.run_reads
 import store.schema
@@ -374,6 +375,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # HOLO-495: `/runs/N`'s
                                                     # witness pre-check.
                                                     "witness_prechecks"]),
+                                 # A run's pipeline, pinned from
+                                 # its document or inherited by a continuation.
+                                 (store.pipelines, ["inherit_pipeline",
+                                                    "pin_pipeline"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",

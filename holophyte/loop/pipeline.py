@@ -53,6 +53,7 @@ from holophyte.pr.pullrequest import _opens_draft, _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
 from holophyte.review import moved_landmarks, reproduce
 from holophyte.review.criterion_ids import numbered
+from holophyte.stages import record
 from holophyte.story.story_claim import story_brief
 
 
@@ -63,6 +64,8 @@ def run_task(project, task, conn=None, run_id=None, provider=None):
         run = run or claimed_run(
             project, task, conn, run_id, provider, clock=monotonic)
         run = profiled_run(run, task)
+        if not task.get("_gate"):
+            record.pin(run)
         return _run_stages(run, task)
     except store.IllegalTransition as refused:
         raise InfraFailure(str(refused)) from refused
