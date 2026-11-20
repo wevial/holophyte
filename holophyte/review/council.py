@@ -30,6 +30,8 @@ from holophyte.review.json_reply import (
     RenderedReply,
     SchemaBrief,
     candidate_path,
+    event_reply,
+    finding_line,
     kept_line,
     message_line,
     rendered,
@@ -50,6 +52,7 @@ UNREADABLE = "reply failed the council reply schema twice"
 UNCONSOLIDATED = "reply failed the consolidated reply schema twice"
 SHARED = "raised by two or more seats at the same path and line"
 UNREASONED = "dropped without a reason"
+DESCRIBED = "PR description"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
 
 
@@ -139,7 +142,7 @@ def record(conn, run_id, rnd, seat):
 
 
 def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
-              criteria, run_agent):
+              criteria, run_agent, noted=None):
     with working(conn, run_id):
         seated = together([partial(ask, project, conn, run_id, wt, base_sha,
                                    sha, prompt, run_agent, number, seat)
@@ -151,6 +154,8 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
             absent.append(f"seat {seat.number} ({seat.route}) {seat.status}: "
                           f"{seat.reason}")
             print(f"[holo2] round {rnd}: council {absent[-1]}")
+    if noted is not None:
+        noted(seat_detail(seated, None))
     answered = [seat for seat in seated if seat.status == "answered"]
     if len(answered) < QUORUM:
         raise InfraFailure(
@@ -189,7 +194,7 @@ def stored_findings(findings):
     stored = []
     for finding in findings:
         message = message_line(finding["message"])
-        path = ("PR description" if finding["target"] == "description" else
+        path = (DESCRIBED if finding["target"] == "description" else
                 candidate_path(kept_line(finding["path"])))
         entry = {"path": path or unparsed_path(message),
                  "severity": finding["severity"], "message": message,
@@ -276,9 +281,11 @@ def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
         if conn is not None and run_id is not None:
             store.record_event(conn, run_id, "council_unconsolidated", summary)
         return verdict, verdict.json_reply["verdict"]
-    final = ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha)
+    final, concerns = ruled(conn, run_id, rnd, value, answered, found,
+                            criteria, wt, sha)
     reply = council_reply(final, seated)
     reply.consolidated_by = label
+    reply.council_concerns = concerns
     return reply, final["verdict"]
 
 
@@ -299,7 +306,8 @@ def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
             return None, ("the consolidator's route failed: "
                           + ("timed out" if getattr(reply, "timed_out", False)
                              else f"exited {reply.exit_code}"))
-        value = reply_object(str(reply), CONSOLIDATED_SCHEMA_FILE)
+        text = event_reply(str(reply), CONSOLIDATED_SCHEMA_FILE) or str(reply)
+        value = reply_object(text, CONSOLIDATED_SCHEMA_FILE)
         if value is not None:
             return value, None
         goal = retry_brief(goal)
@@ -323,21 +331,31 @@ def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
             dropped.update(ids)
             refuted.append(dict(entry, raised_by=raisers(found, ids)))
     for at, ids in unaccounted(found, covered | dropped).items():
+        held = next((finding for finding in kept
+                     if at in shared and spot(finding) == at), None)
+        if held is not None:
+            held.update(severity=min(held["severity"], *(
+                found[name][1]["severity"] for name in ids)),
+                raised_by=list(dict.fromkeys(
+                    held["raised_by"] + raisers(found, ids))))
+            continue
         finding = restored(found, ids)
         kept.append(finding)
         record_kept(conn, run_id, rnd, finding,
                     SHARED if at in shared else UNREASONED)
+    concerns = [found[name][3] for name in found
+                if found[name][2] == "concern" and name not in covered]
     judged = ruled_criteria(value, answered, criteria, wt, sha)
     approve = not kept and all(entry["status"] == "met" for entry in judged)
     return {"verdict": "APPROVE" if approve else "REQUEST_CHANGES",
             "criteria": judged, "findings": kept,
             "follow_ups": value["follow_ups"],
-            "scope": ruled_scope(value, answered), "refuted": refuted}
+            "scope": ruled_scope(value, answered), "refuted": refuted}, concerns
 
 
 def unaccounted(found, accounted):
     left = {}
-    for name, (_, finding, evidence) in found.items():
+    for name, (_, finding, evidence, _) in found.items():
         if name not in accounted and evidence != "concern":
             left.setdefault(spot(finding) or name, []).append(name)
     return left
@@ -364,7 +382,7 @@ def raisers(found, ids):
 
 def shared_places(found):
     seats = {}
-    for who, finding, _ in found.values():
+    for who, finding, *_ in found.values():
         if who.startswith("seat") and (at := spot(finding)):
             seats.setdefault(at, set()).add(who)
     return {at for at, who in seats.items() if len(who) >= 2}
@@ -404,16 +422,37 @@ def ruled_scope(value, answered):
 
 
 def detail(verdict):
+    return seat_detail(verdict.council_seats,
+                       getattr(verdict, "consolidated_by", None))
+
+
+def seat_detail(seated, consolidated_by):
     return {"seats": [{"seat": seat.number, "route": seat.route,
                        "status": seat.status,
                        "score": (seat.value or {}).get("score")}
-                      for seat in verdict.council_seats],
-            "consolidated_by": getattr(verdict, "consolidated_by", None)}
+                      for seat in seated],
+            "consolidated_by": consolidated_by}
 
 
-def held_description(project, conn, run_id, verdict):
-    if merge_config(project).mode != "pr":
-        return verdict
-    kept, described = without_description(verdict)
-    hold_for_pr_text(conn, run_id, described)
-    return kept
+def held_here(project, verdict):
+    return (getattr(verdict, "consolidated_by", None) is not None
+            and merge_config(project).mode == "pr")
+
+
+def described(finding):
+    return isinstance(finding, dict) and finding.get("path") == DESCRIBED
+
+
+def held_description(conn, run_id, verdict, findings):
+    hold_for_pr_text(conn, run_id, [finding_line(
+        {"target": "description", "severity": finding["severity"],
+         "message": finding["message"]}) for finding in findings])
+    return without_description(verdict)[0]
+
+
+def description_only(verdict, findings):
+    value = verdict.json_reply
+    return (not findings and bool(value["findings"])
+            and all(finding["target"] == "description"
+                    for finding in value["findings"])
+            and all(entry["status"] == "met" for entry in value["criteria"]))

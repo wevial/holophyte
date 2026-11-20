@@ -426,7 +426,8 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     profile = review_profile(model, effort)
     turn = {"model": model, "effort": effort, "profile": profile}
     if family_route is not None and not switched:
-        turn, profile, tier = family_route, family_label(family_route), None
+        turn, profile = family_route, family_label(family_route)
+        tier = None if role == "review" else tier
     cap = REVIEW_TIMEOUT if timeout is None else timeout
     configured = carry_directories(project)
     options = {} if tier is None else {"service_tier": tier}

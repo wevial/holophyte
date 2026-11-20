@@ -203,7 +203,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                                                    "review"),
                           seated=bool(seats))
     primary = (partial(council.run_round, project, conn, run_id, wt, base_sha,
-                       sha, prompt, rnd, seats, criteria, agent) if seats else
+                       sha, prompt, rnd, seats, criteria, agent,
+                       lambda detail: attempt.note(council=detail))
+               if seats else
                partial(_review_reply, project, prompt, wt, base_sha, sha, conn,
                        run_id, run_agent=agent, review_round=rnd))
     with heartbeat_while(conn, run_id, beat_s):
@@ -269,22 +271,34 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
               and not consolidated_by and consolidate.handed_on(
                   project, conn, run_id, provider, task_id, rnd, primary,
                   adversarial, fixing,
-                  partial(agent, project, "consolidate", cwd=wt,
-                          base_sha=base_sha, candidate_sha=sha,
-                          timeout=consolidate.TIMEOUT, conn=conn,
-                          run_id=run_id)))
+                  None if seats else partial(
+                      agent, project, "consolidate", cwd=wt,
+                      base_sha=base_sha, candidate_sha=sha,
+                      timeout=consolidate.TIMEOUT, conn=conn, run_id=run_id)))
+    if consolidated_by and verdict.council_concerns:
+        consolidate.handed_on(project, conn, run_id, provider, task_id, rnd, [],
+                              verdict.council_concerns, False, None)
     if ruling is not None and ruling.settled_all:
         return None, decision, findings
     red, private = (stuck_review.kept_findings(red, ruling),
                     stuck_review.kept_findings(private, ruling))
+    reviewed = verdict
+    held = council.held_here(project, reviewed)
+    kept = stuck_review.kept_findings(consolidate.primary_findings(
+        verdict, decision, unwitnessed), ruling)
+    described = [finding for finding in kept
+                 if held and council.described(finding)]
     verdict = _with_report(
         handed or stuck_review.without_dropped(
-            verdict, stuck_review.kept_findings(consolidate.primary_findings(
-                verdict, decision, unwitnessed), ruling), ruling),
+            verdict, [finding for finding in kept if finding not in described],
+            ruling),
         red, out)
     verdict += ruling.fixes if ruling is not None else ""
-    if consolidated_by:
-        verdict = council.held_description(project, conn, run_id, verdict)
+    if held:
+        verdict = council.held_description(conn, run_id, verdict, described)
+        if council.description_only(reviewed, findings):
+            decision = "APPROVE"
+            attempt.note(decision=decision)
     return leak_guard.with_findings(verdict, private), decision, findings
 
 

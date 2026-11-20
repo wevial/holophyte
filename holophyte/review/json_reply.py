@@ -265,7 +265,7 @@ def rendered(value):
     return "\n".join(lines)
 
 
-def event_reply(reply):
+def event_reply(reply, schema=SCHEMA_FILE):
     from holophyte.review.review_runner import ReviewBoundaryError, codex_events
 
     try:
@@ -278,7 +278,7 @@ def event_reply(reply):
         return None
     if not texts or not isinstance(texts[-1], str):
         return None
-    return texts[-1] if reply_object(texts[-1]) is not None else None
+    return texts[-1] if reply_object(texts[-1], schema) is not None else None
 
 
 class RenderedReply(str):

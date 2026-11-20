@@ -395,7 +395,7 @@ class CouncilRoundTests(CouncilFixture):
             council(ASTRA, OPUS).replace(UNTRIMMED, ADVERSARY_ON),
             Change("change", "poetry.lock", "locked\n"),
             Attack("- src/app.py:4 [p2] a symlink may slip by\n"
-                   "EVIDENCE: concern\nADVERSARY: DONE"), Consolidate(),
+                   "EVIDENCE: concern\nADVERSARY: DONE"),
             Change("fix", "src/app.py", "fixed\n"), seats={
                 "gpt-6-astra": [Answer("REQUEST_CHANGES", 4, (unpinned,)),
                                 Answer("APPROVE", 9)],
@@ -412,7 +412,7 @@ class CouncilRoundTests(CouncilFixture):
         concern = ("- src/app.py:4 [p2] a symlink may slip by\n"
                    "EVIDENCE: concern\nADVERSARY: DONE")
         for side in (("Nothing broke.\nADVERSARY: DONE",),
-                     (concern, Consolidate())):
+                     (concern,)):
             with self.subTest(adversary=side[0][:20]):
                 fixture = CouncilFixture()
                 fixture.setUp()

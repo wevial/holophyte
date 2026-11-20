@@ -255,10 +255,10 @@ def second_pass(merged, ask):
 
 
 def council_inputs(answered, adversary):
-    raised = [(f"seat {seat.number}", finding, None) for seat in answered
-              for finding in seat.value["findings"]]
-    raised += [("adversary", _council_finding(item), item["evidence"])
-               for item in items([], adversary)]
+    raised = [(f"seat {seat.number}", finding, None, None)
+              for seat in answered for finding in seat.value["findings"]]
+    raised += [("adversary", _council_finding(item), item["evidence"], found)
+               for item, found in zip(items([], adversary), adversary)]
     return {f"F{n}": entry for n, entry in enumerate(raised, 1)}
 
 
@@ -283,7 +283,7 @@ def council_brief(seated, found, criteria, sha):
         f"{name}, raised by {who}: {_where(finding['path'] or '', finding['line'])}"
         f" [{finding['severity']}]{f' evidence {evidence}' if evidence else ''}"
         f" {' '.join(finding['message'].split())}"
-        for name, (who, finding, evidence) in found.items()) or "(none)"
+        for name, (who, finding, evidence, _) in found.items()) or "(none)"
     text = (
         "You are the READ-ONLY consolidator of a review council. Its seats "
         f"reviewed commit {sha} against the ticket's acceptance criteria:\n\n"
@@ -404,7 +404,7 @@ def handed_on(project, conn, run_id, provider, task_id, rnd, primary,
     record = {"round": rnd, "pass1_in": len(found), "pass1_out": len(merged),
               "pass2": "skipped", "merges": [], "ignored": []}
     final = merged
-    if fix and len(merged) >= 2:
+    if fix and ask is not None and len(merged) >= 2:
         final, outcome = second_pass(merged, ask)
         record.update(outcome)
     sent, held = capped(final, fix)

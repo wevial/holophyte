@@ -175,7 +175,7 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                  f"```diff\n{diff}\n```")
     if refresh is not None:
         parts.extend(_refresh_parts(project, *refresh))
-    elif held := pending_text_review(conn, run_id):
+    elif held := _held_text_review(conn, run_id):
         parts.append("the review says the description must cover:\n\n" + held)
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
@@ -217,6 +217,21 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
     notes = note_privacy.private_texts(conn, run_id)
     return (note_privacy.withhold(title, notes),
             note_privacy.withhold(text, notes))
+
+
+def _held_text_review(conn, run_id):
+    if conn is None or run_id is None:
+        return ""
+    runs = [run_id]
+    while row := conn.execute(
+            "SELECT old.id FROM runs old JOIN runs current"
+            " ON old.ticketId = current.ticketId WHERE current.id = ?"
+            " AND old.outcome = 'paused' AND old.attempt = (SELECT MAX(attempt)"
+            " FROM runs WHERE ticketId = current.ticketId"
+            " AND attempt < current.attempt)", (runs[-1],)).fetchone():
+        runs.append(row[0])
+    return "\n".join(filter(None, (pending_text_review(conn, run)
+                                   for run in reversed(runs))))
 
 
 def _refresh_parts(project, current, answered, review):
