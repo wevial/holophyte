@@ -58,6 +58,30 @@ def current_checks(project):
     return pipeline_checks(project, load_config(project.config_path))
 
 
+def pinned_checks(project):
+    config = load_config(project.config_path)
+    secrets = known_secrets(config) | known_secrets(project.config())
+    return [{**check, "commands": [outbound(command, secrets)
+                                   for command in check["commands"]]}
+            for check in pipeline_checks(project, config)]
+
+
+def check_sources(project):
+    configs = [project.config()]
+    try:
+        configs.insert(0, load_config(project.config_path))
+    except SystemExit:
+        pass
+    secrets = frozenset().union(*map(known_secrets, configs))
+    found = []
+    for config in configs:
+        try:
+            found += pipeline_checks(project, config)
+        except SystemExit:
+            continue
+    return found, secrets
+
+
 def pipeline_checks(project, config=None):
     config = project.config() if config is None else config
     table = config.get("pipeline", {})

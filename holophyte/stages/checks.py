@@ -1,7 +1,7 @@
 """A project's `[[pipeline.check]]` stages run on a candidate and recorded."""
 from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import verify_config
-from holophyte.config.pipeline_settings import current_checks, pipeline_checks
+from holophyte.config.pipeline_settings import check_sources, current_checks
 from holophyte.loop.gates import run_verify, timed_out, verify_timed_out
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import known_secrets
@@ -10,11 +10,15 @@ from holophyte.review.briefs import _changed_files
 from holophyte.stages import record, standard
 from store import pipelines
 
-OUTPUT_TAIL = 2000
+OUTPUT_TAIL = 1000
+NOT_STARTED = (126, 127)
+UNAVAILABLE = ("the config no longer holds the command this check was pinned "
+               "with")
 
 
 def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
-    for check in configured(project, conn, run_id, after):
+    sources, secrets = check_sources(project)
+    for check in configured(project, conn, run_id, after, sources, secrets):
         reason = skip_reason(check, wt, base_sha, sha)
         if reason:
             record.skip(conn, run_id, check["id"], reason, sha)
@@ -23,28 +27,31 @@ def run(project, conn, run_id, beat_s, wt, base_sha, sha, after, **detail):
                             {**detail, "mode": check["mode"]},
                             wt=wt) as attempt, \
                 heartbeat_while(conn, run_id, beat_s):
-            outcome, found = ran(project, check, wt)
-            attempt.close(outcome, "next", sha, **found)
+            outcome, found = (ran(project, check, wt) if check["commands"]
+                              else ("error", {"error": UNAVAILABLE}))
+            attempt.close(outcome, "next", sha,
+                          **standard.scrubbed(found, secrets))
 
 
-def configured(project, conn, run_id, after):
+def configured(project, conn, run_id, after, sources, secrets):
     pinned = None
     if conn is not None and run_id is not None:
         pinned = pipelines.run_pipelines(conn, [run_id]).get(run_id)
     if not pinned:
         return [check for check in current_checks(project)
                 if check["after"] == after]
-    return [unredacted(project, stage) for stage in pinned.get("stages", [])
+    return [executable(project, stage, sources, secrets)
+            for stage in pinned.get("stages", [])
             if stage.get("after") == after]
 
 
-def unredacted(project, stage):
-    secrets = known_secrets(project.config())
-    for check in pipeline_checks(project):
-        if (check["id"] == stage["id"] and standard.scrubbed(
-                check["commands"], secrets) == stage["commands"]):
+def executable(project, stage, sources, secrets):
+    shown = known_secrets(project.config())
+    for check in sources:
+        if check["id"] == stage["id"] and standard.scrubbed(standard.scrubbed(
+                check["commands"], secrets), shown) == stage["commands"]:
             return {**stage, "commands": check["commands"]}
-    return stage
+    return {**stage, "commands": None}
 
 
 def skip_reason(check, wt, base_sha, sha):
@@ -67,7 +74,8 @@ def ran(project, check, wt):
         return "error", {"error": str(error)}
     if ok:
         return "pass", {"exit_status": 0, "output": str(out)[-OUTPUT_TAIL:]}
-    facts = getattr(out, "failure", None) or {}
-    return "fail", {"exit_status": facts.get("exit_status"),
-                    "timed_out": timed_out(out) or verify_timed_out(out),
-                    "output": str(out)[-OUTPUT_TAIL:]}
+    status = (getattr(out, "failure", None) or {}).get("exit_status")
+    return "error" if status in NOT_STARTED else "fail", {
+        "exit_status": status,
+        "timed_out": timed_out(out) or verify_timed_out(out),
+        "output": str(out)[-OUTPUT_TAIL:]}

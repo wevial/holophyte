@@ -3,9 +3,10 @@ import json
 from time import time
 
 import store
-from holophyte.config.pipeline_settings import current_checks, current_notes
+from holophyte.config.pipeline_settings import current_notes, pinned_checks
 from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
+from holophyte.loop.runs import RunSwept
 from holophyte.loop.stop import resumes
 from holophyte.stages import notes, standard
 from store import pipelines, stages
@@ -31,6 +32,20 @@ def guarded(conn, run_id, write, record):
         return REFUSED
 
 
+def checks_guarded(conn, run_id, run_checks):
+    ended = []
+
+    def kept():
+        try:
+            return run_checks()
+        except (store.RunEnded, RunSwept) as error:
+            ended.append(error)
+
+    guarded(conn, run_id, "pipeline_checks", kept)
+    if ended:
+        raise ended[0]
+
+
 def pin(run):
     conn, run_id = run.conn, run.run_id
     if conn is None or run_id is None:
@@ -54,7 +69,7 @@ def _resolved(run):
     notes = guarded(conn, run_id, "pipeline_notes",
                     lambda: current_notes(run.project))
     checks = guarded(conn, run_id, "pipeline_checks",
-                     lambda: current_checks(run.project))
+                     lambda: pinned_checks(run.project))
     document = standard.resolve(run.project, row and row[1]["profile"],
                                 None if notes is REFUSED else notes,
                                 () if checks is REFUSED else checks)

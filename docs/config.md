@@ -2236,12 +2236,17 @@ check runs its commands, joined with `&&`, in the task worktree with the
 verify runner under `[verify] timeout_sec`, and records a stage attempt
 under its `id`: `pass` or `fail` with edge `next`, the exit status and the
 output's tail in its detail, `timed_out` when the timeout ended it, `error`
-when the command could not start. A check after `implement` runs at the
-top of each review round, before that round's verify, on the round's head;
-a check after `trim` runs once, right after trim, on the trimmed head, or
-on the untrimmed head when trim was skipped for its own reasons; a run
-whose bug was not reproduced runs no check. An advisory check's output goes only into its attempt: no
-prompt, ledger entry or finding carries it, and the run goes on whatever
+when the command could not start (the shell's exit 126 or 127 included),
+and `error` when the config no longer holds the command the run pinned. A
+check after `implement` runs once per review round and head, before that
+round's verify, on the round's head; a round that only re-reviews a stale
+approval runs it again. A check after `trim` runs once, right after trim,
+on the trimmed head, or on the untrimmed head when trim was skipped for its
+own reasons. A run whose bug was not reproduced runs no check after `trim`,
+and none during its evidence check; once it hands on to ordinary review
+rounds, its checks after `implement` run there. An advisory check's output
+goes only into its attempt, with any credential either config file holds
+scrubbed: no prompt, ledger entry or finding carries it, and the run goes on whatever
 it returns. A run reads its checks from its pinned pipeline document. A
 check whose read or run fails records `stage_record_failed` and never stops
 the run.

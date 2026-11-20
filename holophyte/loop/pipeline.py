@@ -184,7 +184,7 @@ def _run_stages(run, task):
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts, criteria)
-            record.guarded(conn, run_id, "pipeline_checks", lambda: checks.run(
+            record.checks_guarded(conn, run_id, lambda: checks.run(
                 project, conn, run_id, beat_s, wt, base_sha, sha, "trim"))
         else:
             record.skip(conn, run_id, "trim", UNREPRODUCED, sha)
