@@ -377,7 +377,7 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     "witness_prechecks"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
-                                 # HOLO-854: a run's pipeline, pinned from
+                                 # A run's pipeline, pinned from
                                  # its document or inherited by a continuation.
                                  (store.pipelines, ["inherit_pipeline",
                                                     "pin_pipeline"]),
