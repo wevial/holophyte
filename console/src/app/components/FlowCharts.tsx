@@ -125,7 +125,7 @@ function Chart({ title, note, starts, bucket, format, tip, top, values, none, ch
                 key={index}
                 type="button"
                 data-point={index}
-                aria-label={`${weekRange(starts[index]!, bucket)}: ${said}, ${context}`}
+                aria-label={`${weekRange(starts[index]!, starts[index + 1], bucket)}: ${said}, ${context}`}
                 onMouseEnter={() => setHovered(index)}
                 onMouseLeave={() => setHovered(null)}
                 onFocus={() => setFocused(index)}
@@ -136,7 +136,7 @@ function Chart({ title, note, starts, bucket, format, tip, top, values, none, ch
             );
           })}
           {active != null && activeValue != null && (
-            <Tooltip range={weekRange(starts[active]!, bucket)} tip={tip(activeValue, active)} style={place(active, count, activeValue, top)} align={edge(active, count)} />
+            <Tooltip range={weekRange(starts[active]!, starts[active + 1], bucket)} tip={tip(activeValue, active)} style={place(active, count, activeValue, top)} align={edge(active, count)} />
           )}
         </div>
         <span />
@@ -153,6 +153,7 @@ function Chart({ title, note, starts, bucket, format, tip, top, values, none, ch
 export function BarChart({ values, ...props }: ChartProps & { values: number[] }) {
   const top = roundedTop(Math.max(0, ...values));
   const latest = values.length - 1;
+  const labelEvery = Math.ceil(values.length / AXIS_LABELS);
   return (
     <Chart {...props} top={top} values={values} none="none">
       {(active) => (
@@ -173,9 +174,10 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
               );
             })}
           </svg>
-          {values.map((value, index) => (
+          {values.map((value, index) => (index % labelEvery !== 0 && index !== latest) ? null : (
             <span
               key={index}
+              data-value={index}
               style={place(index, values.length, value, top)}
               className={`absolute -translate-x-1/2 -translate-y-[calc(100%+3px)] font-mono text-[10.5px] ${index === latest ? "font-semibold text-ink" : "text-ink-3"} ${index === latest && active != null ? "invisible" : ""}`}
             >

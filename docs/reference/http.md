@@ -486,7 +486,7 @@ non-integer `limit`, a negative or non-integer `offset`, or a `sort`,
 `error` naming the parameter and any value it got. An `until` at or before
 `since` is 400 with `"until must be after since"`.
 
-## `GET /flow?days=N&bucket=day|week&until=MS`
+## `GET /flow?days=N&bucket=day|week&tz=ZONE&until=MS`
 
 The project's flow day by day or week by week: how much the factory
 merged and where its run time went. The console's Flow page reads it.
@@ -506,16 +506,22 @@ merged and where its run time went. The console's Flow page reads it.
  "reverted": {"count": 0, "merged": 7}}
 ```
 
-`buckets` holds one entry per day or seven-day window ending at `now`,
-oldest first, over the last `days` days. `days` runs from 1 to 182 and
-defaults to 30; `bucket` is `day` or `week`, and without it `day` up to 31
-days and `week` beyond. A `week` span that is not a whole number of weeks
-leaves its oldest entry shorter, opening at the span's start.
+`buckets` holds one entry per calendar day or run of seven days, oldest
+first, over the last `days` days in the time zone `tz` (an IANA name such
+as `Europe/Berlin`, UTC without one), the last day being the one `now`
+falls in (the one just before it when `now` is a midnight). Each day runs
+from local midnight to local midnight, so a day a clock change shortens or
+lengthens keeps its own hours. `days` runs from 1 to 182 and defaults to
+30; `bucket` is `day` or `week`, and without it `day` up to 31 days and
+`week` beyond. Weeks count back from the last day, and a span that is not
+a whole number of weeks leaves its oldest entry shorter, opening at the
+span's first midnight.
 
 Asked with `weeks=N` and neither `days` nor `bucket`, as older consoles
 ask, it answers the entries under `weeks` instead of `buckets`, one per
 seven-day window ending at `now`; `weeks` defaults to 6 and runs from 1
-to 26. Asked with none of the three, it answers the 6 weeks.
+to 26, and `tz` is ignored. Asked with none of the three, it answers the 6
+weeks.
 
 `now` is `until`, the end of the last entry in epoch milliseconds, or the
 daemon's clock without one; phase changes after it are left out. Each
@@ -541,7 +547,8 @@ revert` on `main` reverted within 14 days. A merge with no recorded merge
 commit counts as not reverted. It is null when `git log main` fails.
 
 A `weeks` that is not an integer from 1 to 26, a `days` that is not an
-integer from 1 to 182, a `bucket` other than `day` or `week`, `weeks`
+integer from 1 to 182, a `bucket` other than `day` or `week`, a `tz` that
+names no time zone, `weeks`
 asked with `days` or `bucket`, or an `until` that is not an integer or is
 later than the daemon's clock, is 400 with an `error` naming the allowed
 values.

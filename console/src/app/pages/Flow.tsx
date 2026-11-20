@@ -76,13 +76,17 @@ function lastEndedDay(): string {
 export function validateFlowSearch(search: Record<string, unknown>): FlowSearch {
   const from = validDay(search.from);
   const to = validDay(search.to);
-  if (endedRange(from, to)) return { from, to };
+  if (endedRange(from, to)) return { range: undefined, from, to };
   const range = RANGES.find((each) => each.value === search.range && each.value !== DEFAULT_RANGE);
-  return range ? { range: range.value } : {};
+  return { range: range?.value, from: undefined, to: undefined };
 }
 
 function presetOf(range: string | undefined) {
   return RANGES.find((each) => each.value === range) ?? RANGES.find((each) => each.value === DEFAULT_RANGE)!;
+}
+
+function localZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 
 function bucketOf(days: number): FlowBucket {
@@ -92,10 +96,10 @@ function bucketOf(days: number): FlowBucket {
 function flowWindow({ range, from, to }: FlowSearch): FlowWindow {
   if (from == null || to == null) {
     const { days } = presetOf(range);
-    return { days, bucket: bucketOf(days) };
+    return { days, bucket: bucketOf(days), tz: localZone() };
   }
   const days = wholeDays(from, to);
-  return { days, bucket: bucketOf(days), until: dayEnd(to).getTime() };
+  return { days, bucket: bucketOf(days), tz: localZone(), until: dayEnd(to).getTime() };
 }
 
 const SPLIT = [

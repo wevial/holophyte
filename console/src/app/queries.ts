@@ -633,6 +633,7 @@ const FLOW_INTERVAL_MS = 60_000;
 export interface FlowWindow {
   days: number;
   bucket: FlowBucket;
+  tz: string;
   until?: number;
 }
 
@@ -640,7 +641,7 @@ export interface FlowWindow {
  *  fleet order; a daemon without the route or its `buckets`, or that never answered, is left out. */
 export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }, window: FlowWindow): { host: R; flow: Flow }[] {
   const asked = hosts.filter((host) => host.status != null);
-  const path = `/flow?days=${window.days}&bucket=${window.bucket}${window.until == null ? "" : `&until=${window.until}`}`;
+  const path = `/flow?days=${window.days}&bucket=${window.bucket}&tz=${encodeURIComponent(window.tz)}${window.until == null ? "" : `&until=${window.until}`}`;
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),

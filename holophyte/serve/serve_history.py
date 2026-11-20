@@ -1,8 +1,11 @@
 import dataclasses
 import re
+from bisect import bisect_right
+from datetime import datetime, timedelta, timezone
 from statistics import median
 from time import time
 from typing import NotRequired, TypedDict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import store.read
 from holophyte.cli.report import REVERT_SPAN, is_reverted, main_log_since
@@ -40,7 +43,7 @@ FLOW_DAYS_CAP = 182
 FLOW_DAILY_CAP = 31
 DAY_MS = 24 * 3600 * 1000
 WEEK_MS = 7 * DAY_MS
-BUCKET_MS = {"day": DAY_MS, "week": WEEK_MS}
+BUCKETS = ("day", "week")
 HOUR_MS = 3600 * 1000
 WORKING_PHASES = frozenset({"working", "verifying", "reviewing", "addressing"})
 OPERATOR_PHASE = "blocked_on_operator"
@@ -213,23 +216,50 @@ def parse_count(query, name, default, cap):
     return int(text)
 
 
+def parse_zone(query):
+    text = parse_filter(query, "tz")
+    if text is None:
+        return timezone.utc
+    try:
+        return ZoneInfo(text)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"tz must be an IANA time zone name such as"
+                         f" Europe/Berlin, got {text!r}") from None
+
+
 def parse_flow_window(query):
-    bucket = parse_filter(query, "bucket", tuple(BUCKET_MS))
+    bucket = parse_filter(query, "bucket", BUCKETS)
     if parse_filter(query, "days") is None and bucket is None:
         weeks = parse_count(query, "weeks", FLOW_WEEKS, FLOW_WEEKS_CAP)
-        return "weeks", weeks * WEEK_MS, WEEK_MS
+        return "weeks", lambda now: [now - (weeks - index) * WEEK_MS
+                                     for index in range(weeks)]
     if parse_filter(query, "weeks") is not None:
         raise ValueError("weeks cannot be combined with days or bucket")
     days = parse_count(query, "days", FLOW_DAYS, FLOW_DAYS_CAP)
+    zone = parse_zone(query)
     if bucket is None:
         bucket = "day" if days <= FLOW_DAILY_CAP else "week"
-    return "buckets", days * DAY_MS, BUCKET_MS[bucket]
+    step = 1 if bucket == "day" else 7
+    return "buckets", lambda now: grouped_starts(day_starts(now, days, zone), step)
+
+
+def grouped_starts(starts, step):
+    short = len(starts) % step
+    return starts[:1] * bool(short) + starts[short::step]
+
+
+def day_starts(now, days, zone):
+    last = datetime.fromtimestamp((now - 1) / 1000, zone).date()
+    return [int(datetime(day.year, day.month, day.day, tzinfo=zone)
+                .timestamp() * 1000)
+            for day in (last - timedelta(days=days - 1 - index)
+                        for index in range(days))]
 
 
 def flow(project, query, now=None):
     now = int(time() * 1000) if now is None else now
     try:
-        key, span, size = parse_flow_window(query)
+        key, starts_at = parse_flow_window(query)
         until = parse_until(query)
     except ValueError as bad:
         return 400, {"error": str(bad)}
@@ -238,7 +268,8 @@ def flow(project, query, now=None):
     if not project.store_path.exists():
         return 503, no_store(project)
     now = now if until is None else until
-    since = now - span
+    starts = starts_at(now)
+    since = starts[0]
     conn = store.read.open_readonly(project.store_path)
     try:
         merged = conn.execute(
@@ -257,8 +288,8 @@ def flow(project, query, now=None):
     finally:
         conn.close()
     return 200, {"now": now,
-                 **flow_rows(key, since, size, merged, interventions,
-                             events, now),
+                 **flow_rows(key, starts, merged, interventions, events,
+                             now),
                  "reverted": flow_reverted(project.path, since, merged)}
 
 
@@ -274,17 +305,13 @@ def flow_reverted(repo, since, merged):
             "merged": len(merged)}
 
 
-def flow_rows(key, since, size, merged, interventions, events, now):
-    count = -(-(now - since) // size)
-    short = count * size - (now - since)
-
+def flow_rows(key, starts, merged, interventions, events, now):
     def row_of(at):
-        return rows[min((at - since + short) // size, count - 1)]
+        return rows[max(bisect_right(starts, at) - 1, 0)]
 
-    rows = [{"start_ms": max(since, since - short + index * size),
-             "rounds": [], "interventions": 0,
+    rows = [{"start_ms": start, "rounds": [], "interventions": 0,
              "hours": {"working": 0, "waiting": 0, "operator": 0}}
-            for index in range(count)]
+            for start in starts]
     for ended_at, rounds, _ in merged:
         row_of(ended_at)["rounds"].append(rounds)
     for (at,) in interventions:

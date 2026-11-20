@@ -808,7 +808,8 @@ test("off Settings the sidebar keeps the project switcher and the Pages nav and 
 });
 
 const NOV_6 = Date.UTC(2026, 10, 6);
-const WEEK = 7 * 24 * 3600 * 1000;
+const DAY = 24 * 3600 * 1000;
+const WEEK = 7 * DAY;
 const NO_WAITS = { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 };
 
 function flowOf(weeks: { merged: number; working: number; waiting: number; operator: number }[], waits = NO_WAITS): Flow {
@@ -924,6 +925,54 @@ test("Biggest waits leads with the largest group, and approval carries the by de
   expect(rows.slice(1).some((row) => row.textContent!.includes("by design"))).toBe(false);
 });
 
+function askedFlows(asked: URL[]): Fetch {
+  const polls = daemons([], []);
+  return async (url, init) => {
+    if (!/\/flow\?/.test(url)) return polls(url, init);
+    const query = new URL(url);
+    asked.push(query);
+    const days = Number(query.searchParams.get("days"));
+    const size = query.searchParams.get("bucket") === "week" ? WEEK : DAY;
+    const count = Math.ceil((days * DAY) / size);
+    const flow = flowOf(Array.from({ length: count }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 })));
+    const until = query.searchParams.get("until");
+    if (until == null) return Response.json(flow);
+    const end = Number(until);
+    return Response.json({ ...flow, now: end, buckets: flow.buckets!.map((row, index) => ({ ...row, start_ms: Math.max(end - days * DAY, end - (count - index) * size) })) });
+  };
+}
+
+test("opened with range=90d the Flow page asks each host for ninety days by week and every chart shows a point a week", async () => {
+  const asked: URL[] = [];
+  await mount("#/flow?range=90d", askedFlows(asked));
+  await flush();
+  expect(new Set(asked.map((url) => url.origin))).toEqual(new Set([ORIGIN, PEER]));
+  expect(asked.every((url) => url.searchParams.get("days") === "90" && url.searchParams.get("bucket") === "week" && !url.searchParams.has("until"))).toBe(true);
+  const charts = [...document.querySelectorAll("figure[data-chart]")];
+  expect(charts).toHaveLength(4);
+  expect(charts.map((chart) => chart.querySelectorAll("[data-point]").length)).toEqual([13, 13, 13, 13]);
+});
+
+test("the open Range menu marks the current preset, and choosing From and To puts them in the address and asks for the whole days ending with the To day", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  const asked: URL[] = [];
+  await mount("#/flow?range=90d", askedFlows(asked));
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "Range" }));
+  const choices = within(screen.getByRole("group", { name: "Range choices" }));
+  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 90 days"]);
+  fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-03" } });
+  fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
+  await flush();
+  const search = new URLSearchParams(window.location.hash.split("?")[1]);
+  expect([search.get("from"), search.get("to")]).toEqual(["2026-09-03", "2026-11-12"]);
+  const ends = asked.filter((url) => url.searchParams.has("until"));
+  expect(new Set(ends.map((url) => url.origin))).toEqual(new Set([ORIGIN, PEER]));
+  const last = ends.at(-1)!.searchParams;
+  expect([last.get("days"), last.get("bucket"), last.get("until")]).toEqual(["71", "week", String(new Date(2026, 10, 13).getTime())]);
+  expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toEndWith(" to 12 November");
+});
+
 test("the open Range menu closes when focus moves out of it to the Project picker", async () => {
   await mount("#/flow", flowDaemons(demoFlow, writerFlow));
   await act(settle);
@@ -934,6 +983,25 @@ test("the open Range menu closes when focus moves out of it to the Project picke
   expect(screen.getByRole("group", { name: "Range choices" })).toBeTruthy();
   act(() => projectPicker().focus());
   expect(screen.queryByRole("group", { name: "Range choices" })).toBeNull();
+});
+
+test("a From and To over 182 days, or with a To day not yet ended, stay out of the address and the asks", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  const later = new Date(Date.now() + 2 * DAY);
+  const future = `${later.getFullYear()}-${String(later.getMonth() + 1).padStart(2, "0")}-${String(later.getDate()).padStart(2, "0")}`;
+  for (const [from, to] of [["2026-01-01", "2026-07-02"], ["2026-11-01", future]]) {
+    const asked: URL[] = [];
+    await mount("#/flow", askedFlows(asked));
+    await flush();
+    fireEvent.click(screen.getByRole("button", { name: "Range" }));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: from } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: to } });
+    await flush();
+    const search = new URLSearchParams(window.location.hash.split("?")[1]);
+    expect([search.get("from"), search.get("to")]).toEqual([null, null]);
+    expect(asked.every((url) => url.searchParams.get("days") === "30" && !url.searchParams.has("until"))).toBe(true);
+    cleanup();
+  }
 });
 
 const SEARCH_ANSWER = {

@@ -17,6 +17,13 @@ const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
+function daysBack(count: number, now = Date.now()): number {
+  const day = new Date(now - 1);
+  day.setHours(0, 0, 0, 0);
+  day.setDate(day.getDate() - count);
+  return day.getTime();
+}
+
 /** A daemon answering each `/flow` ask with one bucket per day or week of the asked span, merges rising bucket by bucket. */
 function flowDaemon(asked: URLSearchParams[], older: Flow | null): Fetch {
   const daemon = (project: string) => ({ status: { ...working, host: "writer-host", project }, attention: { level: "none", now: 0, project, items: [] } });
@@ -26,18 +33,18 @@ function flowDaemon(asked: URLSearchParams[], older: Flow | null): Fetch {
     if (!url.startsWith(`${ORIGIN}/flow?`)) return polls(url, init);
     const query = new URL(url).searchParams;
     asked.push(query);
-    const size = query.get("bucket") === "week" ? 7 * DAY : DAY;
+    const step = query.get("bucket") === "week" ? 7 : 1;
     const now = Number(query.get("until") ?? Date.now());
-    const span = Number(query.get("days")) * DAY;
-    const count = Math.ceil(span / size);
+    const days = Number(query.get("days"));
+    const count = Math.ceil(days / step);
     const flow: Flow = {
       now,
       buckets: Array.from({ length: count }, (_, index) => ({
-        start_ms: Math.max(now - span, now - (count - index) * size),
+        start_ms: daysBack(Math.min(days - 1, (count - index) * step - 1), now),
         merged: index + 1,
         rounds_median: 1,
-        interventions: 1,
-        hours: { working: 2, waiting: 1, operator: 0 },
+        interventions: 1 + (index % 2),
+        hours: { working: 2, waiting: 1 + (index % 3), operator: 0 },
       })),
       phases: { working: 1 },
       waits: NO_WAITS,
@@ -67,7 +74,6 @@ async function mount(hash: string, older: Flow | null = null) {
 const windowOf = (query: URLSearchParams) => [query.get("days"), query.get("bucket"), query.get("until")];
 const openRange = () => fireEvent.click(screen.getByRole("button", { name: "Range" }));
 const choices = () => within(screen.getByRole("group", { name: "Range choices" }));
-const changes = () => [...document.querySelectorAll("[data-change]")].map((change) => change.textContent!);
 
 function day(offset: number): string {
   const at = new Date();
@@ -103,13 +109,13 @@ test("picking Last 90 days asks for 90 days in weekly buckets and checks it in t
 });
 
 test("each trend's change reads against the day before over Last 7 days and against the week before over Last 90 days", async () => {
-  await mount("#/flow?range=7d");
-  expect(changes().length).toBeGreaterThan(0);
-  expect(changes().every((text) => text.endsWith(" vs the day before"))).toBe(true);
-  cleanup();
-  await mount("#/flow?range=90d");
-  expect(changes().length).toBeGreaterThan(0);
-  expect(changes().every((text) => text.endsWith(" vs the week before"))).toBe(true);
+  for (const [hash, before] of [["#/flow?range=7d", " vs the day before"], ["#/flow?range=90d", " vs the week before"]]) {
+    await mount(hash);
+    const trends = [...document.querySelectorAll("[data-change]")];
+    expect(trends.map((change) => change.getAttribute("data-change"))).toEqual(["merged", "waiting", "rounds", "interventions"]);
+    expect(trends.map((change) => change.textContent!.endsWith(before))).toEqual([true, true, true, true]);
+    cleanup();
+  }
 });
 
 test("a custom range asks for its whole days ending with the To day, by day up to a month and by week beyond", async () => {
@@ -128,17 +134,12 @@ test("a custom range asks for its whole days ending with the To day, by day up t
   }
 });
 
-test("a custom range over 182 days, or with a To day not yet ended, stays out of the address and the asks", async () => {
-  for (const [from, to] of [[day(-184), day(-1)], [day(-3), day(1)]]) {
-    const asked = await mount("#/flow");
-    openRange();
-    fireEvent.change(screen.getByLabelText("From"), { target: { value: from } });
-    fireEvent.change(screen.getByLabelText("To"), { target: { value: to } });
-    await flush();
-    expect(new URLSearchParams(window.location.hash.split("?")[1]).get("from")).toBeNull();
-    expect(asked.every((query) => query.get("days") === "30" && !query.has("until"))).toBe(true);
-    cleanup();
-  }
+test("a bookmarked From and To over 182 days is cleared from the address and the page asks for the default 30 days", async () => {
+  const asked = await mount("#/flow?from=2025-01-01&to=2025-07-02");
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked.map(windowOf)).toEqual(asked.map(() => ["30", "day", null]));
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("from")).toBeNull();
+  expect(document.querySelector('[data-number="Merged"]')).not.toBeNull();
 });
 
 test("a daemon that answers weekly rows under weeks instead of buckets is left out of the numbers", async () => {
@@ -146,4 +147,21 @@ test("a daemon that answers weekly rows under weeks instead of buckets is left o
   await mount("#/flow?range=7d", { now: Date.now(), weeks: [week], phases: {}, waits: NO_WAITS, reverted: { count: 0, merged: 50 } });
   const figure = (label: string) => document.querySelector(`[data-number="${label}"]`)!.textContent;
   expect([figure("Merged"), figure("Reverted")]).toEqual([String(1 + 2 + 3 + 4 + 5 + 6 + 7), "0 of 1"]);
+});
+
+test("over Last 90 days the oldest point's range ends the day before the next week opens", async () => {
+  await mount("#/flow?range=90d");
+  const [oldest, next] = [...document.querySelector("figure[data-chart]")!.querySelectorAll("[data-point]")];
+  const dated = (at: Date) => at.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const opens = new Date(daysBack(89));
+  const shuts = new Date(daysBack(84));
+  expect(oldest!.getAttribute("aria-label")).toStartWith(`${dated(opens)} – ${opens.getMonth() === shuts.getMonth() ? shuts.getDate() : dated(shuts)}:`);
+  expect(next!.getAttribute("aria-label")).toStartWith(`${dated(new Date(daysBack(83)))} – `);
+});
+
+test("the 30-day Merges chart labels at most every fourth bar and the latest, while every bar keeps its point", async () => {
+  await mount("#/flow");
+  const merges = document.querySelector('figure[data-chart="Merges"]')!;
+  expect(merges.querySelectorAll("[data-point]").length).toBe(30);
+  expect([...merges.querySelectorAll("[data-value]")].map((label) => Number(label.getAttribute("data-value")))).toEqual([0, 4, 8, 12, 16, 20, 24, 28, 29]);
 });

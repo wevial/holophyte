@@ -106,7 +106,8 @@ export function flowSpan(flows: Flow[]): string | null {
   if (starts.length === 0) return null;
   const start = Math.min(...starts);
   const end = Math.max(...flows.map((flow) => flow.now));
-  const days = Math.round((end - start) / 86_400_000);
+  const last = new Date(end - 1);
+  const days = Math.round((new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime() - start) / 86_400_000) + 1;
   const count = COUNT_WORDS[days] ?? String(days);
   return `${count} ${days === 1 ? "day" : "days"}, ${DAY_MONTH.format(start)} to ${DAY_MONTH.format(end - 1)}`;
 }
@@ -193,11 +194,12 @@ export function weekLabel(start: number): string {
   return MONTH_DAY.format(start);
 }
 
-export function weekRange(start: number, bucket: FlowBucket = "week"): string {
-  if (bucket === "day") return MONTH_DAY.format(start);
+export function weekRange(start: number, next: number | undefined, bucket: FlowBucket = "week"): string {
   const first = new Date(start);
-  const last = new Date(start);
-  last.setDate(last.getDate() + 6);
+  const last = new Date(next ?? start);
+  if (next == null) last.setDate(last.getDate() + (bucket === "day" ? 1 : 7));
+  last.setTime(last.getTime() - 1);
+  if (last.toDateString() === first.toDateString()) return MONTH_DAY.format(first);
   const end = last.getMonth() === first.getMonth() ? String(last.getDate()) : MONTH_DAY.format(last);
   return `${MONTH_DAY.format(first)} – ${end}`;
 }
