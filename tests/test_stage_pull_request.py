@@ -27,10 +27,18 @@ from test_covering_fix_round import NEW_FINDING, changes  # noqa: E402
 from test_stage_recording import USAGE, Metered  # noqa: E402
 
 import holophyte.pr.github  # noqa: E402 - after the sys.path insert above
+import holophyte.pr.pr_media  # noqa: E402 - after the sys.path insert above
 import holophyte.pr.pr_status  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
 
 FAILING = "FAIL: test_a (tests.test_y.Case.test_a)\n"
+SAVES_BOTH_VIEWS = """\
+import sys
+from pathlib import Path
+out = Path(sys.argv[-1])
+(out / "01-first.png").write_bytes(b"png")
+(out / "02-second.png").write_bytes(b"png")
+"""
 PINNED_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
                 "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"}
 
@@ -196,6 +204,38 @@ class CaptureStageTests(PullRequestStages):
                          (reviewed.candidate_sha,) * 4)
         self.assertEqual([view.split()[0] for view in failed[6]["missing"]],
                          ["02"])
+
+    def test_a_ui_pull_request_records_its_one_capture_once(self):
+        (self.target / "ui").mkdir()
+        (self.target / "ui" / "app.txt").write_text("first\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "ui")
+        script = self.db.parent / "capture.py"
+        script.write_text(SAVES_BOTH_VIEWS)
+        self.configure('[merge]\nmode = "pr"\nui_paths = ["ui/**"]\n'
+                       f'ui_capture = "{sys.executable} {script}"\n')
+        self.fake_route()
+        self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
+                                       return_value=False))
+        self.BODY = capture_cases.TWO_VIEWS
+        self.loop(Commit("ui work", path="ui/app.txt"), APPROVE, Idle(""),
+                  provider=self.provider())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual([row[:4] for row in self.attempts("capture")],
+                         [("capture", 1, "pass", "next")])
+
+    def test_a_resumed_pull_request_without_ui_paths_records_its_skip(self):
+        self.resume_rejected_fix()
+        self.configure('[merge]\nmode = "pr"\ncovering_fix_rounds = 0\n')
+        self.loop(capture_cases.REQUEST_CHANGES, Commit("fix"),
+                  capture_cases.REQUEST_CHANGES, provider=self.provider())
+
+        (run,), = self.read("SELECT MAX(id) FROM runs")
+        captures = self.attempts("capture", run=run)
+        self.assertTrue(captures)
+        self.assertEqual({(row[2], row[6]["reason"]) for row in captures},
+                         {("skipped", "[merge] ui_paths is unset")})
 
     def test_unset_ui_paths_skips_the_capture_with_that_reason(self):
         self.red_once(reds=0)

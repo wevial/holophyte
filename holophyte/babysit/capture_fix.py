@@ -8,7 +8,11 @@ from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config
 from holophyte.loop.runs import heartbeat_while
 from holophyte.pr import pr_media
-from holophyte.pr.evidence_refresh import captured, publish_evidence
+from holophyte.pr.evidence_refresh import (
+    captured,
+    publish_evidence,
+    settled,
+)
 from holophyte.redact import safe_print as print
 from holophyte.stages import record
 from holophyte.tickets import ticket_template
@@ -65,11 +69,14 @@ def fix_capture(project, conn, run_id, provider, task_id, branch, wt, sha,
     merge = merge_config(project)
     cap = merge.capture_fix_rounds
     number = _rounds_run(conn, run_id) + 1
-    fixable = merge.ui_capture_local and number <= cap
+    settle = []
     failure = publish_evidence(project, conn, run_id, task_id, wt, pull, ticket,
-                               sha, beat_s, fixable=fixable)
-    if not fixable or failure is None or failure.kind != "capture":
+                               sha, beat_s, settle)
+    if (not merge.ui_capture_local or number > cap or failure is None
+            or failure.kind != "capture"):
+        settled(settle, "next")
         return sha
+    settled(settle, "on_fail")
     _record_round(conn, run_id, task_id, pull, sha, failure, (number, cap))
     print(f"[holo2] the UI capture at {sha[:12]} failed; capture fix round"
           f" {number} of {cap}")

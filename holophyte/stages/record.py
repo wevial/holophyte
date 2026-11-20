@@ -194,6 +194,15 @@ def repeats(conn, run_id, stage_id, sha, outcome, edge, detail):
         tuple(row[:3]) == (sha, outcome, edge) and json.loads(row[3]) == detail)
 
 
+def recorded(conn, run_id, stage_id, key, value):
+    return conn.execute(
+        "SELECT 1 FROM stageAttempts s JOIN runs old ON old.id = s.runId"
+        " JOIN runs current ON current.ticketId = old.ticketId"
+        " WHERE current.id = ? AND s.stageId = ?"
+        " AND json_extract(s.detail, '$.' || ?) = ?",
+        (run_id, stage_id, key, value)).fetchone() is not None
+
+
 def waiting(conn, run_id, sha, approve, ready=False):
     if conn is None or run_id is None:
         return

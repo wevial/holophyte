@@ -611,9 +611,12 @@ def prepare(project, wt, task_id, record_note=None, evidence_states=(),
                     evidence_files, ui_change, seen)[0]
 
 
+UI_PATHS_UNSET = '[merge] ui_paths is unset'
+
+
 def _skip_reason(cfg, wt, task_id, ui_change, evidence_states, paths=True):
     if not cfg.ui_paths:
-        return '[merge] ui_paths is unset'
+        return UI_PATHS_UNSET
     if paths and not matches(wt, cfg.ui_paths):
         return 'the change touches no UI path'
     if not _wants_capture(cfg, wt, task_id, ui_change, evidence_states):
@@ -656,7 +659,7 @@ def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files,
         _tell(seen, skipped=skipped)
         return '', ''
     receipt, head = _receipt(project, wt, task_id, evidence_states, evidence_files)
-    _tell(seen, receipt=receipt, fresh=not receipt.exists())
+    _tell(seen, receipt=receipt)
     note = receipt.with_suffix('.note')
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
