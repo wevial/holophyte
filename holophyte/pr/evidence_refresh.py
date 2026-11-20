@@ -7,24 +7,23 @@ from holophyte.stages import record
 from holophyte.tickets import ticket_template
 
 
-def captured(conn, run_id, wt, capture, sha=None, seen=None, settle=None):
-    seen = {} if seen is None else seen
+def captured(conn, run_id, wt, capture, sha=None, report=None, settle=None):
+    report = {} if report is None else report
+    taken = capture(report)
     if conn is None or run_id is None:
-        return capture(seen)
+        return taken
     sha = sha or record.head(conn, run_id, wt)
-    with record.Deferred(conn, run_id, "capture", sha, {}, wt) as attempt:
-        taken = capture(seen)
-    if "skipped" in seen:
-        skipped(conn, run_id, sha, seen["skipped"])
+    if "skipped" in report:
+        skipped(conn, run_id, sha, report["skipped"])
         return taken
     found = record.guarded(conn, run_id, "stage_read", lambda: _outcome(
-        conn, run_id, seen.get("receipt")))
+        conn, run_id, report.get("receipt")))
     if found in (None, record.REFUSED):
         return taken
-    outcome, detail = found
+    outcome, detail, times = found
 
     def close(edge):
-        attempt.opened().close(outcome, edge, sha, **detail)
+        record.span(conn, run_id, "capture", sha, outcome, edge, detail, times)
     if outcome == "fail" and settle is not None:
         settle.append(close)
     else:
@@ -44,12 +43,12 @@ def _outcome(conn, run_id, receipt):
     if receipt is None or not receipt.exists() or record.recorded(
             conn, run_id, "capture", "receipt", receipt.name):
         return None
-    failure = pr_media.failure_at(receipt)
+    failure, times = pr_media.failure_at(receipt), pr_media.taken_at(receipt)
     if failure is None:
-        return "pass", {"receipt": receipt.name}
+        return "pass", {"receipt": receipt.name}, times
     return "fail", {"receipt": receipt.name, "kind": failure.kind,
                     "failure": " ".join(failure.sentence.split()),
-                    "missing": list(failure.missing)}
+                    "missing": list(failure.missing)}, times
 
 
 def settled(settle, edge):
@@ -68,7 +67,7 @@ def publish_evidence(project, conn, run_id, task_id, wt, pull, ticket, sha,
         failure = _publish(project, conn, run_id, task_id, wt, pull, ticket,
                            sha, beat_s, pending)
     except BaseException:
-        settled(pending, "end")
+        settled(pending, "next")
         raise
     if settle is None:
         settled(pending, "next")
@@ -85,14 +84,14 @@ def _publish(project, conn, run_id, task_id, wt, pull, ticket, sha, beat_s,
     with heartbeat_while(conn, run_id, beat_s):
         body = github.rest(project, pull, "GET", endpoint)["body"] or ""
         evidence = github.split_pr_body(body)[2]
-        seen = {}
-        section = captured(conn, run_id, wt, lambda told: pr_media.refresh(
+        told = {}
+        section = captured(conn, run_id, wt, lambda report: pr_media.refresh(
             project, wt, task_id, evidence, evidence_states=states,
             evidence_files=files, ui_change=parsed.ui_change,
             record_note=lambda text: ledger(conn, run_id, task_id, "note",
-                                            text, None), seen=told),
-            sha, seen, pending)
-        failure = (pr_media.failure_at(seen["receipt"]) if "receipt" in seen
+                                            text, None), report=report),
+            sha, told, pending)
+        failure = (pr_media.failure_at(told["receipt"]) if "receipt" in told
                    else pr_media.capture_failure(project, wt, task_id, states,
                                                  files,
                                                  ui_change=parsed.ui_change))

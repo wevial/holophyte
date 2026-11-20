@@ -33,11 +33,14 @@ import store.stages  # noqa: E402 - after the sys.path insert above
 
 FAILING = "FAIL: test_a (tests.test_y.Case.test_a)\n"
 SAVES_BOTH_VIEWS = """\
-import sys
+import sys, time
 from pathlib import Path
+began = int(time.time() * 1000)
 out = Path(sys.argv[-1])
 (out / "01-first.png").write_bytes(b"png")
 (out / "02-second.png").write_bytes(b"png")
+with open({ran!r}, "a") as ran:
+    ran.write(f"{{began}} {{int(time.time() * 1000)}}\\n")
 """
 PINNED_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
                 "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"}
@@ -205,25 +208,54 @@ class CaptureStageTests(PullRequestStages):
         self.assertEqual([view.split()[0] for view in failed[6]["missing"]],
                          ["02"])
 
-    def test_a_ui_pull_request_records_its_one_capture_once(self):
+    def ui_project(self, merge=""):
+        """A target whose `ui/` is a UI path, captured by a script that saves
+        both views and appends its own start and end (ms) to `self.ran`."""
         (self.target / "ui").mkdir()
         (self.target / "ui" / "app.txt").write_text("first\n")
         self.git("add", "-A")
         self.git("commit", "-qm", "ui")
         script = self.db.parent / "capture.py"
-        script.write_text(SAVES_BOTH_VIEWS)
-        self.configure('[merge]\nmode = "pr"\nui_paths = ["ui/**"]\n'
-                       f'ui_capture = "{sys.executable} {script}"\n')
+        self.ran = self.db.parent / "ran.txt"
+        script.write_text(SAVES_BOTH_VIEWS.format(ran=str(self.ran)))
+        self.BODY = capture_cases.TWO_VIEWS
+        return (f'ui_paths = ["ui/**"]\nui_capture = "{sys.executable} {script}"\n'
+                + merge)
+
+    def captures_run(self):
+        return [tuple(map(int, line.split()))
+                for line in self.ran.read_text().splitlines()]
+
+    def test_a_ui_pull_request_records_its_one_capture_over_its_run(self):
+        self.configure('[merge]\nmode = "pr"\n' + self.ui_project())
         self.fake_route()
         self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
                                        return_value=False))
-        self.BODY = capture_cases.TWO_VIEWS
         self.loop(Commit("ui work", path="ui/app.txt"), APPROVE, Idle(""),
                   provider=self.provider())
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         self.assertEqual([row[:4] for row in self.attempts("capture")],
                          [("capture", 1, "pass", "next")])
+        ((began, ended),) = self.captures_run()
+        ((started_at, ended_at),) = self.read(
+            "SELECT startedAt, endedAt FROM stageAttempts"
+            " WHERE stageId = 'capture'")
+        self.assertLessEqual(started_at, began)
+        self.assertGreaterEqual(ended_at, ended)
+
+    def test_a_check_fix_outside_the_ui_records_the_capture_at_each_head(self):
+        heads = self.red_once(self.ui_project())
+        self.enterContext(patch.object(holophyte.pr.pr_media, "repo_is_private",
+                                       return_value=False))
+        self.loop(Commit("ui work", path="ui/app.txt"), APPROVE, Idle(""),
+                  Commit("fix: test_a"), APPROVE, Idle(""),
+                  provider=self.provider())
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(len(self.captures_run()), 2)
+        self.assertEqual([(row[2], row[4]) for row in self.attempts("capture")],
+                         [("pass", heads[0]), ("pass", heads[1])])
 
     def test_a_resumed_pull_request_without_ui_paths_records_its_skip(self):
         self.resume_rejected_fix()

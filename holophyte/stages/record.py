@@ -194,6 +194,15 @@ def repeats(conn, run_id, stage_id, sha, outcome, edge, detail):
         tuple(row[:3]) == (sha, outcome, edge) and json.loads(row[3]) == detail)
 
 
+def span(conn, run_id, stage_id, sha, outcome, edge, detail, times=None):
+    started, ended = times or (None, None)
+    opened = guarded(conn, run_id, "open_stage", lambda: stages.open_stage(
+        conn, run_id, stage_id, sha, detail, now=started))
+    if opened is not REFUSED:
+        guarded(conn, run_id, "close_stage", lambda: stages.close_stage(
+            conn, opened, outcome, edge, sha, (), None, now=ended))
+
+
 def recorded(conn, run_id, stage_id, key, value):
     return conn.execute(
         "SELECT 1 FROM stageAttempts s JOIN runs old ON old.id = s.runId"

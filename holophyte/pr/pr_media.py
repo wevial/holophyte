@@ -605,10 +605,10 @@ def _execution_fingerprint(project):
 
 
 def prepare(project, wt, task_id, record_note=None, evidence_states=(),
-            evidence_files=(), ui_change=None, seen=None):
+            evidence_files=(), ui_change=None, report=None):
     """Keep the receipt in the worktree's git directory, outside candidate files."""
     return _prepare(project, wt, task_id, record_note, evidence_states,
-                    evidence_files, ui_change, seen)[0]
+                    evidence_files, ui_change, report)[0]
 
 
 UI_PATHS_UNSET = '[merge] ui_paths is unset'
@@ -624,9 +624,14 @@ def _skip_reason(cfg, wt, task_id, ui_change, evidence_states, paths=True):
     return None
 
 
-def _tell(seen, **found):
-    if seen is not None:
-        seen.update(found)
+def _tell(report, **found):
+    if report is not None:
+        report.update(found)
+
+
+def taken_at(receipt):
+    taken = receipt.with_suffix('.taken')
+    return tuple(json.loads(taken.read_text())) if taken.exists() else None
 
 
 def _stamp(section, sha):
@@ -652,19 +657,20 @@ def _receipt(project, wt, task_id, evidence_states, evidence_files=()):
 
 
 def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files,
-             ui_change=None, seen=None):
+             ui_change=None, report=None):
     cfg = merge_config(project)
     skipped = _skip_reason(cfg, wt, task_id, ui_change, evidence_states)
     if skipped:
-        _tell(seen, skipped=skipped)
+        _tell(report, skipped=skipped)
         return '', ''
     receipt, head = _receipt(project, wt, task_id, evidence_states, evidence_files)
-    _tell(seen, receipt=receipt)
+    _tell(report, receipt=receipt)
     note = receipt.with_suffix('.note')
     failed = receipt.with_suffix('.failed')
     if not receipt.exists():
-        for kept in ('.kind', '.log'):
+        for kept in ('.kind', '.log', '.taken'):
             receipt.with_suffix(kept).unlink(missing_ok=True)
+        started = int(time.time() * 1000)
         try:
             section, failure = _produce(project, wt, task_id, cfg.ui_capture, note,
                                         cfg, evidence_states, evidence_files)
@@ -684,6 +690,8 @@ def _prepare(project, wt, task_id, record_note, evidence_states, evidence_files,
         if failure:
             failed.write_text(failure)
         receipt.write_text(_stamp(section, head))
+        receipt.with_suffix('.taken').write_text(
+            json.dumps([started, int(time.time() * 1000)]))
     if record_note is not None and note.exists():
         record_note(note.read_text())
     return receipt.read_text(), failed.read_text() if failed.exists() else ''
@@ -719,30 +727,32 @@ def _touched(wt, captured, patterns):
                for path in paths.split('\0') for pattern in patterns)
 
 
-def _seen(project, wt, task_id, evidence, evidence_states, evidence_files):
+def _seen(project, wt, task_id, evidence, evidence_states, evidence_files,
+          report=None):
     receipt, _ = _receipt(project, wt, task_id, evidence_states, evidence_files)
     if not receipt.exists() or receipt.with_suffix('.failed').exists():
         return None
+    _tell(report, receipt=receipt)
     section = receipt.read_text()
     return section if section.rstrip() != evidence.rstrip() else None
 
 
 def refresh(project, wt, task_id, evidence, record_note=None, evidence_states=(),
-            evidence_files=(), ui_change=None, seen=None):
+            evidence_files=(), ui_change=None, report=None):
     cfg = merge_config(project)
     skipped = _skip_reason(cfg, wt, task_id, ui_change, evidence_states,
                            paths=False)
     if skipped:
-        _tell(seen, skipped=skipped)
+        _tell(report, skipped=skipped)
         return None
     captured = CAPTURED.search(evidence)
     if captured and not _touched(wt, captured[1], cfg.ui_paths):
         seen = _seen(project, wt, task_id, evidence, evidence_states,
-                     evidence_files)
+                     evidence_files, report)
         unquoted = QUOTED.sub('', evidence)
         return seen or (unquoted if unquoted != evidence else None)
     section, failure = _prepare(project, wt, task_id, record_note, evidence_states,
-                                evidence_files, ui_change, seen)
+                                evidence_files, ui_change, report)
     if not section:
         return None
     if not failure or not evidence:

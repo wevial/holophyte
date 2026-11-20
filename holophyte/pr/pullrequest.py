@@ -274,14 +274,14 @@ def refresh_pr_text(project, conn, run_id, task_id, task, branch, ticket,
     own, _, evidence, _ = github.split_pr_body(current)
     parsed = ticket_template.parse(ticket)
     with heartbeat_while(conn, run_id, beat_s):
-        section = captured(conn, run_id, wt, lambda seen: (
+        section = captured(conn, run_id, wt, lambda report: (
             pr_media.refresh(
                 project, wt, task_id, evidence,
                 evidence_states=parsed.evidence_states,
                 evidence_files=parsed.evidence_files,
                 ui_change=parsed.ui_change,
                 record_note=lambda text: ledger(conn, run_id, task_id, "note",
-                                                text, None), seen=seen)), sha)
+                                                text, None), report=report)), sha)
     text = None if written else _refreshed_prose(
         project, conn, run_id, task_id, task, branch, ticket, beat_s, wt,
         budget_min, own, answered, review)
@@ -331,14 +331,14 @@ def _prepare_pr(project, conn, run_id, task_id, task, branch, body, beat_s,
                 wt, started, budget_min, issue_url=None, lead=None):
     parsed = ticket_template.parse(body)
     with heartbeat_while(conn, run_id, beat_s):
-        evidence = captured(conn, run_id, wt, lambda seen: (
+        evidence = captured(conn, run_id, wt, lambda report: (
             pr_media.prepare(
                 project, wt, task_id,
                 evidence_states=parsed.evidence_states,
                 evidence_files=parsed.evidence_files,
                 ui_change=parsed.ui_change,
                 record_note=lambda text: ledger(conn, run_id, task_id, "note",
-                                                text, None), seen=seen)))
+                                                text, None), report=report)))
     title, text = _written_pr_text(project, conn, run_id, task_id, task,
                                    branch, body, beat_s, wt, started,
                                    budget_min, issue_url)
