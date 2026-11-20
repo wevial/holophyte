@@ -50,7 +50,7 @@ def config_held(project, answer):
     fresh = dataclasses.replace(project, _config=None)
     try:
         own = own_patterns(fresh)
-    except (SystemExit, OSError):
+    except (SystemExit, OSError, ValueError):
         own = None
     with RESOLVING, values_held(own or ()):
         secrets = current_secrets(project)
@@ -62,13 +62,12 @@ def config_held(project, answer):
 
 def prompt_answered(fresh, target, secrets):
     try:
-        body = standard.scrubbed(previews.preview(fresh, target), secrets)
+        body = previews.preview(fresh, target, lambda text: standard.scrubbed(
+            text, secrets))
     except (SystemExit, ValueError) as error:
         named = standard.scrubbed(setting_named(fresh, error), secrets)
         return 503, {"error": "the project config does not resolve to a"
                               f" prompt{named}"}
-    body["target"] = target
-    body["prompt"] = body["builtin"] + body["notes"] + body["tail"]
     return 200, body
 
 

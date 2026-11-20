@@ -54,8 +54,17 @@ CaptureFailure = collections.namedtuple("CaptureFailure", "kind sentence missing
 def implementer_brief(project, ticket, task_id):
     parsed = ticket_template.parse(ticket)
     states, files = parsed.evidence_states, parsed.evidence_files
-    cfg = merge_config(project)
-    if not states or not cfg.ui_capture:
+    if not states:
+        return ""
+    listed = ([f"{file}: {state}" for file, state in zip(files, states)]
+              if files else
+              [f"{i:02d}: {state}" for i, state in enumerate(states, 1)])
+    return capture_text(merge_config(project), task_id, "\n".join(listed),
+                        bool(files))
+
+
+def capture_text(cfg, task_id, listed, named):
+    if not cfg.ui_capture:
         return ""
     if cfg.ui_capture_local:
         spec = _local_spec(cfg, task_id)
@@ -71,16 +80,14 @@ def implementer_brief(project, ticket, task_id):
                  f"`{cfg.ui_capture}`.")
     if cfg.ui_capture_video:
         where += VIDEO_BRIEF
-    if files:
+    if named:
         produce = (" Produce each state's image or recording under the file "
                    "name listed beside it.")
-        listed = [f"{file}: {state}" for file, state in zip(files, states)]
         opened = "each image"
     else:
         produce = (" Produce one image per state, named NN-slug.png in state "
                    "order (01, 02, ...), plus a recording when the states "
                    "describe a flow.")
-        listed = [f"{i:02d}: {state}" for i, state in enumerate(states, 1)]
         opened = "each NN-slug.png"
     return (where + produce + " Capture only UI "
             "states as images: test or terminal output never becomes an image. "
@@ -88,7 +95,7 @@ def implementer_brief(project, ticket, task_id):
             "HOLOPHYTE_TICKET and newline-joined HOLOPHYTE_EVIDENCE_STATES. "
             f"Run `{cfg.ui_capture}` in the foreground until it exits, never "
             f"in the background, and open {opened} before ending the "
-            "turn.\n" + "\n".join(listed))
+            "turn.\n" + listed)
 
 
 def _local_spec(cfg, task_id):

@@ -3,17 +3,23 @@ import re
 
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
+from holophyte.config.config_tables import merge_config
 from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import _commands_brief, implement_goal
 from holophyte.loop.review_round import review_text, verify_text
 from holophyte.loop.trim_brief import protected_brief, test_heavy_brief, trim_goal
+from holophyte.pr.mockup import design_text
+from holophyte.pr.pr_media import capture_text
 from holophyte.pr.pullrequest import pr_text_goal
 from holophyte.review.briefs import (
     criteria_text,
+    earlier_text,
     follow_up_place,
     named_tests_text,
     scope_text,
     test_rules_text,
+    trim_commits_text,
+    witness_text,
 )
 from holophyte.review.freshness import critic_text
 from holophyte.stages import notes
@@ -43,19 +49,28 @@ STANDS_FOR = {
     "baseline commands": "how many baseline commands ran",
     "verify output": "the output of the ticket's verify commands and the"
                      " project's baseline",
-    "witness pre-check": "the gaps the factory's witness pre-check found",
+    "witness gaps": "the gaps the factory's witness pre-check found",
+    "unnamed criteria": "the ids of the criteria that name no test file",
+    "pre-check point": "when the pre-check ran, such as before this review",
+    "merge-base baseline": "the named checks the factory ran at the merge"
+                           " base; empty when it ran none",
     "stale approvals": "earlier approvals of this commit that no longer"
                        " stand; empty unless one was cited",
-    "earlier rounds": "the earlier review rounds' findings and the fix"
-                      " commits that answer them; empty in round 1",
+    "earlier findings": "the findings of each earlier review round",
+    "first candidate": "the commit round 1 reviewed",
+    "fix commit messages": "the messages of the commits made since then, as"
+                           " JSON",
+    "adjudicator rulings": "the adjudicator's rulings on findings it"
+                           " settled; empty when none were",
     "test rules": "the Tests section of the worktree's AGENTS.md, quoted",
     "scope": "the changed files the ticket does not name, as a JSON list",
     "trim commits": "the trim turn's commits in the reviewed range",
+    "trade-offs": "the Trade-off lines the trim commits record, quoted",
     "evidence": "the candidate's UI capture and the approved design",
     "orchestration": "the subagent brief for the orchestration the ticket or"
                      " project asks for",
-    "evidence capture": "how to capture the ticket's evidence states",
-    "design": "the approved design downloaded into the worktree",
+    "evidence states": "the ticket's evidence states, one line each",
+    "design": "the approved design's images and boards in the worktree",
     "test lines": "the test lines the run's diff adds",
     "code lines": "the non-test lines the run's diff adds",
     "protected files": "the test files the criteria name or the run added",
@@ -86,7 +101,10 @@ def implement(project, slot):
     return implement_goal(
         s("merge conflicts"), s("requeue context"), s("steering"), slot,
         s("ticket"), _commands_brief(project, s("verify commands")),
-        s("orchestration"), s("evidence capture"), s("design"),
+        s("orchestration"),
+        capture_text(merge_config(project), s("ticket id"),
+                     s("evidence states"), False),
+        design_text(s("design")),
         brief_text(s("criteria")) + s("witnessed once"))
 
 
@@ -101,10 +119,17 @@ def review(project, slot):
                                "REQUEST_CHANGES", named_tests_text(
                                    s("named tests")))
         + s("witnessed once"),
-        witness=s("witness pre-check"), stale=s("stale approvals"),
-        earlier=s("earlier rounds"), tests=test_rules_text(s("test rules")),
-        scope=scope_text(s("scope")),
-        trim=s("trim commits"), evidence=s("evidence"))
+        witness=witness_text(s("witness gaps"), s("unnamed criteria"),
+                             s("pre-check point"))
+        + s("merge-base baseline"),
+        stale=s("stale approvals"),
+        earlier=earlier_text(s("earlier findings"), s("first candidate"),
+                             s("fix commit messages"),
+                             follow_up_place([s("criteria")]))
+        + s("adjudicator rulings"),
+        tests=test_rules_text(s("test rules")), scope=scope_text(s("scope")),
+        trim=trim_commits_text(s("trim commits"), s("trade-offs")),
+        evidence=s("evidence"))
 
 
 def trim(project, slot):
@@ -141,13 +166,18 @@ RENDERS = {"implement": implement, "review": review, "trim": trim,
            "babysit_reply": babysit_reply}
 
 
-def preview(project, target):
+def preview(project, target, scrub=str):
     rendered = RENDERS[target](project, SLOT)
     held = dict.fromkeys(MARKED.findall(rendered))
-    builtin, tail = (MARKED.sub(r"⟨\1⟩", part)
-                     for part in rendered.split(SLOT))
-    block = notes.block(project, None, None, target)
+    builtin, tail = (shown(part, scrub) for part in rendered.split(SLOT))
+    block = scrub(notes.block(project, None, None, target))
     return {"target": target, "prompt": builtin + block + tail,
             "builtin": builtin, "notes": block, "tail": tail,
-            "placeholders": [{"name": name, "stands_for": STANDS_FOR[name]}
+            "placeholders": [{"name": name,
+                              "stands_for": scrub(STANDS_FOR[name])}
                              for name in held]}
+
+
+def shown(text, scrub):
+    return "".join(scrub(piece) if at % 2 == 0 else f"⟨{piece}⟩"
+                   for at, piece in enumerate(MARKED.split(text)))

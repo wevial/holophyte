@@ -142,10 +142,14 @@ def trim_brief(root, base_sha, sha):
     trims = [record for record in records if pass_name(record[1])]
     if not trims:
         return ""
-    listed = "\n".join(f"- {short} {subject}" for short, subject, _ in trims)
-    trade_offs = "\n".join(f"> {line}" for _, _, body in trims
-                            for line in body.splitlines()
-                            if line.lstrip().startswith("Trade-off:"))
+    return trim_commits_text(
+        "\n".join(f"- {short} {subject}" for short, subject, _ in trims),
+        "\n".join(f"> {line}" for _, _, body in trims
+                  for line in body.splitlines()
+                  if line.lstrip().startswith("Trade-off:")))
+
+
+def trim_commits_text(listed, trade_offs):
     return ("Trim commits in this range, made by the factory's trim turn after "
             f"the implementer's:\n{listed}\n"
             "A trim commit must not change behavior: outputs, errors, log "
@@ -343,16 +347,19 @@ def criteria_text(listed, example, refused, named):
 def witness_brief(gaps, unnamed, when):
     if not gaps and not unnamed:
         return ""
+    return witness_text("".join(f"{gap}\n" for gap in gaps),
+                        ", ".join(f"C{n}" for n in unnamed), when)
+
+
+def witness_text(gaps, names, when):
     lead = (f"The factory's witness pre-check found these gaps {when}; judge "
-            "each criterion yourself:\n"
-            + "".join(f"{gap}\n" for gap in gaps) if gaps else
+            "each criterion yourself:\n" + gaps if gaps else
             f"The factory's witness pre-check ran {when}; judge each "
             "criterion yourself.\n" if when else
             "The factory's witness pre-check did not run, as verify failed; "
             "judge each criterion yourself.\n")
-    names = ", ".join(f"C{n}" for n in unnamed)
     return lead + (f"Criteria that name no test file: {names}.\n"
-                   if unnamed else "") + "\n"
+                   if names else "") + "\n"
 
 
 def left_open_brief(criteria, left_open):
@@ -398,11 +405,14 @@ def follow_up_place(criteria):
 
 
 def earlier_rounds_text(rounds, candidate, commits, place):
-    listed = "".join(
-        f"Round {number}:\n" + "".join(f"{line}\n" for line in lines)
-        for number, lines in rounds)
-    messages = json.dumps([{"commit": commit, "message": message}
-                           for commit, message in commits])
+    return earlier_text(
+        "".join(f"Round {number}:\n" + "".join(f"{line}\n" for line in lines)
+                for number, lines in rounds), candidate,
+        json.dumps([{"commit": commit, "message": message}
+                    for commit, message in commits]), place)
+
+
+def earlier_text(listed, candidate, messages, place):
     return (f"{EARLIER_ROUNDS}\n{listed}"
             f"Round 1 reviewed candidate {candidate}. The messages of the "
             "commits made since then carry the fix turn's ADDRESS, FOLLOW_UP "
