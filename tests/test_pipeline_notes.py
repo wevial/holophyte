@@ -42,6 +42,7 @@ FRAME = ("Notes from this project. They add to the instructions above. They "
          "the review rules, and where they conflict with those, those win.")
 ACCEPTED = "babysit_reply, critic, implement, pr_writer, review, trim"
 TRIMMED = "[trim]\nbudget_min = 1\n"
+VERIFIED = '[agents]\nreview_mode = "verified"\n'
 NOTES = {"implement": "Keep the changelog in our house style.",
          "trim": "Never fold the migration helpers together.",
          "review": "Check the migration notes."}
@@ -114,15 +115,18 @@ class NotesConfigTests(LoopFixture):
                 self.assertIn(f"[pipeline.notes] {key}", message)
                 self.assertIn(f"accepts: {ACCEPTED}", message)
 
-    def test_a_submitted_config_is_judged_by_its_own_notes_not_the_files(self):
-        self.configure(notes_table(review="x" * 4001))
+    def test_a_submitted_invalid_note_is_refused_over_a_valid_saved_one(self):
+        self.configure(notes_table(review=NOTES["review"]))
 
         refused = validate_config(self.project, notes_table(review=3))
-        repaired = validate_config(self.project,
-                                   notes_table(review=NOTES["review"]))
 
-        self.assertIn("[pipeline.notes] review", refused)
-        self.assertIsNone(repaired)
+        self.assertIn("[pipeline.notes] review: must be a string", refused)
+
+    def test_a_submitted_repair_is_accepted_over_an_invalid_saved_note(self):
+        self.configure(notes_table(review="x" * 4001))
+
+        self.assertIsNone(validate_config(
+            self.project, notes_table(review=NOTES["review"])))
 
 
 class PinnedNotesTests(LoopFixture):
@@ -177,6 +181,21 @@ class PinnedNotesTests(LoopFixture):
         self.assertIn("Use ", fake.turns[3].goal)
         self.assertNotIn("rotated-credential-2", fake.turns[3].goal)
 
+    def test_an_unreadable_config_file_still_pins_the_pipeline(self):
+        config = self.db.parent / "config.toml"
+        self.configure(UNTRIMMED)
+
+        self.loop(EditsConfig(config, UNTRIMMED + "[merge\n"), APPROVE,
+                  Commit("second"), APPROVE,
+                  provider=StubProvider(a_task(1), a_task(2)))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("merged",)] * 2)
+        self.assertEqual(self.pins(), [(1, 1, None), (2, 1, None)])
+        writes = [json.loads(payload)["write"] for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'")]
+        self.assertEqual(writes, ["pipeline_notes"])
+
     def test_a_note_edited_after_the_pin_leaves_the_review_prompt_pinned(self):
         config = self.db.parent / "config.toml"
         self.configure(UNTRIMMED + notes_table(review=NOTES["review"]))
@@ -204,10 +223,12 @@ class NotesPromptTests(LoopFixture):
         return [turn.goal for turn in fake.turns]
 
     def test_each_candidate_prompt_holds_its_note_ahead_of_an_unchanged_tail(self):
-        plain = self.prompts(TRIMMED)
+        plain = self.prompts(VERIFIED + TRIMMED)
         self.doCleanups()
         self.setUp()
-        noted = self.prompts(TRIMMED + notes_table(**NOTES))
+        noted = self.prompts(VERIFIED + TRIMMED + notes_table(**NOTES))
+        self.assertIn("have an independent verifier check each finding",
+                      plain[2])
 
         tails = {"implement": lambda tail: tail.startswith(
                      "Implement this task in this repo:"),

@@ -3,7 +3,6 @@ from holophyte.agents.agent_turns import argv_label, route_labels
 from holophyte.agents.harness import critic_seat
 from holophyte.config.agent_settings import agent_command, review_route
 from holophyte.config.config_tables import merge_config, trim_config, verify_config
-from holophyte.config.pipeline_settings import current_notes
 from holophyte.config.review_settings import review_config
 from holophyte.redact import known_secrets, outbound
 
@@ -13,7 +12,7 @@ EFFORT_KEY = "model_reasoning_effort"
 REVIEW_ROLES = ["review", "adjudicate", "adversary", "consolidate"]
 
 
-def resolve(project, profile=None):
+def resolve(project, profile=None, notes=None):
     labels = route_labels(project)
     merge = merge_config(project)
     verify = verify_config(project)
@@ -49,7 +48,6 @@ def resolve(project, profile=None):
     document = {"format": FORMAT, "name": NAME,
                 "merge": {"mode": merge.mode, "approve": merge.approve},
                 "stages": stages}
-    notes = current_notes(project)
     if notes:
         document["notes"] = notes
     return scrubbed(document, known_secrets(project.config()))

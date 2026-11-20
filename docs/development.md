@@ -618,7 +618,8 @@ Each module, one line:
   under its scaled budget, the run cap and the transport retry.
 - `holophyte/stages/standard.py` — `resolve()`: the "Holophyte standard"
   pipeline as a versioned document of typed stages, read from the project's
-  config with its primary seat labels and any `[pipeline.notes]`.
+  config with its primary seat labels and the `[pipeline.notes]` the pin
+  read beside it, guarded so a failed notes read still pins the pipeline.
 - `holophyte/stages/notes.py` — the notes block a prompt carries: the
   project's note for one target in its fixed frame, read from the run's
   pinned pipeline, or from the config when the run pinned none.
