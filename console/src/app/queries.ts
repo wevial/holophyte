@@ -637,7 +637,7 @@ export interface FlowWindow {
 }
 
 /** Each status-answering host's last good `/flow` answer for `window`, in
- *  fleet order; a daemon without the route, or that never answered, is left out. */
+ *  fleet order; a daemon without the route or its `buckets`, or that never answered, is left out. */
 export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }, window: FlowWindow): { host: R; flow: Flow }[] {
   const asked = hosts.filter((host) => host.status != null);
   const path = `/flow?days=${window.days}&bucket=${window.bucket}${window.until == null ? "" : `&until=${window.until}`}`;
@@ -651,6 +651,6 @@ export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { f
   });
   return asked.flatMap((host, index) => {
     const flow = results[index]?.data;
-    return flow ? [{ host, flow }] : [];
+    return flow?.buckets ? [{ host, flow }] : [];
   });
 }

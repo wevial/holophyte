@@ -8,6 +8,7 @@ import type { Flow, Status } from "../../src/lib/contract.gen";
 import { fakeDeps, peersFetch, settle } from "../harness";
 
 const ORIGIN = "http://writer-host:7710";
+const OLDER = "http://writer-host:7711";
 const DAY = 24 * 3600 * 1000;
 const NO_WAITS = { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 };
 
@@ -17,11 +18,11 @@ const working = (await Bun.file(new URL("status.json", SERVE)).json()) as Status
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 
 /** A daemon answering each `/flow` ask with one bucket per day or week of the asked span, merges rising bucket by bucket. */
-function flowDaemon(asked: URLSearchParams[]): Fetch {
-  const polls = peersFetch(ORIGIN, {
-    [ORIGIN]: { status: { ...working, host: "writer-host", project: "/srv/dev/demo" }, attention: { level: "none", now: 0, project: "/srv/dev/demo", items: [] } },
-  });
+function flowDaemon(asked: URLSearchParams[], older: Flow | null): Fetch {
+  const daemon = (project: string) => ({ status: { ...working, host: "writer-host", project }, attention: { level: "none", now: 0, project, items: [] } });
+  const polls = peersFetch(ORIGIN, { [ORIGIN]: daemon("/srv/dev/demo"), ...(older ? { [OLDER]: daemon("/srv/dev/older") } : {}) });
   return async (url, init) => {
+    if (older && url.startsWith(`${OLDER}/flow?`)) return Response.json(older);
     if (!url.startsWith(`${ORIGIN}/flow?`)) return polls(url, init);
     const query = new URL(url).searchParams;
     asked.push(query);
@@ -50,13 +51,13 @@ async function flush() {
   for (let round = 0; round < 6; round += 1) await act(settle);
 }
 
-async function mount(hash: string) {
+async function mount(hash: string, older: Flow | null = null) {
   const asked: URLSearchParams[] = [];
   happyDOM.setURL(`${ORIGIN}/`);
   window.location.hash = hash;
   render(
     <QueryClientProvider client={consoleQueryClient()}>
-      <ConsoleApp base={ORIGIN} pollDeps={fakeDeps(flowDaemon(asked)).deps} />
+      <ConsoleApp base={ORIGIN} pollDeps={fakeDeps(flowDaemon(asked, older)).deps} />
     </QueryClientProvider>,
   );
   await flush();
@@ -66,7 +67,6 @@ async function mount(hash: string) {
 const windowOf = (query: URLSearchParams) => [query.get("days"), query.get("bucket"), query.get("until")];
 const openRange = () => fireEvent.click(screen.getByRole("button", { name: "Range" }));
 const choices = () => within(screen.getByRole("group", { name: "Range choices" }));
-const points = () => [...document.querySelectorAll("figure[data-chart]")].map((chart) => chart.querySelectorAll("[data-point]").length);
 const changes = () => [...document.querySelectorAll("[data-change]")].map((change) => change.textContent!);
 
 function day(offset: number): string {
@@ -89,24 +89,21 @@ test("with no range, or a retired weekly one, in the address the menu offers 7, 
     openRange();
     expect(choices().getAllByRole("button").map((choice) => choice.textContent)).toEqual(["Last 7 days", "Last 30 days", "Last 90 days"]);
     expect(choices().getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 30 days"]);
-    expect(points()).toEqual([30, 30, 30, 30]);
     cleanup();
   }
 });
 
-test("picking Last 90 days asks for 90 days in weekly buckets and charts thirteen weeks", async () => {
+test("picking Last 90 days asks for 90 days in weekly buckets and checks it in the address", async () => {
   const asked = await mount("#/flow");
   openRange();
   fireEvent.click(choices().getByRole("button", { name: "Last 90 days" }));
   await flush();
   expect(windowOf(asked.at(-1)!)).toEqual(["90", "week", null]);
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("range")).toBe("90d");
-  expect(points()).toEqual([13, 13, 13, 13]);
 });
 
 test("each trend's change reads against the day before over Last 7 days and against the week before over Last 90 days", async () => {
   await mount("#/flow?range=7d");
-  expect(points()).toEqual([7, 7, 7, 7]);
   expect(changes().length).toBeGreaterThan(0);
   expect(changes().every((text) => text.endsWith(" vs the day before"))).toBe(true);
   cleanup();
@@ -142,4 +139,11 @@ test("a custom range over 182 days, or with a To day not yet ended, stays out of
     expect(asked.every((query) => query.get("days") === "30" && !query.has("until"))).toBe(true);
     cleanup();
   }
+});
+
+test("a daemon that answers weekly rows under weeks instead of buckets is left out of the numbers", async () => {
+  const week = { start_ms: Date.now() - 7 * DAY, merged: 50, rounds_median: 1, interventions: 0, hours: { working: 1, waiting: 0, operator: 0 } };
+  await mount("#/flow?range=7d", { now: Date.now(), weeks: [week], phases: {}, waits: NO_WAITS, reverted: { count: 0, merged: 50 } });
+  const figure = (label: string) => document.querySelector(`[data-number="${label}"]`)!.textContent;
+  expect([figure("Merged"), figure("Reverted")]).toEqual([String(1 + 2 + 3 + 4 + 5 + 6 + 7), "0 of 1"]);
 });

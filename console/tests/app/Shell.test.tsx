@@ -814,7 +814,7 @@ const NO_WAITS = { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used:
 function flowOf(weeks: { merged: number; working: number; waiting: number; operator: number }[], waits = NO_WAITS): Flow {
   return {
     now: NOV_6 + WEEK,
-    weeks: weeks.map(({ merged, working, waiting, operator }, index) => ({
+    buckets: weeks.map(({ merged, working, waiting, operator }, index) => ({
       start_ms: NOV_6 - (weeks.length - 1 - index) * WEEK,
       merged,
       rounds_median: 2,

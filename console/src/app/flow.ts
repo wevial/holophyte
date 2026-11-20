@@ -38,7 +38,7 @@ function median(values: number[]): number | null {
 }
 
 function flowRows(flow: Flow): FlowWeek[] {
-  return flow.buckets ?? flow.weeks ?? [];
+  return flow.buckets ?? [];
 }
 
 /** The median of a flow's weekly round medians, its weeks without a merge left out. */

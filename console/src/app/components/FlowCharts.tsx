@@ -67,7 +67,7 @@ interface ChartProps {
   tip: (value: number, index: number) => Tip;
 }
 
-const AXIS_LABELS = 14;
+const AXIS_LABELS = 8;
 
 function edge(index: number, count: number): string {
   if (index === 0) return "-translate-x-3";
