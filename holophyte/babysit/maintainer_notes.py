@@ -128,25 +128,32 @@ def requeue_context(conn, run_id):
     cited = f" (intervention event {event[0]})" if event else ""
     factory = summary.startswith(FACTORY_PREFIX)
     note = summary[len(FACTORY_PREFIX if factory else REQUEUE_PREFIX):]
-    block = (f"Context from the previous attempt (run {prev}):\n"
-             f"{'The factory' if factory else 'Operator'}'s requeue note"
-             f"{cited}:\n{note}\n{PRIVATE}\n")
     last = conn.execute(
         "SELECT round, verdict, findings FROM reviewRounds WHERE runId = ?"
         " ORDER BY round DESC LIMIT 1", (prev,)).fetchone()
+    findings = ""
     if last is not None and last[1] != "pass":
         messages = "\n".join(f"- {f.get('message', '')}"
                               for f in decode_findings(last[2]) or ()
                               if isinstance(f, dict))
         if messages:
-            cut = len(messages) > FINDINGS_CAP
-            messages = messages[:FINDINGS_CAP]
-            block += (f"Unresolved findings of its review round {last[0]}:\n"
-                      f"{messages}\n"
-                      + (f"[findings cut to {FINDINGS_CAP:,} characters]\n"
-                         if cut else ""))
-    return (block + "This is context from the previous attempt, not a change"
-            " to the contract: the ticket below stays the contract.\n\n")
+            findings = unresolved_text(
+                last[0], messages[:FINDINGS_CAP],
+                f"[findings cut to {FINDINGS_CAP:,} characters]\n"
+                if len(messages) > FINDINGS_CAP else "")
+    return requeue_text(prev, "The factory" if factory else "Operator", cited,
+                        note, findings)
+
+
+def unresolved_text(rnd, messages, cut):
+    return f"Unresolved findings of its review round {rnd}:\n{messages}\n{cut}"
+
+
+def requeue_text(prev, requeuer, cited, note, findings):
+    return (f"Context from the previous attempt (run {prev}):\n"
+            f"{requeuer}'s requeue note{cited}:\n{note}\n{PRIVATE}\n"
+            + findings + "This is context from the previous attempt, not a"
+            " change to the contract: the ticket below stays the contract.\n\n")
 
 
 def pending_state(conn, run_id, state, url):

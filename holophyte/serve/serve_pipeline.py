@@ -48,17 +48,26 @@ def pipeline_prompt(project, target):
 
 def config_held(project, answer):
     fresh = dataclasses.replace(project, _config=None)
+    own = readable_patterns(fresh)
+    with RESOLVING:
+        later = dataclasses.replace(project, _config=None)
+        also = readable_patterns(later)
+        reads = [read.config() for read, patterns in ((fresh, own),
+                                                      (later, also))
+                 if patterns is not None]
+        with values_held((own or []) + (also or [])):
+            secrets = current_secrets(project, *reads)
+            if secrets is None or len(reads) < 2:
+                return 503, {"error": "the project config cannot be read, so"
+                                      " its pipeline cannot be resolved"}
+            return answer(fresh, secrets)
+
+
+def readable_patterns(project):
     try:
-        own = own_patterns(fresh)
+        return own_patterns(project)
     except (SystemExit, OSError, ValueError):
-        own = None
-    with RESOLVING, values_held(own or ()):
-        secrets = (None if own is None
-                   else current_secrets(project, fresh.config()))
-        if secrets is None:
-            return 503, {"error": "the project config cannot be read, so its"
-                                  " pipeline cannot be resolved"}
-        return answer(fresh, secrets)
+        return None
 
 
 def prompt_answered(fresh, target, secrets):

@@ -35,6 +35,9 @@ FRAME = ("Notes from this project. They add to the instructions above. They "
          "the review rules, and where they conflict with those, those win.")
 REVIEW_NOTE = "Check the migration notes."
 WITNESS = "def test_work():\n    assert True\n"
+ONCE_PATH = ".holophyte-witness/test_once.py"
+ONCE_TEST = ("import unittest\n\n\nclass Once(unittest.TestCase):\n"
+             "    def test_it_shows(self):\n        self.assertTrue(True)\n")
 RULES = "# Rules\n\n## Tests\n\n- Name each fixture after its oracle.\n"
 TRIMMED = "[trim]\nbudget_min = 1\n"
 TRADE_OFF = "Trade-off: the loop keeps one slower pass."
@@ -50,6 +53,7 @@ APPROVED = Reply("SCOPE AGENTS.md: needed \u2014 the test rules\n"
                  "CRITERION C1: met \u2014 test_work.py::test_work\n"
                  "CRITERION C2: met \u2014 test_work.py::test_work\n"
                  "CRITERION C3: met \u2014 test_work.py::test_work\n"
+                 f"CRITERION C4: met \u2014 {ONCE_PATH}::Once::test_it_shows\n"
                  "VERDICT: APPROVE")
 TARGETS = ("implement", "review", "trim", "critic", "pr_writer",
            "babysit_reply")
@@ -73,16 +77,20 @@ def filled(preview, own):
 
 
 class Turn:
-    """An implementer turn making each scripted commit."""
+    """An implementer turn making each scripted commit, then leaving each
+    `left` file written and uncommitted."""
 
     role = "implement"
 
-    def __init__(self, *commits):
-        self.commits = commits
+    def __init__(self, *commits, left=()):
+        self.commits, self.left = commits, left
 
     def play(self, cwd, turn):
         for commit in self.commits:
             commit.play(cwd, turn)
+        for path, text in self.left:
+            (cwd / path).parent.mkdir(parents=True, exist_ok=True)
+            (cwd / path).write_text(text)
         return "committed"
 
 
@@ -193,6 +201,19 @@ class PromptRouteTests(ServeTestCase):
                       body["prompt"])
         self.assertIn("turn.\n⟨evidence states⟩", body["prompt"])
 
+    def test_implement_opens_with_the_conflict_requeue_and_reproduction_rules(self):
+        body = self.answer("implement", notes_table(implement=REVIEW_NOTE))
+
+        self.assertIn("stopped on conflicts in: ⟨conflicted files⟩. Resolve each"
+                      " one keeping both sides' intent", body["builtin"])
+        self.assertIn("⟨requeuer⟩'s requeue note (intervention event"
+                      " ⟨intervention event⟩):\n⟨requeue note⟩\n", body["builtin"])
+        self.assertIn("not a change to the contract", body["builtin"])
+        self.assertIn("A reproduce turn committed a test at ⟨reproduction commit⟩"
+                      " that makes the ticket's verify fail at `⟨failing"
+                      " command⟩`. Build the fix on top of that commit and keep"
+                      " the test.", body["builtin"])
+
     def test_implement_shows_the_subagent_brief_the_project_configures(self):
         body = self.answer("implement", '[agents.implementer]\n'
                            'harness = "claude"\norchestration = "subagents"\n')
@@ -256,6 +277,29 @@ class PromptRouteTests(ServeTestCase):
         self.assertEqual(code, 200, body)
         self.assertNotIn(private, json.dumps(body))
 
+    def test_a_credential_read_before_a_half_written_save_stays_redacted(self):
+        secret = "lin_api_half_saved_4567"
+        style = f'[merge]\npr_style = "Cite {secret} in the title."\n'
+        self.start("")
+        code, _, _ = self.saved_after_snapshot(
+            f'[linear]\napi_key = "{secret}"\n' + style, "[linear\n")
+        self.assertEqual(code, 503)
+        (self.db.parent / "config.toml").write_text(style)
+
+        code, _, body = self.request("GET", "/pipeline/prompts/pr_writer")
+        self.assertEqual(code, 200, body)
+        self.assertNotIn(secret, json.dumps(body))
+
+    def test_a_kept_note_made_private_mid_request_is_not_shown(self):
+        private = "Project Foxglove"
+        note = notes_table(review=f"Mention {private} in each finding.")
+        self.start("")
+        code, _, body = self.saved_after_snapshot(
+            note, f'[merge]\nprivate_patterns = ["{private}"]\n' + note)
+
+        self.assertEqual(code, 200, body)
+        self.assertNotIn(private, json.dumps(body))
+
     def test_the_critic_answer_keeps_the_pinned_contract(self):
         body = self.answer("critic", notes_table(
             critic="Treat a renamed module as the same module."))
@@ -285,11 +329,15 @@ class LoopAgreementTests(LoopFixture):
             " (`test_work.py` witnesses it).",
             "Given a second thing, then it holds",
             "Given a missing thing, then it is checked"
-            " (`test_missing.py` witnesses it)."]}
+            " (`test_missing.py` witnesses it).",
+            f"Given a shown thing, then it shows (witnessed once: `{ONCE_PATH}`)."],
+            "verify": "python3 -m unittest discover -s .holophyte-witness"
+                      " -p 'test_once.py'"}
         fake, _ = self.loop(
             Turn(Commit("work", "work.txt", lines(60)),
                  Commit("tests", "test_work.py", WITNESS),
-                 Commit("rules", "AGENTS.md", RULES)),
+                 Commit("rules", "AGENTS.md", RULES),
+                 left=[(ONCE_PATH, ONCE_TEST)]),
             Turn(Commit(TRIM_MESSAGE, "work.txt", lines(40))),
             Idle("no witness to add"),
             CHANGES,
@@ -318,14 +366,22 @@ class LoopAgreementTests(LoopFixture):
                    "C1. Given the thing, when it runs, then it works"
                    " (`test_work.py` witnesses it).\nC2. Given a second"
                    " thing, then it holds\nC3. Given a missing thing, then"
-                   " it is checked (`test_missing.py` witnesses it)."),
-               "criterion id": "C3",
+                   " it is checked (`test_missing.py` witnesses it).\nC4."
+                   f" Given a shown thing, then it shows (witnessed once:"
+                   f" `{ONCE_PATH}`)."),
+               "criterion id": "C4",
                "named tests": re.escape(
-                   "`test_work.py`:\n- test_work.py::test_work\n"),
-               "witnessed once": "",
-               "witness gaps": re.escape("criterion C3 names `test_missing.py`;"
-                                         " it does not exist at ")
-               + "[0-9a-f]{12}\n",
+                   "`test_work.py`:\n- test_work.py::test_work\n\n"
+                   f"`{ONCE_PATH}`:\n- {ONCE_PATH}::Once::test_it_shows\n"),
+               "witnessed-once tests": re.escape(f"C4: `{ONCE_PATH}`\n"),
+               "witness gaps": re.escape("criterion C1 names `test_work.py`;"
+                                         " the verify commands run no test"
+                                         " from it\ncriterion C3 names"
+                                         " `test_missing.py`; it does not"
+                                         " exist at ")
+               + "[0-9a-f]{12}\n" + re.escape("criterion C4's named test"
+                                               " passes at the merge base ")
+               + "[0-9a-f]{12}" + re.escape(" without the change\n"),
                "unnamed criteria": "C2",
                "pre-check point": "before this review",
                "merge-base baseline": "",

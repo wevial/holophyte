@@ -2,11 +2,13 @@
 import re
 
 from holophyte.agents.harness import ORCHESTRATION_BRIEFS
+from holophyte.babysit.maintainer_notes import requeue_text, unresolved_text
 from holophyte.babysit.thread_answers import ask_text
 from holophyte.config.agent_settings import review_mode
 from holophyte.config.config_tables import merge_config
 from holophyte.config.pipeline_settings import pipeline_notes
 from holophyte.config.review_settings import review_config
+from holophyte.loop.claim import conflict_brief
 from holophyte.loop.contradiction import brief_text
 from holophyte.loop.implement import (
     _commands_brief,
@@ -29,14 +31,31 @@ from holophyte.review.briefs import (
     witness_text,
 )
 from holophyte.review.freshness import critic_text
+from holophyte.review.reproduce import Reproduction
 from holophyte.stages import notes
+from holophyte.tickets import witness_once
 
 SLOT = "\0notes\0"
 STANDS_FOR = {
-    "merge conflicts": "the files a merge of main into a resumed branch left"
-                       " in conflict; empty on a fresh branch",
-    "requeue context": "the maintainer's context for a requeued ticket;"
-                       " empty otherwise",
+    "conflicted files": "the files a merge of main into the resumed branch"
+                        " left in conflict, comma-separated",
+    "previous run": "the failed run the ticket was requeued from",
+    "requeuer": "who requeued it: Operator or The factory",
+    "intervention event": "the id of the event recording the requeue",
+    "requeue note": "the requeue's note",
+    "last round": "the number of the previous run's last review round",
+    "unresolved findings": "that round's findings, one line each",
+    "findings cut": "a line saying the findings were cut to length; empty"
+                    " when they were not",
+    "escalation": "the factory's escalation of the ticket from a failed"
+                  " implementer profile; empty unless it escalated",
+    "hints": "the maintainer's hints waiting for the ticket; empty when none"
+             " wait",
+    "reproduction commit": "the commit a reproduce turn made with a failing"
+                           " test",
+    "failing command": "the verify command that test makes fail",
+    "witnessed-once tests": "each criterion witnessed once and its"
+                            " uncommitted test file, one line each",
     "steering": "the maintainer's steering notes waiting for this turn;"
                 " empty when none wait",
     "candidate commit": "the commit under review",
@@ -50,8 +69,6 @@ STANDS_FOR = {
                 " and so on",
     "criterion id": "the last criterion's id, such as C3",
     "named tests": "the tests defined in the test files the criteria name",
-    "witnessed once": "the criteria witnessed once by an uncommitted test,"
-                      " with the rules for those tests; empty when none is",
     "verify commands": "the ticket's verify commands",
     "baseline commands": "how many baseline commands ran",
     "verify output": "the output of the ticket's verify commands and the"
@@ -104,13 +121,22 @@ def stand_in(name):
 def implement(project, slot):
     s = stand_in
     return implement_goal(
-        s("merge conflicts"), s("requeue context"), s("steering"), slot,
+        conflict_brief(s("branch"), [s("conflicted files")]),
+        requeue_text(s("previous run"), s("requeuer"),
+                     f" (intervention event {s('intervention event')})",
+                     s("requeue note"),
+                     unresolved_text(s("last round"), s("unresolved findings"),
+                                     s("findings cut")))
+        + s("escalation") + s("hints")
+        + Reproduction(s("reproduction commit"), s("failing command")).opening(),
+        s("steering"), slot,
         s("ticket"), _commands_brief(project, s("verify commands")),
         ORCHESTRATION_BRIEFS[orchestration_mode(project, "")[0]],
         capture_text(merge_config(project), s("ticket id"),
                      s("evidence states"), False),
         design_text(s("design")),
-        brief_text(s("criteria")) + s("witnessed once"))
+        brief_text(s("criteria"))
+        + witness_once.implementer_text(s("witnessed-once tests")))
 
 
 def review(project, slot):
@@ -123,7 +149,7 @@ def review(project, slot):
         criteria=criteria_text(s("criteria"), s("criterion id"),
                                "REQUEST_CHANGES", named_tests_text(
                                    s("named tests")))
-        + s("witnessed once"),
+        + witness_once.reviewer_text(s("witnessed-once tests")),
         witness=witness_text(s("witness gaps"), s("unnamed criteria"),
                              s("pre-check point"))
         + s("merge-base baseline"),

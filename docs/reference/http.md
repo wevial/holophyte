@@ -1218,7 +1218,9 @@ run puts there. Text from the project's config that happens to hold
 `⟨…⟩` is shown as written and is never a stand-in. Adjacent
 stand-ins with no text between them may each be empty in a real run. The
 preview renders a run where every part is present: a ticket with criteria
-and verify commands that passed, a witness pre-check that found gaps, a
+and verify commands that passed, a resumed branch whose merge of main
+stopped on conflicts, a requeue with unresolved findings, a reproduction
+commit, a criterion witnessed once, a witness pre-check that found gaps, a
 later review round with trim commits that record a trade-off, a
 test-heavy diff for trim, a ticket with evidence states, an approved
 design, a pull request template and a convention file. Config gates hold:
