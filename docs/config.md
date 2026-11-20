@@ -2226,6 +2226,7 @@ change reaches the next run, never a run already under way.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `notes` | Default: absent (no notes) | The `[pipeline.notes]` table below. |
+| `check` | Default: absent (no checks) | The `[[pipeline.check]]` entries below. |
 
 ## `[pipeline.notes]`
 
@@ -2260,6 +2261,89 @@ note. A project with no note pins
 the same document, revision and digest as one without the table. An unknown
 key, a value that is not a string or a note over 4000 characters is a
 startup error naming the key and the accepted keys.
+
+## `[pipeline.check]`
+
+A project's own Check stages, one `[[pipeline.check]]` entry each. Each
+becomes a `check` stage in the pinned pipeline document, right after its
+Build stage (`implement` or `trim`), in config order; with no entry the
+document, its digest and its revision are the same as without the array. A
+check runs its commands, joined with `&&`, in a fresh detached Git worktree
+at the commit being checked. Host checks share the task repository's
+objects, branches and tags. Local edits, untracked files and ignored build
+output from the task worktree are absent. With container isolation enabled, verify
+mounts this checkout directly. The workspace follows the configured mount
+permissions and Git metadata is mounted read-only.
+
+Each attempt records the check's `id`, its outcome (`pass` or `fail`) and
+the `next` edge. Its detail holds the exit status and the last 1000
+characters of command output, with credentials scrubbed and invalid UTF-8
+replaced. The verify runner enforces `[verify] timeout_sec` and records
+`timed_out` on a timeout. A command that could not start records `error`,
+including when the shell reports a missing or non-executable command.
+A command that runs and exits 127 records `fail`. The runner ends any
+remaining processes in the command's process group and removes the
+detached worktree after each check. A removal failure is recorded under
+`cleanup_error`.
+
+A run runs the checks it pinned, never an edit made after the pin. The
+pinned document holds each check's `id`, `after`, `mode` and `paths` as
+written, and its commands with credentials redacted, marking the stage
+`redacted` when that changed them; the process that pinned a run keeps the
+original commands, and the credentials it scrubbed them with, in memory
+only, and a run that continues one in the same process takes them over.
+Selection by `after`, the `mode off` skip and the path condition read the
+pinned stage, so a run picked up again by another process still skips as
+pinned; a check that would run but whose pinned stage is marked `redacted`
+without its original commands in memory closes `error` without running.
+The store also redacts registered environment values in the pinned
+document and in every stage attempt it records, except a check stage's
+`id`, `after`, `mode` and `paths` and the reason a check was skipped,
+which it keeps as written.
+
+A check after `implement` runs before each verify a review round starts,
+once per round and head: at the top of the round after its steer, before
+the reverify of a head a witness turn repaired, and before the fix
+self-check's verify on the fix's head, which carries the next round's
+number; a round that only re-reviews a stale approval runs it again. A
+check after `trim` runs once, right after trim, on the trimmed head, or on
+the untrimmed head when trim was skipped for its own reasons. A run whose
+bug was not reproduced runs no check after `trim`, and none during its
+evidence check; once it hands on to ordinary review rounds, its checks
+after `implement` run there. An advisory check's output goes only into its
+attempt: no prompt, ledger entry or finding carries it, and the run goes on
+whatever it returns. Its output and errors are scrubbed of every
+credential either config file or the pin held, cut fragments of one
+included. A check whose read or run fails records
+`stage_record_failed` and never stops the run; a refused entry is named
+without its rejected values.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `id` | Default: none (required) | The stage's id: a non-empty string no other check and no standard stage (`critic`, `implement`, `trim`, `verify`, `review`, `merge_gate`, `capture`, `covering_fix`, `check_fix`, `capture_fix`, `waiting`) uses. |
+| `after` | Default: none (required) | `implement` or `trim`: the Build stage the check follows. |
+| `commands` | Default: none (required) | A non-empty list of non-empty shell commands. |
+| `mode` | Default: none (required) | `advisory` (a failure is recorded and the run goes on) or `off` (recorded `skipped` with reason `mode off`, nothing runs). `required` is refused: that mode is not available yet. |
+| `paths` | Default: `[]` (every change) | Repository-relative globs, matched like `[review] high_paths`; when set, the check runs only if a file changed from the round's review base to the head matches one, and is recorded `skipped` with a reason naming the globs otherwise. |
+
+```toml
+[[pipeline.check]]
+id = "lint"
+after = "implement"
+commands = ["ruff check ."]
+mode = "advisory"
+
+[[pipeline.check]]
+id = "docs"
+after = "trim"
+commands = ["mkdocs build --strict"]
+mode = "advisory"
+paths = ["docs/**"]
+```
+
+A repeated `id`, an `id` a standard stage uses, an `after` or `mode`
+outside the values above, an empty `commands`, an unknown key, or a path
+that is absolute or climbs with `..` is a startup error naming the entry.
 
 ## `[scout]`
 

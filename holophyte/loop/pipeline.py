@@ -53,7 +53,7 @@ from holophyte.pr.pullrequest import _opens_draft, _prepare_pr, _push_and_open
 from holophyte.redact import safe_print as print
 from holophyte.review import moved_landmarks, reproduce
 from holophyte.review.criterion_ids import numbered
-from holophyte.stages import record
+from holophyte.stages import checks, record
 from holophyte.story.story_claim import story_brief
 
 UNREPRODUCED = "the bug was not reproduced"
@@ -184,6 +184,8 @@ def _run_stages(run, task):
         if not unreproduced:
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts, criteria)
+            record.checks_guarded(conn, run_id, lambda: checks.run(
+                project, conn, run_id, beat_s, wt, base_sha, sha, "trim"))
         else:
             record.skip(conn, run_id, "trim", UNREPRODUCED, sha)
 

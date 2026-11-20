@@ -7,9 +7,21 @@ from holophyte.redact import redact_document
 
 from .schema import _has_table, _transaction
 
+CHECK_SELECTORS = ("id", "after", "mode", "paths")
+
+
+def _redacted(document):
+    shown = redact_document(document)
+    for stage, written in zip(shown.get("stages", ()),
+                              document.get("stages", ())):
+        if "after" in written:
+            stage.update({key: written[key] for key in CHECK_SELECTORS
+                          if key in written})
+    return shown
+
 
 def _canonical(document):
-    canonical = json.dumps(redact_document(document), sort_keys=True,
+    canonical = json.dumps(_redacted(document), sort_keys=True,
                            separators=(",", ":"), allow_nan=False)
     return canonical, hashlib.sha256(canonical.encode()).hexdigest()
 

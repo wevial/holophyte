@@ -18,6 +18,7 @@ from holophyte.agents.agent_output import (
 from holophyte.agents.harness import Codex
 from holophyte.config.reader import AGENT_CONFIG_KEYS
 from holophyte.files import RangeError, main_base
+from holophyte.isolation.isolation_git import git_environment
 from holophyte.loop.gates import InfraFailure, run_capped, sh
 from holophyte.pr.mockup import release_review_carry, review_carry
 from holophyte.redact import safe_print as print
@@ -55,13 +56,14 @@ def cut_base(wt):
 
 
 def review_base(repo, frozen, candidate):
+    env = git_environment()
     try:
-        merged = main_base(repo, candidate, f"no main base for {candidate}")
+        merged = main_base(repo, candidate, f"no main base for {candidate}", env=env)
     except RangeError:
         return frozen
     if merged == candidate or subprocess.run(
             ["git", "merge-base", "--is-ancestor", frozen, merged],
-            cwd=repo, capture_output=True).returncode:
+            cwd=repo, env=env, capture_output=True).returncode:
         return frozen
     return merged
 

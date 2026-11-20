@@ -194,7 +194,7 @@ class PinnedNotesTests(LoopFixture):
         self.assertEqual(self.pins(), [(1, 1, None), (2, 1, None)])
         writes = [json.loads(payload)["write"] for (payload,) in self.read(
             "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'")]
-        self.assertEqual(writes, ["pipeline_notes"])
+        self.assertEqual(writes, ["pipeline_notes", "pipeline_checks"])
 
     def test_a_note_edited_after_the_pin_leaves_the_review_prompt_pinned(self):
         config = self.db.parent / "config.toml"

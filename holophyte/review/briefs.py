@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 
 import store.read
+from holophyte.isolation.isolation_git import git_environment
 from holophyte.loop.trim_brief import pass_name
 from holophyte.review.criterion_ids import numbered
 from holophyte.tickets import ticket_template
@@ -15,7 +16,8 @@ def _changed_files(root, approved, sha):
     changed = subprocess.run(
         ["git", "diff", "--name-only", "--no-renames", "--ignore-submodules=none", "-z",
          f"{approved}..{sha}"],
-        cwd=root, capture_output=True, check=True).stdout.split(b"\0")
+        cwd=root, env=git_environment(), capture_output=True, check=True,
+    ).stdout.split(b"\0")
     return {os.fsdecode(path) for path in changed if path}
 
 

@@ -341,6 +341,7 @@ PINNED = {
     "holophyte/serve/views.py": 6,
 
     "holophyte/stages/__init__.py": 0,
+    "holophyte/stages/checks.py": 1,
     "holophyte/stages/notes.py": 1,
     "holophyte/stages/previews.py": 1,
     "holophyte/stages/record.py": 1,

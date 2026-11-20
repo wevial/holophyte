@@ -59,8 +59,8 @@ def _without_paths(source, target, error):
     return PATH_TAIL.sub("", EMPTY_QUOTE.sub("", text)).strip()
 
 
-def git(repo, *args, timeout=GIT_TIMEOUT):
-    return run_capped(["git", *args], repo, timeout)
+def git(repo, *args, timeout=GIT_TIMEOUT, env=None):
+    return run_capped(["git", *args], repo, timeout, env=env)
 
 
 def resolve(repo, rev, missing):
@@ -97,14 +97,14 @@ def worktree_range(worktree):
                      f"worktree {worktree} shares no history with {MAIN}"), head
 
 
-def main_base(repo, head, missing):
+def main_base(repo, head, missing, *, env=None):
     mains = [f"refs/heads/{MAIN}"]
     remote_main = f"refs/remotes/{REMOTE}/{MAIN}"
     code, _ = git(repo, "rev-parse", "--verify", "--quiet",
-                  f"{remote_main}^{{commit}}")
+                  f"{remote_main}^{{commit}}", env=env)
     if code == 0:
         mains.append(remote_main)
-    code, out = git(repo, "merge-base", head, *mains)
+    code, out = git(repo, "merge-base", head, *mains, env=env)
     if code != 0:
         raise RangeError(missing)
     return out.strip()

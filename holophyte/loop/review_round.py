@@ -75,6 +75,7 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
+from holophyte.stages import checks as stage_checks
 from holophyte.stages import record
 from holophyte.tickets import ticket_template, witness_once
 
@@ -410,6 +411,26 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
     return ok, out
 
 
+def _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha, rnd,
+                  checked):
+    if sha is None or (rnd, sha) in checked:
+        return
+    checked.add((rnd, sha))
+    record.checks_guarded(conn, run_id, lambda: stage_checks.run(
+        project, conn, run_id, beat_s, wt, base_sha, sha, "implement",
+        round=rnd))
+
+
+def _verifier(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
+              contracts, rnd, checked):
+    def verify():
+        _round_checks(project, conn, run_id, beat_s, wt, base_sha,
+                      record.head(conn, run_id, wt), rnd, checked)
+        return _verify(project, conn, run_id, beat_s, wt, base_sha, ticket,
+                       verify_cmd, contracts, rnd)
+    return verify
+
+
 def _close_verify(attempt, ok, out):
     attempt.close_at_head("pass" if ok else "fail", "next",
                           timed_out=not ok and (timed_out(out)
@@ -434,9 +455,10 @@ def _checked(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
 
 
 def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
-              sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd):
-    checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
-                     ticket, verify_cmd, contracts, rnd)
+              sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd,
+              checked):
+    checks = _verifier(project, conn, run_id, beat_s, wt, base_sha, ticket,
+                       verify_cmd, contracts, rnd, checked)
     ok, out = checks()
     return witness_turns.before_review(
         project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
@@ -445,17 +467,17 @@ def _verified(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
 
 def _prepared(project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
               sha, ticket, verify_cmd, contracts, criteria, budget_min, rnd,
-              pending):
+              pending, checked):
     phase = pending.get("phase")
     if phase not in ("reviewing", "addressing"):
         return _verified(project, conn, run_id, provider, task_id, beat_s, wt,
                          base_sha, sha, ticket, verify_cmd, contracts, criteria,
-                         budget_min, rnd)
+                         budget_min, rnd, checked)
     ok, out = pending.get("ok", False), pending.get("out", "")
     if phase == "addressing" or "witness" in pending:
         return sha, ok, out, pending.get("witness", "")
-    checks = partial(_verify, project, conn, run_id, beat_s, wt, base_sha,
-                     ticket, verify_cmd, contracts, rnd)
+    checks = _verifier(project, conn, run_id, beat_s, wt, base_sha, ticket,
+                       verify_cmd, contracts, rnd, checked)
     return witness_turns.before_review(
         project, conn, run_id, provider, task_id, beat_s, wt, base_sha, sha,
         ticket, verify_cmd, criteria, budget_min, ok, out, checks, rnd)
@@ -469,6 +491,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     mode = review_mode(project)
     rnd = pending.get("rnd", 1) - 1
     claimed = verify_cmd
+    rechecking, checked = False, set()
     for rnd in range(pending.get("rnd", 1), cap + 1):
         sha, pending = _steer_at_top(project, conn, run_id, beat_s, wt,
                                      budget_min, ticket, sha, pending)
@@ -484,10 +507,14 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" unresolved in {', '.join(unresolved)}; a human"
                     f" resolves the merge before this ticket is run again;"
                     f" branch {branch} preserved at {sha[:12]}")
+        if rechecking:
+            _round_checks(project, conn, run_id, beat_s, wt, base_sha, sha,
+                          rnd, checked)
+        rechecking = False
         sha, ok, out, witness = _prepared(
             project, conn, run_id, provider, task_id, beat_s, wt, base_sha,
             sha, reviewed, verify_cmd, contracts, criteria, budget_min, rnd,
-            pending)
+            pending, checked)
         leaks = leak_guard.branch_leaks(project, wt, sha)
 
         boundary(conn, run_id, "reviewing", rnd=rnd, ok=ok, out=str(out),
@@ -544,6 +571,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     pending = _rereview(conn, run_id, provider, task_id, branch,
                                         sha, rnd, stale, pending, ok, out,
                                         verify_cmd, witness)
+                    rechecking = True
                     attempt.close("fail", "again", sha)
                     continue
 
@@ -562,9 +590,9 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             fixing.close_at_head("pass", "next")
         sha = fix_self_check.after_fix(
             project, conn, run_id, beat_s, wt, budget_min, reviewed, sha, head,
-            verify_cmd, partial(_verify, project, conn, run_id, beat_s, wt,
-                                base_sha, reviewed, verify_cmd, contracts,
-                                rnd + 1))
+            verify_cmd, _verifier(project, conn, run_id, beat_s, wt, base_sha,
+                                  reviewed, verify_cmd, contracts, rnd + 1,
+                                  checked))
     return sha, rnd, False
 
 

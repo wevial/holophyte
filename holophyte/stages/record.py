@@ -3,9 +3,16 @@ import json
 from time import time
 
 import store
-from holophyte.config.pipeline_settings import current_notes
+from holophyte.config.pipeline_settings import (
+    STANDARD_STAGES,
+    current_notes,
+    pinned_checks,
+)
+from holophyte.isolation.isolation_git import git_environment
+from holophyte.isolation.launcher import SignalExit
 from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
+from holophyte.loop.runs import RunSwept
 from holophyte.loop.stop import resumes
 from holophyte.stages import notes, standard
 from store import pipelines, stages
@@ -13,6 +20,7 @@ from store import pipelines, stages
 FAILED = "stage_record_failed"
 REFUSED = object()
 RESTORED = "restored"
+PINNED_CHECKS = {}
 RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
             "operator_note": ("fail", "on_fail")}
 
@@ -20,6 +28,8 @@ RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
 def guarded(conn, run_id, write, record):
     try:
         return record()
+    except SignalExit:
+        raise
     except (Exception, SystemExit) as error:
         try:
             store.record_event(
@@ -31,6 +41,20 @@ def guarded(conn, run_id, write, record):
         return REFUSED
 
 
+def checks_guarded(conn, run_id, run_checks):
+    ended = []
+
+    def kept():
+        try:
+            return run_checks()
+        except (store.RunEnded, RunSwept) as error:
+            ended.append(error)
+
+    guarded(conn, run_id, "pipeline_checks", kept)
+    if ended:
+        raise ended[0]
+
+
 def pin(run):
     conn, run_id = run.conn, run.run_id
     if conn is None or run_id is None:
@@ -39,6 +63,14 @@ def pin(run):
                         lambda: _inherited(run))
     if inherited is None:
         guarded(conn, run_id, "pin_pipeline", lambda: _resolved(run))
+    elif inherited is not REFUSED:
+        guarded(conn, run_id, "inherit_pipeline", lambda: _carried(conn, run_id))
+
+
+def _carried(conn, run_id):
+    held = PINNED_CHECKS.get(_store_run(conn, predecessor(conn, run_id)))
+    if held is not None:
+        PINNED_CHECKS[_store_run(conn, run_id)] = held
 
 
 def _inherited(run):
@@ -53,9 +85,27 @@ def _resolved(run):
     row = latest_profile(conn, run_id)
     notes = guarded(conn, run_id, "pipeline_notes",
                     lambda: current_notes(run.project))
+    checks = guarded(conn, run_id, "pipeline_checks",
+                     lambda: pinned_checks(run.project))
+    raw, shown, secrets = ((), (), frozenset()) if checks is REFUSED else checks
     document = standard.resolve(run.project, row and row[1]["profile"],
-                                None if notes is REFUSED else notes)
-    return pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
+                                None if notes is REFUSED else notes, shown)
+    (unpinned,) = conn.execute("SELECT pipelineId IS NULL FROM runs"
+                               " WHERE id = ?", (run_id,)).fetchone()
+    pinned = pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
+    if unpinned:
+        PINNED_CHECKS[_store_run(conn, run_id)] = (list(raw), secrets)
+    return pinned
+
+
+def _store_run(conn, run_id):
+    (path,) = [row[2] for row in conn.execute("PRAGMA database_list")
+               if row[1] == "main"]
+    return path, run_id
+
+
+def pinned_raw_checks(conn, run_id):
+    return PINNED_CHECKS.get(_store_run(conn, run_id))
 
 
 def notes_block(project, conn, run_id, target):
@@ -83,9 +133,10 @@ def stage_roles(conn, run_id, stage_id):
 
 
 class Attempt:
-    def __init__(self, conn, run_id, stage_id, sha, detail, wt=None):
+    def __init__(self, conn, run_id, stage_id, sha, detail, wt=None,
+                 verbatim=()):
         self.conn, self.run_id, self.stage_id = conn, run_id, stage_id
-        self.sha, self.wt = sha, wt
+        self.sha, self.wt, self.verbatim = sha, wt, verbatim
         self.detail, self.closed = dict(detail), False
         self.id = None
         if conn is not None and run_id is not None:
@@ -94,7 +145,8 @@ class Attempt:
     def _open(self, **mark):
         conn, run_id = self.conn, self.run_id
         return guarded(conn, run_id, "open_stage", lambda: stages.open_stage(
-            conn, run_id, self.stage_id, self.sha, self.detail, **mark))
+            conn, run_id, self.stage_id, self.sha, self.detail,
+            verbatim=self.verbatim, **mark))
 
     @property
     def recording(self):
@@ -111,7 +163,8 @@ class Attempt:
         conn, run_id = self.conn, self.run_id
         guarded(conn, run_id, "close_stage", lambda: stages.close_stage(
             conn, self.id, outcome, edge, sha,
-            stage_roles(conn, run_id, self.stage_id), self.detail))
+            stage_roles(conn, run_id, self.stage_id), self.detail,
+            verbatim=self.verbatim))
 
     def __enter__(self):
         return self
@@ -133,7 +186,7 @@ class Attempt:
     def head(self):
         if self.wt is None or not self.wt.exists():
             return self.sha
-        return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
+        return sh(["git", "rev-parse", "HEAD"], cwd=self.wt, env=git_environment())
 
 
 def fix_round(conn, run_id, stage_id, sha, detail, wt, fix):
@@ -148,8 +201,8 @@ def fix_round(conn, run_id, stage_id, sha, detail, wt, fix):
 
 
 def head(conn, run_id, wt):
-    found = guarded(conn, run_id, "stage_head",
-                    lambda: sh(["git", "rev-parse", "HEAD"], cwd=wt))
+    found = guarded(conn, run_id, "stage_head", lambda: sh(
+        ["git", "rev-parse", "HEAD"], cwd=wt, env=git_environment()))
     return None if found is REFUSED else found
 
 
@@ -184,15 +237,18 @@ def verified_last(conn, run_id, sha):
     if rows is REFUSED:
         return False
     for row in rows:
+        stage_id, _, output = tuple(row)
+        if output == sha and stage_id not in STANDARD_STAGES:
+            continue
         if tuple(row)[::2] != ("implement", sha):
             return tuple(row) == ("verify", "pass", sha)
     return False
 
 
-def skip(conn, run_id, stage_id, reason, sha=None):
+def skip(conn, run_id, stage_id, reason, sha=None, verbatim=False):
     if conn is not None and run_id is not None:
-        guarded(conn, run_id, "skip_stage",
-                lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))
+        guarded(conn, run_id, "skip_stage", lambda: stages.skip_stage(
+            conn, run_id, stage_id, reason, sha, verbatim=verbatim))
 
 
 def repeats(conn, run_id, stage_id, sha, outcome, edge, detail):

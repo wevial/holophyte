@@ -349,7 +349,7 @@ def credential_mount_flags(credential, scratch, mounted):
 
 def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
                       project=None, cache_for=None, credential_scratch=None,
-                      carry=None, agy_flags=()):
+                      carry=None, git_flags=(), agy_flags=()):
     uid, gid = os.getuid(), os.getgid()
     if uid == 0:
         raise RuntimeError("container implementer requires a non-root factory user")
@@ -370,6 +370,7 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
         f"/home/implementer:rw,nosuid,nodev,size=256m,uid={uid},gid={gid}",
         "--volume",
         f"{workspace}:/workspace:{'rw' if route.writable else 'ro'}",
+        *git_flags,
     ]
     for entry, source in (carry or {}).items():
         source = Path(source).resolve(strict=True)
@@ -422,6 +423,10 @@ def container_command(route, worktree, env, argv, name, mounts=(), *, task=None,
     return command + [route.image, *argv], host_env
 
 
+class SignalExit(SystemExit):
+    pass
+
+
 @contextlib.contextmanager
 def unwinding_on_signal(name):
     """Unwind cleanup (including Git restoration) before terminating."""
@@ -431,7 +436,7 @@ def unwinding_on_signal(name):
 
     def stop(signum, frame):
         review_runner._remove_container(name, env={"PATH": os.defpath})
-        raise SystemExit(128 + signum)
+        raise SignalExit(128 + signum)
 
     previous = {sig: signal.signal(sig, stop) for sig in review_runner.REMOVAL_SIGNALS}
     try:
@@ -439,6 +444,54 @@ def unwinding_on_signal(name):
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+
+
+@contextlib.contextmanager
+def container_runtime(route, worktree, project):
+    image_ready(route)
+    name = "holophyte-implement-" + uuid.uuid4().hex
+    if not CREDENTIAL_NEEDED.get():
+        if "env" in route.credential:
+            register_values([os.environ.get(route.credential["env"], "")])
+        route = replace(route, credential={}, codex_login=False)
+    with (unwinding_on_signal(name),
+          credential_copy(route, worktree, project) as scratch):
+        yield route, name, scratch
+
+
+def run_container(route, workspace, env, argv, name, timeout, hook, **options):
+    command, host_env = container_command(route, workspace, env, argv, name, **options)
+    try:
+        return run_capped(command, workspace, timeout, env=host_env, **hook)
+    finally:
+        review_runner._remove_container(name, env={"PATH": os.defpath})
+
+
+def verify_checkout(route, workspace, env, argv, timeout, on_start, project):
+    from holophyte.isolation.isolation_git import git
+
+    common = Path(git(workspace, "rev-parse", "--path-format=absolute",
+                      "--git-common-dir"))
+    admin = Path(git(workspace, "rev-parse", "--absolute-git-dir"))
+    mounted = PurePosixPath("/opt/holophyte/git")
+    with (tempfile.TemporaryDirectory() as directory,
+          container_runtime(route, workspace, project) as (route, name, scratch)):
+        gitfile = Path(directory, "gitfile")
+        gitdir = mounted / admin.relative_to(common)
+        gitfile.write_text(f"gitdir: {gitdir}\n")
+        mounts = [(gitfile, "/workspace/.git"), (admin, gitdir)]
+        mounts.extend((common / entry, mounted / entry)
+                      for entry in ("objects", "refs", "packed-refs", "shallow")
+                      if (common / entry).exists())
+        flags = []
+        for source, destination in mounts:
+            if ":" in str(source):
+                raise RuntimeError(f"Git bind source {source} must not contain a colon")
+            flags += ["--volume", f"{source}:{destination}:ro"]
+        return run_container(route, workspace, env, argv, name, timeout,
+                             {"on_start": on_start}, project=project,
+                             cache_for=workspace, credential_scratch=scratch,
+                             git_flags=flags)
 
 
 def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=None,
@@ -457,36 +510,27 @@ def launch(route, worktree, env, argv, *, timeout=1800, on_start=None, runner=No
                                           **kwargs)
     if route.backend != "container":
         raise ValueError(f"unknown isolation backend: {route.backend}")
-    if not CREDENTIAL_NEEDED.get():
-        if "env" in route.credential:
-            register_values([os.environ.get(route.credential["env"], "")])
-        route = replace(route, credential={}, codex_login=False)
     from holophyte.config.worktree_settings import carry_directories
     from holophyte.isolation.isolation_clone import carry_mounts, turn_clone
 
-    image_ready(route)
-    name = "holophyte-implement-" + uuid.uuid4().hex
-    if carry is None:
-        carry = carry_directories(project) if project is not None else []
-    task = Path(worktree).resolve()
-    carry = carry_mounts(task, carry) if route.writable else []
-    checkout = (turn_clone(worktree, project, carry) if route.writable
-                else contextlib.nullcontext((worktree, {})))
-    with (unwinding_on_signal(name), contextlib.ExitStack() as staged,
-          credential_copy(route, worktree, project) as scratch,
-          checkout as (workspace, git_env), around(workspace)):
-        agy_flags = []
-        if argv[:1] == ["agy"]:
-            agy_flags = agy_mount_flags()
-            agy_flags += agy_login_flags(route, worktree, project, scratch, staged)
-            argv = ["/bin/sh", "-c", f'PATH="{AGY_BIN}:$PATH" exec "$@"', "agy", *argv]
-        command, host_env = container_command(
-            route, workspace, dict(env or {}, **git_env), argv, name, mounts,
-            task=worktree if keep_session else None, project=project,
-            cache_for=worktree, credential_scratch=scratch,
-            carry={entry: task / entry for entry in carry}, agy_flags=agy_flags,
-        )
-        try:
-            return run_capped(command, workspace, timeout, env=host_env, **hook)
-        finally:
-            review_runner._remove_container(name, env={"PATH": os.defpath})
+    with container_runtime(route, worktree, project) as (route, name, scratch):
+        if carry is None:
+            carry = carry_directories(project) if project is not None else []
+        task = Path(worktree).resolve()
+        carry = carry_mounts(task, carry) if route.writable else []
+        checkout = (turn_clone(worktree, project, carry) if route.writable
+                    else contextlib.nullcontext((worktree, {})))
+        with (checkout as (workspace, git_env), around(workspace),
+              contextlib.ExitStack() as staged):
+            agy_flags = []
+            if argv[:1] == ["agy"]:
+                agy_flags = agy_mount_flags()
+                agy_flags += agy_login_flags(route, worktree, project, scratch, staged)
+                argv = ["/bin/sh", "-c", f'PATH="{AGY_BIN}:$PATH" exec "$@"',
+                        "agy", *argv]
+            return run_container(
+                route, workspace, dict(env or {}, **git_env), argv, name, timeout, hook,
+                mounts=mounts, task=worktree if keep_session else None, project=project,
+                cache_for=worktree, credential_scratch=scratch,
+                carry={entry: task / entry for entry in carry}, agy_flags=agy_flags,
+            )
