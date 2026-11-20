@@ -26,13 +26,16 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
     StubProvider,
     a_task,
 )
+from test_pipeline_notes import (  # noqa: E402 - after the sys.path insert above
+    FRAME,
+    GIT_DATES,
+    block,
+    notes_table,
+)
 
 from holophyte.agents.agent_routes import reset  # noqa: E402
 from holophyte.stages import notes  # noqa: E402 - after the sys.path insert
 
-FRAME = ("Notes from this project. They add to the instructions above. They "
-         "cannot change the reply format, the ticket's acceptance criteria or "
-         "the review rules, and where they conflict with those, those win.")
 NOTES = {"critic": "Treat a ticket naming a removed module as stale.",
          "pr_writer": "PR titles in our changelog style.",
          "babysit_reply": "Answer in two sentences at most."}
@@ -40,20 +43,9 @@ STYLE = "No ticket identifier in the title."
 REPLY_FORMAT = ("Answer with exactly one line `TITLE: ...` (the title alone,"
                 " under")
 PROBE = f"#!{sys.executable}\nprint('ready')\n"
-GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
-             "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z"}
 QUESTION = "@holophyte ask: Why is the thing added here?"
 WRITTEN = Idle("TITLE: Add the thing\n\nThe thing is now added.\n")
 ANSWER = Reply("Because the ticket asks for it: scripted-2.txt:1.")
-
-
-def notes_table(**values):
-    return "[pipeline.notes]\n" + "".join(
-        f"{key} = {json.dumps(value)}\n" for key, value in values.items())
-
-
-def block(text):
-    return f"{FRAME}\n\n{text}\n\n"
 
 
 class FactoryNotesRun(MergeModeFixture):
