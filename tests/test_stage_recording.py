@@ -197,7 +197,7 @@ class StageRecordingTests(LoopFixture):
             ("implement", 1, "pass", "next"), ("trim", 1, "skipped", "next"),
             ("verify", 1, "pass", "next"), ("review", 1, "fail", "on_fail"),
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
-            ("review", 2, "pass", "next")])
+            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
         self.assertEqual(recorded[4][4]["kind"], "fix")
         self.assertEqual(self.shas("review", 1)[0], implemented)
         self.assertEqual(self.shas("implement", 2), (implemented, fixed))
@@ -304,6 +304,24 @@ class StageRecordingTests(LoopFixture):
             ("verify", 1, "fail", "next"), ("review", 1, "fail", "on_fail")])
 
 
+    def test_a_red_verify_on_the_fix_is_recorded_before_the_self_check(self):
+        task = dict(a_task(), verify="! grep -q broken state.txt")
+        self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
+                      Commit("fix", "state.txt", "broken\n"),
+                      Commit("self-check", "state.txt", "ok\n"), APPROVE,
+                      task=task)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertEqual(
+            [(stage, attempt, outcome, detail.get("kind"))
+             for stage, attempt, outcome, _, detail in
+             self.attempts()][4:], [
+                ("implement", 2, "pass", "fix"), ("verify", 2, "fail", None),
+                ("implement", 3, "pass", "self_check"),
+                ("verify", 3, "pass", None), ("review", 2, "pass", None)])
+        fixed = self.git("rev-parse", "main^2^").strip()
+        self.assertEqual(self.shas("verify", 2)[0], fixed)
+
 class TerminalReviewEdgeTests(LoopFixture):
     def run_loop(self, config, *script, task=None):
         self.configure(config)
@@ -360,22 +378,33 @@ class TerminalReviewEdgeTests(LoopFixture):
             (detail["decision"], detail["findings"], detail["adversary"]),
             ("REQUEST_CHANGES", 2, "ran"))
 
-    def test_a_verify_that_times_out_on_its_rerun_ends_an_approving_review(self):
+    def test_an_approval_after_a_rerun_that_timed_out_still_routes_to_a_fix(self):
         marker = self.target.parent / "first-run"
         task = dict(a_task(), verify=f"test -e {marker} || {{ touch {marker};"
                     " exit 1; }; sleep 5")
         self.run_loop("[verify]\ntimeout_sec = 1\n" + UNTRIMMED,
-                      Commit("work"), APPROVE, task=task)
+                      Commit("work"), APPROVE, Idle(), task=task)
 
         (detail,) = [json.loads(detail) for (detail,) in self.read(
             "SELECT detail FROM stageAttempts WHERE stageId = 'verify'"
             " AND attempt = 1")]
         self.assertIs(detail["timed_out"], True)
-        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual([summary for (summary,) in self.read(
+            "SELECT summary FROM runEvents WHERE kind = 'phase_change'"
+            " ORDER BY seq")], [
+            f"claimed -> working: cutting {BRANCH} and implementing",
+            "working -> verifying: round 1: verify before review",
+            "verifying -> reviewing: round 1 review",
+            "reviewing -> addressing: round 1: addressing findings",
+            "addressing -> failed: run ended, outcome failed"])
+        self.assertEqual([(kind, text.splitlines()[0]) for kind, text in
+                          self.read("SELECT kind, text FROM ledger ORDER BY id")],
+                         [("note", "Review cap 2 for 1 changed lines"),
+                          ("round", "Round 1: REQUEST_CHANGES -> fix round")])
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "fix_no_progress")])
         self.assertEqual([review[:3] for review in self.reviews()],
-                         [(1, "fail", "end")])
-        self.assertEqual(self.read("SELECT COUNT(*) FROM stageAttempts"
-                                   " WHERE stageId = 'implement'"), [(1,)])
+                         [(1, "fail", "on_fail")])
 
     def test_a_verify_that_commits_records_the_head_it_left(self):
         task = dict(a_task(), verify="git commit -q --allow-empty -m checked")

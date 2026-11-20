@@ -26,6 +26,7 @@ from holophyte.loop.gates import (
     RunFailure,
     run_verify,
     sh,
+    timed_out,
     verify_timed_out,
     with_baseline,
 )
@@ -334,7 +335,8 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
         attempt.close_at_head("pass" if ok else "fail", "next",
-                              timed_out=not ok and verify_timed_out(out))
+                              timed_out=not ok and (timed_out(out)
+                                                    or verify_timed_out(out)))
     return ok, out
 
 
@@ -484,7 +486,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
             fixing.close_at_head("pass", "next")
         sha = fix_self_check.after_fix(
             project, conn, run_id, beat_s, wt, budget_min, reviewed, sha, head,
-            verify_cmd, partial(_checked, project, conn, run_id, beat_s, wt,
+            verify_cmd, partial(_verify, project, conn, run_id, beat_s, wt,
                                 base_sha, reviewed, verify_cmd, contracts,
                                 rnd + 1))
     return sha, rnd, False

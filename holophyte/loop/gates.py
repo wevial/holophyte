@@ -194,7 +194,7 @@ TIMEOUT_HEAD = "[verify] FAILED: verify timed out after "
 
 
 def verify_timed_out(out):
-    return timed_out(out) or str(out).startswith(TIMEOUT_HEAD)
+    return str(out).startswith(TIMEOUT_HEAD)
 
 
 def timeout_failure_report(cmd, clauses, per_clause, cleaned, timeout):
