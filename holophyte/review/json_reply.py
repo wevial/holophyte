@@ -204,9 +204,12 @@ def finding_line(finding):
     if not where:
         return f"- {UNPLACED} {tags}"
     expected = (path, line if line is not None and line > 0 else None, severity)
-    for rendered_line in (f"- {where} {tags}", f"- [{where}]({where}) {tags}"):
+    plain = f"- {where} {tags}"
+    for rendered_line in (plain, f"- [{where}]({where}) {tags}"):
         if parsed_place(rendered_line) == expected:
             return rendered_line
+    if parsed_place(plain)[0].startswith(f"{UNPARSED_PATH}:"):
+        return plain
     return f"- {UNPLACED} {tags} (at {where})"
 
 

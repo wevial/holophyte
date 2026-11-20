@@ -396,6 +396,25 @@ class DispatchedBriefTests(SweepTestCase):
         self.assertEqual(named_schema(argv), json.loads(SCHEMA_FILE.read_text()))
         self.assertEqual(argv[-1], f"Review.\n{REPLY_BRIEF}")
 
+    def test_a_retry_reaches_each_route_asking_for_the_reply_it_enforces(self):
+        retry = "\n\nYour previous reply had no clean terminal verdict. "
+        for name, command, expected in (
+                ("codex", "{} exec", f"Review.\n{REPLY_BRIEF}{retry}Your reply "
+                 "must be one JSON object that the output schema accepts, "
+                 "with verdict APPROVE or REQUEST_CHANGES."),
+                ("reviewer", "{}", f"Review.\nLINES{retry}Your reply must end "
+                 "with exactly one line, VERDICT: APPROVE or VERDICT: "
+                 "REQUEST_CHANGES, and nothing after it.")):
+            with self.subTest(route=name):
+                cli = self.recording_cli(name, "I could not decide.")
+                self.configure(f'[agents]\nreviewer = "{command.format(cli)}"\n')
+                goal = "Review.\n" + reply_brief(self.project, "LINES")
+                with contextlib.redirect_stdout(io.StringIO()):
+                    _review_reply(self.project, goal, self.target, self.sha,
+                                  self.sha, self.conn, self.a_run())
+                [_, sent] = [argv[-1] for argv in self.received(name)]
+                self.assertEqual(sent, expected)
+
     def test_a_refusal_fallback_command_gets_the_line_brief(self):
         goal = "Review.\n" + reply_brief(self.project, "LINES")
         roles._agent(self.project, "review", goal, self.target,
@@ -488,6 +507,15 @@ class RenderedReplyTests(unittest.TestCase):
                 where = path if line is None else f"{path}:{line}"
                 self.assertIn(f"(at {where})", parsed["message"])
                 self.assertEqual(parsed["category"], "correctness")
+
+    def test_a_location_the_line_format_cannot_place_keys_as_its_markdown_twin(self):
+        finding = dict(REPLY["findings"][0], path="LICENSE", line=12,
+                       severity="p2", category="docs",
+                       message="The first line\nnames no licence.")
+        text, _ = read_reply(json.dumps(dict(REPLY, findings=[finding])))
+        twin = "- LICENSE:12 [p2] [docs] The first line names no licence."
+        self.assertEqual(store.findings_overlap(parse_findings(twin),
+                                                parse_findings(text)), 1.0)
 
     def test_a_message_citation_never_becomes_a_finding_location(self):
         cited = "see docs/development.md:272"
@@ -621,23 +649,6 @@ class ReplyFormatTests(unittest.TestCase):
                           for finding in parse_findings(reply)],
                          [("src/app.py", 3)])
         self.assertEqual(self.formats(), [{"format": "markdown", "round": 2}])
-
-    def test_a_retry_asks_each_route_for_the_reply_its_brief_describes(self):
-        prompts = []
-
-        def run_agent(target, role, prompt, *args, **kwargs):
-            prompts.append(prompt)
-            return AgentOutput("I could not decide.", "codex exec")
-        goal = "Review.\n" + reply_brief(brief_project(self, {}), "LINES")
-        _review_reply(None, goal, "wt", "base", "sha", self.conn, self.run,
-                      run_agent=run_agent, review_round=2)
-        retry = prompts[1]
-        self.assertEqual(str(retry), retry.schema_text)
-        self.assertIn("one JSON object", retry.schema_text)
-        self.assertNotIn("VERDICT:", retry.schema_text)
-        self.assertTrue(retry.line_text.startswith("Review.\nLINES"))
-        self.assertTrue(retry.line_text.endswith(
-            "VERDICT: APPROVE or VERDICT: REQUEST_CHANGES, and nothing after it."))
 
     def test_a_review_briefed_in_lines_of_its_own_records_no_format(self):
         reply, decision, _ = self.review(MARKDOWN, prompt="Review. End with "
