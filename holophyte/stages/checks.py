@@ -14,16 +14,18 @@ from holophyte.config.pipeline_settings import (
     CHECK_MODES,
     check_secrets,
     current_checks,
+    pinned_checks,
 )
 from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
-from holophyte.redact import REDACTED, outbound
+from holophyte.redact import REDACTED, outbound, redact_document
 from holophyte.review.blast_radius import matching
 from holophyte.review.briefs import _changed_files
 from holophyte.stages import record
 from store import pipelines
 
 OUTPUT_TAIL = 1000
+PINNED_KEYS = ("id", "after", "mode", "commands", "paths")
 FRAGMENT = 8
 UNLAUNCHED = re.compile(
     r"^(?:\S*/)?(?:ba|da|z)?sh: (?:line )?(?:\d+: )?.+: "
@@ -62,18 +64,35 @@ def configured(project, conn, run_id, after):
     if len(raw) == len(stages):
         return [{**check, "stage": stage["id"], "secrets": secrets | held}
                 for stage, check in zip(stages, raw) if check["after"] == after]
-    return [unbound(stage, secrets) for stage in stages
-            if stage["after"] == after or stage["after"] not in CHECK_AFTER]
+    selectors = _pinned_selectors(project, stages)
+    found = [unbound(stage, secrets, selectors[at])
+             for at, stage in enumerate(stages)]
+    return [check for check in found
+            if check["after"] == after or check["after"] not in CHECK_AFTER]
 
 
-def unbound(stage, secrets):
-    mode = stage["mode"] if stage["mode"] in CHECK_MODES else None
-    paths = stage.get("paths") or []
-    globbed = not (stage.get("redacted")
-                   and any(REDACTED in glob for glob in paths))
-    runnable = (not stage.get("redacted") and stage["after"] in CHECK_AFTER
+def _pinned_selectors(project, stages):
+    try:
+        raw, shown, _ = pinned_checks(project)
+    except (Exception, SystemExit):
+        raw, shown = (), ()
+    forms = [redact_document({key: display[key] for key in PINNED_KEYS})
+             for display in shown]
+    return [next((check for check, form in zip(raw, forms)
+                  if form == {key: stage.get(key) for key in PINNED_KEYS}),
+                 None) for stage in stages]
+
+
+def unbound(stage, secrets, original=None):
+    selectors = original or stage
+    mode = selectors["mode"] if selectors["mode"] in CHECK_MODES else None
+    paths = selectors.get("paths") or []
+    globbed = original is not None or not (
+        stage.get("redacted") and any(REDACTED in glob for glob in paths))
+    runnable = (not stage.get("redacted") and selectors["after"] in CHECK_AFTER
                 and mode is not None)
-    return {**stage, "stage": stage["id"], "secrets": secrets, "mode": mode,
+    return {**stage, "stage": stage["id"], "secrets": secrets,
+            "after": selectors["after"], "mode": mode,
             "paths": paths if globbed else None,
             "commands": stage["commands"] if runnable else None}
 
@@ -158,19 +177,20 @@ def scrubbed_output(text, secrets):
 
 
 class Snapshot:
-    """The index, each file or link in the worktree, and a copy of each file
-    that differs from HEAD or that Git was told not to look at."""
+    """HEAD, the index, and each directory, link and file in the worktree,
+    with a copy of every file's bytes."""
 
     def __init__(self, wt):
         self.wt = Path(wt)
         self.index = Path(wt, _git(wt, "rev-parse", "--git-path", "index"))
+        self.branch = _branch(wt)
+        self.head = _git(wt, "rev-parse", "--verify", "HEAD")
         self.staged = _state(self.index)
-        self.clean = _clean(wt)
         self.found = _walk(self.wt)
         self.saved = tempfile.mkdtemp(prefix="holo-check-")
         try:
             for path, signature in self.found.items():
-                if signature[0] == "file" and path not in self.clean:
+                if signature[0] == "file":
                     copy = Path(self.saved, path)
                     copy.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(self.wt / path, copy,
@@ -181,6 +201,10 @@ class Snapshot:
 
     def restore(self):
         failed, restored = [], set()
+        try:
+            self._restore_head()
+        except Exception as error:
+            failed.append(f"HEAD: {error}")
         try:
             self._restore_paths(failed, restored)
         except Exception as error:
@@ -197,34 +221,57 @@ class Snapshot:
         shutil.rmtree(self.saved, ignore_errors=True)
         return sorted(restored)
 
+    def _restore_head(self):
+        if self.branch is None:
+            _git(self.wt, "update-ref", "--no-deref", "HEAD", self.head)
+            return
+        _git(self.wt, "update-ref", self.branch, self.head)
+        _git(self.wt, "symbolic-ref", "HEAD", self.branch)
+
     def _restore_paths(self, failed, restored):
         now = _walk(self.wt)
-        added = sorted(path for path in now if path not in self.found)
-        changed = sorted(path for path, kept in self.found.items()
-                         if now.get(path) != kept)
-        for path in added + changed:
+        added = sorted((path for path in now if path not in self.found),
+                       key=_depth, reverse=True)
+        changed = sorted((path for path, kept in self.found.items()
+                          if now.get(path) != kept), key=_depth)
+        folders = [path for path in changed if self.found[path][0] == "dir"]
+        steps = ([(path, self._open_folder) for path in folders]
+                 + [(path, self._remove) for path in added]
+                 + [(path, self._put_back) for path in changed
+                    if path not in folders]
+                 + [(path, self._close_folder) for path in reversed(folders)])
+        for path, step in steps:
             try:
-                self._put_back(path)
+                step(path)
                 restored.add(path)
             except Exception as error:
                 failed.append(f"{path}: {error}")
 
-    def _put_back(self, path):
-        target, kept = self.wt / path, self.found.get(path)
-        if kept is None:
-            target.unlink(missing_ok=True)
-        elif kept[0] == "link":
-            _put(target, kept)
-        elif path in self.clean:
-            content = subprocess.run(
-                ["git", "cat-file", "--filters", f"--path={path}",
-                 self.clean[path]], cwd=self.wt,
-                capture_output=True, check=True).stdout
-            _replace(target, kept[-1], lambda out: out.write(content))
+    def _open_folder(self, path):
+        target = self.wt / path
+        if target.is_symlink() or (target.exists() and not target.is_dir()):
+            target.unlink()
+        target.mkdir(exist_ok=True)
+        os.chmod(target, self.found[path][1] | stat.S_IRWXU)
+
+    def _close_folder(self, path):
+        os.chmod(self.wt / path, self.found[path][1])
+
+    def _remove(self, path):
+        target = self.wt / path
+        if target.is_dir() and not target.is_symlink():
+            shutil.rmtree(target)
         else:
-            with Path(self.saved, path).open("rb") as copy:
-                _replace(target, kept[-1],
-                         lambda out: shutil.copyfileobj(copy, out))
+            target.unlink(missing_ok=True)
+
+    def _put_back(self, path):
+        target, kept = self.wt / path, self.found[path]
+        if kept[0] == "link":
+            _put(target, kept)
+            return
+        with Path(self.saved, path).open("rb") as copy:
+            _replace(target, kept[-1],
+                     lambda out: shutil.copyfileobj(copy, out))
 
 
 def _git(wt, *args):
@@ -232,24 +279,14 @@ def _git(wt, *args):
                           check=True).stdout.decode().strip()
 
 
-def _listed(wt, *args):
-    listed = subprocess.run(["git", *args], cwd=wt, capture_output=True,
-                            check=True).stdout
-    return {os.fsdecode(path) for path in listed.split(b"\0") if path}
+def _branch(wt):
+    named = subprocess.run(["git", "symbolic-ref", "-q", "HEAD"], cwd=wt,
+                           capture_output=True)
+    return named.stdout.decode().strip() if named.returncode == 0 else None
 
 
-def _clean(wt):
-    looked = {entry[2:] for entry in _listed(wt, "ls-files", "-z", "-v")
-              if entry.startswith("H ")}
-    clean = looked - _listed(
-        wt, "ls-files", "-z", "--modified", "--deleted") - _listed(
-        wt, "diff", "--cached", "--name-only", "-z", "HEAD")
-    blobs = {}
-    for entry in _listed(wt, "ls-files", "-z", "--stage"):
-        staged, path = entry.split("\t", 1)
-        if path in clean:
-            blobs[path] = staged.split()[1]
-    return blobs
+def _depth(path):
+    return path.count("/")
 
 
 def _walk(root):
@@ -259,7 +296,7 @@ def _walk(root):
         links = [name for name in dirs if (here / name).is_symlink()]
         dirs[:] = [name for name in dirs
                    if name != ".git" and name not in links]
-        for name in files + links:
+        for name in files + links + dirs:
             signature = _signature(here / name) if name != ".git" else None
             if signature is not None:
                 found[(here / name).relative_to(root).as_posix()] = signature
@@ -285,6 +322,8 @@ def _signature(path):
         return None
     if stat.S_ISLNK(info.st_mode):
         return "link", os.readlink(path)
+    if stat.S_ISDIR(info.st_mode):
+        return "dir", stat.S_IMODE(info.st_mode)
     if stat.S_ISREG(info.st_mode):
         return ("file", info.st_ino, info.st_size, info.st_mtime_ns,
                 info.st_ctime_ns, stat.S_IMODE(info.st_mode))

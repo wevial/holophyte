@@ -2240,11 +2240,12 @@ closes `error` when the command could not start, an exit of 126 or 127 the
 shell reports as a command not found or not executable included; a command
 that ran and exited 127 closes `fail`. A check leaves the worktree as it
 found it: the worktree is compared with a snapshot taken before the check,
-not with what Git reports after it, so every file or link the check
-changed, removed or added is put back or removed, a tracked file Git was
-told to assume unchanged or skip included, a file absent before the check
-stays absent, the index is put back, and the paths it touched are listed
-under `restored`. The output's tail is the command's own output, every line
+not with what Git reports after it, so every directory, file or link the
+check changed, removed or added is put back or removed, a file with the
+bytes copied before the check, a tracked file Git was told to assume
+unchanged or skip included, a path absent before the check stays absent,
+HEAD and its branch are moved back to the commit they named, the index is
+put back, and the paths it touched are listed under `restored`. The output's tail is the command's own output, every line
 kept, with credentials redacted.
 
 A run runs the checks it pinned, never an edit made after the pin. The
@@ -2255,7 +2256,9 @@ scrubbed them with, in memory only, and a run that continues one in the
 same process takes them over. Selection by `after`, the `mode off` skip and
 the path condition use those original entries. When the process holds no
 original for a check, such as a run picked up again by another process, the
-pinned `mode` and `paths` still decide the `mode off` and path skips; a
+pinned `mode` and `paths` still decide the `mode off` and path skips; when
+the store redacted either, the current config's entry decides them if it
+pins to the same stage, redactions included; a
 check that would run but whose pinned stage is marked `redacted`, or whose
 `after` or `mode` no longer reads as one of its values, closes `error`
 without running. The
