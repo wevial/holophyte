@@ -75,7 +75,8 @@ class FactoryNotesRun(MergeModeFixture):
                                      if REPLY_FORMAT in turn.goal)}
         phases = self.read("SELECT summary FROM runEvents"
                            " WHERE kind = 'phase_change' ORDER BY seq")
-        ledger = [(kind, re.sub(r"\d+(\.\d+)? ?min", "N min", text))
+        ledger = [(kind, re.sub(r"actual: \d+(\.\d+)? min",
+                                   "actual: N min", text))
                   for kind, text in self.read(
                       "SELECT kind, text FROM ledger ORDER BY id")]
         return (prompts, fake.roles, phases, ledger,
