@@ -2239,11 +2239,13 @@ output's tail in its detail, and `timed_out` when the timeout ended it. It
 closes `error` when the command could not start, an exit of 126 or 127 the
 shell reports as a command not found or not executable included; a command
 that ran and exited 127 closes `fail`. A check leaves the worktree as it
-found it: the index, every tracked or untracked file that differed from
-HEAD, and every file HEAD tracks are put back, an ignored file the check
-added is removed, and the paths it touched are listed under `restored`. An
-ignored file that existed before the check and that the check rewrote is
-not put back.
+found it: the worktree is compared with a snapshot taken before the check,
+not with what Git reports after it, so every file or link the check
+changed, removed or added is put back or removed, a tracked file Git was
+told to assume unchanged or skip included, a file absent before the check
+stays absent, the index is put back, and the paths it touched are listed
+under `restored`. The output's tail is the command's own output, every line
+kept, with credentials redacted.
 
 A run runs the checks it pinned, never an edit made after the pin. The
 pinned document holds each check's id, commands and globs with credentials
@@ -2251,10 +2253,12 @@ redacted, and marks a stage `redacted` when that changed it; the process
 that pinned a run keeps the original entries, and the credentials it
 scrubbed them with, in memory only, and a run that continues one in the
 same process takes them over. Selection by `after`, the `mode off` skip and
-the path condition use those original entries. A check whose pinned stage
-is marked `redacted`, or whose `after` or `mode` no longer reads as one of
-its values, closes `error` without running when the process holds no
-original for it, such as a run picked up again by another process. The
+the path condition use those original entries. When the process holds no
+original for a check, such as a run picked up again by another process, the
+pinned `mode` and `paths` still decide the `mode off` and path skips; a
+check that would run but whose pinned stage is marked `redacted`, or whose
+`after` or `mode` no longer reads as one of its values, closes `error`
+without running. The
 store also redacts registered environment values in every stage attempt it
 records, so a skip reason can read `mode [redacted]`.
 

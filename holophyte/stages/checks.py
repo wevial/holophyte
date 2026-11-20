@@ -15,7 +15,7 @@ from holophyte.config.pipeline_settings import (
     check_secrets,
     current_checks,
 )
-from holophyte.loop.gates import run_verify, timed_out, verify_timed_out
+from holophyte.loop.gates import _verify_command
 from holophyte.loop.runs import heartbeat_while
 from holophyte.redact import REDACTED, outbound
 from holophyte.review.blast_radius import matching
@@ -67,11 +67,15 @@ def configured(project, conn, run_id, after):
 
 
 def unbound(stage, secrets):
-    readable = (not stage.get("redacted") and stage["after"] in CHECK_AFTER
-                and stage["mode"] in CHECK_MODES)
-    return {**stage, "stage": stage["id"], "secrets": secrets,
-            **({} if readable else {"commands": None, "paths": None,
-                                    "mode": None})}
+    mode = stage["mode"] if stage["mode"] in CHECK_MODES else None
+    paths = stage.get("paths") or []
+    globbed = not (stage.get("redacted")
+                   and any(REDACTED in glob for glob in paths))
+    runnable = (not stage.get("redacted") and stage["after"] in CHECK_AFTER
+                and mode is not None)
+    return {**stage, "stage": stage["id"], "secrets": secrets, "mode": mode,
+            "paths": paths if globbed else None,
+            "commands": stage["commands"] if runnable else None}
 
 
 def skip_reason(check, wt, base_sha, sha):
@@ -122,21 +126,26 @@ def _restored(snapshot):
 
 def _outcome(project, check, wt):
     try:
-        ok, out = run_verify(" && ".join(check["commands"]), wt, None,
-                             verify_config(project).timeout_sec,
-                             project=project, rerun=False)
+        status, out = _verify_command(project, " && ".join(check["commands"]),
+                                      wt, verify_config(project).timeout_sec)
+    except subprocess.TimeoutExpired as expired:
+        return "fail", {"exit_status": None, "timed_out": True,
+                        "output": _text(expired.output)}
     except Exception as error:
         return "error", {"error": str(error)}
-    if ok:
-        return "pass", {"exit_status": 0, "output": str(out)}
-    facts = getattr(out, "failure", None) or {}
-    status = facts.get("exit_status")
-    unlaunched = status in (126, 127) and bool(UNLAUNCHED.match(
-        str(facts.get("last_output_line"))))
+    out = _text(out)
+    if status == 0:
+        return "pass", {"exit_status": 0, "output": out}
+    last = out.splitlines()[-1] if out.strip() else ""
+    unlaunched = status in (126, 127) and bool(UNLAUNCHED.match(last))
     return "error" if unlaunched else "fail", {
-        "exit_status": status,
-        "timed_out": timed_out(out) or verify_timed_out(out),
-        "output": str(out)}
+        "exit_status": status, "timed_out": False, "output": out}
+
+
+def _text(out):
+    if isinstance(out, bytes):
+        return out.decode(errors="replace")
+    return out or ""
 
 
 def scrubbed_output(text, secrets):
@@ -149,20 +158,23 @@ def scrubbed_output(text, secrets):
 
 
 class Snapshot:
-    """The index, tracked modes, the content, mode or link target of each path
-    that differs from HEAD, and a copy of each ignored file or link."""
+    """The index, each file or link in the worktree, and a copy of each file
+    that differs from HEAD or that Git was told not to look at."""
 
     def __init__(self, wt):
         self.wt = Path(wt)
         self.index = Path(wt, _git(wt, "rev-parse", "--git-path", "index"))
         self.staged = _state(self.index)
-        self.files = {path: _state(self.wt / path) for path in _outside(wt)}
-        self.modes = _modes(wt)
-        self.ignored = _ignored(wt)
+        self.clean = _clean(wt)
+        self.found = _walk(self.wt)
         self.saved = tempfile.TemporaryDirectory(prefix="holo-check-")
         try:
-            self.kept = {path: _kept(self.wt / path, Path(self.saved.name, path))
-                         for path in self.ignored}
+            for path, signature in self.found.items():
+                if signature[0] == "file" and path not in self.clean:
+                    copy = Path(self.saved.name, path)
+                    copy.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(self.wt / path, copy,
+                                    follow_symlinks=False)
         except BaseException:
             self.saved.cleanup()
             raise
@@ -185,47 +197,32 @@ class Snapshot:
         return sorted(restored)
 
     def _restore_paths(self, failed, restored):
-        changed = sorted(path for path in _outside(self.wt) | set(self.files)
-                         if _differs(self.wt / path, self.files.get(path)))
-        changed += sorted(path for path, mode in self.modes.items()
-                          if path not in changed and path not in self.files
-                          and _mode(self.wt / path) not in (None, mode))
-        added = sorted(_ignored(self.wt) - self.ignored)
-        moved = sorted(path for path, kept in self.kept.items()
-                       if kept is not None
-                       and _signature(self.wt / path) != kept)
-        for path, put in [(path, self._drop) for path in added] + [
-                (path, self._put_back) for path in changed] + [
-                (path, self._put_kept) for path in moved]:
+        now = _walk(self.wt)
+        added = sorted(path for path in now if path not in self.found)
+        changed = sorted(path for path, kept in self.found.items()
+                         if now.get(path) != kept)
+        for path in added + changed:
             try:
-                put(path)
+                self._put_back(path)
                 restored.add(path)
             except Exception as error:
                 failed.append(f"{path}: {error}")
 
-    def _drop(self, path):
-        (self.wt / path).unlink(missing_ok=True)
-
     def _put_back(self, path):
-        target, kept = self.wt / path, self.files.get(path)
-        if kept is not None:
-            _put(target, kept)
-            return
-        if not _tracked(self.wt, path):
+        target, kept = self.wt / path, self.found.get(path)
+        if kept is None:
             target.unlink(missing_ok=True)
-            return
-        _git(self.wt, "restore", "--source=HEAD", "--worktree", "--", path)
-        if self.modes.get(path) is not None:
-            os.chmod(target, self.modes[path])
-
-    def _put_kept(self, path):
-        kept, target = self.kept[path], self.wt / path
-        if kept[0] == "link":
+        elif kept[0] == "link":
             _put(target, kept)
-            return
-        with Path(self.saved.name, path).open("rb") as copy:
-            _replace(target, kept[-1],
-                     lambda out: shutil.copyfileobj(copy, out))
+        elif path in self.clean:
+            content = subprocess.run(
+                ["git", "cat-file", "--filters", f"HEAD:{path}"], cwd=self.wt,
+                capture_output=True, check=True).stdout
+            _replace(target, kept[-1], lambda out: out.write(content))
+        else:
+            with Path(self.saved.name, path).open("rb") as copy:
+                _replace(target, kept[-1],
+                         lambda out: shutil.copyfileobj(copy, out))
 
 
 def _git(wt, *args):
@@ -233,42 +230,32 @@ def _git(wt, *args):
                           check=True).stdout.decode().strip()
 
 
-def _outside(wt):
-    listed = subprocess.run(
-        ["git", "ls-files", "-z", "--modified", "--deleted", "--others",
-         "--exclude-standard"], cwd=wt, capture_output=True, check=True).stdout
-    staged = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "-z", "HEAD"], cwd=wt,
-        capture_output=True, check=True).stdout
-    return {os.fsdecode(path) for path in (listed + b"\0" + staged).split(b"\0")
-            if path}
-
-
-def _ignored(wt):
-    listed = subprocess.run(
-        ["git", "ls-files", "-z", "--others", "--ignored", "--exclude-standard"],
-        cwd=wt, capture_output=True, check=True).stdout
+def _listed(wt, *args):
+    listed = subprocess.run(["git", *args], cwd=wt, capture_output=True,
+                            check=True).stdout
     return {os.fsdecode(path) for path in listed.split(b"\0") if path}
 
 
-def _modes(wt):
-    listed = subprocess.run(["git", "ls-files", "-z"], cwd=wt,
-                            capture_output=True, check=True).stdout
-    paths = {os.fsdecode(path) for path in listed.split(b"\0") if path}
-    return {path: _mode(Path(wt, path)) for path in paths}
+def _clean(wt):
+    looked = {entry[2:] for entry in _listed(wt, "ls-files", "-z", "-v")
+              if entry.startswith("H ")}
+    return looked - _listed(
+        wt, "ls-files", "-z", "--modified", "--deleted") - _listed(
+        wt, "diff", "--cached", "--name-only", "-z", "HEAD")
 
 
-def _mode(path):
-    try:
-        info = path.lstat()
-    except (FileNotFoundError, NotADirectoryError):
-        return None
-    return stat.S_IMODE(info.st_mode) if stat.S_ISREG(info.st_mode) else None
-
-
-def _tracked(wt, path):
-    return subprocess.run(["git", "cat-file", "-e", f"HEAD:{path}"], cwd=wt,
-                          capture_output=True).returncode == 0
+def _walk(root):
+    found = {}
+    for top, dirs, files in os.walk(root):
+        here = Path(top)
+        links = [name for name in dirs if (here / name).is_symlink()]
+        dirs[:] = [name for name in dirs
+                   if name != ".git" and name not in links]
+        for name in files + links:
+            signature = _signature(here / name) if name != ".git" else None
+            if signature is not None:
+                found[(here / name).relative_to(root).as_posix()] = signature
+    return found
 
 
 def _state(path):
@@ -283,22 +270,6 @@ def _state(path):
     return None
 
 
-def _differs(path, kept):
-    try:
-        info = path.lstat()
-    except (FileNotFoundError, NotADirectoryError):
-        return kept is not None
-    if kept is None:
-        return True
-    if stat.S_ISREG(info.st_mode) and kept[0] == "file" \
-            and stat.S_IMODE(info.st_mode) != kept[2]:
-        return True
-    try:
-        return _state(path) != kept
-    except OSError:
-        return True
-
-
 def _signature(path):
     try:
         info = path.lstat()
@@ -310,14 +281,6 @@ def _signature(path):
         return ("file", info.st_ino, info.st_size, info.st_mtime_ns,
                 info.st_ctime_ns, stat.S_IMODE(info.st_mode))
     return None
-
-
-def _kept(path, copy):
-    signature = _signature(path)
-    if signature is not None and signature[0] == "file":
-        copy.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, copy, follow_symlinks=False)
-    return signature
 
 
 def _put(target, state):

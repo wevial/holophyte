@@ -84,6 +84,13 @@ PRE_CHECKS_DOCUMENT = {
 FAILING_LINT = ["printf 'START%01200d\\n' 0", "ls scripted-*.txt", "exit 1"]
 
 
+
+class Forgets(Commit):
+    def play(self, cwd, turn):
+        record.PINNED_CHECKS.clear()
+        return super().play(cwd, turn)
+
+
 def check_table(stage_id, after, commands, mode, paths=None):
     return ("[[pipeline.check]]\n"
             f"id = {json.dumps(stage_id)}\nafter = {json.dumps(after)}\n"
@@ -352,11 +359,6 @@ class AdvisoryCheckTests(CheckRuns):
         self.addCleanup(held.cleanup)
         marker = Path(held.name) / "said"
 
-        class Forgets(Commit):
-            def play(self, cwd, turn):
-                record.PINNED_CHECKS.clear()
-                return super().play(cwd, turn)
-
         self.walked('[extras]\napi_token = "forgotten-credential-3"\n'
                     + check_table("say", "implement", [
                         f"echo forgotten-credential-3 > {marker}"],
@@ -493,6 +495,46 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(self.git("status", "--porcelain"), status)
         self.assertEqual(found["restored"], ["README.md"])
 
+    def test_a_file_a_check_hides_from_git_and_rewrites_is_put_back(self):
+        for flag in ("--assume-unchanged", "--skip-worktree"):
+            with self.subTest(flag=flag):
+                outcome, found = checks.ran(self.project, {
+                    "commands": [f"git update-index {flag} README.md",
+                                 "echo hidden > README.md", "exit 1"],
+                    "secrets": frozenset()}, self.target)
+
+                self.assertEqual(outcome, "fail")
+                self.assertEqual((self.target / "README.md").read_text(),
+                                 "base\n")
+                self.assertEqual(self.git("ls-files", "-v", "README.md"),
+                                 "H README.md\n")
+                self.assertEqual(found["restored"], ["README.md"])
+
+    def test_a_tracked_file_deleted_before_a_check_stays_deleted(self):
+        (self.target / "README.md").unlink()
+        status = self.git("status", "--porcelain")
+
+        outcome, found = checks.ran(self.project, {
+            "commands": ["git checkout -- README.md", "exit 1"],
+            "secrets": frozenset()}, self.target)
+
+        self.assertEqual(outcome, "fail")
+        self.assertFalse((self.target / "README.md").exists())
+        self.assertEqual(self.git("status", "--porcelain"), status)
+        self.assertEqual(found["restored"], ["README.md"])
+
+    def test_the_tail_is_the_commands_own_output_scrubbed(self):
+        line = ('127.0.0.1 - - [20/Nov/2026:10:00:00 +0000]'
+                ' "GET /health?token=access-credential-8 HTTP/1.1" 500 12')
+
+        outcome, found = checks.ran(self.project, {
+            "commands": [f"echo {shlex.quote(line)}", "exit 1"],
+            "secrets": frozenset({"access-credential-8"})}, self.target)
+
+        self.assertEqual((outcome, found["exit_status"]), ("fail", 1))
+        self.assertEqual(found["output"], line.replace(
+            "access-credential-8", REDACTED) + "\n")
+
     def test_a_snapshot_that_cannot_read_a_draft_closes_error_scrubbed(self):
         draft = self.target / "draft-snapshot-credential-7.txt"
         draft.write_text("a draft\n")
@@ -591,11 +633,6 @@ class AdvisoryCheckTests(CheckRuns):
                          ["lint"])
 
     def test_a_literal_redaction_marker_runs_without_the_pinning_process(self):
-        class Forgets(Commit):
-            def play(self, cwd, turn):
-                record.PINNED_CHECKS.clear()
-                return super().play(cwd, turn)
-
         self.walked(check_table("say", "implement", ["echo '[redacted]'"],
                                 "advisory"), Forgets("the scripted work"),
                     APPROVE)
@@ -733,6 +770,28 @@ class SkippedCheckTests(CheckRuns):
         self.assertEqual(sorted(path.name for path in markers.iterdir()),
                          ["scripted"])
 
+
+    def test_a_redacted_check_without_its_original_still_skips(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        markers = Path(held.name)
+
+        def touch(name):
+            return [f"touch {markers / name} skipped-credential-9"]
+
+        self.walked('[extras]\napi_token = "skipped-credential-9"\n'
+                    + check_table("docs", "implement", touch("docs"),
+                                  "advisory", ["docs/**"])
+                    + check_table("dormant", "implement", touch("dormant"),
+                                  "off"),
+                    Forgets("the scripted work"), APPROVE)
+
+        found = {row[0]: row for row in self.attempts()}
+        self.assertEqual(found["docs"][2], "skipped")
+        self.assertIn("docs/**", found["docs"][4]["reason"])
+        self.assertEqual(found["dormant"][2], "skipped")
+        self.assertEqual(found["dormant"][4], {"reason": "mode off"})
+        self.assertEqual(list(markers.iterdir()), [])
 
 class StaleRereviewCheckTests(unittest.TestCase):
     setUp = stale_fixture.StaleApprovalRereviewTests.setUp
