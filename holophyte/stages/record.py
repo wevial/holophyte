@@ -2,7 +2,7 @@
 import json
 
 import store
-from holophyte.loop.gates import InfraFailure
+from holophyte.loop.gates import InfraFailure, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
 from holophyte.stages import standard
@@ -69,9 +69,9 @@ def stage_roles(conn, run_id, stage_id):
 
 
 class Attempt:
-    def __init__(self, conn, run_id, stage_id, sha, detail, head=None):
+    def __init__(self, conn, run_id, stage_id, sha, detail, wt=None):
         self.conn, self.run_id, self.stage_id = conn, run_id, stage_id
-        self.head = head
+        self.sha, self.wt = sha, wt
         self.detail, self.closed = dict(detail), False
         self.id = None
         if conn is not None and run_id is not None:
@@ -101,12 +101,17 @@ class Attempt:
 
     def __exit__(self, kind, error, trace):
         if error is not None and self.recording:
-            head = self.head and guarded(self.conn, self.run_id, "stage_head",
-                                         self.head)
+            head = guarded(self.conn, self.run_id, "stage_head", self.head)
             self.close("error" if isinstance(error, InfraFailure) else "fail",
                        "end", None if head is REFUSED else head,
                        error=str(error))
         return False
+
+
+    def head(self):
+        if self.wt is None or not self.wt.exists():
+            return self.sha
+        return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
 
 
 def skip(conn, run_id, stage_id, reason, sha=None):
