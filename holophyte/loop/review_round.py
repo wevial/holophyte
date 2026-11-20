@@ -333,10 +333,12 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
     head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
     if record.verified_last(conn, run_id, head) and cached_pass(
             run_id, verify_cmd, wt, verify_config(project).timeout_sec):
-        ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
-                           verify_cmd, contracts, rnd)
-        if not ok:
-            _recorded_verify(conn, run_id, wt, head, rnd, ok, out)
+        with record.Deferred(conn, run_id, "verify", head, {"round": rnd},
+                             wt=wt) as rerun:
+            ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha,
+                               ticket, verify_cmd, contracts, rnd)
+            if not ok:
+                _close_verify(rerun.opened(), ok, out)
         return ok, out
     with record.Attempt(conn, run_id, "verify", head, {"round": rnd},
                         wt=wt) as attempt:
@@ -344,11 +346,6 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
                            verify_cmd, contracts, rnd)
         _close_verify(attempt, ok, out)
     return ok, out
-
-
-def _recorded_verify(conn, run_id, wt, head, rnd, ok, out):
-    attempt = record.Attempt(conn, run_id, "verify", head, {"round": rnd}, wt=wt)
-    _close_verify(attempt, ok, out)
 
 
 def _close_verify(attempt, ok, out):

@@ -1,5 +1,6 @@
 """Store writes recording what a run ran under; none of them may stop the run."""
 import json
+from time import time
 
 import store
 from holophyte.loop.gates import InfraFailure, sh
@@ -75,9 +76,12 @@ class Attempt:
         self.detail, self.closed = dict(detail), False
         self.id = None
         if conn is not None and run_id is not None:
-            self.id = guarded(conn, run_id, "open_stage",
-                              lambda: stages.open_stage(conn, run_id, stage_id,
-                                                        sha, self.detail))
+            self.id = self._open()
+
+    def _open(self, **mark):
+        conn, run_id = self.conn, self.run_id
+        return guarded(conn, run_id, "open_stage", lambda: stages.open_stage(
+            conn, run_id, self.stage_id, self.sha, self.detail, **mark))
 
     @property
     def recording(self):
@@ -117,6 +121,28 @@ class Attempt:
         if self.wt is None or not self.wt.exists():
             return self.sha
         return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
+
+
+class Deferred(Attempt):
+    def __init__(self, conn, run_id, stage_id, sha, detail, wt=None):
+        super().__init__(None, None, stage_id, sha, detail, wt)
+        self.conn, self.run_id, self.mark = conn, run_id, None
+        if conn is not None and run_id is not None:
+            self.mark = guarded(conn, run_id, "stage_read", lambda: (
+                int(time() * 1000), conn.execute(
+                    "SELECT COALESCE(MAX(seq), 0) FROM runEvents"
+                    " WHERE runId = ?", (run_id,)).fetchone()[0]))
+
+    def opened(self):
+        if self.id is None and self.mark not in (None, REFUSED):
+            started, seq = self.mark
+            self.id = self._open(now=started, open_seq=seq)
+        return self
+
+    def __exit__(self, kind, error, trace):
+        if error is not None:
+            self.opened()
+        return super().__exit__(kind, error, trace)
 
 
 def verified_last(conn, run_id, sha):

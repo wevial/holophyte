@@ -12,6 +12,7 @@ import re
 import sqlite3
 import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -326,7 +327,8 @@ class StageRecordingTests(LoopFixture):
     def test_a_verify_rerun_on_a_dirty_tree_at_the_same_head_is_recorded(self):
         task = dict(a_task(), verify="echo ran >> verify-runs.log")
         self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
-                      Commit("fix"), APPROVE, task=task)
+                      Commit("fix"), APPROVE, Commit("fix again"), APPROVE,
+                      task=task)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
         fixed = self.git("rev-parse", "main^2").strip()
@@ -334,6 +336,46 @@ class StageRecordingTests(LoopFixture):
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
             ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
         self.assertEqual(self.shas("verify", 3), (fixed, fixed))
+
+    def cached_rerun(self, ends):
+        real, calls, self.ran = holophyte.loop.review_round._checked, [], None
+
+        def rerun(*args):
+            calls.append(args)
+            if len(calls) != 3:
+                return real(*args)
+            self.ran = time.time() * 1000
+            outcome = real(*args)
+            time.sleep(0.05)
+            return ends(outcome)
+        return patch.object(holophyte.loop.review_round, "_checked", rerun)
+
+    def rerun_started(self):
+        (started,), = self.read(
+            "SELECT startedAt FROM stageAttempts"
+            " WHERE stageId = 'verify' AND attempt = 3")
+        return started
+
+    def test_a_red_cached_rerun_starts_before_its_verification(self):
+        with self.cached_rerun(lambda outcome: (False, "contract drifted")):
+            self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
+                          Commit("fix"), APPROVE, Commit("fix again"), APPROVE)
+
+        self.assertEqual(self.outcomes()[6:8], [
+            ("verify", 3, "fail", "next"), ("review", 2, "fail", "on_fail")])
+        self.assertLessEqual(self.rerun_started(), self.ran)
+
+    def test_a_cached_rerun_that_raises_is_recorded(self):
+        def raises(outcome):
+            raise InfraFailure("the rerun's runner died", "infra")
+
+        with self.cached_rerun(raises):
+            self.run_loop(UNTRIMMED, Commit("work"), REQUEST_CHANGES,
+                          Commit("fix"))
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
+        self.assertEqual(self.outcomes()[-1], ("verify", 3, "error", "end"))
+        self.assertLessEqual(self.rerun_started(), self.ran)
 
 class TerminalReviewEdgeTests(LoopFixture):
     def run_loop(self, config, *script, task=None):

@@ -11,7 +11,7 @@ def _now(now):
     return int(time.time() * 1000) if now is None else now
 
 
-def _next_attempt(conn, run_id, stage_id):
+def _next_attempt(conn, run_id, stage_id, open_seq=None):
     if conn.execute("SELECT 1 FROM runs WHERE id = ?",
                     (run_id,)).fetchone() is None:
         raise ValueError(f"no run {run_id}")
@@ -21,16 +21,17 @@ def _next_attempt(conn, run_id, stage_id):
     (seq,) = conn.execute(
         "SELECT COALESCE(MAX(seq), 0) FROM runEvents WHERE runId = ?",
         (run_id,)).fetchone()
-    return attempt, seq
+    return attempt, seq if open_seq is None else open_seq
 
 
 def _document(detail):
     return json.dumps(redact_document(dict(detail or {})), sort_keys=True)
 
 
-def open_stage(conn, run_id, stage_id, input_sha=None, detail=None, now=None):
+def open_stage(conn, run_id, stage_id, input_sha=None, detail=None, now=None,
+               open_seq=None):
     with _transaction(conn):
-        attempt, seq = _next_attempt(conn, run_id, stage_id)
+        attempt, seq = _next_attempt(conn, run_id, stage_id, open_seq)
         return conn.execute(
             "INSERT INTO stageAttempts (runId, stageId, attempt, startedAt,"
             " inputSha, openSeq, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
