@@ -7,6 +7,7 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from time import monotonic, time
 
 import store
@@ -58,6 +59,7 @@ UNREASONED = "dropped without a reason"
 DESCRIBED = "PR description"
 SETTLED_KIND = "pr_text_settled"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
+CHECKED_PATH_RE = re.compile(r"[\w.-]+(?:/[\w.-]+)*\.\w+")
 TURN_FAILURES = (InfraFailure, OSError, subprocess.SubprocessError,
                  UnicodeError)
 
@@ -458,11 +460,20 @@ def ruled_criteria(value, answered, criteria, wt, sha):
         worst = min(theirs, key=lambda entry: RANKS[entry[1]])
         n, status, note, witness = (
             worst if worst[1] != "met"
-            and not (own[1] == "met" and WITNESS_TEST_RE.search(own[3] or ""))
+            and not (own[1] == "met" and named_witness(own[3], wt))
             else own)
         kept.append({"id": f"C{n}", "status": status, "reason": note,
                      "witness": witness})
     return kept
+
+
+def named_witness(witness, wt):
+    if WITNESS_TEST_RE.search(witness or ""):
+        return True
+    root = Path(wt).resolve()
+    return any((root / token).resolve().is_relative_to(root)
+               and (root / token).is_file()
+               for token in CHECKED_PATH_RE.findall(witness or ""))
 
 
 def ruled_scope(value, answered):

@@ -121,8 +121,26 @@ def review_worktrees(repo, env=None):
 
 
 def configured_review(cmd, cwd, cap, env, role, command, on_start=None):
+    if role != "consolidate":
+        return captured_review(cmd, cwd, cap, env, role, command, on_start)
+    with tempfile.TemporaryFile("w+", errors="replace") as diagnostics:
+        output = captured_review(cmd, cwd, cap, env, role, command, on_start,
+                                 diagnostics)
+        diagnostics.seek(0)
+        if output.exit_code:
+            failed = AgentOutput(f"{output}\n{diagnostics.read()}".strip(),
+                                 command, exit_code=output.exit_code)
+            failed.is_error = getattr(output, "is_error", False)
+            output = failed
+    return output
+
+
+def captured_review(cmd, cwd, cap, env, role, command, on_start,
+                    stderr=None):
+    apart = {} if stderr is None else {"stderr": stderr}
     try:
-        code, output = run_capped(cmd, cwd, cap, on_start=on_start, env=env)
+        code, output = run_capped(cmd, cwd, cap, on_start=on_start, env=env,
+                                  **apart)
     except subprocess.TimeoutExpired as e:
         message = f"{AGENT_CONFIG_KEYS[role]} timed out after {cap / 60:g} minutes"
         timed_out = AgentOutput(message, command, timed_out=True)

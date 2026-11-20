@@ -282,8 +282,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     held = council.held_here(project, verdict)
     asked = consolidate.primary_findings(verdict, decision, unwitnessed)
     kept = stuck_review.kept_findings(asked, ruling)
-    settled = [council.held_line(finding) for finding in asked if held
-               and council.described(finding) and finding not in kept]
+    settled = [council.held_line(finding) for finding in asked
+               + (ruling.dropped_earlier if ruling is not None else [])
+               if held and council.described(finding) and finding not in kept]
     settled += getattr(verdict, "withdrawn", [])
     if ruling is not None and ruling.settled_all:
         council.settle(conn, run_id, settled)

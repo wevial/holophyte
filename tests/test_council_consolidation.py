@@ -513,6 +513,21 @@ class ConsolidatedRoundTests(Consolidated):
     def test_a_seats_unmet_criterion_outlasts_a_placeholder_witness(self):
         self.unmet_outlasts("(no test named)")
 
+    def test_a_seats_unmet_criterion_outlasts_a_check_on_a_missing_file(self):
+        self.unmet_outlasts("bash -n scripts/missing.sh")
+
+    def test_a_check_on_a_candidate_file_witnesses_over_a_seats_unmet(self):
+        self.run_panel(
+            council(ASTRA, OPUS), Commit("work"),
+            seats={"gpt-6-astra": [Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 6, criterion="unwitnessed")]},
+            rulings=[Ruling(witness="bash -n README.md")])
+
+        self.assertEqual(self.round_rows()[0], (1, "pass", CONSOLIDATED_BY))
+        self.assertEqual([entry["status"] for entry in self.reply(1)["criteria"]],
+                         ["met"])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
     def unmet_outlasts(self, witness):
         fake = self.run_panel(
             council(ASTRA, OPUS), Commit("work"), Commit("fix"),
@@ -697,6 +712,29 @@ class UnconsolidatedTests(Consolidated):
             "consolidate", None, run_agent)
 
         self.assertEqual((got, why), (value, None))
+
+    def test_a_configured_consolidators_stderr_stays_out_of_its_reply(self):
+        reply = Ruling("REQUEST_CHANGES", findings=((*SHARED, ("F1",), "code"),),
+                       refuted=((OTHER[2], "the test asserts a value", ("F2",)),))
+        wrapper = self.target.parent / "consolidator"
+        wrapper.write_text(
+            f"#!{sys.executable}\nimport subprocess, sys\n"
+            "if sys.argv[-1].startswith('Run the read-only command'):\n"
+            "    print('ready', subprocess.run(['git', 'rev-parse', 'HEAD'],"
+            " capture_output=True, text=True).stdout.strip())\n"
+            "    sys.exit(0)\n"
+            f"print({reply.play('')!r}, flush=True)\n"
+            "print('warning: the session cache is stale', file=sys.stderr)\n")
+        wrapper.chmod(0o755)
+        self.run_panel(
+            f'[agents]\nconsolidator = "{wrapper}"\n' + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"), seats=self.SEATS, rulings=[],
+            fake=RealConsolidator(Commit("work"), Commit("fix")))
+
+        self.assertEqual(self.events("council_unconsolidated"), [])
+        self.assertEqual([f["message"] for f in self.findings(1)], [SHARED[2]])
+        self.assertIsNotNone(self.round_rows()[0][2])
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_consolidator_reply_unreadable_twice_leaves_the_merge(self):
         self.run_panel(
@@ -900,6 +938,34 @@ class DescriptionFindingTests(MergeModeFixture, Consolidated):
 
         [writer] = self.writer(fake)
         self.assertNotIn(DESCRIBED[2], writer)
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+
+    def test_a_dropped_rewording_withdraws_the_earlier_held_wording(self):
+        self.fake_route(states=[self.pr_state()])
+        reworded = "the description omits that the thing is added"
+        fake = self.run_panel(
+            self.PR + "[loop]\nreview_rounds = 3\n" + council(ASTRA, OPUS),
+            Commit("work"), Commit("fix"),
+            Reply("THREAD 1: FIX -- the base line is still never read\n"
+                  "THREAD 2: DROP -- the description already says it"),
+            Commit("fix again"), WRITTEN,
+            provider=StubProvider(dict(a_task(), body=VALID_BODY)),
+            seats={"gpt-6-astra": [
+                Describing(Answer("REQUEST_CHANGES", 4, (SHARED,))),
+                Describing(Answer("REQUEST_CHANGES", 4, (SHARED,)),
+                           message=reworded), Answer("APPROVE", 9)],
+                   "opus": [Answer("APPROVE", 8)] * 3},
+            rulings=[Ruling("REQUEST_CHANGES", findings=(
+                (*SHARED, ("F1",), "code"),
+                (*DESCRIBED, ("F2",), "description"))),
+                Ruling("REQUEST_CHANGES", findings=(
+                    (*SHARED, ("F1",), "code"),
+                    (None, None, reworded, ("F2",), "description"))),
+                Ruling()])
+
+        [writer] = self.writer(fake)
+        self.assertNotIn(DESCRIBED[2], writer)
+        self.assertNotIn(reworded, writer)
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
 
     def test_a_restored_description_finding_the_adjudicator_drops_skips_it(self):

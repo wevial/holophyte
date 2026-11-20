@@ -37,7 +37,8 @@ RULINGS_EVENT = "review_rulings"
 SETTLED = "Settled by the adjudicator, not a blocker:"
 COMMITS_RE = re.compile(r"^BEGIN UNTRUSTED COMMIT MESSAGES\n(.*?)\n"
                         r"END UNTRUSTED COMMIT MESSAGES$", re.M | re.S)
-Ruling = namedtuple("Ruling", ("dropped", "fixed", "settled_all"))
+Ruling = namedtuple("Ruling", ("dropped", "fixed", "settled_all",
+                                 "dropped_earlier"))
 
 
 def _key(finding):
@@ -73,20 +74,27 @@ def _newest_rounds(conn, run_id):
 
 def _paired(later, earlier):
     """The later findings that repeat an earlier one, paired one to one."""
-    left = [_identity(finding) for finding in earlier if _code(finding)]
+    return [finding for finding, _ in _pairs(later, earlier)]
+
+
+def _pairs(later, earlier):
+    left = [finding for finding in earlier if _code(finding)]
     codes = [finding for finding in later if _code(finding)]
-    paired = set()
-    for n, finding in enumerate(codes):
-        if _identity(finding) in left:
-            left.remove(_identity(finding))
-            paired.add(n)
-    for n, finding in enumerate(codes):
-        key = _key(finding)
-        match = next((each for each in left if each[:3] == key), None)
-        if n not in paired and match is not None:
-            left.remove(match)
-            paired.add(n)
-    return [finding for n, finding in enumerate(codes) if n in paired]
+    paired = {}
+    for same in (_identity, _key):
+        for n, finding in enumerate(codes):
+            match = next((each for each in left
+                          if same(each) == same(finding)), None)
+            if n not in paired and match is not None:
+                left.remove(match)
+                paired[n] = match
+    return [(codes[n], paired[n]) for n in sorted(paired)]
+
+
+def _newest_pairs(conn, run_id):
+    later, earlier = (decode_findings(row.findings) or []
+                      for row in _newest_rounds(conn, run_id))
+    return _pairs(later, earlier)
 
 
 def repeats(conn, run_id, threshold):
@@ -263,7 +271,7 @@ def _ruled(findings, ruled):
             and finding.get("evidence_only") is not True
             and _identity(finding) not in dropped]
     return Ruling(dropped, [(finding, reason) for finding, (word, reason)
-                            in ruled if word == "FIX"], not left)
+                            in ruled if word == "FIX"], not left, [])
 
 
 def _adjudications(conn, run_id):
@@ -379,4 +387,7 @@ def adjudicated(project, conn, run_id, provider, task_id, branch, wt, beat_s,
     ledger(conn, run_id, task_id, "adjudication", f"Round {later}: {spoken}",
            provider)
     _settle(conn, run_id, ruled)
-    return _ruled(findings, ruled)
+    dropped = _dropped(ruled)
+    return _ruled(findings, ruled)._replace(dropped_earlier=[
+        before for after, before in _newest_pairs(conn, run_id)
+        if _identity(after) in dropped])
