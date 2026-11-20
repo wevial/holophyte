@@ -221,6 +221,28 @@ class StageRecordingTests(LoopFixture):
         self.assertEqual(self.shas("trim", 1),
                          (self.git("rev-parse", f"{trimmed}^").strip(), trimmed))
 
+    def test_a_trim_that_raises_after_moving_head_records_the_moved_head(self):
+        record_event = store.record_event
+
+        def refuse_trim(conn, run_id, kind, *args, **kwargs):
+            if kind == "trim":
+                raise sqlite3.OperationalError("database is locked")
+            return record_event(conn, run_id, kind, *args, **kwargs)
+
+        with patch.object(store, "record_event", side_effect=refuse_trim):
+            self.run_loop(TRIMMED, Commit("work", "work.txt", lines(60)),
+                          TrimTurn(Commit("trim: delete", "work.txt", lines(40))),
+                          APPROVE)
+
+        trimmed = self.git("rev-parse", BRANCH).strip()
+        self.assertEqual(self.git("log", "-1", "--format=%s", trimmed).strip(),
+                         "trim: delete")
+        self.assertEqual(self.read(
+            "SELECT outcome, edge, inputSha, outputSha FROM stageAttempts"
+            " WHERE stageId = 'trim'"),
+            [("fail", "end", self.git("rev-parse", f"{trimmed}^").strip(),
+              trimmed)])
+
     def test_a_trim_under_the_line_floor_is_skipped_with_that_reason(self):
         self.run_loop(TRIMMED, Commit("work", "work.txt", lines(49)), APPROVE)
 
