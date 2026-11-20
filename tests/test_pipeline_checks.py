@@ -32,8 +32,11 @@ from loop_fixture import (  # noqa: E402 - after the sys.path insert above
 )
 
 from holophyte.config.checks import check_config  # noqa: E402
-from holophyte.config.pipeline_settings import pipeline_checks  # noqa: E402
-from holophyte.stages import checks  # noqa: E402 - after the sys.path insert
+from holophyte.config.pipeline_settings import (  # noqa: E402
+    STANDARD_STAGES,
+    pipeline_checks,
+)
+from holophyte.stages import checks, standard  # noqa: E402
 
 # Fixed commit times, so two fixtures' candidates have the same shas.
 GIT_DATES = {"GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
@@ -65,31 +68,37 @@ class ChecksConfigTests(LoopFixture):
 
     def test_a_bad_entry_stops_the_load_naming_the_entry(self):
         good = check_table("first", "implement", ["true"], "advisory")
-        for case, config, problem in (
+        for case, config, name, problem in (
                 ("repeated id", good + check_table(
-                    "first", "trim", ["true"], "off"), "repeats"),
+                    "first", "trim", ["true"], "off"), "first", "repeats"),
                 ("standard id", check_table(
-                    "verify", "trim", ["true"], "off"), "standard stage"),
+                    "verify", "trim", ["true"], "off"), "verify",
+                 "standard stage"),
                 ("after", check_table(
-                    "first", "review", ["true"], "off"), "after must be"),
+                    "first", "review", ["true"], "off"), "first", "after must be"),
                 ("commands", check_table(
-                    "first", "trim", [], "off"), "commands must be"),
+                    "first", "trim", [], "off"), "first", "commands must be"),
                 ("mode", check_table(
-                    "first", "trim", ["true"], "blocking"), "mode must be"),
+                    "first", "trim", ["true"], "blocking"), "first", "mode must be"),
                 ("absolute path", check_table(
-                    "first", "trim", ["true"], "off", ["/etc/*"]), "paths"),
+                    "first", "trim", ["true"], "off", ["/etc/*"]), "first", "paths"),
                 ("climbing path", check_table(
                     "first", "trim", ["true"], "off", ["docs/../../x"]),
-                 "paths")):
+                 "first", "paths")):
             with self.subTest(case=case):
                 self.configure(config)
                 with self.assertRaises(SystemExit) as stopped:
                     check_config(self.project)
                 message = str(stopped.exception)
-                self.assertIn("[[pipeline.check]] "
-                              + ("verify" if case == "standard id" else "first"),
-                              message)
+                self.assertIn(f"[[pipeline.check]] {name}", message)
                 self.assertIn(problem, message)
+
+    def test_every_stage_the_standard_pipeline_resolves_is_a_reserved_id(self):
+        self.configure('[merge]\nmode = "pr"\n')
+
+        ids = [stage["id"] for stage in standard.resolve(self.project)["stages"]]
+
+        self.assertEqual(sorted(ids), sorted(STANDARD_STAGES))
 
     def test_the_required_mode_is_refused_as_not_available_yet(self):
         self.configure(check_table("types", "implement", ["mypy ."],
@@ -210,6 +219,34 @@ class AdvisoryCheckTests(CheckRuns):
         self.assertEqual(lint[2:4], ("pass", "next"))
         self.assertEqual(lint[4]["exit_status"], 0)
         self.assertIn("clean", lint[4]["output"])
+
+
+    def test_a_trim_check_runs_once_on_the_head_trim_left(self):
+        self.walked(check_table("tidy", "trim", ["echo tidy"], "advisory"),
+                    *self.SCRIPT)
+
+        attempts = self.attempts()
+        stages = [row[0] for row in attempts]
+        self.assertEqual(stages.count("tidy"), 1)
+        at = stages.index("tidy")
+        self.assertEqual(stages[at - 1], "trim")
+        self.assertEqual(attempts[at][1], attempts[at - 1][1])
+        self.assertEqual(attempts[at][2:4], ("pass", "next"))
+
+    def test_a_check_runs_its_configured_command_not_the_pinned_redaction(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        marker = Path(held.name) / "said"
+
+        self.walked('[extras]\napi_token = "check-credential-7"\n'
+                    + check_table("say", "implement",
+                                  [f"echo check-credential-7 > {marker}"],
+                                  "advisory"),
+                    Commit("the scripted work"), APPROVE)
+
+        (document,) = self.read("SELECT document FROM pipelines")
+        self.assertNotIn("check-credential-7", document[0])
+        self.assertEqual(marker.read_text(), "check-credential-7\n")
 
 
 class SkippedCheckTests(CheckRuns):

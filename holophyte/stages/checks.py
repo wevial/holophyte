@@ -1,12 +1,13 @@
 """A project's `[[pipeline.check]]` stages run on a candidate and recorded."""
 from holophyte.agents.review_workspace import review_base
 from holophyte.config.config_tables import verify_config
-from holophyte.config.pipeline_settings import current_checks
+from holophyte.config.pipeline_settings import current_checks, pipeline_checks
 from holophyte.loop.gates import run_verify, timed_out, verify_timed_out
 from holophyte.loop.runs import heartbeat_while
+from holophyte.redact import known_secrets
 from holophyte.review.blast_radius import matching
 from holophyte.review.briefs import _changed_files
-from holophyte.stages import record
+from holophyte.stages import record, standard
 from store import pipelines
 
 OUTPUT_TAIL = 2000
@@ -30,9 +31,20 @@ def configured(project, conn, run_id, after):
     pinned = None
     if conn is not None and run_id is not None:
         pinned = pipelines.run_pipelines(conn, [run_id]).get(run_id)
-    found = ([stage for stage in pinned.get("stages", []) if "after" in stage]
-             if pinned else current_checks(project))
-    return [check for check in found if check["after"] == after]
+    if not pinned:
+        return [check for check in current_checks(project)
+                if check["after"] == after]
+    return [unredacted(project, stage) for stage in pinned.get("stages", [])
+            if stage.get("after") == after]
+
+
+def unredacted(project, stage):
+    secrets = known_secrets(project.config())
+    for check in pipeline_checks(project):
+        if (check["id"] == stage["id"] and standard.scrubbed(
+                check["commands"], secrets) == stage["commands"]):
+            return {**stage, "commands": check["commands"]}
+    return stage
 
 
 def skip_reason(check, wt, base_sha, sha):

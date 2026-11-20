@@ -74,7 +74,8 @@ from holophyte.review.reply_parsing import (
     without_refuted,
 )
 from holophyte.review.stale_approval import stale_again, stale_rereview
-from holophyte.stages import checks, record
+from holophyte.stages import checks as stage_checks
+from holophyte.stages import record
 from holophyte.tickets import ticket_template, witness_once
 
 
@@ -428,7 +429,7 @@ def _review_rounds(project, conn, run_id, provider, task_id, branch, wt, beat_s,
                     f" resolves the merge before this ticket is run again;"
                     f" branch {branch} preserved at {sha[:12]}")
         if pending.get("phase") not in ("reviewing", "addressing"):
-            record.guarded(conn, run_id, "pipeline_checks", lambda: checks.run(
+            record.guarded(conn, run_id, "pipeline_checks", lambda: stage_checks.run(
                 project, conn, run_id, beat_s, wt, base_sha, sha, "implement",
                 round=rnd))
         sha, ok, out, witness = _prepared(
