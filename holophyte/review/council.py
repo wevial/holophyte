@@ -471,11 +471,9 @@ def held_line(finding):
                          "message": finding["message"]})
 
 
-def held_description(conn, run_id, verdict, findings, rulings=(),
-                     settled=()):
+def held_description(conn, run_id, verdict, findings, rulings, settled):
     hold_for_pr_text(conn, run_id,
-                     [held_line(finding) for finding in findings]
-                     + list(rulings))
+                     [held_line(finding) for finding in findings] + rulings)
     if conn is not None and run_id is not None:
         for finding in settled:
             store.record_event(conn, run_id, SETTLED_KIND, held_line(finding),
