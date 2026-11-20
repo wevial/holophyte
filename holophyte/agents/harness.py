@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from holophyte.agents.agent_output import json_line
 from holophyte.review import review_runner
 from holophyte.review.json_reply import SCHEMA_FILE
 from holophyte.tickets.ticket_template import ORCHESTRATION_MODES
@@ -317,10 +318,7 @@ class Agy(Adapter):
 
     @staticmethod
     def reply(output):
-        try:
-            reply = json.loads(output)
-        except ValueError:
-            return None, None
+        reply = json_line(output)
         if not isinstance(reply, dict):
             return None, None
         response, session = reply.get("response"), reply.get("conversation_id")

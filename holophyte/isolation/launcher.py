@@ -194,14 +194,18 @@ AGY_BIN = "/opt/agy/bin"
 AGY_LOGIN = PurePosixPath(".gemini/antigravity-cli/antigravity-oauth-token")
 
 
+def readonly_volume(source, destination):
+    if ":" in str(source):
+        raise RuntimeError(f"bind source {source} must not contain a colon")
+    return ["--volume", f"{source}:{destination}:ro"]
+
+
 def agy_mount_flags():
     found = shutil.which("agy")
     if not found:
         raise RuntimeError("agy executable missing from PATH")
     source = Path(found).resolve(strict=True)
-    if ":" in str(source):
-        raise RuntimeError(f"bind source {source} must not contain a colon")
-    return ["--volume", f"{source}:{AGY_BIN}/agy:ro"]
+    return readonly_volume(source, f"{AGY_BIN}/agy")
 
 
 def agy_login_flags(route, task, project, scratch, stack):
@@ -226,9 +230,7 @@ def codex_mount_flags():
         source = release / name if release else Path(name)
         if release is None or not source.is_file() or not os.access(source, os.X_OK):
             raise RuntimeError(f"Codex release is missing executable: {source}")
-        if ":" in str(source):
-            raise RuntimeError(f"bind source {source} must not contain a colon")
-        flags += ["--volume", f"{source}:{CODEX_BIN}/{name}:ro"]
+        flags += readonly_volume(source, f"{CODEX_BIN}/{name}")
     return flags
 
 
@@ -244,9 +246,7 @@ def codex_login_flags(credential, codex_home):
     source = Path(home, CODEX_LOGIN.name).resolve()
     if not source.is_file():
         return []
-    if ":" in str(source):
-        raise RuntimeError(f"bind source {source} must not contain a colon")
-    return ["--volume", f"{source}:{CODEX_LOGIN}:ro"]
+    return readonly_volume(source, CODEX_LOGIN)
 
 
 def private_directory(path):
