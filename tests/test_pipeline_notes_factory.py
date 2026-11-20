@@ -40,8 +40,19 @@ NOTES = {"critic": "Treat a ticket naming a removed module as stale.",
          "pr_writer": "PR titles in our changelog style.",
          "babysit_reply": "Answer in two sentences at most."}
 STYLE = "No ticket identifier in the title."
-REPLY_FORMAT = ("Answer with exactly one line `TITLE: ...` (the title alone,"
-                " under")
+REPLY_FORMAT = (
+    "Answer with exactly one line `TITLE: ...` (the title alone, under 120"
+    " characters) followed by the description in Markdown. Explain what the"
+    " change does for a user or caller and why first. Where the ticket's"
+    " planned approach and the diff differ, the description follows the"
+    " diff: describe what the diff does, not what the ticket planned. Note"
+    " decisions, risks and anything surprising. Do not narrate the diff. Do"
+    " not list files, styles, class names, renames or tests. Use this"
+    " repository's own style; do not paste the ticket, and do not add a link"
+    " to the ticket -- the loop appends one. Do not edit, commit or run"
+    " anything: answer with the text only.")
+HUNK = ("```diff\ndiff --git a/scripted-2.txt b/scripted-2.txt\n"
+        "new file mode 100644\n")
 PROBE = f"#!{sys.executable}\nprint('ready')\n"
 QUESTION = "@holophyte ask: Why is the thing added here?"
 FRESHNESS_TAIL = ("End your reply with exactly one of these lines, and nothing"
@@ -121,8 +132,10 @@ class FactoryNotesPromptTests(FactoryNotesRun):
                                 + len(block(NOTES["critic"])):], FRESHNESS_TAIL)
         writer = noted["pr_writer"]
         order = [writer.index(STYLE), writer.index(block(NOTES["pr_writer"])),
-                 writer.index("The thing, added."), writer.index("```diff\n")]
+                 writer.index("The thing, added."), writer.index(HUNK),
+                 writer.index("@@ -0,0 +1 @@\n+the scripted work\n```")]
         self.assertEqual(order, sorted(order))
+        self.assertIn(f"\n\n{REPLY_FORMAT}\n\n", writer)
 
 
 class FailedFactoryNotesTests(FactoryNotesRun):
