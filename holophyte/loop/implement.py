@@ -45,6 +45,7 @@ from holophyte.pr.pr_media import implementer_brief as _capture_brief
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
 from holophyte.review import blast_radius, criterion_ids, reproduce
+from holophyte.stages import record as stage_record
 from holophyte.tickets import ticket_template, witness_once
 from store.working import agent_work
 
@@ -700,8 +701,7 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     orchestration = _orchestration(project, conn, run_id, ticket)
     steered = steering.take(conn, run_id)
     numbered = criterion_ids.numbered(conn, run_id, criteria)
-    goal = (conflict_brief(branch, conflicts) + opening + steered
-            + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+    tail = (f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
             "The ticket above is the contract, acceptance criteria "
             "included; the task is done only when they hold. Commit your "
             "work with a clear message. Stay strictly on-scope; do not "
@@ -711,6 +711,9 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
             + mockup.implementer_brief(wt) + blast_radius.BRIEF
             + reproduce.BRIEF + contradiction.brief(numbered)
             + witness_once.implementer_brief(numbered))
+    goal = (conflict_brief(branch, conflicts) + opening + steered
+            + stage_record.notes_block(project, conn, run_id, "implement")
+            + tail)
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     if shadow and fresh and not conflicts and not opening and not steered:
         shadow(goal, start_sha, seconds)

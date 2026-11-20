@@ -140,6 +140,8 @@ Each module, one line:
 - `holophyte/config/serve_settings.py` — the `[console]` and `[serve]` readers.
 - `holophyte/config/review_settings.py` — the `[review]` reader: the
   blast-radius path lists and the fan-in and packages thresholds.
+- `holophyte/config/pipeline_settings.py` — the `[pipeline.notes]` reader:
+  the note targets, each a string of at most 4000 characters.
 - `holophyte/revert/__init__.py` — the `revert` package; empty.
 - `holophyte/revert/settings.py` — the `[revert]` reader: `enabled` and the
   `refuse_paths` globs, each compiled, checked at startup with the other
@@ -616,14 +618,18 @@ Each module, one line:
   under its scaled budget, the run cap and the transport retry.
 - `holophyte/stages/standard.py` — `resolve()`: the "Holophyte standard"
   pipeline as a versioned document of typed stages, read from the project's
-  config with its primary seat labels.
+  config with its primary seat labels and any `[pipeline.notes]`.
+- `holophyte/stages/notes.py` — the notes block a prompt carries: the
+  project's note for one target in its fixed frame, read from the run's
+  pinned pipeline, or from the config when the run pinned none.
 - `holophyte/stages/record.py` — pins a run's pipeline after its profile:
   inherited by a continuation, resolved fresh otherwise; `Attempt` and
   `skip()` record the implement, trim, verify, review and merge gate
   attempts with the roles the pinned document gives each stage; `waiting()`
   opens a park's attempt labelled by its kind, and `release()` closes it
-  from the release that ended the park; a store write or read that fails
-  leaves a `stage_record_failed` event and never stops the run.
+  from the release that ended the park; `notes_block()` reads a prompt's
+  notes the same guarded way; a store write or read that fails leaves a
+  `stage_record_failed` event and never stops the run.
 - `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
   and records a run's implementer profile, and scopes the run's project to it.
 - `holophyte/loop/complexity.py` — the complexity question a claimed run

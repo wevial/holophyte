@@ -6,7 +6,7 @@ import store
 from holophyte.loop.gates import InfraFailure, MergeParked, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
-from holophyte.stages import standard
+from holophyte.stages import notes, standard
 from store import pipelines, stages
 
 FAILED = "stage_record_failed"
@@ -52,6 +52,12 @@ def _resolved(run):
     row = latest_profile(conn, run_id)
     document = standard.resolve(run.project, row and row[1]["profile"])
     return pipelines.pin_pipeline(conn, run_id, standard.NAME, document)
+
+
+def notes_block(project, conn, run_id, target):
+    found = guarded(conn, run_id, "pipeline_notes",
+                    lambda: notes.block(project, conn, run_id, target))
+    return "" if found is REFUSED else found
 
 
 def predecessor(conn, run_id):

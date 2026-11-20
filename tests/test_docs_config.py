@@ -14,6 +14,7 @@ from holophyte.config.config_tables import (
     REPORT_KEYS,
     SUPERVISOR_KEYS,
 )
+from holophyte.config.pipeline_settings import NOTE_TARGETS
 from holophyte.config.reader import AGENT_CONFIG_KEYS, KNOWN_KEYS, REVIEW_ROUTE_KEYS
 from holophyte.config.serve_settings import SERVE_KEYS
 from holophyte.questions import COMPLEXITY_KEYS, FAILURE_KEYS, TITLE_KEYS
@@ -35,6 +36,7 @@ TABLES = {
     "questions.failures": FAILURE_KEYS,
     "questions.complexity": COMPLEXITY_KEYS,
     "questions.titles": TITLE_KEYS,
+    "pipeline.notes": NOTE_TARGETS,
 }
 
 

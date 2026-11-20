@@ -15,7 +15,7 @@ baseline, run from the worktree root:
 {commands}
 
 If the diff holds under about 50 non-test lines and nothing obvious, reply
-"nothing worth trimming" and commit nothing.{tests}{protected}
+"nothing worth trimming" and commit nothing.{tests}
 
 Run the passes below in order. After each pass, run the check command; if
 it fails, discard that pass's edits and go on to the next pass. Commit each
@@ -78,7 +78,10 @@ push, and never rewrite a commit that is not yours.
    never silent, and never on a trust boundary, an auth check, a data-loss
    path or a money path.
 
-Hard rules. Behavior is frozen: outputs, errors, log lines, ordering, side
+"""
+
+TRIM_TAIL = """\
+{protected}Hard rules. Behavior is frozen: outputs, errors, log lines, ordering, side
 effects; when unsure, raise it instead of applying it. Coverage is frozen,
 except for named trade-offs. Public surface is frozen: exported, CLI, HTTP
 and config names used outside the repository or held by a surface or
@@ -108,12 +111,13 @@ covers; fold fixtures and factories down to the fields the code under test
 reads; reuse the repository's existing test helpers rather than new ones.
 Every deleted test still needs its Proof line."""
 
-PROTECTED_BRIEF = """
-
+PROTECTED_BRIEF = """\
 These files witness the ticket's acceptance criteria or were added by this
 run. Remove or rename no test in them; a pass that does is reverted whole.
 You may still shorten a test's body:
-{files}"""
+{files}
+
+"""
 
 
 PASSES = ("delete", "merge", "flatten", "comments", "tests")
