@@ -8,6 +8,7 @@ from urllib.parse import parse_qs
 
 import store.read
 from holophyte.admission import project_of
+from holophyte.config.config_tables import board_config
 from holophyte.serve.serve_runs import current_secrets
 from holophyte.stages import standard
 from store.pipelines import pipeline_revision
@@ -30,15 +31,21 @@ def pipeline(project, query):
     if secrets is None:
         return 503, {"error": "the project config cannot be read, so its"
                               " pipeline cannot be resolved"}
-    document = standard.resolve(dataclasses.replace(project, _config=None))
+    fresh = dataclasses.replace(project, _config=None)
+    try:
+        document = standard.resolve(fresh)
+        board = board_config(fresh)
+    except (SystemExit, ValueError) as error:
+        return 503, {"error": f"the project config does not resolve to a"
+                              f" pipeline: {error}"}
     since_ms = int(time() * 1000) - days * DAY_MS
     revision, numbers = None, {}
     if project.store_path.exists():
         conn = store.read.open_readonly(project.store_path)
         try:
-            revision = pipeline_revision(conn, project_of(conn, project),
-                                         document)
-            numbers = stage_numbers(conn, since_ms, {
+            project_id = served_project(conn, project, board)
+            revision = pipeline_revision(conn, project_id, document)
+            numbers = stage_numbers(conn, project_id, since_ms, {
                 stage["id"] for stage in document["stages"]
                 if stage["type"] == "build"})
         finally:
@@ -50,3 +57,11 @@ def pipeline(project, query):
     body = {"pipeline": {**document, "revision": revision},
             "window": {"days": days, "since_ms": since_ms}, "stages": stages}
     return 200, standard.scrubbed(body, secrets)
+
+
+def served_project(conn, project, board):
+    if board is None:
+        return project_of(conn, project)
+    row = conn.execute("SELECT id FROM projects WHERE linearTeamId = ?",
+                       (board.team,)).fetchone()
+    return None if row is None else row[0]

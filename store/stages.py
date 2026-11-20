@@ -116,14 +116,17 @@ def stage_attempts(conn, run_ids):
     return found
 
 
-def stage_numbers(conn, since_ms, builds):
-    if not _has_table(conn, "stageAttempts"):
+def stage_numbers(conn, project_id, since_ms, builds):
+    if project_id is None or not _has_table(conn, "stageAttempts"):
         return {}
     rows = conn.execute(
-        "SELECT runId, stageId, startedAt, endedAt, inputSha, outputSha,"
-        " outcome, edge, inputTokens, outputTokens, costUsd, detail"
-        " FROM stageAttempts WHERE startedAt >= ?"
-        " ORDER BY runId, startedAt, id", (since_ms,)).fetchall()
+        "SELECT s.runId, s.stageId, s.startedAt, s.endedAt, s.inputSha,"
+        " s.outputSha, s.outcome, s.edge, s.inputTokens, s.outputTokens,"
+        " s.costUsd, s.detail FROM stageAttempts s"
+        " JOIN runs r ON r.id = s.runId"
+        " WHERE r.projectId = ? AND s.startedAt >= ?"
+        " ORDER BY s.runId, s.startedAt, s.id",
+        (project_id, since_ms)).fetchall()
     found = {}
     for at, (run_id, stage_id, started, ended, _, _, outcome, edge,
              input_tokens, output_tokens, cost, detail) in enumerate(rows):

@@ -1130,6 +1130,7 @@ each stage with its `id`, `type`, `group`, `roles` and the settings it
 resolved: `seat`, `profile`, `switch`, `effort`, `adversary`, `commands`
 (`always` and `before_merge`), `paths`, `cap` and `approve`. The config file is read again at each request, so an edit is
 served before any run pins it. `revision` is the stored revision a run
+of the project (the `[board] team`'s row, else the row at this path)
 pinned this same document under, or null when no run has pinned it yet.
 
 `window` names the `days` asked (`?days=N`, 30 when absent) and `since_ms`,
@@ -1138,8 +1139,8 @@ a whole number, is 400 carrying `error`.
 
 `stages` holds one entry per stage id with a closed attempt started inside
 the window, in document order, then any ids the document no longer holds,
-by name; `in_pipeline` says which. Numbers count across every pipeline
-revision. `attempts` counts the closed attempts, skipped included; an
+by name; `in_pipeline` says which. Numbers count this project's runs
+only, across every pipeline revision. `attempts` counts the closed attempts, skipped included; an
 attempt still open counts nowhere. `outcomes` counts them by `pass`,
 `fail`, `skipped` and `error`. `median_seconds` is the median wall time of
 the attempts not skipped, `median_tokens` the median of their input plus
@@ -1151,8 +1152,9 @@ whose run's next attempt was a build stage ending at a new commit.
 
 A project with no store answers the document with `revision` null and an
 empty `stages`. Every string is redacted with the project's known secrets,
-as on `/runs/N/stages`; a config file that cannot be read or parsed makes
-the route answer 503 carrying `error`.
+as on `/runs/N/stages`; a config file that cannot be read or parsed, or
+a setting the pipeline cannot resolve, makes the route answer 503 carrying
+`error`.
 
 ## `GET /ledger?since=MS`
 

@@ -22,6 +22,7 @@ from serve_fixture import MIN, SEC, ServeTestCase  # noqa: E402
 
 import holophyte.config.project  # noqa: E402 - after the sys.path insert above
 import store  # noqa: E402 - after the sys.path insert above
+import store.pipelines  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
 import store.tickets  # noqa: E402 - after the sys.path insert above
 from holophyte.serve.serve_pipeline import pipeline  # noqa: E402
@@ -105,8 +106,8 @@ class StageNumbersTests(ServeTestCase):
                                      [stage], now=started + took)
 
     def seed_reviews(self):
-        """Three judged reviews of 10, 20 and 40 s, a 20 s error, a skip, an
-        open review and one older than the window; the first fail's fix
+        """Three judged reviews of 10, 20 and 40 s, a 20 s error, two skips,
+        an open review and one older than the window; the first fail's fix
         commits, the second's makes no commit."""
         run = self.run_of("KO-1")
         start = self.now - 10 * 60 * MIN
@@ -128,9 +129,10 @@ class StageNumbersTests(ServeTestCase):
         other = self.run_of("KO-2")
         self.attempt(other, "review", start + 5 * MIN, 20 * SEC,
                      ("error", "end"))
-        store.stages.skip_stage(self.conn, other, "review", "not needed",
-                                now=start + 6 * MIN)
-        self.attempt(other, "review", start + 7 * MIN)
+        for minute in (6, 7):
+            store.stages.skip_stage(self.conn, other, "review", "not needed",
+                                    now=start + minute * MIN)
+        self.attempt(other, "review", start + 8 * MIN)
         stale = self.run_of("KO-3")
         self.attempt(stale, "review", self.now - 40 * DAY, 90 * SEC,
                      ("fail", "on_fail"), detail={"findings": 9},
@@ -151,10 +153,10 @@ class StageNumbersTests(ServeTestCase):
         review, = [stage for stage in self.answer()["stages"]
                    if stage["id"] == "review"]
         self.assertEqual(review, {
-            "id": "review", "in_pipeline": True, "attempts": 5,
+            "id": "review", "in_pipeline": True, "attempts": 6,
             "median_seconds": 20, "median_tokens": 300,
             "median_cost_usd": 1.0, "fail_rate": 0.5, "findings_fixed": 3,
-            "outcomes": {"pass": 1, "fail": 2, "skipped": 1, "error": 1}})
+            "outcomes": {"pass": 1, "fail": 2, "skipped": 2, "error": 1}})
 
     def test_the_pinned_fixture_is_the_review_answer(self):
         self.seed_reviews()
@@ -175,8 +177,10 @@ class StageNumbersTests(ServeTestCase):
 
     def test_days_narrows_the_window_to_attempts_started_inside_it(self):
         run = self.run_of("KO-5")
-        for age in (3 * DAY, 10 * DAY):
+        for age in (3 * DAY, 20 * DAY):
             self.attempt(run, "verify", self.now - age, SEC, ("pass", "next"))
+        self.attempt(run, "verify", self.now - 8 * DAY, 2 * DAY,
+                     ("pass", "next"))
         self.conn.commit()
         before = int(time() * 1000)
         body = self.answer("?days=7")
@@ -188,7 +192,41 @@ class StageNumbersTests(ServeTestCase):
                         <= after - 7 * DAY)
         self.assertEqual([(stage["id"], stage["attempts"])
                           for stage in self.answer()["stages"]],
-                         [("verify", 2)])
+                         [("verify", 3)])
+
+    def test_another_projects_attempts_in_a_shared_store_count_nowhere(self):
+        other = store.tickets.ensure_project(self.conn, "team-2",
+                                             self.root / "other")
+        ticket = store.tickets.mirror_ticket(
+            self.conn, other, linear_issue_id="issue-KO-6",
+            linear_identifier="KO-6", title="ticket KO-6",
+            acceptance_criteria=["Given KO-6, then it is worked"],
+            verification_commands=["echo ok"], time_box_ms=60 * MIN)
+        store.tickets.transition(self.conn, ticket, "in_flight")
+        run = store.claim(self.conn, other, ticket)
+        self.attempt(run, "review", self.now - MIN, SEC, ("fail", "end"))
+        self.conn.commit()
+        self.assertEqual(self.answer()["stages"], [])
+
+    def test_the_revision_is_the_configured_boards_project_row(self):
+        board = '[board]\nteam = "team-2"\nproject_id = "board-2"\n'
+        (self.db.parent / "config.toml").write_text(CONFIG + board)
+        self.project = holophyte.config.project.Project.locate(self.target)
+        self.project_id = store.tickets.ensure_project(self.conn, "team-2",
+                                                       self.target)
+        store.pipelines.pin_pipeline(self.conn, self.run_of("KO-7"),
+                                     standard.NAME,
+                                     standard.resolve(self.project))
+        self.conn.commit()
+        self.assertEqual(self.answer()["pipeline"]["revision"], 1)
+
+    def test_a_setting_the_pipeline_cannot_resolve_is_503_naming_it(self):
+        (self.db.parent / "config.toml").write_text(
+            CONFIG + '[trim]\nenabled = "false"\n')
+        self.start()
+        code, _, body = self.request("GET", "/pipeline")
+        self.assertEqual(code, 503)
+        self.assertIn("trim", body["error"])
 
     def test_days_outside_1_to_365_is_400_naming_the_range(self):
         self.start()

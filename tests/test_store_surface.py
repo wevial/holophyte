@@ -377,15 +377,15 @@ class StoreSurfaceTests(unittest.TestCase):
                                                     # witness pre-check.
                                                     "witness_prechecks"]),
                                  # A run's pipeline, pinned from its document
-                                 # or inherited by a continuation, and read;
-                                 # HOLO-865: a document's revision.
+                                 # or inherited by a continuation, read, and
+                                 # a document's revision.
                                  (store.pipelines, ["inherit_pipeline",
                                                     "pin_pipeline",
                                                     "pipeline_revision",
                                                     "run_pipelines"]),
                                  # Each stage attempt of a run, opened and
-                                 # closed or recorded skipped, and read;
-                                 # HOLO-865: each stage's window numbers.
+                                 # closed or recorded skipped, read, and each
+                                 # stage's window numbers.
                                  (store.stages, ["close_stage", "open_stage",
                                                  "skip_stage",
                                                  "stage_attempts",

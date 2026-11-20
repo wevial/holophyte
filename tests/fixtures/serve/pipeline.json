@@ -93,7 +93,7 @@
       }
     },
     {
-      "attempts": 5,
+      "attempts": 6,
       "fail_rate": 0.5,
       "findings_fixed": 3,
       "id": "review",
@@ -105,7 +105,7 @@
         "error": 1,
         "fail": 2,
         "pass": 1,
-        "skipped": 1
+        "skipped": 2
       }
     }
   ],
