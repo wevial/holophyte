@@ -11,6 +11,7 @@ from holophyte.environment_git import refuse_environment_history
 from holophyte.loop import run as run_state
 from holophyte.loop.claim import _resolve_merge_conflict, reuse_leftover
 from holophyte.loop.gates import (
+    HUMAN_MERGE,
     MergeLockHeld,
     MergeParked,
     RunFailure,
@@ -35,6 +36,7 @@ from holophyte.pr.pullrequest import (
 from holophyte.redact import safe_print as print
 from holophyte.review.findings import commit_findings
 from holophyte.review.reproduce import tests_only_line
+from holophyte.stages import record
 from holophyte.story.story_drift import advance_generation, review_refresh, shared_files
 
 
@@ -261,6 +263,21 @@ def merge_conflict_goal(branch, pull, conflicts):
 def _merge_gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
                 beat_s, sha, verify_cmd, contracts, ticket, budget_min,
                 sync_main=True):
+    with record.Attempt(conn, run_id, "merge_gate", sha, {},
+                        wt=wt) as attempt:
+        try:
+            ok, gated = _gate(project, conn, run_id, provider, task_id,
+                              issue_id, branch, wt, beat_s, sha, verify_cmd,
+                              contracts, ticket, budget_min, sync_main)
+        except MergeParked:
+            attempt.close("fail", "park")
+            raise
+        attempt.close("pass", "next", gated)
+    return ok, gated
+
+
+def _gate(project, conn, run_id, provider, task_id, issue_id, branch, wt,
+          beat_s, sha, verify_cmd, contracts, ticket, budget_min, sync_main):
     verify_cmd = adopted_verify(conn, run_id, verify_cmd)
     set_phase(conn, run_id, "merge_gate", "pre-merge verify, then the autonomy gate")
     reviewed, shared = sha, None
@@ -367,8 +384,8 @@ def _park_for_approval(conn, run_id, provider, task_id, branch, sha):
               " parking the run anyway")
     store.park(conn, run_id, "awaiting_merge_approval",
                f"approved and verified; {branch} at {sha[:12]} waits for"
-               " a human to say merge ([merge] approve = \"human\")",
-               candidate_sha=sha)
+               f" {HUMAN_MERGE}", candidate_sha=sha)
+    record.waiting(conn, run_id, sha, lambda: "human", ready=True)
     print(f"[holo2] approved and verified; parked {branch} at {sha[:12]}"
           " awaiting merge approval")
     ledger(conn, run_id, task_id, "note",

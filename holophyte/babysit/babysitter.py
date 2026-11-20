@@ -56,6 +56,7 @@ from holophyte.babysit.thread_text import (  # noqa: F401
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, verify_config
 from holophyte.loop.gates import (
+    HUMAN_MERGE,
     InfraFailure,
     RunFailure,
     VerificationOutput,
@@ -385,7 +386,7 @@ def _babysit_pass(run, beat_s, ticket, verify_cmd, contracts, criteria=(),
                 pass_no, refreshes = pass_no - 1, refreshes + 1
                 continue
         _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
-                    _ready(released, sha), (), reviewed=reviewed)
+                    _ready(released, sha), (), reviewed=reviewed, ready=True)
     return _at_the_cap(replace(run, sha=sha), beat_s, pull, pushed_state,
                        reviewed, refresh, refreshes == merge.pr_main_refreshes)
 
@@ -408,8 +409,7 @@ def _ready(released, sha):
     if released != sha:
         covered = (f"fix commits since {released[:12]} reviewed at {sha[:12]}; "
                    if released else f"the candidate reviewed at {sha[:12]}; ")
-    return (f"ready to merge; {covered}waiting for a human to say merge"
-            " ([merge] approve = \"human\")")
+    return f"ready to merge; {covered}waiting for {HUMAN_MERGE}"
 
 
 def _fix_answers(conn, run_id, rnd, fix_note):

@@ -666,6 +666,9 @@ class MergeParked(Exception):
     """Not a failure: the run is parked, neither released nor counted."""
 
 
+HUMAN_MERGE = 'a human to say merge ([merge] approve = "human")'
+
+
 def outcome_class_of(exc):
     return "infra" if isinstance(exc, InfraFailure) else "work"
 

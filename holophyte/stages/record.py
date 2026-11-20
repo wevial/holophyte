@@ -11,6 +11,9 @@ from store import pipelines, stages
 
 FAILED = "stage_record_failed"
 REFUSED = object()
+RESTORED = "restored"
+RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
+            "operator_note": ("fail", "on_fail")}
 
 
 def guarded(conn, run_id, write, record):
@@ -123,6 +126,12 @@ class Attempt:
         return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
 
 
+def head(conn, run_id, wt):
+    found = guarded(conn, run_id, "stage_head",
+                    lambda: sh(["git", "rev-parse", "HEAD"], cwd=wt))
+    return None if found is REFUSED else found
+
+
 class Deferred(Attempt):
     def __init__(self, conn, run_id, stage_id, sha, detail, wt=None):
         super().__init__(None, None, stage_id, sha, detail, wt)
@@ -146,7 +155,7 @@ class Deferred(Attempt):
 
 
 def verified_last(conn, run_id, sha):
-    if conn is None or run_id is None:
+    if conn is None or run_id is None or sha is None:
         return False
     rows = guarded(conn, run_id, "stage_read", lambda: conn.execute(
         "SELECT stageId, outcome, outputSha FROM stageAttempts WHERE runId = ?"
@@ -163,3 +172,66 @@ def skip(conn, run_id, stage_id, reason, sha=None):
     if conn is not None and run_id is not None:
         guarded(conn, run_id, "skip_stage",
                 lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))
+
+
+def waiting(conn, run_id, sha, approve, ready=False):
+    if conn is None or run_id is None:
+        return
+    detail = guarded(conn, run_id, "stage_read",
+                     lambda: _park_detail(conn, run_id, approve(), ready))
+    Attempt(conn, run_id, "waiting", sha, {} if detail is REFUSED else detail)
+
+
+def _park_detail(conn, run_id, approve, ready):
+    (kind,) = conn.execute("SELECT parkKind FROM runs WHERE id = ?",
+                           (run_id,)).fetchone()
+    (summary,) = conn.execute(
+        "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+        " 'phase_change' ORDER BY seq DESC LIMIT 1", (run_id,)).fetchone()
+    reason = summary.partition(": ")[2]
+    if ready == RESTORED:
+        ready = _waited_for_approval(conn, run_id)
+    if approve == "human" and ready:
+        kind = "approval"
+    return {"kind": kind, "reason": reason, "approve": approve}
+
+
+def _waited_for_approval(conn, run_id):
+    row = conn.execute(
+        "SELECT json_extract(s.detail, '$.kind') FROM stageAttempts s"
+        " JOIN runs old ON old.id = s.runId JOIN runs current"
+        " ON current.ticketId = old.ticketId WHERE current.id = ?"
+        " AND s.stageId = 'waiting' ORDER BY s.id DESC LIMIT 1",
+        (run_id,)).fetchone()
+    return row is not None and row[0] == "approval"
+
+
+def release(run):
+    conn, run_id = run.conn, run.run_id
+    if conn is None or run_id is None:
+        return
+    parked = guarded(conn, run_id, "stage_read", lambda: conn.execute(
+        "SELECT s.id, s.runId, s.inputSha FROM stageAttempts s"
+        " JOIN runs old ON old.id = s.runId JOIN runs current"
+        " ON current.ticketId = old.ticketId WHERE current.id = ?"
+        " AND old.id != current.id AND s.stageId = 'waiting'"
+        " AND s.endedAt IS NULL", (run_id,)).fetchall())
+    for attempt_id, parked_run, sha in [] if parked is REFUSED else parked:
+        guarded(conn, run_id, "close_stage", lambda: _released(
+            conn, attempt_id, parked_run, sha))
+
+
+def _released(conn, attempt_id, parked_run, sha):
+    marks = ", ".join("?" * len(RELEASES))
+    row = conn.execute(
+        'SELECT i.id, i."action", i.source, i.actor, i.at FROM interventions i'
+        " JOIN runs r ON r.id = i.runId WHERE i.runId = ?"
+        " AND r.outcome = 'abandoned'"
+        f' AND i."action" IN ({marks}) ORDER BY i.id DESC LIMIT 1',
+        (parked_run, *RELEASES)).fetchone()
+    if row is None:
+        return
+    intervention, action, source, actor, at = row
+    stages.close_stage(conn, attempt_id, *RELEASES[action], sha, (),
+                       {"release": action, "source": source, "actor": actor,
+                        "intervention": intervention}, now=at)
