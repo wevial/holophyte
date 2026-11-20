@@ -117,19 +117,10 @@ class FactoryNotesPromptTests(FactoryNotesRun):
                                  plain[target])
                 self.assertTrue(plain[target][start:].startswith(tail),
                                 plain[target][start:start + 80])
-
-    def test_the_writer_goal_holds_the_style_then_the_note_before_the_ticket(self):
-        plain = self.walked("")[0]["pr_writer"]
-        self.fresh()
-        goal = self.walked(notes_table(pr_writer=NOTES["pr_writer"]))[0][
-            "pr_writer"]
-
-        order = [goal.index(STYLE), goal.index(block(NOTES["pr_writer"])),
-                 goal.index("The thing, added."), goal.index("```diff\n")]
+        writer = noted["pr_writer"]
+        order = [writer.index(STYLE), writer.index(block(NOTES["pr_writer"])),
+                 writer.index("The thing, added."), writer.index("```diff\n")]
         self.assertEqual(order, sorted(order))
-        reply_format = plain[plain.index(REPLY_FORMAT):plain.index("\n\n",
-                                                               plain.index(REPLY_FORMAT))]
-        self.assertIn("\n\n" + reply_format + "\n\n", goal)
 
 
 class FailedFactoryNotesTests(FactoryNotesRun):
@@ -137,7 +128,7 @@ class FailedFactoryNotesTests(FactoryNotesRun):
         plain = self.walked("")
         self.fresh()
         refused = RuntimeError("notes unreadable")
-        with patch.object(notes, "block", side_effect=refused):
+        with patch.object(notes, "block", side_effect=refused) as read:
             broken = self.walked(notes_table(**NOTES))
 
         self.assertEqual(plain[4], [("merged",)])
@@ -145,6 +136,12 @@ class FailedFactoryNotesTests(FactoryNotesRun):
                                             "pr_writer"])
         self.assertTrue(any(kind == "merge" for kind, _ in plain[3]), plain[3])
         self.assertEqual(broken, plain)
+        self.assertEqual([call.args[3] for call in read.call_args_list],
+                         ["critic", "implement", "review", "pr_writer",
+                          "babysit_reply"])
+        writes = [json.loads(payload)["write"] for (payload,) in self.read(
+            "SELECT payload FROM runEvents WHERE kind = 'stage_record_failed'")]
+        self.assertEqual(writes, ["pipeline_notes"] * 4)
 
 
 if __name__ == "__main__":

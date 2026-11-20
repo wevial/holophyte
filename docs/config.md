@@ -2207,7 +2207,7 @@ fails sends the prompt without notes and records `stage_record_failed`.
 | `implement` | Default: empty (no note) | String of at most 4000 characters; added to the first implement turn's prompt, ahead of the ticket and the closing instructions. |
 | `review` | Default: empty (no note) | String of at most 4000 characters; added to each review round's prompt, ahead of its reply format. |
 | `trim` | Default: empty (no note) | String of at most 4000 characters; added to the trim turn's prompt, ahead of its protected files and hard rules. |
-| `critic` | Default: empty (no note) | String of at most 4000 characters; added to the critic's prompt, ahead of its `FRESHNESS` reply lines. The critic runs at admission, before the claim, when no run or pinned pipeline exists yet, so it reads this note from the config file as it stands at that moment. |
+| `critic` | Default: empty (no note) | String of at most 4000 characters; added to the critic's prompt, ahead of its `FRESHNESS` reply lines. The critic runs at admission, before the claim, when no run or pinned pipeline exists yet, so it reads this note from the config file as it stands at that moment, and a failed read sends its prompt without the note and records nothing. |
 | `pr_writer` | Default: empty (no note) | String of at most 4000 characters; added to the PR-text writer's prompt under `[merge] mode = "pr"`, after the `[merge] pr_style` instructions and ahead of the ticket and the diff. Both stay: the style text comes first, then the notes block. |
 | `babysit_reply` | Default: empty (no note) | String of at most 4000 characters; added to the prompt the babysitter answers a pull request's `ask` thread with, ahead of the ticket, the thread and the question. |
 
