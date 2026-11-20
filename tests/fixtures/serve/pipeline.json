@@ -77,7 +77,7 @@
   },
   "stages": [
     {
-      "attempts": 4,
+      "attempts": 7,
       "fail_rate": 0.0,
       "findings_fixed": 0,
       "id": "implement",
@@ -88,7 +88,7 @@
       "outcomes": {
         "error": 0,
         "fail": 0,
-        "pass": 4,
+        "pass": 7,
         "skipped": 0
       }
     },
@@ -109,17 +109,17 @@
       }
     },
     {
-      "attempts": 8,
-      "fail_rate": 0.6666666666666666,
-      "findings_fixed": 3,
+      "attempts": 11,
+      "fail_rate": 0.7777777777777778,
+      "findings_fixed": 14,
       "id": "review",
       "in_pipeline": true,
-      "median_cost_usd": 1.0,
+      "median_cost_usd": 1.5,
       "median_seconds": 25.0,
-      "median_tokens": 310,
+      "median_tokens": 455.0,
       "outcomes": {
         "error": 1,
-        "fail": 4,
+        "fail": 7,
         "pass": 1,
         "skipped": 2
       }

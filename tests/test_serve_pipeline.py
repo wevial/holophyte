@@ -106,11 +106,14 @@ class StageNumbersTests(ServeTestCase):
                                      [stage], now=started + took)
 
     def seed_reviews(self):
-        """Judged reviews of 5, 10, 20, 30 and 40 s, a 60 s error, two
-        skips, an open review and one older than the window. Only the 10 s
-        fail's on_fail is next followed by a build that commits; the 20 s
-        fail's fix makes no commit, the 5 s fail leaves by `end`, and the
-        30 s fail is next followed by a check that moves the commit."""
+        """Judged reviews of 5 to 40 s, a metered 60 s error, two skips, an
+        open review and one older than the window. Fails of 10, 15 and 35 s
+        are each next followed in their own run by a build that commits: the
+        15 s one shares its start with that build, and the 35 s one was
+        recorded after it though it started first. The 20 s fail's fix makes
+        no commit, the 5 s fail leaves by `end`, the 30 s fail is next
+        followed by a check that moves the commit, and the 25 s fail ends its
+        run just before another run's committing build."""
         run = self.run_of("KO-1")
         start = self.now - 10 * 60 * MIN
         moved = (SHA["candidate"], SHA["fixed"])
@@ -128,15 +131,31 @@ class StageNumbersTests(ServeTestCase):
             ("verify", 30, ("pass", "next"), moved, None, None),
             ("implement", 30, ("pass", "next"), moved, None, None),
             ("review", 40, ("pass", "next"), None, None, {"cost_usd": 4.0}),
+            ("review", 15, ("fail", "on_fail"), None, {"findings": 5}, None),
         ]
         for minute, (stage, took, closed, sha, detail, usage) in enumerate(
                 steps):
             self.attempt(run, stage, start + minute * MIN, took * SEC, closed,
                          sha or (SHA["candidate"], SHA["candidate"]), detail,
                          usage)
+        self.attempt(run, "implement", start + 10 * MIN, 30 * SEC,
+                     ("pass", "next"), moved)
+        cut = self.run_of("KO-8")
+        self.attempt(cut, "review", start + 12 * MIN, 25 * SEC,
+                     ("fail", "on_fail"), detail={"findings": 11})
+        after = self.run_of("KO-9")
+        self.attempt(after, "implement", start + 13 * MIN, 30 * SEC,
+                     ("pass", "next"), moved)
+        late = self.run_of("KO-10")
+        self.attempt(late, "implement", start + 15 * MIN, 30 * SEC,
+                     ("pass", "next"), moved)
+        self.attempt(late, "review", start + 14 * MIN, 35 * SEC,
+                     ("fail", "on_fail"), detail={"findings": 6})
         other = self.run_of("KO-2")
         self.attempt(other, "review", start + 20 * MIN, 60 * SEC,
-                     ("error", "end"))
+                     ("error", "end"),
+                     usage={"input_tokens": 900, "output_tokens": 100,
+                            "cost_usd": 2.0})
         for minute in (21, 22):
             store.stages.skip_stage(self.conn, other, "review", "not needed",
                                     now=start + minute * MIN)
@@ -161,10 +180,10 @@ class StageNumbersTests(ServeTestCase):
         review, = [stage for stage in self.answer()["stages"]
                    if stage["id"] == "review"]
         self.assertEqual(review, {
-            "id": "review", "in_pipeline": True, "attempts": 8,
-            "median_seconds": 25, "median_tokens": 310,
-            "median_cost_usd": 1.0, "fail_rate": 4 / 6, "findings_fixed": 3,
-            "outcomes": {"pass": 1, "fail": 4, "skipped": 2, "error": 1}})
+            "id": "review", "in_pipeline": True, "attempts": 11,
+            "median_seconds": 25, "median_tokens": 455,
+            "median_cost_usd": 1.5, "fail_rate": 7 / 9, "findings_fixed": 14,
+            "outcomes": {"pass": 1, "fail": 7, "skipped": 2, "error": 1}})
 
     def test_the_pinned_fixture_is_the_review_answer(self):
         self.seed_reviews()
@@ -256,6 +275,66 @@ class StageNumbersTests(ServeTestCase):
                 code, _, body = self.request("GET", f"/pipeline?days={days}")
                 self.assertEqual(code, 400)
                 self.assertIn("from 1 to 365", body["error"])
+
+
+class ConfigErrorTests(ServeTestCase):
+    def test_the_error_names_only_a_setting_the_config_holds(self):
+        state = self.root / "state[workspace]"
+        state.mkdir()
+        project = holophyte.config.project.Project(
+            path=self.target, holo_dir=state, store_path=state / "store.db",
+            config_path=state / "config.toml",
+            worktrees=self.root / "repo.worktrees")
+        for config, named in ((CONFIG + '[trim]\nenabled = "sk-0123"\n',
+                               ": check [trim] enabled"),
+                              ("trim = false\n" + CONFIG, ": check [trim]")):
+            with self.subTest(config=named):
+                project.config_path.write_text(config)
+                code, body = pipeline(project, "")
+                self.assertEqual(code, 503)
+                self.assertTrue(body["error"].endswith(named), body["error"])
+
+
+class SharedProcessTests(ServeTestCase):
+    def target_with(self, name, config):
+        target = self.root / name
+        target.mkdir()
+        project = holophyte.config.project.Project.locate(target)
+        project.config_path.parent.mkdir(parents=True)
+        project.config_path.write_text(CONFIG + config)
+        return project
+
+    def test_another_projects_private_patterns_never_redact_this_pipeline(self):
+        command = "curl https://beta-host.example/ping"
+        verify = f'[verify]\nalways = ["{command}"]\n'
+        beta = self.target_with("beta", verify)
+        alpha = self.target_with(
+            "alpha", verify + '[merge]\nprivate_patterns = ["beta-host"]\n')
+        conn = store.open(str(beta.store_path))
+        self.addCleanup(conn.close)
+        store.init(conn)
+        project_id = store.tickets.ensure_project(conn, "team-b", beta.path)
+        ticket = store.tickets.mirror_ticket(
+            conn, project_id, linear_issue_id="issue-KO-11",
+            linear_identifier="KO-11", title="ticket KO-11",
+            acceptance_criteria=["Given KO-11, then it is worked"],
+            verification_commands=["echo ok"], time_box_ms=60 * MIN)
+        store.tickets.transition(conn, ticket, "in_flight")
+        run = store.claim(conn, project_id, ticket)
+        store.pipelines.pin_pipeline(conn, run, standard.NAME,
+                                     standard.resolve(beta))
+        conn.commit()
+
+        def verify_of(project):
+            code, body = pipeline(project, "")
+            self.assertEqual(code, 200)
+            stage, = [stage for stage in body["pipeline"]["stages"]
+                      if stage["id"] == "verify"]
+            return body["pipeline"]["revision"], stage["commands"]["always"]
+
+        self.assertEqual(verify_of(beta), (1, [command]))
+        self.assertNotIn("beta-host", json.dumps(verify_of(alpha)))
+        self.assertEqual(verify_of(beta), (1, [command]))
 
 
 class NoStoreTests(ServeTestCase):

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import threading
 from time import time
 from urllib.parse import parse_qs
 
 import store.read
 from holophyte.admission import project_of
 from holophyte.config.config_tables import board_config
+from holophyte.redact import values_held
 from holophyte.serve.serve_runs import current_secrets
 from holophyte.stages import standard
 from store.pipelines import pipeline_revision
@@ -19,7 +21,8 @@ PIPELINE_PATH = "/pipeline"
 DEFAULT_DAYS = 30
 MAX_DAYS = 365
 DAY_MS = 24 * 60 * 60 * 1000
-SETTING = re.compile(r"\[[A-Za-z0-9_.-]+\]( [A-Za-z0-9_]+)?")
+SETTING = re.compile(r"\[([A-Za-z0-9_.-]+)\](?: ([A-Za-z0-9_]+))?")
+RESOLVING = threading.Lock()
 
 
 def pipeline(project, query):
@@ -35,11 +38,21 @@ def pipeline(project, query):
                               " pipeline cannot be resolved"}
     fresh = dataclasses.replace(project, _config=None)
     try:
+        own = own_patterns(fresh)
+    except SystemExit as error:
+        return 503, {"error": "the project config does not resolve to a"
+                              f" pipeline{setting_without_value(fresh, error)}"}
+    with RESOLVING, values_held(own):
+        return answered(project, fresh, days, secrets)
+
+
+def answered(project, fresh, days, secrets):
+    try:
         document = standard.resolve(fresh)
         board = board_config(fresh)
     except (SystemExit, ValueError) as error:
         return 503, {"error": "the project config does not resolve to a"
-                              f" pipeline{setting_without_value(error)}"}
+                              f" pipeline{setting_without_value(fresh, error)}"}
     since_ms = int(time() * 1000) - days * DAY_MS
     revision, numbers = None, {}
     if project.store_path.exists():
@@ -61,6 +74,15 @@ def pipeline(project, query):
     return 200, standard.scrubbed(body, secrets)
 
 
+def own_patterns(project):
+    merge = project.config().get("merge", {})
+    patterns = merge.get("private_patterns", ()) if isinstance(
+        merge, dict) else ()
+    if not isinstance(patterns, (list, tuple)):
+        return []
+    return [pattern for pattern in patterns if isinstance(pattern, str)]
+
+
 def served_project(conn, project, board):
     if board is None:
         return project_of(conn, project)
@@ -72,6 +94,26 @@ def served_project(conn, project, board):
     return row[0]
 
 
-def setting_without_value(error):
-    found = SETTING.search(str(error).removeprefix("[holo2] "))
-    return "" if found is None else f": check {found.group(0)}"
+def setting_without_value(project, error):
+    text = str(error)
+    for prefix in (f"[holo2] {project.config_path}: ",
+                   f"{project.config_path}: "):
+        if text.startswith(prefix):
+            found = SETTING.match(text[len(prefix):])
+            break
+    else:
+        return ""
+    if found is None:
+        return ""
+    table, key = found.groups()
+    try:
+        value = project.config()
+    except SystemExit:
+        return ""
+    for part in table.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return ""
+        value = value[part]
+    named = (f"[{table}] {key}" if isinstance(value, dict) and key in value
+             else f"[{table}]")
+    return f": check {named}"
