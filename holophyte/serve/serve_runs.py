@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import threading
 from datetime import datetime, timezone
 from time import time
 from urllib.parse import parse_qs
@@ -725,7 +726,15 @@ def run_stages(project, text):
                        "attempts": [attempt._asdict()
                                     for attempt in attempts[lane.id]]}
                       for lane in lanes]}
-    return 200, scrubbed(body, current_secrets(project))
+    secrets = current_secrets(project)
+    if secrets is None:
+        return 503, {"error": "the project config cannot be read, so its"
+                              " secrets cannot be redacted", "run": run.id}
+    return 200, scrubbed(body, secrets)
+
+
+SECRETS_SEEN = {}
+SECRETS_SEEN_LOCK = threading.Lock()
 
 
 def current_secrets(project):
@@ -733,9 +742,13 @@ def current_secrets(project):
     from holophyte.redact import known_secrets
     try:
         on_disk = load_config(project.config_path)
-    except SystemExit:
-        on_disk = {}
-    return known_secrets(project.config()) | known_secrets(on_disk)
+    except (SystemExit, ValueError, OSError):
+        return None
+    found = known_secrets(project.config()) | known_secrets(on_disk)
+    with SECRETS_SEEN_LOCK:
+        seen = SECRETS_SEEN.setdefault(str(project.config_path), set())
+        seen |= found
+        return frozenset(seen)
 
 
 def served_pipeline(pinned):

@@ -1093,7 +1093,10 @@ pinned none) and its own `attempts` in the same shape.
 
 Every string is redacted with the project's known secrets, as on
 `/runs/N/turns`, including any the config file holds at the request
-though it changed after the daemon started. `N` parses as on `/runs/N`: a non-integer is 400, an
+though it changed after the daemon started, and any the daemon has read
+before, so a rotated value stays hidden. When the config file cannot be
+read or parsed, the route answers 503 carrying `error` and `run` and
+serves no stages. `N` parses as on `/runs/N`: a non-integer is 400, an
 integer with no run is 404 carrying `run`. The route writes nothing.
 
 ## `GET /ledger?since=MS`

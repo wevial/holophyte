@@ -225,16 +225,39 @@ class RunStagesTests(ServeTestCase):
         self.assertEqual(body["attempts"][0]["detail"]["error"],
                          "push refused for [redacted]")
 
-    def test_a_secret_configured_after_the_daemon_binds_is_redacted(self):
-        run = self.claim(self.ticket("KO-46"), T0)
+    def secret_after_bind(self, key):
+        run = self.claim(self.ticket(key), T0)
         self.attempt(run, "implement", T0 + MIN, ("fail", "end", T0 + 2 * MIN),
                      detail={"error": f"push refused for {SECRET}"})
         self.conn.commit()
         self.start(CONFIG)
-        (self.db.parent / "config.toml").write_text(
-            CONFIG + f"\n[extra]\napi_key = '{SECRET}'\n")
+        self.config = self.db.parent / "config.toml"
+        self.config.write_text(CONFIG + f"\n[extra]\napi_key = '{SECRET}'\n")
         self.assertEqual(self.stages(run)["attempts"][0]["detail"]["error"],
                          "push refused for [redacted]")
+        return run
+
+    def test_a_secret_configured_after_the_daemon_binds_is_redacted(self):
+        self.secret_after_bind("KO-46")
+
+    def test_a_rotated_secret_stays_redacted_once_the_daemon_has_read_it(self):
+        run = self.secret_after_bind("KO-47")
+        self.config.write_text(CONFIG + "\n[extra]\napi_key = 'rotated-0123'\n")
+        self.assertEqual(self.stages(run)["attempts"][0]["detail"]["error"],
+                         "push refused for [redacted]")
+
+    def test_an_unreadable_config_withholds_the_answer(self):
+        for name, broken in (
+                ("malformed", f"{CONFIG}\n[extra]\napi_key = '{SECRET}'\n[["
+                 .encode()),
+                ("latin-1", f"# caf\xe9\n{CONFIG}".encode("latin-1"))):
+            with self.subTest(config=name):
+                run = self.secret_after_bind(f"KO-{48 + len(name)}")
+                self.config.write_bytes(broken)
+                code, _, body = self.request("GET", f"/runs/{run}/stages")
+                self.assertEqual(code, 503)
+                self.assertNotIn("push refused", self.raw_body)
+                self.assertIn("error", body)
 
     def test_a_store_from_before_stage_recording_answers_no_pipeline(self):
         run = self.claim(self.ticket("KO-45"), T0)
