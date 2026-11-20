@@ -1,5 +1,5 @@
-"""The current pipeline and its stages' numbers `GET /pipeline` answers."""
-from typing import TypedDict
+"""The pipeline and harnesses `GET /pipeline` and `GET /harnesses` answer."""
+from typing import Literal, TypedDict
 
 from holophyte.serve.contract_run import PipelineMerge, PipelineStage
 
@@ -37,3 +37,30 @@ class PipelineNumbers(TypedDict):
     pipeline: CurrentPipeline
     window: PipelineWindow
     stages: list[StageNumbers]
+
+
+class HarnessProbe(TypedDict):
+    ok: bool
+    at_ms: int
+    why: str | None
+    seat: str
+
+
+class HarnessModel(TypedDict):
+    id: str
+    source: Literal["curated", "configured"]
+
+
+class Harness(TypedDict):
+    name: str
+    binary: str
+    path: str | None
+    found: bool
+    configured: bool
+    seats: list[str]
+    probe: HarnessProbe | None
+    models: list[HarnessModel]
+
+
+class Harnesses(TypedDict):
+    harnesses: list[Harness]

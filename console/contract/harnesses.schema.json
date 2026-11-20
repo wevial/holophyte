@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Harnesses",
+  "description": "GET /harnesses",
+  "$ref": "#/$defs/Harnesses",
+  "$defs": {
+    "HarnessProbe": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "at_ms": {
+          "type": "integer"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seat": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ok",
+        "at_ms",
+        "why",
+        "seat"
+      ],
+      "additionalProperties": true
+    },
+    "HarnessModel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "curated",
+            "configured"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "source"
+      ],
+      "additionalProperties": true
+    },
+    "Harness": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "binary": {
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "found": {
+          "type": "boolean"
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "seats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HarnessProbe"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HarnessModel"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "binary",
+        "path",
+        "found",
+        "configured",
+        "seats",
+        "probe",
+        "models"
+      ],
+      "additionalProperties": true
+    },
+    "Harnesses": {
+      "type": "object",
+      "properties": {
+        "harnesses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Harness"
+          }
+        }
+      },
+      "required": [
+        "harnesses"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

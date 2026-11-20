@@ -140,6 +140,8 @@ Each module, one line:
 - `holophyte/config/serve_settings.py` — the `[console]` and `[serve]` readers.
 - `holophyte/config/review_settings.py` — the `[review]` reader: the
   blast-radius path lists and the fan-in and packages thresholds.
+- `holophyte/config/pipeline_settings.py` — the `[pipeline.notes]` reader:
+  the note targets, each a string of at most 4000 characters.
 - `holophyte/revert/__init__.py` — the `revert` package; empty.
 - `holophyte/revert/settings.py` — the `[revert]` reader: `enabled` and the
   `refuse_paths` globs, each compiled, checked at startup with the other
@@ -563,6 +565,9 @@ Each module, one line:
 - `holophyte/serve/serve_pipeline.py` — the daemon's `GET /pipeline`:
   the pipeline the project's config resolves to now, its pinned revision,
   and each stage's numbers over a window of days.
+- `holophyte/serve/serve_harnesses.py` — the daemon's `GET /harnesses`:
+  each registered harness, the binary it would run and whether the host
+  has it, the seats on it, their newest probe and the models it offers.
 - `holophyte/serve/day_log.py` — the `GET /ledger` rows the ledger table
   does not hold: a `park` row for each park waiting on the maintainer and a
   `failure` row for each failed run with no `failure` ledger row.
@@ -604,7 +609,8 @@ Each module, one line:
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
 - `holophyte/serve/contract_pipeline.py` — the current pipeline and its
-  stages' numbers `GET /pipeline` answers, as the contract declares them.
+  stages' numbers `GET /pipeline` answers, and the harnesses
+  `GET /harnesses` answers, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
   committed files; it knows no route.
@@ -626,14 +632,19 @@ Each module, one line:
   under its scaled budget, the run cap and the transport retry.
 - `holophyte/stages/standard.py` — `resolve()`: the "Holophyte standard"
   pipeline as a versioned document of typed stages, read from the project's
-  config with its primary seat labels.
+  config with its primary seat labels and the `[pipeline.notes]` the pin
+  read beside it, guarded so a failed notes read still pins the pipeline.
+- `holophyte/stages/notes.py` — the notes block a prompt carries: the
+  project's note for one target in its fixed frame, read from the run's
+  pinned pipeline, or from the config when the run pinned none.
 - `holophyte/stages/record.py` — pins a run's pipeline after its profile:
   inherited by a continuation, resolved fresh otherwise; `Attempt` and
   `skip()` record the implement, trim, verify, review and merge gate
   attempts with the roles the pinned document gives each stage; `waiting()`
   opens a park's attempt labelled by its kind, and `release()` closes it
-  from the release that ended the park; a store write or read that fails
-  leaves a `stage_record_failed` event and never stops the run.
+  from the release that ended the park; `notes_block()` reads a prompt's
+  notes the same guarded way; a store write or read that fails leaves a
+  `stage_record_failed` event and never stops the run.
 - `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
   and records a run's implementer profile, and scopes the run's project to it.
 - `holophyte/loop/complexity.py` — the complexity question a claimed run

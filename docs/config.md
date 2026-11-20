@@ -2194,6 +2194,50 @@ budget_min = 15
 An `enabled` that is not a boolean, a `budget_min` that is not an integer of
 at least 1, or any other key is a startup error naming the key.
 
+## `[pipeline]`
+
+The run's pipeline settings. A run pins the "Holophyte standard" pipeline it
+was claimed with; the settings below are part of that pinned document, so a
+change reaches the next run, never a run already under way.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `notes` | Default: absent (no notes) | The `[pipeline.notes]` table below. |
+
+## `[pipeline.notes]`
+
+Add-only text a project appends to the prompt one part of the pipeline
+uses. A note never replaces the built-in prompt: it goes in one fixed notes
+block after the built-in instructions and before the prompt's fixed tail
+(the ticket and its criteria, the reply format, the review rules), framed
+so that where it conflicts with those, those win. A run reads its notes
+from its pinned pipeline document, so a note edited mid-run reaches the
+next run; a run with no pinned pipeline reads the config. A notes read that
+fails sends the prompt without notes and records `stage_record_failed`.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `implement` | Default: empty (no note) | String of at most 4000 characters; added to the first implement turn's prompt, ahead of the ticket and the closing instructions. |
+| `review` | Default: empty (no note) | String of at most 4000 characters; added to each review round's prompt, ahead of its reply format. |
+| `trim` | Default: empty (no note) | String of at most 4000 characters; added to the trim turn's prompt, ahead of its protected files and hard rules. |
+| `critic` | Default: empty (no note) | String of at most 4000 characters; accepted and pinned, not yet added to the critic's prompt. |
+| `pr_writer` | Default: empty (no note) | String of at most 4000 characters; accepted and pinned, not yet added to the PR-text writer's prompt. |
+| `babysit_reply` | Default: empty (no note) | String of at most 4000 characters; accepted and pinned, not yet added to the babysitter's thread replies. |
+
+```toml
+[pipeline.notes]
+review = "Check the migration notes against the schema change."
+```
+
+A fresh run reads its notes from the config file as it stands at its claim,
+even mid-loop, and pins each note's text verbatim, less any credential that
+file or the loop's config holds. The shadow reviewer gets
+the run's pinned `review` note too. An empty or whitespace-only note is no
+note. A project with no note pins
+the same document, revision and digest as one without the table. An unknown
+key, a value that is not a string or a note over 4000 characters is a
+startup error naming the key and the accepted keys.
+
 ## `[scout]`
 
 A scout run's routes and budget: one lead route and the helper routes it

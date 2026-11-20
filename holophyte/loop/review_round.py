@@ -147,7 +147,7 @@ def _evidence_brief(project, wt, task_id, ticket):
 
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
-                 witness="", earlier="", seated=False):
+                 witness="", earlier="", notes="", seated=False):
     schema_tail = (f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
                    "guardrail follow_up.")
     brief = council.reply_brief(schema_tail) if seated else reply_brief(
@@ -178,6 +178,7 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         + scope_brief(wt, ticket, base_sha, sha)
         + trim_brief(wt, base_sha, sha)
         + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
+        + notes
         + brief)
 
 
@@ -197,6 +198,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                           verify_cmd, criteria, mode, ok, out, stale,
                           witness=witness,
                           earlier=earlier + stuck_review.settled(conn, run_id),
+                          notes=record.notes_block(project, conn, run_id,
+                                                   "review"),
                           seated=bool(seats))
     primary = (partial(council.run_round, project, conn, run_id, wt, base_sha,
                        sha, prompt, rnd, seats, criteria, agent) if seats else

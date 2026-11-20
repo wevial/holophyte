@@ -62,6 +62,7 @@ from holophyte.serve.serve_config import (
     write_config,
 )
 from holophyte.serve.serve_findings import findings
+from holophyte.serve.serve_harnesses import HARNESSES_PATH, harnesses
 from holophyte.serve.serve_history import flow, history
 from holophyte.serve.serve_levers import LEVERS, holds
 from holophyte.serve.serve_merge import (
@@ -139,7 +140,7 @@ TICKET_PATH = re.compile(r"^/tickets/([^/]+)$")
 JSON_PATHS = frozenset({"/status", "/runs", "/shipped", "/ledger", "/history", "/holds",
                         "/flow", "/attention", "/board", "/report", "/findings",
                         "/tickets", "/search", SCOUTS_PATH, MERGE_QUEUE_PATH,
-                        PIPELINE_PATH})
+                        PIPELINE_PATH, HARNESSES_PATH})
 CONFIG_READS = frozenset({CONFIG_PATH, PATH_MATCHES_PATH, TRACKED_TREE_PATH})
 # A None `token` or `action_token` is open; a None `prefix` is a project daemon.
 Scope = collections.namedtuple(
@@ -295,7 +296,7 @@ QUERY_ROUTES = {"/runs": runs, "/shipped": shipped, "/ledger": ledger,
                 "/findings": findings, "/tickets": ticket_search,
                 "/search": search,
                 SCOUTS_PATH: scouts, MERGE_QUEUE_PATH: merge_queue,
-                PIPELINE_PATH: pipeline}
+                PIPELINE_PATH: pipeline, HARNESSES_PATH: harnesses}
 
 
 def shaped_route(path):
