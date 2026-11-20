@@ -31,7 +31,10 @@ def brief(criteria):
     pairs = criterion_ids.numbered(None, None, criteria)
     if not pairs:
         return ""
-    listed = "\n".join(f"C{n}. {text}" for n, text in pairs)
+    return brief_text("\n".join(f"C{n}. {text}" for n, text in pairs))
+
+
+def brief_text(listed):
     return ("\n\nAcceptance criterion ids:\n" + listed
             + "\n\nWhen an acceptance criterion cannot be met as written (the data "
             "or contract it names lacks a field, two criteria contradict each "

@@ -1184,6 +1184,62 @@ a setting the pipeline cannot resolve, makes the route answer 503 carrying
 `error`, which names the setting, redacted like the rest of the answer,
 but never its value.
 
+## `GET /pipeline/prompts/KEY`
+
+```json
+{"target": "critic",
+ "prompt": "You are the critic. ...Ticket ⟨ticket id⟩: ⟨title⟩\n...Notes from this project. ...End your reply with ...",
+ "builtin": "You are the critic. ...Ticket ⟨ticket id⟩: ⟨title⟩\n...",
+ "notes": "Notes from this project. ...\n\nTreat a renamed module as the same module.\n\n",
+ "tail": "End your reply with exactly one of these lines, ...",
+ "placeholders": [{"name": "ticket id", "stands_for": "the ticket's key"},
+                  {"name": "title", "stands_for": "the ticket's title"}]}
+```
+
+The prompt a `[pipeline.notes]` target would send in the next run, with
+the project's current note for it in place. `KEY` is the note's key, one
+of `implement`, `review`, `trim`, `critic`, `pr_writer` and
+`babysit_reply`, and `target` echoes it; any other answers 404 carrying
+`error`, which names the six. It is served
+whatever `[serve] config_edit` says, behind the read token, reads the
+config file again at each request, and writes nothing. A run already
+claimed keeps the notes its pinned pipeline holds; this shows the next
+run's.
+
+The prompt is rendered through the same text builder the loop calls, so
+everything the builder fixes is the loop's own text. Each part a run
+supplies (the ticket, its criteria, the diff, verify output, earlier review
+rounds, a thread) is a stand-in written `⟨name⟩`; where a part comes with
+rules, such as the criteria's CRITERION lines or trim's protected test
+files, the rules are rendered and only the run's own listing is a
+stand-in. `placeholders` lists each stand-in `prompt` holds, in order of
+first appearance, as its `name` and `stands_for`, a sentence saying what a
+run puts there. Text from the project's config that happens to hold
+`⟨…⟩` is shown as written and is never a stand-in. Adjacent
+stand-ins with no text between them may each be empty in a real run. The
+preview renders a run where every part is present: a ticket with criteria
+and verify commands that passed, a resumed branch whose merge of main
+stopped on conflicts, a requeue with unresolved findings, an escalation
+from an implementer profile, a waiting hint and an amending steering note,
+a reproduction commit, a criterion witnessed once, a witness pre-check that found gaps, a
+later review round with trim commits that record a trade-off, a
+test-heavy diff for trim, a ticket with evidence states, an approved
+design, a pull request template and a convention file. Config gates hold:
+with no `[merge] ui_capture`, the implement prompt has no capture brief,
+as in a run. A run
+missing one of them also loses the fixed text that introduces it.
+
+`prompt` is `builtin`, then `notes`, then `tail`, joined. `builtin` is
+the prompt's instructions ahead of the notes block, `notes` the block the
+note is rendered in, its fixed frame then the note, or empty when the
+project sets no note for `KEY`, and `tail` the fixed text after it that
+a note cannot change: the reply format, the review rules or the ticket
+itself, by target. Every string is redacted with the project's known
+secrets and, as regular expressions, its `[merge] private_patterns`; a config file that cannot be read or parsed, or a note the
+config refuses, makes the route answer 503 carrying `error`. `target` and
+the stand-ins are never redacted, so `placeholders` always matches
+`prompt`.
+
 ## `GET /harnesses`
 
 ```json

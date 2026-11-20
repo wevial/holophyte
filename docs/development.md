@@ -564,7 +564,8 @@ Each module, one line:
   and `/runs/N/files`, their query parsers and the origin-link pair.
 - `holophyte/serve/serve_pipeline.py` — the daemon's `GET /pipeline`:
   the pipeline the project's config resolves to now, its pinned revision,
-  and each stage's numbers over a window of days.
+  and each stage's numbers over a window of days; and
+  `GET /pipeline/prompts/KEY`, a note target's prompt preview.
 - `holophyte/serve/serve_harnesses.py` — the daemon's `GET /harnesses`:
   each registered harness, the binary it would run and whether the host
   has it, the seats on it, their newest probe and the models it offers.
@@ -609,7 +610,8 @@ Each module, one line:
   and `/findings` serve it, its per-round criteria judgement, and the
   run's witness pre-check, as the contract declares them.
 - `holophyte/serve/contract_pipeline.py` — the current pipeline and its
-  stages' numbers `GET /pipeline` answers, and the harnesses
+  stages' numbers `GET /pipeline` answers, a note target's prompt
+  `GET /pipeline/prompts/KEY` answers, and the harnesses
   `GET /harnesses` answers, as the contract declares them.
 - `holophyte/serve/contract_emit.py` — a `TypedDict` turned into JSON
   Schema, JSON Schema into zod source, and the drift check against the
@@ -637,6 +639,10 @@ Each module, one line:
 - `holophyte/stages/notes.py` — the notes block a prompt carries: the
   project's note for one target in its fixed frame, read from the run's
   pinned pipeline, or from the config when the run pinned none.
+- `holophyte/stages/previews.py` — each note target's prompt as the next
+  run would send it: the target's own text builder fed a `⟨name⟩` stand-in
+  for each run-specific part, split into the built-in text, the current
+  notes block and the fixed tail.
 - `holophyte/stages/record.py` — pins a run's pipeline after its profile:
   inherited by a continuation, resolved fresh otherwise; `Attempt` and
   `skip()` record the implement, trim, verify, review and merge gate

@@ -84,6 +84,10 @@ def _verify_brief(verify_cmd, ok, out):
                 for row in getattr(out, "results", []))
     if not verify_cmd and not count:
         return ""
+    return verify_text(count, ok, out)
+
+
+def verify_text(count, ok, out):
     return (f"The ticket's verification commands and the project's baseline "
             f"({count} commands) were run and "
             f"{'PASSED' if ok else 'FAILED with output below'}:\n{out}\n"
@@ -148,6 +152,23 @@ def _evidence_brief(project, wt, task_id, ticket):
 def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
                  verify_cmd, criteria, mode, ok, out, stale=(), evidence=True,
                  witness="", earlier="", notes="", seated=False):
+    return review_text(
+        project, sha, review_refs(run_id), ticket, mode,
+        follow_up_place(criteria), notes,
+        verify=_verify_brief(verify_cmd, ok, out),
+        criteria=(criteria_brief(criteria, wt=wt)
+                  + witness_once.reviewer_brief(criteria)),
+        witness=witness, stale=stale_approval_brief(stale), earlier=earlier,
+        tests=tests_brief(wt), scope=scope_brief(wt, ticket, base_sha, sha),
+        trim=trim_brief(wt, base_sha, sha),
+        evidence=(_evidence_brief(project, wt, task_id, ticket)
+                  if evidence else ""),
+        seated=seated)
+
+
+def review_text(project, sha, refs, ticket, mode, place, notes, *, verify,
+                criteria, witness, stale, earlier, tests, scope, trim,
+                evidence, seated):
     schema_tail = (f" {ONE_PASS_RULE} {CORNER_CASE_RULE} Give such a case as a "
                    "guardrail follow_up.")
     brief = council.reply_brief(schema_tail) if seated else reply_brief(
@@ -157,27 +178,17 @@ def round_prompt(project, run_id, task_id, wt, base_sha, sha, ticket,
         "If REQUEST_CHANGES, list only concrete blockers, each as one list "
         f"item, {FINDING_FORMAT}. {ONE_PASS_RULE} {CORNER_CASE_RULE} Write "
         "such a case as a `FOLLOW_UP(guardrail): TEXT @ PATH:LINE` line "
-        f"before {follow_up_place(criteria)}.",
+        f"before {place}.",
         schema_tail)
     return (
         f"You are a READ-ONLY code reviewer. Review commit {sha} using "
-        f"{review_refs(run_id)[0]} as the frozen base and "
-        f"{review_refs(run_id)[1]} as the candidate "
+        f"{refs[0]} as the frozen base and {refs[1]} as the candidate "
         "in this repo against the ticket below. The ticket is the "
         "contract, acceptance criteria included: a candidate that "
         "leaves a criterion unmet or unwitnessed is not approvable.\n\n"
         f"{ticket}\n\n"
-        + _verify_brief(verify_cmd, ok, out)
-        + criteria_brief(criteria, wt=wt)
-        + witness_once.reviewer_brief(criteria)
-        + witness
-        + stale_approval_brief(stale)
-        + earlier
-        + verified_brief(mode)
-        + tests_brief(wt)
-        + scope_brief(wt, ticket, base_sha, sha)
-        + trim_brief(wt, base_sha, sha)
-        + (_evidence_brief(project, wt, task_id, ticket) if evidence else "")
+        + verify + criteria + witness + stale + earlier
+        + verified_brief(mode) + tests + scope + trim + evidence
         + notes
         + brief)
 

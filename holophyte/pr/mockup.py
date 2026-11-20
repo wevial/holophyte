@@ -417,8 +417,11 @@ def _design(wt):
 
 
 def implementer_brief(wt):
-    design = _design(wt)
-    return BRIEF_HEAD + "\n".join(design) + "\n" + BRIEF_TAIL if design else ""
+    return design_text("\n".join(_design(wt)))
+
+
+def design_text(listed):
+    return BRIEF_HEAD + listed + "\n" + BRIEF_TAIL if listed else ""
 
 
 def clear_captured(wt):

@@ -1,4 +1,4 @@
-"""`GET /pipeline`: the pipeline the config resolves now, with stage numbers."""
+"""`GET /pipeline`: the config's pipeline now, its stage numbers and prompts."""
 from __future__ import annotations
 
 import dataclasses
@@ -10,14 +10,16 @@ from urllib.parse import parse_qs
 import store.read
 from holophyte.admission import project_of
 from holophyte.config.config_tables import board_config
-from holophyte.redact import values_held
+from holophyte.config.pipeline_settings import NOTE_TARGETS
+from holophyte.redact import REDACTED, values_held
 from holophyte.serve.serve_runs import current_secrets
-from holophyte.stages import standard
+from holophyte.stages import previews, standard
 from store.pipelines import pipeline_revision
 from store.project_paths import canonical_projects
 from store.stages import stage_numbers
 
 PIPELINE_PATH = "/pipeline"
+PROMPT_PATH = re.compile(r"^/pipeline/prompts/([^/]+)$")
 DEFAULT_DAYS = 30
 MAX_DAYS = 365
 DAY_MS = 24 * 60 * 60 * 1000
@@ -31,18 +33,66 @@ def pipeline(project, query):
     if not re.fullmatch(r"\d{1,3}", days) or not 1 <= int(days) <= MAX_DAYS:
         return 400, {"error": f"days takes a whole number from 1 to"
                               f" {MAX_DAYS}, not {days!r}"}
-    days = int(days)
+    return config_held(project, lambda fresh, secrets, _private: answered(
+        project, fresh, int(days), secrets))
+
+
+def pipeline_prompt(project, target):
+    if target not in previews.RENDERS:
+        return 404, {"error": "no prompt takes notes by that name; the"
+                              " [pipeline.notes] keys are"
+                              f" {', '.join(NOTE_TARGETS)}"}
+    return config_held(project, lambda fresh, secrets, private:
+                       prompt_answered(fresh, target, secrets, private))
+
+
+def config_held(project, answer):
     fresh = dataclasses.replace(project, _config=None)
+    own = readable_patterns(fresh)
+    with RESOLVING:
+        later = dataclasses.replace(project, _config=None)
+        also = readable_patterns(later)
+        reads = [read.config() for read, patterns in ((fresh, own),
+                                                      (later, also))
+                 if patterns is not None]
+        with values_held((own or []) + (also or [])):
+            secrets = current_secrets(
+                project, *reads,
+                on_disk=later.config() if also is not None else None)
+            private = compiled((own or []) + (also or []))
+            if secrets is None or len(reads) < 2 or private is None:
+                return 503, {"error": "the project config cannot be read, so"
+                                      " its pipeline cannot be resolved"}
+            return answer(fresh, secrets, private)
+
+
+def compiled(patterns):
     try:
-        own = own_patterns(fresh)
-    except SystemExit:
-        own = None
-    with RESOLVING, values_held(own or ()):
-        secrets = current_secrets(project)
-        if secrets is None or own is None:
-            return 503, {"error": "the project config cannot be read, so its"
-                                  " pipeline cannot be resolved"}
-        return answered(project, fresh, days, secrets)
+        return [re.compile(pattern) for pattern in patterns]
+    except (re.error, OverflowError, RecursionError):
+        return None
+
+
+def readable_patterns(project):
+    try:
+        return own_patterns(project)
+    except (SystemExit, OSError, ValueError):
+        return None
+
+
+def prompt_answered(fresh, target, secrets, private):
+    def scrub(text):
+        text = standard.scrubbed(text, secrets)
+        for pattern in private:
+            text = pattern.sub(REDACTED, text)
+        return text
+    try:
+        body = previews.preview(fresh, target, scrub)
+    except (SystemExit, ValueError) as error:
+        named = scrub(setting_named(fresh, error))
+        return 503, {"error": "the project config does not resolve to a"
+                              f" prompt{named}"}
+    return 200, body
 
 
 def answered(project, fresh, days, secrets):
