@@ -1,10 +1,12 @@
+from holophyte.config.reader import load_config
+
 NOTE_TARGETS = ("implement", "review", "trim", "critic", "pr_writer",
                 "babysit_reply")
 NOTE_LIMIT = 4000
 
 
 def pipeline_notes(project):
-    table = project.config().get("pipeline", {})
+    table = load_config(project.config_path).get("pipeline", {})
     if not isinstance(table, dict):
         raise SystemExit(
             f"[holo2] {project.config_path}: [pipeline] must be a table, got "
@@ -26,7 +28,7 @@ def pipeline_notes(project):
                        "allowed")
         else:
             if value.strip():
-                found[key] = value.strip()
+                found[key] = value
             continue
         raise SystemExit(f"[holo2] {project.config_path}: [pipeline.notes] "
                          f"{key}: {problem}; {accepts}")

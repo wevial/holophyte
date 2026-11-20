@@ -29,6 +29,7 @@ from holophyte.redact import safe_print as print
 from holophyte.review import review_runner
 from holophyte.review.json_reply import read_reply
 from holophyte.review.reply_parsing import criteria_findings, parse_findings
+from holophyte.stages import record
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,8 @@ def run_shadow(project, conn, run_id, brief):
     cut = []
     try:
         try:
-            _attempt(project, run_id, seat, brief, branch, wt, result, cut)
+            _attempt(project, run_id, seat, brief, branch, wt, result, cut,
+                     record.notes_block(project, conn, run_id, "review"))
         except Exception as error:
             result["outcome"], result["detail"] = "error", str(error)
         if result["detail"] is not None:
@@ -82,7 +84,7 @@ def run_shadow(project, conn, run_id, brief):
     return result
 
 
-def _attempt(project, run_id, seat, brief, branch, wt, result, cut):
+def _attempt(project, run_id, seat, brief, branch, wt, result, cut, notes):
     probe = probe_launch(project, seat.turn(PROBE_GOAL), PROBE_TIMEOUT, SHADOW_KEY,
                          claude=seat.name == "claude")
     if not probe.ok:
@@ -123,10 +125,10 @@ def _attempt(project, run_id, seat, brief, branch, wt, result, cut):
                          "verified" if ok else "verify_failed")
     if result["outcome"] in ("verified", "verify_failed"):
         result["review"] = _review(project, run_id, brief, wt, branch, head, ok,
-                                   out)
+                                   out, notes)
 
 
-def _review(project, run_id, brief, wt, branch, head, ok, out):
+def _review(project, run_id, brief, wt, branch, head, ok, out, notes):
     if "reviewer" in config_table(project, "agents"):
         return {"verdict": "skipped", "reason": "configured reviewer"}
     model, effort = review_route(project)
@@ -138,7 +140,8 @@ def _review(project, run_id, brief, wt, branch, head, ok, out):
     try:
         prompt = round_prompt(project, run_id, brief.task_id, wt, brief.base_sha,
                               head, brief.ticket, brief.verify, brief.criteria,
-                              review_mode(project), ok, out, evidence=False)
+                              review_mode(project), ok, out, evidence=False,
+                              notes=notes)
         prompt = _as_primary(prompt, wt, branch, brief.branch)
         reply = review_runner.run_review(
             repo=wt, run_id=run_id, base_sha=brief.base_sha, candidate_sha=head,
