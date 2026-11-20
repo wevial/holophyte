@@ -115,20 +115,19 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
     seated = together([partial(ask, project, conn, run_id, wt, base_sha, sha,
                                prompt, run_agent, number, seat)
                        for number, seat in enumerate(seats, 1)])
+    absent = []
     for seat in seated:
         record(conn, run_id, rnd, seat)
         if seat.status != "answered":
-            print(f"[holo2] round {rnd}: council seat {seat.number} "
-                  f"({seat.route}) {seat.status}: {seat.reason}")
+            absent.append(f"seat {seat.number} ({seat.route}) {seat.status}: "
+                          f"{seat.reason}")
+            print(f"[holo2] round {rnd}: council {absent[-1]}")
     answered = [seat for seat in seated if seat.status == "answered"]
     if len(answered) < QUORUM:
-        absent = "; ".join(f"seat {seat.number} ({seat.route}) {seat.status}: "
-                           f"{seat.reason}" for seat in seated
-                           if seat.status != "answered")
         raise InfraFailure(
             f"council review had {len(answered)} of {len(seated)} seats "
-            f"answer, under the quorum of {QUORUM}: {absent}; candidate "
-            f"preserved at {sha}", "review_route")
+            f"answer, under the quorum of {QUORUM}: {'; '.join(absent)}; "
+            f"candidate preserved at {sha}", "review_route")
     value = merged([seat.value for seat in answered])
     reply = RenderedReply(rendered(value))
     reply.json_reply = value
