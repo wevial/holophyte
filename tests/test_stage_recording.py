@@ -176,7 +176,8 @@ class StageRecordingTests(LoopFixture):
         implemented = self.git("rev-parse", "main^2").strip()
         self.assertEqual(self.outcomes(), [
             ("implement", 1, "pass", "next"), ("trim", 1, "skipped", "next"),
-            ("verify", 1, "pass", "next"), ("review", 1, "pass", "next")])
+            ("verify", 1, "pass", "next"), ("review", 1, "pass", "next"),
+            ("merge_gate", 1, "pass", "next")])
         details = {stage: detail for stage, _, _, _, detail in self.attempts()}
         self.assertEqual(details["trim"]["reason"], "[trim] enabled = false")
         self.assertEqual(
@@ -198,7 +199,7 @@ class StageRecordingTests(LoopFixture):
             ("implement", 1, "pass", "next"), ("trim", 1, "skipped", "next"),
             ("verify", 1, "pass", "next"), ("review", 1, "fail", "on_fail"),
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
-            ("review", 2, "pass", "next")])
+            ("review", 2, "pass", "next"), ("merge_gate", 1, "pass", "next")])
         self.assertEqual(recorded[4][4]["kind"], "fix")
         self.assertEqual(self.shas("verify", 2), (fixed, fixed))
         self.assertEqual(self.shas("review", 1)[0], implemented)
@@ -320,7 +321,8 @@ class StageRecordingTests(LoopFixture):
              self.attempts()][4:], [
                 ("implement", 2, "pass", "fix"), ("verify", 2, "fail", None),
                 ("implement", 3, "pass", "self_check"),
-                ("verify", 3, "pass", None), ("review", 2, "pass", None)])
+                ("verify", 3, "pass", None), ("review", 2, "pass", None),
+                ("merge_gate", 1, "pass", None)])
         fixed = self.git("rev-parse", "main^2^").strip()
         self.assertEqual(self.shas("verify", 2)[0], fixed)
 
@@ -334,7 +336,8 @@ class StageRecordingTests(LoopFixture):
         fixed = self.git("rev-parse", "main^2").strip()
         self.assertEqual(self.outcomes()[4:], [
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
-            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
+            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next"),
+            ("merge_gate", 1, "pass", "next")])
         self.assertEqual(self.shas("verify", 3), (fixed, fixed))
 
     def test_a_cached_rerun_whose_baseline_runs_again_is_recorded(self):
@@ -347,7 +350,8 @@ class StageRecordingTests(LoopFixture):
         fixed = self.git("rev-parse", "main^2").strip()
         self.assertEqual(self.outcomes()[4:], [
             ("implement", 2, "pass", "next"), ("verify", 2, "pass", "next"),
-            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next")])
+            ("verify", 3, "pass", "next"), ("review", 2, "pass", "next"),
+            ("merge_gate", 1, "pass", "next")])
         self.assertEqual(self.shas("verify", 3), (fixed, fixed))
 
     def test_a_self_check_that_leaves_head_unchanged_records_no_cached_rerun(self):
@@ -362,7 +366,7 @@ class StageRecordingTests(LoopFixture):
              self.attempts()][4:], [
                 ("implement", 2, "pass", "fix"), ("verify", 2, "pass", None),
                 ("implement", 3, "pass", "self_check"),
-                ("review", 2, "pass", None)])
+                ("review", 2, "pass", None), ("merge_gate", 1, "pass", None)])
 
     def cached_rerun(self, ends):
         real, calls, self.ran = holophyte.loop.review_round._checked, [], None

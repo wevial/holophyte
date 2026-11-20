@@ -331,7 +331,7 @@ def _round_contract(conn, run_id, ticket, claimed, pending):
 
 def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
             contracts, rnd):
-    head = sh(["git", "rev-parse", "HEAD"], cwd=wt)
+    head = record.head(conn, run_id, wt)
     if record.verified_last(conn, run_id, head) and cached_pass(
             run_id, verify_cmd, wt, verify_config(project).timeout_sec):
         launched = commands_launched()

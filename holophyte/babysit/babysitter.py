@@ -56,6 +56,7 @@ from holophyte.babysit.thread_text import (  # noqa: F401
 from holophyte.board.projection import ledger
 from holophyte.config.config_tables import merge_config, verify_config
 from holophyte.loop.gates import (
+    HUMAN_MERGE,
     InfraFailure,
     RunFailure,
     VerificationOutput,
@@ -408,8 +409,7 @@ def _ready(released, sha):
     if released != sha:
         covered = (f"fix commits since {released[:12]} reviewed at {sha[:12]}; "
                    if released else f"the candidate reviewed at {sha[:12]}; ")
-    return (f"ready to merge; {covered}waiting for a human to say merge"
-            " ([merge] approve = \"human\")")
+    return f"ready to merge; {covered}waiting for {HUMAN_MERGE}"
 
 
 def _fix_answers(conn, run_id, rnd, fix_note):

@@ -30,6 +30,7 @@ from holophyte.pr import (
 from holophyte.redact import safe_print as print
 from holophyte.review import consolidate
 from holophyte.review.briefs import main_ref
+from holophyte.stages import record
 from holophyte.tickets import ticket_template
 from store import operator_notes
 
@@ -567,6 +568,8 @@ def _park_on_pr(project, conn, run_id, provider, task_id, branch, sha, pull,
                                    f"the approval of {sha} waits with the park",
                                    level="detail",
                                    payload=json.dumps({"sha": sha}))
+        record.waiting(conn, run_id, sha,
+                       lambda: merge_config(project).approve)
     print(f"[holo2] parked on {pull.url}: {babysitter.gist(why)}")
     ledger(conn, run_id, task_id, "note",
            f"PR OPEN: {pull.url}\n{why}\nBranch {branch} is pushed at {sha}"

@@ -619,8 +619,10 @@ Each module, one line:
   config with its primary seat labels.
 - `holophyte/stages/record.py` — pins a run's pipeline after its profile:
   inherited by a continuation, resolved fresh otherwise; `Attempt` and
-  `skip()` record the implement, trim, verify and review attempts with the
-  roles the pinned document gives each stage; a store write that fails
+  `skip()` record the implement, trim, verify, review and merge gate
+  attempts with the roles the pinned document gives each stage; `waiting()`
+  opens a park's attempt labelled by its kind, and `release()` closes it
+  from the release that ended the park; a store write or read that fails
   leaves a `stage_record_failed` event and never stops the run.
 - `holophyte/loop/implementer_profile.py` — `profiled_run`: resolves, probes
   and records a run's implementer profile, and scopes the run's project to it.

@@ -3,7 +3,7 @@ import json
 from time import time
 
 import store
-from holophyte.loop.gates import InfraFailure, sh
+from holophyte.loop.gates import HUMAN_MERGE, InfraFailure, sh
 from holophyte.loop.implementer_profile import latest_profile
 from holophyte.loop.stop import resumes
 from holophyte.stages import standard
@@ -11,6 +11,8 @@ from store import pipelines, stages
 
 FAILED = "stage_record_failed"
 REFUSED = object()
+RELEASES = {"approve": ("pass", "next"), "babysit": ("fail", "on_fail"),
+            "operator_note": ("fail", "on_fail")}
 
 
 def guarded(conn, run_id, write, record):
@@ -123,6 +125,12 @@ class Attempt:
         return sh(["git", "rev-parse", "HEAD"], cwd=self.wt)
 
 
+def head(conn, run_id, wt):
+    found = guarded(conn, run_id, "stage_head",
+                    lambda: sh(["git", "rev-parse", "HEAD"], cwd=wt))
+    return None if found is REFUSED else found
+
+
 class Deferred(Attempt):
     def __init__(self, conn, run_id, stage_id, sha, detail, wt=None):
         super().__init__(None, None, stage_id, sha, detail, wt)
@@ -163,3 +171,52 @@ def skip(conn, run_id, stage_id, reason, sha=None):
     if conn is not None and run_id is not None:
         guarded(conn, run_id, "skip_stage",
                 lambda: stages.skip_stage(conn, run_id, stage_id, reason, sha))
+
+
+def waiting(conn, run_id, sha, approve):
+    if conn is None or run_id is None:
+        return
+    detail = guarded(conn, run_id, "stage_read",
+                     lambda: _park_detail(conn, run_id, approve()))
+    Attempt(conn, run_id, "waiting", sha, {} if detail is REFUSED else detail)
+
+
+def _park_detail(conn, run_id, approve):
+    (kind,) = conn.execute("SELECT parkKind FROM runs WHERE id = ?",
+                           (run_id,)).fetchone()
+    (summary,) = conn.execute(
+        "SELECT summary FROM runEvents WHERE runId = ? AND kind ="
+        " 'phase_change' ORDER BY seq DESC LIMIT 1", (run_id,)).fetchone()
+    reason = summary.partition(": ")[2]
+    if approve == "human" and HUMAN_MERGE in reason:
+        kind = "approval"
+    return {"kind": kind, "reason": reason, "approve": approve}
+
+
+def release(run):
+    conn, run_id = run.conn, run.run_id
+    if conn is None or run_id is None:
+        return
+    parked = guarded(conn, run_id, "stage_read", lambda: conn.execute(
+        "SELECT s.id, s.runId, s.startedAt, s.inputSha FROM stageAttempts s"
+        " JOIN runs old ON old.id = s.runId JOIN runs current"
+        " ON current.ticketId = old.ticketId WHERE current.id = ?"
+        " AND old.id != current.id AND s.stageId = 'waiting'"
+        " AND s.endedAt IS NULL", (run_id,)).fetchall())
+    for attempt_id, parked_run, opened, sha in ([] if parked is REFUSED
+                                                else parked):
+        guarded(conn, run_id, "close_stage", lambda: _released(
+            conn, attempt_id, parked_run, opened, sha))
+
+
+def _released(conn, attempt_id, parked_run, opened, sha):
+    marks = ", ".join("?" * len(RELEASES))
+    row = conn.execute(
+        'SELECT "action", source, at FROM interventions WHERE runId = ?'
+        f' AND "action" IN ({marks}) AND at >= ? ORDER BY at DESC, id DESC'
+        " LIMIT 1", (parked_run, *RELEASES, opened)).fetchone()
+    if row is None:
+        return
+    action, source, at = row
+    stages.close_stage(conn, attempt_id, *RELEASES[action], sha, (),
+                       {"release": action, "source": source}, now=at)
