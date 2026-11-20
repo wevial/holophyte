@@ -8,15 +8,23 @@ from dataclasses import dataclass
 from functools import partial
 from time import monotonic, time
 
+import store
 import store.council
 from holophyte.agents.agent_routes import routes
-from holophyte.agents.agent_turns import family_label
+from holophyte.agents.agent_turns import argv_label, family_label
+from holophyte.babysit.description_review import (
+    hold_for_pr_text,
+    without_description,
+)
+from holophyte.config.agent_settings import agent_command, review_route
+from holophyte.config.config_tables import merge_config
 from holophyte.config.reader import adversary_credential
 from holophyte.loop.gates import InfraFailure
 from holophyte.redact import redact_document
 from holophyte.redact import safe_print as print
-from holophyte.review import review_runner
+from holophyte.review import consolidate, review_runner
 from holophyte.review.json_reply import (
+    CONSOLIDATED_SCHEMA_FILE,
     COUNCIL_SCHEMA_FILE,
     REPLY_BRIEF,
     RenderedReply,
@@ -39,6 +47,9 @@ QUORUM = 2
 SCORE_BRIEF = (" Also give score: your score for the candidate as it stands, an "
                "integer from 0 (not mergeable) to 10 (ready to merge).")
 UNREADABLE = "reply failed the council reply schema twice"
+UNCONSOLIDATED = "reply failed the consolidated reply schema twice"
+SHARED = "raised by two or more seats at the same path and line"
+UNREASONED = "dropped without a reason"
 RANKS = {"not_met": 0, "unwitnessed": 1, "met": 2}
 
 
@@ -147,12 +158,18 @@ def run_round(project, conn, run_id, wt, base_sha, sha, prompt, rnd, seats,
             f"answer, under the quorum of {QUORUM}: {'; '.join(absent)}; "
             f"candidate preserved at {sha}", "review_route")
     value = merged([seat.value for seat in answered], criteria, wt, sha)
+    reply = council_reply(value, answered)
+    reply.council_seats = seated
+    return reply, value["verdict"], ""
+
+
+def council_reply(value, answered):
     reply = RenderedReply(rendered(value))
     reply.json_reply = value
     reply.council_findings = stored_findings(value["findings"])
     reply.council_route = "council " + ", ".join(seat.route
                                                  for seat in answered)
-    return reply, value["verdict"], ""
+    return reply
 
 
 def merged(values, criteria, wt, sha):
@@ -180,6 +197,8 @@ def stored_findings(findings):
                  "category": finding["category"]}
         if finding["line"] is not None and finding["line"] > 0:
             entry["line"] = finding["line"]
+        if "raised_by" in finding:
+            entry["raised_by"] = finding["raised_by"]
         stored.append(entry)
     return redact_document(stored)
 
@@ -230,3 +249,163 @@ def merged_scope(values):
                     "needed", "tangent"):
                 by_path[entry["path"]] = entry
     return list(by_path.values())
+
+
+def consolidator_route(project):
+    argv = agent_command(project, "consolidate", "")
+    if argv is not None:
+        return None, argv_label(argv[:-1])
+    model, effort = review_route(project)
+    route = {"harness": "codex", "model": model, "effort": effort,
+             "credential": None}
+    return route, family_label(route)
+
+
+def consolidated(project, conn, run_id, wt, base_sha, sha, rnd, verdict,
+                 criteria, adversarial, run_agent):
+    seated = verdict.council_seats
+    answered = [seat for seat in seated if seat.status == "answered"]
+    found = consolidate.council_inputs(answered, adversarial or [])
+    route, label = consolidator_route(project)
+    goal = consolidate.council_brief(seated, found, criteria, sha)
+    value, why = consolidator_reply(project, conn, run_id, wt, base_sha, sha,
+                                    goal, route, run_agent)
+    if value is None:
+        summary = (f"round {rnd}: council not consolidated, {why}; the round "
+                   "takes the strictest-wins merge of its seats")
+        print(f"[holo2] {summary}")
+        if conn is not None and run_id is not None:
+            store.record_event(conn, run_id, "council_unconsolidated", summary)
+        return verdict, verdict.json_reply["verdict"]
+    final = ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha)
+    reply = council_reply(final, answered)
+    reply.council_seats = seated
+    reply.consolidated_by = label
+    return reply, final["verdict"]
+
+
+def consolidator_reply(project, conn, run_id, wt, base_sha, sha, goal, route,
+                       run_agent):
+    for _ in range(2):
+        try:
+            reply = run_agent(project, "consolidate",
+                              goal if route else str(goal), wt,
+                              base_sha=base_sha, candidate_sha=sha,
+                              timeout=consolidate.TIMEOUT, conn=conn,
+                              run_id=run_id, family_route=route)
+        except (InfraFailure, OSError, subprocess.SubprocessError) as failure:
+            if not getattr(failure.__cause__, "schema_refused", False):
+                return None, f"the consolidator's route failed: {failure}"
+            reply = ""
+        if getattr(reply, "timed_out", False) or getattr(reply, "exit_code", 0):
+            return None, ("the consolidator's route failed: "
+                          + ("timed out" if getattr(reply, "timed_out", False)
+                             else f"exited {reply.exit_code}"))
+        value = reply_object(str(reply), CONSOLIDATED_SCHEMA_FILE)
+        if value is not None:
+            return value, None
+        goal = retry_brief(goal)
+    return None, f"the consolidator's {UNCONSOLIDATED}"
+
+
+def ruled(conn, run_id, rnd, value, answered, found, criteria, wt, sha):
+    kept, covered = [], set()
+    for finding in value["findings"]:
+        ids = [name for name in dict.fromkeys(finding["raised_by"])
+               if name in found]
+        covered.update(ids)
+        kept.append(dict(finding, raised_by=raisers(found, ids)))
+    held = {spot(finding) for finding in kept if spot(finding)}
+    shared = shared_places(found)
+    dropped, refuted = set(), []
+    for entry in value["refuted"]:
+        ids = [name for name in dict.fromkeys(entry["raised_by"])
+               if name in found and name not in covered
+               and spot(found[name][1]) not in shared]
+        if ids and entry["reason"].strip():
+            dropped.update(ids)
+            refuted.append(dict(entry, raised_by=raisers(found, ids)))
+    restored = {}
+    for name, (_, finding) in found.items():
+        if name in covered or name in dropped or spot(finding) in held:
+            continue
+        restored.setdefault(spot(finding) or name, []).append(name)
+    for at, ids in restored.items():
+        finding = dict(found[ids[0]][1], raised_by=raisers(found, ids))
+        kept.append(finding)
+        record_kept(conn, run_id, rnd, finding,
+                    SHARED if at in shared else UNREASONED)
+    judged = ruled_criteria(value, answered, criteria, wt, sha)
+    approve = not kept and all(entry["status"] == "met" for entry in judged)
+    return {"verdict": "APPROVE" if approve else "REQUEST_CHANGES",
+            "criteria": judged, "findings": kept,
+            "follow_ups": value["follow_ups"],
+            "scope": ruled_scope(value, answered), "refuted": refuted}
+
+
+def spot(finding):
+    path = candidate_path(kept_line(finding["path"]))
+    if not path or finding["line"] is None:
+        return None
+    return path, finding["line"]
+
+
+def raisers(found, ids):
+    return list(dict.fromkeys(found[name][0] for name in ids))
+
+
+def shared_places(found):
+    seats = {}
+    for who, finding in found.values():
+        if who.startswith("seat") and spot(finding):
+            seats.setdefault(spot(finding), set()).add(who)
+    return {at for at, who in seats.items() if len(who) >= 2}
+
+
+def record_kept(conn, run_id, rnd, finding, why):
+    where = consolidate.location({"path": finding["path"] or "",
+                                  "line": finding["line"]})
+    summary = (f"round {rnd}: the council keeps {where} [{finding['severity']}]"
+               f" {message_line(finding['message'])}: {why}")
+    print(f"[holo2] {summary}")
+    if conn is not None and run_id is not None:
+        store.record_event(conn, run_id, "council_kept", summary,
+                           level="detail", payload=json.dumps(
+                               {"round": rnd, "finding": finding,
+                                "reason": why}))
+
+
+def ruled_criteria(value, answered, criteria, wt, sha):
+    seats = [checked(seat.value, criteria, wt, sha) for seat in answered]
+    kept = []
+    for own, *theirs in zip(checked(value, criteria, wt, sha), *seats):
+        worst = min(theirs, key=lambda entry: RANKS[entry[1]])
+        n, status, note, witness = (
+            worst if worst[1] != "met" and not (own[1] == "met" and own[3])
+            else own)
+        kept.append({"id": f"C{n}", "status": status, "reason": note,
+                     "witness": witness})
+    return kept
+
+
+def ruled_scope(value, answered):
+    own = {entry["path"] for entry in value["scope"]}
+    return value["scope"] + [
+        entry for entry in merged_scope([seat.value for seat in answered])
+        if entry["path"] not in own]
+
+
+def detail(verdict):
+    return {"seats": [{"seat": seat.number, "route": seat.route,
+                       "status": seat.status,
+                       "score": (seat.value or {}).get("score")}
+                      for seat in verdict.council_seats],
+            "consolidated_by": getattr(verdict, "consolidated_by", None)}
+
+
+def held_description(project, conn, run_id, verdict):
+    if merge_config(project).mode != "pr":
+        return verdict
+    kept, described = without_description(verdict)
+    hold_for_pr_text(conn, run_id, described)
+    return kept

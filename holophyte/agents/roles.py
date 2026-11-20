@@ -74,6 +74,7 @@ from holophyte.pr.mockup import review_carry
 from holophyte.redact import REDACTED, known_secrets, outbound
 from holophyte.review import review_runner
 from holophyte.review.json_reply import (
+    CONSOLIDATED_SCHEMA_FILE,
     COUNCIL_SCHEMA_FILE,
     SchemaBrief,
     route_brief,
@@ -172,9 +173,10 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
                                      project, goal, cwd, timeout, on_start)
                                  if role == "write" else critic_turn(
                                      project, goal, cwd, timeout, task))
-        if role == "review" and family_route is not None:
-            return seat_review(project, goal, cwd, base_sha, candidate_sha,
-                               conn, run_id, family_route, timeout)
+        if role in ("review", "consolidate") and family_route is not None:
+            return seat_review(project, role, goal, cwd, base_sha,
+                               candidate_sha, conn, run_id, family_route,
+                               timeout)
         record_pending_switch(project, role, conn, run_id)
         kwargs = dict(base_sha=base_sha, candidate_sha=candidate_sha,
                       timeout=timeout, on_start=on_start, conn=conn,
@@ -213,16 +215,18 @@ def agent(project, role, goal, cwd, *, base_sha=None, candidate_sha=None,
         return outage_checked(project, role, output, attempt, conn, run_id)
 
 
-def seat_review(project, goal, cwd, base_sha, candidate_sha, conn, run_id,
-                family_route, timeout):
+def seat_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
+                run_id, family_route, timeout):
     secrets = known_secrets(project.config())
     goal = outbound(str(goal), secrets)
+    schema = (COUNCIL_SCHEMA_FILE if role == "review"
+              else CONSOLIDATED_SCHEMA_FILE)
 
     def launch():
-        return container_review(project, "review", goal, cwd, base_sha,
+        return container_review(project, role, goal, cwd, base_sha,
                                 candidate_sha, conn, run_id, False,
                                 timeout=timeout, family_route=family_route,
-                                reply_schema=COUNCIL_SCHEMA_FILE)
+                                reply_schema=schema)
     if conn is None or run_id is None:
         return launch()
 
@@ -231,9 +235,9 @@ def seat_review(project, goal, cwd, base_sha, candidate_sha, conn, run_id,
                        label=outbound(family_label(family_route), secrets))
         record_turn(conn, run_id, payload)
         if crashed is not None:
-            record_crash(project, conn, run_id, "review",
+            record_crash(project, conn, run_id, role,
                          payload["exit_status"], crashed)
-    return timed_turn(project, "review", "review", launch, ended, family_route)
+    return timed_turn(project, role, role, launch, ended, family_route)
 
 
 def outage_checked(project, role, output, launch, conn, run_id):

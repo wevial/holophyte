@@ -393,7 +393,10 @@ class StoreSurfaceTests(unittest.TestCase):
                                                  "stage_numbers"]),
                                  # HOLO-870: each reviewer seat's row in a
                                  # council review round.
-                                 (store.council, ["record_seat"]),
+                                 # HOLO-871: the consolidator's route on
+                                 # a consolidated council round.
+                                 (store.council, ["record_consolidator",
+                                                  "record_seat"]),
                                  # The gap layer record's writer and count;
                                  # HOLO-66: `gap_finder_counts`, by finder.
                                  (store.gap_layers, ["gap_finder_counts",

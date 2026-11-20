@@ -8,7 +8,9 @@ from holophyte.board.projection import ledger
 from holophyte.loop.gates import InfraFailure, verify_timed_out
 from holophyte.redact import safe_print as print
 from holophyte.review.blast_radius import continued_runs, high_path
+from holophyte.review.json_reply import SchemaBrief
 from holophyte.review.reply_parsing import (
+    FINDING_CATEGORIES,
     UNPARSED_PATH,
     parse_findings,
     stale_approvals,
@@ -250,6 +252,59 @@ def second_pass(merged, ask):
         print(f"[holo2] consolidator reply had no {DONE} line; "
               "the fix turn gets the exact merge")
     return final, record
+
+
+def council_inputs(answered, adversary):
+    raised = [(f"seat {seat.number}", finding) for seat in answered
+              for finding in seat.value["findings"]]
+    raised += [("adversary", _council_finding(item))
+               for item in items([], adversary)]
+    return {f"F{n}": entry for n, entry in enumerate(raised, 1)}
+
+
+def _council_finding(item):
+    return {"path": item["path"], "line": item["line"],
+            "severity": "p2" if item["severity"] == "nit" else item["severity"],
+            "category": (item["category"] if item["category"]
+                         in FINDING_CATEGORIES else "correctness"),
+            "target": "code",
+            "message": "\n".join(item["messages"] + item["notes"])}
+
+
+def _council_vote(seat):
+    head = f"Seat {seat.number} ({seat.route})"
+    if seat.status != "answered":
+        return f"{head} did not vote, {seat.status}: {seat.reason}"
+    return f"{head}:\n{json.dumps(seat.value, sort_keys=True)}"
+
+
+def council_brief(seated, found, criteria, sha):
+    listed = "\n".join(
+        f"{name}, raised by {who}: {_where(finding['path'] or '', finding['line'])}"
+        f" [{finding['severity']}] {' '.join(finding['message'].split())}"
+        for name, (who, finding) in found.items()) or "(none)"
+    text = (
+        "You are the READ-ONLY consolidator of a review council. Its seats "
+        f"reviewed commit {sha} against the ticket's acceptance criteria:\n\n"
+        + "\n".join(f"C{n}. {criterion}" for n, criterion in criteria)
+        + "\n\nEach seat's reply follows as numbered JSON.\n\n"
+        + "\n\n".join(map(_council_vote, seated))
+        + "\n\nEvery finding the seats and the adversarial reviewer raised, "
+        f"by id:\n{listed}\n\n"
+        "Give the council's one authoritative round. Keep each finding that "
+        "blocks the candidate, merge the findings that report one defect in "
+        "different words into one, and list in its raised_by the id of every "
+        "finding above it covers. Drop a finding only as a refuted entry "
+        "naming its ids in raised_by, with the reason it does not block. A "
+        "finding two or more seats raised at the same path and line is kept "
+        "even if you drop it, and so is one you neither keep nor drop. A "
+        "criterion a seat marks not_met or unwitnessed stays so unless you "
+        "name the test that witnesses it. Do not modify anything. Your reply "
+        "is one JSON object that the turn's output schema checks: verdict, "
+        "criteria, findings, follow_ups, scope and refuted, with the fields "
+        "the seats' replies use, plus raised_by on each finding and refuted "
+        "entry.")
+    return SchemaBrief(text, text, text)
 
 
 def capped(final, fixing):

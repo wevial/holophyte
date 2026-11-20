@@ -13,6 +13,8 @@ from holophyte.review.reply_parsing import (
 
 SCHEMA_FILE = Path(__file__).with_name("review_reply.schema.json")
 COUNCIL_SCHEMA_FILE = Path(__file__).with_name("council_reply.schema.json")
+CONSOLIDATED_SCHEMA_FILE = Path(__file__).with_name(
+    "consolidated_reply.schema.json")
 
 TARGET_FIELD = "target"
 

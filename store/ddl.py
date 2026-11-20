@@ -293,6 +293,8 @@ CREATE TABLE IF NOT EXISTS reviewRounds (
     startedAt           INTEGER NOT NULL,
     endedAt             INTEGER,
     reply               TEXT,  -- the schema-checked JSON reply, else NULL
+    -- the consolidator's route, NULL unless it consolidated a council round
+    consolidatedBy      TEXT,
     UNIQUE (runId, round)
 );
 

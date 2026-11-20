@@ -4,6 +4,7 @@ from functools import partial
 from time import time
 
 import store
+import store.council
 import store.read
 from holophyte import failure_reason, leak_guard
 from holophyte.agents.fix_session import steer_turn
@@ -213,6 +214,15 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                                            agent)))
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
+    if seats:
+        verdict, decision = council.consolidated(
+            project, conn, run_id, wt, base_sha, sha, rnd, verdict, criteria,
+            consolidate.adversary_findings(conn, run_id, rnd) if plan else None,
+            agent)
+        attempt.note(council=council.detail(verdict))
+    consolidated_by = getattr(verdict, "consolidated_by", None)
+    if consolidated_by:
+        blocking = []
     approved = cited_approval(verdict, wt, sha)
     red = _verify_findings(verify_cmd, ok, out)
     leak_guard.record(conn, run_id, leaks)
@@ -225,6 +235,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  structured_findings=getattr(verdict, "council_findings", None),
                  adversary=blocking + red + private,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
+    if consolidated_by and conn is not None:
+        store.council.record_consolidator(conn, run_id, rnd, consolidated_by)
     attempt.note(decision=decision, findings=len(consolidate.primary_findings(
         verdict, decision, blocking + red + private)))
     if decision == "REQUEST_CHANGES" and conn is not None:
@@ -254,7 +266,7 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
     primary = stuck_review.kept_findings(consolidate.primary_findings(
         verdict, decision, unwitnessed + red + private), ruling)
     handed = (adversarial is not None and (adversarial or not seats)
-              and consolidate.handed_on(
+              and not consolidated_by and consolidate.handed_on(
                   project, conn, run_id, provider, task_id, rnd, primary,
                   adversarial, fixing,
                   partial(agent, project, "consolidate", cwd=wt,
@@ -271,6 +283,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                 verdict, decision, unwitnessed), ruling), ruling),
         red, out)
     verdict += ruling.fixes if ruling is not None else ""
+    if consolidated_by:
+        verdict = council.held_description(project, conn, run_id, verdict)
     return leak_guard.with_findings(verdict, private), decision, findings
 
 

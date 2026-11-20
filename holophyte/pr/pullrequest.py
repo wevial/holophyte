@@ -9,6 +9,7 @@ import store.read
 from holophyte import leak_guard, note_privacy
 from holophyte.automation import merge_hold
 from holophyte.babysit import babysitter, maintainer_notes
+from holophyte.babysit.description_review import pending_text_review
 from holophyte.board.projection import block_ticket, ledger
 from holophyte.config.config_tables import board_mode, merge_config, sweep_config
 from holophyte.host.reconcile import _pr_seen
@@ -174,6 +175,8 @@ def _written_pr_text(project, conn, run_id, task_id, task, branch, body,
                  f"```diff\n{diff}\n```")
     if refresh is not None:
         parts.extend(_refresh_parts(project, *refresh))
+    elif held := pending_text_review(conn, run_id):
+        parts.append("the review says the description must cover:\n\n" + held)
     goal = "\n\n".join(parts)
     left = budget_min - (monotonic() - started) / 60
     minutes = max(1, min(PR_TEXT_BUDGET_MIN, int(left)))
