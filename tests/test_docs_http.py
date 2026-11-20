@@ -74,6 +74,10 @@ class HttpReferenceTests(unittest.TestCase):
         assert_covers(self, section(self.document, "`GET /pipeline`"),
                       "pipeline.json")
 
+    def test_pipeline_prompt_section_names_every_pinned_key(self):
+        assert_covers(self, section(self.document, "`GET /pipeline/prompts/"),
+                      "pipeline-prompt.json")
+
     def test_harnesses_section_names_every_pinned_key(self):
         assert_covers(self, section(self.document, "`GET /harnesses`"),
                       "harnesses.json")

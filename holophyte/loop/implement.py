@@ -693,6 +693,18 @@ def _orchestration(project, conn, run_id, ticket):
     return ORCHESTRATION_BRIEFS[mode]
 
 
+def implement_goal(conflicts, opening, steered, notes, ticket, commands,
+                   orchestration, capture, design, criteria):
+    return (conflicts + opening + steered + notes
+            + f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
+            "The ticket above is the contract, acceptance criteria "
+            "included; the task is done only when they hold. Commit your "
+            "work with a clear message. Stay strictly on-scope; do not "
+            "expand the task. Commit messages carry no tool attribution or "
+            "co-author lines for an AI." + orchestration + capture + design
+            + blast_radius.BRIEF + reproduce.BRIEF + criteria)
+
+
 def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
                start_sha, ticket, verify_cmd, budget_min, conflicts=(), opening="",
                shadow=None, provider=None, criteria=()):
@@ -701,19 +713,12 @@ def _implement(project, conn, run_id, task_id, task, branch, wt, fresh, beat_s,
     orchestration = _orchestration(project, conn, run_id, ticket)
     steered = steering.take(conn, run_id)
     numbered = criterion_ids.numbered(conn, run_id, criteria)
-    tail = (f"Implement this task in this repo:\n\n{ticket}{commands}\n\n"
-            "The ticket above is the contract, acceptance criteria "
-            "included; the task is done only when they hold. Commit your "
-            "work with a clear message. Stay strictly on-scope; do not "
-            "expand the task. Commit messages carry no tool attribution or "
-            "co-author lines for an AI." + orchestration
-            + _capture_brief(project, ticket, task_id)
-            + mockup.implementer_brief(wt) + blast_radius.BRIEF
-            + reproduce.BRIEF + contradiction.brief(numbered)
-            + witness_once.implementer_brief(numbered))
-    goal = (conflict_brief(branch, conflicts) + opening + steered
-            + stage_record.notes_block(project, conn, run_id, "implement")
-            + tail)
+    goal = implement_goal(
+        conflict_brief(branch, conflicts), opening, steered,
+        stage_record.notes_block(project, conn, run_id, "implement"), ticket,
+        commands, orchestration, _capture_brief(project, ticket, task_id),
+        mockup.implementer_brief(wt),
+        contradiction.brief(numbered) + witness_once.implementer_brief(numbered))
     seconds, limit = implement_arming(project, conn, run_id, budget_min)
     if shadow and fresh and not conflicts and not opening and not steered:
         shadow(goal, start_sha, seconds)

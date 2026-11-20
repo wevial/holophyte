@@ -29,9 +29,8 @@ from holophyte.loop.runs import heartbeat_while
 from holophyte.loop.trim_brief import (
     PROTECTED_BRIEF,
     TESTS_BRIEF,
-    TRIM_BRIEF,
-    TRIM_TAIL,
     pass_name,
+    trim_goal,
 )
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
@@ -78,13 +77,12 @@ def _trimmed(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
              criteria, config, before, green):
     untracked = _untracked(wt)
     protected = _protected(conn, run_id, wt, base_sha, sha, criteria)
-    tail = TRIM_TAIL.format(protected=PROTECTED_BRIEF.format(
-        files="\n".join(f"- `{path}`" for path in protected))
-        if protected else "")
-    goal = (TRIM_BRIEF.format(
-        base=base_sha, commands=_commands_brief(project, verify_cmd).strip(),
-        tests=_tests_brief(wt, base_sha))
-        + record.notes_block(project, conn, run_id, "trim") + tail)
+    goal = trim_goal(
+        base_sha, _commands_brief(project, verify_cmd).strip(),
+        _tests_brief(wt, base_sha),
+        record.notes_block(project, conn, run_id, "trim"),
+        PROTECTED_BRIEF.format(files="\n".join(
+            f"- `{path}`" for path in protected)) if protected else "")
     out, reason, ended = _ended_turn(project, conn, run_id, beat_s, wt,
                                      config.budget_min, goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
