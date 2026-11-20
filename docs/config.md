@@ -292,21 +292,18 @@ model   = "gemini-4-neon-xhigh"
 Each turn runs `agy --model MODEL --dangerously-skip-permissions
 --output-format json -p GOAL`. The adapter reads the reply text from `response`
 and the session ID from `conversation_id`. The turn output keeps the full JSON.
-Host implementer turns record the session ID and pass `--conversation ID`
-on a resumed fix. The factory currently skips recording this ID for container turns.
+Only host implementer turns record the ID and pass `--conversation ID` on a resumed fix.
 
 An isolated agy turn mounts the host's `agy` from `PATH` read-only at
-`/opt/agy/bin/agy` and prepends `/opt/agy/bin` to its `PATH`. A writable turn
-mounts a private directory (mode 0700) from the project's state directory at
-`/home/implementer/.gemini`. Each task worktree has its own directory, so a
-later turn with the conversation ID can read the saved conversation. Before
-each launch the launcher copies `~/.gemini/antigravity-cli/antigravity-oauth-token`
-to the same path under the container home with mode 0600. Antigravity can
-refresh its copy while the host login stays unchanged. A read-only launch
-uses a temporary login copy. On a writable turn, a file supplied by
-`implementer_credential` under `~/.gemini` is staged inside the same mount
-and removed at the end of the turn. If it supplies the login itself, the
-launcher uses that file as the login source.
+`/opt/agy/bin/agy` and prepends `/opt/agy/bin` to its `PATH`. Writable turns
+mount `/home/implementer/.gemini` from a private per-worktree directory
+(mode 0700) in project state, so later turns can reopen conversations by ID.
+Each launch copies `~/.gemini/antigravity-cli/antigravity-oauth-token` to the
+same path under the container home (mode 0600). Antigravity can refresh its
+copy without changing the host login. Read-only turns use a temporary copy.
+Writable turns stage any `implementer_credential` file destined for `~/.gemini`
+inside the mount and remove it at turn end. A file destined for the login
+path supplies the login for that turn.
 
 `[agents.reviewer] harness = "devin"` (and the same for `adjudicator`) runs
 in the same throwaway candidate checkout as
