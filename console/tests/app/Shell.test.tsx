@@ -808,13 +808,14 @@ test("off Settings the sidebar keeps the project switcher and the Pages nav and 
 });
 
 const NOV_6 = Date.UTC(2026, 10, 6);
-const WEEK = 7 * 24 * 3600 * 1000;
+const DAY = 24 * 3600 * 1000;
+const WEEK = 7 * DAY;
 const NO_WAITS = { pending_checks: 0, checks_failing: 0, thread: 0, rounds_used: 0, behind_main: 0, main_red: 0, approval: 0, other: 0 };
 
 function flowOf(weeks: { merged: number; working: number; waiting: number; operator: number }[], waits = NO_WAITS): Flow {
   return {
     now: NOV_6 + WEEK,
-    weeks: weeks.map(({ merged, working, waiting, operator }, index) => ({
+    buckets: weeks.map(({ merged, working, waiting, operator }, index) => ({
       start_ms: NOV_6 - (weeks.length - 1 - index) * WEEK,
       merged,
       rounds_median: 2,
@@ -864,7 +865,7 @@ test("the Flow page header holds the one Flow title, the window's span beside it
   expect(more).toHaveLength(0);
   expect(title!.textContent).toBe("Flow");
   const [first, last] = [new Date(NOV_6 - WEEK), new Date(NOV_6 + WEEK - 1)];
-  expect(title!.nextElementSibling!.textContent).toBe(`Two weeks, ${first.getDate()} October to ${last.getDate()} November`);
+  expect(title!.nextElementSibling!.textContent).toBe(`14 days, ${first.getDate()} October to ${last.getDate()} November`);
   const header = title!.closest("header")!;
   expect(header.contains(projectPicker())).toBe(true);
   expect(header.contains(screen.getByRole("button", { name: "Range" }))).toBe(true);
@@ -887,7 +888,7 @@ test("the Reverted figure says it counts the page's merges reverted within 14 da
   await act(settle);
   const reverted = screen.getByText("Reverted", { selector: "dt" }).parentElement!;
   expect(within(reverted).getByText("of these merges, within 14 days")).toBeTruthy();
-  expect(document.body.textContent).not.toContain("30 days");
+  expect(reverted.textContent).not.toContain("30 days");
 });
 
 test("on All projects a host whose revert count is unknown leaves the summed Reverted unknown", async () => {
@@ -930,41 +931,45 @@ function askedFlows(asked: URL[]): Fetch {
     if (!/\/flow\?/.test(url)) return polls(url, init);
     const query = new URL(url);
     asked.push(query);
-    const weeks = Number(query.searchParams.get("weeks"));
-    const flow = flowOf(Array.from({ length: weeks }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 })));
+    const days = Number(query.searchParams.get("days"));
+    const size = query.searchParams.get("bucket") === "week" ? WEEK : DAY;
+    const count = Math.ceil((days * DAY) / size);
+    const flow = flowOf(Array.from({ length: count }, () => ({ merged: 1, working: 2, waiting: 1, operator: 0 })));
     const until = query.searchParams.get("until");
     if (until == null) return Response.json(flow);
     const end = Number(until);
-    return Response.json({ ...flow, now: end, weeks: flow.weeks.map((week, index) => ({ ...week, start_ms: end - (weeks - index) * WEEK })) });
+    return Response.json({ ...flow, now: end, buckets: flow.buckets!.map((row, index) => ({ ...row, start_ms: Math.max(end - days * DAY, end - (count - index) * size) })) });
   };
 }
 
-test("opened with range=12w the Flow page asks each host for twelve weeks and every chart shows twelve", async () => {
+test("opened with range=90d the Flow page asks each host for ninety days by week and every chart shows a point a week", async () => {
   const asked: URL[] = [];
-  await mount("#/flow?range=12w", askedFlows(asked));
+  await mount("#/flow?range=90d", askedFlows(asked));
   await flush();
   expect(new Set(asked.map((url) => url.origin))).toEqual(new Set([ORIGIN, PEER]));
-  expect(asked.every((url) => url.searchParams.get("weeks") === "12" && !url.searchParams.has("until"))).toBe(true);
+  expect(asked.every((url) => url.searchParams.get("days") === "90" && url.searchParams.get("bucket") === "week" && !url.searchParams.has("until"))).toBe(true);
   const charts = [...document.querySelectorAll("figure[data-chart]")];
   expect(charts).toHaveLength(4);
-  expect(charts.map((chart) => chart.querySelectorAll("[data-point]").length)).toEqual([12, 12, 12, 12]);
+  expect(charts.map((chart) => chart.querySelectorAll("[data-point]").length)).toEqual([13, 13, 13, 13]);
 });
 
-test("the open Range menu marks the current preset, and choosing From and To puts them in the address and asks for the whole weeks ending with the To day", async () => {
+test("the open Range menu marks the current preset, and choosing From and To puts them in the address and asks for the whole days ending with the To day", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   const asked: URL[] = [];
-  await mount("#/flow?range=12w", askedFlows(asked));
+  await mount("#/flow?range=90d", askedFlows(asked));
   await flush();
   fireEvent.click(screen.getByRole("button", { name: "Range" }));
   const choices = within(screen.getByRole("group", { name: "Range choices" }));
-  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 12 weeks"]);
+  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 90 days"]);
   fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-03" } });
   fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
   await flush();
   const search = new URLSearchParams(window.location.hash.split("?")[1]);
   expect([search.get("from"), search.get("to")]).toEqual(["2026-09-03", "2026-11-12"]);
-  const last = asked.at(-1)!.searchParams;
-  expect([last.get("weeks"), last.get("until")]).toEqual(["10", String(new Date(2026, 10, 13).getTime())]);
+  const ends = asked.filter((url) => url.searchParams.has("until"));
+  expect(new Set(ends.map((url) => url.origin))).toEqual(new Set([ORIGIN, PEER]));
+  const last = ends.at(-1)!.searchParams;
+  expect([last.get("days"), last.get("bucket"), last.get("until")]).toEqual(["71", "week", String(new Date(2026, 10, 13).getTime())]);
   expect(screen.getByRole("heading", { level: 1 }).nextElementSibling!.textContent).toEndWith(" to 12 November");
 });
 
@@ -980,11 +985,11 @@ test("the open Range menu closes when focus moves out of it to the Project picke
   expect(screen.queryByRole("group", { name: "Range choices" })).toBeNull();
 });
 
-test("a From and To under a whole week, or with a To day not yet ended, stay out of the address and the asks", async () => {
+test("a From and To over 182 days, or with a To day not yet ended, stay out of the address and the asks", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
-  const later = new Date(Date.now() + 2 * 24 * 3600 * 1000);
+  const later = new Date(Date.now() + 2 * DAY);
   const future = `${later.getFullYear()}-${String(later.getMonth() + 1).padStart(2, "0")}-${String(later.getDate()).padStart(2, "0")}`;
-  for (const [from, to] of [["2026-11-12", "2026-11-12"], ["2026-11-01", future]]) {
+  for (const [from, to] of [["2026-01-01", "2026-07-02"], ["2026-11-01", future]]) {
     const asked: URL[] = [];
     await mount("#/flow", askedFlows(asked));
     await flush();
@@ -994,7 +999,7 @@ test("a From and To under a whole week, or with a To day not yet ended, stay out
     await flush();
     const search = new URLSearchParams(window.location.hash.split("?")[1]);
     expect([search.get("from"), search.get("to")]).toEqual([null, null]);
-    expect(asked.every((url) => url.searchParams.get("weeks") === "6" && !url.searchParams.has("until"))).toBe(true);
+    expect(asked.every((url) => url.searchParams.get("days") === "30" && !url.searchParams.has("until"))).toBe(true);
     cleanup();
   }
 });

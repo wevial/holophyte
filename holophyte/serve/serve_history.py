@@ -1,10 +1,11 @@
-from __future__ import annotations
-
 import dataclasses
 import re
+from bisect import bisect_right
+from datetime import datetime, timedelta, timezone
 from statistics import median
 from time import time
-from typing import TypedDict
+from typing import NotRequired, TypedDict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import store.read
 from holophyte.cli.report import REVERT_SPAN, is_reverted, main_log_since
@@ -37,7 +38,12 @@ HISTORY_LIMIT = 200
 HISTORY_CAP = 5000
 FLOW_WEEKS = 6
 FLOW_WEEKS_CAP = 26
-WEEK_MS = 7 * 24 * 3600 * 1000
+FLOW_DAYS = 30
+FLOW_DAYS_CAP = 182
+FLOW_DAILY_CAP = 31
+DAY_MS = 24 * 3600 * 1000
+WEEK_MS = 7 * DAY_MS
+BUCKETS = ("day", "week")
 HOUR_MS = 3600 * 1000
 WORKING_PHASES = frozenset({"working", "verifying", "reviewing", "addressing"})
 OPERATOR_PHASE = "blocked_on_operator"
@@ -92,7 +98,8 @@ class FlowReverted(TypedDict):
 
 class Flow(TypedDict):
     now: int
-    weeks: list[FlowWeek]
+    weeks: NotRequired[list[FlowWeek]]
+    buckets: NotRequired[list[FlowWeek]]
     phases: dict[str, float]
     waits: FlowWaits
     reverted: FlowReverted | None
@@ -199,20 +206,60 @@ def history_row(project, run, now, max_rounds, origin, reverted):
             "reverted": reverted}
 
 
-def parse_weeks(query):
-    text = parse_filter(query, "weeks")
+def parse_count(query, name, default, cap):
+    text = parse_filter(query, name)
     if text is None:
-        return FLOW_WEEKS
-    if not INTEGER.fullmatch(text) or not 1 <= int(text) <= FLOW_WEEKS_CAP:
-        raise ValueError(f"weeks must be an integer from 1 to"
-                         f" {FLOW_WEEKS_CAP}, got {text!r}")
+        return default
+    if not INTEGER.fullmatch(text) or not 1 <= int(text) <= cap:
+        raise ValueError(f"{name} must be an integer from 1 to"
+                         f" {cap}, got {text!r}")
     return int(text)
+
+
+def parse_zone(query):
+    text = parse_filter(query, "tz")
+    if text is None:
+        return timezone.utc
+    try:
+        return ZoneInfo(text)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"tz must be an IANA time zone name such as"
+                         f" Europe/Berlin, got {text!r}") from None
+
+
+def parse_flow_window(query):
+    bucket = parse_filter(query, "bucket", BUCKETS)
+    if parse_filter(query, "days") is None and bucket is None:
+        weeks = parse_count(query, "weeks", FLOW_WEEKS, FLOW_WEEKS_CAP)
+        return "weeks", lambda now: [now - (weeks - index) * WEEK_MS
+                                     for index in range(weeks)]
+    if parse_filter(query, "weeks") is not None:
+        raise ValueError("weeks cannot be combined with days or bucket")
+    days = parse_count(query, "days", FLOW_DAYS, FLOW_DAYS_CAP)
+    zone = parse_zone(query)
+    if bucket is None:
+        bucket = "day" if days <= FLOW_DAILY_CAP else "week"
+    step = 1 if bucket == "day" else 7
+    return "buckets", lambda now: grouped_starts(day_starts(now, days, zone), step)
+
+
+def grouped_starts(starts, step):
+    short = len(starts) % step
+    return starts[:1] * bool(short) + starts[short::step]
+
+
+def day_starts(now, days, zone):
+    last = datetime.fromtimestamp((now - 1) / 1000, zone).date()
+    return [int(datetime(day.year, day.month, day.day, tzinfo=zone)
+                .timestamp() * 1000)
+            for day in (last - timedelta(days=days - 1 - index)
+                        for index in range(days))]
 
 
 def flow(project, query, now=None):
     now = int(time() * 1000) if now is None else now
     try:
-        weeks = parse_weeks(query)
+        key, starts_at = parse_flow_window(query)
         until = parse_until(query)
     except ValueError as bad:
         return 400, {"error": str(bad)}
@@ -221,7 +268,8 @@ def flow(project, query, now=None):
     if not project.store_path.exists():
         return 503, no_store(project)
     now = now if until is None else until
-    since = now - weeks * WEEK_MS
+    starts = starts_at(now)
+    since = starts[0]
     conn = store.read.open_readonly(project.store_path)
     try:
         merged = conn.execute(
@@ -240,7 +288,8 @@ def flow(project, query, now=None):
     finally:
         conn.close()
     return 200, {"now": now,
-                 **flow_weeks(since, weeks, merged, interventions, events, now),
+                 **flow_rows(key, starts, merged, interventions, events,
+                             now),
                  "reverted": flow_reverted(project.path, since, merged)}
 
 
@@ -256,34 +305,33 @@ def flow_reverted(repo, since, merged):
             "merged": len(merged)}
 
 
-def flow_weeks(since, weeks, merged, interventions, events, now):
-    def week_of(at):
-        return rows[min((at - since) // WEEK_MS, weeks - 1)]
+def flow_rows(key, starts, merged, interventions, events, now):
+    def row_of(at):
+        return rows[max(bisect_right(starts, at) - 1, 0)]
 
-    rows = [{"start_ms": since + index * WEEK_MS, "rounds": [],
-             "interventions": 0,
+    rows = [{"start_ms": start, "rounds": [], "interventions": 0,
              "hours": {"working": 0, "waiting": 0, "operator": 0}}
-            for index in range(weeks)]
+            for start in starts]
     for ended_at, rounds, _ in merged:
-        week_of(ended_at)["rounds"].append(rounds)
+        row_of(ended_at)["rounds"].append(rounds)
     for (at,) in interventions:
-        week_of(at)["interventions"] += 1
+        row_of(at)["interventions"] += 1
     phases, waits = {}, dict.fromkeys(WAIT_GROUPS, 0)
     for started_at, phase, ms, wait in run_stays(events, now):
         if phase in ENDED_PHASES:
             continue
-        week_of(started_at)["hours"][phase_group(phase)] += ms
+        row_of(started_at)["hours"][phase_group(phase)] += ms
         phases[phase] = phases.get(phase, 0) + ms
         if wait is not None:
             waits[wait] += ms
-    return {"weeks": [{"start_ms": row["start_ms"],
-                       "merged": len(row["rounds"]),
-                       "rounds_median": (median(row["rounds"])
-                                         if row["rounds"] else None),
-                       "interventions": row["interventions"],
-                       "hours": {group: in_hours(ms)
-                                 for group, ms in row["hours"].items()}}
-                      for row in rows],
+    return {key: [{"start_ms": row["start_ms"],
+                   "merged": len(row["rounds"]),
+                   "rounds_median": (median(row["rounds"])
+                                     if row["rounds"] else None),
+                   "interventions": row["interventions"],
+                   "hours": {group: in_hours(ms)
+                             for group, ms in row["hours"].items()}}
+                  for row in rows],
             "phases": {phase: in_hours(ms) for phase, ms in phases.items()},
             "waits": {reason: in_hours(ms) for reason, ms in waits.items()}}
 
