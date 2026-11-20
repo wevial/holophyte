@@ -66,11 +66,10 @@ def trim(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
         record.skip(conn, run_id, "trim", reason, sha)
         return sha
     with record.Attempt(conn, run_id, "trim", sha, {}) as attempt:
-        head, outcome, reason, timed_out = _trimmed(
+        head, outcome, reason, ended = _trimmed(
             project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
             criteria, config, before, green)
-        attempt.close("fail" if timed_out else "pass", "next", head,
-                      trim=outcome, reason=reason)
+        attempt.close(*ended, head, trim=outcome, reason=reason)
     return head
 
 
@@ -85,8 +84,8 @@ def _trimmed(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
                                  files="\n".join(f"- `{path}`"
                                                   for path in protected))
                              if protected else "")
-    out, reason = _turn(project, conn, run_id, beat_s, wt, config.budget_min, goal)
-    timed_out = reason == TIMED_OUT
+    out, reason, ended = _ended_turn(project, conn, run_id, beat_s, wt,
+                                     config.budget_min, goal)
     _land(wt, _below_swept_wip(wt, sha), untracked)
     commits = _commits(wt, sha)
     reason = reason or _malformed(wt, sha, commits)
@@ -99,7 +98,7 @@ def _trimmed(project, conn, run_id, beat_s, wt, base_sha, sha, verify_cmd,
                else "reverted" if reason else "nothing")
     _record(project, conn, run_id, outcome, reason, kept, dropped, before,
             _changed_lines(wt), out)
-    return sh(["git", "rev-parse", "HEAD"], cwd=wt), outcome, reason, timed_out
+    return sh(["git", "rev-parse", "HEAD"], cwd=wt), outcome, reason, ended
 
 
 def _skip_reason(project, conn, run_id, wt, budget_min, sha, lines, green):
@@ -133,20 +132,31 @@ def _is_test(path):
 
 
 def _turn(project, conn, run_id, beat_s, wt, budget_min, goal):
+    out, reason, _ = _ended_turn(project, conn, run_id, beat_s, wt, budget_min,
+                                 goal)
+    return out, reason
+
+
+def _ended_turn(project, conn, run_id, beat_s, wt, budget_min, goal):
     try:
         out, timed_out = _timed(project, conn, run_id, beat_s, wt, budget_min,
                                 goal, role="trim", merges=False)
     except InfraFailure as error:
         return (getattr(error, "output", "") or str(error),
-                f"the route failed: {error}")
+                f"the route failed: {error}", ("error", "end"))
     except (OSError, RuntimeError) as error:
-        return str(error), f"the route could not start: {error}"
+        return (str(error), f"the route could not start: {error}",
+                ("fail", "end"))
     if timed_out:
-        return out, TIMED_OUT
+        return out, TIMED_OUT, ("fail", "next")
+    return (*_judged_turn(out), ("pass", "next"))
+
+
+def _judged_turn(out):
     outage = failed_turn(out) and outage_reason(getattr(out, "command", ""), out)
     if outage:
         return out, f"the route failed: {outage}"
-    if _killed_by_signal(out, timed_out):
+    if _killed_by_signal(out, False):
         return out, f"the turn was killed by a signal (exit {out.exit_code})"
     if getattr(out, "exit_code", 0):
         return out, f"the turn exited with status {out.exit_code}"

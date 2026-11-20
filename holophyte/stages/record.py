@@ -69,8 +69,9 @@ def stage_roles(conn, run_id, stage_id):
 
 
 class Attempt:
-    def __init__(self, conn, run_id, stage_id, sha, detail):
+    def __init__(self, conn, run_id, stage_id, sha, detail, head=None):
         self.conn, self.run_id, self.stage_id = conn, run_id, stage_id
+        self.head = head
         self.detail, self.closed = dict(detail), False
         self.id = None
         if conn is not None and run_id is not None:
@@ -99,9 +100,12 @@ class Attempt:
         return self
 
     def __exit__(self, kind, error, trace):
-        if error is not None:
+        if error is not None and self.recording:
+            head = self.head and guarded(self.conn, self.run_id, "stage_head",
+                                         self.head)
             self.close("error" if isinstance(error, InfraFailure) else "fail",
-                       "end", error=str(error))
+                       "end", None if head is REFUSED else head,
+                       error=str(error))
         return False
 
 

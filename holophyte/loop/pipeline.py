@@ -1,5 +1,6 @@
 """`run_task()`: a claimed run through implement, review, adjudicate and merge."""
 from dataclasses import replace
+from functools import partial
 from time import monotonic
 
 import store
@@ -55,6 +56,8 @@ from holophyte.review import moved_landmarks, reproduce
 from holophyte.review.criterion_ids import numbered
 from holophyte.stages import record
 from holophyte.story.story_claim import story_brief
+
+UNREPRODUCED = "the bug was not reproduced"
 
 
 def run_task(project, task, conn=None, run_id=None, provider=None):
@@ -155,10 +158,13 @@ def _run_stages(run, task):
         sha, unreproduced = start_sha, reproduce.routed(resume)
     elif test and not test.failing:
         sha, unreproduced = test.sha, True
+        record.skip(conn, run_id, "trim", UNREPRODUCED, sha)
     else:
         before = test.sha if test else start_sha
         with record.Attempt(conn, run_id, "implement", before,
-                            {"kind": "first"}) as attempt:
+                            {"kind": "first"},
+                            head=partial(sh, ["git", "rev-parse", "HEAD"],
+                                         cwd=wt)) as attempt:
             sha, unreproduced = _implement(
                 project, conn, run_id, task_id, task, branch, wt,
                 fresh and not test, beat_s, before, ticket, verify_cmd,
@@ -179,7 +185,7 @@ def _run_stages(run, task):
             sha = trim(project, conn, run_id, beat_s, wt, base_sha, sha,
                        verify_cmd, contracts, criteria)
         else:
-            record.skip(conn, run_id, "trim", "the bug was not reproduced", sha)
+            record.skip(conn, run_id, "trim", UNREPRODUCED, sha)
 
     cap = _review_cap(project, conn, run_id, provider, task_id, wt)
     sha, rnd, approved = (reproduce.review_rounds if unreproduced else _review_rounds)(

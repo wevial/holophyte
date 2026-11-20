@@ -106,6 +106,19 @@ class CloseStageTests(unittest.TestCase):
 
         self.assertEqual(self.attempt(attempt)[2:6], (12, 10, 4, None))
 
+    def test_the_writers_keep_the_times_they_are_given(self):
+        attempt = stages.open_stage(self.conn, self.run_id, "implement", now=10)
+        a_turn(self.conn, self.run_id, "implement", 5, {"input_tokens": 3})
+        stages.close_stage(self.conn, attempt, "pass", "next",
+                           roles=(role for role in ["implement"]), now=20)
+        skipped = stages.skip_stage(self.conn, self.run_id, "trim", "off",
+                                    now=30)
+
+        self.assertEqual(self.conn.execute(
+            "SELECT id, startedAt, endedAt, inputTokens FROM stageAttempts"
+            " ORDER BY id").fetchall(),
+            [(attempt, 10, 20, 3), (skipped, 30, 30, None)])
+
     def test_an_attempt_is_closed_once(self):
         attempt = stages.open_stage(self.conn, self.run_id, "verify")
         stages.close_stage(self.conn, attempt, "fail", "next")

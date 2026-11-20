@@ -7,6 +7,10 @@ from holophyte.redact import redact_document
 from .schema import _transaction
 
 
+def _now(now):
+    return int(time.time() * 1000) if now is None else now
+
+
 def _next_attempt(conn, run_id, stage_id):
     if conn.execute("SELECT 1 FROM runs WHERE id = ?",
                     (run_id,)).fetchone() is None:
@@ -24,18 +28,19 @@ def _document(detail):
     return json.dumps(redact_document(dict(detail or {})), sort_keys=True)
 
 
-def open_stage(conn, run_id, stage_id, input_sha=None, detail=None):
+def open_stage(conn, run_id, stage_id, input_sha=None, detail=None, now=None):
     with _transaction(conn):
         attempt, seq = _next_attempt(conn, run_id, stage_id)
         return conn.execute(
             "INSERT INTO stageAttempts (runId, stageId, attempt, startedAt,"
             " inputSha, openSeq, detail) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (run_id, stage_id, attempt, int(time.time() * 1000), input_sha, seq,
+            (run_id, stage_id, attempt, _now(now), input_sha, seq,
              _document(detail))).lastrowid
 
 
 def close_stage(conn, attempt_id, outcome, edge, output_sha=None, roles=(),
-                detail=None):
+                detail=None, now=None):
+    roles = list(roles)
     with _transaction(conn):
         row = conn.execute(
             "SELECT runId, openSeq, endedAt, detail FROM stageAttempts"
@@ -59,13 +64,13 @@ def close_stage(conn, attempt_id, outcome, edge, output_sha=None, roles=(),
             "UPDATE stageAttempts SET endedAt = ?, outputSha = ?, outcome = ?,"
             " edge = ?, agentSeconds = ?, inputTokens = ?, outputTokens = ?,"
             " costUsd = ?, detail = ? WHERE id = ?",
-            (int(time.time() * 1000), output_sha, outcome, edge, seconds, input_tokens,
+            (_now(now), output_sha, outcome, edge, seconds, input_tokens,
              output_tokens, cost,
              _document({**json.loads(stored), **(detail or {})}), attempt_id))
 
 
-def skip_stage(conn, run_id, stage_id, reason, sha=None):
-    now = int(time.time() * 1000)
+def skip_stage(conn, run_id, stage_id, reason, sha=None, now=None):
+    now = _now(now)
     with _transaction(conn):
         attempt, seq = _next_attempt(conn, run_id, stage_id)
         return conn.execute(

@@ -196,10 +196,9 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
             conn, run_id,
             partial(_review_reply, project, prompt, wt, base_sha, sha, conn,
                     run_id, run_agent=agent, review_round=rnd),
-            plan and partial(adversary.attack, project, conn, run_id, wt,
-                             base_sha, ticket, plan, agent))
-    if plan:
-        attempt.note(adversary="ran")
+            plan and _ran(attempt, partial(adversary.attack, project, conn,
+                                           run_id, wt, base_sha, ticket, plan,
+                                           agent)))
     blocking = adversary.settle(project, conn, run_id, provider, task_id, plan,
                                 attacked)
     approved = cited_approval(verdict, wt, sha)
@@ -212,6 +211,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
                  prior_reply=first_reply, approved_range=approved, scope=scope,
                  adversary=blocking + red + private,
                  then=partial(stuck_review.claim, project, conn, run_id, rnd))
+    attempt.note(decision=decision, findings=len(consolidate.primary_findings(
+        verdict, decision, blocking + red + private)))
     if decision == "REQUEST_CHANGES" and conn is not None:
         capture_review(conn, run_id, sha, follow_up_lines(verdict))
     if decision == "MALFORMED":
@@ -227,6 +228,8 @@ def _review(project, conn, run_id, provider, task_id, wt, beat_s, base_sha, sha,
         print(f"[holo2] round {rnd}: {len(unwitnessed)} criteria not "
               "witnessed; treating as REQUEST_CHANGES")
     findings = unwitnessed + blocking + red + private
+    attempt.note(findings=len(consolidate.primary_findings(verdict, decision,
+                                                           findings)))
     fixing = consolidate.fixing(decision, findings, ok, out)
     ruling = fixing and stuck_review.adjudicated(
         project, conn, run_id, provider, task_id, branch, wt, beat_s, base_sha,
@@ -267,9 +270,17 @@ def _recorded_review(project, conn, run_id, provider, task_id, wt, beat_s,
             ticket, verify_cmd, criteria, mode, rnd, ok, out, stale, leaks,
             witness, branch, attempt)
         attempt.close(*_review_edge(conn, run_id, verdict, decision, findings,
-                                    ok, out), sha, decision=decision,
-                      findings=len(findings))
+                                    ok, out), sha)
     return verdict, decision, findings
+
+
+def _ran(attempt, attack):
+    def run():
+        try:
+            return attack()
+        finally:
+            attempt.note(adversary="ran")
+    return run
 
 
 def _review_edge(conn, run_id, verdict, decision, findings, ok, out):
@@ -329,7 +340,10 @@ def _verify(project, conn, run_id, beat_s, wt, base_sha, ticket, verify_cmd,
         ok, out = _checked(project, conn, run_id, beat_s, wt, base_sha, ticket,
                            verify_cmd, contracts, rnd)
         attempt.close("pass" if ok else "fail", "next", head,
-                      timed_out=bool(not ok and verify_timed_out(out)))
+                      timed_out=not ok and any(
+                          verify_timed_out(row.get("output", ""))
+                          for row in getattr(out, "results", None)
+                          or [{"output": str(out)}]))
     return ok, out
 
 

@@ -24,16 +24,25 @@ from fake_agent import (  # noqa: E402 - after the sys.path insert above
     REQUEST_CHANGES,
     Commit,
     FakeAgent,
+    Reply,
+    block_until_killed,
 )
 from loop_fixture import (  # noqa: E402 - after the sys.path insert above
+    BRANCH,
     UNTRIMMED,
     LoopFixture,
     StubProvider,
     a_task,
 )
+from test_reproduce_first import (  # noqa: E402 - after the sys.path insert
+    PASSES,
+    REPRODUCE,
+    bug_task,
+)
 
 import store  # noqa: E402 - after the sys.path insert above
 import store.stages  # noqa: E402 - after the sys.path insert above
+from holophyte.loop.gates import InfraFailure  # noqa: E402
 
 TRIMMED = "[trim]\nbudget_min = 1\n"
 # What each scripted turn reports, by its 1-based place in the script.
@@ -73,6 +82,30 @@ class TrimTurn:
         for commit in self.commits:
             commit.play(cwd, turn)
         return "trimmed"
+
+
+TWO_BLOCKERS = Reply(
+    "- README.md:1 [p1] [correctness] the first blocker\n"
+    "- README.md:1 [p2] [correctness] the second blocker\n"
+    "CRITERION 1: met \u2014 tests/test_thing.py::test_it_works\n"
+    "VERDICT: REQUEST_CHANGES")
+
+
+class CommitThenTimeOut(Commit):
+    """An implement turn that commits, then runs past its budget."""
+
+    def play(self, cwd, turn):
+        super().play(cwd, turn)
+        block_until_killed(cwd)
+
+
+class RouteFails:
+    """A trim turn whose route fails as infrastructure."""
+
+    role = "implement"
+
+    def play(self, cwd, turn):
+        raise InfraFailure("the trimmer route did not start")
 
 
 class StageRecordingTests(LoopFixture):
@@ -159,11 +192,47 @@ class StageRecordingTests(LoopFixture):
         self.assertEqual(detail["reason"],
                          "diff of 49 changed lines is under 50")
 
+    def test_a_trim_whose_route_fails_closes_as_an_error(self):
+        self.run_loop(TRIMMED, Commit("work", "work.txt", lines(60)),
+                      RouteFails(), APPROVE)
+
+        self.assertEqual(self.read("SELECT outcome FROM runs"), [("merged",)])
+        self.assertIn(("trim", 1, "error", "end"), self.outcomes())
+
+    def test_an_unreproduced_bug_records_its_trim_skipped(self):
+        self.configure(TRIMMED)
+        self.loop(REPRODUCE, PASSES, provider=StubProvider(bug_task("echo ok")))
+
+        self.assertEqual(self.read("SELECT parkKind FROM runs"),
+                         [("not_reproduced",)])
+        (_, _, outcome, _, detail), = self.attempts()
+        self.assertEqual((outcome, detail["reason"]),
+                         ("skipped", "the bug was not reproduced"))
+
+    def test_an_implementer_that_commits_then_times_out_keeps_its_commit(self):
+        self.run_loop(UNTRIMMED, CommitThenTimeOut("work"))
+
+        self.assertEqual(self.read("SELECT outcome, failureKind FROM runs"),
+                         [("failed", "budget")])
+        self.assertEqual(self.outcomes(), [("implement", 1, "fail", "end")])
+        self.assertEqual(self.shas("implement", 1),
+                         (self.base, self.git("rev-parse", BRANCH).strip()))
+
+    def test_a_review_counts_the_reviewers_own_blockers(self):
+        self.run_loop(UNTRIMMED, Commit("work"), TWO_BLOCKERS, Commit("fix"),
+                      APPROVE)
+
+        review = [detail for stage, attempt, _, _, detail in self.attempts()
+                  if (stage, attempt) == ("review", 1)][0]
+        self.assertEqual((review["decision"], review["findings"]),
+                         ("REQUEST_CHANGES", 2))
+
     def test_a_reviewer_malformed_twice_ends_its_review_attempt_as_an_error(self):
         self.run_loop(UNTRIMMED, Commit("work"), MALFORMED, MALFORMED)
 
         self.assertEqual(self.read("SELECT outcome FROM runs"), [("failed",)])
         self.assertEqual(self.outcomes()[-1], ("review", 1, "error", "end"))
+        self.assertEqual(self.attempts()[-1][4]["decision"], "MALFORMED")
 
     def test_a_red_verify_before_review_fails_onto_the_review(self):
         task = dict(a_task(), verify="test -f fixed.txt")
