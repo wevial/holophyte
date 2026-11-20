@@ -79,7 +79,7 @@ def _run_one(project, conn, run_id, beat_s, wt, base_sha, sha, check, detail,
                         {**detail, "mode": check["mode"]},
                         wt=wt, verbatim=("mode",)) as attempt, \
             heartbeat_while(conn, run_id, beat_s):
-        outcome, found = _ran_bound(project, check, wt, sha)
+        outcome, found = _ran_bound(project, conn, run_id, check, wt, sha)
         blocking = check["mode"] == "required" and outcome != "pass"
         if blocking:
             finding = _finding(check, found)
@@ -90,7 +90,7 @@ def _run_one(project, conn, run_id, beat_s, wt, base_sha, sha, check, detail,
 
 
 def _finding(check, result):
-    command = outbound(" && ".join(check["commands"] or []), check["secrets"])
+    command = outbound(" && ".join(check["commands"]), check["secrets"])
     name = outbound(check["id"], check["secrets"])
     status = result.get("exit_status")
     title = f"required check {name} failed: {command}"
@@ -103,8 +103,37 @@ def _finding(check, result):
             "message": f"{title}\n{tail}" if tail else title}
 
 
-def _ran_bound(project, check, wt, sha):
-    if check["commands"] is None:
+def _prior_result(conn, run_id, stage_id, sha):
+    for previous in reversed(continued_runs(conn, run_id)):
+        row = conn.execute(
+            "SELECT s.id, s.outcome, s.detail FROM stageAttempts s"
+            " JOIN runs r ON r.id = s.runId"
+            " WHERE s.runId = ?"
+            " AND r.pipelineId = (SELECT pipelineId FROM runs WHERE id = ?)"
+            " AND s.stageId = ? AND s.inputSha = ? AND s.outputSha = ?"
+            " AND s.outcome IN ('pass', 'fail', 'error')"
+            " AND s.edge IN ('next', 'on_fail')"
+            " AND json_extract(s.detail, '$.error') IS NOT ?"
+            " ORDER BY s.id DESC LIMIT 1",
+            (previous, run_id, stage_id, sha, sha, UNBOUND)).fetchone()
+        if row:
+            attempt_id, outcome, detail = row
+            stored = json.loads(detail)
+            result = {key: stored[key] for key in
+                      ("exit_status", "timed_out", "output", "error", "cleanup_error")
+                      if key in stored}
+            result["reused_attempt"] = stored.get("reused_attempt", attempt_id)
+            return outcome, result
+    return None
+
+
+def _ran_bound(project, conn, run_id, check, wt, sha):
+    if check.get("redacted"):
+        if check["mode"] == "required":
+            previous = record.guarded(conn, run_id, "stage_read", lambda: _prior_result(
+                conn, run_id, check["id"], sha))
+            if previous is not None and previous is not record.REFUSED:
+                return previous
         return "error", {"error": UNBOUND}
     try:
         return ran(project, check, wt, sha)
@@ -129,9 +158,7 @@ def configured(project, conn, run_id, after):
     if len(raw) == len(stages):
         return [{**check, "id": stage["id"], "secrets": secrets | held}
                 for stage, check in zip(stages, raw) if check["after"] == after]
-    return [{"id": stage["id"], "after": stage["after"], "mode": stage["mode"],
-             "paths": stage.get("paths") or [], "secrets": secrets,
-             "commands": None if stage.get("redacted") else stage["commands"]}
+    return [{**stage, "paths": stage.get("paths") or [], "secrets": secrets}
             for stage in stages if stage["after"] == after]
 
 

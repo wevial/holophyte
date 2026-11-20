@@ -2295,8 +2295,12 @@ original commands, and the credentials it scrubbed them with, in memory
 only, and a run that continues one in the same process takes them over.
 Selection by `after`, the `mode off` skip and the path condition read the
 pinned stage, so a run picked up again by another process still skips as
-pinned; a check that would run but whose pinned stage is marked `redacted`
-without its original commands in memory closes `error` without running.
+pinned. If a redacted command is unavailable after a restart, a required
+check reuses its latest recorded result for the same commit and pinned
+pipeline in the continued run. The attempt records the original attempt ID
+in `reused_attempt`. Without a matching result, the required check records
+`error` and blocks approval. An advisory check with an unavailable command
+records `error`.
 The store also redacts registered environment values in the pinned
 document and in every stage attempt it records, except a check stage's
 `id`, `after`, `mode` and `paths` and the reason a check was skipped,

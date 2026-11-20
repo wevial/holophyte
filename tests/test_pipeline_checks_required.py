@@ -11,11 +11,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from fake_agent import APPROVE, REQUEST_CHANGES, Commit, Idle  # noqa: E402
 from loop_fixture import UNTRIMMED, StubProvider, a_task  # noqa: E402
 from pause_fixture import PauseReply  # noqa: E402
-from test_pipeline_checks import GIT_DATES, CheckRuns, check_table  # noqa: E402
+from test_pipeline_checks import (  # noqa: E402
+    GIT_DATES,
+    CheckRuns,
+    PausingCommit,
+    check_table,
+)
 from test_pipeline_notes import WITNESS, TrimTurn, lines  # noqa: E402
 
 import store  # noqa: E402
 from holophyte.loop import review_round, stop  # noqa: E402
+from holophyte.stages import record  # noqa: E402
 
 
 class RequiredCheckTests(CheckRuns):
@@ -156,3 +162,45 @@ class RequiredCheckTests(CheckRuns):
         self.assertEqual(fake.roles, ["review", "implement", "review"])
         self.assertIn("test -f fixed", fake.turns[1].goal)
         self.assertIn("repair lint", self.subjects())
+
+    def resume_redacted_check(self, command, fix, *resume_turns):
+        self.configure_required(
+            "lint", "implement", ["echo fixture-credential", command],
+            config=UNTRIMMED + '[extras]\napi_token = "fixture-credential"\n')
+        self.loop(Commit("work"), REQUEST_CHANGES, PausingCommit(self.db, fix))
+        self.assertEqual(self.read("SELECT outcome, resumePhase FROM runs"),
+                         [("paused", "verifying")])
+        stop.command(self.project, "KO-131", None, resume=True)
+        with patch.dict(record.PINNED_CHECKS, clear=True):
+            return self.loop(*resume_turns)[0]
+
+    def test_a_resumed_redacted_check_keeps_the_pass_for_the_same_commit(self):
+        fake = self.resume_redacted_check("true", Idle(), APPROVE)
+        self.assertEqual(self.read("SELECT outcome FROM runs ORDER BY id"),
+                         [("paused",), ("merged",)])
+        self.assertEqual(fake.roles, ["review"])
+        lint, = [row for row in self.attempts(2) if row[0] == "lint"]
+        self.assertEqual(lint[2:4], ("pass", "next"))
+        self.assertEqual(lint[4]["round"], 2)
+        self.assertEqual(self.read("SELECT id FROM stageAttempts"
+                                   " WHERE runId = 1 AND stageId = 'lint'"),
+                         [(lint[4]["reused_attempt"],)])
+
+    def test_a_resumed_redacted_check_keeps_the_command_failure_for_the_fix(self):
+        fake = self.resume_redacted_check("echo lint-diagnostic && exit 23",
+                                          Idle(), APPROVE, Idle())
+        first, second = self.rounds()
+        original = next(item for item in first[2] if item["path"] == "lint")
+        self.assertEqual(second, (2, "changes_requested", [original]))
+        self.assertIn("exit 23", original["title"])
+        self.assertIn("lint-diagnostic", fake.turns[-1].goal)
+        self.assertNotIn("fixture-credential", fake.turns[-1].goal)
+
+    def test_a_resumed_redacted_check_cannot_reuse_a_pass_for_a_different_commit(self):
+        self.resume_redacted_check("true", Commit("fix"), APPROVE, Idle())
+        before, = [row for row in self.attempts() if row[0] == "lint"]
+        after, = [row for row in self.attempts(2) if row[0] == "lint"]
+        self.assertNotEqual(before[1], after[1])
+        self.assertEqual(before[2:4], ("pass", "next"))
+        self.assertEqual(after[2:4], ("error", "on_fail"))
+        self.assertEqual(self.rounds()[-1][1], "changes_requested")

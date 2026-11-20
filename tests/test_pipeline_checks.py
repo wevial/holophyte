@@ -113,7 +113,8 @@ class ChecksConfigTests(LoopFixture):
         self.configure(check_table("lint", "implement", ["ruff check ."],
                                    "advisory")
                        + check_table("docs", "trim", ["make docs", "true"],
-                                     "off", ["docs/**"]))
+                                     "off", ["docs/**"])
+                       + check_table("types", "implement", ["mypy ."], "required"))
 
         check_config(self.project)
 
@@ -121,7 +122,9 @@ class ChecksConfigTests(LoopFixture):
             {"id": "lint", "after": "implement", "mode": "advisory",
              "commands": ["ruff check ."], "paths": []},
             {"id": "docs", "after": "trim", "mode": "off",
-             "commands": ["make docs", "true"], "paths": ["docs/**"]}])
+             "commands": ["make docs", "true"], "paths": ["docs/**"]},
+            {"id": "types", "after": "implement", "mode": "required",
+             "commands": ["mypy ."], "paths": []}])
 
     def test_a_bad_entry_stops_the_load_naming_the_entry(self):
         good = check_table("first", "implement", ["true"], "advisory")
@@ -156,17 +159,6 @@ class ChecksConfigTests(LoopFixture):
         ids = [stage["id"] for stage in standard.resolve(self.project)["stages"]]
 
         self.assertEqual(sorted(ids), sorted(STANDARD_STAGES))
-
-    def test_the_required_mode_is_refused_as_not_available_yet(self):
-        self.configure(check_table("types", "implement", ["mypy ."],
-                                   "required"))
-
-        with self.assertRaises(SystemExit) as stopped:
-            check_config(self.project)
-
-        message = str(stopped.exception)
-        self.assertIn("[[pipeline.check]] types", message)
-        self.assertIn("mode required is not available yet", message)
 
 
 class CheckRuns(LoopFixture):
