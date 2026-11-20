@@ -6,6 +6,7 @@ from holophyte.agents.agent_routes import route_prose, routes, safe_command
 from holophyte.agents.probes import (
     container_fallback_profile,
     probe_adversary_claude,
+    probe_council_seat,
     probe_critic,
     probe_diagnostic,
     probe_implementer,
@@ -167,12 +168,29 @@ def startup_routes(project, provider, implementer_probe=None, *, activate=True,
         _record_startup_probe(project, provider, probe)
         if not probe.ok:
             return False
+    if critic:
+        probe_council(project)
     probe_writer(project, activate=activate)
     probe_trimmer(project, provider, activate=activate)
     if critic:
         # Even a scheduler keeps the critic's route: its workers inherit it.
         probe_critic(project, provider, activate=True)
     return True
+
+
+def probe_council(project, numbers=None):
+    from holophyte.review.council import seat_route
+
+    state = routes(project)
+    for number, seat in enumerate(review_config(project).council, 1):
+        if numbers is not None and number not in numbers:
+            continue
+        probe = probe_council_seat(project, number, seat_route(project, seat))
+        state.council_checked[number] = list(seat)
+        state.council_down.pop(number, None)
+        if not probe.ok:
+            state.council_down[number] = probe_diagnostic(project, probe)
+            print(state.council_down[number])
 
 
 def container_pair_seat(project, role):

@@ -1042,7 +1042,8 @@ export type FlowReverted = z.infer<typeof flowRevertedSchema>;
 
 export const flowSchema = z.looseObject({
   now: z.int(),
-  weeks: z.array(flowWeekSchema),
+  weeks: z.array(flowWeekSchema).optional(),
+  buckets: z.array(flowWeekSchema).optional(),
   phases: z.record(z.string(), z.number()),
   waits: flowWaitsSchema,
   reverted: flowRevertedSchema.nullable(),

@@ -5,11 +5,13 @@ Run: python3 -m unittest discover -s tests -p 'test_serve_history.py' -v
 import os
 import subprocess
 import unittest
+from datetime import datetime, timedelta, timezone
 from time import time
 
 import store
 import store.tickets
 from holophyte.serve.contract import History
+from holophyte.serve.serve_history import Flow
 from tests.phase_fixture import advance_phase, finish_run, park_run
 from tests.serve_fixture import MIN, ServeTestCase
 from tests.test_serve_contract import walk
@@ -417,6 +419,109 @@ class FlowTests(ServeTestCase):
         code, _, body = self.request("GET", f"/flow?until={later}")
         self.assertEqual(code, 400)
         self.assertIn("until", body["error"])
+
+
+class FlowBucketTests(ServeTestCase):
+    UNTIL = 1794009600000
+    MERGES_BY_DAYS_AGO = {1: 2, 3: 1, 4: 3, 5: 1, 7: 1, 8: 2, 10: 1}
+
+    def seed_merges(self):
+        self.seed_at(*(self.UNTIL - days_ago * DAY + 3 * 60 * MIN
+                       for days_ago, count in self.MERGES_BY_DAYS_AGO.items()
+                       for _ in range(count)))
+
+    def flow(self, query):
+        code, _, body = self.request("GET", f"/flow?{query}&until={self.UNTIL}")
+        self.assertEqual(code, 200, body)
+        walk(body, Flow, "flow")
+        return body
+
+    def test_seven_daily_buckets_count_each_days_merges_in_day_order(self):
+        self.seed_merges()
+        body = self.flow("days=7&bucket=day")
+        self.assertNotIn("weeks", body)
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["buckets"]],
+            [(self.UNTIL - 7 * DAY, 1), (self.UNTIL - 6 * DAY, 0),
+             (self.UNTIL - 5 * DAY, 1), (self.UNTIL - 4 * DAY, 3),
+             (self.UNTIL - 3 * DAY, 1), (self.UNTIL - 2 * DAY, 0),
+             (self.UNTIL - DAY, 2)])
+
+    def test_weeks_still_answers_weekly_rows_under_weeks(self):
+        self.seed_merges()
+        body = self.flow("weeks=6")
+        self.assertNotIn("buckets", body)
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["weeks"]],
+            [(self.UNTIL - (6 - index) * 7 * DAY, merged)
+             for index, merged in enumerate((0, 0, 0, 0, 3, 8))])
+
+    def test_weekly_buckets_over_days_not_a_whole_week_shorten_the_oldest(self):
+        self.seed_merges()
+        body = self.flow("days=10&bucket=week")
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["buckets"]],
+            [(self.UNTIL - 10 * DAY, 3), (self.UNTIL - 7 * DAY, 8)])
+
+    def seed_at(self, *merges):
+        conn = store.open(str(self.db))
+        try:
+            store.init(conn)
+            project = store.tickets.ensure_project(conn, "team-1", self.target)
+            for n, merged in enumerate(merges, start=1):
+                ticket = store.tickets.mirror_ticket(
+                    conn, project, linear_issue_id=f"issue-{n}",
+                    linear_identifier=f"KO-{n}", title=f"ticket {n}")
+                run = store.claim(conn, project, ticket, now=merged - MIN)
+                finish_run(conn, run, "merged", now=merged)
+        finally:
+            conn.close()
+        self.start()
+
+    def test_without_until_the_last_day_opens_at_midnight_in_the_asked_zone(self):
+        kolkata = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(kolkata)
+        midnight = int(datetime(now.year, now.month, now.day,
+                                tzinfo=kolkata).timestamp() * 1000)
+        self.seed_at(midnight - MIN, midnight)
+        code, _, body = self.request("GET", "/flow?days=2&tz=Asia/Kolkata")
+        self.assertEqual(code, 200, body)
+        self.assertEqual(
+            [(row["start_ms"], row["merged"]) for row in body["buckets"]],
+            [(midnight - DAY, 1), (midnight, 1)])
+
+    def assert_one_new_york_day(self, opens, closes):
+        opened = int(opens.timestamp() * 1000)
+        closed = int(closes.timestamp() * 1000)
+        self.seed_at(opened - 30 * MIN, opened + 30 * MIN, closed - 30 * MIN)
+        code, _, body = self.request(
+            "GET", f"/flow?days=1&tz=America/New_York&until={closed}")
+        self.assertEqual(code, 200, body)
+        self.assertEqual([(row["start_ms"], row["merged"])
+                          for row in body["buckets"]], [(opened, 2)])
+
+    def test_the_day_clocks_spring_forward_runs_midnight_to_midnight(self):
+        self.assert_one_new_york_day(
+            datetime(2026, 3, 8, tzinfo=timezone(timedelta(hours=-5))),
+            datetime(2026, 3, 9, tzinfo=timezone(timedelta(hours=-4))))
+
+    def test_the_day_clocks_fall_back_runs_midnight_to_midnight(self):
+        self.assert_one_new_york_day(
+            datetime(2026, 11, 1, tzinfo=timezone(timedelta(hours=-4))),
+            datetime(2026, 11, 2, tzinfo=timezone(timedelta(hours=-5))))
+
+    def test_days_or_bucket_outside_the_allowed_values_is_400_naming_them(self):
+        self.seed()
+        self.start()
+        for query, named in (("days=0", "from 1 to 182"),
+                             ("days=183", "from 1 to 182"),
+                             ("days=30&bucket=month", "one of day, week"),
+                             ("bucket=month", "one of day, week"),
+                             ("days=7&tz=Mars/Olympus", "IANA time zone")):
+            with self.subTest(query=query):
+                code, _, body = self.request("GET", f"/flow?{query}")
+                self.assertEqual(code, 400)
+                self.assertIn(named, body["error"])
 
 
 class FlowRevertTests(ServeTestCase):

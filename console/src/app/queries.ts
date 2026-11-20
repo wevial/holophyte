@@ -55,6 +55,7 @@ import {
   type PollBodies,
 } from "../lib/poll";
 import { runKey } from "../lib/runs";
+import type { FlowBucket } from "./flow";
 import { PollDepsContext, scopedHosts } from "./scope";
 import { mergedRows, shippedUrl, tagRows, todayMerges } from "../lib/shipped";
 import type { ShippedRow, ShippedWireRow } from "../lib/types";
@@ -630,15 +631,17 @@ export function useMergeQueues<R extends HostRecord<PollBodies>>(hosts: R[], dep
 const FLOW_INTERVAL_MS = 60_000;
 
 export interface FlowWindow {
-  weeks: number;
+  days: number;
+  bucket: FlowBucket;
+  tz: string;
   until?: number;
 }
 
 /** Each status-answering host's last good `/flow` answer for `window`, in
- *  fleet order; a daemon without the route, or that never answered, is left out. */
+ *  fleet order; a daemon without the route or its `buckets`, or that never answered, is left out. */
 export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { fetch: Fetch }, window: FlowWindow): { host: R; flow: Flow }[] {
   const asked = hosts.filter((host) => host.status != null);
-  const path = `/flow?weeks=${window.weeks}${window.until == null ? "" : `&until=${window.until}`}`;
+  const path = `/flow?days=${window.days}&bucket=${window.bucket}&tz=${encodeURIComponent(window.tz)}${window.until == null ? "" : `&until=${window.until}`}`;
   const results = useQueries({
     queries: asked.map((host) => ({
       queryKey: routeKey(host.base, path),
@@ -649,6 +652,6 @@ export function useFlows<R extends HostRecord<PollBodies>>(hosts: R[], deps: { f
   });
   return asked.flatMap((host, index) => {
     const flow = results[index]?.data;
-    return flow ? [{ host, flow }] : [];
+    return flow?.buckets ? [{ host, flow }] : [];
   });
 }

@@ -29,6 +29,7 @@ from holophyte.review.reply_parsing import (
     unparsed_path,
     without_category,
 )
+from holophyte.review.review_runner import removing_on_signal
 from store.working import working
 
 DEPTHS = {"high": "full", "medium": "light"}
@@ -278,7 +279,7 @@ def beside(conn, run_id, primary, side):
             outcome["value"] = context.run(side)
         except BaseException as exc:  # noqa: BLE001 - re-raised after the join
             outcome["error"] = exc
-    with working(conn, run_id):
+    with working(conn, run_id), removing_on_signal():
         thread = threading.Thread(target=run, args=(contextvars.copy_context(),),
                                   name=f"adversary-run-{run_id}", daemon=True)
         thread.start()

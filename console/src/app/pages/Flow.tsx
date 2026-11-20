@@ -19,8 +19,10 @@ import {
   oneDecimal,
   WAIT_WORDS,
   weeklyTips,
+  type FlowBucket,
   type FlowNumbers,
   type FlowWeekly,
+  sameWindow,
 } from "../flow";
 import { dayStart, validDay } from "../history";
 import { storeScope } from "../projects";
@@ -34,15 +36,15 @@ const RAISED = "rounded-[10px] bg-raised shadow-[inset_0_0_0_1px_var(--hair)]";
 const MENU = "rounded-[9px] bg-raised shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]";
 
 const RANGES = [
-  { value: "4w", label: "Last 4 weeks", weeks: 4 },
-  { value: "6w", label: "Last 6 weeks", weeks: 6 },
-  { value: "12w", label: "Last 12 weeks", weeks: 12 },
-  { value: "26w", label: "Last 26 weeks", weeks: 26 },
+  { value: "7d", label: "Last 7 days", days: 7 },
+  { value: "30d", label: "Last 30 days", days: 30 },
+  { value: "90d", label: "Last 90 days", days: 90 },
 ] as const;
 type FlowRange = (typeof RANGES)[number]["value"];
-const DEFAULT_RANGE: FlowRange = "6w";
+const DEFAULT_RANGE: FlowRange = "30d";
 const ALL = "";
-const WEEKS_CAP = 26;
+const DAYS_CAP = 182;
+const DAILY_CAP = 31;
 
 export interface FlowSearch {
   range?: FlowRange;
@@ -51,9 +53,8 @@ export interface FlowSearch {
 }
 
 function dayEnd(day: string): Date {
-  const end = dayStart(day);
-  end.setDate(end.getDate() + 1);
-  return end;
+  const start = dayStart(day);
+  return new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
 }
 
 function wholeDays(from: string, to: string): number {
@@ -61,7 +62,9 @@ function wholeDays(from: string, to: string): number {
 }
 
 function endedRange(from: string | undefined, to: string | undefined): boolean {
-  return from != null && to != null && wholeDays(from, to) >= 7 && dayEnd(to).getTime() <= Date.now();
+  if (from == null || to == null) return false;
+  const days = wholeDays(from, to);
+  return days >= 1 && days <= DAYS_CAP && dayEnd(to).getTime() <= Date.now();
 }
 
 function lastEndedDay(): string {
@@ -73,14 +76,30 @@ function lastEndedDay(): string {
 export function validateFlowSearch(search: Record<string, unknown>): FlowSearch {
   const from = validDay(search.from);
   const to = validDay(search.to);
-  if (endedRange(from, to)) return { from, to };
+  if (endedRange(from, to)) return { range: undefined, from, to };
   const range = RANGES.find((each) => each.value === search.range && each.value !== DEFAULT_RANGE);
-  return range ? { range: range.value } : {};
+  return { range: range?.value, from: undefined, to: undefined };
+}
+
+function presetOf(range: string | undefined) {
+  return RANGES.find((each) => each.value === range) ?? RANGES.find((each) => each.value === DEFAULT_RANGE)!;
+}
+
+function localZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+function bucketOf(days: number): FlowBucket {
+  return days <= DAILY_CAP ? "day" : "week";
 }
 
 function flowWindow({ range, from, to }: FlowSearch): FlowWindow {
-  if (from == null || to == null) return { weeks: RANGES.find((each) => each.value === (range ?? DEFAULT_RANGE))!.weeks };
-  return { weeks: Math.min(Math.floor(wholeDays(from, to) / 7), WEEKS_CAP), until: dayEnd(to).getTime() };
+  if (from == null || to == null) {
+    const { days } = presetOf(range);
+    return { days, bucket: bucketOf(days), tz: localZone() };
+  }
+  const days = wholeDays(from, to);
+  return { days, bucket: bucketOf(days), tz: localZone(), until: dayEnd(to).getTime() };
 }
 
 const SPLIT = [
@@ -98,14 +117,14 @@ interface Trend {
   values: (number | null)[];
 }
 
-function Figure({ label, children, tone = "text-ink", trend, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; note?: string }) {
+function Figure({ label, children, tone = "text-ink", trend, bucket, note }: { label: string; children: ReactNode; tone?: string; trend?: Trend; bucket?: FlowBucket; note?: string }) {
   return (
     <div className={`flex min-w-0 flex-col gap-2 px-3.5 py-3 transition-colors duration-(--motion-colour) hover:bg-hover ${RAISED}`}>
       <dt className="font-sans text-[12px] text-ink-3">{label}</dt>
       <dd className="flex flex-col gap-2">
         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <span data-number={label} className={`font-sans text-[30px] font-[240] font-stretch-120% leading-none tracking-[-0.02em] ${tone}`}>{children}</span>
-          {trend && <Change number={trend.number} values={trend.values} />}
+          {trend && <Change number={trend.number} values={trend.values} bucket={bucket} />}
         </span>
         {trend && <Sparkline values={trend.values} />}
       </dd>
@@ -114,15 +133,15 @@ function Figure({ label, children, tone = "text-ink", trend, note }: { label: st
   );
 }
 
-function Numbers({ numbers, weekly }: { numbers: FlowNumbers; weekly: FlowWeekly }) {
+function Numbers({ numbers, weekly, bucket }: { numbers: FlowNumbers; weekly: FlowWeekly; bucket: FlowBucket }) {
   return (
     <dl aria-label="Flow numbers" className="grid grid-cols-5 gap-3 max-[960px]:grid-cols-2">
-      <Figure label="Merged" trend={{ number: "merged", values: weekly.merged }}>{numbers.merged}</Figure>
-      <Figure label="Waiting" tone="text-wait" trend={{ number: "waiting", values: weekly.waitingShare }}>
+      <Figure label="Merged" bucket={bucket} trend={{ number: "merged", values: weekly.merged }}>{numbers.merged}</Figure>
+      <Figure label="Waiting" tone="text-wait" bucket={bucket} trend={{ number: "waiting", values: weekly.waitingShare }}>
         {numbers.waitingShare == null ? "–" : `${numbers.waitingShare}%`}
       </Figure>
-      <Figure label="Rounds per merge" trend={{ number: "rounds", values: weekly.rounds }}>{formatRounds(numbers.rounds)}</Figure>
-      <Figure label="Interventions per merge" trend={{ number: "interventions", values: weekly.interventionsPerMerge }}>
+      <Figure label="Rounds per merge" bucket={bucket} trend={{ number: "rounds", values: weekly.rounds }}>{formatRounds(numbers.rounds)}</Figure>
+      <Figure label="Interventions per merge" bucket={bucket} trend={{ number: "interventions", values: weekly.interventionsPerMerge }}>
         {formatPerMerge(numbers.interventionsPerMerge)}
       </Figure>
       <Figure label="Reverted" tone="text-live" note="of these merges, within 14 days">{formatReverted(numbers.reverted)}</Figure>
@@ -133,21 +152,22 @@ function Numbers({ numbers, weekly }: { numbers: FlowNumbers; weekly: FlowWeekly
 const percent = (value: number) => `${Math.round(value)}%`;
 const tenths = (value: number) => value.toFixed(1);
 
-function WeekByWeek({ weekly, allProjects }: { weekly: FlowWeekly; allProjects: boolean }) {
+function WeekByWeek({ weekly, allProjects, bucket }: { weekly: FlowWeekly; allProjects: boolean; bucket: FlowBucket }) {
   const { starts } = weekly;
   const tips = weeklyTips(weekly, allProjects);
+  const per = `per ${bucket}`;
   return (
     <section aria-labelledby="flow-weeks" className="flex flex-col gap-3">
-      <h2 id="flow-weeks" className={H2}>Week by week</h2>
+      <h2 id="flow-weeks" className={H2}>{bucket === "day" ? "Day by day" : "Week by week"}</h2>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,420px),1fr))] gap-3">
-        <BarChart title="Merges" note="per week" starts={starts} values={weekly.merged} format={oneDecimal} tip={tips.merged} />
-        <LineChart title="Time spent waiting" note="share of run time" starts={starts} values={weekly.waitingShare} top={100} format={percent} tip={tips.waiting} />
+        <BarChart title="Merges" note={per} starts={starts} bucket={bucket} values={weekly.merged} format={oneDecimal} tip={tips.merged} />
+        <LineChart title="Time spent waiting" note="share of run time" starts={starts} bucket={bucket} values={weekly.waitingShare} top={100} format={percent} tip={tips.waiting} />
         {allProjects ? (
-          <LineChart title="Interventions" note="per week" starts={starts} values={weekly.interventions} format={oneDecimal} tip={tips.interventions} />
+          <LineChart title="Interventions" note={per} starts={starts} bucket={bucket} values={weekly.interventions} format={oneDecimal} tip={tips.interventions} />
         ) : (
-          <LineChart title="Review rounds per merge" note="median" starts={starts} values={weekly.rounds} format={oneDecimal} tip={tips.rounds} />
+          <LineChart title="Review rounds per merge" note="median" starts={starts} bucket={bucket} values={weekly.rounds} format={oneDecimal} tip={tips.rounds} />
         )}
-        <LineChart title="Interventions per merge" note="per week" starts={starts} values={weekly.interventionsPerMerge} format={tenths} tip={tips.perMerge} />
+        <LineChart title="Interventions per merge" note={per} starts={starts} bucket={bucket} values={weekly.interventionsPerMerge} format={tenths} tip={tips.perMerge} />
       </div>
     </section>
   );
@@ -287,7 +307,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
   const { open, setOpen, close, box, button } = usePopover(false);
   const [draft, setDraft] = useState({ from: "", to: "" });
   const custom = search.from != null && search.to != null;
-  const preset = search.range ?? DEFAULT_RANGE;
+  const preset = presetOf(search.range);
   const field = "h-[30px] w-36 min-w-0 rounded-button border-0 bg-selected px-2 font-mono text-[12.5px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
   const toggle = () => {
     setDraft({ from: search.from ?? "", to: search.to ?? "" });
@@ -304,14 +324,14 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
     }}>
       <button ref={button} type="button" aria-label="Range" aria-haspopup="true" aria-expanded={open} onClick={toggle}
         className="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-        {custom ? dayRangeLabel(search.from, search.to) : RANGES.find((each) => each.value === preset)!.label}
+        {custom ? dayRangeLabel(search.from, search.to) : preset.label}
         <span className="flex text-ink-3"><DropIcon /></span>
       </button>
       {open && (
         <div role="group" aria-label="Range choices" className={`absolute top-full right-0 z-20 mt-1 flex w-[220px] flex-col gap-1 p-1 ${MENU}`}>
           <div className="flex flex-col">
             {RANGES.map((each) => {
-              const on = !custom && preset === each.value;
+              const on = !custom && preset === each;
               return (
                 <button key={each.value} type="button" aria-pressed={on}
                   onClick={() => {
@@ -334,7 +354,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
               To
               <input type="date" value={draft.to} min={draft.from || undefined} max={lastEndedDay()} className={field} onChange={(event) => pickDay({ to: event.target.value })} />
             </label>
-            <span className="leading-[1.5]">Whole weeks back from To, one to 26; To is a past day.</span>
+            <span className="leading-[1.5]">Whole days back from To, one to 182; To is a past day.</span>
           </div>
         </div>
       )}
@@ -343,9 +363,9 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
 }
 
 function byProject(answers: { name: string; flow: Flow }[]): ProjectFlow[] {
-  const grouped = new Map<string, Flow[]>();
-  for (const { name, flow } of answers) grouped.set(name, [...(grouped.get(name) ?? []), flow]);
-  return [...grouped].map(([name, flows]) => ({ name, numbers: flowNumbers(flows) }));
+  const grouped = new Map<string, { name: string; flow: Flow }[]>();
+  for (const answer of answers) grouped.set(answer.name, [...(grouped.get(answer.name) ?? []), answer]);
+  return [...grouped].map(([name, group]) => ({ name, numbers: flowNumbers(sameWindow(group).map(({ flow }) => flow)) }));
 }
 
 export function FlowPage() {
@@ -354,9 +374,10 @@ export function FlowPage() {
   const { project } = search;
   const navigate = useNavigate();
   const deps = useContext(PollDepsContext);
-  const answers = useFlows(hosts, deps, flowWindow(search)).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
+  const asked = flowWindow(search);
+  const answers = useFlows(hosts, deps, asked).map(({ host, flow }) => ({ host, name: projectName(host.status?.project ?? host.project ?? host.label), flow }));
   const inScope = new Set(scopedHosts(hosts, project));
-  const scoped = answers.filter(({ host }) => inScope.has(host)).map(({ flow }) => flow);
+  const scoped = sameWindow(answers.filter(({ host }) => inScope.has(host))).map(({ flow }) => flow);
   const numbers = scoped.length > 0 ? flowNumbers(scoped) : null;
   const weekly = flowWeekly(scoped);
   const span = flowSpan(scoped);
@@ -381,9 +402,9 @@ export function FlowPage() {
       />
       {numbers && (
         <>
-          <Numbers numbers={numbers} weekly={weekly} />
+          <Numbers numbers={numbers} weekly={weekly} bucket={asked.bucket} />
           <TimeSplit numbers={numbers} />
-          {weekly.starts.length > 0 && <WeekByWeek weekly={weekly} allProjects={project == null} />}
+          {weekly.starts.length > 0 && <WeekByWeek weekly={weekly} allProjects={project == null} bucket={asked.bucket} />}
           <div className="grid grid-cols-2 gap-10 max-[960px]:grid-cols-1">
             <BiggestWaits waits={numbers.waits} />
             <ProjectsTable projects={byProject(answers)} scope={project} pick={pick} />

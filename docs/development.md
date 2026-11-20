@@ -340,6 +340,11 @@ Each module, one line:
 - `holophyte/review/adversary.py` — the adversarial pass beside the primary
   review: when a round runs it, its brief by depth and scope, the reply's
   evidence levels and the findings that block.
+- `holophyte/review/council.py` — a council review round under
+  `[[review.council]]`: every seat in parallel on the round's prompt with the
+  `council_reply.schema.json` reply brief, one retry for a reply the schema
+  refuses, each seat's `councilSeats` row, the two-seat quorum and the
+  strictest-wins merge of the answering seats' replies.
 - `holophyte/review/consolidate.py` — one findings list for a fix turn after an
   adversarial pass: the exact merge, the consolidator's merges and order, the
   three-concern cap, the held concerns and the high-path raise.
@@ -1119,6 +1124,8 @@ The store is its own package:
 - `store/stages.py` — `open_stage()`, `close_stage()` and `skip_stage()`: a
   run's `stageAttempts`, numbered per stage, each closed with the agent
   seconds, tokens and cost of its roles' turns recorded while it was open.
+- `store/council.py` — `record_seat()`: one reviewer seat's row in a council
+  review round, its reply and reason redacted.
 - `store/project_paths.py` — canonical project identity reads that require operator
   repair for ambiguous legacy relative paths.
 - `store/tickets.py` — the ticket state machine: `ensure_project`, the §3
