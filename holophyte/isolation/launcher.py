@@ -270,15 +270,16 @@ def agy_login_flags(route, task, project, scratch, stack):
     if not CREDENTIAL_NEEDED.get():
         return route, []
     login = {"file": str(Path.home() / AGY_LOGIN), "destination": str(destination)}
+    login_dir = stack.enter_context(
+        credential_copy(replace(route, credential=login), task, project))
     home = (session_directory(task, project, "gemini") if route.writable
-            else Path(stack.enter_context(tempfile.TemporaryDirectory())))
+            else Path(stack.enter_context(
+                tempfile.TemporaryDirectory(dir=login_dir.parent))))
     if configured.is_relative_to(GEMINI_HOME):
         stack.enter_context(install_gemini_credential(
             home, configured, scratch, temporary=True))
         route = replace(route, credential={})
     if configured != destination:
-        login_dir = stack.enter_context(
-            credential_copy(replace(route, credential=login), task, project))
         stack.enter_context(install_gemini_credential(
             home, destination, login_dir, temporary=False))
     return route, ["--volume", f"{home}:{GEMINI_HOME}:rw"]
