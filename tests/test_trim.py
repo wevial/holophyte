@@ -1056,8 +1056,7 @@ class RetireLoopTests(TrimFixture):
 
     def test_retiring_a_whole_go_test_holding_a_subtest_is_kept(self):
         self.retire_labels(self.GO_LABELS_BASE, "TestLabel", "case")
-        retire_sha = self.shas()[SUBJECT]
-        self.assertEqual(self.gated, [retire_sha])
+        self.assertEqual(self.gated, [self.shas()[SUBJECT]])
         [result] = self.retire_results()
         self.assertEqual(result["outcome"], "kept")
         self.assertEqual(result["retired"], [

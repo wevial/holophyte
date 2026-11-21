@@ -47,7 +47,6 @@ QUIET_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT
                 tokenize.DEDENT, tokenize.ENDMARKER}
 SKIPPED = re.compile(r"'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\""
                      r"|`(?:[^`\\]|\\.)*`|//[^\n]*|/\*.*?\*/", re.S)
-_BRACES = {"{": 1, "}": -1}
 _BRACKETS = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 TEST_VALUE_GATE = """\
 **The test-value gate.** Before adding a test, answer four questions: what
@@ -445,10 +444,8 @@ def _go_cut_owners(path, hunks, spans):
                if opener == "{" for line in span}
     owners = set()
     for hunk in hunks:
-        named = {by_line[line] for line in hunk if line in by_line}
-        owners.update(f"{path}::{name}" for name in named)
-        outside = hunk - by_line.keys()
-        if outside:
+        owners.update(f"{path}::{by_line[line]}" for line in hunk if line in by_line)
+        if outside := hunk - by_line.keys():
             owners.add(f"{path}:{min(outside)}")
     return sorted(owners)
 
@@ -462,21 +459,19 @@ def _declaration_spans(text, suffix):
                          for start, end in masked)]
     spans = []
     for index, (match, name, opener) in enumerate(starts):
-        bound = (starts[index + 1][0].start()
-                 if index + 1 < len(starts) else len(text))
-        close = _declaration_close(text, match, opener, bound, skipped)
+        if opener == "{":
+            close = _closing(text, _go_body_open(text, match.end() - 1),
+                             len(text), skipped, {"{": 1, "}": -1})
+        else:
+            bound = (starts[index + 1][0].start()
+                     if index + 1 < len(starts) else len(text))
+            close = _closing(text, text.find(opener, match.start()), bound,
+                             skipped)
         if close is not None:
             first = text.count("\n", 0, match.start()) + 1
             spans.append((name, opener,
                           range(first, text.count("\n", 0, close) + 2)))
     return spans
-
-
-def _declaration_close(text, match, opener, bound, skipped):
-    if opener == "{":
-        open_at = _go_body_open(text, match.end() - 1)
-        return _closing(text, open_at, len(text), skipped, _BRACES)
-    return _closing(text, text.find(opener, match.start()), bound, skipped)
 
 
 def _go_body_open(text, paren):
@@ -490,10 +485,8 @@ def _go_body_open(text, paren):
             i = skip.end()
             continue
         char = text[i]
-        if char == "{" and depth == 0:
-            return i
-        if char == "\n" and depth == 0:
-            return -1
+        if depth == 0 and char in "{\n":
+            return i if char == "{" else -1
         depth += {"(": 1, ")": -1}.get(char, 0)
         i += 1
     return -1
