@@ -1032,6 +1032,79 @@ class RetireLoopTests(TrimFixture):
                                  "tests/checks_test.go": checks}),))
         self.assert_reverted("not candidates: tests/checks_test.go::kept")
 
+    GO_LABELS_BASE = (
+        'package labels\n\nimport "testing"\n\n'
+        'func TestBase(t *testing.T) {\n'
+        '\tt.Run("base", func(t *testing.T) {})\n}\n')
+    GO_LABELS_ADDED = (
+        GO_LABELS_BASE
+        + '\nfunc TestLabel(t *testing.T) {\n'
+        '\tt.Run("case", func(t *testing.T) {\n'
+        '\t\tif true {\n\t\t\t_ = "}"\n\t\t}\n\t})\n}\n')
+
+    def test_retiring_a_whole_go_test_holding_a_subtest_is_kept(self):
+        self.on_main("tests/labels_test.go", self.GO_LABELS_BASE)
+        self.retired(
+            Files(f"{SUBJECT}\n\n"
+                  "RETIRED tests/labels_test.go::TestLabel: pins a one-off label\n"
+                  "RETIRED tests/labels_test.go::case: pins a one-off label",
+                  {"tests/labels_test.go": self.GO_LABELS_BASE}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/labels_test.go": self.GO_LABELS_ADDED}),))
+        retire_sha = self.shas()[SUBJECT]
+        self.assertEqual(self.gated, [retire_sha])
+        [result] = self.retire_results()
+        self.assertEqual(result["outcome"], "kept")
+        self.assertEqual(result["retired"], [
+            {"test": "tests/labels_test.go::TestLabel",
+             "reason": "pins a one-off label"},
+            {"test": "tests/labels_test.go::case",
+             "reason": "pins a one-off label"}])
+        self.assertNotIn("TestLabel", self.git("show", "main:tests/labels_test.go"))
+
+    def test_retiring_only_a_t_run_inside_a_base_go_test_is_reverted(self):
+        self.on_main("tests/labels_test.go", self.GO_LABELS_BASE)
+        self.retired(
+            Files(f"{SUBJECT}\n\n"
+                  "RETIRED tests/labels_test.go::base: pins a one-off label",
+                  {"tests/labels_test.go": self.GO_LABELS_ADDED.replace(
+                      '\tt.Run("base", func(t *testing.T) {})\n', "")}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/labels_test.go": self.GO_LABELS_ADDED}),))
+        self.assert_reverted("not candidates: tests/labels_test.go::base")
+        self.assert_reverted("deleted lines outside retired tests and unused "
+                             "imports: tests/labels_test.go::TestBase")
+        self.assertIn('t.Run("base"', self.git("show", "main:tests/labels_test.go"))
+
+    def test_retiring_a_go_test_and_cutting_a_following_test_is_reverted(self):
+        base = ('package labels\n\nimport "testing"\n\n'
+                'func TestAfter(t *testing.T) {\n'
+                '\t_ = "keep"\n'
+                '\tt.Run("after", func(t *testing.T) {})\n}\n')
+        added = base.replace(
+            'func TestAfter(',
+            'func TestLabel(t *testing.T) {\n'
+            '\tt.Run("case", func(t *testing.T) {})\n}\n\nfunc TestAfter(')
+        self.on_main("tests/labels_test.go", base)
+        self.retired(
+            Files(f"{SUBJECT}\n\n"
+                  "RETIRED tests/labels_test.go::TestLabel: pins a one-off label\n"
+                  "RETIRED tests/labels_test.go::case: pins a one-off label",
+                  {"tests/labels_test.go": base.replace('\t_ = "keep"\n', "")}),
+            work=(Files("work", {"thing.txt": "the thing\n",
+                                 "tests/test_new.py": NEW,
+                                 "tests/labels_test.go": added}),))
+        self.assert_reverted("deleted lines outside retired tests and unused "
+                             "imports: tests/labels_test.go::TestAfter")
+        [result] = self.retire_results()
+        self.assertEqual(
+            result["reason"],
+            "the commit deleted lines outside retired tests and unused imports:"
+            " tests/labels_test.go::TestAfter")
+        self.assertIn('_ = "keep"', self.git("show", "main:tests/labels_test.go"))
+
     def test_a_retire_commit_that_turns_verify_red_is_reverted(self):
         def leaning(source):
             return source.replace(
