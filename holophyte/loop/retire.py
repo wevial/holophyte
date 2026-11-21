@@ -31,7 +31,12 @@ from holophyte.loop.trim import (
 )
 from holophyte.redact import known_secrets, redact_prose
 from holophyte.redact import safe_print as print
-from holophyte.review.reply_parsing import _GO_NAMES, _JS_TITLE, test_references
+from holophyte.review.reply_parsing import (
+    _GO_NAMES,
+    _GO_TOKEN,
+    _JS_TITLE,
+    test_references,
+)
 
 SUBJECT = "retire: run-added tests"
 NO_CANDIDATE = "no run-added test outside the protected set"
@@ -42,6 +47,7 @@ QUIET_TOKENS = {tokenize.COMMENT, tokenize.NL, tokenize.NEWLINE, tokenize.INDENT
                 tokenize.DEDENT, tokenize.ENDMARKER}
 SKIPPED = re.compile(r"'(?:[^'\\\n]|\\.)*'|\"(?:[^\"\\\n]|\\.)*\""
                      r"|`(?:[^`\\]|\\.)*`|//[^\n]*|/\*.*?\*/", re.S)
+_BRACKETS = {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}
 TEST_VALUE_GATE = """\
 **The test-value gate.** Before adding a test, answer four questions: what
 behavior, invariant or contract does it protect? What credible regression
@@ -317,10 +323,7 @@ def _cut_tests(wt, sha, head, path, gone):
         return []
     deleted = {number for hunk in hunks for number in hunk}
     if tree is None:
-        owned = _candidate_lines(text, PurePosixPath(path).suffix, gone,
-                                 deleted | quiet)
-        return [f"{path}:{min(set(hunk) - owned)}"
-                for hunk in hunks if set(hunk) - owned]
+        return _non_python_cut(text, path, gone, hunks, deleted | quiet)
     kept = set(range(1, text.count("\n") + 2)) - quiet - deleted
     used = (None if PurePosixPath(path).name == "conftest.py"
             else _used_names(wt, head, path))
@@ -425,24 +428,68 @@ def _span(node):
     return range(start, node.end_lineno + 1)
 
 
-def _candidate_lines(text, suffix, gone, cut):
-    masked = [match.span() for match in SKIPPED.finditer(text)]
-    starts = [(match.start(), name, opener)
+def _non_python_cut(text, path, gone, hunks, cut):
+    suffix = PurePosixPath(path).suffix
+    spans = _declaration_spans(text, suffix)
+    owned = {line for name, _, span in spans
+             if name in gone and cut.issuperset(span) for line in span}
+    unowned = [rest for hunk in hunks if (rest := set(hunk) - owned)]
+    if suffix == ".go":
+        return _go_cut_owners(path, unowned, spans)
+    return [f"{path}:{min(hunk)}" for hunk in unowned]
+
+
+def _go_cut_owners(path, hunks, spans):
+    by_line = {line: name for name, opener, span in spans
+               if opener == "{" for line in span}
+    owners = set()
+    for hunk in hunks:
+        owners.update(f"{path}::{by_line[line]}" for line in hunk if line in by_line)
+        if outside := hunk - by_line.keys():
+            owners.add(f"{path}:{min(outside)}")
+    return sorted(owners)
+
+
+def _declaration_spans(text, suffix):
+    skipped = _GO_TOKEN if suffix == ".go" else SKIPPED
+    masked = [match.span() for match in skipped.finditer(text)]
+    starts = [(match, name, opener)
               for match, name, opener in _declarations(text, suffix)
               if not any(start <= match.start() < end
                          for start, end in masked)]
-    lines = set()
-    for index, (start, name, opener) in enumerate(starts):
-        if name not in gone:
-            continue
-        bound = starts[index + 1][0] if index + 1 < len(starts) else len(text)
-        close = _closing(text, text.find(opener, start), bound)
+    spans = []
+    for index, (match, name, opener) in enumerate(starts):
+        if opener == "{":
+            close = _closing(text, _go_body_open(text, match.end() - 1),
+                             len(text), skipped, {"{": 1, "}": -1})
+        else:
+            bound = (starts[index + 1][0].start()
+                     if index + 1 < len(starts) else len(text))
+            close = _closing(text, text.find(opener, match.start()), bound,
+                             skipped)
         if close is not None:
-            first = text.count("\n", 0, start) + 1
-            span = range(first, text.count("\n", 0, close) + 2)
-            if cut.issuperset(span):
-                lines.update(span)
-    return lines
+            first = text.count("\n", 0, match.start()) + 1
+            spans.append((name, opener,
+                          range(first, text.count("\n", 0, close) + 2)))
+    return spans
+
+
+def _go_body_open(text, paren):
+    end = _closing(text, paren, len(text), _GO_TOKEN)
+    if end is None:
+        return -1
+    i, depth = end + 1, 0
+    while i < len(text):
+        skip = _GO_TOKEN.match(text, i)
+        if skip:
+            i = skip.end()
+            continue
+        char = text[i]
+        if depth == 0 and char in "{\n":
+            return i if char == "{" else -1
+        depth += {"(": 1, ")": -1}.get(char, 0)
+        i += 1
+    return -1
 
 
 def _declarations(text, suffix):
@@ -457,15 +504,14 @@ def _declarations(text, suffix):
             for match in _JS_TITLE.finditer(text)]
 
 
-def _closing(text, i, bound):
+def _closing(text, i, bound, skipped, deltas=_BRACKETS):
     depth = 0
     while 0 <= i < bound:
-        skip = SKIPPED.match(text, i)
+        skip = skipped.match(text, i)
         if skip:
             i = skip.end()
             continue
-        depth += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(
-            text[i], 0)
+        depth += deltas.get(text[i], 0)
         if depth == 0:
             return i
         i += 1
