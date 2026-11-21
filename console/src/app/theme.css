@@ -1127,7 +1127,7 @@ body {
 }
 
 @keyframes state-pulse {
-  50% { transform: scale(0.84); stroke-opacity: 0.3; }
+  50% { stroke-opacity: 0.3; }
 }
 
 @keyframes state-march {
@@ -1156,14 +1156,17 @@ body {
 }
 
 .state-pulse {
-  transform-box: fill-box;
-  transform-origin: center;
   animation: state-pulse 2.6s ease-in-out infinite;
 }
 
 .state-march {
   stroke-dasharray: 1 1;
-  animation: state-march var(--motion-march) linear infinite;
+  animation: state-march var(--motion-march) steps(2) infinite;
+}
+
+/* SVG animations run on the main thread every frame, so Motion off stops them. */
+[data-motion="off"] :is(.state-pulse, .state-march, .phase-running, .think i) {
+  animation: none;
 }
 
 .btn {

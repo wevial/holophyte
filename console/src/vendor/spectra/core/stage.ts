@@ -12,6 +12,10 @@
 
 import { AdaptiveResolution } from './resolution';
 
+// An ambient effect needs no more than 30 frames a second; a held one redraws a still frame a few times a second.
+const FRAME_MS = 1000 / 30 - 1;
+const HELD_POLL_MS = 250;
+
 export interface Pointer {
   x: number;        // GL uv, origin bottom-left
   y: number;
@@ -140,6 +144,7 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
 
   let frameFn: ((dt: number, rawDtMs: number) => void) | null = null;
   let rafId = 0;
+  let heldTimer = 0;
   let last = 0;
   let visible = !document.hidden;
   let onScreen = true;
@@ -175,8 +180,7 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
     },
     stop() {
       frameFn = null;
-      cancelAnimationFrame(rafId);
-      rafId = 0;
+      pause();
     },
     destroy() {
       stage.stop();
@@ -192,6 +196,11 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
   function tick(now: number) {
     rafId = 0;
     if (!frameFn) return;
+    const held = reducedMotion.matches || !!opts.held?.();
+    if (!held && frames > 0 && now - last < FRAME_MS) {
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
     const rawDt = now - last;
     last = now;
 
@@ -202,7 +211,6 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
         gl.deleteQuery(q);
       }
     }
-    const held = reducedMotion.matches || !!opts.held?.();
     if (!held && adaptive?.sample(rawDt, gpuMs) && stage.resize()) {
       gpuMs = undefined;
       opts.onResize?.();
@@ -215,7 +223,8 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
       gl.endQuery(timer!.TIME_ELAPSED_EXT);
       queries.push(q);
     }
-    schedule();
+    if (held) heldTimer = window.setTimeout(() => { heldTimer = 0; last = performance.now(); schedule(); }, HELD_POLL_MS);
+    else schedule();
   }
 
   function draw(dt: number, rawDt: number) {
@@ -226,7 +235,7 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
   }
 
   function schedule() {
-    if (driven || rafId || !frameFn || !visible || !onScreen) return;
+    if (driven || rafId || heldTimer || !frameFn || !visible || !onScreen) return;
     if (!last) last = performance.now();
     rafId = requestAnimationFrame(tick);
   }
@@ -234,6 +243,8 @@ export function createStage(container: HTMLElement, opts: StageOptions = {}): St
   function pause() {
     cancelAnimationFrame(rafId);
     rafId = 0;
+    clearTimeout(heldTimer);
+    heldTimer = 0;
   }
 
   document.addEventListener('visibilitychange', () => {
