@@ -1,7 +1,7 @@
 /**
  * The app icon, rendered from the repository's own SVG so no image tool has
- * to exist on the machine: `assets/icon.svg` is the ginkgo leaf, full-bleed
- * on its own gradient ground, because macOS 26 drops an icon without a ground
+ * to exist on the machine: `assets/icon.svg` is the pleated ginkgo, full-bleed
+ * on its own charcoal ground, because macOS 26 drops an icon without a ground
  * onto a grey tile and shrinks it; and the tray's warn and bad variants, rendered
  * from the drawer's SVGs at the template PNG's 1x and 2x sizes since
  * Electron loads no SVG into a tray. `renderIcon` is pure; the CLI entry
