@@ -465,7 +465,7 @@ def _declaration_spans(text, suffix):
     for index, (match, name, opener) in enumerate(starts):
         bound = (starts[index + 1][0].start()
                  if index + 1 < len(starts) else len(text))
-        close = _declaration_close(text, suffix, match, opener, bound, skipped)
+        close = _declaration_close(text, match, opener, bound, skipped)
         if close is not None:
             first = text.count("\n", 0, match.start()) + 1
             spans.append((name, opener,
@@ -473,10 +473,10 @@ def _declaration_spans(text, suffix):
     return spans
 
 
-def _declaration_close(text, suffix, match, opener, bound, skipped):
-    if suffix == ".go" and opener == "{":
+def _declaration_close(text, match, opener, bound, skipped):
+    if opener == "{":
         open_at = _go_body_open(text, match.end() - 1)
-        return _closing(text, open_at, len(text), _GO_TOKEN, _BRACES)
+        return _closing(text, open_at, len(text), skipped, _BRACES)
     return _closing(text, text.find(opener, match.start()), bound, skipped)
 
 
@@ -512,7 +512,7 @@ def _declarations(text, suffix):
             for match in _JS_TITLE.finditer(text)]
 
 
-def _closing(text, i, bound, skipped=SKIPPED, deltas=_BRACKETS):
+def _closing(text, i, bound, skipped, deltas=_BRACKETS):
     depth = 0
     while 0 <= i < bound:
         skip = skipped.match(text, i)
