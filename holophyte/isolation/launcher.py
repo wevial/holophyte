@@ -270,26 +270,18 @@ def agy_login_flags(route, task, project, scratch, stack):
     if not CREDENTIAL_NEEDED.get():
         return route, []
     login = {"file": str(Path.home() / AGY_LOGIN), "destination": str(destination)}
-    if route.writable:
-        home = session_directory(task, project, "gemini")
-        if configured.is_relative_to(GEMINI_HOME):
-            stack.enter_context(install_gemini_credential(
-                home, configured, scratch, temporary=True))
-            route = replace(route, credential={})
-        if configured != destination:
-            login_dir = stack.enter_context(
-                credential_copy(replace(route, credential=login), task, project))
-            stack.enter_context(install_gemini_credential(
-                home, destination, login_dir, temporary=False))
-        return route, ["--volume", f"{home}:{GEMINI_HOME}:rw"]
-    if configured == destination:
-        return route, []
-    if configured.parent == destination.parent:
-        stage_credential(login, scratch)
-        return route, []
-    login_dir = stack.enter_context(
-        credential_copy(replace(route, credential=login), task, project))
-    return route, ["--volume", f"{login_dir}:{destination.parent}:rw"]
+    home = (session_directory(task, project, "gemini") if route.writable
+            else Path(stack.enter_context(tempfile.TemporaryDirectory())))
+    if configured.is_relative_to(GEMINI_HOME):
+        stack.enter_context(install_gemini_credential(
+            home, configured, scratch, temporary=True))
+        route = replace(route, credential={})
+    if configured != destination:
+        login_dir = stack.enter_context(
+            credential_copy(replace(route, credential=login), task, project))
+        stack.enter_context(install_gemini_credential(
+            home, destination, login_dir, temporary=False))
+    return route, ["--volume", f"{home}:{GEMINI_HOME}:rw"]
 
 
 def codex_mount_flags():
