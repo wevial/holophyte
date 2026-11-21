@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -510,6 +511,64 @@ class IsolationTests(GoRaceCases, IsolationCase):
         self.assertEqual(homes[0], homes[1])
         self.assertNotEqual(homes[1], homes[2])
         self.assertEqual(host_login.read_bytes(), b"host-login")
+
+    def test_read_only_agy_launch_gets_a_throwaway_writable_gemini_home(self):
+        from holophyte.isolation import launcher
+
+        worktree, _, host_login = self.agy_project()
+        route = replace(launcher.turn_route(self.target, ["agy"]), writable=False)
+        seen = {}
+
+        def run(command, cwd, timeout, *, env):
+            volumes = [command[i + 1].split(":") for i, flag in enumerate(command)
+                       if flag == "--volume"]
+            gemini = [volume for volume in volumes
+                      if volume[1].startswith("/home/implementer/.gemini")]
+            self.assertEqual([volume[1:] for volume in gemini],
+                             [["/home/implementer/.gemini", "rw"]])
+            home = Path(gemini[0][0])
+            (home / "config" / "projects").mkdir(parents=True)
+            seen["home"] = home
+            login = home / launcher.AGY_LOGIN.relative_to(".gemini")
+            seen["login"] = login.read_text()
+            return 0, ""
+
+        with (patch.object(launcher, "image_ready"),
+              patch.object(launcher.review_runner, "_remove_container"),
+              patch.object(launcher, "run_capped", side_effect=run)):
+            code, _ = launcher.launch(route, worktree, {}, ["agy"], project=self.target)
+        self.assertEqual((code, seen["login"]), (0, "host-login"))
+        self.assertFalse(seen["home"].exists())
+        self.assertEqual(host_login.read_text(), "host-login")
+
+    def test_agy_uses_a_configured_login_without_a_host_login(self):
+        from holophyte.isolation import launcher
+
+        worktree, _, host_login = self.agy_project()
+        host_login.unlink()
+        configured = self.root / "configured-login"
+        configured.write_text("configured-login")
+        self.table["agents"]["implementer_credential"] = {
+            "file": str(configured), "destination": str(launcher.AGY_LOGIN_DESTINATION)}
+        login = launcher.AGY_LOGIN.relative_to(".gemini")
+        for writable in (True, False):
+            with self.subTest(writable=writable):
+                route = replace(launcher.turn_route(self.target, ["agy"]),
+                                writable=writable)
+
+                def run(command, cwd, timeout, *, env):
+                    volumes = [command[i + 1] for i, flag in enumerate(command)
+                               if flag == "--volume"]
+                    home = next(volume.split(":")[0] for volume in volumes
+                                if volume.endswith(":/home/implementer/.gemini:rw"))
+                    return 0, (Path(home) / login).read_text()
+
+                with (patch.object(launcher, "image_ready"),
+                      patch.object(launcher.review_runner, "_remove_container"),
+                      patch.object(launcher, "run_capped", side_effect=run)):
+                    result = launcher.launch(route, worktree, {}, ["agy"],
+                                             project=self.target)
+                self.assertEqual(result, (0, "configured-login"))
 
     def first_agy_turn(self, worktree, credential=None):
         from holophyte.isolation import launcher
