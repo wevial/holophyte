@@ -221,7 +221,7 @@ function dropMovedHazeStrength(): void {
   else unsavedValues.delete("haze");
 }
 
-function readMotion(fallback = true): boolean {
+export function readMotion(fallback = true): boolean {
   try {
     return localStorage.getItem(MOTION_KEY) !== "off";
   } catch {
@@ -267,6 +267,11 @@ export function writeDensity(density: Density): void {
   } catch {
     return;
   }
+}
+
+export function applyMotion(motion: boolean, root: HTMLElement = document.documentElement): void {
+  if (motion) root.removeAttribute("data-motion");
+  else root.setAttribute("data-motion", "off");
 }
 
 export function applyDensity(density: Density, root: HTMLElement = document.documentElement): void {
@@ -333,7 +338,7 @@ const densityStore = appearanceStore(readDensity, writeDensity, applyDensity);
 const fontStore = appearanceStore(readFont, writeFont, applyFont);
 const effectStore = appearanceStore(readHeaderEffect, (effect) => writeStored(EFFECT_KEY, effect === "haze" ? null : effect), () => {});
 const effectSettingsStore = appearanceStore(readEffectSettings, writeEffectSettings, (settings) => applyHazeStrength(Number(settings.haze?.strength ?? FULL)));
-const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), () => {});
+const motionStore = appearanceStore(readMotion, (motion) => writeStored(MOTION_KEY, motion ? null : "off"), applyMotion);
 const textSizeStore = appearanceStore(readPercent(TEXT_SIZE_KEY, TEXT_SIZES), writePercent(TEXT_SIZE_KEY), () => {});
 const grainStore = appearanceStore(readGrain, writePercent(GRAIN_KEY), applyGrain);
 
