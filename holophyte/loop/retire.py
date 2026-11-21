@@ -434,21 +434,20 @@ def _non_python_cut(text, path, gone, hunks, cut):
     spans = _declaration_spans(text, suffix)
     owned = {line for name, _, span in spans
              if name in gone and cut.issuperset(span) for line in span}
+    unowned = [rest for hunk in hunks if (rest := set(hunk) - owned)]
     if suffix == ".go":
-        return _go_cut_owners(path, hunks, owned, spans)
-    return [f"{path}:{min(set(hunk) - owned)}"
-            for hunk in hunks if set(hunk) - owned]
+        return _go_cut_owners(path, unowned, spans)
+    return [f"{path}:{min(hunk)}" for hunk in unowned]
 
 
-def _go_cut_owners(path, hunks, owned, spans):
+def _go_cut_owners(path, hunks, spans):
     by_line = {line: name for name, opener, span in spans
                if opener == "{" for line in span}
     owners = set()
     for hunk in hunks:
-        unowned = set(hunk) - owned
-        named = {by_line[line] for line in unowned if line in by_line}
+        named = {by_line[line] for line in hunk if line in by_line}
         owners.update(f"{path}::{name}" for name in named)
-        outside = unowned - by_line.keys()
+        outside = hunk - by_line.keys()
         if outside:
             owners.add(f"{path}:{min(outside)}")
     return sorted(owners)
