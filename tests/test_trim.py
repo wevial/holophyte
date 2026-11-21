@@ -1058,12 +1058,11 @@ class RetireLoopTests(TrimFixture):
         self.retire_labels(self.GO_LABELS_BASE, "TestLabel", "case")
         self.assertEqual(self.gated, [self.shas()[SUBJECT]])
         [result] = self.retire_results()
-        self.assertEqual(result["outcome"], "kept")
-        self.assertEqual(result["retired"], [
+        self.assertEqual((result["outcome"], result["retired"]), ("kept", [
             {"test": "tests/labels_test.go::TestLabel",
              "reason": "pins a one-off label"},
             {"test": "tests/labels_test.go::case",
-             "reason": "pins a one-off label"}])
+             "reason": "pins a one-off label"}]))
         self.assertNotIn("TestLabel", self.git("show", "main:tests/labels_test.go"))
 
     def test_retiring_only_a_t_run_inside_a_base_go_test_is_reverted(self):
