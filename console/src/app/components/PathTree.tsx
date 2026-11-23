@@ -31,14 +31,8 @@ export function writePathView(view: PathView): void {
   }
 }
 
-type Model = {
-  dirs: Map<string, TrackedTree["dirs"][number]>;
-  under: Map<string, string[]>;
-  patterns: Map<string, string>;
-  items: TreeItemData[];
-  total: number;
-};
-type Split = { selected: Set<string>; kept: string[]; keptCovered: Set<string> };
+type Model = { under: Map<string, string[]>; patterns: Map<string, string>; items: TreeItemData[]; total: number };
+type Split = { selected: string[]; kept: string[]; keptCovered: Set<string> };
 
 const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}`);
 
@@ -69,7 +63,7 @@ function modelOf(tree: TrackedTree): Model {
     if (path !== "") patterns.set(`${literal(path)}/*`, path);
     for (const file of files) patterns.set(literal(file), file);
   }
-  return { dirs, under, patterns, items, total: under.get("")?.length ?? 0 };
+  return { under, patterns, items, total: under.get("")?.length ?? 0 };
 }
 
 const inSet = (text: string) => text.replace(/[\\\]-]/g, "\\$&");
@@ -170,29 +164,26 @@ function split(model: Model, value: readonly string[]): Split {
   for (const each of [...selected]) if (ancestors(each).some((above) => selected.has(above))) selected.delete(each);
   const matchers = kept.map(fnmatch);
   const keptCovered = new Set(files.filter((file) => matchers.some((matcher) => matcher.test(file))));
-  return { selected, kept, keptCovered };
+  return { selected: [...selected], kept, keptCovered };
 }
 
-function written(model: Model, selected: Set<string>, path = ""): string[] {
-  const dir = model.dirs.get(path);
-  if (!dir) return [];
-  const folders = dir.dirs.flatMap((name) => {
-    const child = join(path, name);
-    return selected.has(child) ? [`${literal(child)}/*`] : written(model, selected, child);
+function written(items: readonly TreeItemData[], selected: ReadonlySet<string>): string[] {
+  return items.flatMap((item) => {
+    if (selected.has(item.value)) return [item.children ? `${literal(item.value)}/*` : literal(item.value)];
+    return item.children ? written(item.children, selected) : [];
   });
-  return [...folders, ...dir.leaves.map((leaf) => join(path, leaf)).filter((file) => selected.has(file)).map(literal)];
 }
 
 /** Rewrite the tree's patterns from `checked` while keeping patterns the
  *  tree cannot show in their place. */
-function merged(model: Model, value: readonly string[], kept: readonly string[], checked: readonly string[]): string[] {
-  const next = written(model, new Set(checked));
+function merged(items: readonly TreeItemData[], value: readonly string[], kept: ReadonlySet<string>, checked: readonly string[]): string[] {
+  const next = written(items, new Set(checked));
   const stays = new Set([...kept, ...next]);
   return [...new Set([...value.filter((pattern) => stays.has(pattern)), ...next])];
 }
 
-function coveredBy(model: Model, selected: Set<string>): Set<string> {
-  return new Set([...selected].flatMap((path) => model.under.get(path) ?? [path]));
+function coveredBy(model: Model, selected: readonly string[]): Set<string> {
+  return new Set(selected.flatMap((path) => model.under.get(path) ?? [path]));
 }
 
 const counted = (count: number) => count.toLocaleString("en-US");
@@ -266,7 +257,6 @@ export function PathViewSwitch({ label, view, onPick }: { label: string; view: P
 export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; value: readonly string[]; label: string; onChange: (value: string[]) => void }) {
   const model = useMemo(() => modelOf(tree), [tree]);
   const state = useMemo(() => split(model, value), [model, value]);
-  const checked = useMemo(() => [...state.selected], [state]);
   const kept = new Set(state.kept);
   const covered = new Set([...coveredBy(model, state.selected), ...state.keptCovered]).size;
   return (
@@ -277,8 +267,8 @@ export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; 
         mode="none"
         checkable
         checkStrategy="trunk"
-        checked={checked}
-        onCheckedChange={(next) => onChange(merged(model, value, state.kept, next))}
+        checked={state.selected}
+        onCheckedChange={(next) => onChange(merged(model.items, value, kept, next))}
         className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1"
       >
         <PathBranch items={model.items} model={model} />
