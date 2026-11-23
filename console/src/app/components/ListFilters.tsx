@@ -1,5 +1,11 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { createPopup, definePrimitive, popupContent, popupState, popupTrigger, type Align, type Side } from "@ui-sdk/core";
+import { popoverPreset } from "@ui-sdk/core/popover";
+import { Checkbox, CheckboxGroup, CheckboxIndicator } from "@ui-sdk/react/checkbox";
+import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import { Radio, RadioGroup, RadioIndicator } from "@ui-sdk/react/radio";
+import { Toggle, ToggleGroup } from "@ui-sdk/react/toggle";
 import { dayStart } from "../history";
 import { Btn } from "./Btn";
 import { Picker, type PickerOption as FilterOption } from "./Picker";
@@ -188,14 +194,6 @@ function useWrite() {
   return (change: PageSearch) => void navigate({ to: ".", search: (previous: PageSearch) => ({ ...previous, page: undefined, ...change }) });
 }
 
-function FilterIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 14 14" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round">
-      <path d="M1.5 3h11M3.5 7h7M5.5 11h3" />
-    </svg>
-  );
-}
-
 function SearchIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" className="size-4 shrink-0">
@@ -230,24 +228,122 @@ function CheckMark() {
   );
 }
 
+function BoxMark({ mixed }: { mixed: boolean }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="size-3.5">
+      <path d={mixed ? "M4.8 8h6.4" : "M4.6 8.3l2.3 2.3 4.6-4.9"} />
+    </svg>
+  );
+}
+
+/** A label wrapping its control moves focus to it on the click that ends a
+ *  press, in the same task as pointerup, so focus returns to `button` in the
+ *  task after it. Returns a cancel for a reopen that comes first. */
+function refocusAfterPress(button: HTMLElement | undefined) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stop = () => {
+    document.removeEventListener("pointerup", settle, true);
+    document.removeEventListener("pointercancel", settle, true);
+  };
+  const settle = () => {
+    stop();
+    timer = setTimeout(() => button?.focus({ preventScroll: true }));
+  };
+  document.addEventListener("pointerup", settle, true);
+  document.addEventListener("pointercancel", settle, true);
+  return () => (stop(), clearTimeout(timer));
+}
+
+const toolPopover = definePrimitive({
+  name: "tool-popover",
+  options: { defaultOpen: "boolean", onOpenChange: "callback" },
+  state: (options: { defaultOpen?: boolean; onOpenChange?: (open: boolean) => void }) => popupState(options),
+  api: (context) => {
+    let cancelRefocus = () => {};
+    const popup = createPopup(context, {
+      preset: popoverPreset,
+      behavior: { dismissOnFocusLoss: false },
+      rules: (core) => ({
+        // Controls outside the popover (such as SearchField) preventDefault on Escape,
+        // which makes the popup layer skip it; close when Escape did not come from another popup.
+        onShow() {
+          cancelRefocus();
+          const onKey = (event: KeyboardEvent) => {
+            if (event.key !== "Escape" || !event.defaultPrevented || event.isComposing) return;
+            const dialog = event.target instanceof Element ? event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]') : null;
+            if (dialog && dialog !== core.element("content")) return;
+            core.control.hide({ reason: "escape-key", event, focus: true });
+          };
+          document.addEventListener("keydown", onKey);
+          return () => document.removeEventListener("keydown", onKey);
+        },
+        dismiss(reason, { event, focus }) {
+          if (reason === "focus-out") return;
+          if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
+          event?.preventDefault();
+          core.control.hide({ reason, event, focus: true });
+          const label = event?.target instanceof Element ? event.target.closest("label") : null;
+          if (label && !label.htmlFor) cancelRefocus = refocusAfterPress(core.triggerElement());
+        },
+        close(request, close) {
+          close();
+          if (request.reason !== "escape-key" && request.reason !== "outside-press" && request.reason !== "close-press") return;
+          const trigger = core.triggerElement();
+          if (trigger && document.activeElement !== trigger) trigger.focus({ preventScroll: true });
+        },
+      }),
+    });
+    context.onDestroy(() => cancelRefocus());
+    return popup;
+  },
+  slots: (slot) => {
+    const content = popupContent(slot);
+    return {
+      root: slot({}),
+      trigger: popupTrigger(slot),
+      content: slot({ ...content, attrs: (state, part) => ({ ...content.attrs?.(state, part), "aria-labelledby": undefined }) }),
+    };
+  },
+});
+
+const { Trigger: ToolTrigger, Content: ToolContent } = createParts(toolPopover, { trigger: "button", content: "div" });
+
+/** A trigger over a dialog named `label`: Escape and outside presses close it
+ *  and return focus to the trigger, focus moving out keeps it open, and
+ *  `hidden` closes it. */
+export function ToolPopover({
+  label, hidden, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
+  side = "bottom", align = "end", sideOffset = MENU_GAP, collisionPadding = MENU_EDGE,
+  contentRef, className, style, onOpenChange, children,
+}: {
+  label: string; hidden: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
+  triggerClassName?: string; triggerPressed?: boolean; side?: Side; align?: Align; sideOffset?: number;
+  collisionPadding?: number; contentRef?: RefObject<HTMLDivElement | null>; className?: string;
+  style?: CSSProperties; onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
+}) {
+  const handle = usePrimitive(toolPopover, { onOpenChange });
+  useEffect(() => {
+    if (hidden) handle.api.close({ reason: "imperative" });
+  }, [hidden, handle]);
+  const close = () => void handle.api.close({ reason: "close-press" });
+  return usePart(handle, "root", {}, {
+    className: "shrink-0",
+    children: (
+      <>
+        <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
+        <ToolContent ref={contentRef} aria-label={label} side={side} align={align} sideOffset={sideOffset} collisionPadding={collisionPadding} style={style} className={className}>
+          {typeof children === "function" ? children(close) : children}
+        </ToolContent>
+      </>
+    ),
+  }, "div");
+}
+
 export interface FilterSection {
   label: string;
   param: string;
   options: readonly (FilterOption & { count: number; colour?: string })[];
   mono?: boolean;
-}
-
-function Check({ name, checked, mixed = false, onChange, children, head = false, disabled = false }: {
-  name: string; checked: boolean; mixed?: boolean; onChange: () => void; children: ReactNode; head?: boolean; disabled?: boolean;
-}) {
-  return (
-    <label className={`flex min-h-8 cursor-pointer items-center gap-3 ${head ? "font-semibold text-ink" : "pl-7 text-ink-2"}`}>
-      <input type="checkbox" aria-label={name} checked={checked} disabled={disabled} onChange={onChange}
-        ref={(input) => { if (input) input.indeterminate = mixed; }}
-        className="size-3.5 shrink-0 cursor-pointer accent-act" />
-      {children}
-    </label>
-  );
 }
 
 /** A section's checked values and its writer, which keeps them in the section's order. */
@@ -260,38 +356,6 @@ function useSection(section: FilterSection, search: PageSearch, write: (change: 
   return { checked, set };
 }
 
-/** A section's heading as a box checking every option, mixed while some are. */
-function SectionHead({ id, section, checked, set }: { id: string; section: FilterSection; checked: string[]; set: (values: string[]) => void }) {
-  const on = section.options.filter((option) => checked.includes(option.value));
-  const all = section.options.length > 0 && on.length === section.options.length;
-  return (
-    <Check head name={section.label} checked={all} mixed={on.length > 0 && !all} disabled={section.options.length === 0}
-      onChange={() => set(all ? [] : section.options.map((option) => option.value))}>
-      <span id={id}>{section.label}</span>{" "}
-      {on.length > 0 && <span className="ml-auto font-mono text-[12px] font-normal text-ink-3">{on.length} of {section.options.length}</span>}
-    </Check>
-  );
-}
-
-function Section({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
-  const id = useId();
-  const { checked, set } = useSection(section, search, write);
-  return (
-    <fieldset aria-labelledby={id} className="m-0 min-w-0 border-rule px-4 py-2.5 not-first:border-t">
-      <legend className="float-left w-full">
-        <SectionHead id={id} section={section} checked={checked} set={set} />
-      </legend>
-      {section.options.map((option) => (
-        <Check key={option.value} name={option.label} checked={checked.includes(option.value)}
-          onChange={() => set(checked.includes(option.value) ? checked.filter((value) => value !== option.value) : [...checked, option.value])}>
-          <span className="min-w-0 [overflow-wrap:anywhere]">{option.label}</span>{" "}
-          <span className="ml-auto font-mono text-[12px] tabular-nums text-act">{option.count}</span>
-        </Check>
-      ))}
-    </fieldset>
-  );
-}
-
 export interface SortSection {
   keys: readonly FilterOption[];
   orders: readonly FilterOption[];
@@ -301,61 +365,39 @@ export interface SortSection {
   onOrder: (order: string) => void;
 }
 
-function Radio({ name, label, checked, onPick }: { name: string; label: string; checked: boolean; onPick: () => void }) {
-  return (
-    <label className="flex min-h-8 cursor-pointer items-center gap-3 pl-7 text-ink-2">
-      <input type="radio" name={name} checked={checked} onChange={onPick} className="size-3.5 shrink-0 cursor-pointer accent-act" />
-      {label}
-    </label>
-  );
-}
-
-function Sorting({ sorting }: { sorting: SortSection }) {
-  const id = useId();
-  return (
-    <fieldset aria-labelledby={id} className="m-0 min-w-0 border-rule px-4 py-2.5">
-      <legend id={id} className="float-left flex min-h-8 w-full items-center font-semibold text-ink">Sort</legend>
-      {sorting.keys.map((key) => <Radio key={key.value} name={`${id}-key`} label={key.label} checked={sorting.sort === key.value} onPick={() => sorting.onSort(key.value)} />)}
-      <div role="radiogroup" aria-label="Order" className="mt-1 border-t border-rule-2 pt-1">
-        {sorting.orders.map((order) => <Radio key={order.value} name={`${id}-order`} label={order.label} checked={sorting.order === order.value} onPick={() => sorting.onOrder(order.value)} />)}
-      </div>
-    </fieldset>
-  );
-}
-
 const MENU_HEAD = "flex h-[26px] items-center gap-1.5 px-2 text-[12px] text-ink-3";
-const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-checked:font-medium has-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
-
-function MenuCheck({ type, name, checked, onChange, children, className = MENU_ROW }: {
-  type: "checkbox" | "radio"; name: string; checked: boolean; onChange: () => void; children: ReactNode; className?: string;
-}) {
-  return (
-    <label className={className}>
-      <input type={type} name={type === "radio" ? name : undefined} aria-label={type === "checkbox" ? name : undefined} checked={checked} onChange={onChange} className="sr-only" />
-      <span className={`inline-flex w-3.5 shrink-0 items-center justify-center ${checked ? "" : "invisible"}`}><CheckMark /></span>
-      {children}
-    </label>
-  );
-}
+const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-data-checked:font-medium has-data-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
+const HEAD_BOX = "inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-[4px] shadow-[inset_0_0_0_1.5px_var(--hair-2)] data-checked:bg-accent data-checked:shadow-none data-indeterminate:bg-accent data-indeterminate:shadow-none disabled:cursor-default disabled:opacity-50 forced-colors:border forced-colors:border-solid";
 
 function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
   const id = useId();
   const { checked, set } = useSection(section, search, write);
+  const allValues = section.options.map((option) => option.value);
+  const on = section.options.filter((option) => checked.includes(option.value)).length;
   return (
-    <fieldset aria-labelledby={id} className="m-0 min-w-0 border-0 p-0">
-      <legend className="float-left w-full px-2 text-[12px] *:min-h-[26px] *:gap-2">
-        <SectionHead id={id} section={section} checked={checked} set={set} />
+    <CheckboxGroup value={checked} allValues={allValues} onValueChange={set} aria-labelledby={id} render={<fieldset />} className="m-0 min-w-0 border-0 p-0">
+      <legend className="float-left w-full px-2 text-[12px]">
+        <label className="flex min-h-[26px] cursor-pointer items-center gap-2 font-semibold text-ink">
+          <Checkbox parent aria-label={section.label} disabled={section.options.length === 0} className={HEAD_BOX}>
+            <CheckboxIndicator className="inline-flex items-center justify-center text-raised">
+              {(state) => <BoxMark mixed={state.indeterminate} />}
+            </CheckboxIndicator>
+          </Checkbox>
+          <span id={id}>{section.label}</span>{" "}
+          {on > 0 && <span className="ml-auto font-mono text-[12px] font-normal text-ink-3">{on} of {section.options.length}</span>}
+        </label>
       </legend>
       {section.options.map((option) => (
-        <MenuCheck key={option.value} type="checkbox" name={option.label} checked={checked.includes(option.value)}
-          onChange={() => set(checked.includes(option.value) ? checked.filter((value) => value !== option.value) : [...checked, option.value])}
-          className={`${MENU_ROW} ${option.count === 0 ? "text-ink-3" : ""}`}>
+        <label key={option.value} className={`${MENU_ROW} ${option.count === 0 ? "text-ink-3" : ""}`}>
+          <Checkbox value={option.value} aria-label={option.label} className="inline-flex size-3.5 shrink-0 items-center justify-center outline-none!">
+            <CheckboxIndicator className="inline-flex items-center justify-center"><CheckMark /></CheckboxIndicator>
+          </Checkbox>
           {option.colour && <i aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: option.colour }} />}
           <span data-option-label className={`min-w-0 truncate ${section.mono ? "font-mono text-[12px]" : ""}`}>{option.label}</span>{" "}
           <span className="ml-auto font-mono text-[12px] font-normal tabular-nums text-ink-3">{option.count}</span>
-        </MenuCheck>
+        </label>
       ))}
-    </fieldset>
+    </CheckboxGroup>
   );
 }
 
@@ -373,18 +415,26 @@ function MenuSorting({ sorting }: { sorting: SortSection }) {
     <fieldset aria-labelledby={id} className="m-0 min-w-0 border-0 p-0">
       <legend className={`${MENU_HEAD} float-left w-full`}>
         <span id={id}>Sort</span>
-        <span className="ml-auto inline-flex gap-0.5">
+        <ToggleGroup value={[sorting.order]} deselectable={false} onValueChange={([next]) => { if (next) sorting.onOrder(next); }}
+          render={({ role: _role, ...props }) => <span {...props} />} className="ml-auto inline-flex gap-0.5">
           {sorting.orders.map((order) => (
-            <button key={order.value} type="button" aria-pressed={sorting.order === order.value} aria-label={order.label} title={order.label} onClick={() => sorting.onOrder(order.value)}
+            <Toggle key={order.value} value={order.value} aria-label={order.label} title={order.label}
               className="inline-grid size-[22px] cursor-pointer place-items-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
               <OrderArrow down={order.value === "desc"} />
-            </button>
+            </Toggle>
           ))}
-        </span>
+        </ToggleGroup>
       </legend>
-      {sorting.keys.map((key) => (
-        <MenuCheck key={key.value} type="radio" name={`${id}-key`} checked={sorting.sort === key.value} onChange={() => sorting.onSort(key.value)}>{key.label}</MenuCheck>
-      ))}
+      <RadioGroup value={sorting.sort} onValueChange={(next) => { if (next) sorting.onSort(next); }} aria-labelledby={id}>
+        {sorting.keys.map((key) => (
+          <label key={key.value} className={MENU_ROW}>
+            <Radio value={key.value} aria-label={key.label} className="inline-flex size-3.5 shrink-0 items-center justify-center outline-none!">
+              <RadioIndicator className="inline-flex items-center justify-center"><CheckMark /></RadioIndicator>
+            </Radio>
+            {key.label}
+          </label>
+        ))}
+      </RadioGroup>
     </fieldset>
   );
 }
@@ -392,109 +442,54 @@ function MenuSorting({ sorting }: { sorting: SortSection }) {
 /** A Filter button over a dialog of checkbox `sections`, each section's
  *  checked values written to its own search param as a comma list in the
  *  section's order, after an optional `sorting` and `extra`; `hidden`
- *  closes it. An `icon` trigger is named `label` and the count of filters
- *  on, with a dot while any is. */
-export function FilterPopover({ label, sections, hidden, sorting, extra, icon = false }: {
-  label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection; extra?: ReactNode; icon?: boolean;
+ *  closes it. The trigger is named `label` and the count of filters on,
+ *  with a dot while any is. */
+export function FilterPopover({ label, sections, hidden, sorting, extra }: {
+  label: string; sections: readonly FilterSection[]; hidden: boolean; sorting?: SortSection; extra?: ReactNode;
 }) {
   const search = useSearch({ strict: false }) as PageSearch;
   const write = useWrite();
-  const { open, setOpen, box, button } = usePopover(hidden);
+  const [open, setOpen] = useState(false);
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
   const sheet = useRef<HTMLDivElement>(null);
-  const shift = useRef(0);
-  const fit = useRef<((reveal: boolean) => void) | null>(null);
+  // Checked in layout on open and after picks, as heavier checked labels or new counts can clip a column.
   useLayoutEffect(() => {
-    if (!open || !icon) return;
-    const node = sheet.current!;
-    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit.current?.(true));
-    let pane: HTMLElement | null = null;
-    shift.current = 0;
-    // Size, stacking and offset are set on the node, not in state, as each is measured after the one before it lays out.
-    fit.current = (reveal) => {
-      const parent = scrollParent(node);
-      if (parent !== pane) {
-        pane = parent;
-        moves?.disconnect();
-        for (const watched of [button.current!, pane]) moves?.observe(watched);
-      }
-      if (node.offsetWidth === 0) return;
-      // offsetWidth is rounded, so a scale taken from it drifts and the width it sets flips between two values.
-      const scale = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? node.getBoundingClientRect().width / node.offsetWidth;
-      const view = shownPart(pane, scale);
-      // Trying two columns shortens the dialog, which would reset a reader's scroll inside it.
-      const scrolled = node.scrollTop;
-      node.style.maxWidth = `${Math.max(0, view.right - view.left - 2 * MENU_EDGE) / scale}px`;
-      node.style.maxHeight = `${Math.max(0, Math.min(MENU_HEIGHT, (view.bottom - view.top - 2 * MENU_EDGE) / scale))}px`;
-      node.removeAttribute("data-stacked");
-      if ([...node.querySelectorAll("[data-option-label]")].some((label) => label.scrollWidth > label.clientWidth)) node.setAttribute("data-stacked", "");
-      node.scrollTop = scrolled;
-      const { left, width } = node.getBoundingClientRect();
-      const from = left - shift.current * scale;
-      const over = from + width - (view.right - MENU_EDGE);
-      shift.current = (Math.max(view.left + MENU_EDGE, from - Math.max(0, over)) - from) / scale;
-      node.style.translate = `${shift.current}px 0`;
-      // Moving up would cover the trigger, so what passes the bottom is scrolled into view; a reader's own scroll after a pick is kept.
-      if (reveal) node.scrollIntoView({ block: "nearest", inline: "nearest" });
-    };
-    fit.current(true);
-    return () => {
-      fit.current = null;
-      moves?.disconnect();
-    };
-  }, [open, icon]);
-  // A pick sets its label in a heavier weight and new counts change widths, neither of which resizes what is observed.
-  useLayoutEffect(() => fit.current?.(false));
+    const node = sheet.current;
+    if (!open || !node) return;
+    const scrolled = node.scrollTop;
+    node.removeAttribute("data-stacked");
+    if ([...node.querySelectorAll("[data-option-label]")].some((option) => option.scrollWidth > option.clientWidth)) node.setAttribute("data-stacked", "");
+    node.scrollTop = scrolled;
+  });
   return (
-    <div ref={box} className={icon ? "shrink-0" : "relative shrink-0"}>
-      {icon ? (
-        <button ref={button} type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={count > 0 ? `${label}, ${on}` : label}
-          title={label} onClick={() => setOpen(!open)} className={TOOL}>
-          <ToolFilterIcon />
-          {count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}
-        </button>
-      ) : (
-        <button
-          ref={button}
-          type="button"
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className={`inline-flex min-h-9 cursor-pointer items-center gap-2 whitespace-nowrap border px-2 font-sans text-[14px] hover:bg-paper-2 ${count > 0 ? "border-act text-act" : "border-transparent text-ink"}`}
-        >
-          <FilterIcon />
-          {count > 0 ? `Filter · ${count}` : "Filter"}
-        </button>
-      )}
-      {open && icon && (
-        <div ref={sheet} role="dialog" aria-label={label}
-          className={`group/sheet absolute top-full right-0 z-20 mt-1.5 grid max-h-[min(560px,calc(100vh-11rem))] w-[min(600px,calc(100vw-2rem))] scroll-my-2 ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card data-stacked:grid-cols-1`}>
-          {(sorting || extra) && (
-            <div>
-              {sorting && <MenuSorting sorting={sorting} />}
-              {extra}
-            </div>
-          )}
-          <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 group-data-stacked/sheet:col-span-1 group-data-stacked/sheet:grid-cols-1 group-data-stacked/sheet:grid-rows-none [&>fieldset:nth-child(2)]:col-start-2 [&>fieldset:nth-child(2)]:row-span-2 group-data-stacked/sheet:[&>fieldset:nth-child(2)]:col-start-1 group-data-stacked/sheet:[&>fieldset:nth-child(2)]:row-span-1">
-            {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
-          </div>
-          <div className="col-span-full mt-1.5 flex justify-end border-t border-hair pt-1.5">
-            <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
-              className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
-              Clear
-            </button>
-          </div>
+    <ToolPopover
+      label={label}
+      hidden={hidden}
+      onOpenChange={setOpen}
+      triggerLabel={count > 0 ? `${label}, ${on}` : label}
+      triggerTitle={label}
+      trigger={<><ToolFilterIcon />{count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}</>}
+      contentRef={sheet}
+      style={{ width: `min(600px, var(--available-width, calc(100vw - ${2 * MENU_EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
+      className={`group/sheet fixed z-50 grid ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none data-stacked:grid-cols-1`}
+    >
+      {(sorting || extra) && (
+        <div>
+          {sorting && <MenuSorting sorting={sorting} />}
+          {extra}
         </div>
       )}
-      {open && !icon && (
-        <div role="dialog" aria-label={label}
-          className="absolute top-full left-0 z-20 mt-1 max-h-[min(560px,calc(100vh-11rem))] w-80 overflow-y-auto border border-rule bg-paper text-[14px] shadow-[0_8px_24px_rgb(0_0_0/0.12)]">
-          {sorting && <Sorting sorting={sorting} />}
-          {sections.map((section) => <Section key={section.param} section={section} search={search} write={write} />)}
-        </div>
-      )}
-    </div>
+      <div className="col-span-2 grid grid-cols-2 grid-rows-[auto_1fr] items-start gap-x-2.5 gap-y-2 group-data-stacked/sheet:col-span-1 group-data-stacked/sheet:grid-cols-1 group-data-stacked/sheet:grid-rows-none [&>fieldset:nth-of-type(2)]:col-start-2 [&>fieldset:nth-of-type(2)]:row-span-2 group-data-stacked/sheet:[&>fieldset:nth-of-type(2)]:col-start-1 group-data-stacked/sheet:[&>fieldset:nth-of-type(2)]:row-span-1">
+        {sections.map((section) => <MenuSection key={section.param} section={section} search={search} write={write} />)}
+      </div>
+      <div className="col-span-full mt-1.5 flex justify-end border-t border-hair pt-1.5">
+        <button type="button" disabled={count === 0} onClick={() => write(Object.fromEntries(sections.map((section) => [section.param, undefined])))}
+          className="h-[26px] cursor-pointer rounded-button px-2 text-[12px] font-medium text-ink-2 hover:bg-hover hover:text-ink disabled:cursor-default disabled:text-ink-3 disabled:hover:bg-transparent">
+          Clear
+        </button>
+      </div>
+    </ToolPopover>
   );
 }
 
@@ -507,21 +502,22 @@ export function PressedGroup<V extends string | number>({ label, options, value,
   return (
     <div className="mt-2">
       <div id={id} className={MENU_HEAD}>{label}</div>
-      <div role="group" aria-labelledby={id} className="mx-2 mt-0.5 inline-flex rounded-[7px] bg-canvas p-0.5">
+      <ToggleGroup aria-labelledby={id} value={[String(value)]} deselectable={false}
+        onValueChange={([next]) => { const picked = options.find((option) => String(option) === next); if (picked !== undefined) onPick(picked); }}
+        className="mx-2 mt-0.5 inline-flex rounded-[7px] bg-canvas p-0.5">
         {options.map((option) => (
-          <button key={option} type="button" aria-pressed={option === value} onClick={() => onPick(option)}
+          <Toggle key={String(option)} value={String(option)}
             className="h-6 cursor-pointer rounded-[5px] px-2.5 font-mono text-[12px] font-medium text-ink-3 hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
             {option}
-          </button>
+          </Toggle>
         ))}
-      </div>
+      </ToggleGroup>
     </div>
   );
 }
 
 const MENU_EDGE = 8;
 const MENU_GAP = 6;
-const MENU_HEIGHT = 560;
 
 function scrollParent(node: HTMLElement): HTMLElement {
   for (let at = node.parentElement; at != null; at = at.parentElement) {

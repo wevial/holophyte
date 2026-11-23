@@ -104,13 +104,13 @@ const popover = async () => {
   if (!screen.queryByRole("dialog", { name: "Filter and sort" })) await press(screen.getByRole("button", { name: /^Filter and sort/ }));
   return within(screen.getByRole("dialog", { name: "Filter and sort" }));
 };
-const radio = async (name: string) => (await popover()).getByRole("radio", { name }) as HTMLInputElement;
+const radio = async (name: string) => (await popover()).getByRole("radio", { name });
 const pressedSizes = async () => within((await popover()).getByRole("group", { name: "Per page" })).getAllByRole("button")
   .map((each) => `${each.textContent}${each.getAttribute("aria-pressed") === "true" ? " pressed" : ""}`);
 const orderButton = async (name: string) => (await popover()).getByRole("button", { name });
 const checkedSort = async () => {
   const box = await popover();
-  const key = box.getAllByRole("radio").filter((each) => (each as HTMLInputElement).checked).map((each) => each.closest("label")!.textContent);
+  const key = box.getAllByRole("radio").filter((each) => each.getAttribute("aria-checked") === "true").map((each) => each.closest("label")!.textContent);
   const order = box.getAllByRole("button").filter((each) => each.getAttribute("aria-pressed") === "true" && /first$/.test(each.getAttribute("aria-label") ?? "")).map((each) => each.getAttribute("aria-label"));
   return [...key, ...order];
 };
@@ -245,6 +245,7 @@ test("a sort picked in the Filter popover puts its sort and order in the hash, a
   await press(await orderButton("shortest first"));
   expect(hashSearch().get("order")).toBe("asc");
   expect(list().getAttribute("aria-label")).toBe("Runs, shortest first");
+  expect(await checkedSort()).toEqual(["Took", "shortest first"]);
 
   await press(await radio("State"));
   expect(hashSearch().get("sort")).toBe("state");
@@ -254,6 +255,27 @@ test("a sort picked in the Filter popover puts its sort and order in the hash, a
   expect(hashSearch().has("sort")).toBe(false);
   expect(hashSearch().has("order")).toBe(false);
   expect(await checkedSort()).toEqual(["Started", "newest first"]);
+});
+
+test("ArrowRight moves focus across the Per page buttons and the Sort order arrows, each group holding one tab stop", async () => {
+  await mount("#/runs", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
+  const box = await popover();
+  const sizes = within(box.getByRole("group", { name: "Per page" })).getAllByRole("button");
+  const pressedSize = sizes.find((each) => each.getAttribute("aria-pressed") === "true")!;
+  expect(pressedSize.textContent).toBe("50");
+  expect(sizes.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([pressedSize]);
+  await act(async () => pressedSize.focus());
+  await act(async () => void fireEvent.keyDown(pressedSize, { key: "ArrowRight" }));
+  expect(document.activeElement).toBe(sizes[2]);
+  expect(sizes.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([sizes[2]]);
+
+  const arrows = [await orderButton("newest first"), await orderButton("oldest first")];
+  expect(arrows[0]!.getAttribute("aria-pressed")).toBe("true");
+  expect(arrows.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([arrows[0]]);
+  await act(async () => arrows[0]!.focus());
+  await act(async () => void fireEvent.keyDown(arrows[0]!, { key: "ArrowRight" }));
+  expect(document.activeElement).toBe(arrows[1]);
+  expect(arrows.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([arrows[1]]);
 });
 
 test("sorted by took, two hosts' rows are drawn longest first, then shortest first once that order is picked", async () => {
