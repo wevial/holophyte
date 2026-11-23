@@ -263,8 +263,7 @@ test("Ticket page criterion text renders inline Markdown code, strong, emphasis 
 });
 
 test("Run page judged criterion rows render inline Markdown while Evidence notes stay plain text", async () => {
-  const judgedCriteria = [{ ...criteria[0]!, text: INLINE_CRITERION, note: "witnessed by `tests/test_a.py`" }];
-  await mount(judgedCriteria, [judgedRound(1, ["met"])], null);
+  await mount([{ ...criteria[0]!, text: INLINE_CRITERION, note: "witnessed by `tests/test_a.py`" }], [judgedRound(1, ["met"])], null);
   const [row] = within(within(block()).getAllByRole("list")[0]!).getAllByRole("listitem");
   expectInlineRow(row!);
 

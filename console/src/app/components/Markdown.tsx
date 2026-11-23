@@ -36,10 +36,6 @@ const urlTransform = (url: string, key: string) => key === "src"
   ? (imageSourceAllowed(url) ? url : undefined)
   : defaultUrlTransform(url);
 
-const INLINE_ELEMENTS = ["p", "code", "strong", "em", "a", "br"];
-const INLINE_CODE = "rounded-[6px] bg-selected px-1 font-mono text-[12.5px]";
-const INLINE_LINK = "text-act underline";
-
 /** All untrusted Markdown becomes sanitized React nodes, inside the theme. */
 export function Markdown({ children }: { children: string }) {
   return (
@@ -65,16 +61,12 @@ export function InlineMarkdown({ children }: { children: string }) {
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeRaw, [rehypeSanitize, schema]]}
       urlTransform={urlTransform}
-      allowedElements={INLINE_ELEMENTS}
+      allowedElements={["p", "code", "strong", "em", "a", "br"]}
       unwrapDisallowed
       components={{
         p: ({ children }) => <>{children}</>,
-        code: ({ children }) => <code className={INLINE_CODE}>{children}</code>,
-        a: ({ children, href, title }) => (
-          <a href={href} title={title} target="_blank" rel="noreferrer noopener" className={INLINE_LINK}>
-            {children}
-          </a>
-        ),
+        code: ({ children }) => <code className="rounded-[6px] bg-selected px-1 font-mono text-[12.5px]">{children}</code>,
+        a: ({ children, href, title }) => <a href={href} title={title} target="_blank" rel="noreferrer noopener" className="text-act underline">{children}</a>,
       }}
     >{children}</ReactMarkdown>
   );
