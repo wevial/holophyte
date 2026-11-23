@@ -10,7 +10,7 @@ import {
 } from "@ui-sdk/react/command";
 import { Dialog, DialogBackdrop, DialogContent, DialogTitle } from "@ui-sdk/react/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
-import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { ACTIONS_OFF, ROUTES } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
@@ -287,11 +287,6 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   const query = text.trim();
   const inputId = `${useId()}-input`;
 
-  const byKey = useMemo(
-    () => new Map<string, PaletteEntry>(listing.groups.flatMap((group, at) => group.entries.map((entry) => [`${at}|${entry.key}`, entry]))),
-    [listing.groups],
-  );
-
   const close = () => setOpened(false);
 
   const act = (entry: PaletteEntry, action: PaletteAction, query?: string) => {
@@ -363,7 +358,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
           close();
         }}
         initialFocus={`#${CSS.escape(inputId)}`}
-        finalFocus={() => returnTo()}
+        finalFocus={returnTo}
         className="fixed inset-x-0 top-[120px] z-50 mx-auto flex max-h-[min(552px,calc(100vh-160px))] w-[min(640px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-rule bg-raised text-ink shadow-[0_8px_24px_rgba(0,0,0,.14)]"
       >
         <DialogTitle className="sr-only">Command palette</DialogTitle>
@@ -376,10 +371,6 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
             const taken = takeChip(chip, typed);
             if (taken.chip !== chip) setChip(taken.chip);
             setText(taken.text);
-          }}
-          onAction={(value) => {
-            const entry = byKey.get(value);
-            if (entry) open(entry);
           }}
           className="flex min-h-0 flex-1 flex-col"
         >
@@ -406,7 +397,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
                   close();
                   return;
                 }
-                if (event.key === "Backspace" && text === "" && chip != null) {
+                if (event.key === "Backspace" && text === "") {
                   setChip(null);
                 }
               }}
@@ -430,8 +421,8 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
                   }
                 </CommandStatus>
                 <CommandEmpty>
-                  {(state) =>
-                    !state.loading && listing.empty ? (
+                  {() =>
+                    listing.empty ? (
                       <p className="px-4 pt-4 pb-2 text-[13px] text-ink-3">{listing.empty}</p>
                     ) : null
                   }
@@ -451,6 +442,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
                             label={entry.title}
                             disabled={entry.disabled != null}
                             title={entry.disabled}
+                            onSelect={() => open(entry)}
                             className="group flex min-h-12 cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-1.5 aria-disabled:cursor-default aria-disabled:opacity-55 data-highlighted:bg-hover"
                           >
                             <span className="flex size-4 shrink-0 items-center justify-center">
