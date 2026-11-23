@@ -224,26 +224,71 @@ async function mountTree(source: ReturnType<typeof treeFleet>) {
 }
 
 const pick = (name: string) => fireEvent.click(within(screen.getByRole("group", { name: "UI paths view" })).getByRole("button", { name }));
-const treeBox = (name: string) => screen.getByRole("checkbox", { name });
+const treeItem = (name: string) => screen.getByRole("treeitem", { name });
+const treeBox = (name: string) => treeItem(name).querySelector<HTMLElement>('[data-slot="tree-checkbox"]')!;
 const patterns = () => within(screen.getByRole("list", { name: "UI paths patterns" })).getAllByRole("listitem").map((item) => item.textContent);
 
-test("in Tree view checking console/src/ then console/build.ts writes those two lines with console/ mixed and 3 of 4 covered, and checking console/ folds them to console/*", async () => {
+test("in Tree view the tree uses one tab stop and arrows, Home, End and typeahead walk, open and close it", async () => {
+  await mountTree(treeFleet([]));
+  pick("Tree");
+  const tree = screen.getByRole("tree", { name: "UI paths tree" });
+  const top = within(tree).getAllByRole("treeitem");
+  expect(top.map((item) => item.getAttribute("aria-label"))).toEqual(["console/", "docs/"]);
+  expect(top.map((item) => item.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+  expect(top.filter((item) => item.getAttribute("tabindex") === "0")).toHaveLength(1);
+  await act(async () => { treeItem("console/").focus(); });
+  fireEvent.keyDown(treeItem("console/"), { key: "ArrowRight" });
+  expect(treeItem("console/").getAttribute("aria-expanded")).toBe("true");
+  fireEvent.keyDown(treeItem("console/"), { key: "ArrowRight" });
+  expect(document.activeElement).toBe(treeItem("console/src/"));
+  fireEvent.keyDown(treeItem("console/src/"), { key: "ArrowLeft" });
+  expect(document.activeElement).toBe(treeItem("console/"));
+  fireEvent.keyDown(treeItem("console/"), { key: "ArrowLeft" });
+  expect(treeItem("console/").getAttribute("aria-expanded")).toBe("false");
+  fireEvent.keyDown(treeItem("console/"), { key: "End" });
+  expect(document.activeElement).toBe(treeItem("docs/"));
+  fireEvent.keyDown(treeItem("docs/"), { key: "Home" });
+  expect(document.activeElement).toBe(treeItem("console/"));
+  fireEvent.keyDown(treeItem("console/"), { key: "d" });
+  expect(document.activeElement).toBe(treeItem("docs/"));
+});
+
+test("in Tree view pressing Space on console/src/ then console/build.ts writes those two lines with console/ mixed and 3 of 4 covered, and checking console/ folds them to console/*", async () => {
   await mountTree(treeFleet([]));
   pick("Tree");
   expect(screen.queryByRole("textbox", { name: "UI paths" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Open console/" }));
-  fireEvent.click(treeBox("console/src/"));
-  fireEvent.click(treeBox("console/build.ts"));
+  await act(async () => { treeItem("console/").focus(); });
+  fireEvent.keyDown(treeItem("console/"), { key: "ArrowRight" });
+  await act(async () => { treeItem("console/src/").focus(); });
+  fireEvent.keyDown(treeItem("console/src/"), { key: " " });
+  await act(async () => { treeItem("console/build.ts").focus(); });
+  fireEvent.keyDown(treeItem("console/build.ts"), { key: " " });
   expect(patterns()).toEqual(["console/src/* · 2 files", "console/build.ts · 1 file"]);
-  expect(treeBox("console/").getAttribute("aria-checked")).toBe("mixed");
-  expect(treeBox("docs/").getAttribute("aria-checked")).toBe("false");
+  expect(treeItem("console/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeItem("console/").hasAttribute("data-indeterminate")).toBe(true);
+  expect(treeBox("console/").hasAttribute("data-indeterminate")).toBe(true);
+  expect(treeBox("console/").hasAttribute("data-unchecked")).toBe(false);
+  expect(treeItem("docs/").getAttribute("aria-checked")).toBe("false");
   expect(screen.getByLabelText("UI paths covered").textContent).toBe("3 of 4 tracked files");
   pick("Text");
   expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\nconsole/build.ts");
   pick("Tree");
-  fireEvent.click(treeBox("console/"));
+  await act(async () => { treeItem("console/").focus(); });
+  fireEvent.keyDown(treeItem("console/"), { key: " " });
   expect(patterns()).toEqual(["console/* · 3 files"]);
-  expect(treeBox("console/").getAttribute("aria-checked")).toBe("true");
+  expect(treeItem("console/").getAttribute("aria-checked")).toBe("true");
+  expect(treeBox("console/").hasAttribute("data-checked")).toBe(true);
+  expect(treeBox("console/").hasAttribute("data-indeterminate")).toBe(false);
+});
+
+test("checking a folder's sole tracked file writes that file rather than broadening to the folder pattern", async () => {
+  await mountTree(treeFleet([]));
+  pick("Tree");
+  fireEvent.click(treeItem("docs/"));
+  fireEvent.click(treeBox("docs/x.md"));
+  expect(patterns()).toEqual(["docs/x.md · 1 file"]);
+  expect(treeItem("docs/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeItem("docs/x.md").getAttribute("aria-checked")).toBe("true");
 });
 
 test("a pattern the tree cannot show is kept from text while checking docs/ adds docs/*", async () => {
@@ -260,7 +305,6 @@ test("a kept pattern covers what Python's fnmatchcase covers, a reversed range d
   await mountTree(treeFleet(["docs/[z-ax].md", "[z-a].ts"]));
   pick("Tree");
   expect(patterns()).toEqual(["docs/[z-ax].md · kept from text", "[z-a].ts · kept from text"]);
-  expect(treeBox("docs/").getAttribute("aria-checked")).toBe("mixed");
   expect(screen.getByLabelText("UI paths covered").textContent).toBe("1 of 4 tracked files");
 });
 
@@ -274,7 +318,6 @@ test("a kept ? matches one character outside the Basic Multilingual Plane, as fn
   };
   await mountTree(treeFleet(["styles/?.css"], () => Response.json(tree)));
   pick("Tree");
-  expect(treeBox("styles/").getAttribute("aria-checked")).toBe("mixed");
   expect(screen.getByLabelText("UI paths covered").textContent).toBe("1 of 2 tracked files");
 });
 
@@ -291,9 +334,9 @@ test("a kept pattern of many stars against a long tracked name renders the tree 
 test("unchecking a folder a checked folder above it repeats unchecks it, and unchecking the outer one leaves nothing under it", async () => {
   await mountTree(treeFleet(["console/*", "console/src/*"]));
   pick("Tree");
-  fireEvent.click(screen.getByRole("button", { name: "Open console/" }));
+  fireEvent.click(treeItem("console/"));
   fireEvent.click(treeBox("console/src/"));
-  expect(treeBox("console/src/").getAttribute("aria-checked")).toBe("false");
+  expect(treeItem("console/src/").getAttribute("aria-checked")).toBe("false");
   expect(patterns()).toEqual(["console/build.ts · 1 file"]);
   cleanup();
   await mountTree(treeFleet(["console/*", "console/src/*"]));
@@ -313,26 +356,26 @@ test("a tracked path holding glob characters is written escaped, so the written 
   };
   await mountTree(treeFleet([], () => Response.json(tree)));
   pick("Tree");
-  fireEvent.click(screen.getByRole("button", { name: "Open app/" }));
+  fireEvent.click(treeItem("app/"));
   fireEvent.click(treeBox("app/[slug]/"));
   fireEvent.click(treeBox("app/a?.ts"));
   expect(patterns()).toEqual(["app/[[]slug]/* · 1 file", "app/a[?].ts · 1 file"]);
-  expect(treeBox("app/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeItem("app/").getAttribute("aria-checked")).toBe("mixed");
   pick("Text");
   expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("app/[[]slug]/*\napp/a[?].ts");
   pick("Tree");
-  fireEvent.click(screen.getByRole("button", { name: "Open app/" }));
-  expect(treeBox("app/[slug]/").getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(treeItem("app/"));
+  expect(treeItem("app/[slug]/").getAttribute("aria-checked")).toBe("true");
 });
 
 test("unchecking one file under a checked folder writes its remaining siblings in place of the folder", async () => {
   await mountTree(treeFleet(["console/*"]));
   pick("Tree");
-  fireEvent.click(screen.getByRole("button", { name: "Open console/" }));
-  fireEvent.click(screen.getByRole("button", { name: "Open console/src/" }));
+  fireEvent.click(treeItem("console/"));
+  fireEvent.click(treeItem("console/src/"));
   fireEvent.click(treeBox("console/src/a.ts"));
   expect(patterns()).toEqual(["console/src/b.ts · 1 file", "console/build.ts · 1 file"]);
-  expect(treeBox("console/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeItem("console/").getAttribute("aria-checked")).toBe("mixed");
   expect(screen.getByLabelText("UI paths covered").textContent).toBe("2 of 4 tracked files");
 });
 
@@ -348,11 +391,11 @@ test("switching Tree to Text shows the same lines with their counts on main, the
   cleanup();
   await mountTree(treeFleet(["console/src/*"]));
   expect(screen.getByRole("button", { name: "Tree" }).getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByRole("list", { name: "UI paths tree" })).toBeTruthy();
+  expect(screen.getByRole("tree", { name: "UI paths tree" })).toBeTruthy();
   cleanup();
   await mountTree(treeFleet(["console/src/*"], () => Response.json({ error: "main tracks 20001 files", files: 20001, limit: 20000 }, { status: 413 })));
   expect(screen.queryByRole("group", { name: "UI paths view" })).toBeNull();
-  expect(screen.queryByRole("list", { name: "UI paths tree" })).toBeNull();
+  expect(screen.queryByRole("tree", { name: "UI paths tree" })).toBeNull();
   expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*");
 });
 
