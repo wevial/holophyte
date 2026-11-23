@@ -20,14 +20,13 @@ function Stroke({ children, className }: { children: ReactNode; className?: stri
   );
 }
 
-const DISC = "M8 .5A7.5 7.5 0 1 1 8 15.5A7.5 7.5 0 1 1 8 .5Z";
-const LEAF = "M7.5 13.5V10.05L3 6C4 4 5.5 3 7 3V4.5L8 5.5L9 4.5V3C10.5 3 12 4 13 6L8.5 10.05V13.5Z";
+const LEAF = "M1.43 15.18L1.94 15.6L2.42 15.14L3.78 13.63L6 10.66L6.65 10.37L7.36 10.2L11.09 9.9L12.3 9.7L13.62 9.36L14.42 8.68L14.58 8.04L14.43 7.1L14.19 6.66L13.3 5.44L12.51 3.67L12.21 3.57L11.76 3.61L11.18 3.8L10.47 4.17L10.36 4.13L10.63 2.64L10.59 2.12L10.42 1.8L9.5 1.5L7.93 1.69L7.37 1.63L6.91 1.42L6.15 0.88L5.74 0.63L4.96 0.4L4.44 0.46L2.81 0.95L2.43 1.1L2.18 1.34L1.98 1.86L1.95 2.57L2.35 3.86L2.83 5.02L4.72 8.71L4.98 9.45L5.07 10.14L4.56 11.27L3.7 12.57L2.59 13.96ZM9.25 10.03L8.03 10.1L9.43 9.5L11.32 8.43L13.02 7.14L13.9 6.31L14.14 6.62L13.28 7.46L11.55 8.77ZM9.44 6.25L7.1 9.33L6.8 9.06L8.49 6.9L10.37 3.95L10.29 4.28L10.8 4.01ZM5.65 4.69L5.32 8.49L4.91 8.49L5.24 4.63L6.03 0.82L6.39 1.08Z";
 
-/** The ginkgo disc in the surrounding ink; even-odd filling cuts the leaf out of it. */
+/** The pleated ginkgo of the app icon in the surrounding ink; even-odd filling cuts the pleat lines out of the leaf. */
 export function Mark() {
   return (
     <svg viewBox="0 0 16 16" width={20} height={20} aria-hidden="true" className="size-5 shrink-0">
-      <path d={`${DISC}${LEAF}`} fill="currentColor" fillRule="evenodd" />
+      <path d={LEAF} fill="currentColor" fillRule="evenodd" />
     </svg>
   );
 }
