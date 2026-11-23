@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -100,4 +101,53 @@ test("a confirm exposes role alertdialog, not dialog, and pressing the dimmed pa
   }
   expect(screen.getByRole("alertdialog", { name: "Save these changes?" })).toBeTruthy();
   expect(cancelled).toBe(0);
+});
+
+async function waitInert(element: HTMLElement) {
+  for (let attempt = 0; attempt < 25 && element.closest("[inert]") == null; attempt += 1) {
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 10)));
+  }
+  expect(element.closest("[inert]")).not.toBeNull();
+}
+
+test("closing a confirm by Escape, Cancel or confirm-settle lifts inert so the caller's opener keeps focus", async () => {
+  function Caller() {
+    const [open, setOpen] = useState(false);
+    const opener = useRef<HTMLButtonElement>(null);
+    const close = () => {
+      setOpen(false);
+      opener.current?.focus();
+    };
+    return (
+      <div>
+        <button type="button">Earlier focus</button>
+        <button ref={opener} type="button" onClick={() => setOpen(true)}>
+          Open confirm
+        </button>
+        {open && (
+          <ConfirmDialog label="Save · holophyte" heading="Save these changes?" confirm="Save" busyLabel="Saving…" busy={false} onCancel={close} onConfirm={close}>
+            One change.
+          </ConfirmDialog>
+        )}
+      </div>
+    );
+  }
+  render(<Caller />);
+  const earlier = screen.getByRole("button", { name: "Earlier focus" });
+  const opener = screen.getByRole("button", { name: "Open confirm" });
+
+  for (const close of [
+    () => fireEvent.keyDown(document.activeElement!, { key: "Escape" }),
+    () => fireEvent.click(screen.getByRole("button", { name: "Cancel" })),
+    () => fireEvent.click(screen.getByRole("button", { name: "Save" })),
+  ]) {
+    earlier.focus();
+    await act(async () => void fireEvent.click(opener));
+    expect(screen.getByRole("alertdialog", { name: "Save these changes?" })).toBeTruthy();
+    await waitInert(opener);
+    await act(async () => void close());
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(opener.closest("[inert]")).toBeNull();
+    expect(document.activeElement === opener).toBe(true);
+  }
 });
