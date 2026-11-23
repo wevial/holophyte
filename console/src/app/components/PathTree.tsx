@@ -1,4 +1,13 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
+import {
+  Tree,
+  TreeGroup,
+  TreeItem,
+  TreeItemCheckbox,
+  TreeItemIndicator,
+  TreeItemLabel,
+  type TreeItemData,
+} from "@ui-sdk/react/tree";
 import type { TrackedTree } from "../../lib/contract.gen";
 import { FoldChevron, FolderIcon } from "./icons";
 
@@ -22,29 +31,45 @@ export function writePathView(view: PathView): void {
   }
 }
 
-type Model = { dirs: Map<string, TrackedTree["dirs"][number]>; under: Map<string, string[]>; patterns: Map<string, string>; total: number };
+type Model = {
+  dirs: Map<string, TrackedTree["dirs"][number]>;
+  under: Map<string, string[]>;
+  patterns: Map<string, string>;
+  items: TreeItemData[];
+  total: number;
+};
 type Split = { selected: Set<string>; kept: string[]; keptCovered: Set<string> };
-type Checked = "true" | "false" | "mixed";
 
 const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}`);
 
 function modelOf(tree: TrackedTree): Model {
   const dirs = new Map(tree.dirs.map((dir) => [dir.path, dir]));
   const under = new Map<string, string[]>();
-  const collect = (path: string): string[] => {
+  const build = (path: string): TreeItemData[] => {
     const dir = dirs.get(path);
     if (!dir) return [];
-    const files = [...dir.dirs.flatMap((name) => collect(join(path, name))), ...dir.leaves.map((leaf) => join(path, leaf))];
+    const files: string[] = [];
+    const children: TreeItemData[] = [];
+    for (const name of dir.dirs) {
+      const child = join(path, name);
+      children.push({ value: child, label: name, children: build(child) });
+      files.push(...under.get(child)!);
+    }
+    for (const leaf of dir.leaves) {
+      const file = join(path, leaf);
+      children.push({ value: file, label: leaf });
+      files.push(file);
+    }
     under.set(path, files);
-    return files;
+    return children;
   };
-  collect("");
+  const items = build("");
   const patterns = new Map<string, string>();
   for (const [path, files] of under) {
     if (path !== "") patterns.set(`${literal(path)}/*`, path);
     for (const file of files) patterns.set(literal(file), file);
   }
-  return { dirs, under, patterns, total: under.get("")?.length ?? 0 };
+  return { dirs, under, patterns, items, total: under.get("")?.length ?? 0 };
 }
 
 const inSet = (text: string) => text.replace(/[\\\]-]/g, "\\$&");
@@ -132,7 +157,6 @@ const literal = (path: string) => path.replace(/[[*?]/g, "[$&]");
 const nodeOf = (model: Model, pattern: string) => model.patterns.get(pattern) ?? null;
 
 const ancestors = (path: string) => path.split("/").slice(0, -1).map((_, at, parts) => parts.slice(0, at + 1).join("/"));
-const picked = (selected: Set<string>, path: string) => selected.has(path) || ancestors(path).some((each) => selected.has(each));
 
 function split(model: Model, value: readonly string[]): Split {
   const files = model.under.get("") ?? [];
@@ -150,7 +174,8 @@ function split(model: Model, value: readonly string[]): Split {
 }
 
 function written(model: Model, selected: Set<string>, path = ""): string[] {
-  const dir = model.dirs.get(path)!;
+  const dir = model.dirs.get(path);
+  if (!dir) return [];
   const folders = dir.dirs.flatMap((name) => {
     const child = join(path, name);
     return selected.has(child) ? [`${literal(child)}/*`] : written(model, selected, child);
@@ -158,29 +183,10 @@ function written(model: Model, selected: Set<string>, path = ""): string[] {
   return [...folders, ...dir.leaves.map((leaf) => join(path, leaf)).filter((file) => selected.has(file)).map(literal)];
 }
 
-function uncheck(model: Model, selected: Set<string>, path: string) {
-  if (selected.delete(path)) return;
-  const from = ancestors(path).find((each) => selected.has(each))!;
-  selected.delete(from);
-  for (const step of [...ancestors(path), path].filter((each) => each.length > from.length)) {
-    const parent = model.dirs.get(step.slice(0, step.lastIndexOf("/")))!;
-    for (const sibling of [...parent.dirs, ...parent.leaves].map((name) => join(parent.path, name))) {
-      if (sibling !== step) selected.add(sibling);
-    }
-  }
-}
-
-/** `value` with `path` checked, or unchecked when it or a folder above it
- *  is: the tree's patterns rewritten as the shortest list, each pattern
- *  the tree cannot show kept in its place. */
-function toggled(model: Model, value: readonly string[], path: string): string[] {
-  const { selected, kept } = split(model, value);
-  if (picked(selected, path)) uncheck(model, selected, path);
-  else {
-    for (const each of [...selected]) if (each.startsWith(`${path}/`)) selected.delete(each);
-    selected.add(path);
-  }
-  const next = written(model, selected);
+/** Rewrite the tree's patterns from `checked` while keeping patterns the
+ *  tree cannot show in their place. */
+function merged(model: Model, value: readonly string[], kept: readonly string[], checked: readonly string[]): string[] {
+  const next = written(model, new Set(checked));
   const stays = new Set([...kept, ...next]);
   return [...new Set([...value.filter((pattern) => stays.has(pattern)), ...next])];
 }
@@ -189,25 +195,8 @@ function coveredBy(model: Model, selected: Set<string>): Set<string> {
   return new Set([...selected].flatMap((path) => model.under.get(path) ?? [path]));
 }
 
-function checkedOf(path: string, files: readonly string[], { selected, keptCovered }: Split): Checked {
-  if (picked(selected, path)) return "true";
-  const inside = [...selected].some((each) => each.startsWith(`${path}/`));
-  return inside || files.some((file) => keptCovered.has(file)) ? "mixed" : "false";
-}
-
 const counted = (count: number) => count.toLocaleString("en-US");
 const plural = (count: number) => `${counted(count)} ${count === 1 ? "file" : "files"}`;
-
-function Box({ checked, name, onToggle }: { checked: Checked; name: string; onToggle: () => void }) {
-  return (
-    <button type="button" role="checkbox" aria-checked={checked} aria-label={name} onClick={onToggle}
-      className={`inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center border ${checked === "false" ? "border-ink-3 bg-paper" : "border-act bg-act text-paper"}`}>
-      {checked !== "false" && <svg viewBox="0 0 16 16" width={12} height={12} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d={checked === "true" ? "M3.5 8.5l3 3 6-7" : "M4 8h8"} />
-      </svg>}
-    </button>
-  );
-}
 
 function FileGlyph() {
   return (
@@ -217,8 +206,57 @@ function FileGlyph() {
   );
 }
 
-const ROW = "flex min-h-7 items-center gap-1.5 pr-2 hover:bg-paper-2";
-const INDENT_PX = 16;
+const ITEM = "outline-none! [&:focus-visible>[data-slot=tree-label]]:outline-2 [&:focus-visible>[data-slot=tree-label]]:-outline-offset-2 [&:focus-visible>[data-slot=tree-label]]:outline-focus";
+const ROW = "flex min-h-7 cursor-pointer items-center gap-1.5 pr-2 pl-[calc((var(--tree-level,1)-1)*16px)] select-none hover:bg-paper-2";
+const CHECKBOX = "inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center border data-unchecked:border-ink-3 data-unchecked:bg-paper data-checked:border-act data-checked:bg-act data-checked:text-paper data-indeterminate:border-act data-indeterminate:bg-act data-indeterminate:text-paper";
+
+/** Drop UI SDK's label reference so `aria-label` names the item by its full path. */
+function PathItem({ "aria-labelledby": _, ...props }: Record<string, unknown>) {
+  return <div {...props} />;
+}
+
+function PathBranch({ items, model, expanded }: { items: readonly TreeItemData[]; model: Model; expanded: ReadonlySet<string> }) {
+  return items.map((item) => {
+    const branch = item.children !== undefined;
+    const count = branch ? model.under.get(item.value)?.length ?? 0 : 1;
+    return (
+      <TreeItem
+        key={item.value}
+        value={item.value}
+        branch={branch}
+        label={item.label}
+        aria-label={branch ? `${item.value}/` : item.value}
+        render={(props) => <PathItem {...props} />}
+        className={ITEM}
+      >
+        <TreeItemLabel className={ROW}>
+          {branch ? (
+            <TreeItemIndicator className="group inline-flex cursor-pointer">
+              {(state) => <FoldChevron open={state.expanded} />}
+            </TreeItemIndicator>
+          ) : (
+            <span aria-hidden="true" className="size-3.5 shrink-0" />
+          )}
+          <TreeItemCheckbox className={CHECKBOX}>
+            {(state) => state.checked !== false && (
+              <svg viewBox="0 0 16 16" width={12} height={12} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={state.checked === true ? "M3.5 8.5l3 3 6-7" : "M4 8h8"} />
+              </svg>
+            )}
+          </TreeItemCheckbox>
+          {branch ? <FolderIcon className="text-ink-3" /> : <FileGlyph />}
+          <span className={`min-w-0 flex-1 truncate ${branch ? "text-ink" : "text-ink-2"}`}>{branch ? `${item.label}/` : item.label}</span>
+          <span aria-hidden="true" className="tabular-nums text-ink-3">{counted(count)}</span>
+        </TreeItemLabel>
+        {branch && (
+          <TreeGroup>
+            {expanded.has(item.value) && <PathBranch items={item.children!} model={model} expanded={expanded} />}
+          </TreeGroup>
+        )}
+      </TreeItem>
+    );
+  });
+}
 
 export function PathViewSwitch({ label, view, onPick }: { label: string; view: PathView; onPick: (view: PathView) => void }) {
   return (
@@ -234,50 +272,27 @@ export function PathViewSwitch({ label, view, onPick }: { label: string; view: P
 export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; value: readonly string[]; label: string; onChange: (value: string[]) => void }) {
   const model = useMemo(() => modelOf(tree), [tree]);
   const state = useMemo(() => split(model, value), [model, value]);
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
-  const flip = (path: string) => setOpen((now) => {
-    const next = new Set(now);
-    if (!next.delete(path)) next.add(path);
-    return next;
-  });
-  const rows = (path: string, depth: number): ReactNode[] => {
-    const dir = model.dirs.get(path)!;
-    const indent = { paddingLeft: depth * INDENT_PX };
-    return [
-      ...dir.dirs.map((name) => {
-        const child = join(path, name);
-        const files = model.under.get(child)!;
-        const opened = open.has(child);
-        return <li key={child}>
-          <div className={ROW} style={indent}>
-            <button type="button" aria-label={`${opened ? "Close" : "Open"} ${child}/`} aria-expanded={opened} onClick={() => flip(child)} className="group inline-flex cursor-pointer"><FoldChevron open={opened} /></button>
-            <Box checked={checkedOf(child, files, state)} name={`${child}/`} onToggle={() => onChange(toggled(model, value, child))} />
-            <FolderIcon className="text-ink-3" />
-            <span className="min-w-0 flex-1 truncate text-ink">{name}/</span>
-            <span className="tabular-nums text-ink-3">{counted(files.length)}</span>
-          </div>
-          {opened && <ul>{rows(child, depth + 1)}</ul>}
-        </li>;
-      }),
-      ...dir.leaves.map((leaf) => {
-        const file = join(path, leaf);
-        return <li key={file}>
-          <div className={ROW} style={indent}>
-            <span aria-hidden="true" className="size-3.5 shrink-0" />
-            <Box checked={checkedOf(file, [file], state)} name={file} onToggle={() => onChange(toggled(model, value, file))} />
-            <FileGlyph />
-            <span className="min-w-0 flex-1 truncate text-ink-2">{leaf}</span>
-            <span className="tabular-nums text-ink-3">1</span>
-          </div>
-        </li>;
-      }),
-    ];
-  };
+  const checked = useMemo(() => [...state.selected], [state]);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  const expandedSet = useMemo(() => new Set(expanded), [expanded]);
   const kept = new Set(state.kept);
   const covered = new Set([...coveredBy(model, state.selected), ...state.keptCovered]).size;
   return (
     <div className="flex w-full min-w-0 flex-col gap-2 font-mono text-[12px]">
-      <ul aria-label={`${label} tree`} className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1">{rows("", 0)}</ul>
+      <Tree
+        aria-label={`${label} tree`}
+        items={model.items}
+        mode="none"
+        checkable
+        checkStrategy="trunk"
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        checked={checked}
+        onCheckedChange={(next) => onChange(merged(model, value, state.kept, next))}
+        className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1"
+      >
+        <PathBranch items={model.items} model={model} expanded={expandedSet} />
+      </Tree>
       {value.length > 0 && <ul aria-label={`${label} patterns`} className="flex w-full min-w-0 flex-col gap-1">
         {value.map((pattern, index) => {
           const node = nodeOf(model, pattern);
