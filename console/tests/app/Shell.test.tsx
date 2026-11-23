@@ -1063,6 +1063,28 @@ test("⌘K or Ctrl+K opens the Command palette with its input focused, and Escap
   }
 });
 
+test("Escape with search text typed and ⌘K or Ctrl+K close the Command palette at once back to the previously focused element", async () => {
+  await mount("#/runs", searchDaemons());
+  const before = screen.getByRole("link", { name: "Tickets" });
+  before.focus();
+  await paletteKey();
+  await typeIn("witness");
+  expect((paletteInput() as HTMLInputElement).value).toBe("witness");
+  await paletteKeyDown("Escape");
+  expect(palette()).toBeNull();
+  expect(document.activeElement).toBe(before);
+
+  for (const init of [{ metaKey: true }, { ctrlKey: true }]) {
+    await paletteKey(init);
+    await flush();
+    expect(document.activeElement).toBe(paletteInput());
+    await paletteKey(init);
+    await flush();
+    expect(palette()).toBeNull();
+    expect(document.activeElement).toBe(before);
+  }
+});
+
 test("an empty palette reads Recent, newest first, then Jump to and Switch project", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   await mount("#/", searchDaemons());
@@ -1129,6 +1151,60 @@ test("↓ twice then Enter opens that run's page and puts it first in Recent", a
   await paletteKey();
   await flush();
   expect(titlesOf("Recent")[0]).toBe("run 411 · DEMO-74 Witness criterion for git tickets");
+});
+
+test("an earlier host answering later moves the highlight to the first result, while arrow-key selection holds across unchanged keys", async () => {
+  happyDOM.setURL(`${ORIGIN}/`);
+  const polls = daemons([], []);
+  let releaseOrigin!: () => void;
+  const originGate = new Promise<void>((resolve) => {
+    releaseOrigin = resolve;
+  });
+  const peerAnswer = {
+    ...SEARCH_ANSWER,
+    tickets: [{ ticket: "WRITER-1", title: "Witness peer ticket", status: "ready" }],
+    runs: [],
+    scouts: [],
+    findings: [],
+  };
+  const client = consoleQueryClient();
+  const fetchImpl: Fetch = async (url, init) => {
+    if (url.startsWith(`${ORIGIN}/search?`)) {
+      await originGate;
+      return Response.json({ ...SEARCH_ANSWER, q: new URL(url).searchParams.get("q") });
+    }
+    if (url.startsWith(`${PEER}/search?`)) return Response.json({ ...peerAnswer, q: new URL(url).searchParams.get("q") });
+    return polls(url, init);
+  };
+  window.location.hash = "#/";
+  render(<QueryClientProvider client={client}><ConsoleApp base={ORIGIN} pollDeps={fakeDeps(fetchImpl).deps} /></QueryClientProvider>);
+  await flush();
+
+  await paletteKey();
+  await typeIn("#witness");
+  expect(titlesOf("Tickets")).toEqual(["WRITER-1 Witness peer ticket"]);
+  expect(optionsOf("Tickets")[0]!.hasAttribute("data-highlighted")).toBe(true);
+
+  releaseOrigin();
+  await flush();
+  expect(titlesOf("Tickets")).toEqual(["DEMO-69 Witness turn runs the real tool once", "WRITER-1 Witness peer ticket"]);
+  expect(optionsOf("Tickets").map((option) => option.hasAttribute("data-highlighted"))).toEqual([true, false]);
+  expect(paletteInput().getAttribute("aria-activedescendant")).toBe(optionsOf("Tickets")[0]!.id);
+
+  await paletteKeyDown("Enter");
+  expect(palette()).toBeNull();
+  expect(window.location.hash.split("?")[0]).toBe("#/tickets/demo/DEMO-69");
+
+  await paletteKey();
+  await typeIn("#witness");
+  await paletteKeyDown("ArrowDown");
+  expect(optionsOf("Tickets").map((option) => option.hasAttribute("data-highlighted"))).toEqual([false, true]);
+  await act(async () => void (await client.refetchQueries({ queryKey: ["fleet", ORIGIN] })));
+  await flush();
+  expect(optionsOf("Tickets").map((option) => option.hasAttribute("data-highlighted"))).toEqual([false, true]);
+  await paletteKeyDown("Enter");
+  expect(palette()).toBeNull();
+  expect(window.location.hash.split("?")[0]).toBe("#/tickets/writer/WRITER-1");
 });
 
 test("Run sweep asks for an inline confirm naming its host, with Confirm only on the button: Cancel returns to the list, Confirm posts once to the sweep route", async () => {
