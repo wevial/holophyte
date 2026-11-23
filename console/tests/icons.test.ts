@@ -70,7 +70,7 @@ test("the favicon is its own drawing on a 16-unit grid", async () => {
   expect(svg).toContain('viewBox="0 0 16 16"');
 });
 
-test("the mark is one current-colour leaf whose three pleat lines are even-odd holes, with no gradient", () => {
+test("the mark is one current-colour leaf with an even-odd pleat cut inside its outline, with no gradient", () => {
   const holder = document.createElement("div");
   holder.innerHTML = renderToStaticMarkup(createElement(Mark));
   const svg = holder.querySelector("svg")!;
@@ -81,7 +81,7 @@ test("the mark is one current-colour leaf whose three pleat lines are even-odd h
   expect(shape.getAttribute("fill-rule")).toBe("evenodd");
   expect(shape.hasAttribute("stroke")).toBe(false);
   const outlines = shape.getAttribute("d")!.match(/M[^M]*/g)!;
-  expect(outlines.length).toBe(4);
+  expect(outlines.length).toBe(2);
   for (const outline of outlines) expect(outline.trim().endsWith("Z")).toBe(true);
   expect(svg.querySelector("linearGradient, radialGradient, mask, pattern")).toBeNull();
   expect(svg.outerHTML).not.toContain("url(");
