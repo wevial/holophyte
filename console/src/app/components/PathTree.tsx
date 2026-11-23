@@ -201,21 +201,16 @@ const ITEM = "outline-none! [&:focus-visible>[data-slot=tree-label]]:outline-2 [
 const ROW = "flex min-h-7 cursor-pointer items-center gap-1.5 pr-2 pl-[calc((var(--tree-level,1)-1)*16px)] select-none hover:bg-paper-2";
 const CHECKBOX = "inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center border data-unchecked:border-ink-3 data-unchecked:bg-paper data-checked:border-act data-checked:bg-act data-checked:text-paper data-indeterminate:border-act data-indeterminate:bg-act data-indeterminate:text-paper";
 
-/** Drop UI SDK's label reference so `aria-label` names the item by its full path. */
-function PathItem({ "aria-labelledby": _, ...props }: Record<string, unknown>) {
-  return <div {...props} />;
-}
-
-function PathBranch({ items, model }: { items: readonly TreeItemData[]; model: Model }) {
+function PathBranch({ items, under }: { items: readonly TreeItemData[]; under: ReadonlyMap<string, string[]> }) {
   return items.map((item) => {
     const branch = item.children !== undefined;
-    const count = branch ? model.under.get(item.value)?.length ?? 0 : 1;
     return (
       <TreeItem
         key={item.value}
         value={item.value}
         aria-label={branch ? `${item.value}/` : item.value}
-        render={(props) => <PathItem {...props} />}
+        // Drop UI SDK's label reference so `aria-label` names the item by its full path.
+        render={({ "aria-labelledby": _, ...props }) => <div {...props} />}
         className={ITEM}
       >
         <TreeItemLabel className={ROW}>
@@ -235,9 +230,9 @@ function PathBranch({ items, model }: { items: readonly TreeItemData[]; model: M
           </TreeItemCheckbox>
           {branch ? <FolderIcon className="text-ink-3" /> : <FileGlyph />}
           <span className={`min-w-0 flex-1 truncate ${branch ? "text-ink" : "text-ink-2"}`}>{branch ? `${item.label}/` : item.label}</span>
-          <span aria-hidden="true" className="tabular-nums text-ink-3">{counted(count)}</span>
+          <span aria-hidden="true" className="tabular-nums text-ink-3">{counted(under.get(item.value)?.length ?? 1)}</span>
         </TreeItemLabel>
-        {item.children && <TreeGroup><PathBranch items={item.children} model={model} /></TreeGroup>}
+        {item.children && <TreeGroup><PathBranch items={item.children} under={under} /></TreeGroup>}
       </TreeItem>
     );
   });
@@ -271,7 +266,7 @@ export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; 
         onCheckedChange={(next) => onChange(merged(model.items, value, kept, next))}
         className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1"
       >
-        <PathBranch items={model.items} model={model} />
+        <PathBranch items={model.items} under={model.under} />
       </Tree>
       {value.length > 0 && <ul aria-label={`${label} patterns`} className="flex w-full min-w-0 flex-col gap-1">
         {value.map((pattern, index) => {
