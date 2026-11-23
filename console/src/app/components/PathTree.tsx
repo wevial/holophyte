@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Tree,
   TreeGroup,
@@ -215,7 +215,7 @@ function PathItem({ "aria-labelledby": _, ...props }: Record<string, unknown>) {
   return <div {...props} />;
 }
 
-function PathBranch({ items, model, expanded }: { items: readonly TreeItemData[]; model: Model; expanded: ReadonlySet<string> }) {
+function PathBranch({ items, model }: { items: readonly TreeItemData[]; model: Model }) {
   return items.map((item) => {
     const branch = item.children !== undefined;
     const count = branch ? model.under.get(item.value)?.length ?? 0 : 1;
@@ -223,8 +223,6 @@ function PathBranch({ items, model, expanded }: { items: readonly TreeItemData[]
       <TreeItem
         key={item.value}
         value={item.value}
-        branch={branch}
-        label={item.label}
         aria-label={branch ? `${item.value}/` : item.value}
         render={(props) => <PathItem {...props} />}
         className={ITEM}
@@ -248,11 +246,7 @@ function PathBranch({ items, model, expanded }: { items: readonly TreeItemData[]
           <span className={`min-w-0 flex-1 truncate ${branch ? "text-ink" : "text-ink-2"}`}>{branch ? `${item.label}/` : item.label}</span>
           <span aria-hidden="true" className="tabular-nums text-ink-3">{counted(count)}</span>
         </TreeItemLabel>
-        {branch && (
-          <TreeGroup>
-            {expanded.has(item.value) && <PathBranch items={item.children!} model={model} expanded={expanded} />}
-          </TreeGroup>
-        )}
+        {item.children && <TreeGroup><PathBranch items={item.children} model={model} /></TreeGroup>}
       </TreeItem>
     );
   });
@@ -273,8 +267,6 @@ export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; 
   const model = useMemo(() => modelOf(tree), [tree]);
   const state = useMemo(() => split(model, value), [model, value]);
   const checked = useMemo(() => [...state.selected], [state]);
-  const [expanded, setExpanded] = useState<string[]>([]);
-  const expandedSet = useMemo(() => new Set(expanded), [expanded]);
   const kept = new Set(state.kept);
   const covered = new Set([...coveredBy(model, state.selected), ...state.keptCovered]).size;
   return (
@@ -285,13 +277,11 @@ export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; 
         mode="none"
         checkable
         checkStrategy="trunk"
-        expanded={expanded}
-        onExpandedChange={setExpanded}
         checked={checked}
         onCheckedChange={(next) => onChange(merged(model, value, state.kept, next))}
         className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1"
       >
-        <PathBranch items={model.items} model={model} expanded={expandedSet} />
+        <PathBranch items={model.items} model={model} />
       </Tree>
       {value.length > 0 && <ul aria-label={`${label} patterns`} className="flex w-full min-w-0 flex-col gap-1">
         {value.map((pattern, index) => {
