@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
@@ -314,6 +314,76 @@ test("the Filter popover stays in the page stacking context below modal overlays
     else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
     if (hadHide) Object.defineProperty(HTMLElement.prototype, "hidePopover", hadHide);
     else delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
+});
+
+test("narrowing an open Filter popover stacks it into one column without a re-render, widening unstacks it, and closing stops observing it", async () => {
+  const live = new Map<object, { targets: Element[]; fire: () => void }>();
+  const savedObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      live.set(this, { targets: [], fire: () => callback([], this as unknown as ResizeObserver) });
+    }
+    observe(target: Element) { live.get(this)?.targets.push(target); }
+    unobserve(target: Element) {
+      const entry = live.get(this);
+      if (entry) entry.targets = entry.targets.filter((each) => each !== target);
+    }
+    disconnect() { live.get(this)!.targets = []; }
+  } as unknown as typeof ResizeObserver;
+  const frames = new Map<number, FrameRequestCallback>();
+  let lastFrame = 0;
+  const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => (frames.set(++lastFrame, callback), lastFrame));
+  const caf = spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+  const notify = (target: Element) => act(() => [...live.values()].filter((each) => each.targets.includes(target)).forEach((each) => each.fire()));
+  const flushFrames = () => act(() => {
+    const due = [...frames.entries()];
+    frames.clear();
+    due.forEach(([, callback]) => callback(performance.now()));
+  });
+  const resize = (target: Element) => {
+    notify(target);
+    flushFrames();
+  };
+  try {
+    await mount("#/runs", countedFleet().fetchImpl);
+    const box = await openFilter();
+    let sheetWidth = 600;
+    let labelWidth = 120;
+    Object.defineProperty(box, "clientWidth", { configurable: true, get: () => sheetWidth });
+    const label = box.querySelector<HTMLElement>("[data-option-label]")!;
+    Object.defineProperty(label, "scrollWidth", { configurable: true, value: 90 });
+    Object.defineProperty(label, "clientWidth", { configurable: true, get: () => labelWidth });
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+
+    box.scrollTop = 48;
+    sheetWidth = 360;
+    labelWidth = 70;
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(true);
+    expect(box.scrollTop).toBe(48);
+
+    sheetWidth = 600;
+    labelWidth = 120;
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+
+    labelWidth = 70;
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+
+    sheetWidth = 360;
+    notify(box);
+    await act(async () => void fireEvent.keyDown(box, { key: "Escape" }));
+    expect(dialog()).toBeNull();
+    expect([...live.values()].filter((each) => each.targets.includes(box))).toHaveLength(0);
+    flushFrames();
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+  } finally {
+    globalThis.ResizeObserver = savedObserver;
+    raf.mockRestore();
+    caf.mockRestore();
   }
 });
 

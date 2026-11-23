@@ -431,6 +431,13 @@ function MenuSorting({ sorting }: { sorting: SortSection }) {
   );
 }
 
+function stackSheet(node: HTMLElement) {
+  const scrolled = node.scrollTop;
+  node.removeAttribute("data-stacked");
+  if ([...node.querySelectorAll("[data-option-label]")].some((option) => option.scrollWidth > option.clientWidth)) node.setAttribute("data-stacked", "");
+  node.scrollTop = scrolled;
+}
+
 /** A Filter button over a dialog of checkbox `sections`, each section's
  *  checked values written to its own search param as a comma list in the
  *  section's order, after an optional `sorting` and `extra`; `hidden`
@@ -445,15 +452,33 @@ export function FilterPopover({ label, sections, hidden, sorting, extra }: {
   const count = sections.reduce((sum, section) => sum + section.options.filter((option) => checkedOf(search, section.param).includes(option.value)).length, 0);
   const on = count === 1 ? "1 filter on" : `${count} filters on`;
   const sheet = useRef<HTMLDivElement>(null);
-  // Checked in layout on open and after picks, as heavier checked labels or new counts can clip a column.
+  const width = useRef<number | null>(null);
+  // Checked on open, after picks and when the sheet's width changes; rAF keeps height changes out of ResizeObserver's delivery pass.
   useLayoutEffect(() => {
     const node = sheet.current;
     if (!open || !node) return;
-    const scrolled = node.scrollTop;
-    node.removeAttribute("data-stacked");
-    if ([...node.querySelectorAll("[data-option-label]")].some((option) => option.scrollWidth > option.clientWidth)) node.setAttribute("data-stacked", "");
-    node.scrollTop = scrolled;
+    stackSheet(node);
+    width.current = node.clientWidth;
   });
+  useLayoutEffect(() => {
+    const node = sheet.current;
+    if (!open || !node || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth === width.current) return;
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        if (node.clientWidth === width.current) return;
+        stackSheet(node);
+        width.current = node.clientWidth;
+      });
+    });
+    observer.observe(node);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [open]);
   return (
     <ToolPopover
       label={label}
