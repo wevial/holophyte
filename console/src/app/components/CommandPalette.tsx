@@ -1,6 +1,14 @@
-import { createListbox, createPopup, definePrimitive, popupBackdrop, popupContent, popupState, popupTitle, selects } from "@ui-sdk/core";
-import { dialogPreset } from "@ui-sdk/core/dialog";
-import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandGroupLabel,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandStatus,
+} from "@ui-sdk/react/command";
+import { Dialog, DialogBackdrop, DialogContent, DialogTitle } from "@ui-sdk/react/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -36,80 +44,12 @@ import { useBoards, useSearchAll } from "../queries";
 import { keepScope, PollDepsContext, scopedHosts, useConsolePeers, type ScopeSearch } from "../scope";
 import { Btn } from "./Btn";
 import { AllProjectsIcon, FindingsIcon, FolderIcon } from "./icons";
-import { comboInput, virtualOption, type ComboApi } from "./ProjectSwitcher";
 import { StateDot } from "./StateDot";
 
 const SEARCH_WAIT_MS = 150;
-
-type PaletteOptions = {
-  defaultOpen?: boolean;
-  items?: { value: string; label: string; disabled?: boolean }[];
-  onChoose?: (key: string) => void;
-  onQuery?: (query: string) => void;
-  onEmptyBackspace?: () => void;
-  onOpenChangeComplete?: (open: boolean) => void;
-};
-
-const palette = definePrimitive({
-  name: "command-palette",
-  options: {
-    defaultOpen: "boolean",
-    items: "value",
-    onChoose: "callback",
-    onQuery: "callback",
-    onEmptyBackspace: "callback",
-    onOpenChangeComplete: "callback",
-  },
-  state: (options: PaletteOptions) => ({ ...popupState(options), query: "", highlighted: null as string | null }),
-  api: (context) => {
-    const popup = createPopup(context, { preset: dialogPreset });
-    const listbox = createListbox(context, { key: "highlighted", focus: "virtual", items: () => context.options().items ?? [] });
-    const choose = (key: string | null) => {
-      if (key == null || context.options().items?.find((item) => item.value === key)?.disabled) return;
-      context.options().onChoose?.(key);
-    };
-    const api: ComboApi<ReturnType<typeof context.store.get>> & typeof popup & { replaceQuery(query: string): void } = {
-      ...popup,
-      listbox,
-      choose,
-      search(query: string) {
-        context.store.set({ query });
-        context.options().onQuery?.(query);
-      },
-      replaceQuery(query: string) {
-        context.store.set({ query });
-      },
-      keydown(event: KeyboardEvent) {
-        if (event.key === "Backspace" && context.store.get().query === "") {
-          context.options().onEmptyBackspace?.();
-          return;
-        }
-        if (event.key !== "Enter") return void listbox.keydown(event);
-        event.preventDefault();
-        choose(context.store.get().highlighted);
-      },
-    };
-    return api;
-  },
-  slots: (slot) => ({
-    root: slot({}),
-    backdrop: popupBackdrop(slot),
-    content: popupContent(slot),
-    title: popupTitle(slot),
-    input: comboInput(slot),
-    list: slot({ role: "listbox", keys: { none: "The combobox's input handles them." }, attrs: (_state, { id }) => ({ id: `${id}-list` }) }),
-    option: virtualOption(slot, (state, key) => key === state.highlighted, selects({ highlighted: ({ key }) => [key, null] })),
-  }),
-});
-
-const { Backdrop, Content, Title, Input, List, Option } = createParts(palette, {
-  backdrop: "div",
-  content: "div",
-  title: "h2",
-  input: "input",
-  list: "div",
-  option: "div",
-});
+// CommandStatus and CommandEmpty own live announcements; Command's delayed
+// fallback timer would otherwise announce "No results" after unmount or Confirm.
+const NO_ANNOUNCEMENT = () => null;
 
 const THEME_NEXT: Record<Theme, Theme> = { system: "light", light: "dark", dark: "system" };
 const THEME_WORD: Record<Theme, string> = { system: "System", light: "Light", dark: "Dark" };
@@ -333,6 +273,7 @@ function Confirm({ entry, busy, refusal, onConfirm, onCancel }: { entry: Palette
 export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; returnTo: () => HTMLElement | null }) {
   const { project } = useSearch({ from: "__root__" });
   const navigate = useNavigate();
+  const [opened, setOpened] = useState(true);
   const [chip, setChip] = useState<Chip | null>(null);
   const [text, setText] = useState("");
   const [confirming, setConfirming] = useState<PaletteEntry | null>(null);
@@ -346,14 +287,12 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   const query = text.trim();
   const inputId = `${useId()}-input`;
 
-  const keyed = useMemo(
-    () => listing.groups.flatMap((group, at) => group.entries.map((entry) => ({ value: `${at}|${entry.key}`, entry }))),
+  const byKey = useMemo(
+    () => new Map<string, PaletteEntry>(listing.groups.flatMap((group, at) => group.entries.map((entry) => [`${at}|${entry.key}`, entry]))),
     [listing.groups],
   );
-  const byKey = new Map(keyed.map(({ value, entry }) => [value, entry]));
-  const items = confirming ? [] : keyed.map(({ value, entry }) => ({ value, label: entry.title, disabled: entry.disabled != null }));
 
-  const close = () => handle.api.close();
+  const close = () => setOpened(false);
 
   const act = (entry: PaletteEntry, action: PaletteAction, query?: string) => {
     if (action === "new-ticket" && actions.ticketProject != null) {
@@ -408,52 +347,42 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
     document.getElementById(inputId)?.focus();
   };
 
-  const handle = usePrimitive(palette, {
-    defaultOpen: true,
-    items,
-    onChoose: (key) => {
-      const entry = byKey.get(key);
-      if (entry) open(entry);
-    },
-    onQuery: (typed) => {
-      const taken = takeChip(chip, typed);
-      if (taken.chip !== chip) {
-        setChip(taken.chip);
-        handle.api.replaceQuery(taken.text);
-      }
-      setText(taken.text);
-    },
-    onEmptyBackspace: () => setChip(null),
-    onOpenChangeComplete: (opened) => {
-      if (!opened) onClosed();
-    },
-  });
-
-  const shownKeys = keyed.map(({ value }) => value).join("\n");
-  useEffect(() => {
-    handle.api.listbox.move("first");
-  }, [shownKeys, handle.api.listbox]);
-
-  let at = 0;
-  return usePart(
-    handle,
-    "root",
-    {},
-    {
-      children: (
-        <>
-        <Backdrop className="fixed inset-0 z-50 bg-[rgb(20_16_12/0.3)]" />
-        <Content
-          onKeyDown={(event) => {
-            if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey)) return;
-            event.preventDefault();
-            close();
+  return (
+    <Dialog
+      open={opened}
+      onOpenChange={setOpened}
+      onOpenChangeComplete={(next) => {
+        if (!next) onClosed();
+      }}
+    >
+      <DialogBackdrop className="fixed inset-0 z-50 bg-[rgb(20_16_12/0.3)]" />
+      <DialogContent
+        onKeyDown={(event) => {
+          if (event.key.toLowerCase() !== "k" || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+          event.preventDefault();
+          close();
+        }}
+        initialFocus={`#${CSS.escape(inputId)}`}
+        finalFocus={() => returnTo()}
+        className="fixed inset-x-0 top-[120px] z-50 mx-auto flex max-h-[min(552px,calc(100vh-160px))] w-[min(640px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-rule bg-raised text-ink shadow-[0_8px_24px_rgba(0,0,0,.14)]"
+      >
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
+        <Command
+          filter={false}
+          query={text}
+          status={listing.loading ? "loading" : "idle"}
+          announcement={NO_ANNOUNCEMENT}
+          onQueryChange={(typed) => {
+            const taken = takeChip(chip, typed);
+            if (taken.chip !== chip) setChip(taken.chip);
+            setText(taken.text);
           }}
-          initialFocus={`#${CSS.escape(inputId)}`}
-          finalFocus={() => returnTo()}
-          className="fixed inset-x-0 top-[120px] z-50 mx-auto flex max-h-[min(552px,calc(100vh-160px))] w-[min(640px,calc(100vw-32px))] flex-col overflow-hidden rounded-[12px] border border-rule bg-raised text-ink shadow-[0_8px_24px_rgba(0,0,0,.14)]"
+          onAction={(value) => {
+            const entry = byKey.get(value);
+            if (entry) open(entry);
+          }}
+          className="flex min-h-0 flex-1 flex-col"
         >
-          <Title className="sr-only">Command palette</Title>
           <div className="flex h-14 shrink-0 items-center gap-3 border-b border-rule-2 px-4">
             <svg viewBox="0 0 16 16" width={15} height={15} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true" className="shrink-0 text-ink-3">
               <circle cx="7" cy="7" r="4.5" />
@@ -467,11 +396,20 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
             <label htmlFor={inputId} className="sr-only">
               Search or jump to
             </label>
-            <Input
+            <CommandInput
               id={inputId}
               placeholder={chip ? `Search ${CHIPS[chip].toLowerCase()}` : "Search or jump to…"}
-              autoComplete="off"
-              spellCheck={false}
+              onKeyDown={(event) => {
+                // Close at once instead of Command's default of clearing text first.
+                if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  close();
+                  return;
+                }
+                if (event.key === "Backspace" && text === "" && chip != null) {
+                  setChip(null);
+                }
+              }}
               className="min-w-0 flex-1 bg-transparent text-[17px] text-ink outline-none! placeholder:text-ink-3"
             />
             <kbd className={KBD}>esc</kbd>
@@ -481,68 +419,74 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
               <Confirm entry={confirming} busy={sweep.isPending} refusal={refusal} onConfirm={() => void confirm()} onCancel={cancel} />
             ) : (
               <>
-                {listing.loading && (
-                  <>
-                    <p role="status" className="sr-only">Searching…</p>
-                    <Skeleton />
-                  </>
-                )}
-                {listing.empty && <p role="status" className="px-4 pt-4 pb-2 text-[13px] text-ink-3">{listing.empty}</p>}
-                <List aria-label="Results" className="flex flex-col px-1.5 pb-1.5">
-                  {listing.groups.map((group, index) => {
-                    const headingId = `${inputId}-group-${index}`;
-                    return (
-                      <div key={group.name} role="group" aria-labelledby={headingId} className="pt-1.5">
-                        <div id={headingId} role="presentation" className="px-2.5 pt-2 pb-1 text-[12px] font-semibold text-ink-2">
-                          {group.name}
-                        </div>
-                        {group.entries.map((entry) => {
-                          const value = keyed[at++]!.value;
-                          return (
-                            <Option
-                              key={value}
-                              value={value}
-                              disabled={entry.disabled != null}
-                              title={entry.disabled}
-                              className="group flex min-h-12 cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-1.5 aria-disabled:cursor-default aria-disabled:opacity-55 data-[active=true]:bg-hover"
-                            >
-                              <span className="flex size-4 shrink-0 items-center justify-center">
-                                <Glyph glyph={entry.glyph} />
+                <CommandStatus>
+                  {(state) =>
+                    state.loading ? (
+                      <>
+                        <span className="sr-only">Searching…</span>
+                        <Skeleton />
+                      </>
+                    ) : null
+                  }
+                </CommandStatus>
+                <CommandEmpty>
+                  {(state) =>
+                    !state.loading && listing.empty ? (
+                      <p className="px-4 pt-4 pb-2 text-[13px] text-ink-3">{listing.empty}</p>
+                    ) : null
+                  }
+                </CommandEmpty>
+                <CommandList aria-label="Results" className="flex flex-col px-1.5 pb-1.5">
+                  {listing.groups.map((group, groupIndex) => (
+                    <CommandGroup key={group.name} className="pt-1.5">
+                      <CommandGroupLabel className="px-2.5 pt-2 pb-1 text-[12px] font-semibold text-ink-2">
+                        {group.name}
+                      </CommandGroupLabel>
+                      {group.entries.map((entry) => {
+                        const value = `${groupIndex}|${entry.key}`;
+                        return (
+                          <CommandItem
+                            key={value}
+                            value={value}
+                            label={entry.title}
+                            disabled={entry.disabled != null}
+                            title={entry.disabled}
+                            className="group flex min-h-12 cursor-pointer items-center gap-3 rounded-[8px] px-2.5 py-1.5 aria-disabled:cursor-default aria-disabled:opacity-55 data-highlighted:bg-hover"
+                          >
+                            <span className="flex size-4 shrink-0 items-center justify-center">
+                              <Glyph glyph={entry.glyph} />
+                            </span>
+                            <span className="flex min-w-0 flex-1 flex-col">
+                              <span data-title className="truncate text-[14px] leading-[1.35] text-ink">
+                                <Marked text={entry.title} query={query} />
                               </span>
-                              <span className="flex min-w-0 flex-1 flex-col">
-                                <span data-title className="truncate text-[14px] leading-[1.35] text-ink">
-                                  <Marked text={entry.title} query={query} />
-                                </span>
-                                <span className="truncate font-mono text-[12px] leading-[1.4] text-ink-3">{entry.meta}</span>
-                              </span>
-                              <kbd aria-hidden="true" className={`${KBD} invisible group-data-[active=true]:visible`}>↵</kbd>
-                            </Option>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </List>
+                              <span className="truncate font-mono text-[12px] leading-[1.4] text-ink-3">{entry.meta}</span>
+                            </span>
+                            <kbd aria-hidden="true" className={`${KBD} invisible group-data-highlighted:visible`}>↵</kbd>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  ))}
+                </CommandList>
               </>
             )}
           </div>
-          <div className="flex h-9 shrink-0 items-center gap-2 border-t border-rule-2 px-3.5">
-            <span className="flex gap-1">
-              <Hint keys="↑" tip="Move up" />
-              <Hint keys="↓" tip="Move down" />
-            </span>
-            <Hint keys="↵" tip="Open the highlighted item" />
-            <Hint keys=">" tip="Type > first for actions" />
-            <Hint keys="#" tip="Type # first for tickets" />
-            <Hint keys="@" tip="Type @ first for runs" />
-            <span className="ml-auto">
-              <Hint keys="⌘K" tip="Open or close the palette (Ctrl+K off macOS)" />
-            </span>
-          </div>
-        </Content>
-        </>
-      ),
-    },
-    "div",
+        </Command>
+        <div className="flex h-9 shrink-0 items-center gap-2 border-t border-rule-2 px-3.5">
+          <span className="flex gap-1">
+            <Hint keys="↑" tip="Move up" />
+            <Hint keys="↓" tip="Move down" />
+          </span>
+          <Hint keys="↵" tip="Open the highlighted item" />
+          <Hint keys=">" tip="Type > first for actions" />
+          <Hint keys="#" tip="Type # first for tickets" />
+          <Hint keys="@" tip="Type @ first for runs" />
+          <span className="ml-auto">
+            <Hint keys="⌘K" tip="Open or close the palette (Ctrl+K off macOS)" />
+          </span>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1063,6 +1063,31 @@ test("⌘K or Ctrl+K opens the Command palette with its input focused, and Escap
   }
 });
 
+test("Escape with search text typed and ⌘K or Ctrl+K close the Command palette at once back to the previously focused element", async () => {
+  await mount("#/runs", searchDaemons());
+  const before = screen.getByRole("link", { name: "Tickets" });
+  before.focus();
+  await paletteKey({ metaKey: true });
+  await flush();
+  await typeIn("witness");
+  expect((paletteInput() as HTMLInputElement).value).toBe("witness");
+  await act(async () => void fireEvent.keyDown(paletteInput(), { key: "Escape" }));
+  await flush();
+  expect(palette()).toBeNull();
+  expect(document.activeElement).toBe(before);
+
+  for (const init of [{ metaKey: true }, { ctrlKey: true }]) {
+    await paletteKey(init);
+    await flush();
+    expect(palette()).toBeTruthy();
+    expect(document.activeElement).toBe(paletteInput());
+    await paletteKey(init);
+    await flush();
+    expect(palette()).toBeNull();
+    expect(document.activeElement).toBe(before);
+  }
+});
+
 test("an empty palette reads Recent, newest first, then Jump to and Switch project", async () => {
   happyDOM.setURL(`${ORIGIN}/`);
   await mount("#/", searchDaemons());
