@@ -771,8 +771,8 @@ class CandidateImageTests(unittest.TestCase):
 class ReviewerImageTests(unittest.TestCase):
     DOCKERFILE = ROOT / "docker" / "reviewer.Dockerfile"
 
-    def test_image_tag_is_v15_and_every_tracked_reference_names_it(self):
-        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v15")
+    def test_image_tag_is_v16_and_every_tracked_reference_names_it(self):
+        self.assertEqual(review_runner.IMAGE, "holophyte-reviewer:ubuntu24.04-v16")
         tracked = subprocess.run(
             ["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True
         ).stdout.decode().split("\0")
@@ -782,11 +782,11 @@ class ReviewerImageTests(unittest.TestCase):
             if (ROOT / path).is_file()
             for tag in re.findall(rb"ubuntu24\.04-v\d+", (ROOT / path).read_bytes())
         }
-        self.assertIn(("holophyte/review/review_runner.py", "ubuntu24.04-v15"),
+        self.assertIn(("holophyte/review/review_runner.py", "ubuntu24.04-v16"),
                       references)
-        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v15"), references)
+        self.assertIn(("docs/reviewing.md", "ubuntu24.04-v16"), references)
         self.assertEqual(
-            {ref for ref in references if ref[1] != "ubuntu24.04-v15"}, set())
+            {ref for ref in references if ref[1] != "ubuntu24.04-v16"}, set())
 
     def test_base_moves_off_v14_digest_and_first_step_upgrades_before_install(self):
         text = self.DOCKERFILE.read_text()
@@ -823,7 +823,7 @@ class ReviewerImageTests(unittest.TestCase):
         )
         checksum = re.search(r"^ARG GO_SHA256=([0-9a-f]{64})$", text, re.M)
         self.assertIsNotNone(tarball, "Dockerfile pins no Go tarball")
-        self.assertEqual(tarball.group(1), "1.26.9")
+        self.assertEqual(tarball.group(1), "1.27.4")
         self.assertIsNotNone(checksum, "Dockerfile pins no Go SHA-256")
         self.assertIn("https://go.dev/dl/${GO_TARBALL}", text)
         self.assertRegex(
