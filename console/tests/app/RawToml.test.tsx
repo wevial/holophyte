@@ -109,7 +109,7 @@ test("Revert restores the file and a confirmed raw save sends its full text with
   change(CLEAN);
   await checked();
   fireEvent.click(saveButton());
-  const confirm = within(screen.getByRole("dialog", { name: "Save config.toml?" }));
+  const confirm = within(screen.getByRole("alertdialog", { name: "Save config.toml?" }));
   expect(confirm.getByText("− 2 workers = 2")).toBeTruthy();
   expect(confirm.getByText("+ 2 workers = 3")).toBeTruthy();
   expect(source.writes).toHaveLength(0);
@@ -119,7 +119,7 @@ test("Revert restores the file and a confirmed raw save sends its full text with
   expect(source.writes).toHaveLength(1);
   expect(JSON.parse(String(source.writes[0]!.body))).toEqual({ text: CLEAN });
   expect(new Headers(source.writes[0]!.headers).get("If-Match")).toBe(REVISION);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(editor().value).toBe(CLEAN);
   expect(saveButton().disabled).toBe(true);
 });
@@ -133,7 +133,7 @@ test("a completed raw save preserves a newer edit after Back and Forward project
   change(CLEAN);
   await checked();
   fireEvent.click(saveButton());
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
   await act(settle);
   expect(source.writes).toHaveLength(1);
   await act(async () => { window.history.back(); await settle(); });
@@ -146,7 +146,7 @@ test("a completed raw save preserves a newer edit after Back and Forward project
   expect(editor().value).toBe("[loop]\nworkers = 4\n");
   await checked();
   fireEvent.click(saveButton());
-  const confirm = within(screen.getByRole("dialog", { name: "Save config.toml?" }));
+  const confirm = within(screen.getByRole("alertdialog", { name: "Save config.toml?" }));
   expect(confirm.getByText("− 2 workers = 3")).toBeTruthy();
   expect(confirm.getByText("+ 2 workers = 4")).toBeTruthy();
   fireEvent.click(confirm.getByRole("button", { name: "Save" }));
@@ -196,10 +196,10 @@ test("a save-time refusal closes the confirm and marks the line while preserving
   change(CLEAN);
   await checked();
   fireEvent.click(saveButton());
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
   await act(settle);
   await act(settle);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(editor().value).toBe(CLEAN);
   expect(screen.getByText("line 2")).toBeTruthy();
   expect([...scroller().querySelector('[data-line="2"]')!.classList].filter((name) => name.includes("bad"))).toEqual(["bg-bad-wash", "text-bad-text"]);
@@ -223,7 +223,7 @@ test("a save refused at line 3 marks that gutter line and draws its band on the 
   change("[loop]\nworkers = 3\nkeep = true\n");
   await checked();
   fireEvent.click(saveButton());
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: "Save config.toml?" })).getByRole("button", { name: "Save" }));
   await act(settle);
   await act(settle);
   expect(screen.getByText("line 3")).toBeTruthy();
@@ -266,7 +266,7 @@ test("raw confirmation caps changed lines at forty and counts the remainder", as
   change(ORIGINAL + Array.from({ length: 46 }, (_, index) => `# line ${index + 1}`).join("\n") + "\n");
   await checked();
   fireEvent.click(saveButton());
-  const confirm = within(screen.getByRole("dialog", { name: "Save config.toml?" }));
+  const confirm = within(screen.getByRole("alertdialog", { name: "Save config.toml?" }));
   expect(confirm.getByText("and 6 more lines")).toBeTruthy();
   expect(confirm.getByText("+ 42 # line 40")).toBeTruthy();
   expect(confirm.queryByText(/# line 41/)).toBeNull();

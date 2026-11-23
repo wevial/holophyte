@@ -42,7 +42,7 @@ const row = (name: string) => within(screen.getByRole("group", { name }));
 const reviewButton = () => within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }) as HTMLButtonElement;
 async function save() {
   fireEvent.click(reviewButton());
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
   await act(settle);
   await act(settle);
 }

@@ -63,7 +63,7 @@ test("saving a turned-on Reverts switch and an edited Never revert list writes r
   fireEvent.click(screen.getByRole("switch", { name: "Reverts" }));
   fireEvent.change(screen.getByRole("textbox", { name: "Never revert" }), { target: { value: "store/schema.py\n\n**/*.sql" } });
   fireEvent.click(within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save" }));
-  const dialog = screen.getByRole("dialog", { name: "Save these changes?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Save these changes?" });
   expect(dialog.textContent).toContain("[revert]");
   fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
   await act(settle);

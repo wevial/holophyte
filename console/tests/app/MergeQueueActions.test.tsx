@@ -95,7 +95,7 @@ afterEach(() => {
 
 const rows = () => [...screen.getByRole("list", { name: "relos merge queue" }).querySelectorAll<HTMLElement>("[data-entry]")];
 const jumpIn = (row: HTMLElement) => within(row).queryByRole("button", { name: /Jump to front/ });
-const dialog = () => screen.queryByRole("dialog");
+const dialog = () => screen.queryByRole("alertdialog");
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const press = async (button: HTMLElement) => {
   await act(async () => void fireEvent.click(button));

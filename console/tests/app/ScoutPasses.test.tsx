@@ -302,7 +302,7 @@ test("a Pass group the reader closed stays closed when the next poll brings a he
 test("Stop during a pass says the pass stops and the report stays; during a first run it says no report is written", async () => {
   const line = async () => {
     await click(screen.getByRole("button", { name: "Stop" }));
-    return within(screen.getByRole("dialog", { name: "Stop scout 31?" })).getByText(/stops? now/).textContent;
+    return within(screen.getByRole("alertdialog", { name: "Stop scout 31?" })).getByText(/stops? now/).textContent;
   };
   await mount(swarming, PASS_THREE + 3 * 60_000);
   expect(await line()).toBe("Pass 3 stops now. The report so far stays.");
