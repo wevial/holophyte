@@ -366,6 +366,7 @@ export interface SortSection {
 
 const MENU_HEAD = "flex h-[26px] items-center gap-1.5 px-2 text-[12px] text-ink-3";
 const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-data-checked:font-medium has-data-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
+const MENU_MARK = "inline-flex size-3.5 shrink-0 items-center justify-center outline-none!";
 const HEAD_BOX = "inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-[4px] shadow-[inset_0_0_0_1.5px_var(--hair-2)] data-checked:bg-accent data-checked:shadow-none data-indeterminate:bg-accent data-indeterminate:shadow-none disabled:cursor-default disabled:opacity-50 forced-colors:border forced-colors:border-solid";
 
 function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
@@ -388,7 +389,7 @@ function MenuSection({ section, search, write }: { section: FilterSection; searc
       </legend>
       {section.options.map((option) => (
         <label key={option.value} className={`${MENU_ROW} ${option.count === 0 ? "text-ink-3" : ""}`}>
-          <Checkbox value={option.value} aria-label={option.label} className="inline-flex size-3.5 shrink-0 items-center justify-center outline-none!">
+          <Checkbox value={option.value} aria-label={option.label} className={MENU_MARK}>
             <CheckboxIndicator className="inline-flex items-center justify-center"><CheckMark /></CheckboxIndicator>
           </Checkbox>
           {option.colour && <i aria-hidden="true" className="size-[7px] shrink-0 rounded-full" style={{ background: option.colour }} />}
@@ -427,7 +428,7 @@ function MenuSorting({ sorting }: { sorting: SortSection }) {
       <RadioGroup value={sorting.sort} onValueChange={(next) => { if (next) sorting.onSort(next); }} aria-labelledby={id}>
         {sorting.keys.map((key) => (
           <label key={key.value} className={MENU_ROW}>
-            <Radio value={key.value} aria-label={key.label} className="inline-flex size-3.5 shrink-0 items-center justify-center outline-none!">
+            <Radio value={key.value} aria-label={key.label} className={MENU_MARK}>
               <RadioIndicator className="inline-flex items-center justify-center"><CheckMark /></RadioIndicator>
             </Radio>
             {key.label}

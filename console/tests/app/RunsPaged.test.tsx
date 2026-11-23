@@ -260,22 +260,19 @@ test("a sort picked in the Filter popover puts its sort and order in the hash, a
 test("ArrowRight moves focus across the Per page buttons and the Sort order arrows, each group holding one tab stop", async () => {
   await mount("#/runs", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
   const box = await popover();
+  const stepRight = async (buttons: HTMLElement[], at: number) => {
+    const stops = () => buttons.filter((each) => each.getAttribute("tabindex") === "0");
+    expect(buttons[at]!.getAttribute("aria-pressed")).toBe("true");
+    expect(stops()).toEqual([buttons[at]]);
+    await act(async () => buttons[at]!.focus());
+    await act(async () => void fireEvent.keyDown(buttons[at]!, { key: "ArrowRight" }));
+    expect(document.activeElement).toBe(buttons[at + 1]);
+    expect(stops()).toEqual([buttons[at + 1]]);
+  };
   const sizes = within(box.getByRole("group", { name: "Per page" })).getAllByRole("button");
-  const pressedSize = sizes.find((each) => each.getAttribute("aria-pressed") === "true")!;
-  expect(pressedSize.textContent).toBe("50");
-  expect(sizes.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([pressedSize]);
-  await act(async () => pressedSize.focus());
-  await act(async () => void fireEvent.keyDown(pressedSize, { key: "ArrowRight" }));
-  expect(document.activeElement).toBe(sizes[2]);
-  expect(sizes.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([sizes[2]]);
-
-  const arrows = [await orderButton("newest first"), await orderButton("oldest first")];
-  expect(arrows[0]!.getAttribute("aria-pressed")).toBe("true");
-  expect(arrows.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([arrows[0]]);
-  await act(async () => arrows[0]!.focus());
-  await act(async () => void fireEvent.keyDown(arrows[0]!, { key: "ArrowRight" }));
-  expect(document.activeElement).toBe(arrows[1]);
-  expect(arrows.filter((each) => each.getAttribute("tabindex") === "0")).toEqual([arrows[1]]);
+  expect(sizes[1]!.textContent).toBe("50");
+  await stepRight(sizes, 1);
+  await stepRight(["newest first", "oldest first"].map((name) => box.getByRole("button", { name })), 0);
 });
 
 test("sorted by took, two hosts' rows are drawn longest first, then shortest first once that order is picked", async () => {
