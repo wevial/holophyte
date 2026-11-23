@@ -70,7 +70,7 @@ test("the favicon is its own drawing on a 16-unit grid", async () => {
   expect(svg).toContain('viewBox="0 0 16 16"');
 });
 
-test("the mark is one current-colour disc whose leaf is an even-odd hole, with no gradient", () => {
+test("the mark is one current-colour leaf with an even-odd pleat cut inside its outline, with no gradient", () => {
   const holder = document.createElement("div");
   holder.innerHTML = renderToStaticMarkup(createElement(Mark));
   const svg = holder.querySelector("svg")!;
