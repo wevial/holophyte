@@ -64,8 +64,8 @@ RUN set -eu \
 # every Go cache lives under the writable reviewer home because root is
 # mounted read-only. cgo is on, with gcc installed above, because `go test
 # -race` needs it.
-ARG GO_TARBALL=go1.26.9.linux-amd64.tar.gz
-ARG GO_SHA256=42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d
+ARG GO_TARBALL=go1.27.4.linux-amd64.tar.gz
+ARG GO_SHA256=7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
 RUN set -eu \
     && curl -fsSL -o /tmp/go.linux-amd64.tar.gz \
         "https://go.dev/dl/${GO_TARBALL}" \
