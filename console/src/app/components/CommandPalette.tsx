@@ -286,6 +286,19 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   const { actions } = listing;
   const query = text.trim();
   const inputId = `${useId()}-input`;
+  const rows = confirming
+    ? []
+    : listing.groups.flatMap((group, groupIndex) =>
+        group.entries.map((entry) => ({ value: `${groupIndex}|${entry.key}`, disabled: entry.disabled != null })),
+      );
+  const shownKeys = rows.map(({ value }) => value).join("\n");
+  const firstEnabled = rows.find(({ disabled }) => !disabled)?.value ?? null;
+  const [selection, setSelection] = useState<{ keys: string; value: string | null }>({ keys: shownKeys, value: firstEnabled });
+  if (selection.keys !== shownKeys) setSelection({ keys: shownKeys, value: firstEnabled });
+  const highlighted =
+    selection.keys === shownKeys && rows.some((row) => row.value === selection.value && !row.disabled)
+      ? selection.value
+      : firstEnabled;
 
   const close = () => setOpened(false);
 
@@ -358,6 +371,8 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
         <DialogTitle className="sr-only">Command palette</DialogTitle>
         <Command
           filter={false}
+          value={highlighted}
+          onValueChange={(next) => setSelection({ keys: shownKeys, value: next })}
           query={text}
           status={listing.loading ? "loading" : "idle"}
           announcement={NO_ANNOUNCEMENT}
