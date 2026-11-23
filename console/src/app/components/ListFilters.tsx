@@ -260,7 +260,8 @@ const toolPopover = definePrimitive({
   state: (_options: { onOpenChange?: (open: boolean) => void }) => popupState({}),
   api: (context) => {
     let cancelRefocus = () => {};
-    const popup = createPopup(context, {
+    context.onDestroy(() => cancelRefocus());
+    return createPopup(context, {
       preset: popoverPreset,
       behavior: { dismissOnFocusLoss: false, blur: "never" },
       rules: (core) => ({
@@ -292,8 +293,6 @@ const toolPopover = definePrimitive({
         },
       }),
     });
-    context.onDestroy(() => cancelRefocus());
-    return popup;
   },
   slots: (slot) => {
     const content = popupContent(slot);
@@ -324,14 +323,13 @@ export function ToolPopover({
   useEffect(() => {
     if (hidden) handle.api.close();
   }, [hidden, handle]);
-  const close = () => void handle.api.close({ reason: "close-press" });
   return usePart(handle, "root", {}, {
     className: "shrink-0",
     children: (
       <>
         <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
         <ToolContent ref={contentRef} aria-label={label} side={side} align={align} sideOffset={sideOffset} collisionPadding={collisionPadding} style={style} className={className}>
-          {typeof children === "function" ? children(close) : children}
+          {typeof children === "function" ? children(() => void handle.api.close({ reason: "close-press" })) : children}
         </ToolContent>
       </>
     ),
@@ -343,16 +341,6 @@ export interface FilterSection {
   param: string;
   options: readonly (FilterOption & { count: number; colour?: string })[];
   mono?: boolean;
-}
-
-/** A section's checked values and its writer, which keeps them in the section's order. */
-function useSection(section: FilterSection, search: PageSearch, write: (change: PageSearch) => void) {
-  const checked = checkedOf(search, section.param);
-  const set = (values: string[]) => {
-    const kept = section.options.map((option) => option.value).filter((value) => values.includes(value));
-    write({ [section.param]: kept.length > 0 ? kept.join(",") : undefined });
-  };
-  return { checked, set };
 }
 
 export interface SortSection {
@@ -367,24 +355,26 @@ export interface SortSection {
 const MENU_HEAD = "flex h-[26px] items-center gap-1.5 px-2 text-[12px] text-ink-3";
 const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-data-checked:font-medium has-data-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
 const MENU_MARK = "inline-flex size-3.5 shrink-0 items-center justify-center outline-none!";
-const HEAD_BOX = "inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-[4px] shadow-[inset_0_0_0_1.5px_var(--hair-2)] data-checked:bg-accent data-checked:shadow-none data-indeterminate:bg-accent data-indeterminate:shadow-none disabled:cursor-default disabled:opacity-50 forced-colors:border forced-colors:border-solid";
 
 function MenuSection({ section, search, write }: { section: FilterSection; search: PageSearch; write: (change: PageSearch) => void }) {
   const id = useId();
-  const { checked, set } = useSection(section, search, write);
+  const raw = checkedOf(search, section.param);
   const allValues = section.options.map((option) => option.value);
-  const on = section.options.filter((option) => checked.includes(option.value)).length;
+  const checked = allValues.filter((value) => raw.includes(value));
   return (
-    <CheckboxGroup value={checked} allValues={allValues} onValueChange={set} aria-labelledby={id} render={<fieldset />} className="m-0 min-w-0 border-0 p-0">
+    <CheckboxGroup value={checked} allValues={allValues}
+      onValueChange={(values) => write({ [section.param]: values.length > 0 ? values.join(",") : undefined })}
+      aria-labelledby={id} render={<fieldset />} className="m-0 min-w-0 border-0 p-0">
       <legend className="float-left w-full px-2 text-[12px]">
         <label className="flex min-h-[26px] cursor-pointer items-center gap-2 font-semibold text-ink">
-          <Checkbox parent aria-label={section.label} disabled={section.options.length === 0} className={HEAD_BOX}>
+          <Checkbox parent aria-label={section.label} disabled={section.options.length === 0}
+            className="inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-[4px] shadow-[inset_0_0_0_1.5px_var(--hair-2)] data-checked:bg-accent data-checked:shadow-none data-indeterminate:bg-accent data-indeterminate:shadow-none disabled:cursor-default disabled:opacity-50 forced-colors:border forced-colors:border-solid">
             <CheckboxIndicator className="inline-flex items-center justify-center text-raised">
               {(state) => <BoxMark mixed={state.indeterminate} />}
             </CheckboxIndicator>
           </Checkbox>
           <span id={id}>{section.label}</span>{" "}
-          {on > 0 && <span className="ml-auto font-mono text-[12px] font-normal text-ink-3">{on} of {section.options.length}</span>}
+          {checked.length > 0 && <span className="ml-auto font-mono text-[12px] font-normal text-ink-3">{checked.length} of {section.options.length}</span>}
         </label>
       </legend>
       {section.options.map((option) => (
