@@ -289,6 +289,34 @@ test("Escape with focus moved from the Filter popover to Search still closes it 
   expect(document.activeElement).toBe(filterButton());
 });
 
+test("the Filter popover stays in the page stacking context below modal overlays rather than promoting to the top layer", async () => {
+  await mount("#/runs", countedFleet().fetchImpl);
+  const checkStack = (box: HTMLElement) => {
+    expect(box.hasAttribute("popover")).toBe(false);
+    expect(screen.getByRole("main").contains(box)).toBe(true);
+    expect(box.classList.contains("z-50")).toBe(false);
+    expect(box.style.zIndex === "" || Number(box.style.zIndex) < 50).toBe(true);
+  };
+  checkStack(await openFilter());
+  await press(filterButton());
+  expect(dialog()).toBeNull();
+
+  let promoted = 0;
+  const hadShow = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
+  const hadHide = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
+  Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, value() { promoted += 1; } });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true, value() {} });
+  try {
+    checkStack(await openFilter());
+    expect(promoted).toBe(0);
+  } finally {
+    if (hadShow) Object.defineProperty(HTMLElement.prototype, "showPopover", hadShow);
+    else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+    if (hadHide) Object.defineProperty(HTMLElement.prototype, "hidePopover", hadHide);
+    else delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
+});
+
 test("Clear filters empties Search and drops a search still waiting on its debounce", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs?failure=verify", daemons.fetchImpl);

@@ -265,6 +265,8 @@ const toolPopover = definePrimitive({
       preset: popoverPreset,
       behavior: { dismissOnFocusLoss: false, blur: "never" },
       rules: (core) => ({
+        // Keep the sheet in the page's stacking context so modal overlays cover it.
+        bind: () => ({ inline: true }),
         // Controls outside the popover (such as SearchField) preventDefault on Escape,
         // which makes the popup layer skip it; close when Escape did not come from another popup.
         onShow() {
@@ -328,7 +330,7 @@ export function ToolPopover({
     children: (
       <>
         <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
-        <ToolContent ref={contentRef} aria-label={label} side={side} align={align} sideOffset={sideOffset} collisionPadding={collisionPadding} style={style} className={className}>
+        <ToolContent ref={contentRef} aria-label={label} side={side} align={align} sideOffset={sideOffset} collisionPadding={collisionPadding} style={{ zIndex: 20, ...style }} className={className}>
           {typeof children === "function" ? children(() => void handle.api.close({ reason: "close-press" })) : children}
         </ToolContent>
       </>
@@ -462,7 +464,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra }: {
       trigger={<><ToolFilterIcon />{count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}</>}
       contentRef={sheet}
       style={{ width: `min(600px, var(--available-width, calc(100vw - ${2 * MENU_EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
-      className={`group/sheet fixed z-50 grid ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none data-stacked:grid-cols-1`}
+      className={`group/sheet fixed z-20 grid ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none data-stacked:grid-cols-1`}
     >
       {(sorting || extra) && (
         <div>
