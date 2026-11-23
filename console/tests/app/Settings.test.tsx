@@ -253,6 +253,44 @@ test("in Tree view the tree uses one tab stop and arrows, Home, End and typeahea
   expect(document.activeElement).toBe(treeItem("docs/"));
 });
 
+test("in Tree view pressing Space on console/src/ then console/build.ts writes those two lines with console/ mixed and 3 of 4 covered, and checking console/ folds them to console/*", async () => {
+  await mountTree(treeFleet([]));
+  pick("Tree");
+  expect(screen.queryByRole("textbox", { name: "UI paths" })).toBeNull();
+  await act(async () => { treeItem("console/").focus(); });
+  fireEvent.keyDown(treeItem("console/"), { key: "ArrowRight" });
+  await act(async () => { treeItem("console/src/").focus(); });
+  fireEvent.keyDown(treeItem("console/src/"), { key: " " });
+  await act(async () => { treeItem("console/build.ts").focus(); });
+  fireEvent.keyDown(treeItem("console/build.ts"), { key: " " });
+  expect(patterns()).toEqual(["console/src/* · 2 files", "console/build.ts · 1 file"]);
+  expect(treeItem("console/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeItem("console/").hasAttribute("data-indeterminate")).toBe(true);
+  expect(treeBox("console/").hasAttribute("data-indeterminate")).toBe(true);
+  expect(treeBox("console/").hasAttribute("data-unchecked")).toBe(false);
+  expect(treeItem("docs/").getAttribute("aria-checked")).toBe("false");
+  expect(screen.getByLabelText("UI paths covered").textContent).toBe("3 of 4 tracked files");
+  pick("Text");
+  expect((screen.getByRole("textbox", { name: "UI paths" }) as HTMLTextAreaElement).value).toBe("console/src/*\nconsole/build.ts");
+  pick("Tree");
+  await act(async () => { treeItem("console/").focus(); });
+  fireEvent.keyDown(treeItem("console/"), { key: " " });
+  expect(patterns()).toEqual(["console/* · 3 files"]);
+  expect(treeItem("console/").getAttribute("aria-checked")).toBe("true");
+  expect(treeBox("console/").hasAttribute("data-checked")).toBe(true);
+  expect(treeBox("console/").hasAttribute("data-indeterminate")).toBe(false);
+});
+
+test("checking a folder's sole tracked file writes that file rather than broadening to the folder pattern", async () => {
+  await mountTree(treeFleet([]));
+  pick("Tree");
+  fireEvent.click(treeItem("docs/"));
+  fireEvent.click(treeBox("docs/x.md"));
+  expect(patterns()).toEqual(["docs/x.md · 1 file"]);
+  expect(treeItem("docs/").getAttribute("aria-checked")).toBe("mixed");
+  expect(treeItem("docs/x.md").getAttribute("aria-checked")).toBe("true");
+});
+
 test("a pattern the tree cannot show is kept from text while checking docs/ adds docs/*", async () => {
   await mountTree(treeFleet(["console/src/*", "*.css"]));
   pick("Tree");
@@ -309,10 +347,10 @@ test("unchecking a folder a checked folder above it repeats unchecks it, and unc
 
 test("a tracked path holding glob characters is written escaped, so the written pattern matches it", async () => {
   const tree = {
-    ref: "main", sha: "0123456789ab", files: 3,
+    ref: "main", sha: "0123456789ab", files: 2,
     dirs: [
-      { path: "", files: 3, dirs: ["app"], leaves: [] },
-      { path: "app", files: 3, dirs: ["[slug]"], leaves: ["a?.ts", "other.ts"] },
+      { path: "", files: 2, dirs: ["app"], leaves: [] },
+      { path: "app", files: 2, dirs: ["[slug]"], leaves: ["a?.ts"] },
       { path: "app/[slug]", files: 1, dirs: [], leaves: ["page.tsx"] },
     ],
   };

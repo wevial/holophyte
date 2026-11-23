@@ -31,16 +31,20 @@ export function writePathView(view: PathView): void {
   }
 }
 
-type Model = { under: Map<string, string[]>; patterns: Map<string, string>; items: TreeItemData[]; total: number };
-type Split = { selected: string[]; kept: string[]; keptCovered: Set<string> };
+type Model = { dirs: Map<string, string[]>; under: Map<string, string[]>; patterns: Map<string, string>; items: TreeItemData[]; total: number };
+type Split = { selected: Set<string>; kept: string[]; keptCovered: Set<string> };
+type Checked = "true" | "false" | "mixed";
+
+const NONE: string[] = [];
 
 const join = (dir: string, name: string) => (dir === "" ? name : `${dir}/${name}`);
 
 function modelOf(tree: TrackedTree): Model {
-  const dirs = new Map(tree.dirs.map((dir) => [dir.path, dir]));
+  const byPath = new Map(tree.dirs.map((dir) => [dir.path, dir]));
+  const dirs = new Map<string, string[]>();
   const under = new Map<string, string[]>();
   const build = (path: string): TreeItemData[] => {
-    const dir = dirs.get(path);
+    const dir = byPath.get(path);
     if (!dir) return [];
     const files: string[] = [];
     const children: TreeItemData[] = [];
@@ -54,6 +58,7 @@ function modelOf(tree: TrackedTree): Model {
       children.push({ value: file, label: leaf });
       files.push(file);
     }
+    dirs.set(path, children.map((child) => child.value));
     under.set(path, files);
     return children;
   };
@@ -63,7 +68,7 @@ function modelOf(tree: TrackedTree): Model {
     if (path !== "") patterns.set(`${literal(path)}/*`, path);
     for (const file of files) patterns.set(literal(file), file);
   }
-  return { under, patterns, items, total: under.get("")?.length ?? 0 };
+  return { dirs, under, patterns, items, total: under.get("")?.length ?? 0 };
 }
 
 const inSet = (text: string) => text.replace(/[\\\]-]/g, "\\$&");
@@ -151,6 +156,7 @@ const literal = (path: string) => path.replace(/[[*?]/g, "[$&]");
 const nodeOf = (model: Model, pattern: string) => model.patterns.get(pattern) ?? null;
 
 const ancestors = (path: string) => path.split("/").slice(0, -1).map((_, at, parts) => parts.slice(0, at + 1).join("/"));
+const picked = (selected: ReadonlySet<string>, path: string) => selected.has(path) || ancestors(path).some((each) => selected.has(each));
 
 function split(model: Model, value: readonly string[]): Split {
   const files = model.under.get("") ?? [];
@@ -164,7 +170,7 @@ function split(model: Model, value: readonly string[]): Split {
   for (const each of [...selected]) if (ancestors(each).some((above) => selected.has(above))) selected.delete(each);
   const matchers = kept.map(fnmatch);
   const keptCovered = new Set(files.filter((file) => matchers.some((matcher) => matcher.test(file))));
-  return { selected: [...selected], kept, keptCovered };
+  return { selected, kept, keptCovered };
 }
 
 function written(items: readonly TreeItemData[], selected: ReadonlySet<string>): string[] {
@@ -174,16 +180,49 @@ function written(items: readonly TreeItemData[], selected: ReadonlySet<string>):
   });
 }
 
-/** Rewrite the tree's patterns from `checked` while keeping patterns the
- *  tree cannot show in their place. */
-function merged(items: readonly TreeItemData[], value: readonly string[], kept: ReadonlySet<string>, checked: readonly string[]): string[] {
-  const next = written(items, new Set(checked));
+function uncheck(model: Model, selected: Set<string>, path: string) {
+  if (selected.delete(path)) return;
+  const from = ancestors(path).find((each) => selected.has(each));
+  if (from === undefined) return;
+  selected.delete(from);
+  for (const step of [...ancestors(path), path].filter((each) => each.length > from.length)) {
+    const parent = step.slice(0, step.lastIndexOf("/"));
+    for (const sibling of model.dirs.get(parent) ?? []) {
+      if (sibling !== step) selected.add(sibling);
+    }
+  }
+}
+
+/** `value` with `path` toggled: checking a folder folds its descendants,
+ *  unchecking under a checked folder keeps siblings, and checking every
+ *  child never promotes to the folder pattern. Kept patterns stay in place. */
+function toggled(model: Model, value: readonly string[], path: string): string[] {
+  const { selected, kept } = split(model, value);
+  if (picked(selected, path)) uncheck(model, selected, path);
+  else {
+    for (const each of [...selected]) if (each.startsWith(`${path}/`)) selected.delete(each);
+    selected.add(path);
+  }
+  const next = written(model.items, selected);
   const stays = new Set([...kept, ...next]);
   return [...new Set([...value.filter((pattern) => stays.has(pattern)), ...next])];
 }
 
-function coveredBy(model: Model, selected: readonly string[]): Set<string> {
-  return new Set(selected.flatMap((path) => model.under.get(path) ?? [path]));
+function coveredBy(model: Model, selected: ReadonlySet<string>): Set<string> {
+  return new Set([...selected].flatMap((path) => model.under.get(path) ?? [path]));
+}
+
+function checkedOf(path: string, selected: ReadonlySet<string>, mixed: ReadonlySet<string>): Checked {
+  if (picked(selected, path)) return "true";
+  return mixed.has(path) ? "mixed" : "false";
+}
+
+function checkedData(checked: Checked) {
+  return {
+    "data-checked": checked === "true" ? "" : undefined,
+    "data-unchecked": checked === "false" ? "" : undefined,
+    "data-indeterminate": checked === "mixed" ? "" : undefined,
+  };
 }
 
 const counted = (count: number) => count.toLocaleString("en-US");
@@ -201,16 +240,23 @@ const ITEM = "outline-none! [&:focus-visible>[data-slot=tree-label]]:outline-2 [
 const ROW = "flex min-h-7 cursor-pointer items-center gap-1.5 pr-2 pl-[calc((var(--tree-level,1)-1)*16px)] select-none hover:bg-paper-2";
 const CHECKBOX = "inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center border data-unchecked:border-ink-3 data-unchecked:bg-paper data-checked:border-act data-checked:bg-act data-checked:text-paper data-indeterminate:border-act data-indeterminate:bg-act data-indeterminate:text-paper";
 
-function PathBranch({ items, under }: { items: readonly TreeItemData[]; under: ReadonlyMap<string, string[]> }) {
+function PathBranch({ items, under, selected, mixed }: {
+  items: readonly TreeItemData[];
+  under: ReadonlyMap<string, string[]>;
+  selected: ReadonlySet<string>;
+  mixed: ReadonlySet<string>;
+}) {
   return items.map((item) => {
     const branch = item.children !== undefined;
+    const checked = checkedOf(item.value, selected, mixed);
+    const data = checkedData(checked);
     return (
       <TreeItem
         key={item.value}
         value={item.value}
         aria-label={branch ? `${item.value}/` : item.value}
         // Drop UI SDK's label reference so `aria-label` names the item by its full path.
-        render={({ "aria-labelledby": _, ...props }) => <div {...props} />}
+        render={({ "aria-labelledby": _, ...props }) => <div {...props} aria-checked={checked} {...data} />}
         className={ITEM}
       >
         <TreeItemLabel className={ROW}>
@@ -221,10 +267,10 @@ function PathBranch({ items, under }: { items: readonly TreeItemData[]; under: R
           ) : (
             <span aria-hidden="true" className="size-3.5 shrink-0" />
           )}
-          <TreeItemCheckbox className={CHECKBOX}>
-            {(state) => state.checked !== false && (
+          <TreeItemCheckbox className={CHECKBOX} render={(props) => <span {...props} {...data} />}>
+            {checked !== "false" && (
               <svg viewBox="0 0 16 16" width={12} height={12} fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d={state.checked === true ? "M3.5 8.5l3 3 6-7" : "M4 8h8"} />
+                <path d={checked === "true" ? "M3.5 8.5l3 3 6-7" : "M4 8h8"} />
               </svg>
             )}
           </TreeItemCheckbox>
@@ -232,7 +278,7 @@ function PathBranch({ items, under }: { items: readonly TreeItemData[]; under: R
           <span className={`min-w-0 flex-1 truncate ${branch ? "text-ink" : "text-ink-2"}`}>{branch ? `${item.label}/` : item.label}</span>
           <span aria-hidden="true" className="tabular-nums text-ink-3">{counted(under.get(item.value)?.length ?? 1)}</span>
         </TreeItemLabel>
-        {item.children && <TreeGroup><PathBranch items={item.children} under={under} /></TreeGroup>}
+        {item.children && <TreeGroup><PathBranch items={item.children} under={under} selected={selected} mixed={mixed} /></TreeGroup>}
       </TreeItem>
     );
   });
@@ -252,21 +298,32 @@ export function PathViewSwitch({ label, view, onPick }: { label: string; view: P
 export function PathTree({ tree, value, label, onChange }: { tree: TrackedTree; value: readonly string[]; label: string; onChange: (value: string[]) => void }) {
   const model = useMemo(() => modelOf(tree), [tree]);
   const state = useMemo(() => split(model, value), [model, value]);
+  const mixed = useMemo(() => {
+    const dirs = new Set<string>();
+    for (const path of state.selected) for (const above of ancestors(path)) dirs.add(above);
+    return dirs;
+  }, [state]);
   const kept = new Set(state.kept);
   const covered = new Set([...coveredBy(model, state.selected), ...state.keptCovered]).size;
   return (
     <div className="flex w-full min-w-0 flex-col gap-2 font-mono text-[12px]">
+      {/* UI SDK's cascading check strategies fold a folder once all its leaves are checked,
+          which would broaden a file list into `dir/*`; manage checked transitions here. */}
       <Tree
         aria-label={`${label} tree`}
         items={model.items}
         mode="none"
         checkable
-        checkStrategy="trunk"
-        checked={state.selected}
-        onCheckedChange={(next) => onChange(merged(model.items, value, kept, next))}
+        checkStrategy="independent"
+        checked={NONE}
+        onCheckedChange={(next, details) => {
+          details.cancel();
+          const path = next[0];
+          if (path !== undefined) onChange(toggled(model, value, path));
+        }}
         className="max-h-96 w-full overflow-auto border border-rule bg-paper py-1 pl-1"
       >
-        <PathBranch items={model.items} under={model.under} />
+        <PathBranch items={model.items} under={model.under} selected={state.selected} mixed={mixed} />
       </Tree>
       {value.length > 0 && <ul aria-label={`${label} patterns`} className="flex w-full min-w-0 flex-col gap-1">
         {value.map((pattern, index) => {
