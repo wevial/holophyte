@@ -27,7 +27,8 @@ test("a confirm's box is a rounded raised surface ringed in hair-2, its label no
       One change.
     </ConfirmDialog>,
   );
-  const box = screen.getByRole("dialog", { name: "Save these changes?" });
+  const box = screen.getByRole("alertdialog", { name: "Save these changes?" });
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(classes(box)).toEqual(expect.arrayContaining(["rounded-[12px]", "bg-raised"]));
   expect(classes(box).some((name) => name.startsWith("shadow-[0_0_0_1px_var(--hair-2)"))).toBe(true);
   expect(classes(box)).not.toContain("border-rule");
@@ -58,8 +59,45 @@ test("the Abort confirm's reason is a field-styled textarea under a label that i
   const actions = document.querySelector<HTMLElement>("[data-run-actions]")!;
   await act(async () => void fireEvent.click(within(actions).getByRole("button", { name: "Abort" })));
   for (let round = 0; round < 4; round += 1) await act(settle);
-  const reason = within(screen.getByRole("dialog", { name: "Abort run 12?" })).getByRole<HTMLTextAreaElement>("textbox", { name: "Reason · saved with the run" });
+  const reason = within(screen.getByRole("alertdialog", { name: "Abort run 12?" })).getByRole<HTMLTextAreaElement>("textbox", { name: "Reason · saved with the run" });
   expect(reason.tagName).toBe("TEXTAREA");
   expect(classes(reason)).toContain("field");
   expect(classes(reason.labels![0]!)).not.toContain("uppercase");
+});
+
+test("a confirm exposes role alertdialog, not dialog, and pressing the dimmed page outside it leaves it open without calling onCancel", async () => {
+  let cancelled = 0;
+  render(
+    <div>
+      <button type="button">Outside</button>
+      <ConfirmDialog
+        label="Save · holophyte"
+        heading="Save these changes?"
+        confirm="Save"
+        busyLabel="Saving…"
+        busy={false}
+        onCancel={() => {
+          cancelled += 1;
+        }}
+        onConfirm={() => {}}
+      >
+        One change.
+      </ConfirmDialog>
+    </div>,
+  );
+  await act(settle);
+  expect(screen.getByRole("alertdialog", { name: "Save these changes?" })).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const backdrop = document.querySelector<HTMLElement>('[data-slot="alert-dialog-backdrop"]');
+  expect(backdrop).toBeTruthy();
+  const outside = screen.getByRole("button", { name: "Outside" });
+  for (const target of [backdrop!, outside]) {
+    await act(async () => {
+      fireEvent.pointerDown(target, { button: 0 });
+      fireEvent.pointerUp(target, { button: 0 });
+      fireEvent.click(target);
+    });
+  }
+  expect(screen.getByRole("alertdialog", { name: "Save these changes?" })).toBeTruthy();
+  expect(cancelled).toBe(0);
 });

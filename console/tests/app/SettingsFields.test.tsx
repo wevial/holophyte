@@ -200,7 +200,7 @@ test("General's Colour row offers Automatic and four colours as round swatch but
   expect(within(row("Colour")).getByRole("button", { name: "Teal" }).getAttribute("aria-pressed")).toBe("true");
   expect(changeLine("Colour")).toBe("Automatic → Teal · applies at the next loop start");
   fireEvent.click(within(unsaved()!).getByRole("button", { name: "Save" }));
-  fireEvent.click(within(screen.getByRole("dialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: "Save these changes?" })).getByRole("button", { name: "Save" }));
   await act(settle);
   await act(settle);
   expect(writes).toEqual([{ patch: { "console.colour": "teal" } }]);

@@ -176,7 +176,7 @@ test("a reverted run's Revert… is disabled, names its revert ticket, and posts
   await act(async () => void fireEvent.click(item));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(fake.posted).toEqual([]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
 });
 
 test("a run that is not its ticket's latest merge is refused before any preview, naming the run a revert would undo", async () => {
@@ -184,14 +184,14 @@ test("a run that is not its ticket's latest merge is refused before any preview,
   const fake = daemon(true, undefined, { tickets: { "DEMO-9": remerged } });
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
-  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  const dialog = screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" });
   expect(dialog.querySelector("[data-revert-refusal]")?.textContent).toBe("Run 9 is not DEMO-9's latest merge; a revert would undo run 11. Revert it from run 11.");
   expect(fake.posted).toEqual([]);
 });
 
 test("a latest merge with no recorded sha is refused before any preview, naming the older merge the daemon would undo or that there is none", async () => {
   const shaless = { ...runNine, run: { ...runNine.run, merge_sha: null } };
-  const refusal = () => screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent;
+  const refusal = () => screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent;
   const only = daemon(true, undefined, { runs: { 9: shaless } });
   await mount("#/runs/demo/9", only.fetchImpl);
   await revertFromRunPage();
@@ -278,22 +278,22 @@ test("a ticket that merged again after its preview files nothing and says why", 
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
   fake.state.tickets["DEMO-9"] = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 11 }, ...ticketNine.runs] };
-  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revert DEMO-9?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
   await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
   for (let round = 0; round < 4; round += 1) await act(settle);
-  expect(screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent).toContain("a revert would undo run 11");
+  expect(screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent).toContain("a revert would undo run 11");
   expect(fake.posted.map(({ body }) => body.dry_run)).toEqual([true]);
 });
 
 async function fileFromDialog(reason = "broke the ledger") {
-  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revert DEMO-9?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: reason } }));
   await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
   for (let round = 0; round < 4; round += 1) await act(settle);
 }
 
-const refusalText = () => screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent;
+const refusalText = () => screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" }).querySelector("[data-revert-refusal]")?.textContent;
 
 test("a revert previewed from the Ticket page files nothing once its newest attempt shows a failed run", async () => {
   const fake = daemon(true, () => Response.json(PREVIEW));
@@ -322,7 +322,7 @@ test("a preview answered 200 without its preview fields offers no filing and pos
     const fake = daemon(true, () => Response.json(reply));
     await mount("#/runs/demo/9", fake.fetchImpl);
     await revertFromRunPage();
-    const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+    const dialog = screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" });
     expect(within(dialog).queryByText("Nothing merged since touches these files")).toBeNull();
     expect(within(dialog).getAllByRole("button").map((button) => button.textContent)).toEqual(["Close"]);
     expect(fake.posted).toHaveLength(1);
@@ -368,13 +368,13 @@ test("a File revert refused on its recheck moves focus from the vanished button 
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
   fake.state.tickets["DEMO-9"] = { ...ticketNine, runs: [{ ...ticketNine.runs[0]!, run: 11 }, ...ticketNine.runs] };
-  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revert DEMO-9?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
   const file = within(dialog).getByRole("button", { name: "File revert" });
   file.focus();
   await act(async () => void fireEvent.click(file));
   for (let round = 0; round < 4; round += 1) await act(settle);
-  const dialogNow = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  const dialogNow = screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" });
   expect(dialogNow.contains(document.activeElement)).toBe(true);
   expect(document.activeElement?.textContent).toBe("Close");
 });
@@ -389,15 +389,17 @@ test("a filing in flight holds the dialog open against Keep it and Esc", async (
   });
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
-  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revert DEMO-9?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
   await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect((within(dialog).getByRole("button", { name: "Keep it" }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "Keep it" })));
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.getByRole("dialog", { name: "Revert DEMO-9?" })).toBe(dialog);
+  expect(screen.getByRole("alertdialog", { name: "Revert DEMO-9?" })).toBe(dialog);
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.querySelector("[data-revert-filed]")?.textContent).toBe("Filed DEMO-50 to revert DEMO-9.");
 });
 
@@ -425,7 +427,8 @@ test("a slow preview from one Done row does not open over the dialog of a row ch
   }
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
-  expect(screen.getAllByRole("dialog").map((dialog) => dialog.querySelector("h2")?.textContent)).toEqual(["Revert DEMO-9?"]);
+  expect(screen.getAllByRole("alertdialog").map((dialog) => dialog.querySelector("h2")?.textContent)).toEqual(["Revert DEMO-9?"]);
+  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
 });
 
 test("a preview answered after Raw log opened leaves Raw log the only dialog, and one Esc closes it", async () => {
@@ -440,11 +443,11 @@ test("a preview answered after Raw log opened leaves Raw log the only dialog, an
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Raw log/ })));
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
-  const dialogs = screen.getAllByRole("dialog");
+  const dialogs = [...screen.queryAllByRole("dialog"), ...screen.queryAllByRole("alertdialog")];
   expect(dialogs).toHaveLength(1);
   expect(dialogs[0]!.textContent).toContain("Raw log · run 9");
   await act(async () => void fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" }));
-  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+  expect([...screen.queryAllByRole("dialog"), ...screen.queryAllByRole("alertdialog")]).toHaveLength(0);
 });
 
 test("a preview answered after Raw log opened and closed again opens no dialog", async () => {
@@ -458,10 +461,10 @@ test("a preview answered after Raw log opened and closed again opens no dialog",
   await revertFromRunPage();
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Raw log/ })));
   await act(async () => void fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" }));
-  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+  expect([...screen.queryAllByRole("dialog"), ...screen.queryAllByRole("alertdialog")]).toHaveLength(0);
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
-  expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+  expect([...screen.queryAllByRole("dialog"), ...screen.queryAllByRole("alertdialog")]).toHaveLength(0);
 });
 
 test("a preview answered after the narrow-width sidebar drawer opened and closed again opens no dialog", async () => {
@@ -478,10 +481,10 @@ test("a preview answered after the narrow-width sidebar drawer opened and closed
     await act(async () => void fireEvent.keyDown(document, { key: "\\", ctrlKey: true }));
     expect(screen.getByRole("dialog", { name: "Sidebar" })).toBeTruthy();
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
-    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+    expect([...screen.queryAllByRole("dialog"), ...screen.queryAllByRole("alertdialog")]).toHaveLength(0);
     await act(async () => release());
     for (let round = 0; round < 4; round += 1) await act(settle);
-    expect(screen.queryAllByRole("dialog")).toHaveLength(0);
+    expect([...screen.queryAllByRole("dialog"), ...screen.queryAllByRole("alertdialog")]).toHaveLength(0);
   } finally {
     happyDOM.setViewport({ width: 1024 });
   }
@@ -569,7 +572,7 @@ test("a preview answered 200 with a body that is not JSON offers no filing and p
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
 
-  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  const dialog = screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" });
   expect(within(dialog).queryByText("Nothing merged since touches these files")).toBeNull();
   expect(within(dialog).getAllByRole("button").map((button) => button.textContent)).toEqual(["Close"]);
   expect(fake.posted).toHaveLength(1);
@@ -585,7 +588,7 @@ test("Revert… previews, lists the later merge, and files the revert with the t
   await revertFromRunPage();
   expect(fake.posted).toEqual([{ url: `${DEMO}/actions/revert`, body: expect.objectContaining({ key: "DEMO-9", dry_run: true }) }]);
 
-  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revert DEMO-9?" });
   expect(within(dialog).getByText("demo · run 9")).toBeTruthy();
   const dependent = within(within(dialog).getByRole("list", { name: "Merged since, same files" })).getByRole("listitem");
   expect([...dependent.children].map((cell) => cell.textContent)).toEqual(["DEMO-12", "9be0d14", "src/pages/ledger.tsx"]);
@@ -597,7 +600,7 @@ test("Revert… previews, lists the later merge, and files the revert with the t
   await act(async () => void fireEvent.click(file));
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(fake.posted[1]).toEqual({ url: `${DEMO}/actions/revert`, body: { key: "DEMO-9", reason: "broke the ledger" } });
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   const status = document.querySelector("[data-revert-filed]")!;
   expect(status.textContent).toBe("Filed DEMO-50 to revert DEMO-9.");
   expect(within(status as HTMLElement).getByRole("link", { name: "DEMO-50" }).getAttribute("href")).toEndWith("#/tickets/demo/DEMO-50");
@@ -607,7 +610,7 @@ test("the filed revert's ticket link from a project-scoped Run page keeps the pr
   const fake = daemon(true, (body) => (body.dry_run === true ? Response.json(PREVIEW) : Response.json({ action: "revert", recorded: 42, key: "DEMO-50" })));
   await mount("#/runs/demo/9?project=demo", fake.fetchImpl);
   await revertFromRunPage();
-  const dialog = screen.getByRole("dialog", { name: "Revert DEMO-9?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Revert DEMO-9?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox", { name: "Reason" }), { target: { value: "broke the ledger" } }));
   await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "File revert" })));
   for (let round = 0; round < 4; round += 1) await act(settle);
@@ -625,7 +628,7 @@ test("a preview refused for store/schema.py names the path, offers only Close, a
   await mount("#/runs/demo/9", fake.fetchImpl);
   await revertFromRunPage();
 
-  const dialog = screen.getByRole("dialog", { name: "DEMO-9 can't be reverted" });
+  const dialog = screen.getByRole("alertdialog", { name: "DEMO-9 can't be reverted" });
   expect(within(dialog).getByText("store/schema.py").tagName).toBe("CODE");
   expect(dialog.querySelector("[data-revert-refusal]")?.textContent).toBe("It changed store/schema.py, which this project never reverts. Ship a forward fix instead.");
   expect(within(dialog).getAllByRole("button").map((button) => button.textContent)).toEqual(["Close"]);
@@ -633,6 +636,6 @@ test("a preview refused for store/schema.py names the path, offers only Close, a
 
   await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "Close" })));
   for (let round = 0; round < 2; round += 1) await act(settle);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(fake.posted).toHaveLength(1);
 });

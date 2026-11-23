@@ -270,7 +270,7 @@ test("a refused Requeue keeps the box and its form, shows the daemon's detail an
 test("a ready park's Merge opens the focus card's merge dialog, and an in-flight ticket's peek has no box", async () => {
   await peekAt("DEMO-9", fakeFetch({ ok: true, detail: "approved" }).fetchImpl);
   await press(within(askBox()!).getByRole("button", { name: "Merge" }));
-  expect(screen.getByRole("dialog", { name: "Merge PR #42?" })).toBeTruthy();
+  expect(screen.getByRole("alertdialog", { name: "Merge PR #42?" })).toBeTruthy();
 
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Cancel" })));
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
@@ -282,7 +282,7 @@ test("Esc on the peek's merge dialog shuts the dialog alone and puts focus back 
   await press(within(askBox()!).getByRole("button", { name: "Merge" }));
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
 
-  expect(screen.queryByRole("dialog", { name: "Merge PR #42?" })).toBeNull();
+  expect(screen.queryByRole("alertdialog", { name: "Merge PR #42?" })).toBeNull();
   expect(screen.getByRole("dialog", { name: "DEMO-9 title" })).toBeTruthy();
   expect(document.activeElement).toBe(within(askBox()!).getByRole("button", { name: "Merge" }));
 });
