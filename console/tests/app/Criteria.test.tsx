@@ -25,16 +25,19 @@ const rounds: RunDetail["rounds"] = [
   { ...served.rounds[0]!, round: 2, ended_ms: null, verdict: "", findings: [], instructions: [], operator_notes: [] },
 ];
 
-async function mount(standing = criteria, judgedRounds = rounds, precheck = served.precheck) {
-  const polls = fleet({ items: [], runs: [{ ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 }] }, { items: [] });
-  const fetch: Fetch = async (url) => url === `${DEMO}/runs/12`
-    ? Response.json({ ...served, run: { ...served.run, id: 12, ticket: "DEMO-12", phase: "reviewing", max_rounds: 3 }, rounds: judgedRounds, criteria: standing, precheck })
-    : polls(url);
-  window.location.hash = "#/runs/demo/12";
+async function mountAt(hash: string, fetch: Fetch) {
+  window.location.hash = hash;
   const fake = fakeDeps(fetch);
   fake.clock.now = NOW;
   render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={DEMO} pollDeps={fake.deps} /></QueryClientProvider>);
   for (let tick = 0; tick < 6; tick += 1) await act(settle);
+}
+
+async function mount(standing = criteria, judgedRounds = rounds, precheck = served.precheck) {
+  const polls = fleet({ items: [], runs: [{ ...run(12, "DEMO-12"), phase: "reviewing", round: 1, max_rounds: 3 }] }, { items: [] });
+  await mountAt("#/runs/demo/12", async (url) => url === `${DEMO}/runs/12`
+    ? Response.json({ ...served, run: { ...served.run, id: 12, ticket: "DEMO-12", phase: "reviewing", max_rounds: 3 }, rounds: judgedRounds, criteria: standing, precheck })
+    : polls(url));
 }
 
 const judged = (n: number, status: RoundCriterion["status"]): RoundCriterion => ({ id: `C${n}`, n, status, note: "" });
@@ -66,12 +69,7 @@ const failedFinal: RunDetail = {
 
 async function mountRun(detail: RunDetail) {
   const polls = fleet({ items: [] }, { items: [] });
-  const fetch: Fetch = async (url) => url === `${DEMO}/runs/12` ? Response.json(detail) : polls(url);
-  window.location.hash = "#/runs/demo/12";
-  const fake = fakeDeps(fetch);
-  fake.clock.now = NOW;
-  render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={DEMO} pollDeps={fake.deps} /></QueryClientProvider>);
-  for (let tick = 0; tick < 6; tick += 1) await act(settle);
+  await mountAt("#/runs/demo/12", async (url) => url === `${DEMO}/runs/12` ? Response.json(detail) : polls(url));
 }
 
 /** Each criterion row's round marks: one entry per column, the mark's name or null for an empty slot. */
@@ -225,17 +223,24 @@ async function mountTicket(ticketCriteria: { id: string; text: string }[], judge
     acceptance_criteria: ticketCriteria.map((criterion) => criterion.text),
     criteria: ticketCriteria,
   };
-  const fetch: Fetch = async (url) => {
+  await mountAt("#/tickets/demo/DEMO-12", async (url) => {
     if (url === `${DEMO}/board`) return Response.json({ ...servedBoard, stories: [], columns: [] });
     if (url === `${DEMO}/tickets/DEMO-12`) return Response.json(ticket);
     if (url === `${DEMO}/runs/12`) return Response.json({ ...served, run: { ...served.run, id: 12, ticket: "DEMO-12" }, criteria: judged });
     return polls(url);
-  };
-  window.location.hash = "#/tickets/demo/DEMO-12";
-  const fake = fakeDeps(fetch);
-  fake.clock.now = NOW;
-  render(<QueryClientProvider client={consoleQueryClient()}><ConsoleApp base={DEMO} pollDeps={fake.deps} /></QueryClientProvider>);
-  for (let tick = 0; tick < 6; tick += 1) await act(settle);
+  });
+}
+
+function expectInlineRow(row: HTMLElement) {
+  const code = row.querySelector("code")!;
+  expect(code.textContent).toBe("the path");
+  expect([...code.classList]).toEqual(expect.arrayContaining(["rounded-[6px]", "bg-selected", "px-1", "font-mono", "text-[12.5px]"]));
+  expect([...row.querySelectorAll("strong")].map((node) => node.textContent)).toEqual(["C1", "b"]);
+  expect(row.textContent).not.toContain("`");
+  expect(row.textContent).not.toContain("*");
+  expect(row.querySelector("p")).toBeNull();
+  expect(code.closest("span")!.className).toContain("[overflow-wrap:anywhere]");
+  return code;
 }
 
 test("Ticket page criterion text renders inline Markdown code, strong, emphasis and links with no backticks, asterisks or paragraph wrapper", async () => {
@@ -244,18 +249,10 @@ test("Ticket page criterion text renders inline Markdown code, strong, emphasis 
       { id: "C1", text: INLINE_CRITERION },
       { id: "C2", text: "See *note* in [the spec](https://example.com/spec) and `console/src/app/components/Criteria.tsx`" },
     ],
-    [{ id: "C1", n: 1, text: INLINE_CRITERION, status: "met", note: "", run: 12, round: 1 }],
+    [{ ...criteria[0]!, text: INLINE_CRITERION, note: "" }],
   );
   const [first, second] = within(block()).getAllByRole("listitem");
-  const code = first!.querySelector("code")!;
-  expect(code.textContent).toBe("the path");
-  expect([...code.classList]).toEqual(expect.arrayContaining(["rounded-[6px]", "bg-selected", "px-1", "font-mono", "text-[12.5px]"]));
-  expect([...first!.querySelectorAll("strong")].map((node) => node.textContent)).toEqual(["C1", "b"]);
-  expect(first!.textContent).not.toContain("`");
-  expect(first!.textContent).not.toContain("*");
-  expect(first!.querySelector("p")).toBeNull();
-  expect(code.closest("span")!.className).toContain("[overflow-wrap:anywhere]");
-  expect(code.closest("span")!.className).toContain("max-w-[75ch]");
+  expect(expectInlineRow(first!).closest("span")!.className).toContain("max-w-[75ch]");
 
   expect(second!.querySelector("em")!.textContent).toBe("note");
   const link = second!.querySelector<HTMLAnchorElement>('a[href="https://example.com/spec"]')!;
@@ -266,19 +263,10 @@ test("Ticket page criterion text renders inline Markdown code, strong, emphasis 
 });
 
 test("Run page judged criterion rows render inline Markdown while Evidence notes stay plain text", async () => {
-  const judgedCriteria: RunCriterion[] = [
-    { id: "C1", n: 1, text: INLINE_CRITERION, status: "met", note: "witnessed by `tests/test_a.py`", run: 12, round: 1 },
-  ];
+  const judgedCriteria = [{ ...criteria[0]!, text: INLINE_CRITERION, note: "witnessed by `tests/test_a.py`" }];
   await mount(judgedCriteria, [judgedRound(1, ["met"])], null);
   const [row] = within(within(block()).getAllByRole("list")[0]!).getAllByRole("listitem");
-  const code = row!.querySelector("code")!;
-  expect(code.textContent).toBe("the path");
-  expect([...code.classList]).toEqual(expect.arrayContaining(["rounded-[6px]", "bg-selected", "px-1", "font-mono", "text-[12.5px]"]));
-  expect([...row!.querySelectorAll("strong")].map((node) => node.textContent)).toEqual(["C1", "b"]);
-  expect(row!.textContent).not.toContain("`");
-  expect(row!.textContent).not.toContain("*");
-  expect(row!.querySelector("p")).toBeNull();
-  expect(code.closest("span")!.className).toContain("[overflow-wrap:anywhere]");
+  expectInlineRow(row!);
 
   const evidence = block().querySelector("details")!;
   expect(evidence.textContent).toContain("witnessed by `tests/test_a.py`");
@@ -286,25 +274,23 @@ test("Run page judged criterion rows render inline Markdown while Evidence notes
 });
 
 test("criterion text with raw HTML images, event handlers and fenced code blocks drops img, pre and onerror while keeping id and standing mark in the same row", async () => {
-  const judged: RunCriterion[] = [{ id: "C1", n: 1, text: HOSTILE_CRITERION, status: "met", note: "", run: 12, round: 1 }];
+  const expectSanitized = (row: HTMLElement) => {
+    expect(row.querySelector("img, pre, script, p, [onerror]")).toBeNull();
+    expect(row.textContent).not.toContain("alert(2)");
+    expect(row.textContent).not.toContain("<img");
+    expect(row.textContent).not.toContain("```");
+    expect(row.textContent).toContain("echo hi");
+    expect(row.querySelector("strong")!.textContent).toBe("C1");
+  };
+  const judged = [{ ...criteria[0]!, text: HOSTILE_CRITERION, note: "" }];
   await mountTicket([{ id: "C1", text: HOSTILE_CRITERION }], judged);
   const [ticketRow] = within(block()).getAllByRole("listitem");
-  expect(ticketRow!.querySelector("img, pre, script, p, [onerror]")).toBeNull();
-  expect(ticketRow!.textContent).not.toContain("alert(2)");
-  expect(ticketRow!.textContent).not.toContain("<img");
-  expect(ticketRow!.textContent).not.toContain("```");
-  expect(ticketRow!.textContent).toContain("echo hi");
-  expect(ticketRow!.querySelector("strong")!.textContent).toBe("C1");
+  expectSanitized(ticketRow!);
   expect(ticketRow!.querySelector("[data-standing]")!.getAttribute("data-standing")).toBe("met");
 
   cleanup();
   await mount(judged, [judgedRound(1, ["met"])], null);
   const [runRow] = within(within(block()).getAllByRole("list")[0]!).getAllByRole("listitem");
-  expect(runRow!.querySelector("img, pre, script, p, [onerror]")).toBeNull();
-  expect(runRow!.textContent).not.toContain("alert(2)");
-  expect(runRow!.textContent).not.toContain("<img");
-  expect(runRow!.textContent).not.toContain("```");
-  expect(runRow!.textContent).toContain("echo hi");
-  expect(runRow!.querySelector("strong")!.textContent).toBe("C1");
+  expectSanitized(runRow!);
   expect(within(runRow!).getAllByRole("img")[0]!.getAttribute("aria-label")).toBe("met");
 });
