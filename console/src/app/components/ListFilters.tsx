@@ -256,13 +256,13 @@ function refocusAfterPress(button: HTMLElement | undefined) {
 
 const toolPopover = definePrimitive({
   name: "tool-popover",
-  options: { defaultOpen: "boolean", onOpenChange: "callback" },
-  state: (options: { defaultOpen?: boolean; onOpenChange?: (open: boolean) => void }) => popupState(options),
+  options: { onOpenChange: "callback" },
+  state: (_options: { onOpenChange?: (open: boolean) => void }) => popupState({}),
   api: (context) => {
     let cancelRefocus = () => {};
     const popup = createPopup(context, {
       preset: popoverPreset,
-      behavior: { dismissOnFocusLoss: false },
+      behavior: { dismissOnFocusLoss: false, blur: "never" },
       rules: (core) => ({
         // Controls outside the popover (such as SearchField) preventDefault on Escape,
         // which makes the popup layer skip it; close when Escape did not come from another popup.
@@ -278,7 +278,6 @@ const toolPopover = definePrimitive({
           return () => document.removeEventListener("keydown", onKey);
         },
         dismiss(reason, { event, focus }) {
-          if (reason === "focus-out") return;
           if (reason !== "outside-press") return void core.control.hide({ reason, event, focus });
           event?.preventDefault();
           core.control.hide({ reason, event, focus: true });
@@ -323,7 +322,7 @@ export function ToolPopover({
 }) {
   const handle = usePrimitive(toolPopover, { onOpenChange });
   useEffect(() => {
-    if (hidden) handle.api.close({ reason: "imperative" });
+    if (hidden) handle.api.close();
   }, [hidden, handle]);
   const close = () => void handle.api.close({ reason: "close-press" });
   return usePart(handle, "root", {}, {
