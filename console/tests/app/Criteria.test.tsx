@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
-import type { Board, RoundCriterion, RunCriterion, RunDetail, TicketDetail } from "../../src/lib/contract.gen";
+import type { RoundCriterion, RunCriterion, RunDetail, TicketDetail } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -13,7 +13,6 @@ import { DEMO, fleet, NOW, run, SERVE } from "./needsFleet";
 
 const served = (await Bun.file(new URL("run-detail.json", SERVE)).json()) as RunDetail;
 const servedTicket = (await Bun.file(new URL("ticket.json", SERVE)).json()) as TicketDetail;
-const servedBoard = (await Bun.file(new URL("board.json", SERVE)).json()) as Board;
 const criteria: RunCriterion[] = [
   { id: "C1", n: 1, text: "Silent leases are requeued.", status: "met", note: "tests/test_a.py::test_one", run: 12, round: 1 },
   { id: "C2", n: 2, text: "Fresh leases remain active.", status: "met", note: "tests/test_a.py::test_two", run: 12, round: 1 },
@@ -210,22 +209,10 @@ test("before any review returns, the pre-check's verdicts show as marks on rows 
 const INLINE_CRITERION = "Given `the path`, then **b** shows";
 const HOSTILE_CRITERION = 'Given <img src="/x.png" onerror="alert(1)"> and <script>alert(2)</script> with\n\n```sh\necho hi\n```';
 
-async function mountTicket(ticketCriteria: { id: string; text: string }[], judged: RunCriterion[] = []) {
-  const polls = fleet({ items: [], runs: [] }, { items: [] });
-  const ticket: TicketDetail = {
-    ...servedTicket,
-    ticket: "DEMO-12",
-    title: "DEMO-12 title",
-    status: "in_flight",
-    run: 12,
-    runs: [],
-    steers: [],
-    acceptance_criteria: ticketCriteria.map((criterion) => criterion.text),
-    criteria: ticketCriteria,
-  };
+async function mountTicket(ticketCriteria: { id: string; text: string }[], judged: RunCriterion[]) {
+  const polls = fleet({ items: [] }, { items: [] });
   await mountAt("#/tickets/demo/DEMO-12", async (url) => {
-    if (url === `${DEMO}/board`) return Response.json({ ...servedBoard, stories: [], columns: [] });
-    if (url === `${DEMO}/tickets/DEMO-12`) return Response.json(ticket);
+    if (url === `${DEMO}/tickets/DEMO-12`) return Response.json({ ...servedTicket, ticket: "DEMO-12", run: 12, criteria: ticketCriteria });
     if (url === `${DEMO}/runs/12`) return Response.json({ ...served, run: { ...served.run, id: 12, ticket: "DEMO-12" }, criteria: judged });
     return polls(url);
   });
