@@ -343,13 +343,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
   };
 
   return (
-    <Dialog
-      open={opened}
-      onOpenChange={setOpened}
-      onOpenChangeComplete={(next) => {
-        if (!next) onClosed();
-      }}
-    >
+    <Dialog open={opened} onOpenChange={setOpened} onOpenChangeComplete={(next) => { if (!next) onClosed(); }}>
       <DialogBackdrop className="fixed inset-0 z-50 bg-[rgb(20_16_12/0.3)]" />
       <DialogContent
         onKeyDown={(event) => {
@@ -397,9 +391,7 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
                   close();
                   return;
                 }
-                if (event.key === "Backspace" && text === "") {
-                  setChip(null);
-                }
+                if (event.key === "Backspace" && text === "") setChip(null);
               }}
               className="min-w-0 flex-1 bg-transparent text-[17px] text-ink outline-none! placeholder:text-ink-3"
             />
@@ -411,21 +403,15 @@ export function CommandPalette({ onClosed, returnTo }: { onClosed: () => void; r
             ) : (
               <>
                 <CommandStatus>
-                  {(state) =>
-                    state.loading ? (
-                      <>
-                        <span className="sr-only">Searching…</span>
-                        <Skeleton />
-                      </>
-                    ) : null
-                  }
+                  {listing.loading && (
+                    <>
+                      <span className="sr-only">Searching…</span>
+                      <Skeleton />
+                    </>
+                  )}
                 </CommandStatus>
                 <CommandEmpty>
-                  {() =>
-                    listing.empty ? (
-                      <p className="px-4 pt-4 pb-2 text-[13px] text-ink-3">{listing.empty}</p>
-                    ) : null
-                  }
+                  {() => listing.empty && <p className="px-4 pt-4 pb-2 text-[13px] text-ink-3">{listing.empty}</p>}
                 </CommandEmpty>
                 <CommandList aria-label="Results" className="flex flex-col px-1.5 pb-1.5">
                   {listing.groups.map((group, groupIndex) => (
