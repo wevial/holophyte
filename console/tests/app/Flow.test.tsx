@@ -223,14 +223,11 @@ test("a host's answer whose days end before today is left out of All projects, y
   expect([figure("Merged"), figure("Reverted")]).toEqual(["35", "0 of 35"]);
 });
 
-interface DaySpec {
-  merged: number;
-  interventions: number;
-  working: number;
-  waiting: number;
-}
+const QUIET = { merged: 0, interventions: 0, working: 0, waiting: 0 };
+const HIGH_WAIT = { merged: 2, interventions: 1, working: 1, waiting: 3 };
+const LOW_WAIT = { merged: 4, interventions: 2, working: 3, waiting: 1 };
 
-function dailyFlow(specs: DaySpec[]): Flow {
+function dailyFlow(specs: (typeof QUIET)[]): Flow {
   const now = Date.now();
   return {
     now,
@@ -267,15 +264,41 @@ function fillCoversX(path: Element, x: number): boolean {
   return xs.length > 0 && Math.min(...xs) <= x && x <= Math.max(...xs);
 }
 
-const SIXTH_QUIET: DaySpec[] = [
+const SIXTH_QUIET: (typeof QUIET)[] = [
   { merged: 2, interventions: 1, working: 3, waiting: 1 },
   { merged: 3, interventions: 2, working: 2, waiting: 2 },
   { merged: 1, interventions: 1, working: 2, waiting: 3 },
   { merged: 4, interventions: 3, working: 3, waiting: 1 },
-  { merged: 2, interventions: 1, working: 1, waiting: 3 },
-  { merged: 0, interventions: 0, working: 0, waiting: 0 },
-  { merged: 4, interventions: 2, working: 3, waiting: 1 },
+  HIGH_WAIT,
+  QUIET,
+  LOW_WAIT,
 ];
+
+async function checkBridgedRatio(days: (typeof QUIET)[], quiet: number[], points: string[], [from, to]: [number, number]) {
+  const flow = dailyFlow(days);
+  await mount("#/flow?range=7d", null, flow);
+  return ["Time spent waiting", "Interventions per merge"].map((title) => {
+    const chart = document.querySelector(`figure[data-chart="${title}"]`)!;
+    for (const index of quiet) {
+      expect(chart.getAttribute("aria-label"), `${title} day ${index}`).toContain(`${shortDay(flow.buckets![index]!.start_ms)} no data`);
+    }
+    expect([...chart.querySelectorAll("button[data-point]")].map((point) => point.getAttribute("data-point")), title).toEqual(points);
+    expect([...chart.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot")), title).toEqual(points);
+    const bridges = [...chart.querySelectorAll("path[data-bridge]")];
+    expect(bridges, title).toHaveLength(1);
+    const bridge = bridges[0]!;
+    expect(bridge.getAttribute("stroke-dasharray"), title).toBeTruthy();
+    const [[x1, y1], [x2, y2]] = bridgeEnds(bridge);
+    const [fromX, fromY] = dotAt(chart, from);
+    const [toX, toY] = dotAt(chart, to);
+    expect(Math.abs(x1 - fromX), title).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(y1 - fromY), title).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(x2 - toX), title).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(y2 - toY), title).toBeLessThanOrEqual(0.01);
+    const fills = [...chart.querySelectorAll("svg path:not([data-segment]):not([data-bridge])")];
+    return { title, chart, bridge, fills };
+  });
+}
 
 test("with the sixth of seven days quiet, Interventions reads 0 for that day and draws one unbroken segment across all seven", async () => {
   const flow = dailyFlow(SIXTH_QUIET);
@@ -294,64 +317,18 @@ test("with the sixth of seven days quiet, Interventions reads 0 for that day and
 });
 
 test("with the sixth of seven days quiet, the ratio charts read it as no data with no point, bridge day five to day seven, and leave the sixth day unfilled", async () => {
-  const flow = dailyFlow(SIXTH_QUIET);
-  await mount("#/flow?range=7d", null, flow);
-  const sixthLabel = shortDay(flow.buckets![5]!.start_ms);
   const sixthX = ((5 + 0.5) / 7) * 100;
-  for (const title of ["Time spent waiting", "Interventions per merge"]) {
-    const chart = document.querySelector(`figure[data-chart="${title}"]`)!;
-    expect(chart.getAttribute("aria-label"), title).toContain(`${sixthLabel} no data`);
-    expect([...chart.querySelectorAll("button[data-point]")].map((point) => point.getAttribute("data-point")), title).toEqual(["0", "1", "2", "3", "4", "6"]);
-    expect([...chart.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot")), title).toEqual(["0", "1", "2", "3", "4", "6"]);
-    const bridges = [...chart.querySelectorAll("path[data-bridge]")];
-    expect(bridges, title).toHaveLength(1);
-    expect(bridges[0]!.getAttribute("stroke-dasharray"), title).toBeTruthy();
+  for (const { title, chart, bridge, fills } of await checkBridgedRatio(SIXTH_QUIET, [5], ["0", "1", "2", "3", "4", "6"], [4, 6])) {
     const segment = chart.querySelector("path[data-segment]")!;
-    expect(Number(bridges[0]!.getAttribute("stroke-width")), title).toBeLessThan(Number(segment.getAttribute("stroke-width")));
-    const [[x1, y1], [x2, y2]] = bridgeEnds(bridges[0]!);
-    const [day5X, day5Y] = dotAt(chart, 4);
-    const [day7X, day7Y] = dotAt(chart, 6);
-    expect(Math.abs(x1 - day5X), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(y1 - day5Y), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(x2 - day7X), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(y2 - day7Y), title).toBeLessThanOrEqual(0.01);
-    const fills = [...chart.querySelectorAll("svg path:not([data-segment]):not([data-bridge])")];
+    expect(Number(bridge.getAttribute("stroke-width")), title).toBeLessThan(Number(segment.getAttribute("stroke-width")));
     expect(fills.length, title).toBeGreaterThan(0);
     expect(fills.some((fill) => fillCoversX(fill, sixthX)), title).toBe(false);
   }
 });
 
 test("when a ratio series has only two known days separated by multiple quiet days, one dashed bridge joins them with no point, tooltip or fill on the quiet days", async () => {
-  const quiet = { merged: 0, interventions: 0, working: 0, waiting: 0 };
-  const flow = dailyFlow([
-    quiet,
-    { merged: 2, interventions: 1, working: 1, waiting: 3 },
-    quiet,
-    quiet,
-    quiet,
-    { merged: 4, interventions: 2, working: 3, waiting: 1 },
-    quiet,
-  ]);
-  await mount("#/flow?range=7d", null, flow);
-  for (const title of ["Time spent waiting", "Interventions per merge"]) {
-    const chart = document.querySelector(`figure[data-chart="${title}"]`)!;
-    for (const quietIndex of [0, 2, 3, 4, 6]) {
-      expect(chart.getAttribute("aria-label"), `${title} day ${quietIndex}`).toContain(`${shortDay(flow.buckets![quietIndex]!.start_ms)} no data`);
-    }
-    expect([...chart.querySelectorAll("button[data-point]")].map((point) => point.getAttribute("data-point")), title).toEqual(["1", "5"]);
-    expect([...chart.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot")), title).toEqual(["1", "5"]);
+  for (const { title, chart, fills } of await checkBridgedRatio([QUIET, HIGH_WAIT, QUIET, QUIET, QUIET, LOW_WAIT, QUIET], [0, 2, 3, 4, 6], ["1", "5"], [1, 5])) {
     expect(chart.querySelector("[data-tooltip]"), title).toBeNull();
-    const bridges = [...chart.querySelectorAll("path[data-bridge]")];
-    expect(bridges, title).toHaveLength(1);
-    expect(bridges[0]!.getAttribute("stroke-dasharray"), title).toBeTruthy();
-    const [[x1, y1], [x2, y2]] = bridgeEnds(bridges[0]!);
-    const [firstX, firstY] = dotAt(chart, 1);
-    const [secondX, secondY] = dotAt(chart, 5);
-    expect(Math.abs(x1 - firstX), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(y1 - firstY), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(x2 - secondX), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(y2 - secondY), title).toBeLessThanOrEqual(0.01);
-    const fills = [...chart.querySelectorAll("svg path:not([data-segment]):not([data-bridge])")];
     for (const quietIndex of [0, 2, 3, 4, 6]) {
       const quietX = ((quietIndex + 0.5) / 7) * 100;
       expect(fills.some((fill) => fillCoversX(fill, quietX)), `${title} fill at ${quietIndex}`).toBe(false);
