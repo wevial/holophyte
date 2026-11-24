@@ -820,6 +820,43 @@ test("folded, the project switcher's tooltip names the current project on hover 
   expect(tooltip()).toBeNull();
 });
 
+test("folded, the project switcher's tooltip stays hidden while its dialog is open and resumes once it closes", async () => {
+  localStorage.setItem("holophyte.next.rail", "folded");
+  await mount("#/runs?project=demo");
+  const switcher = screen.getByRole("button", { name: /Switch project$/ });
+  fireEvent.click(switcher);
+  await act(settle);
+  const dialog = screen.getByRole("dialog", { name: "Switch project" });
+  await pointerAway(switcher);
+  await pointerOver(switcher);
+  expect(tooltip()).toBeNull();
+
+  const find = within(dialog).getByRole("combobox");
+  fireEvent.keyDown(find, { key: "Escape" });
+  await act(settle);
+  expect(screen.queryByRole("dialog", { name: "Switch project" })).toBeNull();
+  await pointerAway(switcher);
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+});
+
+test("unfolding while the folded project switcher's tooltip is open clears it so refolding does not reopen it", async () => {
+  localStorage.setItem("holophyte.next.rail", "folded");
+  await mount("#/runs?project=demo");
+  const switcher = screen.getByRole("button", { name: /Switch project$/ });
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+
+  fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+  expect(tooltip()).toBeNull();
+  await pointerAway(switcher);
+  fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+  expect(tooltip()).toBeNull();
+
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+});
+
 test("the title bar's holophyte mark has no title attribute and shows a holophyte tooltip on keyboard focus", async () => {
   await mount("#/");
   const mark = homeLink();
@@ -827,7 +864,11 @@ test("the title bar's holophyte mark has no title attribute and shows a holophyt
   expect(mark.hasAttribute("aria-describedby")).toBe(false);
   expect(tooltip()).toBeNull();
   await keyboardFocus(mark);
-  expect(screen.getByRole("tooltip").textContent).toBe("holophyte");
+  const tip = screen.getByRole("tooltip");
+  expect(tip.textContent).toBe("holophyte");
+  expect(tip.getAttribute("data-side")).toBe("right");
+  expect(tip.getAttribute("data-align")).toBe("center");
+  expect(parseFloat(tip.style.left) - mark.getBoundingClientRect().right).toBe(10);
   expect(mark.hasAttribute("aria-describedby")).toBe(false);
   await act(async () => mark.blur());
   expect(tooltip()).toBeNull();
