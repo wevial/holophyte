@@ -56,7 +56,7 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
         <span data-cell="title" className={`min-w-0 font-sans text-[14px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
           {row.title}
           {reason && (
-            <Hint tip={reason} describe>
+            <Hint tip={reason} describe wrap>
               {(trigger) => <span {...trigger} data-reason className="ml-2 font-sans text-[13px] font-medium text-bad">{cappedReason(reason)}</span>}
             </Hint>
           )}

@@ -44,7 +44,7 @@ function FileItem({ item, base }: { item: FileEvidence; base: string }) {
     item.verified
       ? <span {...props} data-file className={`${MONO} text-ink underline underline-offset-2`}>{place}</span>
       : <span {...props} data-file data-unverified className={`${MONO} text-warn-ink`}>? {place} unverified</span>;
-  return tip ? <Hint tip={tip} describe>{span}</Hint> : span();
+  return tip ? <Hint tip={tip} describe wrap={!item.verified}>{span}</Hint> : span();
 }
 
 function UrlItem({ url }: { url: string }) {

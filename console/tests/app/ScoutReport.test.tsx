@@ -145,14 +145,20 @@ test("a verified citation is described by its base and an unverified one by its 
   const f3 = findingRows()[2]!;
   await openCitations(f3);
   expect(screen.queryByRole("tooltip")).toBeNull();
-  for (const [label, tip] of [["lotuspod/digest.py:57", "at base a41c9e2"], ["? lotuspod/digest.py:301 unverified", WHY]] as const) {
+  for (const [label, tip, wrapped] of [
+    ["lotuspod/digest.py:57", "at base a41c9e2", false],
+    ["? lotuspod/digest.py:301 unverified", WHY, true],
+  ] as const) {
     const citation = within(f3).getByText(label);
     expect(citation.getAttribute("title")).toBeNull();
     expect(citation.getAttribute("tabindex")).toBeNull();
     expect(within(f3).getByRole("generic", { description: tip })).toBe(citation);
     await act(async () => void fireEvent.pointerEnter(citation, { pointerType: "mouse" }));
     await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-    expect(screen.getByRole("tooltip").textContent).toBe(tip);
+    const popup = screen.getByRole("tooltip");
+    expect(popup.textContent).toBe(tip);
+    expect(popup.classList.contains("overflow-y-auto")).toBe(wrapped);
+    expect(popup.classList.contains("leading-[1.35]!")).toBe(wrapped);
     await act(async () => void fireEvent.pointerLeave(citation, { pointerType: "mouse", clientX: 900, clientY: 900 }));
   }
 });

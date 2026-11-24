@@ -88,7 +88,7 @@ export function useLaunchProjects(project: string | undefined) {
 function Outcome({ outcome }: { outcome: ScoutOutcome }) {
   if (outcome.kind === "failed") {
     return (
-      <Hint tip={outcome.text} side="bottom" describe>
+      <Hint tip={outcome.text} side="bottom" describe wrap>
         {(trigger) => <span {...trigger} className="min-w-0 truncate font-semibold text-bad">{cappedReason(outcome.text)}</span>}
       </Hint>
     );

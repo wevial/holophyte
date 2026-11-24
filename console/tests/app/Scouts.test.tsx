@@ -206,7 +206,13 @@ test("a failed row shows at most 160 characters of its reason, the whole line in
   expect(screen.queryByRole("tooltip")).toBeNull();
   await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe(long);
+  const tip = screen.getByRole("tooltip");
+  expect(tip.textContent).toBe(long);
+  expect(tip.classList.contains("overflow-y-auto")).toBe(true);
+  expect(tip.classList.contains("whitespace-normal!")).toBe(true);
+  expect(tip.className).toContain("max-h-[var(--available-height");
+  await click(tip);
+  expect(window.location.hash).toBe("#/scouts?project=demo");
   expect(readRow(40).reason).toBe(short);
   expect(readRow(40).text).not.toContain("…");
 });

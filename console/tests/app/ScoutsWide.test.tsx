@@ -221,7 +221,12 @@ test("resting the pointer or keyboard focus on Hide scout list shows its tooltip
 
   await act(async () => void fireEvent.pointerEnter(hide, { pointerType: "mouse" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe("Hide scout list");
+  const tip = screen.getByRole("tooltip");
+  expect(tip.textContent).toBe("Hide scout list");
+  expect(tip.classList.contains("whitespace-nowrap")).toBe(true);
+  expect(tip.classList.contains("leading-[1.2]")).toBe(true);
+  expect(tip.classList.contains("leading-[1.35]!")).toBe(false);
+  expect(tip.classList.contains("overflow-y-auto")).toBe(false);
   expect(hide.getAttribute("aria-describedby")).toBeNull();
 
   await act(async () => void fireEvent.pointerLeave(hide, { pointerType: "mouse", clientX: 900, clientY: 900 }));
@@ -249,5 +254,10 @@ test("a failed row in the wide scout list shows the cut reason, described by the
 
   await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe(long);
+  const tip = screen.getByRole("tooltip");
+  expect(tip.textContent).toBe(long);
+  expect(tip.classList.contains("overflow-y-auto")).toBe(true);
+  expect(tip.className).toContain("max-h-[var(--available-height");
+  await click(tip);
+  expect(path()).toBe("#/scouts");
 });
