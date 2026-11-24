@@ -547,7 +547,7 @@ test("the Scout document tablist opens on Decide with its count in its own eleme
   expect([decide.firstChild!.textContent, decide.querySelector("[data-tab-count]")!.textContent]).toEqual(["Decide", "2"]);
   roving(decide);
   let active = decide;
-  for (const [key, next] of [["ArrowLeft", last], ["Home", decide], ["ArrowRight", writeup], ["End", last]] as const) {
+  for (const [key, next] of [["ArrowLeft", last], ["Home", decide], ["End", last], ["Home", decide], ["ArrowRight", writeup]] as const) {
     await act(async () => void fireEvent.keyDown(active, { key }));
     await settled();
     roving(next);
@@ -641,6 +641,29 @@ test("pressing Home on the opening Decide tab keeps it selected and shows Undo a
   await click(within(shown()).getByRole("button", { name: "Not now" }));
   expect(screen.getByRole("tab", { name: "Decide" }).getAttribute("aria-selected")).toBe("true");
   expect(within(shown()).getByRole("button", { name: "Undo" })).toBeTruthy();
+});
+
+test("pressing End on a focused Activity tab selects it after a scout update adds Write-up and shifts the opening selection", async () => {
+  happyDOM.setViewport({ width: 1800, height: 900 });
+  const bodies: Record<number, ScoutDetail> = { 31: live };
+  const queries = await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies }).fetch);
+  const activityTab = screen.getByRole("tab", { name: "Activity" });
+  expect(screen.getAllByRole("tab")).toEqual([activityTab]);
+  activityTab.focus();
+  expect(document.activeElement).toBe(activityTab);
+  bodies[31] = { ...writtenUp, actions: [] };
+  await act(async () => {
+    await queries.refetchQueries();
+  });
+  await settled();
+  expect(tabs()).toEqual([["Write-up", "true"], ["Findings 4", "false"], ["Activity", "false"]]);
+  expect(document.activeElement).toBe(activityTab);
+  await act(async () => void fireEvent.keyDown(activityTab, { key: "End" }));
+  await settled();
+  expect(tabs()).toEqual([["Write-up", "false"], ["Findings 4", "false"], ["Activity", "true"]]);
+  expect(screen.getByRole("tabpanel", { name: "Activity" })).toBe(shown());
+  expect(activityTab.getAttribute("tabindex")).toBe("0");
+  expect(document.activeElement).toBe(activityTab);
 });
 
 test("leaving a live Activity panel hides it immediately while its running pulse animates", async () => {

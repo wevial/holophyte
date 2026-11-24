@@ -186,14 +186,22 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
       changedBy.current = details.event ?? null;
       if (value) onChoose(value);
     }}>
-      {/* SDK skips onValueChange when a click or navigation key lands on the current tab; record those explicit choices. */}
+      {/* SDK skips onValueChange when a click repeats the selection or a navigation key lands on the selected or focused tab. */}
       <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2"
         onKeyDownCapture={(event) => {
           wasPrevented.current = event.isDefaultPrevented();
           changedBy.current = null;
         }}
         onKeyDown={(event) => {
-          if (!wasPrevented.current && event.isDefaultPrevented() && changedBy.current !== event.nativeEvent) onChoose(current.id);
+          if (!wasPrevented.current && event.isDefaultPrevented() && changedBy.current !== event.nativeEvent) {
+            const elements = Array.from(event.currentTarget.querySelectorAll('[role="tab"]'));
+            const target = event.target instanceof Element ? elements.indexOf(event.target) : -1;
+            if (target !== -1) {
+              const active = document.activeElement instanceof Element ? elements.indexOf(document.activeElement) : -1;
+              const landed = tabs[active !== -1 ? active : target];
+              if (landed) onChoose(landed.id);
+            }
+          }
           changedBy.current = null;
         }}>
         <TabsList aria-label="Scout document" className="flex flex-wrap gap-0.5">
