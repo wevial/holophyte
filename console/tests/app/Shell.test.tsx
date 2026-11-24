@@ -1674,6 +1674,7 @@ test("at 390px with a ticket preview open, Escape in the drawer closes only the 
     await act(async () => void fireEvent.click(document.querySelector<HTMLElement>('[id^="card-"]')!));
     const preview = () => screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer());
     expect(preview()).toHaveLength(1);
+    expect(preview()[0]!.classList.contains("max-[720px]:top-[30px]")).toBe(true);
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true }));
     const panel = drawer()!;
     expect(panel.getAttribute("aria-modal")).toBe("true");
@@ -1732,14 +1733,48 @@ test("at 390px Escape in the drawer's project switcher closes the switcher and l
   });
 });
 
-test("at 390px Escape closes the open drawer though focus sits on the title bar's home link, returning focus to the panel button", async () => {
+test("at 390px Escape closes the open drawer though focus sits on the title bar's home link with its tooltip open, returning focus to the panel button", async () => {
   await atWidth(390, async () => {
     await mount("#/");
-    fireEvent.click(openSidebar());
-    await act(async () => homeLink().focus());
+    await act(async () => void fireEvent.click(openSidebar()));
+    await keyboardFocus(homeLink());
+    expect(document.activeElement).toBe(homeLink());
+    expect(tooltip()?.textContent).toBe("holophyte");
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
     expect(drawer()).toBeNull();
+    expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(openSidebar());
+  });
+});
+
+test("at 390px hovering Home while the drawer is open still lets the first Escape close the drawer over a ticket preview, without skipping the project switcher", async () => {
+  await atWidth(390, async () => {
+    const polls = daemons([], []);
+    await mount("#/tickets", async (url, init) => (url === `${ORIGIN}/board` ? Response.json(pinned) : polls(url, init)));
+    await act(settle);
+    await act(async () => void fireEvent.click(document.querySelector<HTMLElement>('[id^="card-"]')!));
+    const preview = () => screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer());
+    expect(preview()).toHaveLength(1);
+
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true }));
+    await act(async () => void fireEvent.click(within(drawer()!).getByRole("button", { name: /Switch project$/ })));
+    const find = within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
+    await act(async () => find.focus());
+    await pointerOver(homeLink());
+    expect(tooltip()?.textContent).toBe("holophyte");
+
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    await act(settle);
+    expect(screen.queryByRole("dialog", { name: "Switch project" })).toBeNull();
+    expect(drawer()).not.toBeNull();
+    expect(preview()).toHaveLength(1);
+
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    await act(settle);
+    expect(drawer()).toBeNull();
+    expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(openSidebar());
+    expect(preview()).toHaveLength(1);
   });
 });
 

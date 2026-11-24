@@ -1,4 +1,4 @@
-import { useContext, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { Dialog, DialogClose, DialogContent, DialogTitle } from "@ui-sdk/react/dialog";
 import { criteriaRows } from "../../lib/criteria";
@@ -126,10 +126,15 @@ export function TicketPeek({
   onClose: () => void;
 }) {
   const close = useRef<HTMLButtonElement>(null);
+  const previousCard = useRef(card.id);
+  useEffect(() => {
+    if (previousCard.current === card.id) return;
+    previousCard.current = card.id;
+    close.current?.focus();
+  }, [card.id]);
   const head = COLUMN_HEADS[column];
   return (
     <Dialog
-      key={card.id}
       open
       modal={false}
       onOpenChange={(next) => {
@@ -140,7 +145,7 @@ export function TicketPeek({
         data-peek=""
         initialFocus={() => close.current}
         finalFocus="none"
-        className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:w-full max-[720px]:rounded-none"
+        className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:top-[30px] max-[720px]:w-full max-[720px]:rounded-none"
       >
         <div className="flex items-center gap-1 pl-[18px] pr-[18px] pt-4">
           <span data-peek-key className="mr-auto font-mono text-[12px] leading-none tabular-nums text-ink-3">{card.key}</span>
@@ -190,7 +195,7 @@ export function TicketPeek({
               )}
             </Fact>
           </dl>
-          <Contract card={card} />
+          <Contract key={card.id} card={card} />
         </div>
       </DialogContent>
     </Dialog>

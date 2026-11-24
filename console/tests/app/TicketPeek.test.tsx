@@ -250,7 +250,7 @@ test("a failed ticket's peek asks first under a Needs you heading with one Reque
   expect(within(box).queryByRole("link", { name: "Open run" })).toBeNull();
 });
 
-test("a taken Requeue posts the ticket once and swaps the box for the toast's sentence", async () => {
+test("a taken Requeue posts the ticket once, swaps the box for the toast's sentence and keeps it across a card swap", async () => {
   const action = fakeFetch({ ok: true, detail: "requeued" });
   await peekAt("DEMO-11", action.fetchImpl);
   await press(within(askBox()!).getByRole("button", { name: "Requeue" }));
@@ -260,6 +260,13 @@ test("a taken Requeue posts the ticket once and swaps the box for the toast's se
   expect(askBox()).toBeNull();
   expect(peek()!.querySelector("[data-peek-acted]")!.textContent).toBe("Requeued DEMO-11.");
   expect(toast()).toBe("Requeued DEMO-11.");
+
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  expect(document.activeElement).toBe(within(peek()!).getByRole("button", { name: "Close preview" }));
+  await act(async () => void fireEvent.click(cardLink("DEMO-11")));
+  expect(document.activeElement).toBe(within(peek()!).getByRole("button", { name: "Close preview" }));
+  expect(askBox()).toBeNull();
+  expect(peek()!.querySelector("[data-peek-acted]")!.textContent).toBe("Requeued DEMO-11.");
 });
 
 test("a refused Requeue keeps the box and its form, shows the daemon's detail and enables Requeue again", async () => {

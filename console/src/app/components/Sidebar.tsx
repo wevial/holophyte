@@ -418,6 +418,7 @@ function HistoryButton({
   go,
   next,
   buttonRef,
+  onTipChange,
 }: {
   name: string;
   shortcut: string;
@@ -425,9 +426,10 @@ function HistoryButton({
   go: () => void;
   next?: boolean;
   buttonRef?: Ref<HTMLButtonElement>;
+  onTipChange?: (open: boolean, details: { reason: string }) => void;
 }) {
   return (
-    <Tooltip delay={300} shortcut={shortcut}>
+    <Tooltip delay={300} shortcut={shortcut} onOpenChange={onTipChange}>
       <TooltipTrigger
         ref={buttonRef}
         aria-label={name}
@@ -445,15 +447,22 @@ function HistoryButton({
   );
 }
 
-export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: SidebarFold) {
+export function TitleBar({ folded, foldable, fold, narrow, drawer, closeDrawer, toggleRef }: SidebarFold) {
   const [macApp] = useState(inMacApp);
   const [nextButton, setNextButton] = useState<HTMLButtonElement | null>(null);
   const nav = useHistoryNav(macApp);
   const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
+  // A title-bar tooltip layers above the modal drawer; Escape on it must still close the drawer unless an inner dialog is open.
+  const onTipChange = (open: boolean, details: { reason: string }) => {
+    if (open || !drawer || details.reason !== "escape-key") return;
+    if (document.querySelector('#sidebar-drawer [role="dialog"][data-open]')) return;
+    const modals = document.querySelectorAll('[aria-modal="true"]');
+    if (modals.length === 1 && modals[0]?.id === "sidebar-drawer") closeDrawer();
+  };
   return (
     <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
       {foldable && (
-        <Tooltip delay={300} shortcut={"mod+\\"}>
+        <Tooltip delay={300} shortcut={"mod+\\"} onOpenChange={onTipChange}>
           <TooltipTrigger
             ref={toggleRef}
             data-sidebar-toggle=""
@@ -471,7 +480,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
           </TooltipContent>
         </Tooltip>
       )}
-      <Tooltip delay={300}>
+      <Tooltip delay={300} onOpenChange={onTipChange}>
         <TooltipTrigger
           render={({ type: _button, "aria-describedby": _same, ...trigger }) => (
             <Link
@@ -500,8 +509,8 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
       </Tooltip>
       {macApp && (
         <>
-          <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} />
-          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next buttonRef={setNextButton} />
+          <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} onTipChange={onTipChange} />
+          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next buttonRef={setNextButton} onTipChange={onTipChange} />
         </>
       )}
     </div>
