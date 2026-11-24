@@ -117,19 +117,13 @@ class ConfigReferenceTests(unittest.TestCase):
 
     def test_review_memory_row_gives_its_default_format_and_turns(self):
         agents = sections((DOCS / "config.md").read_text())["agents"]
-        row = re.search(r"^\| `review_memory` \|.*$", agents, re.MULTILINE)
-        self.assertIsNotNone(row, "[agents] needs a key row: review_memory")
-        _, default_cell, details = [
-            cell.strip() for cell in row.group().strip("|").split("|")
-        ]
+        row = re.search(r"^\| `review_memory` \|.*$", agents, re.MULTILINE).group()
+        _, default_cell, details = [cell.strip() for cell in row.strip("|").split("|")]
         self.assertEqual(review_runner.MEMORY, "4g")
         self.assertEqual(default_cell, f'Default: `"{review_runner.MEMORY}"`')
-        for term in (
-            "Positive integer with an `m` or `g` suffix",
-            "`--memory=`",
-            "Applies to every container review and adversary turn",
-            "primary and fallback model routes",
-        ):
+        for term in ("Positive integer with an `m` or `g` suffix", "`--memory=`",
+                     "Applies to every container review and adversary turn",
+                     "primary and fallback model routes"):
             with self.subTest(term=term):
                 self.assertIn(term, details)
 

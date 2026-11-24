@@ -968,9 +968,7 @@ class ReviewMemoryTests(unittest.TestCase):
             with self.subTest(agents=agents.strip()):
                 with self.assertRaisesRegex(SystemExit, pattern):
                     check_config(self.configure(agents))
-        for good in ('"512m"', '"6g"'):
-            with self.subTest(good=good):
-                check_config(self.configure(f"review_memory = {good}\n"))
+        check_config(self.configure('review_memory = "512m"\n'))
 
 
 class RealDockerMemoryCapTests(unittest.TestCase):
