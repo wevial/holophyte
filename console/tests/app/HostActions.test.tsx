@@ -291,7 +291,6 @@ test("Save token then Forget stacks two toasts newest first, and Undo restores t
   const shown = toasts();
   expect(shown).toHaveLength(2);
   expect(within(shown[0]!).getByText("Forgot the token for writer-host in this browser.")).toBeTruthy();
-  expect(within(shown[0]!).getByRole("button", { name: "Undo" })).toBeTruthy();
   expect(shown[1]!.textContent).toBe(savedToast);
   await press("Undo", shown[0]!);
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
