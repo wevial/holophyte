@@ -109,8 +109,7 @@ test("Merged today's project dot and Today's log link show their hints as toolti
   const withoutSha = { ...merged(12, "DEMO-12", NOW - 20 * MINUTE), pr_url: "https://github.com/example/demo/pull/12", merge_sha: null };
   await mount("#/", fleet({ items: [], shipped: [withSha, withoutSha] }, { items: [] }));
 
-  const done = screen.getByRole("region", { name: "Merged today" });
-  const [first, second] = within(done).getAllByRole("listitem");
+  const [first, second] = within(screen.getByRole("region", { name: "Merged today" })).getAllByRole("listitem");
   await expectHoverTip(within(first!).getByRole("img", { name: "demo" }), "demo");
   await expectFocusTip(within(first!).getByRole("link", { name: "#11" }), sha, true);
   await expectFocusTip(within(second!).getByRole("link", { name: "#12" }), null);
