@@ -58,10 +58,6 @@ function areaPath(points: Point[]): string {
   return `${smoothPath(points)} L${points.at(-1)![0]} 100 L${points[0]![0]} 100 Z`;
 }
 
-function bridges(runs: Point[][]): [Point, Point][] {
-  return runs.slice(1).map((next, index) => [runs[index]!.at(-1)!, next[0]!]);
-}
-
 interface ChartProps {
   title: string;
   note: string;
@@ -201,7 +197,7 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
   const top = fixedTop ?? roundedTop(Math.max(0, ...values.map((value) => value ?? 0)));
   const runs = segments(values, top);
   const drawn = runs.filter((points) => points.length > 1);
-  const spans = bridges(runs);
+  const bridges: [Point, Point][] = runs.slice(1).map((next, index) => [runs[index]!.at(-1)!, next[0]!]);
   const latest = values.length - 1;
   const latestValue = values[latest];
   return (
@@ -212,7 +208,7 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
             {drawn.map((points) => (
               <path key={`fill-${points[0]![0]}`} d={areaPath(points)} className="fill-wait opacity-15" />
             ))}
-            {spans.map(([[x1, y1], [x2, y2]]) => (
+            {bridges.map(([[x1, y1], [x2, y2]]) => (
               <path
                 key={`bridge-${x1}-${x2}`}
                 data-bridge

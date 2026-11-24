@@ -208,8 +208,7 @@ test("a bucket with no merges keeps its real interventions count while ratio ser
     interventions: [2, 3, 0, 1][index]!,
     hours: { working: 1, waiting: 1, operator: 0 },
   }));
-  const flow = { now: SIX_WEEKS[4]!, buckets: weeks, phases: {}, waits: NO_WAITS, reverted: null };
-  const weekly = flowWeekly([flow]);
+  const weekly = flowWeekly([{ now: SIX_WEEKS[4]!, buckets: weeks, phases: {}, waits: NO_WAITS, reverted: null }]);
   expect(weekly.interventions).toEqual([2, 3, 0, 1]);
   expect(weekly.waitingShare).toEqual([50, null, null, 50]);
   expect(weekly.interventionsPerMerge).toEqual([2, null, null, 1]);

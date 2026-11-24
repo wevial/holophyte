@@ -244,20 +244,7 @@ function dailyFlow(specs: (typeof QUIET)[]): Flow {
   };
 }
 
-function shortDay(startMs: number): string {
-  return new Date(startMs).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function dotAt(chart: Element, index: number): [number, number] {
-  const dot = chart.querySelector<HTMLElement>(`[data-dot="${index}"]`)!;
-  return [parseFloat(dot.style.left), parseFloat(dot.style.top)];
-}
-
-function bridgeEnds(bridge: Element): [[number, number], [number, number]] {
-  const match = /^M([\d.]+) ([\d.]+) L([\d.]+) ([\d.]+)$/.exec(bridge.getAttribute("d") ?? "");
-  expect(match).not.toBeNull();
-  return [[Number(match![1]), Number(match![2])], [Number(match![3]), Number(match![4])]];
-}
+const shortDay = (startMs: number) => new Date(startMs).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 function fillCoversX(path: Element, x: number): boolean {
   const xs = [...(path.getAttribute("d") ?? "").matchAll(/(-?[\d.]+)\s+(-?[\d.]+)/g)].map((match) => Number(match[1]));
@@ -288,13 +275,13 @@ async function checkBridgedRatio(days: (typeof QUIET)[], quiet: number[], points
     expect(bridges, title).toHaveLength(1);
     const bridge = bridges[0]!;
     expect(bridge.getAttribute("stroke-dasharray"), title).toBeTruthy();
-    const [[x1, y1], [x2, y2]] = bridgeEnds(bridge);
-    const [fromX, fromY] = dotAt(chart, from);
-    const [toX, toY] = dotAt(chart, to);
-    expect(Math.abs(x1 - fromX), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(y1 - fromY), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(x2 - toX), title).toBeLessThanOrEqual(0.01);
-    expect(Math.abs(y2 - toY), title).toBeLessThanOrEqual(0.01);
+    const match = /^M([\d.]+) ([\d.]+) L([\d.]+) ([\d.]+)$/.exec(bridge.getAttribute("d") ?? "");
+    expect(match, title).not.toBeNull();
+    const ends = [from, to].flatMap((index) => {
+      const dot = chart.querySelector<HTMLElement>(`[data-dot="${index}"]`)!;
+      return [parseFloat(dot.style.left), parseFloat(dot.style.top)];
+    });
+    match!.slice(1).forEach((coord, index) => expect(Math.abs(Number(coord) - ends[index]!), title).toBeLessThanOrEqual(0.01));
     const fills = [...chart.querySelectorAll("svg path:not([data-segment]):not([data-bridge])")];
     return { title, chart, bridge, fills };
   });
@@ -304,8 +291,7 @@ test("with the sixth of seven days quiet, Interventions reads 0 for that day and
   const flow = dailyFlow(SIXTH_QUIET);
   await mount("#/flow?range=7d", null, flow);
   const chart = document.querySelector('figure[data-chart="Interventions"]')!;
-  const sixthLabel = shortDay(flow.buckets![5]!.start_ms);
-  expect(chart.getAttribute("aria-label")).toContain(`${sixthLabel} 0`);
+  expect(chart.getAttribute("aria-label")).toContain(`${shortDay(flow.buckets![5]!.start_ms)} 0`);
   expect(chart.getAttribute("aria-label")).not.toContain("no data");
   expect([...chart.querySelectorAll("[data-point]")].map((point) => point.getAttribute("data-point"))).toEqual(["0", "1", "2", "3", "4", "5", "6"]);
   const segments = [...chart.querySelectorAll("path[data-segment]")];
@@ -317,12 +303,10 @@ test("with the sixth of seven days quiet, Interventions reads 0 for that day and
 });
 
 test("with the sixth of seven days quiet, the ratio charts read it as no data with no point, bridge day five to day seven, and leave the sixth day unfilled", async () => {
-  const sixthX = ((5 + 0.5) / 7) * 100;
   for (const { title, chart, bridge, fills } of await checkBridgedRatio(SIXTH_QUIET, [5], ["0", "1", "2", "3", "4", "6"], [4, 6])) {
-    const segment = chart.querySelector("path[data-segment]")!;
-    expect(Number(bridge.getAttribute("stroke-width")), title).toBeLessThan(Number(segment.getAttribute("stroke-width")));
+    expect(Number(bridge.getAttribute("stroke-width")), title).toBeLessThan(Number(chart.querySelector("path[data-segment]")!.getAttribute("stroke-width")));
     expect(fills.length, title).toBeGreaterThan(0);
-    expect(fills.some((fill) => fillCoversX(fill, sixthX)), title).toBe(false);
+    expect(fills.some((fill) => fillCoversX(fill, (5.5 / 7) * 100)), title).toBe(false);
   }
 });
 
