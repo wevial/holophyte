@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, useState, type ReactNode, type Ref, type
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Drawer, DrawerBackdrop, DrawerContent } from "@ui-sdk/react/drawer";
 import { mergeProps } from "@ui-sdk/react/primitive";
-import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger, type TooltipProps } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
 import { SWEEP_OK } from "../../lib/hosts";
@@ -86,14 +86,19 @@ function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLin
   return hosts.every(fine) ? "live" : "stale";
 }
 
-type TipChange = (open: boolean, details: { reason: string }) => void;
+const DRAWER_ID = "sidebar-drawer";
+
+type TipChange = TooltipProps["onOpenChange"];
 
 // A tooltip layers above the modal drawer; Escape on it must still close the drawer unless an inner dialog is open.
-function onDrawerTipChange(open: boolean, details: { reason: string }, closeDrawer: () => void) {
-  if (open || details.reason !== "escape-key") return;
-  if (document.querySelector('#sidebar-drawer [role="dialog"][data-open]')) return;
-  const modals = document.querySelectorAll('[aria-modal="true"]');
-  if (modals.length === 1 && modals[0]?.id === "sidebar-drawer") closeDrawer();
+function drawerTipChange(drawerOpen: boolean, closeDrawer: () => void): TipChange {
+  if (!drawerOpen) return undefined;
+  return (open, details) => {
+    if (open || details.reason !== "escape-key") return;
+    if (document.querySelector(`#${DRAWER_ID} [role="dialog"][data-open]`)) return;
+    const modals = document.querySelectorAll('[aria-modal="true"]');
+    if (modals.length === 1 && modals[0]?.id === DRAWER_ID) closeDrawer();
+  };
 }
 
 function FootTip({
@@ -472,9 +477,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, closeDrawer, 
   const [nextButton, setNextButton] = useState<HTMLButtonElement | null>(null);
   const nav = useHistoryNav(macApp);
   const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
-  const onTipChange: TipChange = (open, details) => {
-    if (drawer) onDrawerTipChange(open, details, closeDrawer);
-  };
+  const onTipChange = drawerTipChange(drawer, closeDrawer);
   return (
     <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
       {foldable && (
@@ -484,7 +487,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, closeDrawer, 
             data-sidebar-toggle=""
             aria-label={toggleName}
             aria-expanded={narrow ? drawer : !folded}
-            aria-controls={drawer ? "sidebar-drawer" : undefined}
+            aria-controls={drawer ? DRAWER_ID : undefined}
             onClick={fold}
             className={`${TITLE_BUTTON} ${macApp ? APP_NO_DRAG : ""}`}
           >
@@ -645,7 +648,7 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
     >
       <DrawerBackdrop className="fixed inset-x-0 top-[30px] bottom-0 z-50 bg-scrim" />
       <DrawerContent
-        id="sidebar-drawer"
+        id={DRAWER_ID}
         aria-label="Sidebar"
         keepMounted
         finalFocus="[data-sidebar-toggle]"
@@ -658,13 +661,7 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
         }}
         className="mt-[30px] flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
-        <Sidebar
-          folded={false}
-          back={back}
-          onTipChange={(next, details) => {
-            if (open) onDrawerTipChange(next, details, onClose);
-          }}
-        />
+        <Sidebar folded={false} back={back} onTipChange={drawerTipChange(open, onClose)} />
       </DrawerContent>
     </Drawer>
   );
