@@ -72,7 +72,7 @@ async function mount(hash: string, peer: Flow | null = null, primary: Flow | nul
 
 const windowOf = (query: URLSearchParams) => [query.get("days"), query.get("bucket"), query.get("until")];
 const openRange = () => fireEvent.click(screen.getByRole("button", { name: "Range" }));
-const choices = () => within(screen.getByRole("group", { name: "Range choices" }));
+const choices = () => within(screen.getByRole("dialog", { name: "Range choices" }));
 
 function day(offset: number): string {
   const at = new Date();
@@ -92,8 +92,8 @@ test("with no range, or a retired weekly one, in the address the menu offers 7, 
     expect(asked.length).toBeGreaterThan(0);
     expect(asked.map(windowOf)).toEqual(asked.map(() => ["30", "day", null]));
     openRange();
-    expect(choices().getAllByRole("button").map((choice) => choice.textContent)).toEqual(["Last 7 days", "Last 30 days", "Last 90 days"]);
-    expect(choices().getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 30 days"]);
+    expect(choices().getAllByRole("option").map((choice) => choice.textContent)).toEqual(["Last 7 days", "Last 30 days", "Last 90 days"]);
+    expect(choices().getAllByRole("option", { selected: true }).map((choice) => choice.textContent)).toEqual(["Last 30 days"]);
     cleanup();
   }
 });
@@ -101,10 +101,24 @@ test("with no range, or a retired weekly one, in the address the menu offers 7, 
 test("picking Last 90 days asks for 90 days in weekly buckets and checks it in the address", async () => {
   const asked = await mount("#/flow");
   openRange();
-  fireEvent.click(choices().getByRole("button", { name: "Last 90 days" }));
+  fireEvent.click(choices().getByRole("option", { name: "Last 90 days" }));
   await flush();
+  expect(screen.queryByRole("dialog", { name: "Range choices" })).toBeNull();
   expect(windowOf(asked.at(-1)!)).toEqual(["90", "week", null]);
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("range")).toBe("90d");
+});
+
+test("reselecting the active default preset clears a retired range from the address", async () => {
+  await mount("#/flow");
+  window.location.hash = "#/flow?range=6w";
+  await act(async () => void window.dispatchEvent(new PopStateEvent("popstate")));
+  await flush();
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("range")).toBe("6w");
+  openRange();
+  fireEvent.click(choices().getByRole("option", { name: "Last 30 days" }));
+  await flush();
+  expect(screen.queryByRole("dialog", { name: "Range choices" })).toBeNull();
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).has("range")).toBe(false);
 });
 
 test("each trend's change reads against the day before over Last 7 days and against the week before over Last 90 days", async () => {

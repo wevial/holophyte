@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Board, BoardTicket, Status, TicketDetail } from "../../src/lib/contract.gen";
 import { addressOf } from "../../src/lib/hosts";
@@ -198,4 +199,36 @@ test("a move in flight from the header disables the same move in the ⋯ menu, s
   expect(write.seen).toHaveLength(1);
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
+});
+
+test("Esc or Keep it on Cancel ticket opened from the ⋯ menu returns focus to ⋯", async () => {
+  const user = userEvent.setup();
+  const write = fakeFetch({ ticket: "DEMO-3", revision: 6 });
+  await mount("DEMO-3", { write: write.fetchImpl });
+  const trigger = screen.getByRole("button", { name: "More for DEMO-3" });
+
+  await user.click(trigger);
+  await act(settle);
+  await user.click(screen.getByRole("menuitem", { name: "Cancel ticket" }));
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(dialog()).toBeTruthy();
+  await user.keyboard("{Escape}");
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+
+  trigger.focus();
+  await user.keyboard("{ArrowDown}");
+  await act(settle);
+  await user.keyboard("c");
+  await act(settle);
+  expect(document.activeElement?.textContent).toBe("Cancel ticket");
+  await user.keyboard("{Enter}");
+  for (let round = 0; round < 4; round += 1) await act(settle);
+  expect(dialog()).toBeTruthy();
+  await user.click(within(dialog()).getByRole("button", { name: "Keep it" }));
+  for (let round = 0; round < 2; round += 1) await act(settle);
+  expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  expect(write.seen).toEqual([]);
 });
