@@ -210,6 +210,20 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   }
 });
 
+const tooltip = () => screen.queryByRole("tooltip");
+const keyboardFocus = (link: HTMLElement) => act(async () => {
+  fireEvent.keyDown(document.body, { key: "Tab" });
+  link.focus();
+});
+const pointerOver = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+};
+const pointerAway = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+};
+
 const themeGroup = () => screen.getByRole("group", { name: "Theme" });
 const pressed = () => within(themeGroup()).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("aria-label"));
 
@@ -217,9 +231,18 @@ test("the theme group's Dawn, Night and System buttons stamp and store the choic
   await mount("#/");
   const buttons = within(themeGroup()).getAllByRole("button");
   expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["Dawn", "Night", "System"]);
-  expect(buttons.map((button) => button.getAttribute("title"))).toEqual(["Dawn", "Night", "System"]);
+  expect(buttons.map((button) => button.hasAttribute("title"))).toEqual([false, false, false]);
+  expect(buttons.map((button) => button.hasAttribute("aria-describedby"))).toEqual([false, false, false]);
   expect(buttons.map((button) => button.textContent)).toEqual(["", "", ""]);
   expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "true"]);
+  const night = within(themeGroup()).getByRole("button", { name: "Night" });
+  expect(tooltip()).toBeNull();
+  await pointerOver(night);
+  expect(screen.getByRole("tooltip").textContent).toBe("Night");
+  expect(night.hasAttribute("aria-describedby")).toBe(false);
+  await pointerAway(night);
+  expect(tooltip()).toBeNull();
+
   const choose = (name: string) => fireEvent.click(within(themeGroup()).getByRole("button", { name }));
 
   choose("Dawn");
@@ -273,20 +296,6 @@ test("a stored Night presses Night, and with nothing stored System stays pressed
     happyDOM.setViewport({ width: 1024 });
   }
 });
-
-const tooltip = () => screen.queryByRole("tooltip");
-const keyboardFocus = (link: HTMLElement) => act(async () => {
-  fireEvent.keyDown(document.body, { key: "Tab" });
-  link.focus();
-});
-const pointerOver = async (link: HTMLElement) => {
-  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
-};
-const pointerAway = async (link: HTMLElement) => {
-  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
-};
 
 const connectionDot = () => screen.getByRole("complementary", { name: "Console" }).querySelector<HTMLElement>("[data-connection]")!;
 const breathes = () => connectionDot().querySelector(".state-pulse") != null;
@@ -784,6 +793,44 @@ test("expanded, no page link carries a tooltip on focus or hover, and the curren
   await pointerOver(findings);
   expect(tooltip()).toBeNull();
   expect(pages().filter((link) => link.hasAttribute("aria-describedby"))).toEqual([]);
+});
+
+test("folded, the project switcher's tooltip names the current project on hover without a title attribute, and stays hidden while unfolded", async () => {
+  await mount("#/runs?project=demo");
+  const switcher = screen.getByRole("button", { name: /Switch project$/ });
+  expect(switcher.hasAttribute("title")).toBe(false);
+  await pointerOver(switcher);
+  expect(tooltip()).toBeNull();
+  await pointerAway(switcher);
+
+  fireEvent.click(toggle());
+  expect(switcher.hasAttribute("title")).toBe(false);
+  expect(switcher.hasAttribute("aria-describedby")).toBe(false);
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+  expect(switcher.hasAttribute("aria-describedby")).toBe(false);
+  await pointerAway(switcher);
+  expect(tooltip()).toBeNull();
+
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+  fireEvent.click(switcher);
+  await act(settle);
+  expect(screen.getByRole("dialog", { name: "Switch project" })).toBeTruthy();
+  expect(tooltip()).toBeNull();
+});
+
+test("the title bar's holophyte mark has no title attribute and shows a holophyte tooltip on keyboard focus", async () => {
+  await mount("#/");
+  const mark = homeLink();
+  expect(mark.hasAttribute("title")).toBe(false);
+  expect(mark.hasAttribute("aria-describedby")).toBe(false);
+  expect(tooltip()).toBeNull();
+  await keyboardFocus(mark);
+  expect(screen.getByRole("tooltip").textContent).toBe("holophyte");
+  expect(mark.hasAttribute("aria-describedby")).toBe(false);
+  await act(async () => mark.blur());
+  expect(tooltip()).toBeNull();
 });
 
 test("each page's heading section opens on the title row's padding", async () => {

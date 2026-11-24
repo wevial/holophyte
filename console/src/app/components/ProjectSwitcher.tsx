@@ -11,12 +11,15 @@ import {
 } from "@ui-sdk/core";
 import { popoverPreset } from "@ui-sdk/core/popover";
 import type { BaseSlotProps } from "@ui-sdk/core/renderer";
-import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
-import { useId, useMemo, useRef } from "react";
+import { createParts, mergeProps, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { useId, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { storeScope, type SwitcherRow } from "../projects";
 import type { ScopeSearch } from "../scope";
 import { DropIcon } from "./icons";
+
+export const SIDEBAR_TIP = "z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card";
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
@@ -265,30 +268,42 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
       className: `pb-1 ${folded ? "flex justify-center pt-3" : "px-2"}`,
       children: (
         <>
-          <Trigger
-            ref={buttonRef}
-            aria-label={buttonName(current)}
-            title={folded ? current.label : undefined}
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-              event.preventDefault();
-              handle.api.setOpen(true, { event: event.nativeEvent });
-            }}
-            className={`relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink [--dot-ring:var(--side)] hover:bg-hover hover:[--dot-ring:var(--hover)] aria-expanded:bg-hover aria-expanded:[--dot-ring:var(--hover)] ${
-              folded ? "size-11 justify-center" : "h-row w-full px-2.5"
-            }`}
-          >
-            <ScopeDots dots={dotsOf(current)} />
-            {!folded && (
-              <>
-                <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
-                {current.held && <HeldTag />}
-                <span className="text-ink-3">
-                  <DropIcon />
-                </span>
-              </>
+          <Tooltip delay={300} disabled={!folded}>
+            <TooltipTrigger
+              render={({ "aria-describedby": _same, ...trigger }) => (
+                <Trigger
+                  {...mergeProps(trigger, {
+                    ref: buttonRef,
+                    "aria-label": buttonName(current),
+                    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                      event.preventDefault();
+                      handle.api.setOpen(true, { event: event.nativeEvent });
+                    },
+                    className: `relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink [--dot-ring:var(--side)] hover:bg-hover hover:[--dot-ring:var(--hover)] aria-expanded:bg-hover aria-expanded:[--dot-ring:var(--hover)] ${
+                      folded ? "size-11 justify-center" : "h-row w-full px-2.5"
+                    }`,
+                  })}
+                >
+                  <ScopeDots dots={dotsOf(current)} />
+                  {!folded && (
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
+                      {current.held && <HeldTag />}
+                      <span className="text-ink-3">
+                        <DropIcon />
+                      </span>
+                    </>
+                  )}
+                </Trigger>
+              )}
+            />
+            {folded && (
+              <TooltipContent side="right" sideOffset={10} className={SIDEBAR_TIP}>
+                {current.label}
+              </TooltipContent>
             )}
-          </Trigger>
+          </Tooltip>
 
           <Content
             side="bottom"
