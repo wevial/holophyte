@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { mergeProps } from "@ui-sdk/react/primitive";
+import { createTooltipController, Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { oklchToHex, oklchToRgb, type Oklch } from "../../lib/oklch";
 import {
   builtinSpec, buttonInk, contrastChecks, deriveTheme, isCustom, type CustomTheme, type DerivedTheme, type HazeSource, type ThemeMode, type ThemePick, type ThemeSpec,
 } from "../../lib/theme";
 import { useCustomThemes } from "../appearance";
+import { TIP } from "./AgentPanel";
 import { Btn } from "./Btn";
+import { Hint } from "./Hint";
 import { STATE_ICONS } from "./StateDot";
 
 export type EditorSubject = { mode: ThemeMode; pick: ThemePick } | { draft: CustomTheme };
@@ -94,7 +98,10 @@ function ColourSquare({ label, value, maxChroma, disabled, onChange }: {
 function Field({ title, reset, children }: { title: string; reset?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2.5">
-      <h4 className="flex min-h-7 items-center gap-1 font-sans text-[14px] font-semibold text-ink">{title}{reset}</h4>
+      <div className="flex min-h-7 items-center gap-1">
+        <h4 className="font-sans text-[14px] font-semibold text-ink">{title}</h4>
+        {reset}
+      </div>
       {children}
     </div>
   );
@@ -113,9 +120,18 @@ function OklchPicker({ name, value, maxChroma, disabled, onChange, reset }: {
 
 function ResetIcon({ label, onReset }: { label: string; onReset: () => void }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onReset} className="flex size-7 items-center justify-center text-ink-3 hover:text-ink">
-      <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.6-3.7M3 2.5v2.5h2.5" /></svg>
-    </button>
+    <Hint tip={label}>
+      {(trigger) => (
+        <button
+          {...mergeProps(trigger, { onClick: onReset })}
+          type="button"
+          aria-label={label}
+          className="flex size-7 items-center justify-center text-ink-3 hover:text-ink"
+        >
+          <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.6-3.7M3 2.5v2.5h2.5" /></svg>
+        </button>
+      )}
+    </Hint>
   );
 }
 
@@ -223,21 +239,40 @@ function Preview({ derived }: { derived: DerivedTheme }) {
 const ratioText = (ratio: number) => (Math.floor(ratio * 10) / 10).toFixed(1);
 
 function ContrastFlags({ derived }: { derived: DerivedTheme }) {
+  const [tooltip] = useState(() => createTooltipController<string>());
+  const checks = contrastChecks(derived).map((check) => {
+    const fails = check.ratio < check.bar;
+    return { check, fails, tip: `${check.name} ${ratioText(check.ratio)}:1${fails ? ` · under ${check.bar}` : ""}` };
+  });
   return (
-    <ul aria-label="Contrast" className="flex flex-wrap gap-2">
-      {contrastChecks(derived).map((check) => {
-        const fails = check.ratio < check.bar;
-        const tip = `${check.name} ${ratioText(check.ratio)}:1${fails ? ` · under ${check.bar}` : ""}`;
-        return (
-          <li key={check.name} aria-label={tip} title={tip} data-fails={fails || undefined}
-            className={`inline-flex h-5 items-center gap-[5px] rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none ${fails ? "bg-bad-wash text-bad" : "bg-selected text-ink-2"}`}>
-            <span aria-hidden="true" className="size-2.5 rounded-[3px] shadow-[inset_0_0_0_1px_var(--hair-2)]" style={{ background: check.colour }} />
-            <span aria-hidden="true" className={fails ? "text-bad" : "text-live"}>{fails ? "!" : "✓"}</span>
-            <span className="font-mono font-normal">{ratioText(check.ratio)}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <>
+      <ul aria-label="Contrast" className="flex flex-wrap gap-2">
+        {checks.map(({ check, fails, tip }) => (
+          <TooltipTrigger
+            key={check.name}
+            controller={tooltip}
+            payload={check.name}
+            render={({ type: _button, "aria-describedby": _described, ...trigger }) => (
+              <li
+                {...trigger}
+                aria-label={tip}
+                data-fails={fails || undefined}
+                className={`inline-flex h-5 items-center gap-[5px] rounded-[5px] px-[7px] font-sans text-[11.5px] font-semibold leading-none ${fails ? "bg-bad-wash text-bad" : "bg-selected text-ink-2"}`}
+              >
+                <span aria-hidden="true" className="size-2.5 rounded-[3px] shadow-[inset_0_0_0_1px_var(--hair-2)]" style={{ background: check.colour }} />
+                <span aria-hidden="true" className={fails ? "text-bad" : "text-live"}>{fails ? "!" : "✓"}</span>
+                <span className="font-mono font-normal">{ratioText(check.ratio)}</span>
+              </li>
+            )}
+          />
+        ))}
+      </ul>
+      <Tooltip controller={tooltip} delay={150} type="description">
+        <TooltipContent<string> side="top" sideOffset={6} className={TIP}>
+          {(state) => checks.find((item) => item.check.name === state.payload)?.tip ?? null}
+        </TooltipContent>
+      </Tooltip>
+    </>
   );
 }
 

@@ -1,4 +1,5 @@
 import { useId, useState, type CSSProperties, type ReactNode } from "react";
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { SegmentedControl, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
 import { Switch, SwitchThumb } from "@ui-sdk/react/switch";
 import {
@@ -8,6 +9,7 @@ import {
 import { KNOBS, THEME, type ChoiceKnob } from "../effectKnobs";
 import { BUILTIN_NAMES, BUILTIN_PICKS, builtinSpec, deriveTheme, isCustom, type CustomTheme, type Theme, type ThemeMode, type ThemePick } from "../../lib/theme";
 import { Btn } from "./Btn";
+import { Hint } from "./Hint";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
 import { Segmented } from "./Segmented";
 import { copyOf, ThemeEditor, type EditorSubject } from "./ThemeEditor";
@@ -77,9 +79,18 @@ function Row({ id, icon, title, children, reset, labelTop = "pt-2" }: {
 
 function RowReset({ label, onReset }: { label: string; onReset: () => void }) {
   return (
-    <button type="button" aria-label={label} title={label} onClick={onReset} className="ml-auto flex size-7 items-center justify-center text-ink-3 hover:text-ink">
-      <ResetGlyph />
-    </button>
+    <Hint tip={label}>
+      {(trigger) => (
+        <button
+          {...mergeProps(trigger, { onClick: onReset })}
+          type="button"
+          aria-label={label}
+          className="ml-auto flex size-7 items-center justify-center text-ink-3 hover:text-ink"
+        >
+          <ResetGlyph />
+        </button>
+      )}
+    </Hint>
   );
 }
 
