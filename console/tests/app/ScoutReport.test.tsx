@@ -140,14 +140,38 @@ test("a done bug scout's Findings counts its findings, reads its reproduction wi
   expect(rows.map(chip)).toEqual(["confirmed", "confirmed", "partial", "unconfirmed"]);
 });
 
-test("a verified citation is titled with its base and an unverified one reads its reason as its description", async () => {
+test("a verified citation is described by its base and an unverified one by its reason, each in a tooltip with no title", async () => {
   await mount(31);
   const f3 = findingRows()[2]!;
   await openCitations(f3);
-  const verified = within(f3).getByText("lotuspod/digest.py:57");
-  expect(verified.getAttribute("title")).toBe("at base a41c9e2");
-  const unverified = within(f3).getByText("? lotuspod/digest.py:301 unverified");
-  expect(within(f3).getByRole("generic", { description: WHY })).toBe(unverified);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  for (const [label, tip, wrapped] of [
+    ["lotuspod/digest.py:57", "at base a41c9e2", false],
+    ["? lotuspod/digest.py:301 unverified", WHY, true],
+  ] as const) {
+    const citation = within(f3).getByText(label);
+    expect(citation.getAttribute("title")).toBeNull();
+    expect(citation.getAttribute("tabindex")).toBeNull();
+    expect(within(f3).getByRole("generic", { description: tip })).toBe(citation);
+    await act(async () => void fireEvent.pointerEnter(citation, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const popup = screen.getByRole("tooltip");
+    expect(popup.textContent).toBe(tip);
+    expect(popup.getAttribute("tabindex")).toBe(wrapped ? "-1" : null);
+    expect(popup.classList.contains("overflow-y-auto")).toBe(wrapped);
+    expect(popup.classList.contains("leading-[1.35]!")).toBe(wrapped);
+    if (wrapped) {
+      await act(async () => void fireEvent.mouseDown(popup));
+      expect(popup.getAttribute("tabindex")).toBeNull();
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+      expect(popup.getAttribute("tabindex")).toBe("-1");
+      await act(async () => popup.focus());
+      expect(document.activeElement).not.toBe(popup);
+    }
+    await act(async () => void fireEvent.pointerLeave(citation, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  }
 });
 
 test("a command chip opens its command and output under the finding and closes again", async () => {
