@@ -530,8 +530,7 @@ test("a merged run's menu with reverts on places a separator right before Revert
 
 test("typing a letter in an open menu focuses the matching item", async () => {
   await mount("#/runs/demo/9", daemon(true).fetchImpl);
-  const button = screen.getByRole("button", { name: "More for run 9" });
-  await act(async () => void fireEvent.keyDown(button, { key: "ArrowDown" }));
+  await act(async () => void fireEvent.keyDown(screen.getByRole("button", { name: "More for run 9" }), { key: "ArrowDown" }));
   expect(document.activeElement?.textContent).toBe("Open ticket");
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "c" }));
   expect(document.activeElement?.textContent).toBe("Copy link");
@@ -589,8 +588,7 @@ test("Enter or ArrowDown on ⋯ focuses the first item, and ArrowUp focuses the 
 test.each(["Enter", " "])("holding the %p that opened the menu chooses no item, and a fresh Enter chooses the focused one", async (key) => {
   const user = userEvent.setup();
   await mount("#/runs/demo/9?project=demo", daemon(true).fetchImpl);
-  const button = screen.getByRole("button", { name: "More for run 9" });
-  button.focus();
+  screen.getByRole("button", { name: "More for run 9" }).focus();
   await user.keyboard(key === " " ? " " : "{Enter}");
   await act(settle);
   const item = screen.getByRole("menuitem", { name: "Open ticket" });

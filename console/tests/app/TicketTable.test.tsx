@@ -219,9 +219,8 @@ test("pressing a row's ⋯ and one of its items opens no peek, and pressing anot
   await mount("#/tickets?project=demo", seeded);
   await press("Table");
   await click(screen.getByRole("button", { name: "More for DEMO-3" }));
-  const menu = screen.getByRole("menu", { name: "More for DEMO-3" });
   expect(peek()).toBeNull();
-  await click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+  await click(within(screen.getByRole("menu", { name: "More for DEMO-3" })).getByRole("menuitem", { name: "Copy link" }));
   expect(screen.queryByRole("menu")).toBeNull();
   expect(peek()).toBeNull();
 

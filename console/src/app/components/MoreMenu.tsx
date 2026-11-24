@@ -87,7 +87,7 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
           className="z-50 flex min-w-[180px] flex-col overflow-y-auto rounded-[9px] border-0 bg-raised p-1 text-left text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
         >
           {items.map((item, index) => {
-            const noteId = `${id}-note-${index}`;
+            const noteId = item.note != null ? `${id}-note-${index}` : undefined;
             return (
               <Fragment key={item.label}>
                 {item.divided && <MenuSeparator className="mx-0.5 my-1 h-px bg-hair" />}
@@ -95,17 +95,15 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
                   label={item.label}
                   disabled={item.disabled}
                   destructive={item.danger}
-                  aria-describedby={item.note != null ? noteId : undefined}
-                  onSelect={() => {
-                    item.onSelect();
-                  }}
+                  aria-describedby={noteId}
+                  onSelect={() => void item.onSelect()}
                   className={`flex min-h-[32px] w-full cursor-pointer items-center rounded-button px-2.5 py-1.5 text-left font-sans text-[13px] leading-[1.25] outline-none focus:bg-hover data-highlighted:bg-hover aria-disabled:cursor-default aria-disabled:opacity-60 ${
                     item.danger ? "text-bad" : "text-ink"
                   }`}
                 >
                   {item.label}
                 </SdkMenuItem>
-                {item.note != null && (
+                {noteId != null && (
                   <p id={noteId} aria-hidden="true" className="m-0 px-2.5 pb-1.5 font-sans text-[12px] leading-[1.3] text-ink-3">
                     {item.note}
                   </p>

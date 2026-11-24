@@ -312,8 +312,7 @@ test("pressing Esc inside an open ⋯ menu closes the menu and leaves an open Re
   const note = () => within(screen.getByRole("group", { name: "Requeue DEMO-40" })).getByRole("textbox", { name: "Note" }) as HTMLTextAreaElement;
   await act(async () => void fireEvent.change(note(), { target: { value: "keep this note" } }));
   await act(async () => void fireEvent.keyDown(screen.getByRole("button", { name: "More for run 40" }), { key: "ArrowDown" }));
-  const menu = screen.getByRole("menu", { name: "More for run 40" });
-  expect(menu.contains(document.activeElement)).toBe(true);
+  expect(screen.getByRole("menu", { name: "More for run 40" }).contains(document.activeElement)).toBe(true);
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
   expect(screen.queryByRole("menu")).toBeNull();
   expect(formOpen()).toBe(true);
