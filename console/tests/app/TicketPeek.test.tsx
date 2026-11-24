@@ -113,8 +113,7 @@ test("a card's click opens its peek with key, icon-only Expand and Close, title 
 
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  const swapped = screen.getByRole("dialog", { name: "DEMO-2 title" });
-  expect(document.activeElement).toBe(within(swapped).getByRole("button", { name: "Close preview" }));
+  expect(document.activeElement).toBe(within(screen.getByRole("dialog", { name: "DEMO-2 title" })).getByRole("button", { name: "Close preview" }));
   expect(fact("Run").textContent).toBe("none yet");
   expect(fact("Time box").textContent).toBe("none");
   expect(cardLink("DEMO-2").hasAttribute("data-open")).toBe(true);

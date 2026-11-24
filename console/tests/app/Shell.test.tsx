@@ -1769,8 +1769,7 @@ test("at 390px hovering Home while the drawer is open still lets the first Escap
 
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true }));
     await act(async () => void fireEvent.click(within(drawer()!).getByRole("button", { name: /Switch project$/ })));
-    const find = within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
-    await act(async () => find.focus());
+    await act(async () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox").focus());
     await pointerOver(homeLink());
     expect(tooltip()?.textContent).toBe("holophyte");
 
