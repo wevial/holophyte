@@ -695,66 +695,54 @@ for (const [hash, checked, asked] of [
   });
 }
 
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+const tipAttrs = (element: HTMLElement) => [element.getAttribute("title"), element.getAttribute("aria-describedby")];
+
 test("resting the pointer on the Search runs button shows a Search tooltip while keeping its name with no title or aria-describedby", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
   const button = searchButton()!;
   expect(button.getAttribute("aria-label")).toBe("Search runs");
-  expect(button.getAttribute("title")).toBeNull();
-  expect(button.getAttribute("aria-describedby")).toBeNull();
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tipAttrs(button)).toEqual([null, null]);
+  expect(tooltip()).toBeNull();
 
   await act(async () => void fireEvent.pointerEnter(button, { pointerType: "mouse" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe("Search");
+  expect(tooltip()).toBe("Search");
   expect(button.getAttribute("aria-label")).toBe("Search runs");
-  expect(button.getAttribute("title")).toBeNull();
-  expect(button.getAttribute("aria-describedby")).toBeNull();
+  expect(tipAttrs(button)).toEqual([null, null]);
 
   await act(async () => void fireEvent.pointerLeave(button, { pointerType: "mouse", clientX: 900, clientY: 900 }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  await act(settle);
+  expect(tooltip()).toBeNull();
 });
 
 test("keyboard focus on the Filter and sort and Range buttons shows each tooltip with no browser title", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
-  const filter = filterButton();
-  const range = rangeButton();
-  expect(filter.getAttribute("title")).toBeNull();
-  expect(filter.getAttribute("aria-describedby")).toBeNull();
-  expect(range.getAttribute("title")).toBeNull();
-  expect(range.getAttribute("aria-describedby")).toBeNull();
-  expect(screen.queryByRole("tooltip")).toBeNull();
-
-  await act(async () => {
-    fireEvent.keyDown(document.body, { key: "Tab" });
-    filter.focus();
-  });
-  expect(screen.getByRole("tooltip").textContent).toBe("Filter and sort");
-  await act(async () => filter.blur());
-  expect(screen.queryByRole("tooltip")).toBeNull();
-
-  await act(async () => {
-    fireEvent.keyDown(document.body, { key: "Tab" });
-    range.focus();
-  });
-  expect(screen.getByRole("tooltip").textContent).toBe("7 days");
-  await act(async () => range.blur());
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
+  for (const [button, tip] of [[filterButton(), "Filter and sort"], [rangeButton(), "7 days"]] as const) {
+    expect(tipAttrs(button)).toEqual([null, null]);
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: "Tab" });
+      button.focus();
+    });
+    expect(tooltip()).toBe(tip);
+    await act(async () => button.blur());
+    expect(tooltip()).toBeNull();
+  }
 });
 
 test("resting the pointer on the shortest first sort arrow after Took is picked shows its tooltip with no browser title", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
   await press((await section("Sort")).getByRole("radio", { name: "Took" }));
   const shortest = (await section("Sort")).getByRole("button", { name: "shortest first" });
-  expect(shortest.getAttribute("title")).toBeNull();
-  expect(shortest.getAttribute("aria-describedby")).toBeNull();
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tipAttrs(shortest)).toEqual([null, null]);
+  expect(tooltip()).toBeNull();
 
   await act(async () => void fireEvent.pointerEnter(shortest, { pointerType: "mouse" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe("shortest first");
+  expect(tooltip()).toBe("shortest first");
 
   await act(async () => void fireEvent.keyDown(shortest, { key: "Escape" }));
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
   expect(dialog()).not.toBeNull();
 });
