@@ -154,7 +154,7 @@ test("an empty timed-out turn explains why the agent wrote nothing", async () =>
 
 test("a host failure reports an alert instead of claiming the transcript is missing", async () => {
   await mount(500);
-  expect(screen.getByRole("alert").textContent).toBe("Could not read the transcript from writer-host.");
+  expect(within(screen.getByRole("main")).getByRole("alert").textContent).toBe("Could not read the transcript from writer-host.");
 });
 
 test("a pending transcript announces fetching while the turn figures remain visible", async () => {

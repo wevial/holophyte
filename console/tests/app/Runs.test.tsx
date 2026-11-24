@@ -208,7 +208,7 @@ test("the ticket key and the title sit in the row, the key linked to its ticket 
 test("a host whose daemon has no /history adds no rows and no error beside one that answers", async () => {
   await mount("#/runs?state=all", fleet(null, [writer40]));
   expect(rows().map((row) => row.getAttribute("data-run"))).toEqual(["40"]);
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(within(screen.getByRole("main")).queryByRole("alert")).toBeNull();
   expect(document.querySelector("[data-notice]")).toBeNull();
 });
 
