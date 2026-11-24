@@ -1553,16 +1553,24 @@ test("at 390px the open drawer, laid under the title bar that stays while the pa
   await atWidth(390, async () => {
     await mount("#/");
     expect(screen.getByRole("heading", { level: 1 }).textContent).not.toBe("Runs");
+    const press = (target: HTMLElement) => {
+      fireEvent.pointerDown(target, { button: 0 });
+      fireEvent.pointerUp(target, { button: 0 });
+      fireEvent.click(target);
+    };
     const closes: [string, () => void][] = [
       ["link", () => fireEvent.click(within(drawer()!).getByRole("link", { name: "Runs" }))],
-      ["scrim", () => fireEvent.click(document.querySelector("[data-scrim]")!)],
+      ["scrim", () => press(document.querySelector<HTMLElement>('[data-slot="drawer-backdrop"]')!)],
       ["escape", () => fireEvent.keyDown(document.activeElement!, { key: "Escape" })],
-      ["panel button", () => fireEvent.click(openSidebar())],
+      ["panel button", () => press(openSidebar())],
     ];
     for (const [way, close] of closes) {
-      fireEvent.click(openSidebar());
+      await act(async () => void fireEvent.click(openSidebar()));
       expect(drawer()).not.toBeNull();
-      expect(drawer()!.parentElement!.classList.contains("top-[30px]")).toBe(true);
+      const backdrop = document.querySelector<HTMLElement>('[data-slot="drawer-backdrop"]')!;
+      expect(backdrop.classList.contains("top-[30px]")).toBe(true);
+      expect(drawer()!.classList.contains("mt-[30px]")).toBe(true);
+      expect(drawer()!.contains(titleBar())).toBe(false);
       expect([titleBar().parentElement!.classList.contains("overflow-hidden"), screen.getByRole("main").classList.contains("overflow-y-auto")]).toEqual([true, true]);
       await act(async () => close());
       await act(settle);
@@ -1666,8 +1674,9 @@ test("at 390px with a ticket preview open, Escape in the drawer closes only the 
     await act(async () => void fireEvent.click(document.querySelector<HTMLElement>('[id^="card-"]')!));
     const preview = () => screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer());
     expect(preview()).toHaveLength(1);
-    fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true });
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true }));
     const panel = drawer()!;
+    expect(panel.getAttribute("aria-modal")).toBe("true");
     fireEvent.keyDown(document.activeElement!, { key: "/" });
     expect(panel.contains(document.activeElement)).toBe(true);
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));

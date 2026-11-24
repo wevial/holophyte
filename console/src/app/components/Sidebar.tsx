@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
-import { createPortal } from "react-dom";
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
+import { Drawer, DrawerBackdrop, DrawerContent } from "@ui-sdk/react/drawer";
 import { mergeProps } from "@ui-sdk/react/primitive";
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
@@ -36,7 +36,6 @@ import {
 import { ProjectSwitcher, SIDEBAR_TIP } from "./ProjectSwitcher";
 import { SettingsNav } from "./SettingsNav";
 import { plainTitle, TitleText } from "./TitleText";
-import { trap } from "./trap";
 import { useSidebarWidth } from "../viewport";
 
 const RAIL_KEY = "holophyte.next.rail";
@@ -457,6 +456,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
         <Tooltip delay={300} shortcut={"mod+\\"}>
           <TooltipTrigger
             ref={toggleRef}
+            data-sidebar-toggle=""
             aria-label={toggleName}
             aria-expanded={narrow ? drawer : !folded}
             aria-controls={drawer ? "sidebar-drawer" : undefined}
@@ -607,50 +607,34 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
   );
 }
 
-const inPopup = (target: EventTarget | null, drawer: HTMLElement | null) => {
-  const popup = target instanceof Element ? target.closest('[role="dialog"]') : null;
-  return popup != null && popup !== drawer && drawer?.contains(popup) === true;
-};
-
 export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose: () => void; back: string | null }) {
-  const box = useRef<HTMLDivElement>(null);
-  const live = useRef(onClose);
-  live.current = onClose;
-  useEffect(() => {
-    if (!open) return;
-    box.current?.focus();
-    const keep = (event: KeyboardEvent) => {
-      if (inPopup(event.target, box.current)) return;
-      trap(event, box.current, () => live.current());
-      if (event.key === "Escape") event.stopPropagation();
-    };
-    document.addEventListener("keydown", keep, true);
-    return () => document.removeEventListener("keydown", keep, true);
-  }, [open]);
-  return createPortal(
-    <div
-      hidden={!open}
-      onKeyDown={(event) => {
-        if (!event.metaKey && !event.ctrlKey) event.stopPropagation();
+  return (
+    <Drawer
+      open={open}
+      modal={open}
+      side="left"
+      persistentElements={["[data-title-bar]"]}
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
-      className="fixed inset-x-0 top-[30px] bottom-0 z-50"
     >
-      <div data-scrim aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-scrim" />
-      <div
-        ref={box}
+      <DrawerBackdrop className="fixed inset-x-0 top-[30px] bottom-0 z-50 bg-scrim" />
+      <DrawerContent
         id="sidebar-drawer"
-        role={open ? "dialog" : undefined}
-        aria-modal={open ? "true" : undefined}
-        aria-label={open ? "Sidebar" : undefined}
-        tabIndex={-1}
+        aria-label="Sidebar"
+        keepMounted
+        finalFocus="[data-sidebar-toggle]"
+        onKeyDown={(event) => {
+          // Stop non-modifier keys before page shortcuts such as `/`, leaving Escape to the drawer's layer.
+          if (event.key !== "Escape" && !event.metaKey && !event.ctrlKey) event.stopPropagation();
+        }}
         onClick={(event) => {
           if ((event.target as Element).closest("a[href]")) onClose();
         }}
-        className="absolute inset-y-0 left-0 flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
+        className="mt-[30px] flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
         <Sidebar folded={false} back={back} />
-      </div>
-    </div>,
-    document.body,
+      </DrawerContent>
+    </Drawer>
   );
 }

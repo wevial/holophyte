@@ -93,6 +93,7 @@ test("a card's click opens its peek with key, icon-only Expand and Close, title 
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
 
   const dialog = screen.getByRole("dialog", { name: "DEMO-3 title" });
+  expect(dialog.getAttribute("aria-modal")).not.toBe("true");
   expect(dialog.querySelector("[data-peek-key]")!.textContent).toBe("DEMO-3");
   const expand = within(dialog).getByRole("link", { name: "Expand to the full ticket page" });
   const close = within(dialog).getByRole("button", { name: "Close preview" });
@@ -112,7 +113,8 @@ test("a card's click opens its peek with key, icon-only Expand and Close, title 
 
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(screen.getByRole("dialog", { name: "DEMO-2 title" })).toBeTruthy();
+  const swapped = screen.getByRole("dialog", { name: "DEMO-2 title" });
+  expect(document.activeElement).toBe(within(swapped).getByRole("button", { name: "Close preview" }));
   expect(fact("Run").textContent).toBe("none yet");
   expect(fact("Time box").textContent).toBe("none");
   expect(cardLink("DEMO-2").hasAttribute("data-open")).toBe(true);
@@ -161,6 +163,12 @@ test("Esc or Close preview shuts the peek and puts focus back on the card that o
   await mount("#/tickets");
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   expect(peek()).not.toBeNull();
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  expect(peek()).toBeNull();
+  expect(document.activeElement).toBe(cardLink("DEMO-2"));
+
+  await act(async () => void fireEvent.click(cardLink("DEMO-2")));
+  await act(async () => cardLink("DEMO-3").focus());
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
   expect(peek()).toBeNull();
   expect(document.activeElement).toBe(cardLink("DEMO-2"));

@@ -1,5 +1,6 @@
-import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useContext, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { Dialog, DialogClose, DialogContent, DialogTitle } from "@ui-sdk/react/dialog";
 import { criteriaRows } from "../../lib/criteria";
 import { formatAge } from "../../lib/format";
 import { summaryOf } from "../../lib/ticket";
@@ -124,69 +125,75 @@ export function TicketPeek({
   now: number;
   onClose: () => void;
 }) {
-  const titleId = useId();
   const close = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    close.current?.focus();
-  }, [card.id]);
   const head = COLUMN_HEADS[column];
   return (
-    <section
-      role="dialog"
-      aria-modal="false"
-      aria-labelledby={titleId}
-      className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:w-full max-[720px]:rounded-none"
+    <Dialog
+      key={card.id}
+      open
+      modal={false}
+      closeOnOutsidePress={false}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
     >
-      <div className="flex items-center gap-1 pl-[18px] pr-[18px] pt-4">
-        <span data-peek-key className="mr-auto font-mono text-[12px] leading-none tabular-nums text-ink-3">{card.key}</span>
-        <span className="flex gap-1">
-          <Link
-            to="/tickets/$project/$key"
-            params={{ project: card.project, key: card.key }}
-            search={keepScope}
-            aria-label="Expand to the full ticket page"
-            className={HEAD_BUTTON}
-          >
-            <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" />
-            </svg>
-          </Link>
-          <button ref={close} type="button" aria-label="Close preview" onClick={onClose} className={HEAD_BUTTON}>
-            <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
-              <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
-            </svg>
-          </button>
-        </span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-7 pt-3">
-        <h2 id={titleId} className="m-0 break-words font-sans text-[17px] font-semibold leading-[1.3] tracking-[-0.01em]">
-          <TitleText>{card.title}</TitleText>
-        </h2>
-        <div data-peek-column className="mt-3">
-          <Chip tone={column === "needs_you" ? "need" : STATES[head.state].tone}>
-            <StateDot state={head.state} hideWord tone={column === "needs_you" ? "need" : undefined} />
-            <span>{head.label}</span>
-          </Chip>
+      <DialogContent
+        data-peek=""
+        initialFocus={() => close.current}
+        finalFocus="none"
+        className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:w-full max-[720px]:rounded-none"
+      >
+        <div className="flex items-center gap-1 pl-[18px] pr-[18px] pt-4">
+          <span data-peek-key className="mr-auto font-mono text-[12px] leading-none tabular-nums text-ink-3">{card.key}</span>
+          <span className="flex gap-1">
+            <Link
+              to="/tickets/$project/$key"
+              params={{ project: card.project, key: card.key }}
+              search={keepScope}
+              aria-label="Expand to the full ticket page"
+              className={HEAD_BUTTON}
+            >
+              <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" />
+              </svg>
+            </Link>
+            <DialogClose ref={close} aria-label="Close preview" className={HEAD_BUTTON}>
+              <svg viewBox="0 0 16 16" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" aria-hidden="true">
+                <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />
+              </svg>
+            </DialogClose>
+          </span>
         </div>
-        <Ask card={card} now={now} />
-        <dl className="mt-4 grid grid-cols-[90px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5">
-          <Fact label="Project">{card.project}</Fact>
-          <Fact label="Time box">{card.timeBoxMs == null ? "none" : <span className={NUMBER}>{formatAge(card.timeBoxMs)}</span>}</Fact>
-          <Fact label="Run">
-            {card.runId == null ? (
-              "none yet"
-            ) : (
-              <>
-                <span className={NUMBER}>run {card.runId}</span>
-                <span data-peek-run-state className="mt-1.5 flex">
-                  <RunChip card={card} now={now} />
-                </span>
-              </>
-            )}
-          </Fact>
-        </dl>
-        <Contract key={card.id} card={card} />
-      </div>
-    </section>
+        <div className="min-h-0 flex-1 overflow-y-auto px-[18px] pb-7 pt-3">
+          <DialogTitle className="m-0 break-words font-sans text-[17px] font-semibold leading-[1.3] tracking-[-0.01em]">
+            <TitleText>{card.title}</TitleText>
+          </DialogTitle>
+          <div data-peek-column className="mt-3">
+            <Chip tone={column === "needs_you" ? "need" : STATES[head.state].tone}>
+              <StateDot state={head.state} hideWord tone={column === "needs_you" ? "need" : undefined} />
+              <span>{head.label}</span>
+            </Chip>
+          </div>
+          <Ask card={card} now={now} />
+          <dl className="mt-4 grid grid-cols-[90px_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5">
+            <Fact label="Project">{card.project}</Fact>
+            <Fact label="Time box">{card.timeBoxMs == null ? "none" : <span className={NUMBER}>{formatAge(card.timeBoxMs)}</span>}</Fact>
+            <Fact label="Run">
+              {card.runId == null ? (
+                "none yet"
+              ) : (
+                <>
+                  <span className={NUMBER}>run {card.runId}</span>
+                  <span data-peek-run-state className="mt-1.5 flex">
+                    <RunChip card={card} now={now} />
+                  </span>
+                </>
+              )}
+            </Fact>
+          </dl>
+          <Contract card={card} />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
