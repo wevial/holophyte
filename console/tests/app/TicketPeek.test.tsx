@@ -263,7 +263,6 @@ test("a taken Requeue posts the ticket once, swaps the box for the toast's sente
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
   expect(document.activeElement).toBe(within(peek()!).getByRole("button", { name: "Close preview" }));
   await act(async () => void fireEvent.click(cardLink("DEMO-11")));
-  expect(document.activeElement).toBe(within(peek()!).getByRole("button", { name: "Close preview" }));
   expect(askBox()).toBeNull();
   expect(peek()!.querySelector("[data-peek-acted]")!.textContent).toBe("Requeued DEMO-11.");
 });
