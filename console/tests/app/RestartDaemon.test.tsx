@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, jest, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { HostStatus, Status } from "../../src/lib/contract.gen";
@@ -16,7 +16,7 @@ const fixtures = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const host = await Bun.file(new URL("host-status.json", fixtures)).json() as HostStatus;
 const project = await Bun.file(new URL("status.json", fixtures)).json() as Status;
 const card = () => screen.getByRole("article", { name: "writer-host" });
-const toast = () => document.querySelector("[data-toast]")!;
+const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const restarting = "Restarting · back in about 20s";
 
 async function flush() {
@@ -64,7 +64,7 @@ async function mount(input = source()) {
   render(<QueryClientProvider client={client}><ConsoleApp base={ORIGIN} pollDeps={fake.deps} /></QueryClientProvider>);
   await flush();
   return {
-    ...input,
+    ...input, client,
     poll: async (now = NOW) => {
       fake.clock.now = now;
       await act(async () => { await client.refetchQueries({ queryKey: ["fleet", ORIGIN] }); });
@@ -110,7 +110,7 @@ test("restart posts once with the bearer, remains restarting through failed and 
   expect(within(card()).getByText(restarting)).toBeTruthy();
   expect(within(card()).getByRole("status").textContent).toBe("Restarting the daemon. Runs keep going; this card comes back when it answers.");
   for (const name of ["Run sweep", "Restart daemon"]) expect(within(card()).getByRole("button", { name }).hasAttribute("disabled")).toBe(true);
-  expect(toast().textContent).not.toContain("Restarted the daemon");
+  expect(toast()).not.toContain("Restarted the daemon");
   view.fail();
   await view.poll();
   expect(within(card()).getByText(restarting)).toBeTruthy();
@@ -120,7 +120,7 @@ test("restart posts once with the bearer, remains restarting through failed and 
   expect(within(card()).getByText(restarting)).toBeTruthy();
   view.answer(2000);
   await view.poll();
-  expect(toast().textContent).toBe("Restarted the daemon on writer-host.");
+  expect(toast()).toBe("Restarted the daemon on writer-host.");
   expect(within(card()).getByText("Healthy")).toBeTruthy();
   expect(within(card()).queryByText(restarting)).toBeNull();
   for (const name of ["Run sweep", "Restart daemon"]) expect(within(card()).getByRole("button", { name }).hasAttribute("disabled")).toBe(false);
@@ -164,5 +164,119 @@ test("after sixty seconds without a new daemon the card returns to its last fail
   await view.poll(NOW + 60_000);
   expect(within(card()).queryByText(restarting)).toBeNull();
   expect(within(card()).getByText(/Not answering/)).toBeTruthy();
-  expect(toast().textContent).not.toContain("Restarted the daemon");
+  expect(toast()).not.toContain("Restarted the daemon");
+});
+
+test("when four restarts finish in one fleet poll, dismissing a newer toast promotes and politely announces the queued oldest toast", async () => {
+  const post = fakeFetch({ ok: true });
+  const names = ["writer-host", "peer-2", "peer-3", "peer-4"];
+  const bases = names.map((name) => `http://${name}:7710`);
+  const rootsByBase = Object.fromEntries(bases.map((base) => [base, {
+    ...host, actions: true, now: NOW, daemon: { ...host.daemon, started_ms: 1000 }, projects: [],
+  }]));
+  const daemons: Record<string, StubDaemon> = Object.fromEntries(
+    bases.map((base) => [base, { status: rootsByBase[base]!, attention: NO_ATTENTION }]),
+  );
+  const roots = peersFetch(ORIGIN, daemons);
+  const view = await mount({
+    fetch: (url, init) => (init?.method === "POST" ? post.fetchImpl(url, init) : roots(url, init)),
+    fail: () => {},
+    answer: () => {},
+  });
+  for (const name of names) {
+    await press("Restart daemon", screen.getByRole("article", { name }));
+    await press("Restart daemon", screen.getByRole("alertdialog", { name: `Restart ${name}` }));
+  }
+  for (const base of bases) rootsByBase[base]!.daemon.started_ms = 2000;
+  await view.poll();
+  const polite = () => screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent ?? "";
+  expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+    "Restarted the daemon on peer-4.",
+    "Restarted the daemon on peer-3.",
+    "Restarted the daemon on peer-2.",
+  ]);
+  await waitFor(() => expect(polite()).toContain("Restarted the daemon on peer-4."));
+  expect(polite()).not.toContain("Restarted the daemon on writer-host.");
+  await act(async () => void fireEvent.keyDown(document.querySelector("[data-toast]")!, { key: "Escape" }));
+  await flush();
+  expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+    "Restarted the daemon on peer-3.",
+    "Restarted the daemon on peer-2.",
+    "Restarted the daemon on writer-host.",
+  ]);
+  await waitFor(() => expect(polite()).toBe("Restarted the daemon on writer-host."));
+});
+
+test("promoting a queued unannounced toast preserves its remaining duration from before it was queued", async () => {
+  const post = fakeFetch({ ok: true });
+  const names = ["writer-host", "peer-2", "peer-3", "peer-4"];
+  const bases = names.map((name) => `http://${name}:7710`);
+  const rootsByBase = Object.fromEntries(bases.map((base) => [base, {
+    ...host, actions: true, now: NOW, daemon: { ...host.daemon, started_ms: 1000 }, projects: [],
+  }]));
+  const daemons: Record<string, StubDaemon> = Object.fromEntries(
+    bases.map((base) => [base, { status: rootsByBase[base]!, attention: NO_ATTENTION }]),
+  );
+  const roots = peersFetch(ORIGIN, daemons);
+  const view = await mount({
+    fetch: (url, init) => (init?.method === "POST" ? post.fetchImpl(url, init) : roots(url, init)),
+    fail: () => {},
+    answer: () => {},
+  });
+  for (const name of names) {
+    await press("Restart daemon", screen.getByRole("article", { name }));
+    await press("Restart daemon", screen.getByRole("alertdialog", { name: `Restart ${name}` }));
+  }
+  while (document.querySelector("[data-toast]")) {
+    await act(async () => void fireEvent.keyDown(document.querySelector("[data-toast]")!, { key: "Escape" }));
+    await flush();
+  }
+  const polite = () => screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent ?? "";
+  jest.useFakeTimers();
+  try {
+    rootsByBase[bases[0]!]!.daemon.started_ms = 2000;
+    await act(async () => {
+      await view.client.refetchQueries({ queryKey: ["fleet", ORIGIN] });
+      jest.advanceTimersByTime(0);
+    });
+    const shownAt = Date.now();
+    expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+      "Restarted the daemon on writer-host.",
+    ]);
+    await act(async () => void jest.advanceTimersByTime(65));
+    for (const base of bases.slice(1)) rootsByBase[base]!.daemon.started_ms = 2000;
+    await act(async () => {
+      await view.client.refetchQueries({ queryKey: ["fleet", ORIGIN] });
+      jest.advanceTimersByTime(0);
+    });
+    const firstSpell = Date.now() - shownAt;
+    expect(firstSpell).toBeGreaterThanOrEqual(65);
+    expect(firstSpell).toBeLessThan(100);
+    expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+      "Restarted the daemon on peer-4.",
+      "Restarted the daemon on peer-3.",
+      "Restarted the daemon on peer-2.",
+    ]);
+    await act(async () => void jest.advanceTimersByTime(250));
+    expect(polite()).toContain("Restarted the daemon on peer-4.");
+    expect(polite()).not.toContain("Restarted the daemon on writer-host.");
+    await act(async () => void fireEvent.keyDown(document.querySelector("[data-toast]")!, { key: "Escape" }));
+    expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+      "Restarted the daemon on peer-3.",
+      "Restarted the daemon on peer-2.",
+      "Restarted the daemon on writer-host.",
+    ]);
+    await act(async () => void jest.advanceTimersByTime(200));
+    expect(polite()).toBe("Restarted the daemon on writer-host.");
+    await act(async () => void jest.advanceTimersByTime(6000 - firstSpell - 200 - 1));
+    expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+      "Restarted the daemon on writer-host.",
+    ]);
+    await act(async () => void jest.advanceTimersByTime(1));
+    expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([]);
+  } finally {
+    cleanup();
+    jest.advanceTimersByTime(0);
+    jest.useRealTimers();
+  }
 });

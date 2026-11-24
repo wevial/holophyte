@@ -110,7 +110,7 @@ function unfold(group: string, text: string): HTMLElement {
 
 const buttonOf = (row: HTMLElement, label: RegExp) => [...row.querySelectorAll<HTMLButtonElement>("button.btn")].find((each) => label.test(each.textContent!));
 const fateOf = (row: HTMLElement) => row.querySelector("[data-fate]")!.textContent;
-const toast = () => document.querySelector("[data-toast]")!.textContent;
+const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
 

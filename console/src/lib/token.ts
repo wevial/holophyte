@@ -6,6 +6,35 @@
 
 export const TOKEN_KEY_PREFIX = "holophyte.token.";
 
+const epochs = new Map<string, number>();
+let clearedEpoch = 0;
+
+function bumpEpoch(address?: string): void {
+  if (address == null) {
+    clearedEpoch += 1;
+    return;
+  }
+  epochs.set(address, (epochs.get(address) ?? 0) + 1);
+}
+
+/** Monotonic count of browser token writes or removals affecting `address`,
+ *  including cross-tab `storage` events. */
+export function tokenEpoch(address: string): number {
+  return clearedEpoch + (epochs.get(address) ?? 0);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    try {
+      if (event.storageArea != null && event.storageArea !== localStorage) return;
+    } catch {
+      return;
+    }
+    if (event.key == null) bumpEpoch();
+    else if (event.key.startsWith(TOKEN_KEY_PREFIX)) bumpEpoch(event.key.slice(TOKEN_KEY_PREFIX.length));
+  });
+}
+
 /** The storage key for a daemon's token: the prefix and its `HOST:PORT`. */
 export function tokenKey(address: string): string {
   return `${TOKEN_KEY_PREFIX}${address}`;
@@ -53,6 +82,7 @@ export function storeToken(address: string, token: string): string | null {
   if (reason != null) return reason;
   try {
     localStorage.setItem(tokenKey(address), trimmed);
+    bumpEpoch(address);
   } catch {
     // Storage may be disabled; the daemon will ask again next poll.
   }
@@ -62,6 +92,7 @@ export function storeToken(address: string, token: string): string | null {
 export function forgetToken(address: string): void {
   try {
     localStorage.removeItem(tokenKey(address));
+    bumpEpoch(address);
   } catch {
     // Nothing stored, nothing to forget.
   }

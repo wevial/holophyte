@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { addressOf } from "../src/lib/hosts";
 import { defaultPollDeps } from "../src/lib/poll";
-import { TOKEN_KEY_PREFIX, checkToken, forgetToken, storeToken, tokenFor, withToken } from "../src/lib/token";
+import { TOKEN_KEY_PREFIX, checkToken, forgetToken, storeToken, tokenEpoch, tokenFor, withToken } from "../src/lib/token";
 
 const A = "http://writer:7710";
 const B = "http://writer-2:7710";
@@ -92,4 +92,19 @@ test("a stored value the header cannot carry never throws from the default fetch
   expect(seen[0]!.headers.get("accept")).toBe("application/json");
   expect(tokenFor(addressOf(A))).toBeNull();
   expect(localStorage.length).toBe(0);
+});
+
+test("tokenEpoch advances on same-host writes and cross-tab storage events, ignores other hosts and unrelated keys, and advances on storage clear", () => {
+  const beforeA = tokenEpoch("writer:7710");
+  const beforeB = tokenEpoch("writer-2:7710");
+  window.dispatchEvent(new StorageEvent("storage", { key: "other.key", newValue: "1", storageArea: localStorage }));
+  expect(tokenEpoch("writer:7710")).toBe(beforeA);
+  window.dispatchEvent(new StorageEvent("storage", { key: `${TOKEN_KEY_PREFIX}writer-2:7710`, newValue: "tok", storageArea: localStorage }));
+  expect(tokenEpoch("writer:7710")).toBe(beforeA);
+  expect(tokenEpoch("writer-2:7710")).toBeGreaterThan(beforeB);
+  window.dispatchEvent(new StorageEvent("storage", { key: `${TOKEN_KEY_PREFIX}writer:7710`, newValue: null, storageArea: localStorage }));
+  const afterA = tokenEpoch("writer:7710");
+  expect(afterA).toBeGreaterThan(beforeA);
+  window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: localStorage }));
+  expect(tokenEpoch("writer:7710")).toBeGreaterThan(afterA);
 });

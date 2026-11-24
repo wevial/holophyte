@@ -105,7 +105,7 @@ for (const mode of ["Hold", "Release"] as const) {
     fireEvent.change(screen.getByPlaceholderText(placeholder), { target: { value: note } });
     fireEvent.click(screen.getByRole("button", { name: `${mode} demo` }));
     await act(settle);
-    expect(screen.getByRole("alert").textContent).toContain("project /x already held: y");
+    expect(within(screen.getByRole("main")).getByRole("alert").textContent).toContain("project /x already held: y");
     expect((screen.getByPlaceholderText(placeholder) as HTMLTextAreaElement).value).toBe(note);
   });
 }
