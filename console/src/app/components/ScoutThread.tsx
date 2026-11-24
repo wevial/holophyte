@@ -1,9 +1,11 @@
 import { useIsMutating } from "@tanstack/react-query";
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { useCallback, useId, useRef, useState, type Ref } from "react";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { useAction } from "../actions";
 import { composeBlock, threadRows, type CardRow, type LineTone } from "../scoutThread";
 import { Btn } from "./Btn";
+import { Hint } from "./Hint";
 import { ScoutCard } from "./ScoutCard";
 import { Segmented } from "./Segmented";
 import { ThreadMessage } from "./ThreadMessage";
@@ -67,10 +69,18 @@ function ScoutCompose({ base, detail, actions, sending, answering, onStopAnsweri
       {answering && (
         <div data-answering className="mt-2.5 flex items-start justify-between gap-2 font-sans text-[13px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
           <span className="pt-1">Answering: {answering.question}</span>
-          <button type="button" aria-label="Stop answering" title="Stop answering" onClick={onStopAnswering}
-            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none">
-            <CloseGlyph />
-          </button>
+          <Hint tip="Stop answering">
+            {(trigger) => (
+              <button
+                {...mergeProps(trigger, { onClick: onStopAnswering })}
+                type="button"
+                aria-label="Stop answering"
+                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none"
+              >
+                <CloseGlyph />
+              </button>
+            )}
+          </Hint>
         </div>
       )}
       <textarea ref={ref} aria-label={asking ? "Question for the scout" : "Note to the scout"}

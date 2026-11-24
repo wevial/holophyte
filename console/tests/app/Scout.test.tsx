@@ -855,3 +855,39 @@ test("a draft and its Steer mode survive folding and reopening the chat, crossin
     media.mockRestore();
   }
 });
+
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+
+async function expectHoverTip(button: HTMLElement, tip: string) {
+  const attrs = () => [button.getAttribute("aria-label"), button.getAttribute("title"), button.getAttribute("aria-describedby")];
+  expect(attrs()).toEqual([tip, null, null]);
+  expect(tooltip()).toBeNull();
+  await act(async () => void fireEvent.pointerEnter(button, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(tooltip()).toBe(tip);
+  expect(attrs()).toEqual([tip, null, null]);
+  await act(async () => void fireEvent.pointerLeave(button, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(tooltip()).toBeNull();
+}
+
+test("resting the pointer on Hide chat shows its tooltip while keeping its name with no title or aria-describedby", async () => {
+  wideView();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
+  await expectHoverTip(within(chat()!).getByRole("button", { name: "Hide chat" }), "Hide chat");
+});
+
+test("the New scout form's remove-topic button shows its name in a tooltip on hover and keyboard focus with no title or aria-describedby", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  await click(within(topBar()).getByRole("button", { name: "Run again" }));
+  const form = screen.getByRole("form", { name: "New scout" });
+  const remove = within(form).getByRole("button", { name: "Remove ALPHA-1" });
+  await expectHoverTip(remove, "Remove ALPHA-1");
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    remove.focus();
+  });
+  expect(tooltip()).toBe("Remove ALPHA-1");
+  await act(async () => remove.blur());
+  expect(tooltip()).toBeNull();
+});
