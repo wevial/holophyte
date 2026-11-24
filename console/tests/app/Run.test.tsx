@@ -80,7 +80,13 @@ const runs: Record<number, RunDetail> = {
     ],
   },
   56: {
-    ...detail(56, "DEMO-56", { phase: "merge_gate", max_rounds: 3 }, [{ ...passed, round: 1 }, reviewRound(2, "pass", 41, 43), reviewRound(3, "pass", 46, 48), reviewRound(4, "pass", 51, 53)]),
+    ...detail(56, "DEMO-56", { phase: "merge_gate", max_rounds: 3 }, [
+      { ...passed, round: 1 },
+      reviewRound(2, "pass", 41, 43),
+      reviewRound(3, "pass", 46, 48),
+      reviewRound(4, "pass", 51, 53),
+      reviewRound(5, "pass", 56, 58),
+    ]),
     events: [{ at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" }],
   },
   57: {
@@ -397,22 +403,23 @@ test("a covering review under way links its mark to its round's covering review 
   expect(target?.getAttribute("data-group")).toBe("covering_review");
 });
 
-test("a covering review retried twice shows its three rounds under Merge gate, each linked to and scrolling to its own covering review in Progress", async () => {
+test("a covering review retried three times shows its four rounds under Merge gate, each linked to and scrolling to its own covering review in Progress", async () => {
   await mount("#/runs/demo/56");
   const list = within(screen.getByRole("region", { name: "Progress" })).getByRole("list", { name: "Run activity" });
   const reviewMarks = within(screen.getByRole("group", { name: "Review rounds" })).getAllByRole("link");
   expect(reviewMarks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 1: pass"]);
-  expect(reviewMarks[0]!.getAttribute("href")).toBe("#round-1");
   const rechecks = within(screen.getByRole("group", { name: "Merge gate rounds" })).getAllByRole("link");
-  expect(rechecks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 2: pass", "Round 3: pass", "Round 4: pass"]);
+  expect(rechecks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 2: pass", "Round 3: pass", "Round 4: pass", "Round 5: pass"]);
 
   const expected = [
     [reviewMarks[0]!, "round-1", "round", "Round 1"],
     [rechecks[0]!, "round-2", "covering_review", "Covering review · round 2"],
     [rechecks[1]!, "round-3", "covering_review", "Covering review · round 3"],
     [rechecks[2]!, "round-4", "covering_review", "Covering review · round 4"],
+    [rechecks[3]!, "round-5", "covering_review", "Covering review · round 5"],
   ] as const;
   const targets = expected.map(([mark, id, kind, title]) => {
+    expect(mark.getAttribute("href")).toBe(`#${id}`);
     const target = scrollTarget(mark);
     expect(target).toBe(document.getElementById(id)!);
     expect(target.parentElement).toBe(list);
@@ -420,7 +427,7 @@ test("a covering review retried twice shows its three rounds under Merge gate, e
     expect(target.querySelector("[data-group-title]")!.textContent).toStartWith(title);
     return target;
   });
-  expect(new Set(targets).size).toBe(4);
+  expect(new Set(targets).size).toBe(5);
 });
 
 test("an approved covering review still reviewing, with no later review begun, adds no round and keeps Merge gate current", async () => {

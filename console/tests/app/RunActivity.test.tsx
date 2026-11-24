@@ -89,16 +89,37 @@ const reviewing: RunDetail = {
   rounds: [roundOne],
 };
 
+/** Run 12, live with review round 2 underway after Round 1's fix and verify. */
+const inReview: RunDetail = {
+  ...live,
+  run: { ...live.run, phase: "reviewing" },
+  events: [
+    ...EVENTS,
+    phase(T + 16 * MIN, "verifying -> reviewing: round 2 review"),
+    beat(T + 16 * MIN + 30 * SEC, "Review turn: 4 tool calls; last: reading a file"),
+  ],
+  rounds: [
+    roundOne,
+    round({ round: 2, started_ms: T + 16 * MIN, ended_ms: null, verdict: "", reviewer_model: "codex-sol-high" }),
+  ],
+};
+
 const noAsks: RunAsks = { run: 12, ticket: "DEMO-12", pr_url: null, asks: [] };
 
 /** `/runs/12` answers `bodies.detail`, read at each request; run 12 is live in `/status` while it has no outcome. */
 function runFetch(bodies: { detail: RunDetail }): Fetch {
-  const working = fleet({ items: [], runs: [{ ...run(12, "DEMO-12"), phase: "working", round: 0, max_rounds: 3 }] }, { items: [] });
   const idle = fleet({ items: [] }, { items: [] });
   return async (url) => {
     if (url === `${DEMO}/runs/12`) return Response.json(bodies.detail);
     if (url === `${DEMO}/runs/12/asks`) return Response.json(noAsks);
-    return (bodies.detail.run.outcome == null ? working : idle)(url);
+    if (bodies.detail.run.outcome != null) return idle(url);
+    const liveRun = {
+      ...run(12, "DEMO-12"),
+      phase: bodies.detail.run.phase,
+      round: bodies.detail.rounds.filter((item) => item.ended_ms != null).length,
+      max_rounds: bodies.detail.run.max_rounds,
+    };
+    return fleet({ items: [], runs: [liveRun] }, { items: [] })(url);
   };
 }
 
@@ -253,7 +274,8 @@ test("a live run's running group alone is current, untinted, with its title in f
 });
 
 test("a reviewing run's Progress is one Run activity list of groups named by title, described by time and duration, with one roving tab stop", async () => {
-  await mount(runFetch({ detail: reviewing }));
+  await mount(runFetch({ detail: inReview }));
+  expect(within(screen.getByRole("main")).getByRole("status").textContent).toBe("Reviewing round 2 of 3.");
   expect(within(progress()).getAllByRole("list", { name: "Run activity" })).toHaveLength(1);
   const items = rows();
   expect(Array.from(list().children)).toEqual(items);
@@ -263,6 +285,7 @@ test("a reviewing run's Progress is one Run activity list of groups named by tit
   expect(within(list()).getByRole("listitem", { name: "Implement", description: "10:00 10m 00s" })).toBe(items[0]!);
   expect(within(list()).getByRole("listitem", { name: "Round 1 · 3 should-fix", description: "10:10 5m 30s" })).toBe(items[1]!);
   expect(within(list()).getByRole("listitem", { name: "Round 2", description: "10:15 now" })).toBe(items[2]!);
+  expect(steps(items[2]!)).toEqual(["Verify 30s", "Review · codex-sol-high"]);
   expect(items[2]!.querySelector('[data-state="running"]')!.closest('[aria-hidden="true"]')).not.toBeNull();
 });
 
@@ -369,6 +392,52 @@ test("an open group's finding controls are tabbable only while that group holds 
   expect(document.activeElement).toBe(more);
   await user.tab();
   expect(document.activeElement).toBe(location);
+});
+
+test("clicking an inactive group's fold moves the tab stop there so its opened finding controls stay reachable by Tab", async () => {
+  const user = userEvent.setup();
+  const detail: RunDetail = {
+    ...inReview,
+    rounds: [
+      {
+        ...roundOne,
+        findings: [
+          {
+            ...p2("Preserve keyboard order\nDetail shown after More."),
+            path: "console/src/app/components/Timeline.tsx",
+            line: 69,
+            summary: undefined,
+            url: "https://github.test/demo/pull/1#discussion_r1",
+          },
+        ],
+      },
+      inReview.rounds[1]!,
+    ],
+  };
+  await mount(runFetch({ detail }));
+  const items = rows();
+  await act(async () => void items[2]!.focus());
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
+
+  await user.click(fold(items[1]!));
+  expect(fold(items[1]!).getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(fold(items[1]!));
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+
+  const more = within(items[1]!).getByRole("button", { name: "More" });
+  const location = within(items[1]!).getByRole("link", { name: "console/src/app/components/Timeline.tsx:69" });
+  await user.tab();
+  expect(document.activeElement).toBe(more);
+  await user.tab();
+  expect(document.activeElement).toBe(location);
+  await user.tab();
+  expect(document.activeElement).toBe(within(progress()).getByRole("button", { name: /^Raw log/ }));
+
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[1]);
 });
 
 test("a focused running covering review keeps focus and the tab stop when a poll records that round with a later start time", async () => {

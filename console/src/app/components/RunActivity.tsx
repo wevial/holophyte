@@ -33,12 +33,12 @@ function Mark({ criterion }: { criterion: RoundCriterion }) {
 function Heading({ group, current }: { group: ActivityGroup; current: boolean }) {
   return (
     <>
-      <TimelineTitle render={<span />} data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
+      <TimelineTitle render={<span />} data-group-title className="min-w-0 font-sans text-[15px] leading-[22px] text-ink-2 [overflow-wrap:anywhere]">
         <b className={`font-medium ${current ? "text-ink" : "text-ink-2"}`}>{group.title}</b>
         {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
         {group.kind === "round" && group.marks.map((criterion) => <Mark key={criterion.id} criterion={criterion} />)}
       </TimelineTitle>
-      <TimelineDescription render={<span />} data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
+      <TimelineDescription render={<span />} data-group-span className="flex h-[22px] items-center whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
         {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
       </TimelineDescription>
     </>
@@ -122,7 +122,14 @@ function Group({ group, value, open, tabbable, onFocusItem, onToggle, fates, cur
       data-group={group.kind}
       data-running={group.running ? "" : undefined}
       data-current={current ?? undefined}
-      onFocus={(event) => { if (event.target === event.currentTarget) onFocusItem(); }}
+      onFocus={(event) => {
+        onFocusItem();
+        if (event.target !== event.currentTarget && event.currentTarget.getAttribute("tabindex") !== "0") {
+          // Timeline's roving focus listens only to non-bubbling focus on the item itself.
+          event.currentTarget.dispatchEvent(new FocusEvent("focus"));
+          event.currentTarget.dispatchEvent(new FocusEvent("blur"));
+        }
+      }}
       className="group/item relative scroll-mt-4 border-b border-rule-2"
     >
       <TimelineConnector className="pointer-events-none absolute top-[27px] -bottom-[28px] left-[76px] w-px bg-rule group-data-last/item:hidden max-[720px]:left-[66px]" />
