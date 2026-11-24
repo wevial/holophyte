@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger, type TooltipContentProps } from "@ui-sdk/react/tooltip";
 import { TIP } from "./AgentPanel";
 
+const HINT_TIP = `${TIP} w-max max-w-[min(420px,var(--available-width,calc(100vw-16px)))] whitespace-normal! leading-[1.35]! [overflow-wrap:anywhere]`;
+
 /** A hover and keyboard-focus hint over a trigger. Pass `describe` when the tip
  *  adds to the trigger's own name; omit it when it repeats or shortens it. */
 export function Hint({ tip, side = "top", describe = false, children }: {
@@ -17,7 +19,7 @@ export function Hint({ tip, side = "top", describe = false, children }: {
           <>{children(describe ? { ...trigger, "aria-describedby": describedBy } : trigger)}</>
         )}
       />
-      <TooltipContent side={side} sideOffset={6} className={TIP}>{tip}</TooltipContent>
+      <TooltipContent side={side} sideOffset={6} className={HINT_TIP}>{tip}</TooltipContent>
     </Tooltip>
   );
 }

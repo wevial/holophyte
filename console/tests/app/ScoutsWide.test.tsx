@@ -211,3 +211,43 @@ test("below 1100px the Scouts page keeps its table, row links and form above the
   const form = screen.getByRole("form", { name: "New scout" });
   expect(form.compareDocumentPosition(list()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
+
+test("resting the pointer or keyboard focus on Hide scout list shows its tooltip with no title or aria-describedby", async () => {
+  await mount("#/scouts");
+  const hide = screen.getByRole("button", { name: "Hide scout list", expanded: true });
+  expect(hide.getAttribute("title")).toBeNull();
+  expect(hide.getAttribute("aria-describedby")).toBeNull();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(hide, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(screen.getByRole("tooltip").textContent).toBe("Hide scout list");
+  expect(hide.getAttribute("aria-describedby")).toBeNull();
+
+  await act(async () => void fireEvent.pointerLeave(hide, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    hide.focus();
+  });
+  expect(screen.getByRole("tooltip").textContent).toBe("Hide scout list");
+  await act(async () => hide.blur());
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("a failed row in the wide scout list shows the cut reason, described by the whole line in a tooltip with no title", async () => {
+  const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(10)}`.slice(0, 300);
+  await mount("#/scouts", wideFetch([row(31, { title: TITLE }), row(30, { phase: "failed", reason: long })]));
+  const failed = rowOf(30) as HTMLElement;
+  const cut = within(failed).getByText(`${long.slice(0, 159)}…`);
+  expect(cut.getAttribute("title")).toBeNull();
+  expect(cut.getAttribute("tabindex")).toBeNull();
+  expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(screen.getByRole("tooltip").textContent).toBe(long);
+});

@@ -3,6 +3,7 @@ import type { CommandEvidence, FileEvidence, Hypothesis, Reproduction, ScoutFind
 import { shortSha } from "../../lib/shipped";
 import { numberFindings, type NumberedFinding } from "../scout";
 import { SECTION_LABEL } from "./Criteria";
+import { Hint } from "./Hint";
 import { FoldChevron } from "./icons";
 
 type Evidence = ScoutFinding["evidence"][number];
@@ -39,13 +40,15 @@ const isText = (item: Evidence): item is TextEvidence => "text" in item;
 function FileItem({ item, base }: { item: FileEvidence; base: string }) {
   const place = `${item.file}:${item.line}`;
   if (item.verified) {
-    return <span data-file title={base === "" ? undefined : `at base ${base}`} className={`${MONO} text-ink underline underline-offset-2`}>{place}</span>;
+    const span = (props?: Record<string, unknown>) => (
+      <span {...props} data-file className={`${MONO} text-ink underline underline-offset-2`}>{place}</span>
+    );
+    return base === "" ? span() : <Hint tip={`at base ${base}`} describe>{span}</Hint>;
   }
-  return (
-    <span data-file data-unverified title={item.why ?? undefined} className={`${MONO} text-warn-ink`}>
-      ? {place} unverified
-    </span>
+  const span = (props?: Record<string, unknown>) => (
+    <span {...props} data-file data-unverified className={`${MONO} text-warn-ink`}>? {place} unverified</span>
   );
+  return item.why ? <Hint tip={item.why} describe>{span}</Hint> : span();
 }
 
 function UrlItem({ url }: { url: string }) {
