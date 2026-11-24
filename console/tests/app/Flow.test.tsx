@@ -255,7 +255,7 @@ async function checkBridgedRatio(days: (typeof QUIET)[], quiet: number[], points
     for (const index of quiet) {
       expect(chart.getAttribute("aria-label"), `${title} day ${index}`).toContain(`${shortDay(flow.buckets![index]!.start_ms)} no data`);
     }
-    expect([...chart.querySelectorAll("button[data-point]")].map((point) => point.getAttribute("data-point")), title).toEqual(points);
+    expect([...chart.querySelectorAll("button")].map((point) => point.getAttribute("data-point")), title).toEqual(points);
     expect([...chart.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot")), title).toEqual(points);
     const bridges = [...chart.querySelectorAll("path[data-bridge]")];
     expect(bridges, title).toHaveLength(1);
@@ -297,8 +297,44 @@ test("with the sixth of seven days quiet, the ratio charts read it as no data wi
 });
 
 test("when a ratio series has only two known days separated by multiple quiet days, one dashed bridge joins them with no point, tooltip or fill on the quiet days", async () => {
-  for (const { title, chart, fills } of await checkBridgedRatio([QUIET, HIGH_WAIT, QUIET, QUIET, QUIET, LOW_WAIT, QUIET], [0, 2, 3, 4, 6], ["1", "5"], [1, 5])) {
-    expect(chart.querySelector("[data-tooltip]"), title).toBeNull();
+  const quietDays = [0, 2, 3, 4, 6];
+  const rect = (left: number, width: number) => () => ({ left, top: 0, width, height: 120, right: left + width, bottom: 120, x: left, y: 0, toJSON: () => ({}) });
+  for (const { title, chart, bridge, fills } of await checkBridgedRatio([QUIET, HIGH_WAIT, QUIET, QUIET, QUIET, LOW_WAIT, QUIET], quietDays, ["1", "5"], [1, 5])) {
+    const tooltip = () => chart.querySelector("[data-tooltip], [role='tooltip']")?.textContent ?? null;
     expect(fills, title).toHaveLength(0);
+    const known = [...chart.querySelectorAll<HTMLElement>("button[data-point]")];
+    for (const point of known) {
+      const index = Number(point.getAttribute("data-point"));
+      expect(parseFloat(point.style.left), `${title} slot ${index}`).toBeCloseTo((index / 7) * 100, 6);
+      expect(parseFloat(point.style.width), `${title} slot ${index}`).toBeCloseTo(100 / 7, 6);
+    }
+    fireEvent.mouseEnter(known[0]!);
+    expect(tooltip(), `${title} known point`).toBeTruthy();
+    fireEvent.mouseLeave(known[0]!);
+    expect(tooltip(), `${title} after leave`).toBeNull();
+    const plot = known[0]!.parentElement!;
+    const svg = chart.querySelector("svg")!;
+    chart.getBoundingClientRect = rect(0, 700);
+    plot.getBoundingClientRect = rect(0, 700);
+    svg.getBoundingClientRect = rect(0, 700);
+    bridge.getBoundingClientRect = rect(150, 400);
+    for (const index of quietDays) {
+      const at = { clientX: (index + 0.5) * 100, clientY: 60 };
+      for (const target of [plot, svg, ...(index > 1 && index < 5 ? [bridge] : [])]) {
+        fireEvent.mouseEnter(target, at);
+        fireEvent.mouseMove(target, at);
+        fireEvent.pointerEnter(target, at);
+        fireEvent.pointerMove(target, at);
+        expect(tooltip(), `${title} quiet day ${index}`).toBeNull();
+      }
+    }
+    for (const target of [chart, ...chart.querySelectorAll("*")]) {
+      if (target.matches("[data-point], [data-dot]")) continue;
+      fireEvent.mouseEnter(target);
+      fireEvent.mouseMove(target, { clientX: 350, clientY: 60 });
+      fireEvent.pointerEnter(target);
+      fireEvent.focus(target);
+      expect(tooltip(), `${title} ${target.tagName}`).toBeNull();
+    }
   }
 });
