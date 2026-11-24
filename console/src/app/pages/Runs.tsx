@@ -182,7 +182,7 @@ export function Runs() {
           <div data-tools className="relative ml-auto flex min-w-0 items-center gap-1">
             <SearchToggle key={fieldKey} label="Search runs" />
             <RangePopover presets={RANGES} fallback={DEFAULT_RANGE} hidden={hidden} now={now} />
-            <FilterPopover icon label="Filter and sort" sections={sections} hidden={hidden} sorting={sorting}
+            <FilterPopover label="Filter and sort" sections={sections} hidden={hidden} sorting={sorting}
               extra={<PressedGroup label="Per page" options={PAGE_SIZES} value={size} onPick={(picked) => go({ size: picked === DEFAULT_SIZE ? undefined : picked })} />} />
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 
 const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
@@ -121,9 +121,9 @@ const openFilter = async () => {
 };
 const section = async (name: string) => within(within(await openFilter()).getByRole("group", { name }));
 /** A section's option boxes, without the heading's box named for the section. */
-const optionBoxes = async (name: string) => ((await section(name)).getAllByRole("checkbox") as HTMLInputElement[]).filter((box) => box.getAttribute("aria-label") !== name);
+const optionBoxes = async (name: string) => (await section(name)).getAllByRole("checkbox").filter((box) => box.getAttribute("aria-label") !== name);
 const valueRows = async (name: string) => (await optionBoxes(name)).map((box) => box.closest("label")!.textContent);
-const checkedIn = async (name: string) => (await optionBoxes(name)).filter((box) => box.checked).map((box) => box.getAttribute("aria-label"));
+const checkedIn = async (name: string) => (await optionBoxes(name)).filter((box) => box.getAttribute("aria-checked") === "true").map((box) => box.getAttribute("aria-label"));
 const check = async (sectionName: string, value: string) => press((await section(sectionName)).getByRole("checkbox", { name: value }));
 const tabs = () => within(screen.getByRole("group", { name: "Run states" })).getAllByRole("button");
 const tabTexts = () => tabs().map((tab) => tab.textContent);
@@ -230,6 +230,7 @@ test("typing a search from a later page goes back to page 1", async () => {
 test("Escape and a press outside close the Filter popover and give focus back to its button", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
   await check("Failure kind", "verify");
+  (await section("Failure kind")).getByRole("checkbox", { name: "verify" }).focus();
   expect(document.activeElement).not.toBe(filterButton());
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
   expect(dialog()).toBeNull();
@@ -282,9 +283,108 @@ test("Escape with focus moved from the Filter popover to Search still closes it 
   await mount("#/runs?q=lock", countedFleet().fetchImpl);
   await openFilter();
   field().focus();
+  expect(dialog()).not.toBeNull();
   await act(async () => void fireEvent.keyDown(field(), { key: "Escape" }));
   expect(dialog()).toBeNull();
   expect(document.activeElement).toBe(filterButton());
+});
+
+test("the Filter popover stays in the page stacking context below modal overlays rather than promoting to the top layer", async () => {
+  await mount("#/runs", countedFleet().fetchImpl);
+  const checkStack = (box: HTMLElement) => {
+    expect(box.hasAttribute("popover")).toBe(false);
+    expect(screen.getByRole("main").contains(box)).toBe(true);
+    expect(box.classList.contains("z-50")).toBe(false);
+    expect(box.style.zIndex === "" || Number(box.style.zIndex) < 50).toBe(true);
+  };
+  checkStack(await openFilter());
+  await press(filterButton());
+  expect(dialog()).toBeNull();
+
+  let promoted = 0;
+  const hadShow = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
+  const hadHide = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
+  Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, value() { promoted += 1; } });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true, value() {} });
+  try {
+    checkStack(await openFilter());
+    expect(promoted).toBe(0);
+  } finally {
+    if (hadShow) Object.defineProperty(HTMLElement.prototype, "showPopover", hadShow);
+    else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+    if (hadHide) Object.defineProperty(HTMLElement.prototype, "hidePopover", hadHide);
+    else delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
+});
+
+test("narrowing an open Filter popover stacks it into one column without a re-render, widening unstacks it, and closing stops observing it", async () => {
+  const live = new Map<object, { targets: Element[]; fire: () => void }>();
+  const savedObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(callback: ResizeObserverCallback) {
+      live.set(this, { targets: [], fire: () => callback([], this as unknown as ResizeObserver) });
+    }
+    observe(target: Element) { live.get(this)?.targets.push(target); }
+    unobserve(target: Element) {
+      const entry = live.get(this);
+      if (entry) entry.targets = entry.targets.filter((each) => each !== target);
+    }
+    disconnect() { live.get(this)!.targets = []; }
+  } as unknown as typeof ResizeObserver;
+  const frames = new Map<number, FrameRequestCallback>();
+  let lastFrame = 0;
+  const raf = spyOn(window, "requestAnimationFrame").mockImplementation((callback) => (frames.set(++lastFrame, callback), lastFrame));
+  const caf = spyOn(window, "cancelAnimationFrame").mockImplementation((id) => void frames.delete(id));
+  const notify = (target: Element) => act(() => [...live.values()].filter((each) => each.targets.includes(target)).forEach((each) => each.fire()));
+  const flushFrames = () => act(() => {
+    const due = [...frames.entries()];
+    frames.clear();
+    due.forEach(([, callback]) => callback(performance.now()));
+  });
+  const resize = (target: Element) => {
+    notify(target);
+    flushFrames();
+  };
+  try {
+    await mount("#/runs", countedFleet().fetchImpl);
+    const box = await openFilter();
+    let sheetWidth = 600;
+    let labelWidth = 120;
+    Object.defineProperty(box, "clientWidth", { configurable: true, get: () => sheetWidth });
+    const label = box.querySelector<HTMLElement>("[data-option-label]")!;
+    Object.defineProperty(label, "scrollWidth", { configurable: true, value: 90 });
+    Object.defineProperty(label, "clientWidth", { configurable: true, get: () => labelWidth });
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+
+    box.scrollTop = 48;
+    sheetWidth = 360;
+    labelWidth = 70;
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(true);
+    expect(box.scrollTop).toBe(48);
+
+    sheetWidth = 600;
+    labelWidth = 120;
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+
+    labelWidth = 70;
+    resize(box);
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+
+    sheetWidth = 360;
+    notify(box);
+    await act(async () => void fireEvent.keyDown(box, { key: "Escape" }));
+    expect(dialog()).toBeNull();
+    expect([...live.values()].filter((each) => each.targets.includes(box))).toHaveLength(0);
+    flushFrames();
+    expect(box.hasAttribute("data-stacked")).toBe(false);
+  } finally {
+    globalThis.ResizeObserver = savedObserver;
+    raf.mockRestore();
+    caf.mockRestore();
+  }
 });
 
 test("Clear filters empties Search and drops a search still waiting on its debounce", async () => {
@@ -374,7 +474,7 @@ test("the Filter popover holds Sort, Project, Failure kind and Implementer with 
   const box = await openFilter();
   expect(filterButton().getAttribute("aria-expanded")).toBe("true");
   expect(within(box).getAllByRole("group")).toEqual(["Sort", "Per page", "Project", "Failure kind", "Implementer"].map((name) => within(box).getByRole("group", { name })));
-  expect((within(box).getAllByRole("checkbox") as HTMLInputElement[]).filter((each) => each.checked || each.indeterminate)).toEqual([]);
+  expect(within(box).getAllByRole("checkbox").filter((each) => each.getAttribute("aria-checked") !== "false")).toEqual([]);
   expect((await valueRows("Failure kind")).slice(0, 2)).toEqual(["verify 3", "review 1"]);
   expect((await optionBoxes("Implementer")).map((each) => each.getAttribute("aria-label"))).toEqual(["claude opus", "codex gpt-6-astra"]);
 
@@ -395,6 +495,8 @@ test("checking Failure kind boxes writes them as a comma list in the section's o
   expect(hashSearch().has("page")).toBe(false);
   for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).failure).toBe("verify,review_route");
   expect(filterButton().getAttribute("aria-label")).toBe("Filter and sort, 2 filters on");
+  expect(filterDot()).not.toBeNull();
+  expect((await section("Failure kind")).getByRole("checkbox", { name: "Failure kind" }).getAttribute("aria-checked")).toBe("mixed");
   expect(await optionBoxes("Failure kind")).toHaveLength(9);
   expect(chips()).toEqual(["Failure: verify, review"]);
 
@@ -407,7 +509,7 @@ test("checking Failure kind boxes writes them as a comma list in the section's o
 test("with a Failure kind and a Project picked, the Failure kind heading's box picks every failure kind and keeps the Project pick", async () => {
   await mount("#/runs?failure=verify&projects=demo", countedFleet().fetchImpl);
   await press((await section("Failure kind")).getByRole("checkbox", { name: "Failure kind" }));
-  expect((await optionBoxes("Failure kind")).map((box) => box.checked)).toEqual(Array(9).fill(true));
+  expect((await optionBoxes("Failure kind")).map((box) => box.getAttribute("aria-checked"))).toEqual(Array(9).fill("true"));
   expect(hashSearch().get("failure")!.split(",")).toHaveLength(9);
   expect(await checkedIn("Project")).toEqual(["demo"]);
   expect(hashSearch().get("projects")).toBe("demo");
@@ -495,7 +597,7 @@ test("a link's filters show in every control and chip and reach the hosts; a chi
   expect(rangeButton().textContent).toBe("30d");
   expect(await checkedIn("Project")).toEqual(["demo"]);
   expect(await checkedIn("Failure kind")).toEqual(["verify"]);
-  expect((await section("Sort")).getByRole("radio", { name: "Took" })).toHaveProperty("checked", true);
+  expect((await section("Sort")).getByRole("radio", { name: "Took" }).getAttribute("aria-checked")).toBe("true");
   expect(pressedTabs()).toEqual([]);
   expect(chips()).toEqual(["Search: “lock”", "Project: demo", "Failure: verify", "State: Failed, Abandoned", "Started: Last 30 days"]);
   expect(daemons.lastOf(DEMO)).toMatchObject({ q: "lock", state: "failed,abandoned", failure: "verify", since: midnight(9, 16), sort: "duration", order: "desc", limit: "25" });
