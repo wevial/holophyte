@@ -570,12 +570,21 @@ test("a tile opens its item in a lightbox that Left and Right step through scree
   expect((within(dialog()!).getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
+async function waitInert(element: HTMLElement) {
+  for (let attempt = 0; attempt < 25 && element.closest("[inert]") == null; attempt += 1) {
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 10)));
+  }
+  expect(element.closest("[inert]")).not.toBeNull();
+}
+
 test("the lightbox keeps focus inside, and Esc or Close returns it to the tile of the item shown last", async () => {
   await openMedia("02 custom slot");
   await press("ArrowRight");
   expect(dialog()!.getAttribute("aria-label")).toBe("Screenshot 3 of 4");
+  await waitInert(tile("03 saved document"));
   await press("Escape");
   expect(dialog()).toBeNull();
+  expect(tile("03 saved document").closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(tile("03 saved document"));
 
   await act(async () => {
@@ -588,12 +597,28 @@ test("the lightbox keeps focus inside, and Esc or Close returns it to the tile o
   expect(document.activeElement).toBe(within(dialog()!).getByRole("button", { name: "Next" }));
   await press("Tab");
   expect(document.activeElement).toBe(close);
+  await waitInert(tile("01 split view"));
   await act(async () => {
     fireEvent.click(close);
     await settle();
   });
   expect(dialog()).toBeNull();
+  expect(tile("01 split view").closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(tile("01 split view"));
+});
+
+test("pressing the dimmed page beside the lightbox leaves it open", async () => {
+  await openMedia("02 custom slot");
+  const backdrop = document.querySelector<HTMLElement>('[data-slot="dialog-backdrop"]');
+  expect(backdrop).toBeTruthy();
+  await waitInert(tile("02 custom slot"));
+  await act(async () => {
+    fireEvent.pointerDown(backdrop!, { button: 0 });
+    fireEvent.pointerUp(backdrop!, { button: 0 });
+    fireEvent.click(backdrop!);
+    await settle();
+  });
+  expect(screen.getByRole("dialog", { name: "Screenshot 2 of 4" })).toBeTruthy();
 });
 
 test("a poll that leaves the row no media closes the lightbox onto Open run, and returning media does not reopen it", async () => {
@@ -605,6 +630,7 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
     await settle();
   });
   expect(dialog()).not.toBeNull();
+  await waitInert(within(rows()[0]!).getByRole("link", { name: "Open run" }));
   const pr = item.pr as { screenshots: unknown[]; videos: unknown[] };
   const repoll = async () => {
     await act(async () => {
@@ -618,6 +644,7 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
   await repoll();
   expect(dialog()).toBeNull();
   expect(tileNames(rows()[0]!)).toEqual([]);
+  expect(within(rows()[0]!).getByRole("link", { name: "Open run" }).closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(within(rows()[0]!).getByRole("link", { name: "Open run" }));
 
   pr.screenshots = SHOTS;

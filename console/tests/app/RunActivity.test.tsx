@@ -243,11 +243,19 @@ test("a live run's running group alone is current, untinted, with its title in f
   expect(rows().map(titleInk)).toEqual([["text-ink-2"], ["text-ink-2"], ["text-ink"]]);
 });
 
+async function waitInert(element: HTMLElement) {
+  for (let attempt = 0; attempt < 25 && element.closest("[inert]") == null; attempt += 1) {
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 10)));
+  }
+  expect(element.closest("[inert]")).not.toBeNull();
+}
+
 test("Raw log opens a dialog of every Progress line, heartbeats included, and Escape returns focus to its button", async () => {
   await mount(runFetch({ detail: ended }));
   const button = within(progress()).getByRole("button", { name: /^Raw log/ });
   await act(async () => void fireEvent.click(button));
   const dialog = screen.getByRole("dialog", { name: "Raw log · run 12" });
+  expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close raw log" }));
   const lines = Array.from(dialog.querySelectorAll("li"), (li) => `${li.querySelector("time")!.textContent} ${li.querySelector("[data-line-text]")!.textContent}`);
   expect(lines).toEqual([
     "10:00 Run started · implementing",
@@ -261,7 +269,33 @@ test("Raw log opens a dialog of every Progress line, heartbeats included, and Es
     "10:16 Merged to main",
   ]);
   expect(button.textContent).toContain(String(lines.length));
+  await waitInert(button);
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(button.closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(button);
+});
+
+test("Close raw log and pressing the dimmed page beside Raw log each close the panel and return focus to its button", async () => {
+  await mount(runFetch({ detail: ended }));
+  const button = within(progress()).getByRole("button", { name: /^Raw log/ });
+  for (const close of [
+    (closeButton: HTMLElement) => fireEvent.click(closeButton),
+    () => {
+      const backdrop = document.querySelector<HTMLElement>('[data-slot="dialog-backdrop"]');
+      expect(backdrop).toBeTruthy();
+      fireEvent.pointerDown(backdrop!, { button: 0 });
+      fireEvent.pointerUp(backdrop!, { button: 0 });
+      fireEvent.click(backdrop!);
+    },
+  ]) {
+    await act(async () => void fireEvent.click(button));
+    const closeButton = within(screen.getByRole("dialog", { name: "Raw log · run 12" })).getByRole("button", { name: "Close raw log" });
+    expect(document.activeElement).toBe(closeButton);
+    await waitInert(button);
+    await act(async () => void close(closeButton));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(button.closest("[inert]")).toBeNull();
+    expect(document.activeElement).toBe(button);
+  }
 });
