@@ -308,16 +308,28 @@ test("when a ratio series has only two known days separated by multiple quiet da
       expect(parseFloat(point.style.left), `${title} slot ${index}`).toBeCloseTo((index / 7) * 100, 6);
       expect(parseFloat(point.style.width), `${title} slot ${index}`).toBeCloseTo(100 / 7, 6);
     }
-    fireEvent.mouseEnter(known[0]!);
-    expect(tooltip(), `${title} known point`).toBeTruthy();
-    fireEvent.mouseLeave(known[0]!);
-    expect(tooltip(), `${title} after leave`).toBeNull();
     const plot = known[0]!.parentElement!;
     const svg = chart.querySelector("svg")!;
     chart.getBoundingClientRect = rect(0, 700);
     plot.getBoundingClientRect = rect(0, 700);
     svg.getBoundingClientRect = rect(0, 700);
     bridge.getBoundingClientRect = rect(150, 400);
+    for (const [from, fromDay, gapDay] of [[known[0]!, 1, 2], [known[1]!, 5, 4]] as const) {
+      for (const target of [plot, svg, bridge]) {
+        const start = { clientX: (fromDay + 0.5) * 100, clientY: 60 };
+        const gap = { clientX: (gapDay + 0.5) * 100, clientY: 60 };
+        fireEvent.mouseEnter(from, start);
+        fireEvent.pointerEnter(from, start);
+        expect(tooltip(), `${title} known day ${fromDay}`).toBeTruthy();
+        fireEvent.mouseLeave(from, { ...gap, relatedTarget: target });
+        fireEvent.pointerLeave(from, { ...gap, relatedTarget: target });
+        fireEvent.mouseEnter(target, { ...gap, relatedTarget: from });
+        fireEvent.mouseMove(target, gap);
+        fireEvent.pointerEnter(target, { ...gap, relatedTarget: from });
+        fireEvent.pointerMove(target, gap);
+        expect(tooltip(), `${title} day ${fromDay} to quiet day ${gapDay} (${target.tagName})`).toBeNull();
+      }
+    }
     for (const index of quietDays) {
       const at = { clientX: (index + 0.5) * 100, clientY: 60 };
       for (const target of [plot, svg, ...(index > 1 && index < 5 ? [bridge] : [])]) {
