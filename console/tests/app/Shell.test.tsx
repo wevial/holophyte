@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { consoleQueryClient } from "../../src/app/fleet";
 import { ConsoleApp } from "../../src/app/router";
@@ -1549,6 +1550,21 @@ test("at 390px the page loads with no sidebar nav and the panel button opens a d
   });
 });
 
+test("at 390px opening the drawer from the keyboard focuses the Sidebar dialog first, so Tab reaches Switch project", async () => {
+  const user = userEvent.setup();
+  await atWidth(390, async () => {
+    await mount("#/runs");
+    await act(async () => {
+      openSidebar().focus();
+      await user.keyboard("{Enter}");
+    });
+    await act(settle);
+    expect(document.activeElement === drawer()).toBe(true);
+    await act(async () => void (await user.tab()));
+    expect(document.activeElement === within(drawer()!).getByRole("button", { name: /Switch project$/ })).toBe(true);
+  });
+});
+
 test("at 390px the open drawer, laid under the title bar that stays while the page scrolls, closes on a nav link, the dimmed page, Escape or the panel button, each time returning focus to the panel button", async () => {
   await atWidth(390, async () => {
     await mount("#/");
@@ -1727,7 +1743,7 @@ test("Settings opened from a filtered page at 390px still returns there after th
 test("at 390px Escape in the drawer's project switcher closes the switcher and leaves the drawer and a ticket preview open", async () => {
   await atWidth(390, async () => {
     await openTicketPreview();
-    fireEvent.click(openSidebar());
+    await act(async () => void fireEvent.click(openSidebar()));
     await act(async () => void fireEvent.click(within(drawer()!).getByRole("button", { name: /Switch project$/ })));
     const find = within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox");
     await act(async () => find.focus());
@@ -1826,7 +1842,7 @@ test("at 390px over an open Filter and sort, Escape closes the drawer's project 
     await act(async () => void fireEvent.click(screen.getByRole("button", { name: /^Filter and sort/ })));
     const filters = () => screen.queryByRole("dialog", { name: "Filter and sort" });
     expect(filters()).not.toBeNull();
-    fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true });
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true }));
     await act(async () => void fireEvent.click(within(drawer()!).getByRole("button", { name: /Switch project$/ })));
     await act(async () => within(screen.getByRole("dialog", { name: "Switch project" })).getByRole("combobox").focus());
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));

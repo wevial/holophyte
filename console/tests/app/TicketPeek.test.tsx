@@ -180,13 +180,23 @@ test("Esc or Close preview shuts the peek and puts focus back on the card that o
   expect(document.activeElement).toBe(cardLink("DEMO-2"));
 });
 
-test("Esc another handler already took leaves the peek open", async () => {
+test("Esc another handler already took leaves the peek open, inside the peek or on the board", async () => {
   await mount("#/tickets");
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   const taken = (event: Event) => event.preventDefault();
   document.activeElement!.addEventListener("keydown", taken);
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
-  expect(peek()).not.toBeNull();
+  expect(peek() !== null).toBe(true);
+
+  const search = screen.getByRole<HTMLInputElement>("searchbox", { name: "Search tickets" });
+  await act(async () => search.focus());
+  await act(async () => void fireEvent.change(search, { target: { value: "DEMO-2" } }));
+  expect(document.activeElement === search && search.value === "DEMO-2").toBe(true);
+  await act(async () => void fireEvent.keyDown(search, { key: "Escape" }));
+  await act(settle);
+  expect(search.value).toBe("");
+  expect(peek() !== null).toBe(true);
+  expect(document.activeElement === search).toBe(true);
 });
 
 test("a Ctrl click on a card opens no peek and leaves the click's default to the browser", async () => {

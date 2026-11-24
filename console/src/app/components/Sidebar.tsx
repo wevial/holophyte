@@ -655,6 +655,7 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
         id={DRAWER_ID}
         aria-label="Sidebar"
         keepMounted
+        initialFocus="content"
         finalFocus="[data-sidebar-toggle]"
         onKeyDown={(event) => {
           // Stop non-modifier keys before page shortcuts such as `/`, leaving Escape to the drawer's layer.
