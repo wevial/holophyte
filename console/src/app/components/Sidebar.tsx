@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { mergeProps } from "@ui-sdk/react/primitive";
@@ -412,10 +412,25 @@ function useHistoryNav(bound: boolean) {
 
 const TITLE_BUTTON = "flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink";
 
-function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; shortcut: string; enabled: boolean; go: () => void; next?: boolean }) {
+function HistoryButton({
+  name,
+  shortcut,
+  enabled,
+  go,
+  next,
+  buttonRef,
+}: {
+  name: string;
+  shortcut: string;
+  enabled: boolean;
+  go: () => void;
+  next?: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
+}) {
   return (
     <Tooltip delay={300} shortcut={shortcut}>
       <TooltipTrigger
+        ref={buttonRef}
         aria-label={name}
         disabled={!enabled}
         onClick={go}
@@ -433,6 +448,7 @@ function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; sh
 
 export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: SidebarFold) {
   const [macApp] = useState(inMacApp);
+  const [nextButton, setNextButton] = useState<HTMLButtonElement | null>(null);
   const nav = useHistoryNav(macApp);
   const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
   return (
@@ -473,9 +489,10 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
           )}
         />
         <TooltipContent
-          side={macApp ? "bottom" : "right"}
-          align={macApp ? "start" : undefined}
-          sideOffset={macApp ? 6 : 10}
+          side="right"
+          sideOffset={10}
+          collisionPadding={1}
+          anchor={macApp ? nextButton : undefined}
           className={SIDEBAR_TIP}
         >
           holophyte
@@ -484,7 +501,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
       {macApp && (
         <>
           <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} />
-          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next />
+          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next buttonRef={setNextButton} />
         </>
       )}
     </div>

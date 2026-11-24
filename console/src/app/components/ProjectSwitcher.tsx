@@ -19,7 +19,9 @@ import { storeScope, type SwitcherRow } from "../projects";
 import type { ScopeSearch } from "../scope";
 import { DropIcon } from "./icons";
 
-export const SIDEBAR_TIP = "z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card";
+const TIP_BOX = "z-50 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium text-ink shadow-card";
+
+export const SIDEBAR_TIP = `${TIP_BOX} flex items-center gap-2 whitespace-nowrap`;
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
@@ -311,7 +313,11 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
               )}
             />
             {folded && (
-              <TooltipContent side="right" sideOffset={10} className={SIDEBAR_TIP}>
+              <TooltipContent
+                side="right"
+                sideOffset={10}
+                className={`${TIP_BOX} max-w-[min(320px,var(--available-width,calc(100vw-16px)))] [overflow-wrap:anywhere]`}
+              >
                 {current.label}
               </TooltipContent>
             )}

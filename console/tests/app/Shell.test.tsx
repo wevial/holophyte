@@ -857,36 +857,123 @@ test("unfolding while the folded project switcher's tooltip is open clears it so
   expect(screen.getByRole("tooltip").textContent).toBe("demo");
 });
 
-test("the title bar's holophyte mark has no title attribute and shows a holophyte tooltip on keyboard focus", async () => {
-  await mount("#/");
-  const mark = homeLink();
-  expect(mark.hasAttribute("title")).toBe(false);
-  expect(mark.hasAttribute("aria-describedby")).toBe(false);
-  expect(tooltip()).toBeNull();
-  await keyboardFocus(mark);
-  const tip = screen.getByRole("tooltip");
-  expect(tip.textContent).toBe("holophyte");
-  expect(tip.getAttribute("data-side")).toBe("right");
-  expect(tip.getAttribute("data-align")).toBe("center");
-  expect(parseFloat(tip.style.left) - mark.getBoundingClientRect().right).toBe(10);
-  expect(mark.hasAttribute("aria-describedby")).toBe(false);
-  await act(async () => mark.blur());
-  expect(tooltip()).toBeNull();
+const placeBox = (el: HTMLElement, rect: DOMRect) => {
+  el.getBoundingClientRect = () => rect;
+  el.getClientRects = () => [rect] as unknown as DOMRectList;
+};
+const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+
+async function atViewport(width: number, height: number, check: () => Promise<void>) {
+  const prevWidth = Object.getOwnPropertyDescriptor(document.documentElement, "clientWidth");
+  const prevHeight = Object.getOwnPropertyDescriptor(document.documentElement, "clientHeight");
+  Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: width });
+  Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: height });
+  try {
+    await atWidth(width, check);
+  } finally {
+    if (prevWidth) Object.defineProperty(document.documentElement, "clientWidth", prevWidth);
+    else delete (document.documentElement as { clientWidth?: number }).clientWidth;
+    if (prevHeight) Object.defineProperty(document.documentElement, "clientHeight", prevHeight);
+    else delete (document.documentElement as { clientHeight?: number }).clientHeight;
+  }
+}
+
+test("folded, the project switcher's tooltip constrains a long project label to the available width at 720px and lets it wrap", async () => {
+  const longName = `project_${"a".repeat(118)}`;
+  expect(longName).toHaveLength(126);
+  const longDaemon = peersFetch(ORIGIN, {
+    [ORIGIN]: { status: statusOf(`/srv/dev/${longName}`), attention: attentionOf([], `/srv/dev/${longName}`) },
+  });
+  await atViewport(720, 800, async () => {
+    localStorage.setItem("holophyte.next.rail", "folded");
+    await mount(`#/runs?project=${longName}`, longDaemon);
+    const switcher = screen.getByRole("button", { name: /Switch project$/ });
+    placeBox(switcher, new DOMRect(6, 42, 44, 44));
+    await pointerOver(switcher);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(longName);
+    expect(tip.getAttribute("data-side")).toBe("right");
+    expect(parseFloat(tip.style.left)).toBe(60);
+    expect(parseFloat(tip.style.getPropertyValue("--available-width"))).toBe(652);
+    expect(tip.classList.contains("whitespace-nowrap")).toBe(false);
+    expect(tip.classList.contains("[overflow-wrap:anywhere]")).toBe(true);
+    expect([...tip.classList].some((name) => name.startsWith("max-w-") && name.includes("--available-width"))).toBe(true);
+  });
 });
 
-test("in the macOS app the holophyte mark's tooltip drops below the title bar so it stays clear of Back and Next", async () => {
+test("the title bar's holophyte mark has no title attribute and shows a holophyte tooltip on keyboard focus", async () => {
+  await atViewport(1280, 800, async () => {
+    await mount("#/");
+    const mark = homeLink();
+    const switcher = screen.getByRole("button", { name: /Switch project$/ });
+    const markRect = new DOMRect(44, 3, 78, 24);
+    const switcherRect = new DOMRect(8, 30, 216, 32);
+    placeBox(mark, markRect);
+    placeBox(switcher, switcherRect);
+    for (const el of document.querySelectorAll<HTMLElement>('[role="tooltip"]')) {
+      if (el.textContent !== "holophyte") continue;
+      Object.defineProperty(el, "offsetWidth", { configurable: true, value: 78 });
+      Object.defineProperty(el, "offsetHeight", { configurable: true, value: 28 });
+      el.getBoundingClientRect = () => new DOMRect(parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0, 78, 28);
+    }
+    expect(mark.hasAttribute("title")).toBe(false);
+    expect(mark.hasAttribute("aria-describedby")).toBe(false);
+    expect(tooltip()).toBeNull();
+    await keyboardFocus(mark);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe("holophyte");
+    expect(tip.getAttribute("data-side")).toBe("right");
+    expect(tip.getAttribute("data-align")).toBe("center");
+    expect(parseFloat(tip.style.left) - markRect.right).toBe(10);
+    expect(overlaps(tip.getBoundingClientRect(), switcherRect)).toBe(false);
+    expect(mark.hasAttribute("aria-describedby")).toBe(false);
+    await act(async () => mark.blur());
+    expect(tooltip()).toBeNull();
+  });
+});
+
+test("in the macOS app the holophyte mark's tooltip sits to the right of Next, clear of Back, Next and the expanded project switcher", async () => {
   localStorage.setItem(APP_SHELL_KEY, "macos");
-  await mountAt("#/");
-  const mark = homeLink();
-  await keyboardFocus(mark);
-  const tip = screen.getByRole("tooltip");
-  expect(tip.textContent).toBe("holophyte");
-  expect(tip.getAttribute("data-side")).toBe("bottom");
-  expect(tip.getAttribute("data-align")).toBe("start");
-  expect(parseFloat(tip.style.top) - mark.getBoundingClientRect().bottom).toBe(6);
-  expect(mark.hasAttribute("aria-describedby")).toBe(false);
-  await act(async () => mark.blur());
-  expect(tooltip()).toBeNull();
+  await atViewport(1280, 800, async () => {
+    await mountAt("#/");
+    const mark = homeLink();
+    const back = historyButton("Back");
+    const next = historyButton("Next");
+    const switcher = screen.getByRole("button", { name: /Switch project$/ });
+    const markRect = new DOMRect(108, 3, 78, 24);
+    const backRect = new DOMRect(194, 3, 24, 24);
+    const nextRect = new DOMRect(226, 3, 24, 24);
+    const switcherRect = new DOMRect(8, 30, 216, 32);
+    placeBox(mark, markRect);
+    placeBox(back, backRect);
+    placeBox(next, nextRect);
+    placeBox(switcher, switcherRect);
+
+    for (const el of document.querySelectorAll<HTMLElement>('[role="tooltip"]')) {
+      if (el.textContent !== "holophyte") continue;
+      Object.defineProperty(el, "offsetWidth", { configurable: true, value: 78 });
+      Object.defineProperty(el, "offsetHeight", { configurable: true, value: 28 });
+      el.getBoundingClientRect = () => new DOMRect(parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0, 78, 28);
+    }
+
+    await pointerOver(mark);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe("holophyte");
+    expect(tip.getAttribute("data-side")).toBe("right");
+    expect(parseFloat(tip.style.left) - nextRect.right).toBe(10);
+    const tipRect = tip.getBoundingClientRect();
+    expect(overlaps(tipRect, backRect)).toBe(false);
+    expect(overlaps(tipRect, nextRect)).toBe(false);
+    expect(overlaps(tipRect, switcherRect)).toBe(false);
+    expect(mark.hasAttribute("aria-describedby")).toBe(false);
+
+    await act(async () => void fireEvent.pointerLeave(mark, { pointerType: "mouse", clientX: 116, clientY: 46 }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(tooltip()).toBeNull();
+    fireEvent.click(switcher);
+    await act(settle);
+    expect(screen.getByRole("dialog", { name: "Switch project" })).toBeTruthy();
+  });
 });
 
 test("each page's heading section opens on the title row's padding", async () => {
