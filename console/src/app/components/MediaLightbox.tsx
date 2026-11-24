@@ -43,8 +43,7 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
   // Child Dialog's layout effect lifts inert before this runs, so onClose
   // focuses the last-shown tile on a non-inert page.
   useLayoutEffect(() => {
-    if (open) return;
-    onClose(shown);
+    if (!open) onClose(shown);
   }, [open]);
   const item = items[shown]!;
   // Stepping off a focused video or into a disabled step button drops focus to body.

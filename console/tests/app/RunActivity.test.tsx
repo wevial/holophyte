@@ -279,8 +279,8 @@ test("Raw log opens a dialog of every Progress line, heartbeats included, and Es
 test("Close raw log and pressing the dimmed page beside Raw log each close the panel and return focus to its button", async () => {
   await mount(runFetch({ detail: ended }));
   const button = within(progress()).getByRole("button", { name: /^Raw log/ });
-  const closes = [
-    () => fireEvent.click(within(screen.getByRole("dialog", { name: "Raw log · run 12" })).getByRole("button", { name: "Close raw log" })),
+  for (const close of [
+    (closeButton: HTMLElement) => fireEvent.click(closeButton),
     () => {
       const backdrop = document.querySelector<HTMLElement>('[data-slot="dialog-backdrop"]');
       expect(backdrop).toBeTruthy();
@@ -288,13 +288,12 @@ test("Close raw log and pressing the dimmed page beside Raw log each close the p
       fireEvent.pointerUp(backdrop!, { button: 0 });
       fireEvent.click(backdrop!);
     },
-  ];
-  for (const close of closes) {
+  ]) {
     await act(async () => void fireEvent.click(button));
-    const dialog = screen.getByRole("dialog", { name: "Raw log · run 12" });
-    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close raw log" }));
+    const closeButton = within(screen.getByRole("dialog", { name: "Raw log · run 12" })).getByRole("button", { name: "Close raw log" });
+    expect(document.activeElement).toBe(closeButton);
     await waitInert(button);
-    await act(async () => void close());
+    await act(async () => void close(closeButton));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(button.closest("[inert]")).toBeNull();
     expect(document.activeElement).toBe(button);
