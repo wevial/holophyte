@@ -16,7 +16,7 @@ const fixtures = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const host = await Bun.file(new URL("host-status.json", fixtures)).json() as HostStatus;
 const project = await Bun.file(new URL("status.json", fixtures)).json() as Status;
 const card = () => screen.getByRole("article", { name: "writer-host" });
-const toast = () => document.querySelector("[data-toast]")!;
+const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const restarting = "Restarting · back in about 20s";
 
 async function flush() {
@@ -110,7 +110,7 @@ test("restart posts once with the bearer, remains restarting through failed and 
   expect(within(card()).getByText(restarting)).toBeTruthy();
   expect(within(card()).getByRole("status").textContent).toBe("Restarting the daemon. Runs keep going; this card comes back when it answers.");
   for (const name of ["Run sweep", "Restart daemon"]) expect(within(card()).getByRole("button", { name }).hasAttribute("disabled")).toBe(true);
-  expect(toast().textContent).not.toContain("Restarted the daemon");
+  expect(toast()).not.toContain("Restarted the daemon");
   view.fail();
   await view.poll();
   expect(within(card()).getByText(restarting)).toBeTruthy();
@@ -120,7 +120,7 @@ test("restart posts once with the bearer, remains restarting through failed and 
   expect(within(card()).getByText(restarting)).toBeTruthy();
   view.answer(2000);
   await view.poll();
-  expect(toast().textContent).toBe("Restarted the daemon on writer-host.");
+  expect(toast()).toBe("Restarted the daemon on writer-host.");
   expect(within(card()).getByText("Healthy")).toBeTruthy();
   expect(within(card()).queryByText(restarting)).toBeNull();
   for (const name of ["Run sweep", "Restart daemon"]) expect(within(card()).getByRole("button", { name }).hasAttribute("disabled")).toBe(false);
@@ -164,5 +164,5 @@ test("after sixty seconds without a new daemon the card returns to its last fail
   await view.poll(NOW + 60_000);
   expect(within(card()).queryByText(restarting)).toBeNull();
   expect(within(card()).getByText(/Not answering/)).toBeTruthy();
-  expect(toast().textContent).not.toContain("Restarted the daemon");
+  expect(toast()).not.toContain("Restarted the daemon");
 });

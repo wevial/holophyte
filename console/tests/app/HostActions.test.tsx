@@ -17,7 +17,8 @@ const NOW = new Date(2026, 9, 16, 16, 53).getTime();
 const fixtures = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const host = await Bun.file(new URL("host-status.json", fixtures)).json() as HostStatus;
 const project = await Bun.file(new URL("status.json", fixtures)).json() as Status;
-const toast = () => document.querySelector("[data-toast]")!;
+const toastEl = () => document.querySelector<HTMLElement>("[data-toast]");
+const toast = () => toastEl()?.textContent ?? "";
 const card = (name = "writer-host") => screen.getByRole("article", { name });
 
 async function flush() {
@@ -88,7 +89,7 @@ test("Run sweep posts once to the daemon root with its bearer, stays busy until 
   expect(view.statuses).toHaveLength(before);
   await act(async () => release());
   await flush();
-  expect(toast().textContent).toBe("Asked writer-host to sweep.");
+  expect(toast()).toBe("Asked writer-host to sweep.");
   expect(within(card()).getByRole("button", { name: "Run sweep" }).hasAttribute("disabled")).toBe(false);
   expect(view.statuses).toHaveLength(before + 2);
 });
@@ -100,7 +101,7 @@ test("a refused sweep shows the daemon's detail under the card head without rere
   await press("Run sweep");
   expect(post.seen).toHaveLength(1);
   expect(within(card()).getByText("systemctl exited 1")).toBeTruthy();
-  expect(toast().textContent).toBe("");
+  expect(toast()).toBe("");
   expect(view.statuses).toHaveLength(before);
 });
 
@@ -131,7 +132,7 @@ test("Retry now polls once and remains busy until a failing daemon answers, then
   expect(view.statuses.filter((url) => url === `${SPARE}/status`)).toHaveLength(before + 1);
   await act(async () => release());
   await flush();
-  expect(toast().textContent).toBe("spare still is not answering. Tried at 16:53.");
+  expect(toast()).toBe("spare still is not answering. Tried at 16:53.");
   expect(within(card("spare")).getByRole("button", { name: "Retry now" }).hasAttribute("disabled")).toBe(false);
 });
 
@@ -158,10 +159,10 @@ test("a saved token is masked and accepted, Forget removes it and Undo restores 
   const before = view.statuses.length;
   await press("Forget");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
-  expect(toast().textContent).toContain("Forgot the token for writer-host in this browser.");
+  expect(toast()).toContain("Forgot the token for writer-host in this browser.");
   expect(within(card()).getByLabelText("Serve token for writer-host", { selector: "input" })).toBeTruthy();
   expect(view.statuses.length).toBeGreaterThan(before);
-  await press("Undo", toast() as HTMLElement);
+  await press("Undo", toastEl()!);
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe(secret);
   expect(card().textContent).toContain("saved in this browser");
 });
@@ -189,7 +190,7 @@ test("Undo preserves the restored token when Forget's unauthenticated poll answe
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
   expect(unauthenticated).toBe(3);
   const before = authenticated;
-  await press("Undo", toast() as HTMLElement);
+  await press("Undo", toastEl()!);
   expect(authenticated).toBe(before + 3);
   expect(card().textContent).toContain("accepted");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe(secret);
@@ -215,7 +216,7 @@ test("Save token refuses header-unsafe input and saves a valid token with an emp
   await act(async () => void fireEvent.change(field, { target: { value: "abc123" } }));
   await press("Save token");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
-  expect(toast().textContent).toBe("Saved the token for writer-host in this browser.");
+  expect(toast()).toBe("Saved the token for writer-host in this browser.");
   expect(view.statuses.length).toBeGreaterThan(before);
   await press("Forget");
   expect((within(card()).getByLabelText("Serve token for writer-host", { selector: "input" }) as HTMLInputElement).value).toBe("");
