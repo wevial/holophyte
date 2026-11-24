@@ -1,6 +1,7 @@
 import { createContext, Fragment, useContext, useRef, useState, type ReactNode, type Ref } from "react";
 import { flushSync } from "react-dom";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { projectName } from "../../lib/derive";
 import { formatClock, formatSettled } from "../../lib/format";
@@ -24,6 +25,7 @@ import {
 } from "../scouts";
 import { useScoutListWidth } from "../viewport";
 import { Btn } from "./Btn";
+import { Hint } from "./Hint";
 import { FactIcon, PanelLeftIcon } from "./icons";
 import { FilterSelect, SearchField } from "./ListFilters";
 import type { LaunchProject } from "./ScoutLaunch";
@@ -84,7 +86,13 @@ export function useLaunchProjects(project: string | undefined) {
 }
 
 function Outcome({ outcome }: { outcome: ScoutOutcome }) {
-  if (outcome.kind === "failed") return <span title={outcome.text} className="font-semibold text-bad">{cappedReason(outcome.text)}</span>;
+  if (outcome.kind === "failed") {
+    return (
+      <Hint tip={outcome.text} side="bottom" describe wrap>
+        {(trigger) => <span {...trigger} className="min-w-0 truncate font-semibold text-bad">{cappedReason(outcome.text)}</span>}
+      </Hint>
+    );
+  }
   if (outcome.kind === "back") return <>{outcome.text}</>;
   return outcome.parts.map((part, index) => (
     <Fragment key={part.words}>
@@ -103,6 +111,8 @@ function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }
   const took = state === "queued" || row.elapsed_ms == null ? DASH : formatSettled(row.elapsed_ms);
   const outcome = scoutOutcome(row);
   const empty = outcome.kind === "counts" ? outcome.parts.length === 0 : outcome.text === "";
+  const failed = outcome.kind === "failed";
+  const facts = `${row.kind} · ${took} · ${dayTime(row.started_ms ?? row.created_ms)}${empty ? "" : " · "}`;
   return (
     <li data-row data-scout={row.id} aria-current={current ? "page" : undefined} className="border-b border-rule-2 py-px last:border-b-0">
       <Link
@@ -114,9 +124,9 @@ function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }
         <span className="mt-[2px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span className="flex min-w-0 flex-col gap-[5px]">
           <span data-cell="title" className="line-clamp-2 font-sans text-[14px] font-semibold leading-[1.3] text-ink">{row.title}</span>
-          <span data-scout-row-facts className={`font-sans text-[12.5px] leading-[1.4] text-ink-3 ${outcome.kind === "failed" ? "truncate" : "[overflow-wrap:anywhere]"}`}>
-            {row.kind}{" · "}{took}{" · "}{dayTime(row.started_ms ?? row.created_ms)}
-            {!empty && <>{" · "}<Outcome outcome={outcome} /></>}
+          <span data-scout-row-facts className={`font-sans text-[12.5px] leading-[1.4] text-ink-3 ${failed ? "flex min-w-0 items-baseline overflow-hidden whitespace-nowrap" : "[overflow-wrap:anywhere]"}`}>
+            {failed ? <span className="shrink-0 whitespace-pre">{facts}</span> : facts}
+            {!empty && <Outcome outcome={outcome} />}
           </span>
         </span>
       </Link>
@@ -195,11 +205,20 @@ export function ScoutsBeside({ search, current, newScout, children }: {
           className="sticky top-0 hidden h-(--panel-height) w-[330px] shrink-0 flex-col border-r border-rule bg-canvas min-[1100px]:flex">
           <div className="flex flex-col gap-3 border-b border-rule-2 px-4 pt-4 pb-3">
             <div className="flex items-center gap-2">
-              <button ref={hideButton} type="button" aria-label="Hide scout list" title="Hide scout list" aria-expanded={true} aria-controls={LIST_ID}
-                onClick={() => toggle(true)}
-                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink aria-expanded:bg-selected aria-expanded:text-ink motion-reduce:transition-none">
-                <PanelLeftIcon />
-              </button>
+              <Hint tip="Hide scout list" side="bottom">
+                {(trigger) => (
+                  <button
+                    {...mergeProps(trigger, { ref: hideButton, onClick: () => toggle(true) })}
+                    type="button"
+                    aria-label="Hide scout list"
+                    aria-expanded={true}
+                    aria-controls={LIST_ID}
+                    className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink aria-expanded:bg-selected aria-expanded:text-ink motion-reduce:transition-none"
+                  >
+                    <PanelLeftIcon />
+                  </button>
+                )}
+              </Hint>
               <h2 className="m-0 flex-1 font-sans text-[20px] font-semibold leading-[1.25] text-ink">Scouts</h2>
               {newScout ?? <NewScout project={project} current={current} />}
             </div>

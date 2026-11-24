@@ -211,3 +211,83 @@ test("below 1100px the Scouts page keeps its table, row links and form above the
   const form = screen.getByRole("form", { name: "New scout" });
   expect(form.compareDocumentPosition(list()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
+
+test("resting the pointer or keyboard focus on Hide scout list shows its tooltip with no title or aria-describedby", async () => {
+  await mount("#/scouts");
+  const hide = screen.getByRole("button", { name: "Hide scout list", expanded: true });
+  expect(hide.getAttribute("title")).toBeNull();
+  expect(hide.getAttribute("aria-describedby")).toBeNull();
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(hide, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  const tip = screen.getByRole("tooltip");
+  expect(tip.textContent).toBe("Hide scout list");
+  expect(tip.getAttribute("tabindex")).toBeNull();
+  expect(tip.classList.contains("whitespace-nowrap")).toBe(true);
+  expect(tip.classList.contains("leading-[1.2]")).toBe(true);
+  expect(tip.classList.contains("leading-[1.35]!")).toBe(false);
+  expect(tip.classList.contains("overflow-y-auto")).toBe(false);
+  expect(hide.getAttribute("aria-describedby")).toBeNull();
+
+  await act(async () => void fireEvent.pointerLeave(hide, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    hide.focus();
+  });
+  expect(screen.getByRole("tooltip").textContent).toBe("Hide scout list");
+  await act(async () => hide.blur());
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+
+test("a failed row in the wide scout list shows the cut reason, described by the whole line in a tooltip with no title", async () => {
+  const showPopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
+  const hidePopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
+  Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, writable: true, value() {} });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true, writable: true, value() {} });
+  try {
+    const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(10)}`.slice(0, 300);
+    await mount("#/scouts", wideFetch([row(31, { title: TITLE }), row(30, { phase: "failed", reason: long })]));
+    const failed = rowOf(30) as HTMLElement;
+    const cut = within(failed).getByText(`${long.slice(0, 159)}…`);
+    let closedLinkName = "";
+    const link = within(failed).getByRole("link", { name: (name) => ((closedLinkName = name), true) });
+    expect(cut.getAttribute("title")).toBeNull();
+    expect(cut.getAttribute("tabindex")).toBeNull();
+    expect(closedLinkName).not.toContain(long);
+    expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(long);
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    expect(tip.classList.contains("overflow-y-auto")).toBe(true);
+    expect(tip.className).toContain("max-h-[var(--available-height");
+    expect(link.contains(tip)).toBe(false);
+    expect(failed.contains(tip)).toBe(true);
+    expect(link.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(failed).getByRole("link", { name: closedLinkName })).toBe(link);
+    expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
+    await act(async () => void fireEvent.mouseDown(tip));
+    expect(tip.getAttribute("tabindex")).toBeNull();
+    await click(tip);
+    expect(path()).toBe("#/scouts");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    await act(async () => tip.focus());
+    expect(document.activeElement).not.toBe(tip);
+    await act(async () => void fireEvent.pointerLeave(tip, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  } finally {
+    if (showPopover) Object.defineProperty(HTMLElement.prototype, "showPopover", showPopover);
+    else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+    if (hidePopover) Object.defineProperty(HTMLElement.prototype, "hidePopover", hidePopover);
+    else delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
+});

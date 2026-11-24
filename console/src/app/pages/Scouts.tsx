@@ -4,6 +4,7 @@ import { ACTIONS_OFF } from "../../lib/actions";
 import { useAction } from "../actions";
 import { formatSettled } from "../../lib/format";
 import { Btn } from "../components/Btn";
+import { Hint } from "../components/Hint";
 import { FactIcon } from "../components/icons";
 import { PageHeader } from "../components/PageHeader";
 import { EMPTY_DRAFT, prefilledDraft, ScoutLaunch } from "../components/ScoutLaunch";
@@ -54,7 +55,11 @@ function ScoutTableRow({ row }: { row: ScoutListRow }) {
         <span data-cell="state" className="flex items-start pt-[3px]"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span data-cell="title" className={`min-w-0 font-sans text-[14px] font-medium leading-[1.35] min-[720px]:order-2 ${quiet ? "text-ink-2" : "text-ink"}`}>
           {row.title}
-          {reason && <span data-reason title={reason} className="ml-2 font-sans text-[13px] font-medium text-bad">{cappedReason(reason)}</span>}
+          {reason && (
+            <Hint tip={reason} describe wrap>
+              {(trigger) => <span {...trigger} data-reason className="ml-2 font-sans text-[13px] font-medium text-bad">{cappedReason(reason)}</span>}
+            </Hint>
+          )}
         </span>
         <span className={`col-start-2 flex flex-wrap ${FACTS} min-[720px]:contents`}>
           <span data-cell="kind" className={`${FACT} min-[720px]:order-3`}>
