@@ -1671,7 +1671,8 @@ test("at 390px with a ticket preview open, Escape in the drawer closes only the 
     const polls = daemons([], []);
     await mount("#/tickets", async (url, init) => (url === `${ORIGIN}/board` ? Response.json(pinned) : polls(url, init)));
     await act(settle);
-    await act(async () => void fireEvent.click(document.querySelector<HTMLElement>('[id^="card-"]')!));
+    const card = document.querySelector<HTMLElement>('[id^="card-"]')!;
+    await act(async () => void fireEvent.click(card));
     const preview = () => screen.queryAllByRole("dialog").filter((dialog) => dialog !== drawer());
     expect(preview()).toHaveLength(1);
     expect(preview()[0]!.classList.contains("max-[720px]:top-[30px]")).toBe(true);
@@ -1684,6 +1685,9 @@ test("at 390px with a ticket preview open, Escape in the drawer closes only the 
     expect(drawer()).toBeNull();
     expect(document.activeElement).toBe(openSidebar());
     expect(preview()).toHaveLength(1);
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    expect(preview()).toHaveLength(0);
+    expect(document.activeElement).toBe(card);
   });
 });
 
@@ -1740,6 +1744,20 @@ test("at 390px Escape closes the open drawer though focus sits on the title bar'
     await keyboardFocus(homeLink());
     expect(document.activeElement).toBe(homeLink());
     expect(tooltip()?.textContent).toBe("holophyte");
+    await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+    expect(drawer()).toBeNull();
+    expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(openSidebar());
+  });
+});
+
+test("at 390px Escape closes the open drawer on the first press though a drawer footer tooltip is open", async () => {
+  await atWidth(390, async () => {
+    await mount("#/");
+    await act(async () => void fireEvent.click(openSidebar()));
+    const settings = within(drawer()!).getByRole("link", { name: "Settings" });
+    await keyboardFocus(settings);
+    expect(tooltip()?.textContent).toBe("Settings");
     await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
     expect(drawer()).toBeNull();
     expect(openSidebar().getAttribute("aria-expanded")).toBe("false");

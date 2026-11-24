@@ -86,9 +86,29 @@ function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLin
   return hosts.every(fine) ? "live" : "stale";
 }
 
-function FootTip({ tip, folded, children }: { tip: string; folded: boolean; children: (trigger: Record<string, unknown>) => ReactNode }) {
+type TipChange = (open: boolean, details: { reason: string }) => void;
+
+// A tooltip layers above the modal drawer; Escape on it must still close the drawer unless an inner dialog is open.
+function onDrawerTipChange(open: boolean, details: { reason: string }, closeDrawer: () => void) {
+  if (open || details.reason !== "escape-key") return;
+  if (document.querySelector('#sidebar-drawer [role="dialog"][data-open]')) return;
+  const modals = document.querySelectorAll('[aria-modal="true"]');
+  if (modals.length === 1 && modals[0]?.id === "sidebar-drawer") closeDrawer();
+}
+
+function FootTip({
+  tip,
+  folded,
+  onTipChange,
+  children,
+}: {
+  tip: string;
+  folded: boolean;
+  onTipChange?: TipChange;
+  children: (trigger: Record<string, unknown>) => ReactNode;
+}) {
   return (
-    <Tooltip delay={300}>
+    <Tooltip delay={300} onOpenChange={onTipChange}>
       <TooltipTrigger render={({ type: _button, "aria-describedby": _same, ...trigger }) => <>{children(trigger)}</>} />
       <TooltipContent side={folded ? "right" : "top"} sideOffset={folded ? 10 : 8} className={SIDEBAR_TIP}>
         {tip}
@@ -103,7 +123,7 @@ const THEME_CHOICES: { theme: Theme; name: string; icon: ReactNode }[] = [
   { theme: "system", name: "System", icon: <SystemIcon /> },
 ];
 
-function ThemeGroup({ folded }: { folded: boolean }) {
+function ThemeGroup({ folded, onTipChange }: { folded: boolean; onTipChange?: TipChange }) {
   const { theme, setTheme } = useTheme();
   return (
     <div
@@ -112,7 +132,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
       className={`flex shrink-0 gap-0.5 ${folded ? "flex-col" : ""}`}
     >
       {THEME_CHOICES.map((choice) => (
-        <FootTip key={choice.theme} tip={choice.name} folded={folded}>
+        <FootTip key={choice.theme} tip={choice.name} folded={folded} onTipChange={onTipChange}>
           {(trigger) => (
             <button
               {...mergeProps(trigger, {
@@ -426,7 +446,7 @@ function HistoryButton({
   go: () => void;
   next?: boolean;
   buttonRef?: Ref<HTMLButtonElement>;
-  onTipChange?: (open: boolean, details: { reason: string }) => void;
+  onTipChange?: TipChange;
 }) {
   return (
     <Tooltip delay={300} shortcut={shortcut} onOpenChange={onTipChange}>
@@ -452,12 +472,8 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, closeDrawer, 
   const [nextButton, setNextButton] = useState<HTMLButtonElement | null>(null);
   const nav = useHistoryNav(macApp);
   const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
-  // A title-bar tooltip layers above the modal drawer; Escape on it must still close the drawer unless an inner dialog is open.
-  const onTipChange = (open: boolean, details: { reason: string }) => {
-    if (open || !drawer || details.reason !== "escape-key") return;
-    if (document.querySelector('#sidebar-drawer [role="dialog"][data-open]')) return;
-    const modals = document.querySelectorAll('[aria-modal="true"]');
-    if (modals.length === 1 && modals[0]?.id === "sidebar-drawer") closeDrawer();
+  const onTipChange: TipChange = (open, details) => {
+    if (drawer) onDrawerTipChange(open, details, closeDrawer);
   };
   return (
     <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
@@ -517,7 +533,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, closeDrawer, 
   );
 }
 
-export function Sidebar({ folded, back }: { folded: boolean; back: string | null }) {
+export function Sidebar({ folded, back, onTipChange }: { folded: boolean; back: string | null; onTipChange?: TipChange }) {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const deps = useContext(PollDepsContext);
@@ -544,7 +560,7 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
   const connection = connectionOf(hosts, footer);
 
   const dot = (
-    <FootTip tip={polled} folded={folded}>
+    <FootTip tip={polled} folded={folded} onTipChange={onTipChange}>
       {(trigger) => (
         <span
           {...trigger}
@@ -563,7 +579,7 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
   );
 
   const settings = (
-    <FootTip tip="Settings" folded={folded}>
+    <FootTip tip="Settings" folded={folded} onTipChange={onTipChange}>
       {(trigger) => (
         <Link
           {...trigger}
@@ -609,7 +625,7 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
 
       <footer className={`mt-auto flex gap-0.5 py-3 ${folded ? "flex-col items-center px-1.5" : "items-center px-3"}`}>
         {dot}
-        <ThemeGroup folded={folded} />
+        <ThemeGroup folded={folded} onTipChange={onTipChange} />
         {settings}
       </footer>
     </aside>
@@ -642,7 +658,13 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
         }}
         className="mt-[30px] flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
-        <Sidebar folded={false} back={back} />
+        <Sidebar
+          folded={false}
+          back={back}
+          onTipChange={(next, details) => {
+            if (open) onDrawerTipChange(next, details, onClose);
+          }}
+        />
       </DrawerContent>
     </Drawer>
   );
