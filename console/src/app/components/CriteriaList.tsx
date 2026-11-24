@@ -3,6 +3,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import type { RunDetail } from "../../lib/contract.gen";
 import { criteriaGrid, type CriteriaGrid, type GridCell } from "../activity";
 import { CriterionMark } from "./icons";
+import { InlineMarkdown } from "./Markdown";
 
 type GridColumn = CriteriaGrid["columns"][number];
 
@@ -52,7 +53,7 @@ function RoundMarks({ columns, cells }: { columns: GridColumn[]; cells: (GridCel
 
 const ROW = "flex flex-wrap items-center gap-3 border-b border-rule-2 py-3";
 const CRITERION_ID = "w-[34px] shrink-0 font-mono text-[11px] font-bold text-ink-3";
-const CRITERION_TEXT = "min-w-0 flex-1 font-read text-[14px] text-ink-2";
+const CRITERION_TEXT = "min-w-0 flex-1 font-read text-[14px] text-ink-2 [overflow-wrap:anywhere]";
 
 export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolean }) {
   const { criteria, rounds, run } = detail;
@@ -76,7 +77,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
             <li key={row.id} className={ROW}>
               <span aria-hidden="true" className="size-4 shrink-0" />
               <strong className={CRITERION_ID}>{row.id}</strong>
-              <span className={CRITERION_TEXT}>{row.text}</span>
+              <span className={CRITERION_TEXT}>{row.text != null && <InlineMarkdown>{row.text}</InlineMarkdown>}</span>
               <RoundMarks columns={grid.columns} cells={row.cells} />
             </li>
           ))}
@@ -93,7 +94,7 @@ export function CriteriaList({ detail, live }: { detail: RunDetail; live: boolea
                 <li key={criterion.id} className={ROW}>
                   <CriterionMark status={criterion.status} />
                   <strong className={CRITERION_ID}>{criterion.id}</strong>
-                  <span className={CRITERION_TEXT}>{criterion.text}</span>
+                  <span className={CRITERION_TEXT}><InlineMarkdown>{criterion.text}</InlineMarkdown></span>
                   {waiting && <span className="font-mono text-[11px] text-ink-3">waits on round {pending}</span>}
                   {grid != null && cells?.some((cell) => cell != null) && <RoundMarks columns={grid.columns} cells={cells} />}
                 </li>
