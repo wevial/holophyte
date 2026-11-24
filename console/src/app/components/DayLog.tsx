@@ -7,6 +7,7 @@ import { prLabel } from "../../lib/shipped";
 import { categoryOf, keeps, phraseOf, projectColours, useDayLogFilter, type DayLogFilter } from "../dayLog";
 import { runPage } from "../run";
 import { keepScope, useConsolePeers } from "../scope";
+import { Hint } from "./Hint";
 import { SettingsIcon } from "./icons";
 import { STATE_ICONS } from "./StateDot";
 
@@ -206,10 +207,16 @@ export function DayLog({ entries, preview, className = "" }: { entries: LedgerEn
             {showAll ? "Highlights only" : `Show all (${hidden} hidden)`}
           </button>
         )}
-        {!preview && <Link to="/settings/$tab" params={{ tab: "log" }} search={keepScope} aria-label="Filter Today's log" title="Filter Today's log"
-          className="flex size-8 shrink-0 items-center justify-center border border-rule text-ink-2 hover:border-ink-3 hover:text-ink">
-          <SettingsIcon />
-        </Link>}
+        {!preview && (
+          <Hint tip="Filter Today's log">
+            {(trigger) => (
+              <Link {...trigger} to="/settings/$tab" params={{ tab: "log" }} search={keepScope} aria-label="Filter Today's log"
+                className="flex size-8 shrink-0 items-center justify-center border border-rule text-ink-2 hover:border-ink-3 hover:text-ink">
+                <SettingsIcon />
+              </Link>
+            )}
+          </Hint>
+        )}
       </div>
       {shown.length === 0 ? (
         <p className="font-mono text-[12.5px] text-ink-3">{entries.length === 0 ? "Nothing logged since midnight." : "Nothing in the filter since midnight."}</p>

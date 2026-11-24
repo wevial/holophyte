@@ -192,16 +192,58 @@ test("a row reads its state, title not ask, kind, routes, helper progress and ti
 });
 
 test("a failed row shows at most 160 characters of its reason, the whole line in its tooltip", async () => {
-  const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(120)}`.slice(0, 5000);
-  const short = "helper route luna is down: probe failed.";
-  await mount("#/scouts?project=demo", scoutFetch({ demo: [scout(41, "failed", 1, { reason: long }), scout(40, "failed", 2, { reason: short })] }).fetch);
-  const cut = list().querySelector('[data-scout="41"] [data-reason]')!;
-  expect(long).toHaveLength(5000);
-  expect(cut.textContent).toHaveLength(160);
-  expect(cut.textContent).toBe(`${long.slice(0, 159)}…`);
-  expect(cut.getAttribute("title")).toBe(long);
-  expect(readRow(40).reason).toBe(short);
-  expect(readRow(40).text).not.toContain("…");
+  const showPopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
+  const hidePopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
+  Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, writable: true, value() {} });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true, writable: true, value() {} });
+  try {
+    const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(120)}`.slice(0, 5000);
+    const short = "helper route luna is down: probe failed.";
+    await mount("#/scouts?project=demo", scoutFetch({ demo: [scout(41, "failed", 1, { reason: long }), scout(40, "failed", 2, { reason: short })] }).fetch);
+    const row41 = list().querySelector<HTMLElement>('[data-scout="41"]')!;
+    const cut = row41.querySelector<HTMLElement>("[data-reason]")!;
+    let closedLinkName = "";
+    const link = within(row41).getByRole("link", { name: (name) => ((closedLinkName = name), true) });
+    expect(long).toHaveLength(5000);
+    expect(cut.textContent).toHaveLength(160);
+    expect(cut.textContent).toBe(`${long.slice(0, 159)}…`);
+    expect(cut.getAttribute("title")).toBeNull();
+    expect(cut.getAttribute("tabindex")).toBeNull();
+    expect(closedLinkName).not.toContain(long);
+    expect(within(row41).getByRole("generic", { description: long })).toBe(cut);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(long);
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    expect(tip.classList.contains("overflow-y-auto")).toBe(true);
+    expect(tip.classList.contains("whitespace-normal!")).toBe(true);
+    expect(tip.className).toContain("max-h-[var(--available-height");
+    expect(link.contains(tip)).toBe(false);
+    expect(row41.contains(tip)).toBe(true);
+    expect(link.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(row41).getByRole("link", { name: closedLinkName })).toBe(link);
+    expect(within(row41).getByRole("generic", { description: long })).toBe(cut);
+    await act(async () => void fireEvent.mouseDown(tip));
+    expect(tip.getAttribute("tabindex")).toBeNull();
+    await click(tip);
+    expect(window.location.hash).toBe("#/scouts?project=demo");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    await act(async () => tip.focus());
+    expect(document.activeElement).not.toBe(tip);
+    await act(async () => void fireEvent.pointerLeave(tip, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(readRow(40).reason).toBe(short);
+    expect(readRow(40).text).not.toContain("…");
+  } finally {
+    if (showPopover) Object.defineProperty(HTMLElement.prototype, "showPopover", showPopover);
+    else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+    if (hidePopover) Object.defineProperty(HTMLElement.prototype, "hidePopover", hidePopover);
+    else delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
 });
 
 test("a wide list row reads its title, then one line of kind, time taken, start and what it found, to file in the need colour", async () => {

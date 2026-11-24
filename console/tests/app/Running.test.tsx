@@ -176,7 +176,17 @@ test("a running row's activity line is its run's newest event, else its step", a
 test("the Running heading's worker dots count busy workers against every worker in scope", async () => {
   await mount("#/", [statusOf("/srv/dev/demo", [demoRun], { workers: 2 }), statusOf("/srv/dev/writer", [writerRun], { workers: 3 })]);
   const dots = within(running()).getByRole("img", { name: "2 of 5 workers busy" });
-  expect(dots.getAttribute("title")).toBe("2 of 5 workers busy");
+  expect([dots.getAttribute("title"), dots.getAttribute("aria-describedby"), dots.getAttribute("tabindex")]).toEqual([null, null, null]);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(dots, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(screen.getByRole("tooltip").textContent).toBe("2 of 5 workers busy");
+
+  await act(async () => void fireEvent.pointerLeave(dots, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
   expect(dots.querySelectorAll("[data-busy]")).toHaveLength(2);
   expect(dots.children).toHaveLength(5);
 });

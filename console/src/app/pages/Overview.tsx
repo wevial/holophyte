@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { projectColours } from "../dayLog";
 import { DayLog } from "../components/DayLog";
 import { FocusCard, useOpenEntry } from "../components/FocusCard";
+import { Hint } from "../components/Hint";
 import { MergedToday, SHOWN_MERGES } from "../components/MergedToday";
 import { FirstLoad, Notices } from "../components/Notices";
 import { PullRequestGlyph, waitingRows, WaitingRows } from "../components/PrLane";
@@ -27,10 +28,14 @@ function Glyph({ children, className = "" }: { children: ReactNode; className?: 
 function GlyphCount({ count, words, tone, icon }: { count: number; words: string; tone: Tone; icon: ReactNode }) {
   const label = `${count} ${words}`;
   return (
-    <span role="img" aria-label={label} title={label} className="inline-flex items-center gap-1.5 font-mono text-[13px] text-ink-2">
-      <Glyph className={TONE_TEXT[tone]}>{icon}</Glyph>
-      {count}
-    </span>
+    <Hint tip={label}>
+      {(trigger) => (
+        <span {...trigger} role="img" aria-label={label} className="inline-flex items-center gap-1.5 font-mono text-[13px] text-ink-2">
+          <Glyph className={TONE_TEXT[tone]}>{icon}</Glyph>
+          {count}
+        </span>
+      )}
+    </Hint>
   );
 }
 

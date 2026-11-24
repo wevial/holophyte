@@ -4,6 +4,7 @@ import type { RunTurn } from "../../lib/contract.gen";
 import { formatClockSeconds, formatSpan } from "../../lib/format";
 import { TitleText } from "../components/TitleText";
 import { TurnEntries } from "../components/TurnEntries";
+import { Hint } from "../components/Hint";
 import { TurnArrow } from "../components/icons";
 import { runPage } from "../run";
 import { turnPage, turnTitles, useTurnPage } from "../turn";
@@ -33,8 +34,20 @@ function TurnLink({ project, run, turn, next = false }: { project: string; run: 
   const label = next ? "Next turn" : "Previous turn";
   const icon = <TurnArrow next={next} />;
   if (!turn) return <a role="link" aria-label={label} aria-disabled="true" className={`${ICON_BUTTON} cursor-not-allowed opacity-40`}>{icon}</a>;
-  return <Link {...turnPage(project, run, turn.id)} aria-label={label} title={label}
-    className={`${ICON_BUTTON} transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none`}>{icon}</Link>;
+  return (
+    <Hint tip={label}>
+      {(trigger) => (
+        <Link
+          {...trigger}
+          {...turnPage(project, run, turn.id)}
+          aria-label={label}
+          className={`${ICON_BUTTON} transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none`}
+        >
+          {icon}
+        </Link>
+      )}
+    </Hint>
+  );
 }
 
 export function TurnPage() {

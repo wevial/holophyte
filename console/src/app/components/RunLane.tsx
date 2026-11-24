@@ -9,6 +9,7 @@ import type { ContractBodies } from "../fleet";
 import { useRun } from "../queries";
 import { runPage } from "../run";
 import { PollDepsContext } from "../scope";
+import { Hint } from "./Hint";
 import { reviewRound } from "./StageChip";
 import { StateDot } from "./StateDot";
 import { plainTitle, TitleText } from "./TitleText";
@@ -80,11 +81,15 @@ export function WorkerDots({ groups }: { groups: LaneGroup[] }) {
   const busy = Math.min(workers, groups.reduce((sum, group) => sum + group.runs.length, 0));
   const label = `${busy} of ${workers} workers busy`;
   return (
-    <span role="img" aria-label={label} title={label} className="flex items-center gap-[3px]">
-      {Array.from({ length: workers }, (_, index) => (
-        <i key={index} data-busy={index < busy || undefined} className={`block size-[5px] rounded-full ${index < busy ? "bg-live" : "bg-rule"}`} />
-      ))}
-    </span>
+    <Hint tip={label}>
+      {(trigger) => (
+        <span {...trigger} role="img" aria-label={label} className="flex items-center gap-[3px]">
+          {Array.from({ length: workers }, (_, index) => (
+            <i key={index} data-busy={index < busy || undefined} className={`block size-[5px] rounded-full ${index < busy ? "bg-live" : "bg-rule"}`} />
+          ))}
+        </span>
+      )}
+    </Hint>
   );
 }
 

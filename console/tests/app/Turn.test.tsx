@@ -128,3 +128,34 @@ test("a host still being asked exposes a loading status", async () => {
   expect(loading.getAttribute("aria-busy")).toBe("true");
   expect(loading.textContent).toBe("");
 });
+
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+
+test("resting the pointer on Next turn or focusing Previous turn shows each tooltip while keeping the link name, navigation and no title", async () => {
+  await mount("#/runs/demo/12/turns/41");
+  const previous = screen.getByRole("link", { name: "Previous turn" });
+  const next = screen.getByRole("link", { name: "Next turn" });
+  expect([next.getAttribute("aria-label"), next.getAttribute("title"), next.getAttribute("aria-describedby")]).toEqual(["Next turn", null, null]);
+  expect([previous.getAttribute("aria-label"), previous.getAttribute("title"), previous.getAttribute("aria-describedby")]).toEqual(["Previous turn", null, null]);
+  expect(tooltip()).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(next, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(tooltip()).toBe("Next turn");
+  expect([next.getAttribute("aria-label"), next.getAttribute("title"), next.getAttribute("aria-describedby")]).toEqual(["Next turn", null, null]);
+  await act(async () => void fireEvent.pointerLeave(next, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(tooltip()).toBeNull();
+
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    previous.focus();
+  });
+  expect(tooltip()).toBe("Previous turn");
+  await act(async () => previous.blur());
+  expect(tooltip()).toBeNull();
+
+  await act(async () => { fireEvent.click(next); });
+  for (let round = 0; round < 6; round += 1) await act(settle);
+  expect(window.location.hash).toBe("#/runs/demo/12/turns/42");
+});
