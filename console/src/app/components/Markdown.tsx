@@ -32,6 +32,10 @@ function imageSourceAllowed(src: string): boolean {
   }
 }
 
+const urlTransform = (url: string, key: string) => key === "src"
+  ? (imageSourceAllowed(url) ? url : undefined)
+  : defaultUrlTransform(url);
+
 /** All untrusted Markdown becomes sanitized React nodes, inside the theme. */
 export function Markdown({ children }: { children: string }) {
   return (
@@ -39,9 +43,7 @@ export function Markdown({ children }: { children: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, schema]]}
-        urlTransform={(url, key) => key === "src"
-          ? (imageSourceAllowed(url) ? url : undefined)
-          : defaultUrlTransform(url)}
+        urlTransform={urlTransform}
         components={{
           a: ({ children, href, title }) => <a href={href} title={title} target="_blank" rel="noreferrer noopener">{children}</a>,
           img: ({ src, alt, title, width, height }) => typeof src === "string" && imageSourceAllowed(src)
@@ -49,5 +51,23 @@ export function Markdown({ children }: { children: string }) {
         }}
       >{children}</ReactMarkdown>
     </div>
+  );
+}
+
+/** Sanitized inline Markdown for single-row fields such as criteria. */
+export function InlineMarkdown({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeRaw, [rehypeSanitize, schema]]}
+      urlTransform={urlTransform}
+      allowedElements={["p", "code", "strong", "em", "a", "br"]}
+      unwrapDisallowed
+      components={{
+        p: ({ children }) => <>{children}</>,
+        code: ({ children }) => <code className="rounded-[6px] bg-selected px-1 font-mono text-[12.5px]">{children}</code>,
+        a: ({ children, href, title }) => <a href={href} title={title} target="_blank" rel="noreferrer noopener" className="text-act underline">{children}</a>,
+      }}
+    >{children}</ReactMarkdown>
   );
 }

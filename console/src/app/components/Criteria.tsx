@@ -1,5 +1,6 @@
 import type { CriterionRow, Standing } from "../../lib/criteria";
 import type { State, Tone } from "../state";
+import { InlineMarkdown } from "./Markdown";
 import { STATE_ICONS, TONE_TEXT } from "./StateDot";
 
 const MARKS: Record<Standing, { icon: State; tone: Tone; name: string }> = {
@@ -59,7 +60,7 @@ export function Criteria({
           <li key={row.id} className="flex items-start gap-2.5 border-b border-hair py-2 font-sans text-[14px] leading-[1.5] text-ink">
             <strong className="mt-[3px] w-[34px] shrink-0 font-mono text-[11px] font-bold leading-none text-ink-3">{row.id}</strong>
             {held == null ? <Mark standing={row.standing} /> : <span className="size-3.5 shrink-0" />}
-            <span className="min-w-0 max-w-[75ch] [overflow-wrap:anywhere]">{row.text}</span>
+            <span className="min-w-0 max-w-[75ch] [overflow-wrap:anywhere]"><InlineMarkdown>{row.text}</InlineMarkdown></span>
           </li>
         ))}
       </ul>
