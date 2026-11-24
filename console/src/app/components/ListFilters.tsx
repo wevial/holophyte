@@ -615,12 +615,8 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
             deselectable
             value={picked?.value ?? null}
             onValueChange={(next, details) => {
-              if (next == null) {
-                details.cancel();
-                close();
-                return;
-              }
-              write({ range: next === fallback ? undefined : next, from: undefined, to: undefined });
+              if (next == null) details.cancel();
+              else write({ range: next === fallback ? undefined : next, from: undefined, to: undefined });
               close();
             }}
             className="flex flex-col outline-none"

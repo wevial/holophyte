@@ -319,9 +319,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
       label="Range choices"
       dismissOnFocusLoss
       sideOffset={4}
-      onOpenChange={(open) => {
-        if (open) setDraft({ from: search.from ?? "", to: search.to ?? "" });
-      }}
+      onOpenChange={(open) => { if (open) setDraft({ from: search.from ?? "", to: search.to ?? "" }); }}
       triggerLabel="Range"
       triggerClassName="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       trigger={
@@ -341,12 +339,8 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
             deselectable
             value={custom ? null : preset.value}
             onValueChange={(next, details) => {
-              if (next == null) {
-                details.cancel();
-                close();
-                return;
-              }
-              choose({ range: next === DEFAULT_RANGE ? undefined : next, from: undefined, to: undefined });
+              if (next == null) details.cancel();
+              else choose({ range: next === DEFAULT_RANGE ? undefined : next, from: undefined, to: undefined });
               close();
             }}
             className="flex flex-col outline-none"
