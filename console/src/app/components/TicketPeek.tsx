@@ -11,6 +11,7 @@ import { cardState, cardWord, COLUMN_HEADS, type ColumnId, type TicketCard } fro
 import { CardActions } from "./CardActions";
 import { Criteria, SECTION_LABEL } from "./Criteria";
 import { describeOn } from "./FocusCard";
+import { useNoCloseWatcher } from "./Sidebar";
 import { stageWord } from "./StageChip";
 import { StateDot, TONE_TEXT } from "./StateDot";
 import { TitleText } from "./TitleText";
@@ -125,6 +126,7 @@ export function TicketPeek({
   now: number;
   onClose: () => void;
 }) {
+  const { before, contentRef } = useNoCloseWatcher(true);
   const close = useRef<HTMLButtonElement>(null);
   const previousCard = useRef(card.id);
   useEffect(() => {
@@ -134,19 +136,22 @@ export function TicketPeek({
   }, [card.id]);
   const head = COLUMN_HEADS[column];
   return (
-    <Dialog
-      open
-      modal={false}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <DialogContent
-        data-peek=""
-        initialFocus={() => close.current}
-        finalFocus="none"
-        className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:top-[30px] max-[720px]:w-full max-[720px]:rounded-none"
+    <>
+      {before}
+      <Dialog
+        open
+        modal={false}
+        onOpenChange={(next) => {
+          if (!next) onClose();
+        }}
       >
+        <DialogContent
+          ref={contentRef}
+          data-peek=""
+          initialFocus={() => close.current}
+          finalFocus="none"
+          className="fixed inset-y-0 right-0 z-40 box-border flex w-[min(420px,100vw)] flex-col rounded-l-[12px] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))] max-[720px]:top-[30px] max-[720px]:w-full max-[720px]:rounded-none"
+        >
         <div className="flex items-center gap-1 pl-[18px] pr-[18px] pt-4">
           <span data-peek-key className="mr-auto font-mono text-[12px] leading-none tabular-nums text-ink-3">{card.key}</span>
           <span className="flex gap-1">
@@ -199,5 +204,6 @@ export function TicketPeek({
         </div>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

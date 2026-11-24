@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
+import { useCallback, useContext, useEffect, useInsertionEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Drawer, DrawerBackdrop, DrawerContent } from "@ui-sdk/react/drawer";
 import { mergeProps } from "@ui-sdk/react/primitive";
@@ -87,6 +87,66 @@ function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLin
 }
 
 const DRAWER_ID = "sidebar-drawer";
+
+let closeWatcherHolds = 0;
+let hadCloseWatcher = false;
+let savedCloseWatcher: unknown;
+
+function holdCloseWatcher(): () => void {
+  const host = globalThis as { CloseWatcher?: unknown };
+  if (closeWatcherHolds === 0) {
+    hadCloseWatcher = "CloseWatcher" in host;
+    savedCloseWatcher = host.CloseWatcher;
+    if (hadCloseWatcher) host.CloseWatcher = undefined;
+  }
+  closeWatcherHolds += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    closeWatcherHolds -= 1;
+    if (closeWatcherHolds > 0) return;
+    if (hadCloseWatcher) host.CloseWatcher = savedCloseWatcher;
+    hadCloseWatcher = false;
+    savedCloseWatcher = undefined;
+  };
+}
+
+function HoldCloseWatcher({ active, hold }: { active: boolean; hold: () => void }) {
+  useLayoutEffect(() => {
+    if (active) hold();
+  }, [active, hold]);
+  return null;
+}
+
+// Suppresses UI SDK's Android CloseWatcher during attach/open so system Back stays on browser history.
+export function useNoCloseWatcher(active: boolean) {
+  const release = useRef<(() => void) | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const hold = useCallback(() => {
+    release.current ??= holdCloseWatcher();
+  }, []);
+  const drop = useCallback(() => {
+    release.current?.();
+    release.current = null;
+  }, []);
+  useInsertionEffect(() => {
+    if (active) hold();
+    return drop;
+  }, [active, hold, drop]);
+  useLayoutEffect(() => {
+    drop();
+    return drop;
+  }, [active, drop]);
+  const contentRef = useCallback(
+    (el: HTMLElement | null) => {
+      if (el != null && activeRef.current) hold();
+    },
+    [hold],
+  );
+  return { before: <HoldCloseWatcher active={active} hold={hold} />, contentRef };
+}
 
 type TipChange = TooltipProps["onOpenChange"];
 
@@ -637,37 +697,69 @@ export function Sidebar({ folded, back, onTipChange }: { folded: boolean; back: 
 }
 
 export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose: () => void; back: string | null }) {
+  const { before, contentRef: holdWatcherRef } = useNoCloseWatcher(open);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const setContentRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      contentRef.current = el;
+      holdWatcherRef(el);
+    },
+    [holdWatcherRef],
+  );
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    // Block non-touch pointerdown before the drawer's pointer driver so mouse drags stay no-ops while touch swipes still work.
+    const stopDirect = (event: PointerEvent) => {
+      if (event.pointerType !== "touch" && event.target === content) event.stopPropagation();
+    };
+    const stopInside = (event: PointerEvent) => {
+      if (event.pointerType !== "touch") event.stopPropagation();
+    };
+    const viewport = content.parentElement;
+    const surface = content.firstElementChild instanceof HTMLElement ? content.firstElementChild : null;
+    viewport?.addEventListener("pointerdown", stopDirect, true);
+    surface?.addEventListener("pointerdown", stopInside);
+    return () => {
+      viewport?.removeEventListener("pointerdown", stopDirect, true);
+      surface?.removeEventListener("pointerdown", stopInside);
+    };
+  }, []);
   return (
-    <Drawer
-      open={open}
-      modal={open}
-      side="left"
-      persistentElements={["[data-title-bar]"]}
-      onOpenChange={(next, details) => {
-        if (next) return;
-        // Stop Escape before underlying document fallback listeners run when focus is on the persistent title bar.
-        if (details.reason === "escape-key") details.event?.stopImmediatePropagation();
-        onClose();
-      }}
-    >
-      <DrawerBackdrop className="fixed inset-x-0 top-[30px] bottom-0 z-50 bg-scrim" />
-      <DrawerContent
-        id={DRAWER_ID}
-        aria-label="Sidebar"
-        keepMounted
-        initialFocus="content"
-        finalFocus="[data-sidebar-toggle]"
-        onKeyDown={(event) => {
-          // Stop non-modifier keys before page shortcuts such as `/`, leaving Escape to the drawer's layer.
-          if (event.key !== "Escape" && !event.metaKey && !event.ctrlKey) event.stopPropagation();
+    <>
+      {before}
+      <Drawer
+        open={open}
+        modal={open}
+        side="left"
+        persistentElements={["[data-title-bar]"]}
+        onOpenChange={(next, details) => {
+          if (next) return;
+          // Stop Escape before underlying document fallback listeners run when focus is on the persistent title bar.
+          if (details.reason === "escape-key") details.event?.stopImmediatePropagation();
+          onClose();
         }}
-        onClick={(event) => {
-          if ((event.target as Element).closest("a[href]")) onClose();
-        }}
-        className="mt-[30px] flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
-        <Sidebar folded={false} back={back} onTipChange={drawerTipChange(open, onClose)} />
-      </DrawerContent>
-    </Drawer>
+        <DrawerBackdrop className="fixed inset-x-0 top-[30px] bottom-0 z-50 bg-scrim" />
+        <DrawerContent
+          ref={setContentRef}
+          id={DRAWER_ID}
+          aria-label="Sidebar"
+          keepMounted
+          initialFocus="content"
+          finalFocus="[data-sidebar-toggle]"
+          onKeyDown={(event) => {
+            // Stop non-modifier keys before page shortcuts such as `/`, leaving Escape to the drawer's layer.
+            if (event.key !== "Escape" && !event.metaKey && !event.ctrlKey) event.stopPropagation();
+          }}
+          onClick={(event) => {
+            if ((event.target as Element).closest("a[href]")) onClose();
+          }}
+          className="mt-[30px] flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
+        >
+          <Sidebar folded={false} back={back} onTipChange={drawerTipChange(open, onClose)} />
+        </DrawerContent>
+      </Drawer>
+    </>
   );
 }

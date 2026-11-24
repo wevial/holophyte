@@ -311,3 +311,35 @@ test("Esc on the peek's merge dialog shuts the dialog alone and puts focus back 
   expect(screen.getByRole("dialog", { name: "DEMO-9 title" })).toBeTruthy();
   expect(document.activeElement).toBe(within(askBox()!).getByRole("button", { name: "Merge" }));
 });
+
+test("on Android Chrome opening a ticket peek registers no CloseWatcher, while a confirm opened from it still sees CloseWatcher", async () => {
+  const host = globalThis as { CloseWatcher?: unknown };
+  const hadWatcher = "CloseWatcher" in host;
+  const previousWatcher = host.CloseWatcher;
+  const previousUa = Object.getOwnPropertyDescriptor(navigator, "userAgent");
+  const created: unknown[] = [];
+  class FakeCloseWatcher extends EventTarget {
+    constructor() {
+      super();
+      created.push(this);
+    }
+    destroy() {}
+  }
+  host.CloseWatcher = FakeCloseWatcher;
+  Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (Linux; Android 14; Pixel 7) Chrome/126.0.0.0 Mobile Safari/537.36" });
+  try {
+    await peekAt("DEMO-9", fakeFetch({ ok: true, detail: "approved" }).fetchImpl);
+    expect(peek()).not.toBeNull();
+    expect(created).toHaveLength(0);
+    expect(host.CloseWatcher).toBe(FakeCloseWatcher);
+
+    await press(within(askBox()!).getByRole("button", { name: "Merge" }));
+    expect(screen.getByRole("alertdialog", { name: "Merge PR #42?" })).toBeTruthy();
+    expect(created).toHaveLength(1);
+  } finally {
+    if (hadWatcher) host.CloseWatcher = previousWatcher;
+    else delete host.CloseWatcher;
+    if (previousUa) Object.defineProperty(navigator, "userAgent", previousUa);
+    else delete (navigator as { userAgent?: string }).userAgent;
+  }
+});

@@ -1855,3 +1855,95 @@ test("at 390px over an open Filter and sort, Escape closes the drawer's project 
     expect(filters()).not.toBeNull();
   });
 });
+
+test("at 390px a mouse drag on the drawer leaves it open while a touch swipe toward the left edge closes it", async () => {
+  const nativeAnimate = Element.prototype.animate;
+  Element.prototype.animate = function animate(...args: Parameters<Element["animate"]>) {
+    const animation = nativeAnimate.apply(this, args);
+    animation.finished.catch(() => {});
+    return animation;
+  };
+  try {
+    await atWidth(390, async () => {
+      await mount("#/runs");
+      const panel = document.getElementById("sidebar-drawer")!;
+      Object.defineProperty(panel, "offsetWidth", { configurable: true, value: 332 });
+      Object.defineProperty(panel.parentElement!, "clientWidth", { configurable: true, value: 390 });
+      panel.getBoundingClientRect = () => new DOMRect(0, 30, 332, 814);
+      await act(async () => void fireEvent.click(openSidebar()));
+      await act(settle);
+      expect(drawer()).toBe(panel);
+
+      const surface = within(panel).getByRole("complementary", { name: "Console" });
+      for (const target of [surface, panel]) {
+        await act(async () => {
+          target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientX: 295, clientY: 670 }));
+          document.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientX: 160, clientY: 670 }));
+          document.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientX: 25, clientY: 670 }));
+          document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, button: 0, pointerId: 1, pointerType: "mouse", clientX: 25, clientY: 670 }));
+        });
+        await act(settle);
+        expect(drawer()).toBe(panel);
+        expect(panel.hasAttribute("data-dragging")).toBe(false);
+        expect(openSidebar().getAttribute("aria-expanded")).toBe("true");
+      }
+
+      const touchEvent = (type: string, clientX: number, active: boolean) => {
+        const point = { identifier: 1, clientX, clientY: 670, target: surface };
+        const event = new Event(type, { bubbles: true, cancelable: true }) as Event & { touches: unknown[]; changedTouches: unknown[] };
+        event.touches = active ? [point] : [];
+        event.changedTouches = [point];
+        return event;
+      };
+      await act(async () => {
+        surface.dispatchEvent(touchEvent("touchstart", 295, true));
+        surface.dispatchEvent(touchEvent("touchmove", 160, true));
+        surface.dispatchEvent(touchEvent("touchmove", 25, true));
+        surface.dispatchEvent(touchEvent("touchend", 25, false));
+      });
+      await act(settle);
+      expect(drawer()).toBeNull();
+      expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(openSidebar());
+    });
+  } finally {
+    Element.prototype.animate = nativeAnimate;
+  }
+});
+
+test("at 390px on Android Chrome opening the drawer registers no CloseWatcher and leaves CloseWatcher intact", async () => {
+  const host = globalThis as { CloseWatcher?: unknown };
+  const hadWatcher = "CloseWatcher" in host;
+  const previousWatcher = host.CloseWatcher;
+  const previousUa = Object.getOwnPropertyDescriptor(navigator, "userAgent");
+  const created: unknown[] = [];
+  class FakeCloseWatcher extends EventTarget {
+    constructor() {
+      super();
+      created.push(this);
+    }
+    destroy() {}
+  }
+  host.CloseWatcher = FakeCloseWatcher;
+  Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (Linux; Android 14; Pixel 7) Chrome/126.0.0.0 Mobile Safari/537.36" });
+  try {
+    await atWidth(390, async () => {
+      await mount("#/runs");
+      for (const _open of [1, 2]) {
+        await act(async () => void fireEvent.click(openSidebar()));
+        await act(settle);
+        expect(drawer()).not.toBeNull();
+        expect(created).toHaveLength(0);
+        expect(host.CloseWatcher).toBe(FakeCloseWatcher);
+        await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+        await act(settle);
+        expect(drawer()).toBeNull();
+      }
+    });
+  } finally {
+    if (hadWatcher) host.CloseWatcher = previousWatcher;
+    else delete host.CloseWatcher;
+    if (previousUa) Object.defineProperty(navigator, "userAgent", previousUa);
+    else delete (navigator as { userAgent?: string }).userAgent;
+  }
+});
