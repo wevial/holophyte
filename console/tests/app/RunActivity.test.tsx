@@ -302,6 +302,75 @@ test("ArrowDown, End, Home and wrapping ArrowUp move focus across Progress group
   expect(document.activeElement).toBe(fold(items[2]!));
 });
 
+test("an open group's finding controls are tabbable only while that group holds the tab stop", async () => {
+  const user = userEvent.setup();
+  const detail: RunDetail = {
+    ...reviewing,
+    rounds: [
+      {
+        ...roundOne,
+        findings: [
+          {
+            ...p2("Preserve keyboard order\nDetail shown after More."),
+            path: "console/src/app/components/Timeline.tsx",
+            line: 69,
+            summary: undefined,
+            url: "https://github.test/demo/pull/1#discussion_r1",
+          },
+        ],
+      },
+    ],
+  };
+  await mount(runFetch({ detail }));
+  const items = rows();
+  await act(async () => void items[0]!.focus());
+
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(items[1]);
+
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[1]!));
+  await user.keyboard("{Enter}");
+  expect(fold(items[1]!).getAttribute("aria-expanded")).toBe("true");
+
+  const more = within(items[1]!).getByRole("button", { name: "More" });
+  const location = within(items[1]!).getByRole("link", { name: "console/src/app/components/Timeline.tsx:69" });
+  await user.tab();
+  expect(document.activeElement).toBe(more);
+  await user.tab();
+  expect(document.activeElement).toBe(location);
+
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[1]);
+
+  await user.keyboard("{End}");
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.tab({ shift: true });
+  expect(progress().contains(document.activeElement)).toBe(false);
+
+  await user.tab();
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.keyboard("{Home}");
+  expect(document.activeElement).toBe(items[0]);
+  await user.tab();
+  expect(list().contains(document.activeElement)).toBe(false);
+
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[0]);
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(items[1]);
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[1]!));
+  await user.tab();
+  expect(document.activeElement).toBe(more);
+  await user.tab();
+  expect(document.activeElement).toBe(location);
+});
+
 test("a focused running covering review keeps focus and the tab stop when a poll records that round with a later start time", async () => {
   const pendingCovering: RunDetail = {
     ...live,

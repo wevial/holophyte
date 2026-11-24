@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Timeline,
   TimelineConnector,
@@ -62,6 +62,28 @@ function Findings({ findings, fates }: { findings: RoundFinding[]; fates: Map<Ro
 
 type Current = Ending["tone"] | "live" | null;
 
+const TABBABLE =
+  'a[href],area[href],button,input:not([type="hidden"]),select,textarea,summary,iframe,[tabindex],[contenteditable]:not([contenteditable="false"])';
+const savedTabIndex = new WeakMap<HTMLElement, string | null>();
+
+function syncSubtreeTabbable(root: HTMLElement, tabbable: boolean) {
+  if (tabbable) {
+    for (const el of root.querySelectorAll<HTMLElement>('[tabindex="-1"]')) {
+      if (!savedTabIndex.has(el)) continue;
+      const previous = savedTabIndex.get(el)!;
+      savedTabIndex.delete(el);
+      if (previous == null) el.removeAttribute("tabindex");
+      else el.setAttribute("tabindex", previous);
+    }
+    return;
+  }
+  for (const el of root.querySelectorAll<HTMLElement>(TABBABLE)) {
+    if (el.getAttribute("tabindex") === "-1") continue;
+    savedTabIndex.set(el, el.getAttribute("tabindex"));
+    el.setAttribute("tabindex", "-1");
+  }
+}
+
 interface GroupProps {
   group: ActivityGroup;
   value: string;
@@ -78,10 +100,23 @@ interface GroupProps {
 
 function Group({ group, value, open, tabbable, onFocusItem, onToggle, fates, current, tail }: GroupProps) {
   const stepsId = useId();
+  const itemRef = useRef<HTMLDivElement>(null);
   const findings = groupFindings(group);
   const folds = group.steps.length > 0 || findings.length > 0 || tail != null;
+  useLayoutEffect(() => {
+    const item = itemRef.current;
+    if (item == null) return;
+    syncSubtreeTabbable(item, tabbable);
+    if (tabbable || typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => record.type === "childList" || record.target !== item)) syncSubtreeTabbable(item, false);
+    });
+    observer.observe(item, { childList: true, subtree: true, attributes: true, attributeFilter: ["tabindex", "href"] });
+    return () => observer.disconnect();
+  }, [tabbable, open, folds]);
   return (
     <TimelineItem
+      ref={itemRef}
       value={value}
       id={group.anchor ?? (group.number == null ? undefined : `round-${group.number}`)}
       data-group={group.kind}
@@ -91,7 +126,7 @@ function Group({ group, value, open, tabbable, onFocusItem, onToggle, fates, cur
       className="group/item relative scroll-mt-4 border-b border-rule-2"
     >
       <TimelineConnector className="pointer-events-none absolute top-[27px] -bottom-[28px] left-[76px] w-px bg-rule group-data-last/item:hidden max-[720px]:left-[66px]" />
-      <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} tabbable={tabbable} onToggle={onToggle}>
+      <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} onToggle={onToggle}>
         <Heading group={group} current={current != null} />
       </GroupHead>
       {folds && open && (
