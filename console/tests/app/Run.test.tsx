@@ -394,12 +394,19 @@ test("a covering review under way links its mark to its round's covering review 
 
 test("a covering review retried twice shows its three rounds under Merge gate, each linked to its own covering review in Progress", async () => {
   await mount("#/runs/demo/56");
-  expect(markNames("Review rounds")).toEqual(["Round 1: pass"]);
+  const list = within(screen.getByRole("region", { name: "Progress" })).getByRole("list", { name: "Run activity" });
+  const reviewMarks = within(screen.getByRole("group", { name: "Review rounds" })).getAllByRole("link");
+  expect(reviewMarks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 1: pass"]);
+  expect(reviewMarks[0]!.getAttribute("href")).toBe("#round-1");
+  const roundOneTarget = document.getElementById(reviewMarks[0]!.getAttribute("href")!.slice(1));
+  expect(roundOneTarget?.parentElement).toBe(list);
+  expect(roundOneTarget?.getAttribute("data-group")).toBe("round");
   const rechecks = within(screen.getByRole("group", { name: "Merge gate rounds" })).getAllByRole("link");
   expect(rechecks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 2: pass", "Round 3: pass", "Round 4: pass"]);
   const targets = rechecks.map((mark) => document.getElementById(mark.getAttribute("href")!.slice(1)));
+  expect(targets.every((target) => target?.parentElement === list)).toBe(true);
   expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
-  expect(new Set(targets).size).toBe(3);
+  expect(new Set([roundOneTarget, ...targets]).size).toBe(4);
 });
 
 test("an approved covering review still reviewing, with no later review begun, adds no round and keeps Merge gate current", async () => {

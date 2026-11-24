@@ -64,7 +64,10 @@ type Current = Ending["tone"] | "live" | null;
 
 interface GroupProps {
   group: ActivityGroup;
+  value: string;
   open: boolean;
+  tabbable: boolean;
+  onFocusItem: () => void;
   onToggle: () => void;
   fates: Map<RoundFinding, Fate>;
   /** The current group's tone; null for every other group. */
@@ -73,20 +76,22 @@ interface GroupProps {
   tail: ReactNode;
 }
 
-function Group({ group, open, onToggle, fates, current, tail }: GroupProps) {
+function Group({ group, value, open, tabbable, onFocusItem, onToggle, fates, current, tail }: GroupProps) {
   const stepsId = useId();
   const findings = groupFindings(group);
   const folds = group.steps.length > 0 || findings.length > 0 || tail != null;
   return (
     <TimelineItem
+      value={value}
       id={group.anchor ?? (group.number == null ? undefined : `round-${group.number}`)}
       data-group={group.kind}
       data-running={group.running ? "" : undefined}
       data-current={current ?? undefined}
+      onFocus={(event) => { if (event.target === event.currentTarget) onFocusItem(); }}
       className="group/item relative scroll-mt-4 border-b border-rule-2"
     >
       <TimelineConnector className="pointer-events-none absolute top-[27px] -bottom-[28px] left-[76px] w-px bg-rule group-data-last/item:hidden max-[720px]:left-[66px]" />
-      <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} onToggle={onToggle}>
+      <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} tabbable={tabbable} onToggle={onToggle}>
         <Heading group={group} current={current != null} />
       </GroupHead>
       {folds && open && (
@@ -100,7 +105,11 @@ function Group({ group, open, onToggle, fates, current, tail }: GroupProps) {
   );
 }
 
-const groupKey = (group: ActivityGroup) => `${group.kind}:${group.at}`;
+const groupKey = (group: ActivityGroup) => {
+  if (group.anchor != null) return `${group.kind}:${group.anchor}`;
+  if ((group.kind === "round" || group.kind === "final") && group.number != null) return `round:${group.number}`;
+  return `${group.kind}:${group.at}`;
+};
 
 const judgedFindings = (group: ActivityGroup) =>
   group.round != null && (group.kind === "round" || (group.kind === "final" && (group.round.findings.length > 0 || PASSED.has(group.round.verdict))));
@@ -134,7 +143,10 @@ function NowDetail({ text }: { text: string }) {
  *  is open exactly while it is current. */
 export function RunActivity({ activity, detail, base, project }: RunActivityProps) {
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
+  const [tabStop, setTabStop] = useState<string | null>(null);
   const { groups } = activity;
+  const keys = groups.map(groupKey);
+  const stopKey = tabStop != null && keys.includes(tabStop) ? tabStop : (keys[0] ?? null);
   const fates = useMemo(() => reviewFates(groups), [groups]);
   const ending = detail.run.outcome == null ? null : endingOf(detail, activity);
   const currentOf = (group: ActivityGroup, index: number): Current => (index !== groups.length - 1 ? null : group.running ? "live" : (ending?.tone ?? null));
@@ -150,17 +162,20 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
     <div className="mt-4">
       <Timeline aria-label="Run activity" className="border-t border-rule-2">
         {groups.map((group, index) => {
-          const key = groupKey(group);
+          const key = keys[index]!;
           const current = currentOf(group, index);
           const open = chosen[key] ?? current != null;
           return (
             <Group
               key={key}
+              value={key}
               group={group}
               open={open}
+              tabbable={key === stopKey}
               fates={fates}
               current={current}
               tail={tailOf(group, current)}
+              onFocusItem={() => setTabStop(key)}
               onToggle={() => setChosen((was) => ({ ...was, [key]: !open }))}
             />
           );

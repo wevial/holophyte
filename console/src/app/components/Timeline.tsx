@@ -45,13 +45,14 @@ export function Badge({ tone, running, icon }: { tone: ActivityTone; running: bo
 
 /** A group's head row: its start time, badge, and `children` (its title and
  *  duration cells), as a fold button with a chevron when it `folds`. */
-export function GroupHead({ at, badge, folds, open, controls, onToggle, children }: {
+export function GroupHead({ at, badge, folds, open, controls, onToggle, tabbable = true, children }: {
   at: number | null;
   badge: ReactNode;
   folds: boolean;
   open: boolean;
   controls: string;
   onToggle: () => void;
+  tabbable?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -65,6 +66,7 @@ export function GroupHead({ at, badge, folds, open, controls, onToggle, children
       {folds ? (
         <button
           type="button"
+          tabIndex={tabbable ? undefined : -1}
           aria-expanded={open}
           aria-controls={controls}
           onClick={onToggle}

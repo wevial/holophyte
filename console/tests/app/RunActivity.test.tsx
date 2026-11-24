@@ -208,13 +208,17 @@ test("a live run has no Now region; its running group alone is open and current,
   expect(row(running)[1]).toBe("now");
   expect(current()).toEqual([running]);
   expect(rows().map((li) => li.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded") ?? null)).toEqual([null, "false", "true"]);
-  expect(body(running)!.textContent).toContain("Implement turn: 9 tool calls; last: running a command");
-  const before = body(running)!.childElementCount;
+  expect(steps(running)).toEqual(["Verify"]);
+  const openBody = body(running)!;
+  expect(openBody.lastElementChild!.textContent).toBe("Implement turn: 9 tool calls; last: running a command");
+  const before = openBody.childElementCount;
+  expect(before).toBeGreaterThan(1);
 
   bodies.detail = { ...reviewing, events: [...reviewing.events, beat(T + 16 * MIN, "Implement turn: 12 tool calls; last: editing a file")] };
   await repoll(queries);
   const after = body(rows().at(-1)!)!;
-  expect(after.textContent).toContain("Implement turn: 12 tool calls; last: editing a file");
+  expect(steps(rows().at(-1)!)).toEqual(["Verify"]);
+  expect(after.lastElementChild!.textContent).toBe("Implement turn: 12 tool calls; last: editing a file");
   expect(after.textContent).not.toContain("Implement turn: 9 tool calls");
   expect(after.childElementCount).toBe(before);
   expect(rows()).toHaveLength(3);
@@ -288,8 +292,52 @@ test("ArrowDown, End, Home and wrapping ArrowUp move focus across Progress group
   await user.keyboard("{ArrowUp}");
   expect(document.activeElement).toBe(items[2]);
 
+  await user.tab({ shift: true });
+  expect(progress().contains(document.activeElement)).toBe(false);
+
+  await user.tab();
+  expect(document.activeElement).toBe(items[2]);
+
   await user.tab();
   expect(document.activeElement).toBe(fold(items[2]!));
+});
+
+test("a focused running covering review keeps focus and the tab stop when a poll records that round with a later start time", async () => {
+  const pendingCovering: RunDetail = {
+    ...live,
+    run: { ...live.run, phase: "reviewing" },
+    events: [
+      phase(T, "claimed -> working"),
+      phase(T + 10 * MIN, "working -> verifying"),
+      phase(T + 10 * MIN + 30 * SEC, "verifying -> reviewing: round 1 review"),
+      { at: T + 20 * MIN, kind: "babysit_step", summary: "covering_review" },
+      phase(T + 20 * MIN, "merge_gate -> reviewing: review of the fix at 0123456789ab"),
+    ],
+    rounds: [round({ ...roundOne, verdict: "pass", findings: [] })],
+  };
+  const bodies = { detail: pendingCovering };
+  const queries = await mount(runFetch(bodies));
+  const covering = document.getElementById("round-2")!;
+  expect(covering.getAttribute("data-group")).toBe("covering_review");
+  expect(covering.querySelector("time")!.textContent).toBe("10:20");
+  await act(async () => void covering.focus());
+  expect(document.activeElement).toBe(covering);
+  expect(covering.getAttribute("tabindex")).toBe("0");
+
+  bodies.detail = {
+    ...pendingCovering,
+    run: { ...pendingCovering.run, phase: "merge_gate" },
+    rounds: [
+      ...pendingCovering.rounds,
+      round({ round: 2, started_ms: T + 21 * MIN, ended_ms: T + 23 * MIN, verdict: "approved" }),
+    ],
+  };
+  await repoll(queries);
+  expect(document.getElementById("round-2") === covering).toBe(true);
+  expect(covering.querySelector("time")!.textContent).toBe("10:21");
+  expect(document.activeElement === covering).toBe(true);
+  expect(covering.getAttribute("tabindex")).toBe("0");
+  expect(rowOf("Implement").getAttribute("tabindex")).toBe("-1");
 });
 
 async function waitInert(element: HTMLElement) {
