@@ -542,26 +542,16 @@ test("the Scout document tablist opens on Decide with its count in its own eleme
     expect(selected.getAttribute("aria-selected")).toBe("true");
     expect(allTabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(allTabs.map((tab) => (tab === selected ? "0" : "-1")));
   };
-  const press = async (target: HTMLElement, key: string) => {
-    await act(async () => void fireEvent.keyDown(target, { key }));
-    await settled();
-  };
   expect([decide.firstChild!.textContent, decide.querySelector("[data-tab-count]")!.textContent]).toEqual(["Decide", "2"]);
   roving(decide);
-  await press(decide, "ArrowLeft");
-  roving(last);
-  expect(document.activeElement).toBe(last);
-  await press(last, "Home");
-  roving(decide);
-  expect(document.activeElement).toBe(decide);
-  await press(decide, "End");
-  roving(last);
-  expect(document.activeElement).toBe(last);
-  await press(last, "Home");
-  roving(decide);
-  await press(decide, "ArrowRight");
-  roving(writeup);
-  expect(document.activeElement).toBe(writeup);
+  let active = decide;
+  for (const [key, next] of [["ArrowLeft", last], ["Home", decide], ["ArrowRight", writeup], ["End", last]] as const) {
+    await act(async () => void fireEvent.keyDown(active, { key }));
+    await settled();
+    roving(next);
+    expect(document.activeElement).toBe(next);
+    active = next;
+  }
 });
 
 test("the Progress heading reads live beside it while the scout runs, and the run's span once it is done", async () => {
@@ -592,14 +582,12 @@ test("choosing Write-up, Findings then Activity shows the write-up, the findings
     .toEqual(WRITEUP.map((section) => [section.heading, section.text]));
   const findingsTab = screen.getByRole("tab", { name: "Findings 4" });
   await click(findingsTab);
-  const visiblePanels = screen.getAllByRole("tabpanel");
-  expect(visiblePanels).toHaveLength(1);
+  const panel = screen.getByRole("tabpanel", { name: "Findings 4" });
   expect(findingsTab.id).not.toBe("");
-  expect(visiblePanels[0]!.getAttribute("aria-labelledby")).toBe(findingsTab.id);
-  expect(screen.getByRole("tabpanel", { name: "Findings 4" })).toBe(visiblePanels[0]!);
+  expect(panel.getAttribute("aria-labelledby")).toBe(findingsTab.id);
   const allPanels = screen.getAllByRole("tabpanel", { hidden: true });
   expect(allPanels).toHaveLength(screen.getAllByRole("tab").length);
-  expect(allPanels.filter((panel) => !panel.hidden)).toEqual(visiblePanels);
+  expect(allPanels.filter((each) => !each.hidden)).toEqual([panel]);
   expect(within(within(shown()).getByRole("list", { name: "Findings" })).getAllByRole("listitem")).toHaveLength(4);
   expect(within(shown()).queryByText(WRITEUP[0]!.heading)).toBeNull();
   await showActivity();
@@ -758,15 +746,14 @@ test("a draft and its Steer mode survive folding and reopening the chat, crossin
     await settled();
     expect(chat()).toBeNull();
     await click(screen.getByRole("tab", { name: "Chat · 2" }));
-    const composerInTab = within(shown()).getByRole("textbox", { name: "Note to the scout" }) as HTMLTextAreaElement;
-    expect(composerInTab).toBe(note());
+    const composerInTab = note();
+    expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(composerInTab);
     expect(composerInTab.value).toBe("Check the digest too");
     await act(async () => void fireEvent.change(composerInTab, { target: { value: "Check the digest and the sweep" } }));
     await click(screen.getByRole("tab", { name: "Findings 4" }));
     await click(screen.getByRole("tab", { name: "Chat · 2" }));
-    const reopened = within(shown()).getByRole("textbox", { name: "Note to the scout" }) as HTMLTextAreaElement;
-    expect(reopened).toBe(composerInTab);
-    expect(reopened.value).toBe("Check the digest and the sweep");
+    expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(composerInTab);
+    expect(composerInTab.value).toBe("Check the digest and the sweep");
   } finally {
     media.mockRestore();
   }
