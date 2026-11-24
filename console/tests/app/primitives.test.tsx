@@ -200,16 +200,18 @@ test("a weekly change is green when the number moved the good way and the accent
   expect(waitingChange.classList.contains("text-accent")).toBe(true);
 });
 
-test("a week with no merges has no interventions count, so the All projects interventions line breaks there", () => {
-  const weeks = [1, 0, 1].map((merged, index) => ({
+test("a bucket with no merges keeps its real interventions count while ratio series stay null", () => {
+  const weeks = [1, 0, 0, 1].map((merged, index) => ({
     start_ms: SIX_WEEKS[index]!,
     merged,
     rounds_median: null,
-    interventions: [2, 0, 1][index]!,
+    interventions: [2, 3, 0, 1][index]!,
     hours: { working: 1, waiting: 1, operator: 0 },
   }));
-  const flow = { now: SIX_WEEKS[3]!, buckets: weeks, phases: {}, waits: NO_WAITS, reverted: null };
-  expect(flowWeekly([flow]).interventions).toEqual([2, null, 1]);
+  const weekly = flowWeekly([{ now: SIX_WEEKS[4]!, buckets: weeks, phases: {}, waits: NO_WAITS, reverted: null }]);
+  expect(weekly.interventions).toEqual([2, 3, 0, 1]);
+  expect(weekly.waitingShare).toEqual([50, null, null, 50]);
+  expect(weekly.interventionsPerMerge).toEqual([2, null, null, 1]);
 });
 
 test("a per-merge line far below one keeps its gridlines at distinct one-decimal values", () => {
