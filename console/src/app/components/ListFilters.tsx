@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { createPopup, definePrimitive, popupContent, popupState, popupTrigger } from "@ui-sdk/core";
 import { popoverPreset } from "@ui-sdk/core/popover";
@@ -282,11 +282,11 @@ const { Trigger: ToolTrigger, Content: ToolContent } = createParts(toolPopover, 
  *  `dismissOnFocusLoss`, and `hidden` closes it. */
 export function ToolPopover({
   label, hidden = false, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
-  dismissOnFocusLoss, sideOffset = GAP, contentRef, className, style, onOpenChange, children,
+  dismissOnFocusLoss, sideOffset = GAP, width, contentRef, className, onOpenChange, children,
 }: {
   label: string; hidden?: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
   triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; sideOffset?: number;
-  contentRef?: RefObject<HTMLDivElement | null>; className?: string; style?: CSSProperties;
+  width: number; contentRef?: RefObject<HTMLDivElement | null>; className: string;
   onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const handle = usePrimitive(toolPopover, { dismissOnFocusLoss, onOpenChange });
@@ -298,7 +298,9 @@ export function ToolPopover({
     children: (
       <>
         <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
-        <ToolContent ref={contentRef} aria-label={label} side="bottom" align="end" sideOffset={sideOffset} collisionPadding={EDGE} style={{ zIndex: 20, ...style }} className={className}>
+        <ToolContent ref={contentRef} aria-label={label} side="bottom" align="end" sideOffset={sideOffset} collisionPadding={EDGE}
+          style={{ zIndex: 20, width: `min(${width}px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
+          className={`fixed z-20 overflow-y-auto outline-none ${className}`}>
           {typeof children === "function" ? children(() => void handle.api.close({ reason: "close-press" })) : children}
         </ToolContent>
       </>
@@ -322,6 +324,7 @@ export interface SortSection {
   onOrder: (order: string) => void;
 }
 
+const POPOVER_SHEET = "rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card";
 const MENU_HEAD = "flex h-[26px] items-center gap-1.5 px-2 text-[12px] text-ink-3";
 const MENU_ROW = "flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-ink-2 transition-colors hover:bg-hover hover:text-ink has-data-checked:font-medium has-data-checked:text-ink has-focus-visible:outline-2 has-focus-visible:outline-focus";
 const MENU_MARK = "inline-flex size-3.5 shrink-0 items-center justify-center outline-none!";
@@ -456,8 +459,8 @@ export function FilterPopover({ label, sections, hidden, sorting, extra }: {
       triggerTitle={label}
       trigger={<><ToolFilterIcon />{count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}</>}
       contentRef={sheet}
-      style={{ width: `min(600px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
-      className={`group/sheet fixed z-20 grid ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none data-stacked:grid-cols-1`}
+      width={600}
+      className={`group/sheet grid ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 ${POPOVER_SHEET} data-stacked:grid-cols-1`}
     >
       {(sorting || extra) && (
         <div>
@@ -513,11 +516,7 @@ export function dayRangeLabel(from: string | undefined, to: string | undefined):
   return from != null ? `From ${dayLabel(from)}` : to != null ? `To ${dayLabel(to)}` : "";
 }
 
-const RANGE_STYLE: CSSProperties = {
-  width: `min(248px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`,
-  maxWidth: "var(--available-width)",
-  maxHeight: "var(--available-height)",
-};
+const RANGE_WIDTH = 248;
 
 /** A group of `presets` written as the search's `range`, `fallback`
  *  dropping it, and a Custom range popover writing `from` and `to`, which
@@ -547,8 +546,8 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
             {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
           </>
         }
-        style={RANGE_STYLE}
-        className="fixed z-20 flex flex-col gap-2 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none"
+        width={RANGE_WIDTH}
+        className={`flex flex-col gap-2 ${POPOVER_SHEET}`}
       >
         {(close) => (
           <>
@@ -605,8 +604,8 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
           <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{picked?.label ?? dayRangeLabel(from, to)}</span>
         </>
       }
-      style={RANGE_STYLE}
-      className="fixed z-20 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none"
+      width={RANGE_WIDTH}
+      className={POPOVER_SHEET}
     >
       {(close) => (
         <>

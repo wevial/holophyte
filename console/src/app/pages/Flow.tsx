@@ -330,8 +330,8 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
           <span className="flex text-ink-3"><DropIcon /></span>
         </>
       }
-      style={{ width: "min(220px, var(--available-width, calc(100vw - 16px)))", maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
-      className={`fixed z-20 flex flex-col gap-1 overflow-y-auto p-1 outline-none ${MENU}`}
+      width={220}
+      className={`flex flex-col gap-1 p-1 ${MENU}`}
     >
       {(close) => (
         <>
