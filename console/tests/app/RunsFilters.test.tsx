@@ -112,7 +112,7 @@ const openRange = async () => {
   if (!rangeDialog()) await press(rangeButton());
   return within(rangeDialog()!);
 };
-const checkedRanges = async () => (await openRange()).getAllByRole("radio").filter((each) => each.getAttribute("aria-checked") === "true").map((each) => each.textContent);
+const checkedRanges = async () => (await openRange()).getAllByRole("option").filter((each) => each.getAttribute("aria-selected") === "true").map((each) => each.textContent);
 const chips = () => screen.queryAllByRole("button", { name: /^Remove / }).map((each) => each.getAttribute("aria-label")!.slice("Remove ".length));
 const dialog = () => screen.queryByRole("dialog", { name: "Filter and sort" });
 const openFilter = async () => {
@@ -272,7 +272,7 @@ test("Escape and a press outside close the Range popover and give focus back to 
   expect(rangeButton().getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(rangeButton());
 
-  (await openRange()).getByRole("radio", { name: "Today" }).focus();
+  (await openRange()).getByRole("option", { name: "Today" }).focus();
   await act(async () => void fireEvent.pointerDown(screen.getByRole("heading", { level: 1, name: "Runs" })));
   expect(rangeDialog()).toBeNull();
   expect(document.activeElement).toBe(rangeButton());
@@ -401,15 +401,16 @@ test("Clear filters empties Search and drops a search still waiting on its debou
   expect((await openSearch()).value).toBe("");
 });
 
-test("the Range dialog lists its presets with 7 days checked, and 30 days writes range=30d, closes it, relabels the button and asks the hosts from 30 days back", async () => {
+test("the Range dialog lists its presets with 7 days selected, and 30 days writes range=30d, closes it, relabels the button and asks the hosts from 30 days back", async () => {
   const daemons = fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] });
   await mount("#/runs", daemons.fetchImpl);
   const box = await openRange();
   expect(rangeButton().getAttribute("aria-expanded")).toBe("true");
-  expect(box.getAllByRole("radio").map((each) => each.textContent)).toEqual(["Today", "2 days", "7 days", "30 days", "Any time"]);
+  const list = within(box.getByRole("listbox", { name: "Started" }));
+  expect(list.getAllByRole("option").map((each) => each.textContent)).toEqual(["Today", "2 days", "7 days", "30 days", "Any time"]);
   expect(await checkedRanges()).toEqual(["7 days"]);
 
-  await press(box.getByRole("radio", { name: "30 days" }));
+  await press(list.getByRole("option", { name: "30 days" }));
   expect(hashSearch().get("range")).toBe("30d");
   expect(rangeDialog()).toBeNull();
   expect(document.activeElement).toBe(rangeButton());
@@ -418,10 +419,29 @@ test("the Range dialog lists its presets with 7 days checked, and 30 days writes
   for (const base of [DEMO, WRITER]) expect(daemons.lastOf(base).since).toBe(midnight(9, 16));
   expect(chips()).toEqual(["Started: Last 30 days"]);
 
-  await press((await openRange()).getByRole("radio", { name: "Today" }));
+  await press((await openRange()).getByRole("option", { name: "Today" }));
   expect(hashSearch().get("range")).toBe("today");
   expect(rangeButton().textContent).toBe("Today");
   expect(daemons.lastOf(DEMO).since).toBe(midnight(10, 15));
+});
+
+test("ArrowDown in the Range dialog moves focus from 7 days to 30 days without writing range, and Enter picks 30 days, closes it and returns focus to the button", async () => {
+  await mount("#/runs", fleet({ rows: runs("DEMO", 100, 3) }, { rows: [] }).fetchImpl);
+  const box = await openRange();
+  const seven = box.getByRole("option", { name: "7 days" });
+  const thirty = box.getByRole("option", { name: "30 days" });
+  expect(document.activeElement).toBe(seven);
+
+  await act(async () => void fireEvent.keyDown(seven, { key: "ArrowDown" }));
+  await settleAll();
+  expect(document.activeElement).toBe(thirty);
+  expect(hashSearch().has("range")).toBe(false);
+
+  await act(async () => void fireEvent.keyDown(thirty, { key: "Enter" }));
+  await settleAll();
+  expect(hashSearch().get("range")).toBe("30d");
+  expect(rangeDialog()).toBeNull();
+  expect(document.activeElement).toBe(rangeButton());
 });
 
 test("From and To picked in the Range dialog show on its button and ask the hosts from the From day until the day after the To day", async () => {

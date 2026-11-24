@@ -959,8 +959,8 @@ test("the open Range menu marks the current preset, and choosing From and To put
   await mount("#/flow?range=90d", askedFlows(asked));
   await flush();
   fireEvent.click(screen.getByRole("button", { name: "Range" }));
-  const choices = within(screen.getByRole("group", { name: "Range choices" }));
-  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 90 days"]);
+  const choices = within(screen.getByRole("dialog", { name: "Range choices" }));
+  expect(choices.getAllByRole("option", { selected: true }).map((choice) => choice.textContent)).toEqual(["Last 90 days"]);
   fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-03" } });
   fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
   await flush();
@@ -980,9 +980,9 @@ test("the open Range menu closes when focus moves out of it to the Project picke
   range.focus();
   fireEvent.click(range);
   screen.getByLabelText("From").focus();
-  expect(screen.getByRole("group", { name: "Range choices" })).toBeTruthy();
+  expect(screen.getByRole("dialog", { name: "Range choices" })).toBeTruthy();
   act(() => projectPicker().focus());
-  expect(screen.queryByRole("group", { name: "Range choices" })).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Range choices" })).toBeNull();
 });
 
 test("a From and To over 182 days, or with a To day not yet ended, stay out of the address and the asks", async () => {

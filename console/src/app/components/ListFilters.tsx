@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import { createPopup, definePrimitive, popupContent, popupState, popupTrigger, type Align, type Side } from "@ui-sdk/core";
 import { popoverPreset } from "@ui-sdk/core/popover";
 import { Checkbox, CheckboxGroup, CheckboxIndicator } from "@ui-sdk/react/checkbox";
+import { Listbox, ListboxItem, ListboxItemIndicator } from "@ui-sdk/react/listbox";
 import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
 import { Radio, RadioGroup, RadioIndicator } from "@ui-sdk/react/radio";
 import { Toggle, ToggleGroup } from "@ui-sdk/react/toggle";
@@ -149,41 +150,6 @@ export function FilterSelect({ label, param, allLabel, options }: { label: strin
 
 const DATE_FIELD = "h-[28px] rounded-button border-0 bg-selected px-2 font-mono text-[12px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
 
-/** A popover's open state, closed by `hidden`, Escape or a press outside
- *  `box`, which gives focus back to `button` and focuses nothing else. */
-export function usePopover(hidden: boolean) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const close = () => {
-    setOpen(false);
-    button.current?.focus();
-  };
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      close();
-    };
-    const onPress = (event: PointerEvent) => {
-      if (box.current?.contains(event.target as Node)) return;
-      event.preventDefault();
-      close();
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onPress);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onPress);
-    };
-  }, [open]);
-  useEffect(() => {
-    if (hidden) setOpen(false);
-  }, [hidden]);
-  return { open, setOpen, close, box, button };
-}
-
 function checkedOf(search: PageSearch, param: string): string[] {
   const raw = search[param];
   return typeof raw === "string" ? raw.split(",") : [];
@@ -254,16 +220,19 @@ function refocusAfterPress(button: HTMLElement | undefined) {
   return () => (stop(), clearTimeout(timer));
 }
 
+const EDGE = 8;
+const GAP = 6;
+
 const toolPopover = definePrimitive({
   name: "tool-popover",
-  options: { onOpenChange: "callback" },
-  state: (_options: { onOpenChange?: (open: boolean) => void }) => popupState({}),
+  options: { dismissOnFocusLoss: "boolean", onOpenChange: "callback" },
+  state: (_options: { dismissOnFocusLoss?: boolean; onOpenChange?: (open: boolean) => void }) => popupState({}),
   api: (context) => {
     let cancelRefocus = () => {};
     context.onDestroy(() => cancelRefocus());
     return createPopup(context, {
       preset: popoverPreset,
-      behavior: { dismissOnFocusLoss: false, blur: "never" },
+      behavior: { dismissOnFocusLoss: !!context.options().dismissOnFocusLoss, blur: "never" },
       rules: (core) => ({
         // Keep the sheet in the page's stacking context so modal overlays cover it.
         bind: () => ({ inline: true }),
@@ -309,19 +278,19 @@ const toolPopover = definePrimitive({
 const { Trigger: ToolTrigger, Content: ToolContent } = createParts(toolPopover, { trigger: "button", content: "div" });
 
 /** A trigger over a dialog named `label`: Escape and outside presses close it
- *  and return focus to the trigger, focus moving out keeps it open, and
- *  `hidden` closes it. */
+ *  and return focus to the trigger, focus moving out closes it only with
+ *  `dismissOnFocusLoss`, and `hidden` closes it. */
 export function ToolPopover({
   label, hidden, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
-  side = "bottom", align = "end", sideOffset = MENU_GAP, collisionPadding = MENU_EDGE,
+  dismissOnFocusLoss = false, side = "bottom", align = "end", sideOffset = GAP, collisionPadding = EDGE,
   contentRef, className, style, onOpenChange, children,
 }: {
   label: string; hidden: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
-  triggerClassName?: string; triggerPressed?: boolean; side?: Side; align?: Align; sideOffset?: number;
-  collisionPadding?: number; contentRef?: RefObject<HTMLDivElement | null>; className?: string;
+  triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; side?: Side; align?: Align;
+  sideOffset?: number; collisionPadding?: number; contentRef?: RefObject<HTMLDivElement | null>; className?: string;
   style?: CSSProperties; onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
 }) {
-  const handle = usePrimitive(toolPopover, { onOpenChange });
+  const handle = usePrimitive(toolPopover, { dismissOnFocusLoss, onOpenChange });
   useEffect(() => {
     if (hidden) handle.api.close();
   }, [hidden, handle]);
@@ -488,7 +457,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra }: {
       triggerTitle={label}
       trigger={<><ToolFilterIcon />{count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}</>}
       contentRef={sheet}
-      style={{ width: `min(600px, var(--available-width, calc(100vw - ${2 * MENU_EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
+      style={{ width: `min(600px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
       className={`group/sheet fixed z-20 grid ${sorting || extra ? "grid-cols-3" : "grid-cols-2"} gap-x-2.5 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none data-stacked:grid-cols-1`}
     >
       {(sorting || extra) && (
@@ -533,30 +502,6 @@ export function PressedGroup<V extends string | number>({ label, options, value,
   );
 }
 
-const MENU_EDGE = 8;
-const MENU_GAP = 6;
-
-function scrollParent(node: HTMLElement): HTMLElement {
-  for (let at = node.parentElement; at != null; at = at.parentElement) {
-    if (/auto|scroll/.test(getComputedStyle(at).overflowX)) return at;
-  }
-  return document.documentElement;
-}
-
-/** The part of `pane` the reader sees, inside the window and clear of its scrollbars, in viewport pixels. */
-function shownPart(pane: HTMLElement, scale: number) {
-  const root = document.documentElement;
-  const right = root.getBoundingClientRect().right;
-  if (pane === root) return { left: 0, top: 0, right, bottom: window.innerHeight };
-  const box = pane.getBoundingClientRect();
-  return {
-    left: Math.max(0, box.left + pane.clientLeft * scale),
-    top: Math.max(0, box.top + pane.clientTop * scale),
-    right: Math.min(right, box.left + (pane.clientLeft + pane.clientWidth) * scale),
-    bottom: Math.min(window.innerHeight, box.top + (pane.clientTop + pane.clientHeight) * scale),
-  };
-}
-
 const DAY_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 
 export function dayLabel(day: string): string {
@@ -569,6 +514,12 @@ export function dayRangeLabel(from: string | undefined, to: string | undefined):
   return from != null ? `From ${dayLabel(from)}` : to != null ? `To ${dayLabel(to)}` : "";
 }
 
+const RANGE_STYLE: CSSProperties = {
+  width: `min(248px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`,
+  maxWidth: "var(--available-width)",
+  maxHeight: "var(--available-height)",
+};
+
 /** A group of `presets` written as the search's `range`, `fallback`
  *  dropping it, and a Custom range popover writing `from` and `to`, which
  *  win over `range` while set; `hidden` closes it. */
@@ -577,78 +528,31 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
 }) {
   const { range, from, to } = useSearch({ strict: false }) as { range?: string; from?: string; to?: string };
   const write = useWrite();
-  const { open, setOpen, close, box, button } = usePopover(hidden);
   const custom = from != null || to != null;
   const fromId = useId();
   const toId = useId();
-  const anchor = useRef<HTMLDivElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  const [shift, setShift] = useState(0);
-  const [above, setAbove] = useState(false);
-  const [reveals, setReveals] = useState(0);
-  useLayoutEffect(() => {
-    if (reveals > 0) menu.current?.scrollIntoView({ block: "nearest" });
-  }, [reveals]);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const moves = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => fit(true));
-    let pane: HTMLElement | null = null;
-    let placedAt = "";
-    let scrolledTo = "";
-    const fit = (reveal: boolean) => {
-      const node = anchor.current!;
-      const sheet = menu.current!;
-      const parent = scrollParent(node);
-      if (parent !== pane) {
-        pane = parent;
-        moves?.disconnect();
-        for (const watched of [node, sheet, pane]) moves?.observe(watched);
-      }
-      // Bounding rectangles are in zoomed viewport pixels, while `left` is in the menu's own CSS pixels.
-      const { width, height } = sheet.getBoundingClientRect();
-      const scale = width / sheet.offsetWidth;
-      const { left, top, bottom } = node.getBoundingClientRect();
-      const view = shownPart(pane, scale);
-      const over = left + width - (view.right - MENU_EDGE);
-      setShift(over > 0 ? -Math.min(over, Math.max(0, left - view.left - MENU_EDGE)) / scale : 0);
-      const reach = height + MENU_GAP * scale + MENU_EDGE;
-      const fitsBelow = bottom + reach <= view.bottom;
-      const fitsAbove = top - reach >= view.top;
-      setAbove(!fitsBelow && fitsAbove);
-      if (reveal && !fitsBelow && !fitsAbove) setReveals((count) => count + 1);
-      placedAt = `${left},${top}`;
-      scrolledTo = `${pane.scrollLeft},${pane.scrollTop}`;
-    };
-    let frame = 0;
-    // Moves that resize nothing, a scroll among them, show only in the anchor's position; a reader who scrolled is not scrolled back.
-    const watch = () => {
-      const { left, top } = anchor.current!.getBoundingClientRect();
-      if (`${left},${top}` !== placedAt) fit(`${pane!.scrollLeft},${pane!.scrollTop}` === scrolledTo);
-      frame = requestAnimationFrame(watch);
-    };
-    const resized = () => fit(true);
-    fit(true);
-    frame = requestAnimationFrame(watch);
-    window.addEventListener("resize", resized);
-    return () => {
-      window.removeEventListener("resize", resized);
-      moves?.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, [open]);
   return (
-    <div ref={box} className="flex max-w-full flex-wrap items-center gap-1.5">
+    <div className="flex max-w-full flex-wrap items-center gap-1.5">
       <Segmented label={label} options={presets} value={custom ? undefined : (range ?? fallback)}
         onPick={(picked) => write({ range: picked === fallback ? undefined : picked, from: undefined, to: undefined })} />
-      <div ref={anchor} className="relative shrink-0">
-        <button ref={button} type="button" aria-label="Custom range" title="Custom range" aria-pressed={custom} aria-haspopup="true" aria-expanded={open}
-          onClick={() => setOpen(!open)} className={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}>
-          <ToolCalendarIcon />
-          {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
-        </button>
-        {open && (
-          <div ref={menu} role="group" aria-label={`${label} range`} style={{ left: shift }}
-            className={`absolute ${above ? "bottom-full mb-1.5" : "top-full mt-1.5"} z-20 flex w-62 scroll-my-2 flex-col gap-2 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card`}>
+      <ToolPopover
+        label="Custom range"
+        hidden={hidden}
+        triggerLabel="Custom range"
+        triggerTitle="Custom range"
+        triggerPressed={custom}
+        triggerClassName={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}
+        trigger={
+          <>
+            <ToolCalendarIcon />
+            {custom && <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{dayRangeLabel(from, to)}</span>}
+          </>
+        }
+        style={RANGE_STYLE}
+        className="fixed z-20 flex flex-col gap-2 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none"
+      >
+        {(close) => (
+          <>
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5">
               <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
               <input id={fromId} type="date" value={from ?? ""} max={to} className={DATE_FIELD}
@@ -658,9 +562,9 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
                 onChange={(event) => write({ range: undefined, to: event.target.value || undefined })} />
             </div>
             <Btn onClick={close} className="self-end">Done</Btn>
-          </div>
+          </>
         )}
-      </div>
+      </ToolPopover>
     </div>
   );
 }
@@ -684,7 +588,6 @@ function dayBefore(now: number, days: number): string {
 export function RangePopover({ presets, fallback, hidden, now }: { presets: readonly RangePreset[]; fallback: string; hidden: boolean; now: number }) {
   const { range, from, to } = useSearch({ strict: false }) as { range?: string; from?: string; to?: string };
   const write = useWrite();
-  const { open, setOpen, close, box, button } = usePopover(hidden);
   const custom = from != null || to != null;
   const picked = custom ? undefined : (presets.find((preset) => preset.value === (range ?? fallback)) ?? presets.find((preset) => preset.value === fallback));
   const shownFrom = custom ? from : picked?.back != null ? dayBefore(now, picked.back) : undefined;
@@ -692,28 +595,51 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
   const fromId = useId();
   const toId = useId();
   return (
-    <div ref={box} className="shrink-0">
-      <button ref={button} type="button" aria-haspopup="dialog" aria-expanded={open} aria-label={`Range: ${picked?.name ?? dayRangeLabel(from, to)}`}
-        title={picked?.name ?? "Custom range"} onClick={() => setOpen(!open)} className={TOOL}>
-        <ToolCalendarIcon />
-        <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{picked?.label ?? dayRangeLabel(from, to)}</span>
-      </button>
-      {open && (
-        <div role="dialog" aria-label="Range"
-          className="absolute top-full right-0 z-20 mt-1.5 w-62 rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card">
-          <div role="radiogroup" aria-label="Started">
+    <ToolPopover
+      label="Range"
+      hidden={hidden}
+      triggerLabel={`Range: ${picked?.name ?? dayRangeLabel(from, to)}`}
+      triggerTitle={picked?.name ?? "Custom range"}
+      trigger={
+        <>
+          <ToolCalendarIcon />
+          <span className="font-mono text-[12px] tabular-nums whitespace-nowrap text-accent">{picked?.label ?? dayRangeLabel(from, to)}</span>
+        </>
+      }
+      style={RANGE_STYLE}
+      className="fixed z-20 overflow-y-auto rounded-[9px] border border-hair-2 bg-raised p-2 text-[13px] text-ink-2 shadow-card outline-none"
+    >
+      {(close) => (
+        <>
+          <Listbox
+            aria-label="Started"
+            activation="manual"
+            deselectable
+            value={picked?.value ?? null}
+            onValueChange={(next, details) => {
+              if (next == null) {
+                details.cancel();
+                close();
+                return;
+              }
+              write({ range: next === fallback ? undefined : next, from: undefined, to: undefined });
+              close();
+            }}
+            className="flex flex-col outline-none"
+          >
             {presets.map((preset) => (
-              <button key={preset.value} type="button" role="radio" aria-checked={preset === picked}
-                onClick={() => {
-                  write({ range: preset.value === fallback ? undefined : preset.value, from: undefined, to: undefined });
-                  close();
-                }}
-                className="flex h-[26px] w-full cursor-pointer items-center gap-2 rounded-button px-2 text-left text-ink-2 hover:bg-hover hover:text-ink aria-checked:font-medium aria-checked:text-ink">
-                <span className={`inline-flex ${preset === picked ? "" : "invisible"}`}><CheckMark /></span>
+              <ListboxItem
+                key={preset.value}
+                value={preset.value}
+                className="flex h-[26px] w-full cursor-pointer items-center gap-2 rounded-button px-2 text-left text-ink-2 outline-none hover:bg-hover hover:text-ink data-selected:font-medium data-selected:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                <span aria-hidden="true" className={MENU_MARK}>
+                  <ListboxItemIndicator className="inline-flex items-center justify-center"><CheckMark /></ListboxItemIndicator>
+                </span>
                 {preset.name}
-              </button>
+              </ListboxItem>
             ))}
-          </div>
+          </Listbox>
           <div className="my-1.5 h-px bg-hair" />
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5 px-2 pt-0.5 pb-1">
             <label htmlFor={fromId} className="text-[12px] text-ink-3">From</label>
@@ -723,9 +649,9 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
             <input id={toId} type="date" value={shownTo ?? ""} min={shownFrom} className={DATE_FIELD}
               onChange={(event) => write({ range: undefined, from: shownFrom, to: event.target.value || undefined })} />
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </ToolPopover>
   );
 }
 
