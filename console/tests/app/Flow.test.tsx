@@ -242,6 +242,34 @@ function dailyFlow(specs: (typeof QUIET)[]): Flow {
 
 const shortDay = (startMs: number) => new Date(startMs).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
+function pathPoints(d: string): [number, number][] | null {
+  const move = /^\s*M\s*(-?\d+(?:\.\d+)?)[\s,]+(-?\d+(?:\.\d+)?)/y;
+  const step = /\s*(?:C\s*(?:-?\d+(?:\.\d+)?[\s,]+){4}|L\s*)(-?\d+(?:\.\d+)?)[\s,]+(-?\d+(?:\.\d+)?)/y;
+  const start = move.exec(d);
+  if (!start) return null;
+  const points: [number, number][] = [[Number(start[1]), Number(start[2])]];
+  let at = move.lastIndex;
+  while (at < d.length) {
+    if (/^\s*$/.test(d.slice(at))) break;
+    step.lastIndex = at;
+    const match = step.exec(d);
+    if (!match) return null;
+    points.push([Number(match[1]), Number(match[2])]);
+    at = step.lastIndex;
+  }
+  return points;
+}
+
+function dashPattern(element: SVGElement): number[] | null {
+  const raw = (element.style.strokeDasharray || element.getAttribute("stroke-dasharray") || "").trim();
+  if (!/^(?:\d+(?:\.\d+)?|\.\d+)(?:px)?(?:(?:\s*,\s*|\s+)(?:\d+(?:\.\d+)?|\.\d+)(?:px)?)*$/.test(raw)) return null;
+  const lengths = raw.split(/\s*,\s*|\s+/).map(parseFloat);
+  const pairs = lengths.length % 2 === 1 ? [...lengths, ...lengths] : lengths;
+  const hasDash = pairs.some((length, index) => index % 2 === 0 && length > 0);
+  const hasGap = pairs.some((length, index) => index % 2 === 1 && length > 0);
+  return hasDash && hasGap ? pairs : null;
+}
+
 function fillCoversX(path: Element, x: number): boolean {
   const xs = [...(path.getAttribute("d") ?? "").matchAll(/(-?[\d.]+)\s+(-?[\d.]+)/g)].map((match) => Number(match[1]));
   return xs.length > 0 && Math.min(...xs) <= x && x <= Math.max(...xs);
@@ -257,15 +285,18 @@ async function checkBridgedRatio(days: (typeof QUIET)[], quiet: number[], points
     }
     expect([...chart.querySelectorAll("button")].map((point) => point.getAttribute("data-point")), title).toEqual(points);
     expect([...chart.querySelectorAll("[data-dot]")].map((dot) => dot.getAttribute("data-dot")), title).toEqual(points);
-    const bridges = [...chart.querySelectorAll("path[data-bridge]")];
+    const bridges = [...chart.querySelectorAll<SVGPathElement>("path[data-bridge]")];
     expect(bridges, title).toHaveLength(1);
     const bridge = bridges[0]!;
-    expect(bridge.getAttribute("stroke-dasharray"), title).toBeTruthy();
+    expect(dashPattern(bridge), title).not.toBeNull();
+    expect(Number(bridge.getAttribute("stroke-width")), title).toBeGreaterThan(0);
     const match = /^M([\d.]+) ([\d.]+) L([\d.]+) ([\d.]+)$/.exec(bridge.getAttribute("d") ?? "");
     expect(match, title).not.toBeNull();
     const ends = [from, to].flatMap((index) => {
       const dot = chart.querySelector<HTMLElement>(`[data-dot="${index}"]`)!;
-      return [parseFloat(dot.style.left), parseFloat(dot.style.top)];
+      const x = parseFloat(dot.style.left);
+      expect(x, `${title} dot ${index} x`).toBeCloseTo(((index + 0.5) / days.length) * 100, 6);
+      return [x, parseFloat(dot.style.top)];
     });
     match!.slice(1).forEach((coord, index) => expect(Math.abs(Number(coord) - ends[index]!), title).toBeLessThanOrEqual(0.01));
     const fills = [...chart.querySelectorAll("svg path:not([data-segment]):not([data-bridge])")];
@@ -277,15 +308,27 @@ test("with the sixth of seven days quiet, Interventions reads 0 for that day and
   const flow = dailyFlow(SIXTH_QUIET);
   await mount("#/flow?range=7d", null, flow);
   const chart = document.querySelector('figure[data-chart="Interventions"]')!;
-  expect(chart.getAttribute("aria-label")).toContain(`${shortDay(flow.buckets![5]!.start_ms)} 0`);
+  expect(chart.getAttribute("aria-label")).toContain(`${shortDay(flow.buckets![5]!.start_ms)} 0,`);
   expect(chart.getAttribute("aria-label")).not.toContain("no data");
   expect([...chart.querySelectorAll("[data-point]")].map((point) => point.getAttribute("data-point"))).toEqual(["0", "1", "2", "3", "4", "5", "6"]);
-  const segments = [...chart.querySelectorAll("path[data-segment]")];
+  const dots = [...chart.querySelectorAll<HTMLElement>("[data-dot]")];
+  expect(dots.map((dot) => dot.getAttribute("data-dot"))).toEqual(["0", "1", "2", "3", "4", "5", "6"]);
+  expect(parseFloat(dots[5]!.style.top)).toBeCloseTo(100, 6);
+  expect(parseFloat(dots[6]!.style.top)).toBeLessThan(100);
+  const segments = [...chart.querySelectorAll<SVGPathElement>("path[data-segment]")];
   expect(segments).toHaveLength(1);
   expect(chart.querySelectorAll("path[data-bridge]")).toHaveLength(0);
-  const d = segments[0]!.getAttribute("d")!;
-  expect(d.match(/M/g)).toHaveLength(1);
-  expect(d.match(/C/g)).toHaveLength(6);
+  expect(dashPattern(segments[0]!)).toBeNull();
+  const points = pathPoints(segments[0]!.getAttribute("d") ?? "");
+  expect(points).toHaveLength(7);
+  points!.forEach(([x, y], index) => {
+    const dot = dots[index]!;
+    const dotX = parseFloat(dot.style.left);
+    const dotY = parseFloat(dot.style.top);
+    expect(dotX, `dot ${index} x`).toBeCloseTo(((index + 0.5) / 7) * 100, 6);
+    expect(Math.abs(x - dotX), `day ${index} x`).toBeLessThanOrEqual(0.01);
+    expect(Math.abs(y - dotY), `day ${index} y`).toBeLessThanOrEqual(0.01);
+  });
 });
 
 test("with the sixth of seven days quiet, the ratio charts read it as no data with no point, bridge day five to day seven, and leave the sixth day unfilled", async () => {
