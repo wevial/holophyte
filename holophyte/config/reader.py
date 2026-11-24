@@ -43,7 +43,6 @@ IMPL_EFFORT = "high"
 REVIEW_MODEL = review_runner.MODEL
 REVIEW_EFFORT = review_runner.EFFORT
 REVIEW_EFFORTS = review_runner.EFFORTS
-REVIEW_MEMORY = review_runner.MEMORY
 review_profile = review_runner.profile_for
 REVIEW_PROFILE = review_profile(REVIEW_MODEL, REVIEW_EFFORT)
 ADVERSARY_CLAUDE = ("opus", "high")

@@ -10,7 +10,6 @@ from holophyte.config.reader import (
     REVIEW_EFFORT,
     REVIEW_EFFORTS,
     REVIEW_FALLBACK_KEYS,
-    REVIEW_MEMORY,
     REVIEW_MEMORY_KEY,
     REVIEW_MODEL,
     REVIEW_MODES,
@@ -134,7 +133,7 @@ def review_tier(project, *, fallback=False):
 
 
 def review_memory(project):
-    value = config_table(project, "agents").get(REVIEW_MEMORY_KEY, REVIEW_MEMORY)
+    value = config_table(project, "agents").get(REVIEW_MEMORY_KEY, review_runner.MEMORY)
     if not isinstance(value, str) or not review_runner.MEMORY_SIZE.fullmatch(value):
         raise SystemExit(
             f"[holo2] {project.config_path}: [agents] {REVIEW_MEMORY_KEY} must be "
