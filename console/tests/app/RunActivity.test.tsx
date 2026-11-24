@@ -4,6 +4,7 @@ const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Round, RunAsks, RunDetail, RunEvent } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -124,14 +125,14 @@ async function repoll(queries: ReturnType<typeof consoleQueryClient>) {
 
 const progress = () => screen.getByRole("region", { name: "Progress" });
 const list = () => within(progress()).getByRole("list", { name: "Run activity" });
-const rows = () => Array.from(list().querySelectorAll(":scope > li"));
-const row = (li: Element) => [li.querySelector("[data-group-title]")!.textContent, li.querySelector("[data-group-span]")!.textContent];
-const rowOf = (title: string) => rows().find((li) => li.querySelector("[data-group-title]")!.textContent!.startsWith(title))!;
-const steps = (li: Element) => Array.from(li.querySelectorAll("[data-step-text]"), (step) => step.textContent);
-const fold = (li: Element) => within(li as HTMLElement).getAllByRole("button")[0]!;
-const toggle = async (li: Element) => act(async () => void fireEvent.click(fold(li)));
-const shut = async (li: Element) => {
-  if (fold(li).getAttribute("aria-expanded") === "true") await toggle(li);
+const rows = () => Array.from(list().querySelectorAll<HTMLElement>(':scope > [data-slot="timeline-item"]'));
+const row = (item: Element) => [item.querySelector("[data-group-title]")!.textContent, item.querySelector("[data-group-span]")!.textContent];
+const rowOf = (title: string) => rows().find((item) => item.querySelector("[data-group-title]")!.textContent!.startsWith(title))!;
+const steps = (item: Element) => Array.from(item.querySelectorAll("[data-step-text]"), (step) => step.textContent);
+const fold = (item: Element) => within(item as HTMLElement).getAllByRole("button")[0]!;
+const toggle = async (item: Element) => act(async () => void fireEvent.click(fold(item)));
+const shut = async (item: Element) => {
+  if (fold(item).getAttribute("aria-expanded") === "true") await toggle(item);
 };
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -188,6 +189,8 @@ test("an ended run opens only its last group, the current one, and a last group 
     ["Final check", "true"],
   ]);
   expect(current()).toEqual([rowOf("Final check")]);
+  expect(rowOf("Final check").getAttribute("data-current")).toBe("ok");
+  expect(rowOf("Final check").getAttribute("aria-current")).toBeNull();
   await toggle(rowOf("Final check"));
   bodies.detail = { ...checked, events: [...checked.events, { at: T + 19 * MIN, kind: "trim", summary: "Trim kept; line delta -2" }] };
   await repoll(queries);
@@ -201,6 +204,8 @@ test("a live run has no Now region; its running group alone is open and current,
   expect(within(progress()).queryByRole("region", { name: "Now" })).toBeNull();
   const running = rows().at(-1)!;
   expect(running.hasAttribute("data-running")).toBe(true);
+  expect(running.getAttribute("data-current")).toBe("live");
+  expect(row(running)[1]).toBe("now");
   expect(current()).toEqual([running]);
   expect(rows().map((li) => li.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded") ?? null)).toEqual([null, "false", "true"]);
   expect(body(running)!.textContent).toContain("Implement turn: 9 tool calls; last: running a command");
@@ -241,6 +246,50 @@ test("a live run's running group alone is current, untinted, with its title in f
   expect(rows().map((li) => li.getAttribute("data-current"))).toEqual([null, null, "live"]);
   expect(rows().map(tints)).toEqual([[], [], []]);
   expect(rows().map(titleInk)).toEqual([["text-ink-2"], ["text-ink-2"], ["text-ink"]]);
+});
+
+test("a reviewing run's Progress is one Run activity list of groups named by title, described by time and duration, with one roving tab stop", async () => {
+  await mount(runFetch({ detail: reviewing }));
+  expect(within(progress()).getAllByRole("list", { name: "Run activity" })).toHaveLength(1);
+  const items = rows();
+  expect(Array.from(list().children)).toEqual(items);
+  expect(items.map((item) => item.getAttribute("role"))).toEqual(["listitem", "listitem", "listitem"]);
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+  expect(items.every((item) => item.getAttribute("aria-current") === null)).toBe(true);
+  expect(within(list()).getByRole("listitem", { name: "Implement", description: "10:00 10m 00s" })).toBe(items[0]!);
+  expect(within(list()).getByRole("listitem", { name: "Round 1 · 3 should-fix", description: "10:10 5m 30s" })).toBe(items[1]!);
+  expect(within(list()).getByRole("listitem", { name: "Round 2", description: "10:15 now" })).toBe(items[2]!);
+  expect(items[2]!.querySelector('[data-state="running"]')!.closest('[aria-hidden="true"]')).not.toBeNull();
+});
+
+test("ArrowDown, End, Home and wrapping ArrowUp move focus across Progress groups, and Tab moves from a focused group to its fold button", async () => {
+  const user = userEvent.setup();
+  await mount(runFetch({ detail: reviewing }));
+  const items = rows();
+  await act(async () => void items[0]!.focus());
+  expect(document.activeElement).toBe(items[0]);
+
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(items[1]);
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[1]!));
+
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[1]);
+
+  await user.keyboard("{End}");
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.keyboard("{Home}");
+  expect(document.activeElement).toBe(items[0]);
+
+  await user.keyboard("{ArrowUp}");
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[2]!));
 });
 
 async function waitInert(element: HTMLElement) {

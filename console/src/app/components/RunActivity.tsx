@@ -1,11 +1,18 @@
 import { useId, useMemo, useState, type ReactNode } from "react";
+import {
+  Timeline,
+  TimelineConnector,
+  TimelineDescription,
+  TimelineItem,
+  TimelineTitle,
+} from "@ui-sdk/react/timeline";
 import type { RoundCriterion, RoundFinding, RunDetail } from "../../lib/contract.gen";
 import { formatSpan } from "../../lib/format";
 import { findingsHistory, RANK, severityOf, type Fate } from "../../lib/findings";
 import { PASSED, type ActivityGroup, type RunActivity as Activity } from "../activity";
 import { ActivityFinding } from "./ActivityFinding";
 import { EndFacts, endingOf, type Ending } from "./EndFacts";
-import { Badge, Connector, GroupHead, lineOf, Steps, type Line } from "./Timeline";
+import { Badge, GroupHead, Steps } from "./Timeline";
 
 const MARK: Record<Exclude<RoundCriterion["status"], "met">, { glyph: string; word: string; tone: string }> = {
   not_met: { glyph: "✕", word: "not met", tone: "text-bad" },
@@ -26,14 +33,14 @@ function Mark({ criterion }: { criterion: RoundCriterion }) {
 function Heading({ group, current }: { group: ActivityGroup; current: boolean }) {
   return (
     <>
-      <span data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
+      <TimelineTitle render={<span />} data-group-title className="min-w-0 font-sans text-[15px] leading-[1.4] text-ink-2 [overflow-wrap:anywhere]">
         <b className={`font-medium ${current ? "text-ink" : "text-ink-2"}`}>{group.title}</b>
         {group.sub.length > 0 && ` · ${group.sub.join(" · ")}`}
         {group.kind === "round" && group.marks.map((criterion) => <Mark key={criterion.id} criterion={criterion} />)}
-      </span>
-      <span data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
+      </TimelineTitle>
+      <TimelineDescription render={<span />} data-group-span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-ink-2">
         {group.running ? "now" : group.ms == null ? "" : formatSpan(group.ms)}
-      </span>
+      </TimelineDescription>
     </>
   );
 }
@@ -59,7 +66,6 @@ interface GroupProps {
   group: ActivityGroup;
   open: boolean;
   onToggle: () => void;
-  line: Line;
   fates: Map<RoundFinding, Fate>;
   /** The current group's tone; null for every other group. */
   current: Current;
@@ -67,19 +73,19 @@ interface GroupProps {
   tail: ReactNode;
 }
 
-function Group({ group, open, onToggle, line, fates, current, tail }: GroupProps) {
+function Group({ group, open, onToggle, fates, current, tail }: GroupProps) {
   const stepsId = useId();
   const findings = groupFindings(group);
   const folds = group.steps.length > 0 || findings.length > 0 || tail != null;
   return (
-    <li
+    <TimelineItem
       id={group.anchor ?? (group.number == null ? undefined : `round-${group.number}`)}
       data-group={group.kind}
       data-running={group.running ? "" : undefined}
       data-current={current ?? undefined}
-      className="relative scroll-mt-4 border-b border-rule-2"
+      className="group/item relative scroll-mt-4 border-b border-rule-2"
     >
-      <Connector line={line} />
+      <TimelineConnector className="pointer-events-none absolute top-[27px] -bottom-[28px] left-[76px] w-px bg-rule group-data-last/item:hidden max-[720px]:left-[66px]" />
       <GroupHead at={group.at} badge={<Badge tone={group.tone} running={group.running} icon={group.kind === "pickup" ? "pickup" : undefined} />} folds={folds} open={open} controls={stepsId} onToggle={onToggle}>
         <Heading group={group} current={current != null} />
       </GroupHead>
@@ -90,7 +96,7 @@ function Group({ group, open, onToggle, line, fates, current, tail }: GroupProps
           {tail}
         </div>
       )}
-    </li>
+    </TimelineItem>
   );
 }
 
@@ -142,7 +148,7 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
   };
   return (
     <div className="mt-4">
-      <ol aria-label="Run activity" className="m-0 list-none border-t border-rule-2 p-0">
+      <Timeline aria-label="Run activity" className="border-t border-rule-2">
         {groups.map((group, index) => {
           const key = groupKey(group);
           const current = currentOf(group, index);
@@ -152,7 +158,6 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
               key={key}
               group={group}
               open={open}
-              line={lineOf(index, groups.length)}
               fates={fates}
               current={current}
               tail={tailOf(group, current)}
@@ -160,7 +165,7 @@ export function RunActivity({ activity, detail, base, project }: RunActivityProp
             />
           );
         })}
-      </ol>
+      </Timeline>
     </div>
   );
 }
