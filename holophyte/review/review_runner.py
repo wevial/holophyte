@@ -21,6 +21,8 @@ from typing import Sequence
 ROOT = Path(__file__).resolve().parents[2]
 IMAGE = "holophyte-reviewer:ubuntu24.04-v16"
 PIDS_LIMIT = 4096
+MEMORY = "4g"
+MEMORY_SIZE = re.compile(r"[1-9][0-9]*[mg]")
 MODEL = "gpt-6-astra"
 EFFORT = "high"
 EFFORTS = ("low", "medium", "high", "xhigh")
@@ -251,7 +253,7 @@ def exec_script(harness: str, multi_agent: bool,
     return script.replace("SCHEMA", SCHEMA_FLAGS[harness] if reply_schema else "")
 
 
-def hardening_flags(uid: int, gid: int, memory: str = "2g") -> list[str]:
+def hardening_flags(uid: int, gid: int, memory: str = MEMORY) -> list[str]:
     return ["--read-only", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", f"--pids-limit={PIDS_LIMIT}",
             f"--memory={memory}", "--cpus=2", "--network=bridge",
@@ -276,6 +278,7 @@ def container_command(
     harness: str = "codex",
     credential: str | None = None,
     reply_schema: bool | Path = False,
+    memory: str = MEMORY,
 ) -> list[str]:
     """Prompt, model, effort and tier are positional arguments, never interpolated."""
     from holophyte.agents.review_workspace import review_refs
@@ -314,7 +317,7 @@ cp -a /workspace /home/reviewer/candidate
         "--rm",
         "--name",
         name,
-        *hardening_flags(uid, gid),
+        *hardening_flags(uid, gid, memory),
         "--env=HOME=/home/reviewer",
         f"--env=HOLOPHYTE_REVIEW_CANDIDATE={review_refs(run_id)[1]}",
         *([f"--env={credential}"] if harness == "claude" else []),
@@ -690,6 +693,7 @@ def run_review(
     harness: str = "codex",
     credential: str | None = None,
     reply_schema: bool | Path = False,
+    memory: str = MEMORY,
 ) -> str:
     """`profile` must be what the model and effort compute to; another is refused."""
     if not model:
@@ -701,6 +705,9 @@ def run_review(
         raise ReviewBoundaryError(
             f"reviewer profile {profile} does not name the route "
             f"{model} at {effort} ({profile_for(model, effort)})")
+    if not isinstance(memory, str) or not MEMORY_SIZE.fullmatch(memory):
+        raise ReviewBoundaryError(
+            f"invalid review memory cap {memory!r}; must be a positive m/g size")
     codex = _harness_tools(harness, credential)
 
     SCRATCH_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -731,6 +738,7 @@ def run_review(
             harness=harness,
             credential=credential,
             reply_schema=reply_schema,
+            memory=memory,
         )
         with _removing_on_signal(name):
             try:
