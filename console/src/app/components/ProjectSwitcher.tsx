@@ -11,12 +11,17 @@ import {
 } from "@ui-sdk/core";
 import { popoverPreset } from "@ui-sdk/core/popover";
 import type { BaseSlotProps } from "@ui-sdk/core/renderer";
-import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
-import { useId, useMemo, useRef } from "react";
+import { createParts, mergeProps, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import { createTooltipController, Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { storeScope, type SwitcherRow } from "../projects";
 import type { ScopeSearch } from "../scope";
 import { DropIcon } from "./icons";
+
+const TIP_BOX = "z-50 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium text-ink shadow-card";
+
+export const SIDEBAR_TIP = `${TIP_BOX} flex items-center gap-2 whitespace-nowrap`;
 
 const DIALOG_WIDTH = 264;
 const EDGE = 8;
@@ -27,6 +32,7 @@ type SwitcherOptions = {
   items?: { value: string; label: string }[];
   current?: string;
   onChoose?: (key: string) => void;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /** What a filtering combobox's primitive offers its input and options. */
@@ -88,7 +94,7 @@ export function virtualOption<State extends { highlighted: string | null }, Api 
 
 const switcher = definePrimitive({
   name: "project-switcher",
-  options: { defaultOpen: "boolean", items: "value", current: "string", onChoose: "callback" },
+  options: { defaultOpen: "boolean", items: "value", current: "string", onChoose: "callback", onOpenChange: "callback" },
   state: (options: SwitcherOptions) => ({
     ...popupState(options),
     query: "",
@@ -228,6 +234,9 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
   const navigate = useNavigate();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const findId = `${useId()}-find`;
+  const [open, setOpen] = useState(false);
+  const [tip] = useState(createTooltipController);
+  const tipDisabled = !folded || open;
 
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const byKey = useMemo(() => new Map(rows.map((row) => [rowKey(row), row])), [rows]);
@@ -246,7 +255,15 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
       storeScope(row.name);
       void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: row.name ?? undefined }) });
     },
+    onOpenChange: (next) => {
+      setOpen(next);
+      if (next) tip.close();
+    },
   });
+
+  useLayoutEffect(() => {
+    if (tipDisabled) tip.close();
+  }, [tipDisabled, tip]);
 
   const besideRailWhenRoom = {
     getBoundingClientRect: () => {
@@ -265,30 +282,46 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
       className: `pb-1 ${folded ? "flex justify-center pt-3" : "px-2"}`,
       children: (
         <>
-          <Trigger
-            ref={buttonRef}
-            aria-label={buttonName(current)}
-            title={folded ? current.label : undefined}
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-              event.preventDefault();
-              handle.api.setOpen(true, { event: event.nativeEvent });
-            }}
-            className={`relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink [--dot-ring:var(--side)] hover:bg-hover hover:[--dot-ring:var(--hover)] aria-expanded:bg-hover aria-expanded:[--dot-ring:var(--hover)] ${
-              folded ? "size-11 justify-center" : "h-row w-full px-2.5"
-            }`}
-          >
-            <ScopeDots dots={dotsOf(current)} />
-            {!folded && (
-              <>
-                <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
-                {current.held && <HeldTag />}
-                <span className="text-ink-3">
-                  <DropIcon />
-                </span>
-              </>
+          <Tooltip controller={tip} delay={300} disabled={tipDisabled}>
+            <TooltipTrigger
+              render={({ "aria-describedby": _same, ...trigger }) => (
+                <Trigger
+                  {...mergeProps(trigger, {
+                    ref: buttonRef,
+                    "aria-label": buttonName(current),
+                    onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                      event.preventDefault();
+                      handle.api.setOpen(true, { event: event.nativeEvent });
+                    },
+                    className: `relative flex items-center gap-2 rounded-[6px] text-[13px] text-ink [--dot-ring:var(--side)] hover:bg-hover hover:[--dot-ring:var(--hover)] aria-expanded:bg-hover aria-expanded:[--dot-ring:var(--hover)] ${
+                      folded ? "size-11 justify-center" : "h-row w-full px-2.5"
+                    }`,
+                  })}
+                >
+                  <ScopeDots dots={dotsOf(current)} />
+                  {!folded && (
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-left font-medium">{current.label}</span>
+                      {current.held && <HeldTag />}
+                      <span className="text-ink-3">
+                        <DropIcon />
+                      </span>
+                    </>
+                  )}
+                </Trigger>
+              )}
+            />
+            {folded && (
+              <TooltipContent
+                side="right"
+                sideOffset={10}
+                className={`${TIP_BOX} max-w-[min(320px,var(--available-width,calc(100vw-16px)))] [overflow-wrap:anywhere]`}
+              >
+                {current.label}
+              </TooltipContent>
             )}
-          </Trigger>
+          </Tooltip>
 
           <Content
             side="bottom"
