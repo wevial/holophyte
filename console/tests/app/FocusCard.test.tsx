@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider, type QueryClient } from "@tanstack/react-query";
 import type { Attention, RunDetail, Status } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -397,7 +397,9 @@ test("Requeue opens a form that posts nothing until its own Requeue, then toasts
   expect(taken.seen).toEqual([]);
   await press(inForm("Requeue"));
   expect(taken.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/requeue`, body: { ticket: "DEMO-11" } }]);
-  expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe("Requeued DEMO-11.");
+  await waitFor(() =>
+    expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe("Requeued DEMO-11."),
+  );
   expect(attentionReads(asked)).toBeGreaterThan(reads);
   expect(openRow().dataset.waitRow).toBe("DEMO-4");
 });

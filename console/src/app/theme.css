@@ -1134,12 +1134,84 @@ body {
   to { stroke-dashoffset: -2; }
 }
 
-@keyframes toast-in {
-  from { transform: translateY(12px); }
+[data-slot="toast-region"] {
+  --toast-gap: 10px;
+  bottom: calc(24px + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  inset-inline-end: calc(24px + env(safe-area-inset-right, 0px));
+  width: min(480px, calc(100vw - 48px));
+  height: var(--toast-front-height, 0px);
+  pointer-events: none;
+  transition: height 280ms var(--ease-console);
 }
 
-.toast-in {
-  animation: toast-in 280ms var(--ease-console);
+[data-slot="toast-region"][role="region"][data-expanded] {
+  height: calc(var(--toast-stack-height, 0px) + max(0, var(--toast-count, 1) - 1) * var(--toast-gap));
+  pointer-events: auto;
+}
+
+[data-slot="toast"] {
+  --y: calc(var(--toast-index, 0) * -10px);
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: calc(100 - var(--toast-index, 0));
+  overflow: hidden;
+  height: var(--toast-height, auto);
+  transform-origin: 50% 0%;
+  translate: var(--toast-swipe-x, 0px) calc(var(--y) + var(--toast-swipe-y, 0px));
+  scale: calc(1 - var(--toast-index, 0) * 0.05);
+  box-shadow: 0 0 0 1px rgb(from var(--paper) r g b / 0.18), var(--card-shadow);
+  pointer-events: auto;
+  user-select: none;
+  transition-property: translate, scale, opacity, height;
+  transition-duration: 280ms;
+  transition-timing-function: var(--ease-console);
+}
+
+[data-slot="toast"] > * {
+  transition: opacity 280ms var(--ease-console);
+}
+
+[data-slot="toast-title"] {
+  overflow-wrap: anywhere;
+}
+
+[data-slot="toast"]:not([data-front], [data-expanded]) {
+  height: var(--toast-front-height, auto);
+  opacity: calc(1 - var(--toast-index, 0) * 0.22);
+}
+
+[data-slot="toast"]:not([data-front], [data-expanded]) > * {
+  opacity: 0;
+}
+
+[data-slot="toast"][data-expanded] {
+  --y: calc(-1 * (var(--toast-offset, 0px) + var(--toast-index, 0) * var(--toast-gap)));
+  scale: 1;
+}
+
+[data-slot="toast"]:is([data-starting-style], [data-swiping]) {
+  transition: none;
+}
+
+[data-slot="toast"]:is([data-starting-style], [data-ending-style]) {
+  opacity: 0;
+}
+
+[data-slot="toast"][data-ending-style] {
+  pointer-events: none;
+}
+
+[data-slot="toast"][data-front]:is([data-starting-style], [data-ending-style]:not([data-swipe-direction])) {
+  --y: 12px;
+}
+
+[data-slot="toast"][data-ending-style][data-swipe-direction="down"] {
+  --y: 100%;
+}
+
+[data-slot="toast"][data-ending-style][data-swipe-direction="right"] {
+  translate: calc(var(--toast-swipe-x, 0px) + 100%) calc(var(--y) + var(--toast-swipe-y, 0px));
 }
 
 @keyframes stamp {
