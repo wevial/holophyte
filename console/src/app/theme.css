@@ -1136,7 +1136,6 @@ body {
 
 [data-slot="toast-region"] {
   --toast-gap: 10px;
-  --toast-peek: 10px;
   bottom: calc(24px + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
   inset-inline-end: calc(24px + env(safe-area-inset-right, 0px));
   width: min(480px, calc(100vw - 48px));
@@ -1151,7 +1150,7 @@ body {
 }
 
 [data-slot="toast"] {
-  --y: calc(var(--toast-index, 0) * -1 * var(--toast-peek));
+  --y: calc(var(--toast-index, 0) * -10px);
   position: absolute;
   inset-inline: 0;
   bottom: 0;

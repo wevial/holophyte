@@ -3,8 +3,7 @@ import { createToaster, Toast, ToastAction, ToastRegion, ToastTitle } from "@ui-
 
 const TOAST_MS = 6000;
 
-type ToastActionItem = { label: string; run: () => void };
-type Say = (text: string, action?: ToastActionItem) => void;
+type Say = (text: string, action?: { label: string; run: () => void }) => void;
 
 const ToastContext = createContext<Say>(() => {});
 
@@ -17,12 +16,9 @@ export function useToast(): Say {
  *  each closing after `TOAST_MS` unless hovered or focused. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toaster] = useState(() => createToaster({ duration: TOAST_MS }));
-  const say = useCallback<Say>(
-    (text, action) => {
-      toaster(text, action ? { action: { label: action.label, onAction: action.run } } : undefined);
-    },
-    [toaster],
-  );
+  const say = useCallback<Say>((text, action) => {
+    toaster(text, action && { action: { label: action.label, onAction: action.run } });
+  }, [toaster]);
   useEffect(() => () => toaster.dismiss(), [toaster]);
   return (
     <ToastContext.Provider value={say}>
