@@ -874,6 +874,21 @@ test("the title bar's holophyte mark has no title attribute and shows a holophyt
   expect(tooltip()).toBeNull();
 });
 
+test("in the macOS app the holophyte mark's tooltip drops below the title bar so it stays clear of Back and Next", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await mountAt("#/");
+  const mark = homeLink();
+  await keyboardFocus(mark);
+  const tip = screen.getByRole("tooltip");
+  expect(tip.textContent).toBe("holophyte");
+  expect(tip.getAttribute("data-side")).toBe("bottom");
+  expect(tip.getAttribute("data-align")).toBe("start");
+  expect(parseFloat(tip.style.top) - mark.getBoundingClientRect().bottom).toBe(6);
+  expect(mark.hasAttribute("aria-describedby")).toBe(false);
+  await act(async () => mark.blur());
+  expect(tooltip()).toBeNull();
+});
+
 test("each page's heading section opens on the title row's padding", async () => {
   for (const hash of ["#/runs", "#/tickets", "#/findings", "#/settings/general"]) {
     await mount(hash);

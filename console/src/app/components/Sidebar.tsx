@@ -472,7 +472,12 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
             </Link>
           )}
         />
-        <TooltipContent side="right" sideOffset={10} className={SIDEBAR_TIP}>
+        <TooltipContent
+          side={macApp ? "bottom" : "right"}
+          align={macApp ? "start" : undefined}
+          sideOffset={macApp ? 6 : 10}
+          className={SIDEBAR_TIP}
+        >
           holophyte
         </TooltipContent>
       </Tooltip>
