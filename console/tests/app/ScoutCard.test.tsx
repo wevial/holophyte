@@ -236,3 +236,26 @@ test("while a typed answer is in flight the card's buttons are disabled, so a ch
   await act(async () => answer(taken()));
   await settled();
 });
+
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+const tipAttrs = (element: HTMLElement) => [element.getAttribute("title"), element.getAttribute("aria-describedby")];
+
+test("keyboard focus on Stop answering shows its tooltip with no title or aria-describedby", async () => {
+  await mount(scoutFetch({ scout: carded }).fetch);
+  await click(choice("Type an answer"));
+  const stop = within(region()).getByRole("button", { name: "Stop answering" });
+  expect(stop.getAttribute("aria-label")).toBe("Stop answering");
+  expect(tipAttrs(stop)).toEqual([null, null]);
+  expect(tooltip()).toBeNull();
+
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    stop.focus();
+  });
+  expect(tooltip()).toBe("Stop answering");
+  expect(stop.getAttribute("aria-label")).toBe("Stop answering");
+  expect(tipAttrs(stop)).toEqual([null, null]);
+
+  await act(async () => stop.blur());
+  expect(tooltip()).toBeNull();
+});

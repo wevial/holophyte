@@ -855,3 +855,53 @@ test("a draft and its Steer mode survive folding and reopening the chat, crossin
     media.mockRestore();
   }
 });
+
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+const tipAttrs = (element: HTMLElement) => [element.getAttribute("title"), element.getAttribute("aria-describedby")];
+
+test("resting the pointer on Hide chat shows its tooltip while keeping its name with no title or aria-describedby", async () => {
+  wideView();
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: chatty } }).fetch);
+  const button = within(chat()!).getByRole("button", { name: "Hide chat" });
+  expect(button.getAttribute("aria-label")).toBe("Hide chat");
+  expect(tipAttrs(button)).toEqual([null, null]);
+  expect(tooltip()).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(button, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(tooltip()).toBe("Hide chat");
+  expect(button.getAttribute("aria-label")).toBe("Hide chat");
+  expect(tipAttrs(button)).toEqual([null, null]);
+
+  await act(async () => void fireEvent.pointerLeave(button, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(tooltip()).toBeNull();
+});
+
+test("the New scout form's remove-topic button shows its name in a tooltip on hover and keyboard focus with no title or aria-describedby", async () => {
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
+  await click(within(topBar()).getByRole("button", { name: "Run again" }));
+  const form = screen.getByRole("form", { name: "New scout" });
+  const remove = within(form).getByRole("button", { name: "Remove ALPHA-1" });
+  expect(remove.getAttribute("aria-label")).toBe("Remove ALPHA-1");
+  expect(tipAttrs(remove)).toEqual([null, null]);
+  expect(tooltip()).toBeNull();
+
+  await act(async () => void fireEvent.pointerEnter(remove, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(tooltip()).toBe("Remove ALPHA-1");
+  expect(remove.getAttribute("aria-label")).toBe("Remove ALPHA-1");
+  expect(tipAttrs(remove)).toEqual([null, null]);
+
+  await act(async () => void fireEvent.pointerLeave(remove, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(tooltip()).toBeNull();
+
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    remove.focus();
+  });
+  expect(tooltip()).toBe("Remove ALPHA-1");
+  await act(async () => remove.blur());
+  expect(tooltip()).toBeNull();
+});
