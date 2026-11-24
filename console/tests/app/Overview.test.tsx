@@ -72,9 +72,69 @@ test("the glyph counts are images labelled with the running, pull request, queue
   await mount("#/", fleet({ items: [ciPark], runs: threeRuns, shipped: merges }, { items: [prPark] }));
   for (const name of ["3 running", "2 waiting on a pull request", "0 queued", "25 merged today"]) {
     const glyph = screen.getByRole("img", { name });
-    expect(glyph.getAttribute("title")).toBe(name);
+    expect([glyph.getAttribute("title"), glyph.getAttribute("aria-describedby"), glyph.getAttribute("tabindex")]).toEqual([null, null, null]);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    await act(async () => void fireEvent.pointerEnter(glyph, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    expect(screen.getByRole("tooltip").textContent).toBe(name);
+
+    await act(async () => void fireEvent.pointerLeave(glyph, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   }
   expect(within(screen.getByRole("region", { name: "Waiting" })).getAllByRole("listitem")).toHaveLength(2);
+});
+
+test("Merged today's project dot and Today's log link show their hints as tooltips without describing, while a PR link's merge sha describes it", async () => {
+  const sha = "5acc138e0c2b4d7f9a1e6b3c8d0f2a4e6c8b0d1f";
+  const withSha = { ...merged(11, "DEMO-11", NOW - 10 * MINUTE), pr_url: "https://github.com/example/demo/pull/11", merge_sha: sha };
+  const withoutSha = { ...merged(12, "DEMO-12", NOW - 20 * MINUTE), pr_url: "https://github.com/example/demo/pull/12", merge_sha: null };
+  await mount("#/", fleet({ items: [], shipped: [withSha, withoutSha] }, { items: [] }));
+
+  const done = screen.getByRole("region", { name: "Merged today" });
+  const [first, second] = within(done).getAllByRole("listitem");
+
+  const dot = within(first!).getByRole("img", { name: "demo" });
+  expect([dot.getAttribute("title"), dot.getAttribute("aria-describedby"), dot.getAttribute("tabindex")]).toEqual([null, null, null]);
+  await act(async () => void fireEvent.pointerEnter(dot, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+  await act(async () => void fireEvent.pointerLeave(dot, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  const pr = within(first!).getByRole("link", { name: "#11" });
+  expect(pr.getAttribute("title")).toBeNull();
+  const describedBy = pr.getAttribute("aria-describedby");
+  expect(describedBy).toBeTruthy();
+  expect(document.getElementById(describedBy!)?.textContent).toBe(sha);
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    pr.focus();
+  });
+  expect(screen.getByRole("tooltip").textContent).toBe(sha);
+  await act(async () => pr.blur());
+  expect(screen.queryByRole("tooltip")).toBeNull();
+
+  const plainPr = within(second!).getByRole("link", { name: "#12" });
+  expect([plainPr.getAttribute("title"), plainPr.getAttribute("aria-describedby")]).toEqual([null, null]);
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    plainPr.focus();
+  });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  await act(async () => plainPr.blur());
+
+  const filterLog = screen.getByRole("link", { name: "Filter Today's log" });
+  expect([filterLog.getAttribute("title"), filterLog.getAttribute("aria-describedby")]).toEqual([null, null]);
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    filterLog.focus();
+  });
+  expect(screen.getByRole("tooltip").textContent).toBe("Filter Today's log");
+  await act(async () => filterLog.blur());
+  expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
 test("with five merges today, Merged today lists the three newest and a 2 more link to Runs filtered to merged runs started today", async () => {
