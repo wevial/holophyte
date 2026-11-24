@@ -471,22 +471,21 @@ test("with must and Open and Follow-up picked, the Severity heading's box shows 
   await mount("#/findings?severity=must&status=open,follow_up", fleet(demoDaemon([demo7]), {}).fetch);
   fireEvent.click(screen.getByRole("button", { name: /^Filter findings/ }));
   const dialog = within(screen.getByRole("dialog", { name: "Filter findings" }));
-  const box = (name: string) => dialog.getByRole("checkbox", { name }) as HTMLInputElement;
-  const params = () => new URLSearchParams(window.location.hash.split("?")[1]);
-  const heads = () => ["Severity", "Category", "Status"].map((name) => [box(name).checked, box(name).indeterminate]);
-  expect(heads()).toEqual([[false, true], [false, false], [false, true]]);
+  const box = (name: string) => dialog.getByRole("checkbox", { name });
+  const checked = (name: string) => box(name).getAttribute("aria-checked");
+  expect(["Severity", "Category", "Status"].map(checked)).toEqual(["mixed", "false", "mixed"]);
 
   fireEvent.click(box("Severity"));
   for (let step = 0; step < 2; step += 1) await act(settle);
-  expect(["must", "should", "nit"].map((name) => box(name).checked)).toEqual([true, true, true]);
-  expect([box("Severity").checked, box("Severity").indeterminate]).toEqual([true, false]);
-  expect([params().get("severity"), params().get("status")]).toEqual(["must,should,nit", "open,follow_up"]);
+  expect(["must", "should", "nit"].map(checked)).toEqual(["true", "true", "true"]);
+  expect(checked("Severity")).toBe("true");
+  expect([addressParams().get("severity"), addressParams().get("status")]).toEqual(["must,should,nit", "open,follow_up"]);
 
   fireEvent.click(box("Severity"));
   for (let step = 0; step < 2; step += 1) await act(settle);
-  expect(["must", "should", "nit"].map((name) => box(name).checked)).toEqual([false, false, false]);
-  expect([params().has("severity"), params().get("status")]).toEqual([false, "open,follow_up"]);
-  expect(["Open", "Follow-up"].map((name) => box(name).checked)).toEqual([true, true]);
+  expect(["must", "should", "nit"].map(checked)).toEqual(["false", "false", "false"]);
+  expect([addressParams().has("severity"), addressParams().get("status")]).toEqual([false, "open,follow_up"]);
+  expect(["Open", "Follow-up"].map(checked)).toEqual(["true", "true"]);
 });
 
 test("a linked range and severity press 30d, show only must rows under a Severity chip, and clearing the chip drops severity from the URL", async () => {
