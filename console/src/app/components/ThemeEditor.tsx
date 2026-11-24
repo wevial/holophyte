@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { mergeProps } from "@ui-sdk/react/primitive";
+import { createTooltipController, Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { oklchToHex, oklchToRgb, type Oklch } from "../../lib/oklch";
 import {
   builtinSpec, buttonInk, contrastChecks, deriveTheme, isCustom, type CustomTheme, type DerivedTheme, type HazeSource, type ThemeMode, type ThemePick, type ThemeSpec,
 } from "../../lib/theme";
 import { useCustomThemes } from "../appearance";
+import { TIP } from "./AgentPanel";
 import { Btn } from "./Btn";
 import { Hint } from "./Hint";
 import { STATE_ICONS } from "./StateDot";
@@ -237,14 +239,20 @@ function Preview({ derived }: { derived: DerivedTheme }) {
 const ratioText = (ratio: number) => (Math.floor(ratio * 10) / 10).toFixed(1);
 
 function ContrastFlags({ derived }: { derived: DerivedTheme }) {
+  const [tooltip] = useState(() => createTooltipController<string>());
+  const checks = contrastChecks(derived).map((check) => {
+    const fails = check.ratio < check.bar;
+    return { check, fails, tip: `${check.name} ${ratioText(check.ratio)}:1${fails ? ` · under ${check.bar}` : ""}` };
+  });
   return (
-    <ul aria-label="Contrast" className="flex flex-wrap gap-2">
-      {contrastChecks(derived).map((check) => {
-        const fails = check.ratio < check.bar;
-        const tip = `${check.name} ${ratioText(check.ratio)}:1${fails ? ` · under ${check.bar}` : ""}`;
-        return (
-          <Hint key={check.name} tip={tip}>
-            {(trigger) => (
+    <>
+      <ul aria-label="Contrast" className="flex flex-wrap gap-2">
+        {checks.map(({ check, fails, tip }) => (
+          <TooltipTrigger
+            key={check.name}
+            controller={tooltip}
+            payload={check.name}
+            render={({ type: _button, "aria-describedby": _described, ...trigger }) => (
               <li
                 {...trigger}
                 aria-label={tip}
@@ -256,10 +264,15 @@ function ContrastFlags({ derived }: { derived: DerivedTheme }) {
                 <span className="font-mono font-normal">{ratioText(check.ratio)}</span>
               </li>
             )}
-          </Hint>
-        );
-      })}
-    </ul>
+          />
+        ))}
+      </ul>
+      <Tooltip controller={tooltip} delay={150} type="description">
+        <TooltipContent<string> side="top" sideOffset={6} className={TIP}>
+          {(state) => checks.find((item) => item.check.name === state.payload)?.tip ?? null}
+        </TooltipContent>
+      </Tooltip>
+    </>
   );
 }
 

@@ -923,6 +923,44 @@ test("a mid-grey light ground raises the Muted text flag with its ratio under 4.
   expect(text.getAttribute("aria-label")).not.toContain("under");
 });
 
+test("in a top-layer browser, hovering contrast flags keeps the tooltip outside the Contrast list and updates across flags", async () => {
+  const proto = HTMLElement.prototype;
+  const hadShow = Object.getOwnPropertyDescriptor(proto, "showPopover");
+  const hadHide = Object.getOwnPropertyDescriptor(proto, "hidePopover");
+  Object.defineProperty(proto, "showPopover", { configurable: true, writable: true, value: () => {} });
+  Object.defineProperty(proto, "hidePopover", { configurable: true, writable: true, value: () => {} });
+  try {
+    await mount();
+    const list = screen.getByRole("list", { name: "Contrast" });
+    const muted = flag("Muted text");
+    const text = flag("Text");
+    const mutedLabel = muted.getAttribute("aria-label")!;
+    const textLabel = text.getAttribute("aria-label")!;
+    expect([...list.children].map((child) => child.tagName)).toEqual(Array(list.children.length).fill("LI"));
+    await act(async () => void fireEvent.pointerEnter(muted, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(mutedLabel);
+    expect(list.contains(tip)).toBe(false);
+    expect(within(list).queryByRole("tooltip")).toBeNull();
+    expect(muted.getAttribute("aria-describedby")).toBeNull();
+    await act(async () => void fireEvent.pointerLeave(muted, { pointerType: "mouse", relatedTarget: text }));
+    await act(async () => void fireEvent.pointerEnter(text, { pointerType: "mouse" }));
+    await act(settle);
+    expect(screen.getByRole("tooltip").textContent).toBe(textLabel);
+    expect(list.contains(screen.getByRole("tooltip"))).toBe(false);
+    await act(async () => void fireEvent.pointerLeave(text, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(tooltip()).toBeNull();
+  } finally {
+    cleanup();
+    if (hadShow) Object.defineProperty(proto, "showPopover", hadShow);
+    else Reflect.deleteProperty(proto, "showPopover");
+    if (hadHide) Object.defineProperty(proto, "hidePopover", hadHide);
+    else Reflect.deleteProperty(proto, "hidePopover");
+  }
+});
+
 test("resting the pointer or keyboard focus on Reset density shows its tooltip with no title or aria-describedby", async () => {
   await mount();
   fireEvent.click(screen.getByRole("button", { name: "Compact" }));
