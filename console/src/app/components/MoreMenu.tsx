@@ -40,11 +40,15 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
+  const openRef = useRef(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
 
   const setMenuOpen = (next: boolean) => {
+    if (openRef.current === next) return;
+    openRef.current = next;
     setOpen(next);
     onOpenChangeRef.current?.(next);
   };
@@ -68,6 +72,7 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
     <div className={className} onClick={(event) => event.stopPropagation()}>
       <Menu open={open} onOpenChange={setMenuOpen} modal={false}>
         <MenuTrigger
+          ref={trigger}
           aria-label={label}
           className={`${TRIGGER} ${compact ? "size-[26px] aria-expanded:bg-[color-mix(in_oklab,var(--accent)_32%,var(--selected))]" : "size-[34px] shadow-[inset_0_0_0_1px_var(--hair-2)]"}`}
         >
@@ -96,7 +101,11 @@ export function MoreMenu({ label, items, className = "", compact = false, onOpen
                   disabled={item.disabled}
                   destructive={item.danger}
                   aria-describedby={noteId}
-                  onSelect={() => void item.onSelect()}
+                  onSelect={() => {
+                    // Return focus to ⋯ before onSelect so callers reading activeElement record it, not the unmounting item.
+                    trigger.current?.focus({ preventScroll: true });
+                    item.onSelect();
+                  }}
                   className={`flex min-h-[32px] w-full cursor-pointer items-center rounded-button px-2.5 py-1.5 text-left font-sans text-[13px] leading-[1.25] outline-none focus:bg-hover data-highlighted:bg-hover aria-disabled:cursor-default aria-disabled:opacity-60 ${
                     item.danger ? "text-bad" : "text-ink"
                   }`}

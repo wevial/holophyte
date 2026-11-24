@@ -402,6 +402,7 @@ test("a filing in flight holds the dialog open against Keep it and Esc", async (
   await act(async () => release());
   for (let round = 0; round < 4; round += 1) await act(settle);
   expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "More for run 9" }));
   expect(document.querySelector("[data-revert-filed]")?.textContent).toBe("Filed DEMO-50 to revert DEMO-9.");
 });
 
@@ -673,5 +674,6 @@ test("a preview refused for store/schema.py names the path, offers only Close, a
   await act(async () => void fireEvent.click(within(dialog).getByRole("button", { name: "Close" })));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "More for run 9" }));
   expect(fake.posted).toHaveLength(1);
 });
