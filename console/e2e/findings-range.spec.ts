@@ -6,7 +6,7 @@ for (const textSize of [110, 120]) {
     await page.addInitScript((size) => localStorage.setItem("holophyte.textSize", size), String(textSize));
     await page.goto("/#/findings?from=2026-10-01&to=2026-10-15");
     await page.getByRole("button", { name: "Custom range" }).click();
-    const menu = page.getByRole("group", { name: "Range range" });
+    const menu = page.getByRole("dialog", { name: "Custom range" });
     await expect(menu.getByLabel("From")).toHaveValue("2026-10-01");
     const box = (await menu.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -59,7 +59,7 @@ async function toggleSidebar(page: Page, name: "Expand sidebar" | "Collapse side
   await expect(page.getByRole("button", { name })).toHaveCount(0);
 }
 
-const rangeMenu = (page: Page) => page.getByRole("group", { name: "Range range" });
+const rangeMenu = (page: Page) => page.getByRole("dialog", { name: "Custom range" });
 
 test("at 720x425 and 125% text, scrolling Findings down after the sidebar expands under an open Custom range keeps the dates menu and Done shown", async ({ page }) => {
   await openFolded(page, 720, 425);

@@ -959,8 +959,8 @@ test("the open Range menu marks the current preset, and choosing From and To put
   await mount("#/flow?range=90d", askedFlows(asked));
   await flush();
   fireEvent.click(screen.getByRole("button", { name: "Range" }));
-  const choices = within(screen.getByRole("group", { name: "Range choices" }));
-  expect(choices.getAllByRole("button", { pressed: true }).map((choice) => choice.textContent)).toEqual(["Last 90 days"]);
+  const choices = within(screen.getByRole("dialog", { name: "Range choices" }));
+  expect(choices.getAllByRole("option", { selected: true }).map((choice) => choice.textContent)).toEqual(["Last 90 days"]);
   fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-09-03" } });
   fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-11-12" } });
   await flush();
@@ -979,10 +979,29 @@ test("the open Range menu closes when focus moves out of it to the Project picke
   const range = screen.getByRole("button", { name: "Range" });
   range.focus();
   fireEvent.click(range);
-  screen.getByLabelText("From").focus();
-  expect(screen.getByRole("group", { name: "Range choices" })).toBeTruthy();
+  await act(settle);
+  const from = screen.getByLabelText("From");
+  act(() => from.focus());
+  expect(document.activeElement).toBe(from);
+  expect(screen.getByRole("dialog", { name: "Range choices" })).toBeTruthy();
   act(() => projectPicker().focus());
-  expect(screen.queryByRole("group", { name: "Range choices" })).toBeNull();
+  expect(document.activeElement).toBe(projectPicker());
+  expect(screen.queryByRole("dialog", { name: "Range choices" })).toBeNull();
+});
+
+test("the open Flow Range menu closes when focus leaves the document", async () => {
+  await mount("#/flow", flowDaemons(demoFlow, writerFlow));
+  await act(settle);
+  const range = screen.getByRole("button", { name: "Range" });
+  fireEvent.click(range);
+  await act(settle);
+  const to = screen.getByLabelText("To");
+  act(() => to.focus());
+  expect(document.activeElement).toBe(to);
+  expect(screen.getByRole("dialog", { name: "Range choices" })).toBeTruthy();
+  act(() => void window.dispatchEvent(new Event("blur")));
+  expect(screen.queryByRole("dialog", { name: "Range choices" })).toBeNull();
+  expect(document.activeElement).not.toBe(range);
 });
 
 test("a From and To over 182 days, or with a To day not yet ended, stay out of the address and the asks", async () => {
