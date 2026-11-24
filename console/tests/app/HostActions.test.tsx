@@ -17,8 +17,9 @@ const NOW = new Date(2026, 9, 16, 16, 53).getTime();
 const fixtures = new URL("../../../tests/fixtures/serve/", import.meta.url);
 const host = await Bun.file(new URL("host-status.json", fixtures)).json() as HostStatus;
 const project = await Bun.file(new URL("status.json", fixtures)).json() as Status;
-const toastEl = () => document.querySelector<HTMLElement>("[data-toast]");
-const toast = () => toastEl()?.textContent ?? "";
+const toasts = () => [...document.querySelectorAll<HTMLElement>("[data-toast]")];
+const toast = () => toasts()[0]?.textContent ?? "";
+const savedToast = "Saved the token for writer-host in this browser.";
 const card = (name = "writer-host") => screen.getByRole("article", { name });
 
 async function flush() {
@@ -101,7 +102,7 @@ test("a refused sweep shows the daemon's detail under the card head without rere
   await press("Run sweep");
   expect(post.seen).toHaveLength(1);
   expect(within(card()).getByText("systemctl exited 1")).toBeTruthy();
-  expect(toastEl()).toBeNull();
+  expect(toasts()).toEqual([]);
   expect(view.statuses).toHaveLength(before);
 });
 
@@ -162,10 +163,10 @@ test("a saved token is masked and accepted, Forget removes it and Undo restores 
   expect(toast()).toContain("Forgot the token for writer-host in this browser.");
   expect(within(card()).getByLabelText("Serve token for writer-host", { selector: "input" })).toBeTruthy();
   expect(view.statuses.length).toBeGreaterThan(before);
-  await press("Undo", toastEl()!);
+  await press("Undo", toasts()[0]!);
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe(secret);
   expect(card().textContent).toContain("saved in this browser");
-  expect(toastEl()).toBeNull();
+  expect(toasts()).toEqual([]);
 });
 
 test("Undo preserves the restored token when Forget's unauthenticated poll answers 401 after the authenticated poll", async () => {
@@ -191,7 +192,7 @@ test("Undo preserves the restored token when Forget's unauthenticated poll answe
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
   expect(unauthenticated).toBe(3);
   const before = authenticated;
-  await press("Undo", toastEl()!);
+  await press("Undo", toasts()[0]!);
   expect(authenticated).toBe(before + 3);
   expect(card().textContent).toContain("accepted");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe(secret);
@@ -217,7 +218,7 @@ test("Save token refuses header-unsafe input and saves a valid token with an emp
   await act(async () => void fireEvent.change(field, { target: { value: "abc123" } }));
   await press("Save token");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
-  expect(toast()).toBe("Saved the token for writer-host in this browser.");
+  expect(toast()).toBe(savedToast);
   expect(view.statuses.length).toBeGreaterThan(before);
   await press("Forget");
   expect((within(card()).getByLabelText("Serve token for writer-host", { selector: "input" }) as HTMLInputElement).value).toBe("");
@@ -287,16 +288,14 @@ test("Save token then Forget stacks two toasts newest first, and Undo restores t
   await act(async () => void fireEvent.change(field, { target: { value: "abc123" } }));
   await press("Save token");
   await press("Forget");
-  const toasts = [...document.querySelectorAll<HTMLElement>("[data-toast]")];
-  expect(toasts).toHaveLength(2);
-  expect(within(toasts[0]!).getByText("Forgot the token for writer-host in this browser.")).toBeTruthy();
-  expect(within(toasts[0]!).getByRole("button", { name: "Undo" })).toBeTruthy();
-  expect(toasts[1]!.textContent).toBe("Saved the token for writer-host in this browser.");
-  await press("Undo", toasts[0]!);
+  const shown = toasts();
+  expect(shown).toHaveLength(2);
+  expect(within(shown[0]!).getByText("Forgot the token for writer-host in this browser.")).toBeTruthy();
+  expect(within(shown[0]!).getByRole("button", { name: "Undo" })).toBeTruthy();
+  expect(shown[1]!.textContent).toBe(savedToast);
+  await press("Undo", shown[0]!);
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
-  expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
-    "Saved the token for writer-host in this browser.",
-  ]);
+  expect(toasts().map((el) => el.textContent)).toEqual([savedToast]);
 });
 
 test("a Save token toast stays visible at 5,999 ms and closes at 6,000 ms", async () => {
@@ -306,11 +305,11 @@ test("a Save token toast stays visible at 5,999 ms and closes at 6,000 ms", asyn
   jest.useFakeTimers();
   try {
     await act(async () => void fireEvent.click(within(card()).getByRole("button", { name: "Save token" })));
-    expect(toast()).toBe("Saved the token for writer-host in this browser.");
+    expect(toast()).toBe(savedToast);
     await act(async () => void jest.advanceTimersByTime(5999));
-    expect(toast()).toBe("Saved the token for writer-host in this browser.");
+    expect(toast()).toBe(savedToast);
     await act(async () => void jest.advanceTimersByTime(1));
-    expect(toastEl()).toBeNull();
+    expect(toasts()).toEqual([]);
   } finally {
     jest.useRealTimers();
   }
