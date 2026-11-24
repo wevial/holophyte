@@ -324,6 +324,53 @@ test("saving a replacement token removes Undo from an older Forget toast even wh
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("replacement-token");
 });
 
+test("forgetting tokens for two hosts keeps Undo working on both toasts when expanded", async () => {
+  storeToken(ADDRESS, "writer-secret");
+  storeToken("spare:7710", "spare-secret");
+  await mount();
+  await press("Forget", card("writer-host"));
+  await press("Forget", card("spare"));
+  const region = document.querySelector<HTMLElement>('[data-slot="toast-region"]')!;
+  await act(async () => void fireEvent.pointerEnter(region));
+  await flush();
+  const shown = toasts();
+  expect(shown).toHaveLength(2);
+  expect(within(shown[0]!).getByText("Forgot the token for spare in this browser.")).toBeTruthy();
+  expect(within(shown[1]!).getByText("Forgot the token for writer-host in this browser.")).toBeTruthy();
+  await press("Undo", shown[1]!);
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("writer-secret");
+  expect(localStorage.getItem(tokenKey("spare:7710"))).toBeNull();
+  expect(toasts()).toHaveLength(1);
+  await press("Undo", toasts()[0]!);
+  expect(localStorage.getItem(tokenKey("spare:7710"))).toBe("spare-secret");
+  expect(toasts()).toEqual([]);
+});
+
+test("Undo on a paused Forget toast does not overwrite a replacement token saved in another tab", async () => {
+  storeToken(ADDRESS, "old-token");
+  await mount();
+  jest.useFakeTimers();
+  try {
+    await act(async () => void fireEvent.click(within(card()).getByRole("button", { name: "Forget" })));
+    expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
+    expect(toasts()).toHaveLength(1);
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(toasts()).toHaveLength(1);
+    storeToken(ADDRESS, "other-tab-token");
+    await act(async () => void window.dispatchEvent(new Event("focus")));
+    await act(async () => void fireEvent.click(within(toasts()[0]!).getByRole("button", { name: "Undo" })));
+    expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("other-tab-token");
+    expect(toasts()).toEqual([]);
+  } finally {
+    cleanup();
+    jest.advanceTimersByTime(0);
+    jest.useRealTimers();
+  }
+});
+
 test("a Save token toast stays visible at 5,999 ms and closes at 6,000 ms", async () => {
   await mount();
   const field = within(card()).getByLabelText("Serve token for writer-host", { selector: "input" });
@@ -337,6 +384,8 @@ test("a Save token toast stays visible at 5,999 ms and closes at 6,000 ms", asyn
     await act(async () => void jest.advanceTimersByTime(1));
     expect(toasts()).toEqual([]);
   } finally {
+    cleanup();
+    jest.advanceTimersByTime(0);
     jest.useRealTimers();
   }
 });

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { HostStatus, Status } from "../../src/lib/contract.gen";
@@ -165,4 +165,44 @@ test("after sixty seconds without a new daemon the card returns to its last fail
   expect(within(card()).queryByText(restarting)).toBeNull();
   expect(within(card()).getByText(/Not answering/)).toBeTruthy();
   expect(toast()).not.toContain("Restarted the daemon");
+});
+
+test("when four restarts finish in one fleet poll, dismissing a newer toast promotes and politely announces the queued oldest toast", async () => {
+  const post = fakeFetch({ ok: true });
+  const names = ["writer-host", "peer-2", "peer-3", "peer-4"];
+  const bases = names.map((name) => `http://${name}:7710`);
+  const rootsByBase = Object.fromEntries(bases.map((base) => [base, {
+    ...host, actions: true, now: NOW, daemon: { ...host.daemon, started_ms: 1000 }, projects: [],
+  }]));
+  const daemons: Record<string, StubDaemon> = Object.fromEntries(
+    bases.map((base) => [base, { status: rootsByBase[base]!, attention: NO_ATTENTION }]),
+  );
+  const roots = peersFetch(ORIGIN, daemons);
+  const view = await mount({
+    fetch: (url, init) => (init?.method === "POST" ? post.fetchImpl(url, init) : roots(url, init)),
+    fail: () => {},
+    answer: () => {},
+  });
+  for (const name of names) {
+    await press("Restart daemon", screen.getByRole("article", { name }));
+    await press("Restart daemon", screen.getByRole("alertdialog", { name: `Restart ${name}` }));
+  }
+  for (const base of bases) rootsByBase[base]!.daemon.started_ms = 2000;
+  await view.poll();
+  const polite = () => screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent ?? "";
+  expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+    "Restarted the daemon on peer-4.",
+    "Restarted the daemon on peer-3.",
+    "Restarted the daemon on peer-2.",
+  ]);
+  await waitFor(() => expect(polite()).toContain("Restarted the daemon on peer-4."));
+  expect(polite()).not.toContain("Restarted the daemon on writer-host.");
+  await act(async () => void fireEvent.keyDown(document.querySelector("[data-toast]")!, { key: "Escape" }));
+  await flush();
+  expect([...document.querySelectorAll("[data-toast]")].map((el) => el.textContent)).toEqual([
+    "Restarted the daemon on peer-3.",
+    "Restarted the daemon on peer-2.",
+    "Restarted the daemon on writer-host.",
+  ]);
+  await waitFor(() => expect(polite()).toBe("Restarted the daemon on writer-host."));
 });

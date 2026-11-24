@@ -17,6 +17,7 @@ export function HostToken({ host }: { host: HostCard }) {
   const [reason, setReason] = useState<string | null>(null);
   const [, rerender] = useState(0);
   const form = useRef<HTMLFormElement>(null);
+  const tokenEpoch = useRef(0);
   const address = addressOf(host.record.base);
   const stored = tokenFor(address);
   const seen = host.record.root_seen_ms ?? host.record.seen_ms;
@@ -35,10 +36,19 @@ export function HostToken({ host }: { host: HostCard }) {
         <Btn onClick={() => {
           forgetToken(address);
           refresh();
-          say(`Forgot the token for ${host.name} in this browser.`, { label: "Undo", run: () => {
-            storeToken(address, stored);
-            refresh();
-          } });
+          const gen = tokenEpoch.current;
+          let stale = false;
+          const valid = () => !(stale ||= tokenEpoch.current !== gen || tokenFor(address) != null);
+          say(`Forgot the token for ${host.name} in this browser.`, {
+            label: "Undo",
+            valid,
+            run: () => {
+              if (!valid()) return;
+              tokenEpoch.current += 1;
+              storeToken(address, stored);
+              refresh();
+            },
+          });
         }}>Forget</Btn>
       </div> : <form onSubmit={(event) => {
         event.preventDefault();
@@ -46,6 +56,7 @@ export function HostToken({ host }: { host: HostCard }) {
         const refused = storeToken(address, value);
         setReason(refused);
         if (refused != null) return;
+        tokenEpoch.current += 1;
         setValue("");
         say(`Saved the token for ${host.name} in this browser.`);
         refresh();
