@@ -882,6 +882,22 @@ class VisualEvidencePromptTests(unittest.TestCase):
         self.assertIn('counts against the candidate', brief)
 
 
+DOCKER_ARGV_SHIM = """#!{python}
+import json, os, sys
+args = sys.argv[1:]
+if args[:1] == ["inspect"]:
+    sys.exit(1)
+if args[:1] != ["run"]:
+    sys.exit(0)
+with open(os.environ["HOLOPHYTE_DOCKER_ARGV"], "a") as log:
+    log.write(json.dumps(args) + "\\n")
+print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
+for item in ({{"type": "command_execution", "exit_code": 0}},
+             {{"type": "agent_message", "text": "VERDICT: APPROVE"}}):
+    print(json.dumps({{"type": "item.completed", "item": item}}))
+"""
+
+
 class ReviewMemoryTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -897,44 +913,59 @@ class ReviewMemoryTests(unittest.TestCase):
         project.config_path.write_text("[agents]\n" + agents)
         return project
 
+    @staticmethod
+    def _memory_flags(argv: list[str]) -> list[str]:
+        return [arg for arg in argv
+                if arg == "--memory" or arg.startswith(("--memory=", "-m"))]
+
     def test_container_review_turns_pass_default_or_configured_memory_cap(self):
         from holophyte.agents import roles
 
-        self.assertIn("--memory=4g", review_runner.hardening_flags(1000, 1000))
+        self.assertEqual(
+            self._memory_flags(review_runner.hardening_flags(1000, 1000)),
+            ["--memory=4g"],
+        )
         base, candidate = two_commit_repo(self.repo)
         bin_dir, env = docker_shim(self.root)
-        (bin_dir / "docker").write_text(IMAGE_SHIM)
-        (self.root / "docker.images").write_text(f"{review_runner.IMAGE}\n")
+        (bin_dir / "docker").write_text(
+            DOCKER_ARGV_SHIM.format(python=sys.executable))
         (self.root / "auth.json").write_text("{}")
-        log = Path(env["HOLOPHYTE_DOCKER_LOG"])
+        argv_log = self.root / "docker-argv.jsonl"
         self.enterContext(patch.dict(os.environ, {
-            **env, "HOLOPHYTE_DOCKER_IMAGES": str(self.root / "docker.images")}))
+            **env, "HOLOPHYTE_DOCKER_ARGV": str(argv_log)}))
         for attr, value in (("SCRATCH_ROOT", self.root / "reviews"),
                             ("CODEX_AUTH", self.root / "auth.json")):
             self.enterContext(patch.object(review_runner, attr, value))
 
-        configured = ('review_memory = "6g"\n'
-                      'review_fallback_model = "gpt-5.6-sol"\n'
-                      'review_fallback_effort = "medium"\n')
-        for agents, role, fallback, flag, model in (
-            ("", "review", False, "--memory=4g", review_runner.MODEL),
-            (configured, "review", False, "--memory=6g", review_runner.MODEL),
-            (configured, "review", True, "--memory=6g", "gpt-5.6-sol"),
-            (configured, "adversary", False, "--memory=6g", review_runner.MODEL),
+        fallback_only = ('review_fallback_model = "gpt-5.6-sol"\n'
+                         'review_fallback_effort = "medium"\n')
+        configured = 'review_memory = "6g"\n' + fallback_only
+        for label, agents, role, fallback, flag, model in (
+            ("default", "", "review", False, "--memory=4g", review_runner.MODEL),
+            ("default", "", "adversary", False, "--memory=4g", review_runner.MODEL),
+            ("default", fallback_only, "review", True, "--memory=4g", "gpt-5.6-sol"),
+            ("default", fallback_only, "adversary", True, "--memory=4g", "gpt-5.6-sol"),
+            ("6g", configured, "review", False, "--memory=6g", review_runner.MODEL),
+            ("6g", configured, "review", True, "--memory=6g", "gpt-5.6-sol"),
+            ("6g", configured, "adversary", False, "--memory=6g", review_runner.MODEL),
+            ("6g", configured, "adversary", True, "--memory=6g", "gpt-5.6-sol"),
         ):
-            with self.subTest(role=role, fallback=fallback, flag=flag):
-                log.unlink(missing_ok=True)
+            with self.subTest(config=label, role=role, fallback=fallback):
+                argv_log.unlink(missing_ok=True)
                 roles.container_review(
                     self.configure(agents), role, "judge the candidate",
                     self.repo, base, candidate, None, None, fallback)
-                lines = log.read_text().splitlines()
-                (run,) = [line.split() for line in lines if line.startswith("run ")]
-                (actual_model,) = [line.split()[-2] for line in lines
-                                   if "model_reasoning_effort=" in line]
-                flags = [arg for arg in run[:run.index(review_runner.IMAGE)]
-                         if arg in ("--memory", "-m")
-                         or arg.startswith(("--memory=", "-m="))]
-                self.assertEqual((flags, actual_model), ([flag], model))
+                (run,) = [json.loads(line)
+                          for line in argv_log.read_text().splitlines()]
+                docker_flags = run[:run.index(review_runner.IMAGE)]
+                shell = run.index("/bin/sh")
+                self.assertEqual(self._memory_flags(docker_flags), [flag])
+                self.assertEqual(run[shell + 6], model)
+                self.assertIn(
+                    "--enable multi_agent" if role == "adversary"
+                    else "--disable multi_agent",
+                    run[shell + 3],
+                )
 
     def test_invalid_review_memory_and_reviewer_beside_it_fail_config_check(self):
         from holophyte.config.checks import check_config

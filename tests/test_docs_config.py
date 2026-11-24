@@ -18,6 +18,7 @@ from holophyte.config.pipeline_settings import CHECK_KEYS, NOTE_TARGETS
 from holophyte.config.reader import AGENT_CONFIG_KEYS, KNOWN_KEYS, REVIEW_ROUTE_KEYS
 from holophyte.config.serve_settings import SERVE_KEYS
 from holophyte.questions import COMPLEXITY_KEYS, FAILURE_KEYS, TITLE_KEYS
+from holophyte.review import review_runner
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 TABLES = {
@@ -116,12 +117,21 @@ class ConfigReferenceTests(unittest.TestCase):
 
     def test_review_memory_row_gives_its_default_format_and_turns(self):
         agents = sections((DOCS / "config.md").read_text())["agents"]
-        row = re.search(r"^\| `review_memory` \|.*$", agents, re.MULTILINE).group()
-        for term in ('Default: `"4g"`', "Positive integer", "`m`", "`g`",
-                     "`--memory=`", "review", "adversary", "primary",
-                     "fallback"):
+        row = re.search(r"^\| `review_memory` \|.*$", agents, re.MULTILINE)
+        self.assertIsNotNone(row, "[agents] needs a key row: review_memory")
+        _, default_cell, details = [
+            cell.strip() for cell in row.group().strip("|").split("|")
+        ]
+        self.assertEqual(review_runner.MEMORY, "4g")
+        self.assertEqual(default_cell, f'Default: `"{review_runner.MEMORY}"`')
+        for term in (
+            "Positive integer with an `m` or `g` suffix",
+            "`--memory=`",
+            "Applies to every container review and adversary turn",
+            "primary and fallback model routes",
+        ):
             with self.subTest(term=term):
-                self.assertIn(term, row)
+                self.assertIn(term, details)
 
     def test_removed_entry_names_missing_key_even_if_mentioned_elsewhere(self):
         document = (DOCS / "config.md").read_text()
