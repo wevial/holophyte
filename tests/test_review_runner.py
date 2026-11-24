@@ -971,6 +971,10 @@ class ReviewMemoryTests(unittest.TestCase):
         check_config(self.configure('review_memory = "512m"\n'))
 
 
+@unittest.skipUnless(
+    os.environ.get("HOLOPHYTE_TEST_DOCKER") == "1",
+    "set HOLOPHYTE_TEST_DOCKER=1 for container integration",
+)
 class RealDockerMemoryCapTests(unittest.TestCase):
     def test_hardening_flags_memory_cap_reaches_the_container_cgroup(self):
         docker = shutil.which("docker")
