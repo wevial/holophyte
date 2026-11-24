@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s tests -p 'test_review_runner*' -v
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import os
 import re
@@ -889,7 +890,7 @@ if args[:1] == ["inspect"]:
     sys.exit(1)
 if args[:1] != ["run"]:
     sys.exit(0)
-with open(os.environ["HOLOPHYTE_DOCKER_ARGV"], "a") as log:
+with open(os.environ["HOLOPHYTE_DOCKER_LOG"], "a") as log:
     log.write(json.dumps(args) + "\\n")
 print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
 for item in ({{"type": "command_execution", "exit_code": 0}},
@@ -929,31 +930,28 @@ class ReviewMemoryTests(unittest.TestCase):
         bin_dir, env = docker_shim(self.root)
         (bin_dir / "docker").write_text(
             DOCKER_ARGV_SHIM.format(python=sys.executable))
-        (self.root / "auth.json").write_text("{}")
-        argv_log = self.root / "docker-argv.jsonl"
-        self.enterContext(patch.dict(os.environ, {
-            **env, "HOLOPHYTE_DOCKER_ARGV": str(argv_log)}))
+        auth = self.root / "auth.json"
+        auth.write_text("{}")
+        argv_log = Path(env["HOLOPHYTE_DOCKER_LOG"])
+        self.enterContext(patch.dict(os.environ, env))
         for attr, value in (("SCRATCH_ROOT", self.root / "reviews"),
-                            ("CODEX_AUTH", self.root / "auth.json")):
+                            ("CODEX_AUTH", auth)):
             self.enterContext(patch.object(review_runner, attr, value))
 
-        fallback_only = ('review_fallback_model = "gpt-5.6-sol"\n'
-                         'review_fallback_effort = "medium"\n')
-        configured = 'review_memory = "6g"\n' + fallback_only
-        for label, agents, role, fallback, flag, model in (
-            ("default", "", "review", False, "--memory=4g", review_runner.MODEL),
-            ("default", "", "adversary", False, "--memory=4g", review_runner.MODEL),
-            ("default", fallback_only, "review", True, "--memory=4g", "gpt-5.6-sol"),
-            ("default", fallback_only, "adversary", True, "--memory=4g", "gpt-5.6-sol"),
-            ("6g", configured, "review", False, "--memory=6g", review_runner.MODEL),
-            ("6g", configured, "review", True, "--memory=6g", "gpt-5.6-sol"),
-            ("6g", configured, "adversary", False, "--memory=6g", review_runner.MODEL),
-            ("6g", configured, "adversary", True, "--memory=6g", "gpt-5.6-sol"),
-        ):
+        fallback_cfg = ('review_fallback_model = "gpt-5.6-sol"\n'
+                        'review_fallback_effort = "medium"\n')
+        cases = itertools.product(
+            (("default", "", "--memory=4g"),
+             ("6g", 'review_memory = "6g"\n', "--memory=6g")),
+            (("review", "--disable multi_agent"),
+             ("adversary", "--enable multi_agent")),
+            ((False, "", review_runner.MODEL), (True, fallback_cfg, "gpt-5.6-sol")),
+        )
+        for (label, mem, flag), (role, multi), (fallback, route, model) in cases:
             with self.subTest(config=label, role=role, fallback=fallback):
                 argv_log.unlink(missing_ok=True)
                 roles.container_review(
-                    self.configure(agents), role, "judge the candidate",
+                    self.configure(mem + route), role, "judge the candidate",
                     self.repo, base, candidate, None, None, fallback)
                 (run,) = [json.loads(line)
                           for line in argv_log.read_text().splitlines()]
@@ -961,11 +959,7 @@ class ReviewMemoryTests(unittest.TestCase):
                 shell = run.index("/bin/sh")
                 self.assertEqual(self._memory_flags(docker_flags), [flag])
                 self.assertEqual(run[shell + 6], model)
-                self.assertIn(
-                    "--enable multi_agent" if role == "adversary"
-                    else "--disable multi_agent",
-                    run[shell + 3],
-                )
+                self.assertIn(multi, run[shell + 3])
 
     def test_invalid_review_memory_and_reviewer_beside_it_fail_config_check(self):
         from holophyte.config.checks import check_config
