@@ -985,18 +985,28 @@ class ReviewMemoryTests(unittest.TestCase):
 
 class RealDockerMemoryCapTests(unittest.TestCase):
     def test_hardening_flags_memory_cap_reaches_the_container_cgroup(self):
+        docker = shutil.which("docker")
+        if not docker:
+            self.skipTest("docker is not on PATH")
         try:
             inspect = subprocess.run(
-                ["docker", "image", "inspect", review_runner.IMAGE],
-                capture_output=True, text=True, timeout=15)
+                [docker, "image", "inspect", review_runner.IMAGE],
+                capture_output=True, text=True, timeout=15,
+            )
         except (OSError, subprocess.TimeoutExpired) as error:
             self.skipTest(f"docker unavailable: {error}")
-        if inspect.returncode:
-            self.skipTest(f"Docker or reviewer image {review_runner.IMAGE} absent")
+        if inspect.returncode != 0:
+            self.skipTest(
+                f"Docker daemon or reviewer image {review_runner.IMAGE} absent"
+            )
         result = subprocess.run(
-            ["docker", "run", "--rm", "--pull=never",
-             *review_runner.hardening_flags(os.getuid(), os.getgid(), "3g"),
-             review_runner.IMAGE, "cat", "/sys/fs/cgroup/memory.max"],
-            capture_output=True, text=True, timeout=60)
+            [
+                docker, "run", "--rm", "--pull=never",
+                *review_runner.hardening_flags(os.getuid(), os.getgid(), "3g"),
+                review_runner.IMAGE,
+                "cat", "/sys/fs/cgroup/memory.max",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "3221225472")
