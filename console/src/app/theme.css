@@ -1140,7 +1140,7 @@ body {
   position: fixed;
   bottom: calc(24px + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
   inset-inline-end: calc(24px + env(safe-area-inset-right, 0px));
-  width: min(460px, calc(100vw - 48px));
+  width: min(480px, calc(100vw - 48px));
   height: var(--toast-front-height, 0px);
   pointer-events: none;
   transition: height 280ms var(--ease-console);
@@ -1181,7 +1181,6 @@ body {
 }
 
 [data-slot="toast"]:not([data-front], [data-expanded]) {
-  min-height: 0;
   height: var(--toast-front-height, auto);
   opacity: calc(1 - var(--toast-index, 0) * 0.22);
 }
