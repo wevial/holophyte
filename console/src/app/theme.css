@@ -1172,6 +1172,10 @@ body {
   transition: opacity 280ms var(--ease-console);
 }
 
+[data-slot="toast-title"] {
+  overflow-wrap: anywhere;
+}
+
 [data-slot="toast"]:not([data-front], [data-expanded]) {
   height: var(--toast-front-height, auto);
   opacity: calc(1 - var(--toast-index, 0) * 0.22);

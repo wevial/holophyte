@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, jest, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { HostStatus, Status } from "../../src/lib/contract.gen";
@@ -219,6 +219,9 @@ test("Save token refuses header-unsafe input and saves a valid token with an emp
   await press("Save token");
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
   expect(toast()).toBe(savedToast);
+  await waitFor(() =>
+    expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe(savedToast),
+  );
   expect(view.statuses.length).toBeGreaterThan(before);
   await press("Forget");
   expect((within(card()).getByLabelText("Serve token for writer-host", { selector: "input" }) as HTMLInputElement).value).toBe("");
@@ -295,6 +298,30 @@ test("Save token then Forget stacks two toasts newest first, and Undo restores t
   await press("Undo", shown[0]!);
   expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
   expect(toasts().map((el) => el.textContent)).toEqual([savedToast]);
+});
+
+test("saving a replacement token removes Undo from an older Forget toast even when the stack expands or the Save toast closes", async () => {
+  storeToken(ADDRESS, "old-token");
+  await mount();
+  await press("Forget");
+  expect(within(toasts()[0]!).getByRole("button", { name: "Undo" })).toBeTruthy();
+  const field = within(card()).getByLabelText("Serve token for writer-host", { selector: "input" });
+  await act(async () => void fireEvent.change(field, { target: { value: "replacement-token" } }));
+  await press("Save token");
+  const region = document.querySelector<HTMLElement>('[data-slot="toast-region"]')!;
+  await act(async () => void fireEvent.pointerEnter(region));
+  await flush();
+  expect(region.hasAttribute("data-expanded")).toBe(true);
+  const shown = toasts();
+  expect(shown).toHaveLength(2);
+  expect(shown[0]!.textContent).toBe(savedToast);
+  expect(shown[1]!.textContent).toBe("Forgot the token for writer-host in this browser.");
+  expect(within(shown[1]!).queryByRole("button", { name: "Undo" })).toBeNull();
+  await act(async () => void fireEvent.keyDown(shown[0]!, { key: "Escape" }));
+  await flush();
+  expect(toasts().map((el) => el.textContent)).toEqual(["Forgot the token for writer-host in this browser."]);
+  expect(within(toasts()[0]!).queryByRole("button", { name: "Undo" })).toBeNull();
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("replacement-token");
 });
 
 test("a Save token toast stays visible at 5,999 ms and closes at 6,000 ms", async () => {
