@@ -100,6 +100,7 @@ interface Daemon {
   scouts?: Record<number, ScoutDetail>;
   actions?: boolean;
   stop?: () => Response;
+  aside?: (body: { item: number; aside: boolean }) => Response;
   list?: ScoutRow[];
 }
 
@@ -116,6 +117,7 @@ function scoutFetch(daemon: Daemon) {
     }
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: daemon.list ?? [] });
     if (url === `${DEMO}/actions/scout-stop` && daemon.stop) return daemon.stop();
+    if (url === `${DEMO}/actions/scout-set-aside` && daemon.aside) return daemon.aside(JSON.parse(init!.body as string));
     const answer = await polls(url);
     if (!url.endsWith("/status")) return answer;
     return Response.json({ ...(await answer.json()), actions: daemon.actions ?? true });
@@ -597,6 +599,48 @@ test("choosing Write-up, Findings then Activity shows the write-up, the findings
   expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent).toBe(HEADLINE);
 });
 
+test("clicking the opening Decide tab keeps it selected and shows Undo after setting aside the last open item", async () => {
+  const oneOpen = writtenUp.actions.filter((item) => item.kind !== "revise" && item.ticket == null && item.set_aside_ms == null).slice(0, 1);
+  const bodies: Record<number, ScoutDetail> = { 31: { ...writtenUp, actions: oneOpen } };
+  const aside = ({ item, aside: setAside }: { item: number; aside: boolean }) => {
+    const set_aside_ms = setAside ? at(11, 59) : null;
+    bodies[31] = { ...bodies[31]!, actions: bodies[31]!.actions.map((each) => (each.position === item ? { ...each, set_aside_ms } : each)) };
+    return Response.json({ ok: true, scout: 31, item, set_aside_ms, detail: "done" });
+  };
+  await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies, aside }).fetch);
+  const decideTab = screen.getByRole("tab", { name: "Decide 1" });
+  expect(decideTab.getAttribute("aria-selected")).toBe("true");
+  await click(decideTab);
+  await click(within(shown()).getByRole("button", { name: "Not now" }));
+  expect(screen.getByRole("tab", { name: "Decide" }).getAttribute("aria-selected")).toBe("true");
+  expect(within(shown()).getByRole("button", { name: "Undo" })).toBeTruthy();
+});
+
+test("leaving a live Activity panel hides it immediately while its running pulse animates", async () => {
+  const followUp: ScoutDetail = {
+    ...writtenUp,
+    scout: { ...writtenUp.scout, phase: "swarming", ended_ms: null },
+    actions: [],
+  };
+  const infinite = { effect: { getComputedTiming: () => ({ endTime: Number.POSITIVE_INFINITY, localTime: 0 }) }, finished: new Promise<void>(() => {}) };
+  const animations = spyOn(Element.prototype, "getAnimations").mockImplementation(function (this: Element) {
+    return this.querySelector(".state-pulse") ? [infinite as unknown as Animation] : [];
+  });
+  try {
+    await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: followUp } }).fetch);
+    await showActivity();
+    expect(shown().querySelector(".state-pulse")).toBeTruthy();
+    const findingsTab = screen.getByRole("tab", { name: "Findings 4" });
+    act(() => void fireEvent.click(findingsTab));
+    const panels = screen.getAllByRole("tabpanel", { hidden: true });
+    expect(panels).toHaveLength(screen.getAllByRole("tab").length);
+    expect(panels.filter((panel) => !panel.hidden).map((panel) => panel.getAttribute("aria-labelledby"))).toEqual([findingsTab.id]);
+    await settled();
+  } finally {
+    animations.mockRestore();
+  }
+});
+
 test("a report with no write-up and nothing to file opens on Findings with no Decide or Write-up tab", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: twoWaves } }).fetch);
   expect(tabs()).toEqual([["Findings 4", "true"], ["Activity", "false"], ["Chat · 3", "false"]]);
@@ -751,7 +795,10 @@ test("a draft and its Steer mode survive folding and reopening the chat, crossin
     expect(composerInTab.value).toBe("Check the digest too");
     await act(async () => void fireEvent.change(composerInTab, { target: { value: "Check the digest and the sweep" } }));
     await click(screen.getByRole("tab", { name: "Findings 4" }));
+    expect(screen.getByRole("tabpanel", { name: "Findings 4" })).toBe(shown());
+    expect(within(shown()).queryByRole("textbox", { name: "Note to the scout" })).toBeNull();
     await click(screen.getByRole("tab", { name: "Chat · 2" }));
+    expect(screen.getByRole("tabpanel", { name: "Chat · 2" })).toBe(shown());
     expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(composerInTab);
     expect(composerInTab.value).toBe("Check the digest and the sweep");
   } finally {

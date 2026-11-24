@@ -184,7 +184,9 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
       <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2">
         <TabsList aria-label="Scout document" className="flex flex-wrap gap-0.5">
           {tabs.map((tab) => (
-            <TabsTab key={tab.id} value={tab.id} className={tab.className ? `${TAB} ${tab.className}` : TAB}>
+            // SDK skips onValueChange for a repeated value; record an explicit click on the current tab.
+            <TabsTab key={tab.id} value={tab.id} onClick={tab.id === current.id ? () => onChoose(tab.id) : undefined}
+              className={tab.className ? `${TAB} ${tab.className}` : TAB}>
               {tab.label}
               {tab.count != null && <> <span data-tab-count className="font-mono text-[12px] font-normal text-ink-3 group-data-selected:text-ink-2">{tab.count}</span></>}
             </TabsTab>
@@ -192,7 +194,8 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
         </TabsList>
       </div>
       {tabs.map((tab) => (
-        <TabsPanel key={tab.id} value={tab.id} keepMounted className="pt-5 [&>:first-child]:mt-0">
+        // Hide non-current panels on the first frame so descendant animations cannot delay panel exit.
+        <TabsPanel key={tab.id} value={tab.id} keepMounted hidden={tab !== current} className="pt-5 [&>:first-child]:mt-0">
           {tab.body}
         </TabsPanel>
       ))}
