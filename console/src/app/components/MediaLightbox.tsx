@@ -40,13 +40,11 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
   const close = useRef<HTMLButtonElement>(null);
   const total = items.length;
   const shown = Math.min(index, total - 1);
-  const live = useRef({ shown, onClose });
-  live.current = { shown, onClose };
   // Child Dialog's layout effect lifts inert before this runs, so onClose
   // focuses the last-shown tile on a non-inert page.
   useLayoutEffect(() => {
     if (open) return;
-    live.current.onClose(live.current.shown);
+    onClose(shown);
   }, [open]);
   const item = items[shown]!;
   // Stepping off a focused video or into a disabled step button drops focus to body.
@@ -55,17 +53,10 @@ export function MediaLightbox({ items, start, onClose }: { items: MediaItem[]; s
   }, [open, shown, item.kind]);
   const name = `${item.kind === "video" ? "Video" : "Screenshot"} ${shown + 1} of ${total}`;
   return (
-    <Dialog
-      open={open}
-      closeOnOutsidePress={false}
-      onOpenChange={(next) => {
-        if (!next) setOpen(false);
-      }}
-    >
+    <Dialog open={open} closeOnOutsidePress={false} onOpenChange={setOpen}>
       <DialogBackdrop className="fixed inset-0 z-50 bg-scrim" />
       <DialogContent
         aria-label={name}
-        initialFocus={() => close.current}
         finalFocus="none"
         onKeyDown={(event) => {
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
