@@ -223,6 +223,7 @@ test("resting the pointer or keyboard focus on Hide scout list shows its tooltip
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
   const tip = screen.getByRole("tooltip");
   expect(tip.textContent).toBe("Hide scout list");
+  expect(tip.getAttribute("tabindex")).toBeNull();
   expect(tip.classList.contains("whitespace-nowrap")).toBe(true);
   expect(tip.classList.contains("leading-[1.2]")).toBe(true);
   expect(tip.classList.contains("leading-[1.35]!")).toBe(false);
@@ -243,21 +244,39 @@ test("resting the pointer or keyboard focus on Hide scout list shows its tooltip
 });
 
 test("a failed row in the wide scout list shows the cut reason, described by the whole line in a tooltip with no title", async () => {
-  const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(10)}`.slice(0, 300);
-  await mount("#/scouts", wideFetch([row(31, { title: TITLE }), row(30, { phase: "failed", reason: long })]));
-  const failed = rowOf(30) as HTMLElement;
-  const cut = within(failed).getByText(`${long.slice(0, 159)}…`);
-  expect(cut.getAttribute("title")).toBeNull();
-  expect(cut.getAttribute("tabindex")).toBeNull();
-  expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  const showPopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "showPopover");
+  const hidePopover = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "hidePopover");
+  Object.defineProperty(HTMLElement.prototype, "showPopover", { configurable: true, writable: true, value() {} });
+  Object.defineProperty(HTMLElement.prototype, "hidePopover", { configurable: true, writable: true, value() {} });
+  try {
+    const long = `copying node_modules failed: ${"/scratch/stage/console/node_modules/dep/index.js ".repeat(10)}`.slice(0, 300);
+    await mount("#/scouts", wideFetch([row(31, { title: TITLE }), row(30, { phase: "failed", reason: long })]));
+    const failed = rowOf(30) as HTMLElement;
+    const cut = within(failed).getByText(`${long.slice(0, 159)}…`);
+    let closedLinkName = "";
+    const link = within(failed).getByRole("link", { name: (name) => ((closedLinkName = name), true) });
+    expect(cut.getAttribute("title")).toBeNull();
+    expect(cut.getAttribute("tabindex")).toBeNull();
+    expect(closedLinkName).not.toContain(long);
+    expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
+    expect(screen.queryByRole("tooltip")).toBeNull();
 
-  await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  const tip = screen.getByRole("tooltip");
-  expect(tip.textContent).toBe(long);
-  expect(tip.classList.contains("overflow-y-auto")).toBe(true);
-  expect(tip.className).toContain("max-h-[var(--available-height");
-  await click(tip);
-  expect(path()).toBe("#/scouts");
+    await act(async () => void fireEvent.pointerEnter(cut, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(long);
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    expect(tip.classList.contains("overflow-y-auto")).toBe(true);
+    expect(tip.className).toContain("max-h-[var(--available-height");
+    expect(link.contains(tip)).toBe(false);
+    expect(within(failed).getByRole("link", { name: closedLinkName })).toBe(link);
+    expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
+    await click(tip);
+    expect(path()).toBe("#/scouts");
+  } finally {
+    if (showPopover) Object.defineProperty(HTMLElement.prototype, "showPopover", showPopover);
+    else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;
+    if (hidePopover) Object.defineProperty(HTMLElement.prototype, "hidePopover", hidePopover);
+    else delete (HTMLElement.prototype as { hidePopover?: unknown }).hidePopover;
+  }
 });

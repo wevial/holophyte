@@ -157,6 +157,7 @@ test("a verified citation is described by its base and an unverified one by its 
     await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
     const popup = screen.getByRole("tooltip");
     expect(popup.textContent).toBe(tip);
+    expect(popup.getAttribute("tabindex")).toBe(wrapped ? "-1" : null);
     expect(popup.classList.contains("overflow-y-auto")).toBe(wrapped);
     expect(popup.classList.contains("leading-[1.35]!")).toBe(wrapped);
     await act(async () => void fireEvent.pointerLeave(citation, { pointerType: "mouse", clientX: 900, clientY: 900 }));

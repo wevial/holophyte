@@ -24,6 +24,8 @@ export function Hint({ tip, side = "top", describe = false, wrap = false, childr
       <TooltipContent
         side={side}
         sideOffset={6}
+        container={typeof document === "undefined" ? null : document.body}
+        tabIndex={wrap ? -1 : undefined}
         className={wrap ? WRAP_TIP : TIP}
         onClick={wrap ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       >
