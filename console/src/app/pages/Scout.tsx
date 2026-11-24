@@ -1,8 +1,10 @@
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { ACTIONS_OFF } from "../../lib/actions";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { Btn } from "../components/Btn";
+import { Hint } from "../components/Hint";
 import { ChatIcon, FoldRightIcon } from "../components/icons";
 import { CHAT_SLOT, ScoutDocument, Verdict, type TabId } from "../components/ScoutBody";
 import { ScoutHead } from "../components/ScoutHead";
@@ -134,10 +136,21 @@ export function ScoutView({ project, param }: { project: string; param: string }
           className="sticky top-0 hidden h-(--panel-height) min-w-0 flex-col border-l border-rule bg-paper min-[1440px]:flex">
           <header className="flex min-h-14 items-center justify-between gap-2 border-b border-rule py-2.5 pr-3 pl-[18px]">
             <h2 id={chatTitle} className="m-0 font-sans text-[15px] font-semibold text-ink">Chat with the scout</h2>
-            <button type="button" aria-label="Hide chat" title="Hide chat" aria-expanded={true} aria-controls={drawerId} onClick={foldChat}
-              className="btn w-9 shrink-0 px-0" data-variant="quiet">
-              <FoldRightIcon />
-            </button>
+            <Hint tip="Hide chat" side="bottom">
+              {(trigger) => (
+                <button
+                  {...mergeProps(trigger, { onClick: foldChat })}
+                  type="button"
+                  aria-label="Hide chat"
+                  aria-expanded={true}
+                  aria-controls={drawerId}
+                  className="btn w-9 shrink-0 px-0"
+                  data-variant="quiet"
+                >
+                  <FoldRightIcon />
+                </button>
+              )}
+            </Hint>
           </header>
           <div ref={holdThread} className={`flex min-h-0 flex-1 flex-col px-[18px] py-4 ${CHAT_SLOT} [&>div>section]:flex [&>div>section]:min-h-0 [&>div>section]:flex-1 [&>div>section]:flex-col [&>div>section>ol]:mt-0 [&>div>section>ol]:min-h-0 [&>div>section>ol]:overflow-y-auto [&>div>section>div]:mt-auto [&>div>section>div]:pt-4`} />
         </section>

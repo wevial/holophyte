@@ -4,6 +4,7 @@ const zone = process.env.TZ;
 process.env.TZ = "America/Los_Angeles";
 
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Round, RunAsks, RunDetail, RunEvent } from "../../src/lib/contract.gen";
 import type { Fetch } from "../../src/lib/poll";
@@ -88,16 +89,37 @@ const reviewing: RunDetail = {
   rounds: [roundOne],
 };
 
+/** Run 12, live with review round 2 underway after Round 1's fix and verify. */
+const inReview: RunDetail = {
+  ...live,
+  run: { ...live.run, phase: "reviewing" },
+  events: [
+    ...EVENTS,
+    phase(T + 16 * MIN, "verifying -> reviewing: round 2 review"),
+    beat(T + 16 * MIN + 30 * SEC, "Review turn: 4 tool calls; last: reading a file"),
+  ],
+  rounds: [
+    roundOne,
+    round({ round: 2, started_ms: T + 16 * MIN, ended_ms: null, verdict: "", reviewer_model: "codex-sol-high" }),
+  ],
+};
+
 const noAsks: RunAsks = { run: 12, ticket: "DEMO-12", pr_url: null, asks: [] };
 
 /** `/runs/12` answers `bodies.detail`, read at each request; run 12 is live in `/status` while it has no outcome. */
 function runFetch(bodies: { detail: RunDetail }): Fetch {
-  const working = fleet({ items: [], runs: [{ ...run(12, "DEMO-12"), phase: "working", round: 0, max_rounds: 3 }] }, { items: [] });
   const idle = fleet({ items: [] }, { items: [] });
   return async (url) => {
     if (url === `${DEMO}/runs/12`) return Response.json(bodies.detail);
     if (url === `${DEMO}/runs/12/asks`) return Response.json(noAsks);
-    return (bodies.detail.run.outcome == null ? working : idle)(url);
+    if (bodies.detail.run.outcome != null) return idle(url);
+    const liveRun = {
+      ...run(12, "DEMO-12"),
+      phase: bodies.detail.run.phase,
+      round: bodies.detail.rounds.filter((item) => item.ended_ms != null).length,
+      max_rounds: bodies.detail.run.max_rounds,
+    };
+    return fleet({ items: [], runs: [liveRun] }, { items: [] })(url);
   };
 }
 
@@ -124,14 +146,14 @@ async function repoll(queries: ReturnType<typeof consoleQueryClient>) {
 
 const progress = () => screen.getByRole("region", { name: "Progress" });
 const list = () => within(progress()).getByRole("list", { name: "Run activity" });
-const rows = () => Array.from(list().querySelectorAll(":scope > li"));
-const row = (li: Element) => [li.querySelector("[data-group-title]")!.textContent, li.querySelector("[data-group-span]")!.textContent];
-const rowOf = (title: string) => rows().find((li) => li.querySelector("[data-group-title]")!.textContent!.startsWith(title))!;
-const steps = (li: Element) => Array.from(li.querySelectorAll("[data-step-text]"), (step) => step.textContent);
-const fold = (li: Element) => within(li as HTMLElement).getAllByRole("button")[0]!;
-const toggle = async (li: Element) => act(async () => void fireEvent.click(fold(li)));
-const shut = async (li: Element) => {
-  if (fold(li).getAttribute("aria-expanded") === "true") await toggle(li);
+const rows = () => Array.from(list().querySelectorAll<HTMLElement>(':scope > [data-slot="timeline-item"]'));
+const row = (item: Element) => [item.querySelector("[data-group-title]")!.textContent, item.querySelector("[data-group-span]")!.textContent];
+const rowOf = (title: string) => rows().find((item) => item.querySelector("[data-group-title]")!.textContent!.startsWith(title))!;
+const steps = (item: Element) => Array.from(item.querySelectorAll("[data-step-text]"), (step) => step.textContent);
+const fold = (item: Element) => within(item as HTMLElement).getAllByRole("button")[0]!;
+const toggle = async (item: Element) => act(async () => void fireEvent.click(fold(item)));
+const shut = async (item: Element) => {
+  if (fold(item).getAttribute("aria-expanded") === "true") await toggle(item);
 };
 
 const happyDOM = (window as unknown as { happyDOM: { setURL: (url: string) => void } }).happyDOM;
@@ -188,6 +210,8 @@ test("an ended run opens only its last group, the current one, and a last group 
     ["Final check", "true"],
   ]);
   expect(current()).toEqual([rowOf("Final check")]);
+  expect(rowOf("Final check").getAttribute("data-current")).toBe("ok");
+  expect(rowOf("Final check").getAttribute("aria-current")).toBeNull();
   await toggle(rowOf("Final check"));
   bodies.detail = { ...checked, events: [...checked.events, { at: T + 19 * MIN, kind: "trim", summary: "Trim kept; line delta -2" }] };
   await repoll(queries);
@@ -201,15 +225,21 @@ test("a live run has no Now region; its running group alone is open and current,
   expect(within(progress()).queryByRole("region", { name: "Now" })).toBeNull();
   const running = rows().at(-1)!;
   expect(running.hasAttribute("data-running")).toBe(true);
+  expect(running.getAttribute("data-current")).toBe("live");
+  expect(row(running)[1]).toBe("now");
   expect(current()).toEqual([running]);
   expect(rows().map((li) => li.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded") ?? null)).toEqual([null, "false", "true"]);
-  expect(body(running)!.textContent).toContain("Implement turn: 9 tool calls; last: running a command");
-  const before = body(running)!.childElementCount;
+  expect(steps(running)).toEqual(["Verify"]);
+  const openBody = body(running)!;
+  expect(openBody.lastElementChild!.textContent).toBe("Implement turn: 9 tool calls; last: running a command");
+  const before = openBody.childElementCount;
+  expect(before).toBeGreaterThan(1);
 
   bodies.detail = { ...reviewing, events: [...reviewing.events, beat(T + 16 * MIN, "Implement turn: 12 tool calls; last: editing a file")] };
   await repoll(queries);
   const after = body(rows().at(-1)!)!;
-  expect(after.textContent).toContain("Implement turn: 12 tool calls; last: editing a file");
+  expect(steps(rows().at(-1)!)).toEqual(["Verify"]);
+  expect(after.lastElementChild!.textContent).toBe("Implement turn: 12 tool calls; last: editing a file");
   expect(after.textContent).not.toContain("Implement turn: 9 tool calls");
   expect(after.childElementCount).toBe(before);
   expect(rows()).toHaveLength(3);
@@ -241,6 +271,211 @@ test("a live run's running group alone is current, untinted, with its title in f
   expect(rows().map((li) => li.getAttribute("data-current"))).toEqual([null, null, "live"]);
   expect(rows().map(tints)).toEqual([[], [], []]);
   expect(rows().map(titleInk)).toEqual([["text-ink-2"], ["text-ink-2"], ["text-ink"]]);
+});
+
+test("a reviewing run's Progress is one Run activity list of groups named by title, described by time and duration, with one roving tab stop", async () => {
+  await mount(runFetch({ detail: inReview }));
+  expect(within(screen.getByRole("main")).getByRole("status").textContent).toBe("Reviewing round 2 of 3.");
+  expect(within(progress()).getAllByRole("list", { name: "Run activity" })).toHaveLength(1);
+  const items = rows();
+  expect(Array.from(list().children)).toEqual(items);
+  expect(items.map((item) => item.getAttribute("role"))).toEqual(["listitem", "listitem", "listitem"]);
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+  expect(items.every((item) => item.getAttribute("aria-current") === null)).toBe(true);
+  expect(within(list()).getByRole("listitem", { name: "Implement", description: "10:00 10m 00s" })).toBe(items[0]!);
+  expect(within(list()).getByRole("listitem", { name: "Round 1 · 3 should-fix", description: "10:10 5m 30s" })).toBe(items[1]!);
+  expect(within(list()).getByRole("listitem", { name: "Round 2", description: "10:15 now" })).toBe(items[2]!);
+  expect(steps(items[2]!)).toEqual(["Verify 30s", "Review · codex-sol-high"]);
+  expect(items[2]!.querySelector('[data-state="running"]')!.closest('[aria-hidden="true"]')).not.toBeNull();
+});
+
+test("ArrowDown, End, Home and wrapping ArrowUp move focus across Progress groups, and Tab moves from a focused group to its fold button", async () => {
+  const user = userEvent.setup();
+  await mount(runFetch({ detail: reviewing }));
+  const items = rows();
+  await act(async () => void items[0]!.focus());
+  expect(document.activeElement).toBe(items[0]);
+
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(items[1]);
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[1]!));
+
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[1]);
+
+  await user.keyboard("{End}");
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.keyboard("{Home}");
+  expect(document.activeElement).toBe(items[0]);
+
+  await user.keyboard("{ArrowUp}");
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.tab({ shift: true });
+  expect(progress().contains(document.activeElement)).toBe(false);
+
+  await user.tab();
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[2]!));
+});
+
+test("an open group's finding controls are tabbable only while that group holds the tab stop", async () => {
+  const user = userEvent.setup();
+  const detail: RunDetail = {
+    ...reviewing,
+    rounds: [
+      {
+        ...roundOne,
+        findings: [
+          {
+            ...p2("Preserve keyboard order\nDetail shown after More."),
+            path: "console/src/app/components/Timeline.tsx",
+            line: 69,
+            summary: undefined,
+            url: "https://github.test/demo/pull/1#discussion_r1",
+          },
+        ],
+      },
+    ],
+  };
+  await mount(runFetch({ detail }));
+  const items = rows();
+  await act(async () => void items[0]!.focus());
+
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(items[1]);
+
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[1]!));
+  await user.keyboard("{Enter}");
+  expect(fold(items[1]!).getAttribute("aria-expanded")).toBe("true");
+
+  const more = within(items[1]!).getByRole("button", { name: "More" });
+  const location = within(items[1]!).getByRole("link", { name: "console/src/app/components/Timeline.tsx:69" });
+  await user.tab();
+  expect(document.activeElement).toBe(more);
+  await user.tab();
+  expect(document.activeElement).toBe(location);
+
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[1]);
+
+  await user.keyboard("{End}");
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.tab({ shift: true });
+  expect(progress().contains(document.activeElement)).toBe(false);
+
+  await user.tab();
+  expect(document.activeElement).toBe(items[2]);
+
+  await user.keyboard("{Home}");
+  expect(document.activeElement).toBe(items[0]);
+  await user.tab();
+  expect(list().contains(document.activeElement)).toBe(false);
+
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[0]);
+  await user.keyboard("{ArrowDown}");
+  expect(document.activeElement).toBe(items[1]);
+  await user.tab();
+  expect(document.activeElement).toBe(fold(items[1]!));
+  await user.tab();
+  expect(document.activeElement).toBe(more);
+  await user.tab();
+  expect(document.activeElement).toBe(location);
+});
+
+test("clicking an inactive group's fold moves the tab stop there so its opened finding controls stay reachable by Tab", async () => {
+  const user = userEvent.setup();
+  const detail: RunDetail = {
+    ...inReview,
+    rounds: [
+      {
+        ...roundOne,
+        findings: [
+          {
+            ...p2("Preserve keyboard order\nDetail shown after More."),
+            path: "console/src/app/components/Timeline.tsx",
+            line: 69,
+            summary: undefined,
+            url: "https://github.test/demo/pull/1#discussion_r1",
+          },
+        ],
+      },
+      inReview.rounds[1]!,
+    ],
+  };
+  await mount(runFetch({ detail }));
+  const items = rows();
+  await act(async () => void items[2]!.focus());
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
+
+  await user.click(fold(items[1]!));
+  expect(fold(items[1]!).getAttribute("aria-expanded")).toBe("true");
+  expect(document.activeElement).toBe(fold(items[1]!));
+  expect(items.map((item) => item.getAttribute("tabindex"))).toEqual(["-1", "0", "-1"]);
+
+  const more = within(items[1]!).getByRole("button", { name: "More" });
+  const location = within(items[1]!).getByRole("link", { name: "console/src/app/components/Timeline.tsx:69" });
+  await user.tab();
+  expect(document.activeElement).toBe(more);
+  await user.tab();
+  expect(document.activeElement).toBe(location);
+  await user.tab();
+  expect(document.activeElement).toBe(within(progress()).getByRole("button", { name: /^Raw log/ }));
+
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  await user.tab({ shift: true });
+  expect(document.activeElement).toBe(items[1]);
+});
+
+test("a focused running covering review keeps focus and the tab stop when a poll records that round with a later start time", async () => {
+  const pendingCovering: RunDetail = {
+    ...live,
+    run: { ...live.run, phase: "reviewing" },
+    events: [
+      phase(T, "claimed -> working"),
+      phase(T + 10 * MIN, "working -> verifying"),
+      phase(T + 10 * MIN + 30 * SEC, "verifying -> reviewing: round 1 review"),
+      { at: T + 20 * MIN, kind: "babysit_step", summary: "covering_review" },
+      phase(T + 20 * MIN, "merge_gate -> reviewing: review of the fix at 0123456789ab"),
+    ],
+    rounds: [round({ ...roundOne, verdict: "pass", findings: [] })],
+  };
+  const bodies = { detail: pendingCovering };
+  const queries = await mount(runFetch(bodies));
+  const covering = document.getElementById("round-2")!;
+  expect(covering.getAttribute("data-group")).toBe("covering_review");
+  expect(covering.querySelector("time")!.textContent).toBe("10:20");
+  await act(async () => void covering.focus());
+  expect(document.activeElement).toBe(covering);
+  expect(covering.getAttribute("tabindex")).toBe("0");
+
+  bodies.detail = {
+    ...pendingCovering,
+    run: { ...pendingCovering.run, phase: "merge_gate" },
+    rounds: [
+      ...pendingCovering.rounds,
+      round({ round: 2, started_ms: T + 21 * MIN, ended_ms: T + 23 * MIN, verdict: "approved" }),
+    ],
+  };
+  await repoll(queries);
+  expect(document.getElementById("round-2") === covering).toBe(true);
+  expect(covering.querySelector("time")!.textContent).toBe("10:21");
+  expect(document.activeElement === covering).toBe(true);
+  expect(covering.getAttribute("tabindex")).toBe("0");
+  expect(rowOf("Implement").getAttribute("tabindex")).toBe("-1");
 });
 
 async function waitInert(element: HTMLElement) {
