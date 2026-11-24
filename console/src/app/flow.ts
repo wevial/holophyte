@@ -146,8 +146,7 @@ export function formatReverted(reverted: FlowNumbers["reverted"]): string {
 export interface FlowWeekly {
   starts: number[];
   merged: number[];
-  interventionCount: number[];
-  interventions: (number | null)[];
+  interventions: number[];
   waitingHours: number[];
   runHours: number[];
   waitingShare: (number | null)[];
@@ -164,7 +163,6 @@ export function flowWeekly(flows: Flow[]): FlowWeekly {
   const weekly: FlowWeekly = {
     starts: [],
     merged: [],
-    interventionCount: [],
     interventions: [],
     waitingHours: [],
     runHours: [],
@@ -181,10 +179,9 @@ export function flowWeekly(flows: Flow[]): FlowWeekly {
     const total = waiting + weeks.reduce((sum, week) => sum + week.hours.working, 0);
     weekly.starts.push(Math.min(...weeks.map((week) => week.start_ms)));
     weekly.merged.push(merged);
-    weekly.interventionCount.push(interventions);
+    weekly.interventions.push(interventions);
     weekly.waitingHours.push(waiting);
     weekly.runHours.push(total);
-    weekly.interventions.push(merged > 0 ? interventions : null);
     weekly.waitingShare.push(merged > 0 && total > 0 ? Math.round((100 * waiting) / total) : null);
     const hostMedians = weeks.flatMap((week) => (week.rounds_median == null ? [] : [week.rounds_median]));
     weekly.rounds.push(merged > 0 ? median(hostMedians) : null);
@@ -221,7 +218,7 @@ function counted(count: number, one: string): string {
 /** What each Week by week chart's tooltip says about a week with a known value. */
 export function weeklyTips(weekly: FlowWeekly, allProjects: boolean) {
   const merges = (index: number) => counted(weekly.merged[index]!, "merge");
-  const interventions = (index: number) => counted(weekly.interventionCount[index]!, "intervention");
+  const interventions = (index: number) => counted(weekly.interventions[index]!, "intervention");
   const medianRounds = (index: number) => {
     const rounds = weekly.rounds[index];
     return rounds == null ? "no review rounds" : `median ${counted(rounds, "review round")}`;

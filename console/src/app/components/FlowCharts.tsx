@@ -58,6 +58,10 @@ function areaPath(points: Point[]): string {
   return `${smoothPath(points)} L${points.at(-1)![0]} 100 L${points[0]![0]} 100 Z`;
 }
 
+function bridges(runs: Point[][]): [Point, Point][] {
+  return runs.slice(1).map((next, index) => [runs[index]!.at(-1)!, next[0]!]);
+}
+
 interface ChartProps {
   title: string;
   note: string;
@@ -196,6 +200,8 @@ export function BarChart({ values, ...props }: ChartProps & { values: number[] }
 export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { values: (number | null)[]; top?: number }) {
   const top = fixedTop ?? roundedTop(Math.max(0, ...values.map((value) => value ?? 0)));
   const runs = segments(values, top);
+  const drawn = runs.filter((points) => points.length > 1);
+  const spans = bridges(runs);
   const latest = values.length - 1;
   const latestValue = values[latest];
   return (
@@ -203,10 +209,22 @@ export function LineChart({ values, top: fixedTop, ...props }: ChartProps & { va
       {(active) => (
         <>
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 size-full overflow-visible">
-            {runs.map((points) => (
+            {drawn.map((points) => (
               <path key={`fill-${points[0]![0]}`} d={areaPath(points)} className="fill-wait opacity-15" />
             ))}
-            {runs.map((points) => (
+            {spans.map(([[x1, y1], [x2, y2]]) => (
+              <path
+                key={`bridge-${x1}-${x2}`}
+                data-bridge
+                d={`M${x1} ${y1} L${x2} ${y2}`}
+                fill="none"
+                strokeWidth={1.25}
+                strokeDasharray="4 4"
+                vectorEffect="non-scaling-stroke"
+                className="stroke-wait opacity-65"
+              />
+            ))}
+            {drawn.map((points) => (
               <path key={`line-${points[0]![0]}`} data-segment d={smoothPath(points)} fill="none" strokeWidth={1.75} vectorEffect="non-scaling-stroke" className="stroke-wait" />
             ))}
           </svg>
