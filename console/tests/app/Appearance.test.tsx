@@ -892,16 +892,100 @@ async function saveDarkTheme() {
   fireEvent.click(editor().getByRole("button", { name: "Save" }));
 }
 
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+
+async function expectHoverTip(element: HTMLElement, tip: string) {
+  expect([element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("aria-describedby")]).toEqual([tip, null, null]);
+  expect(tooltip()).toBeNull();
+  await act(async () => void fireEvent.pointerEnter(element, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  expect(tooltip()).toBe(tip);
+  expect([element.getAttribute("aria-label"), element.getAttribute("title"), element.getAttribute("aria-describedby")]).toEqual([tip, null, null]);
+  await act(async () => void fireEvent.pointerLeave(element, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(settle);
+  expect(tooltip()).toBeNull();
+}
+
 test("a mid-grey light ground raises the Muted text flag with its ratio under 4.5 while Text passes", async () => {
   await mount();
   fireEvent.click(within(screen.getByRole("group", { name: "Light" })).getByRole("button", { name: /New theme/ }));
   pickGround(0.62, 0.01, 250);
   const muted = flag("Muted text");
-  const ratio = Number(muted.getAttribute("title")!.match(/^Muted text (\d+\.\d):1 · under 4\.5$/)![1]);
+  const label = muted.getAttribute("aria-label")!;
+  const ratio = Number(label.match(/^Muted text (\d+\.\d):1 · under 4\.5$/)![1]);
   expect(ratio).toBeLessThan(4.5);
   expect(muted.hasAttribute("data-fails")).toBe(true);
-  expect(flag("Text").hasAttribute("data-fails")).toBe(false);
-  expect(flag("Text").getAttribute("title")).not.toContain("under");
+  expect(muted.getAttribute("tabindex")).toBeNull();
+  await expectHoverTip(muted, label);
+  const text = flag("Text");
+  expect(text.hasAttribute("data-fails")).toBe(false);
+  expect(text.getAttribute("title")).toBeNull();
+  expect(text.getAttribute("aria-label")).not.toContain("under");
+});
+
+test("in a top-layer browser, hovering contrast flags keeps the tooltip outside the Contrast list and updates across flags", async () => {
+  const proto = HTMLElement.prototype;
+  const hadShow = Object.getOwnPropertyDescriptor(proto, "showPopover");
+  const hadHide = Object.getOwnPropertyDescriptor(proto, "hidePopover");
+  Object.defineProperty(proto, "showPopover", { configurable: true, writable: true, value: () => {} });
+  Object.defineProperty(proto, "hidePopover", { configurable: true, writable: true, value: () => {} });
+  try {
+    await mount();
+    const list = screen.getByRole("list", { name: "Contrast" });
+    const muted = flag("Muted text");
+    const text = flag("Text");
+    const mutedLabel = muted.getAttribute("aria-label")!;
+    const textLabel = text.getAttribute("aria-label")!;
+    expect([...list.children].map((child) => child.tagName)).toEqual(Array(list.children.length).fill("LI"));
+    await act(async () => void fireEvent.pointerEnter(muted, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(mutedLabel);
+    expect(list.contains(tip)).toBe(false);
+    expect(within(list).queryByRole("tooltip")).toBeNull();
+    expect(muted.getAttribute("aria-describedby")).toBeNull();
+    await act(async () => void fireEvent.pointerLeave(muted, { pointerType: "mouse", relatedTarget: text }));
+    await act(async () => void fireEvent.pointerEnter(text, { pointerType: "mouse" }));
+    await act(settle);
+    expect(screen.getByRole("tooltip").textContent).toBe(textLabel);
+    expect(list.contains(screen.getByRole("tooltip"))).toBe(false);
+    await act(async () => void fireEvent.pointerLeave(text, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(tooltip()).toBeNull();
+  } finally {
+    cleanup();
+    if (hadShow) Object.defineProperty(proto, "showPopover", hadShow);
+    else Reflect.deleteProperty(proto, "showPopover");
+    if (hadHide) Object.defineProperty(proto, "hidePopover", hadHide);
+    else Reflect.deleteProperty(proto, "hidePopover");
+  }
+});
+
+test("resting the pointer or keyboard focus on Reset density shows its tooltip with no title or aria-describedby", async () => {
+  await mount();
+  fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+  const reset = screen.getByRole("button", { name: "Reset density" });
+  await expectHoverTip(reset, "Reset density");
+  await act(async () => {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    reset.focus();
+  });
+  expect(tooltip()).toBe("Reset density");
+  await act(async () => reset.blur());
+  expect(tooltip()).toBeNull();
+});
+
+test("resting the pointer on a theme editor reset icon shows its tooltip with no title and clicking still resets the field", async () => {
+  await mount();
+  fireEvent.click(within(screen.getByRole("group", { name: "Light" })).getByRole("button", { name: /New theme/ }));
+  const grain = editor().getByRole("slider", { name: "Theme grain" }) as HTMLInputElement;
+  const initial = grain.value;
+  fireEvent.change(grain, { target: { value: initial === "0" ? "2" : "0" } });
+  const reset = editor().getByRole("button", { name: "Reset theme grain" });
+  await expectHoverTip(reset, "Reset theme grain");
+  fireEvent.click(reset);
+  expect(grain.value).toBe(initial);
+  expect(editor().queryByRole("button", { name: "Reset theme grain" })).toBeNull();
 });
 
 test("Lotus dark in the editor is read-only, and Edit a copy opens an editable Lotus dark copy", async () => {

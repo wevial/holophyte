@@ -4,6 +4,7 @@ import { Listbox, ListboxItem, ListboxItemIndicator } from "@ui-sdk/react/listbo
 import type { Flow } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
 import { BarChart, Change, LineChart, Sparkline, type TrendNumber } from "../components/FlowCharts";
+import { Hint } from "../components/Hint";
 import { DropIcon } from "../components/icons";
 import { dayRangeLabel, ToolPopover } from "../components/ListFilters";
 import { PageHeader } from "../components/PageHeader";
@@ -186,9 +187,18 @@ function TimeSplit({ numbers }: { numbers: FlowNumbers }) {
           const width = share(numbers.hours[part], numbers.total);
           if (width <= 0) return null;
           return (
-            <div key={part} data-part={part} title={name} style={{ width: `${width}%` }} className={`flex items-center overflow-hidden px-2 not-first:border-l-2 not-first:border-canvas ${fill}`}>
-              {width >= INSIDE_MIN && <span className="font-mono text-[12px] font-semibold text-canvas">{Math.round(width)}%</span>}
-            </div>
+            <Hint key={part} tip={name} describe>
+              {(trigger) => (
+                <div
+                  {...trigger}
+                  data-part={part}
+                  style={{ width: `${width}%` }}
+                  className={`flex items-center overflow-hidden px-2 not-first:border-l-2 not-first:border-canvas ${fill}`}
+                >
+                  {width >= INSIDE_MIN && <span className="font-mono text-[12px] font-semibold text-canvas">{Math.round(width)}%</span>}
+                </div>
+              )}
+            </Hint>
           );
         })}
       </div>
