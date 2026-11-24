@@ -64,7 +64,7 @@ def route_for(project):
     if backend not in ("none", "container"):
         raise SystemExit("[agents] implementer_isolation must be none or container")
     memory = options.get("memory", "4g")
-    if not isinstance(memory, str) or not re.fullmatch(r"[1-9][0-9]*[mg]", memory):
+    if not isinstance(memory, str) or not review_runner.MEMORY_SIZE.fullmatch(memory):
         raise SystemExit(
             "[agents] implementer_isolation memory must be a positive m/g size"
         )

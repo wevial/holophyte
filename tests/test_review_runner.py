@@ -880,3 +880,160 @@ class VisualEvidencePromptTests(unittest.TestCase):
         self.assertIn(failure, body)
         self.assertIn(failure, brief)
         self.assertIn('counts against the candidate', brief)
+
+
+DOCKER_ARGV_SHIM = """#!{python}
+import json, os, sys
+args = sys.argv[1:]
+if args[0] == "inspect":
+    sys.exit(1)
+if args[0] != "run":
+    sys.exit(0)
+with open(os.environ["HOLOPHYTE_DOCKER_ARGV"], "a") as log:
+    log.write(json.dumps(args) + "\\n")
+print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
+for item in ({{"type": "command_execution", "exit_code": 0}},
+             {{"type": "agent_message", "text": "VERDICT: APPROVE"}}):
+    print(json.dumps({{"type": "item.completed", "item": item}}))
+"""
+
+
+class ReviewMemoryTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.repo = self.root / "repo"
+        self.base, self.candidate = two_commit_repo(self.repo)
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        for name, body in (
+            ("docker", DOCKER_ARGV_SHIM),
+            ("codex", "#!/bin/sh\nexit 0\n"),
+            ("codex-code-mode-host", "#!/bin/sh\nexit 0\n"),
+        ):
+            script = bin_dir / name
+            script.write_text(body.format(python=sys.executable))
+            script.chmod(0o755)
+        (self.root / "auth.json").write_text("{}")
+        self.argv_log = self.root / "docker-argv"
+        env = patch.dict(os.environ, {
+            "HOLOPHYTE_HOME": str(self.root / "home"),
+            "HOLOPHYTE_DOCKER_ARGV": str(self.argv_log),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        })
+        env.start()
+        self.addCleanup(env.stop)
+        for attr, value in (("SCRATCH_ROOT", self.root / "reviews"),
+                            ("CODEX_AUTH", self.root / "auth.json")):
+            patcher = patch.object(review_runner, attr, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def configure(self, agents: str):
+        import holophyte.config.project
+
+        config = holophyte.config.project.state_dir(self.repo) / "config.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("[agents]\n" + agents)
+        return holophyte.config.project.Project.locate(self.repo)
+
+    def docker_run_argv(self, project, *, role="review", fallback=False):
+        from holophyte.agents import roles
+
+        self.argv_log.unlink(missing_ok=True)
+        roles.container_review(
+            project, role, "judge the candidate", self.repo,
+            self.base, self.candidate, None, None, fallback,
+        )
+        runs = self.argv_log.read_text().splitlines()
+        self.assertEqual(len(runs), 1, runs)
+        return json.loads(runs[0])
+
+    @staticmethod
+    def memory_flags(argv: list[str]) -> list[str]:
+        docker_flags = argv[:argv.index(review_runner.IMAGE)]
+        return [
+            arg for arg in docker_flags
+            if arg in ("--memory", "-m")
+            or arg.startswith(("--memory=", "-m="))
+        ]
+
+    def test_container_review_turns_pass_default_or_configured_memory_cap(self):
+        default_project = self.configure("")
+        for role in ("review", "adversary"):
+            with self.subTest(config="default", role=role):
+                argv = self.docker_run_argv(default_project, role=role)
+                self.assertEqual(self.memory_flags(argv), ["--memory=4g"])
+        self.assertEqual(
+            [arg for arg in review_runner.hardening_flags(1000, 1000)
+             if arg.startswith("--memory")],
+            ["--memory=4g"],
+        )
+
+        configured_project = self.configure(
+            'review_memory = "6g"\n'
+            'review_fallback_model = "gpt-5.6-sol"\n'
+            'review_fallback_effort = "medium"\n'
+        )
+        for role in ("review", "adversary"):
+            for fallback, model in ((False, review_runner.MODEL),
+                                    (True, "gpt-5.6-sol")):
+                with self.subTest(role=role, fallback=fallback):
+                    argv = self.docker_run_argv(
+                        configured_project, role=role, fallback=fallback)
+                    self.assertEqual(self.memory_flags(argv), ["--memory=6g"])
+                    self.assertEqual(argv[-2], model)
+
+    def test_invalid_review_memory_and_reviewer_beside_it_fail_config_check(self):
+        from holophyte.config.checks import check_config
+
+        for bad in ('"0g"', '"4"', '"4gb"', '4', '""'):
+            with self.subTest(bad=bad):
+                project = self.configure(f"review_memory = {bad}\n")
+                with self.assertRaises(SystemExit) as raised:
+                    check_config(project)
+                message = str(raised.exception)
+                self.assertIn("[agents] review_memory", message)
+                self.assertNotIn("unknown key", message)
+
+        for good in ('"512m"', '"6g"'):
+            with self.subTest(good=good):
+                check_config(self.configure(f"review_memory = {good}\n"))
+
+        beside = self.configure('reviewer = "sh -c"\nreview_memory = "6g"\n')
+        with self.assertRaises(SystemExit) as raised:
+            check_config(beside)
+        message = str(raised.exception)
+        self.assertRegex(
+            message, r"\[agents\] review_memory beside \[agents\] reviewer")
+        self.assertNotIn("unknown key", message)
+
+
+class RealDockerMemoryCapTests(unittest.TestCase):
+    def test_hardening_flags_memory_cap_reaches_the_container_cgroup(self):
+        docker = shutil.which("docker")
+        if not docker:
+            self.skipTest("docker is not on PATH")
+        try:
+            inspect = subprocess.run(
+                [docker, "image", "inspect", review_runner.IMAGE],
+                capture_output=True, text=True, timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            self.skipTest(f"docker unavailable: {error}")
+        if inspect.returncode != 0:
+            self.skipTest(
+                f"Docker daemon or reviewer image {review_runner.IMAGE} absent"
+            )
+        result = subprocess.run(
+            [
+                docker, "run", "--rm", "--pull=never",
+                *review_runner.hardening_flags(os.getuid(), os.getgid(), "3g"),
+                review_runner.IMAGE,
+                "cat", "/sys/fs/cgroup/memory.max",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "3221225472")

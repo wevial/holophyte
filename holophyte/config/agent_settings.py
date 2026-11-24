@@ -10,6 +10,8 @@ from holophyte.config.reader import (
     REVIEW_EFFORT,
     REVIEW_EFFORTS,
     REVIEW_FALLBACK_KEYS,
+    REVIEW_MEMORY,
+    REVIEW_MEMORY_KEY,
     REVIEW_MODEL,
     REVIEW_MODES,
     REVIEW_ROUTE_KEYS,
@@ -19,6 +21,7 @@ from holophyte.config.reader import (
     TURN_QUIET_SEC,
     config_table,
 )
+from holophyte.review import review_runner
 
 
 def implementer_session(project):
@@ -84,7 +87,8 @@ def fallback_entries(project, role):
 
 def review_route(project, *, fallback=False):
     agents = config_table(project, "agents")
-    for key in (*REVIEW_ROUTE_KEYS, *REVIEW_FALLBACK_KEYS, *REVIEW_TIER_KEYS):
+    for key in (*REVIEW_ROUTE_KEYS, *REVIEW_FALLBACK_KEYS, *REVIEW_TIER_KEYS,
+                REVIEW_MEMORY_KEY):
         if key in agents and "reviewer" in agents:
             raise SystemExit(
                 f"[holo2] {project.config_path}: [agents] {key} beside [agents] "
@@ -102,6 +106,7 @@ def review_route(project, *, fallback=False):
             f"[agents] {REVIEW_FALLBACK_KEYS[0]} beside it")
     for route in (False, True):
         review_tier(project, fallback=route)
+    review_memory(project)
     if fallback and not present:
         return None
     model_key, effort_key = REVIEW_FALLBACK_KEYS if fallback else REVIEW_ROUTE_KEYS
@@ -126,6 +131,15 @@ def review_tier(project, *, fallback=False):
             f"[holo2] {project.config_path}: [agents] {key} must be a "
             f"non-empty Codex service tier, got {tier!r}")
     return tier
+
+
+def review_memory(project):
+    value = config_table(project, "agents").get(REVIEW_MEMORY_KEY, REVIEW_MEMORY)
+    if not isinstance(value, str) or not review_runner.MEMORY_SIZE.fullmatch(value):
+        raise SystemExit(
+            f"[holo2] {project.config_path}: [agents] {REVIEW_MEMORY_KEY} must be "
+            f"a positive integer with an m or g suffix, got {value!r}")
+    return value
 
 
 def budget_scale(project):

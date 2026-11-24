@@ -53,6 +53,7 @@ from holophyte.agents.turn_tools import report_asked
 from holophyte.config.agent_settings import (
     agent_command,
     fallback_entries,
+    review_memory,
     review_route,
     review_tier,
     turn_cap,
@@ -423,6 +424,7 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     from holophyte.review.review_session import record_review_session
     model, effort = review_route(project, fallback=switched)
     tier = review_tier(project, fallback=switched)
+    memory = review_memory(project)
     profile = review_profile(model, effort)
     turn = {"model": model, "effort": effort, "profile": profile}
     if family_route is not None and not switched:
@@ -431,6 +433,8 @@ def container_review(project, role, goal, cwd, base_sha, candidate_sha, conn,
     cap = REVIEW_TIMEOUT if timeout is None else timeout
     configured = carry_directories(project)
     options = {} if tier is None else {"service_tier": tier}
+    if memory != review_runner.MEMORY:
+        options["memory"] = memory
     if role == "adversary":
         options["multi_agent"] = True
     if reply_schema:

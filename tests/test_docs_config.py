@@ -114,6 +114,16 @@ class ConfigReferenceTests(unittest.TestCase):
             with self.subTest(term=term):
                 self.assertIn(term, cleanup)
 
+    def test_review_memory_row_gives_its_default_format_and_turns(self):
+        agents = sections((DOCS / "config.md").read_text())["agents"]
+        row = re.search(r"^\| `review_memory` \|.*$", agents, re.MULTILINE)
+        self.assertIsNotNone(row, "[agents] needs a key row: review_memory")
+        for term in ('Default: `"4g"`', "Positive integer", "`m`", "`g`",
+                     "`--memory=`", "review", "adversary", "primary",
+                     "fallback"):
+            with self.subTest(term=term):
+                self.assertIn(term, row.group())
+
     def test_removed_entry_names_missing_key_even_if_mentioned_elsewhere(self):
         document = (DOCS / "config.md").read_text()
         removed, count = re.subn(r"^\| `media_repo` \|.*\n", "", document,

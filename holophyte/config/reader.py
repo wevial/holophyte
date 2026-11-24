@@ -43,6 +43,7 @@ IMPL_EFFORT = "high"
 REVIEW_MODEL = review_runner.MODEL
 REVIEW_EFFORT = review_runner.EFFORT
 REVIEW_EFFORTS = review_runner.EFFORTS
+REVIEW_MEMORY = review_runner.MEMORY
 review_profile = review_runner.profile_for
 REVIEW_PROFILE = review_profile(REVIEW_MODEL, REVIEW_EFFORT)
 ADVERSARY_CLAUDE = ("opus", "high")
@@ -64,6 +65,7 @@ SHA_ROLES = ("review", "adjudicate", "adversary", "consolidate")
 REVIEW_ROUTE_KEYS = ("review_model", "review_effort")
 REVIEW_FALLBACK_KEYS = ("review_fallback_model", "review_fallback_effort")
 REVIEW_TIER_KEYS = ("review_service_tier", "review_fallback_service_tier")
+REVIEW_MEMORY_KEY = "review_memory"
 
 DEFAULT_IMPLEMENTER = "claude"
 DEFAULT_REVIEWER = "docker"
@@ -79,7 +81,8 @@ KNOWN_KEYS = {
                   "turn_cap_min", "turn_quiet_sec",
                   "implementer_isolation", "implementer_image",
                   "implementer_credential", "implementer_session",
-                  "implementer_resume", "review_mode", "adversary_credential",
+                  "implementer_resume", "review_mode", REVIEW_MEMORY_KEY,
+                  "adversary_credential",
                   harness.SHADOW_KEY, harness.PROFILES_KEY}),
     "worktree": frozenset({"setup", "setup_timeout_sec", "branch_prefix",
                            "carry", "env_source", "env_allow"}),
