@@ -12,8 +12,8 @@ import {
 import { popoverPreset } from "@ui-sdk/core/popover";
 import type { BaseSlotProps } from "@ui-sdk/core/renderer";
 import { createParts, mergeProps, usePart, usePrimitive } from "@ui-sdk/react/primitive";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
-import { useId, useMemo, useRef, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { createTooltipController, Tooltip, TooltipContent, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { storeScope, type SwitcherRow } from "../projects";
 import type { ScopeSearch } from "../scope";
@@ -30,6 +30,7 @@ type SwitcherOptions = {
   items?: { value: string; label: string }[];
   current?: string;
   onChoose?: (key: string) => void;
+  onOpenChange?: (open: boolean) => void;
 };
 
 /** What a filtering combobox's primitive offers its input and options. */
@@ -91,7 +92,7 @@ export function virtualOption<State extends { highlighted: string | null }, Api 
 
 const switcher = definePrimitive({
   name: "project-switcher",
-  options: { defaultOpen: "boolean", items: "value", current: "string", onChoose: "callback" },
+  options: { defaultOpen: "boolean", items: "value", current: "string", onChoose: "callback", onOpenChange: "callback" },
   state: (options: SwitcherOptions) => ({
     ...popupState(options),
     query: "",
@@ -231,6 +232,9 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
   const navigate = useNavigate();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const findId = `${useId()}-find`;
+  const [open, setOpen] = useState(false);
+  const [tip] = useState(createTooltipController);
+  const tipDisabled = !folded || open;
 
   const current = rows.find((row) => row.name === (project ?? null)) ?? unknownRow(project!);
   const byKey = useMemo(() => new Map(rows.map((row) => [rowKey(row), row])), [rows]);
@@ -249,7 +253,15 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
       storeScope(row.name);
       void navigate({ to: ".", search: (previous: ScopeSearch) => ({ ...previous, project: row.name ?? undefined }) });
     },
+    onOpenChange: (next) => {
+      setOpen(next);
+      if (next) tip.close();
+    },
   });
+
+  useLayoutEffect(() => {
+    if (tipDisabled) tip.close();
+  }, [tipDisabled, tip]);
 
   const besideRailWhenRoom = {
     getBoundingClientRect: () => {
@@ -268,7 +280,7 @@ export function ProjectSwitcher({ rows, colours, folded, selected }: { rows: Swi
       className: `pb-1 ${folded ? "flex justify-center pt-3" : "px-2"}`,
       children: (
         <>
-          <Tooltip delay={300} disabled={!folded}>
+          <Tooltip controller={tip} delay={300} disabled={tipDisabled}>
             <TooltipTrigger
               render={({ "aria-describedby": _same, ...trigger }) => (
                 <Trigger

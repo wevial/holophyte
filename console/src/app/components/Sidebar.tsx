@@ -472,7 +472,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
             </Link>
           )}
         />
-        <TooltipContent side="bottom" align="start" sideOffset={6} className={SIDEBAR_TIP}>
+        <TooltipContent side="right" sideOffset={10} className={SIDEBAR_TIP}>
           holophyte
         </TooltipContent>
       </Tooltip>
