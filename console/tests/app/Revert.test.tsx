@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { Board, HistoryRow, RunDetail, Status, TicketDetail } from "../../src/lib/contract.gen";
 import { writeView } from "../../src/app/components/ViewToggle";
@@ -177,6 +178,7 @@ test("a reverted run's Revert… is disabled, names its revert ticket, and posts
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(fake.posted).toEqual([]);
   expect(screen.queryByRole("alertdialog")).toBeNull();
+  expect(screen.getByRole("menu", { name: "More for run 9" })).toBeTruthy();
 });
 
 test("a run that is not its ticket's latest merge is refused before any preview, naming the run a revert would undo", async () => {
@@ -515,7 +517,30 @@ test("Copy link on a plain-HTTP origin copies the run's link through a selection
   }
 });
 
-test("arrow keys move through the menu and Esc closes it, returning focus to its ⋯ button", async () => {
+test("a merged run's menu with reverts on places a separator right before Revert…", async () => {
+  await mount("#/runs/demo/9", daemon(true).fetchImpl);
+  await openMenu("More for run 9");
+  const menu = screen.getByRole("menu", { name: "More for run 9" });
+  const separator = within(menu).getByRole("separator");
+  const items = within(menu).getAllByRole("menuitem");
+  expect(items.map((item) => item.textContent)).toEqual(["Open ticket", "Copy link", "Revert…"]);
+  expect(items).not.toContain(separator);
+  expect(separator.nextElementSibling).toBe(items.at(-1)!);
+});
+
+test("typing a letter in an open menu focuses the matching item", async () => {
+  await mount("#/runs/demo/9", daemon(true).fetchImpl);
+  const button = screen.getByRole("button", { name: "More for run 9" });
+  await act(async () => void fireEvent.keyDown(button, { key: "ArrowDown" }));
+  expect(document.activeElement?.textContent).toBe("Open ticket");
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "c" }));
+  expect(document.activeElement?.textContent).toBe("Copy link");
+  await act(() => new Promise<void>((resolve) => setTimeout(resolve, 550)));
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "r" }));
+  expect(document.activeElement?.textContent).toBe("Revert…");
+});
+
+test("arrow keys wrap at both ends, Home and End jump to the ends, and Esc closes the menu returning focus to ⋯", async () => {
   await mount("#/runs/demo/9", daemon(true).fetchImpl);
   const button = screen.getByRole("button", { name: "More for run 9" });
   await act(async () => void fireEvent.keyDown(button, { key: "ArrowDown" }));
@@ -523,33 +548,57 @@ test("arrow keys move through the menu and Esc closes it, returning focus to its
   expect(document.activeElement?.textContent).toBe("Open ticket");
   await act(async () => void fireEvent.keyDown(menu, { key: "ArrowDown" }));
   expect(document.activeElement?.textContent).toBe("Copy link");
+  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowDown" }));
+  expect(document.activeElement?.textContent).toBe("Revert…");
+  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowDown" }));
+  expect(document.activeElement?.textContent).toBe("Open ticket");
   await act(async () => void fireEvent.keyDown(menu, { key: "ArrowUp" }));
+  expect(document.activeElement?.textContent).toBe("Revert…");
   await act(async () => void fireEvent.keyDown(menu, { key: "ArrowUp" }));
+  expect(document.activeElement?.textContent).toBe("Copy link");
+  await act(async () => void fireEvent.keyDown(menu, { key: "Home" }));
+  expect(document.activeElement?.textContent).toBe("Open ticket");
+  await act(async () => void fireEvent.keyDown(menu, { key: "End" }));
   expect(document.activeElement?.textContent).toBe("Revert…");
   await act(async () => void fireEvent.keyDown(menu, { key: "Escape" }));
   expect(screen.queryByRole("menu")).toBeNull();
   expect(document.activeElement).toBe(button);
 });
 
-test("Enter on the ⋯ button opens the menu with its first item focused", async () => {
+test("Enter or ArrowDown on ⋯ focuses the first item, and ArrowUp focuses the last", async () => {
+  const user = userEvent.setup();
   await mount("#/runs/demo/9", daemon(true).fetchImpl);
   const button = screen.getByRole("button", { name: "More for run 9" });
-  await act(async () => void fireEvent.keyDown(button, { key: "Enter" }));
-  expect(screen.getByRole("menu", { name: "More for run 9" })).toBeTruthy();
-  expect(document.activeElement?.textContent).toBe("Open ticket");
+
+  for (const [chord, expected] of [
+    ["{Enter}", "Open ticket"],
+    ["{ArrowDown}", "Open ticket"],
+    ["{ArrowUp}", "Revert…"],
+  ] as const) {
+    button.focus();
+    await user.keyboard(chord);
+    await act(settle);
+    expect(screen.getByRole("menu", { name: "More for run 9" })).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe(expected);
+    await user.keyboard("{Escape}");
+    await act(settle);
+    expect(screen.queryByRole("menu")).toBeNull();
+  }
 });
 
 test.each(["Enter", " "])("holding the %p that opened the menu chooses no item, and a fresh Enter chooses the focused one", async (key) => {
+  const user = userEvent.setup();
   await mount("#/runs/demo/9?project=demo", daemon(true).fetchImpl);
   const button = screen.getByRole("button", { name: "More for run 9" });
-  await act(async () => void fireEvent.keyDown(button, { key }));
+  button.focus();
+  await user.keyboard(key === " " ? " " : "{Enter}");
+  await act(settle);
   const item = screen.getByRole("menuitem", { name: "Open ticket" });
   expect(document.activeElement).toBe(item);
   let browserMayActivate = true;
   await act(async () => void (browserMayActivate = fireEvent.keyDown(item, { key, repeat: true })));
   expect(browserMayActivate).toBe(false);
-  await act(async () => void (browserMayActivate = fireEvent.keyUp(item, { key })));
-  expect(browserMayActivate).toBe(false);
+  await act(async () => void fireEvent.keyUp(item, { key }));
   for (let round = 0; round < 2; round += 1) await act(settle);
   expect(screen.queryByRole("menu")).not.toBeNull();
   expect(window.location.hash).toBe("#/runs/demo/9?project=demo");

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, spyOn, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { compile } from "tailwindcss";
 import type { Board, BoardColumn, BoardTicket, ShippedRow, Status } from "../../src/lib/contract.gen";
@@ -210,4 +211,28 @@ test("with a storage that throws, pressing Table still draws the table", async (
     reads.mockRestore();
     writes.mockRestore();
   }
+});
+
+test("pressing a row's ⋯ and one of its items opens no peek, and pressing another row's ⋯ switches menus in one press", async () => {
+  const user = userEvent.setup();
+  await mount("#/tickets?project=demo", seeded);
+  await press("Table");
+  await user.click(screen.getByRole("button", { name: "More for DEMO-3" }));
+  await act(settle);
+  const menu = screen.getByRole("menu", { name: "More for DEMO-3" });
+  expect(peek()).toBeNull();
+  await user.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+  await act(settle);
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(peek()).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "More for DEMO-3" }));
+  await act(settle);
+  expect(screen.getByRole("menu", { name: "More for DEMO-3" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "More for DEMO-2" }));
+  await act(settle);
+  expect(screen.queryByRole("menu", { name: "More for DEMO-3" })).toBeNull();
+  expect(screen.getByRole("menu", { name: "More for DEMO-2" })).toBeTruthy();
+  expect(screen.getAllByRole("menu")).toHaveLength(1);
+  expect(peek()).toBeNull();
 });
