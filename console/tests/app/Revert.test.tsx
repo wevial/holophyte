@@ -519,13 +519,9 @@ test("Copy link on a plain-HTTP origin copies the run's link through a selection
 
 test("a merged run's menu with reverts on places a separator right before Revert…", async () => {
   await mount("#/runs/demo/9", daemon(true).fetchImpl);
-  await openMenu("More for run 9");
+  expect(await openMenu("More for run 9")).toEqual(["Open ticket", "Copy link", "Revert…"]);
   const menu = screen.getByRole("menu", { name: "More for run 9" });
-  const separator = within(menu).getByRole("separator");
-  const items = within(menu).getAllByRole("menuitem");
-  expect(items.map((item) => item.textContent)).toEqual(["Open ticket", "Copy link", "Revert…"]);
-  expect(items).not.toContain(separator);
-  expect(separator.nextElementSibling).toBe(items.at(-1)!);
+  expect(within(menu).getByRole("separator").nextElementSibling).toBe(within(menu).getByRole("menuitem", { name: "Revert…" }));
 });
 
 test("typing a letter in an open menu focuses the matching item", async () => {
@@ -545,20 +541,13 @@ test("arrow keys wrap at both ends, Home and End jump to the ends, and Esc close
   await act(async () => void fireEvent.keyDown(button, { key: "ArrowDown" }));
   const menu = screen.getByRole("menu", { name: "More for run 9" });
   expect(document.activeElement?.textContent).toBe("Open ticket");
-  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowDown" }));
-  expect(document.activeElement?.textContent).toBe("Copy link");
-  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowDown" }));
-  expect(document.activeElement?.textContent).toBe("Revert…");
-  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowDown" }));
-  expect(document.activeElement?.textContent).toBe("Open ticket");
-  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowUp" }));
-  expect(document.activeElement?.textContent).toBe("Revert…");
-  await act(async () => void fireEvent.keyDown(menu, { key: "ArrowUp" }));
-  expect(document.activeElement?.textContent).toBe("Copy link");
-  await act(async () => void fireEvent.keyDown(menu, { key: "Home" }));
-  expect(document.activeElement?.textContent).toBe("Open ticket");
-  await act(async () => void fireEvent.keyDown(menu, { key: "End" }));
-  expect(document.activeElement?.textContent).toBe("Revert…");
+  for (const [key, expected] of [
+    ["ArrowDown", "Copy link"], ["ArrowDown", "Revert…"], ["ArrowDown", "Open ticket"],
+    ["ArrowUp", "Revert…"], ["ArrowUp", "Copy link"], ["Home", "Open ticket"], ["End", "Revert…"],
+  ] as const) {
+    await act(async () => void fireEvent.keyDown(menu, { key }));
+    expect(document.activeElement?.textContent).toBe(expected);
+  }
   await act(async () => void fireEvent.keyDown(menu, { key: "Escape" }));
   expect(screen.queryByRole("menu")).toBeNull();
   expect(document.activeElement).toBe(button);

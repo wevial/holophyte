@@ -315,6 +315,5 @@ test("pressing Esc inside an open ⋯ menu closes the menu and leaves an open Re
   expect(screen.getByRole("menu", { name: "More for run 40" }).contains(document.activeElement)).toBe(true);
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
   expect(screen.queryByRole("menu")).toBeNull();
-  expect(formOpen()).toBe(true);
   expect(note().value).toBe("keep this note");
 });

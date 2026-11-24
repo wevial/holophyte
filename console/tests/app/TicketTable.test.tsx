@@ -227,8 +227,6 @@ test("pressing a row's ⋯ and one of its items opens no peek, and pressing anot
   await click(screen.getByRole("button", { name: "More for DEMO-3" }));
   expect(screen.getByRole("menu", { name: "More for DEMO-3" })).toBeTruthy();
   await click(screen.getByRole("button", { name: "More for DEMO-2" }));
-  expect(screen.queryByRole("menu", { name: "More for DEMO-3" })).toBeNull();
-  expect(screen.getByRole("menu", { name: "More for DEMO-2" })).toBeTruthy();
-  expect(screen.getAllByRole("menu")).toHaveLength(1);
+  expect(screen.getAllByRole("menu")).toEqual([screen.getByRole("menu", { name: "More for DEMO-2" })]);
   expect(peek()).toBeNull();
 });
