@@ -77,7 +77,7 @@ async function mount(key: string, { editable = true, write }: { editable?: boole
 const actions = () => document.querySelector<HTMLElement>("[data-ticket-actions]")!;
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
 const reads = (path: string) => requested.filter((url) => url === `${DEMO}${path}`).length;
-const dialog = () => screen.getByRole("dialog", { name: "Cancel DEMO-3?" });
+const dialog = () => screen.getByRole("alertdialog", { name: "Cancel DEMO-3?" });
 
 async function press(name: string, scope: HTMLElement = actions()) {
   await act(async () => void fireEvent.click(within(scope).getByRole("button", { name })));
@@ -149,7 +149,7 @@ test("Cancel ticket asks for a reason before posting it as the note, then closes
   await press("Cancel ticket", dialog());
   expect(write.seen.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/tickets/DEMO-3/cancel`, body: { note: "wrong scope" } }]);
   expect(ifMatch).toEqual(["5"]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(toast()).toBe("Cancelled DEMO-3.");
 });
 
@@ -159,11 +159,11 @@ test("Esc or Keep it closes the cancel dialog, returns focus to Cancel ticket an
   const opener = within(actions()).getByRole("button", { name: "Cancel ticket" });
   await press("Cancel ticket");
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.activeElement).toBe(opener);
   await press("Cancel ticket");
   await press("Keep it", dialog());
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.activeElement).toBe(opener);
   expect(write.seen).toEqual([]);
 });

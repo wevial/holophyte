@@ -69,7 +69,7 @@ async function mount(id: number, { actions = true, post }: { actions?: boolean |
 const actionsBox = () => document.querySelector<HTMLElement>("[data-run-actions]");
 const labels = () => [...(actionsBox()?.querySelectorAll("button") ?? [])].map((button) => button.textContent);
 const toast = () => document.querySelector("[data-toast]")?.textContent ?? "";
-const dialog = () => screen.getByRole("dialog", { name: "Abort run 12?" });
+const dialog = () => screen.getByRole("alertdialog", { name: "Abort run 12?" });
 const formOpen = () => document.querySelector("[data-requeue-form]") != null;
 const posted = (seen: { url: string; body: unknown }[]) => seen.map(({ url, body }) => ({ url, body }));
 
@@ -133,7 +133,7 @@ test("Abort asks for a reason in a confirm that Esc closes unposted, then posts 
   );
   expect(document.activeElement?.textContent).toBe("Keep running");
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(post.seen).toEqual([]);
   await press("Abort");
   const confirm = within(dialog()).getByRole("button", { name: "Abort run" });
@@ -142,7 +142,7 @@ test("Abort asks for a reason in a confirm that Esc closes unposted, then posts 
   expect(confirm.hasAttribute("disabled")).toBe(false);
   await press("Abort run", dialog());
   expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 12, close: false, note: "wrong ticket" } }]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(toast()).toBe("Aborted run 12.");
 });
 
@@ -160,7 +160,7 @@ test("ticking Close PR in Abort rewrites the sentence and confirm, posts close: 
   await act(async () => void fireEvent.change(within(dialog()).getByRole("textbox", { name: "Reason · saved with the run" }), { target: { value: "superseded" } }));
   await press("Abort run and close PR #524", dialog());
   expect(posted(post.seen)).toEqual([{ url: `${DEMO}/actions/abort`, body: { run: 12, close: true, note: "superseded" } }]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(toast()).toBe("Aborted run 12 and closed PR #524.");
 });
 
@@ -169,7 +169,7 @@ test("Close PR is unticked again when Abort reopens after Esc, with the sentence
   await press("Abort");
   await act(async () => void fireEvent.click(within(dialog()).getByRole("checkbox", { name: "Close PR #524" })));
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   await press("Abort");
   expect((within(dialog()).getByRole("checkbox", { name: "Close PR #524" }) as HTMLInputElement).checked).toBe(false);
   expect(dialog().textContent).toContain(
@@ -182,7 +182,7 @@ test("a run without a pull request gets no Close PR checkbox in Abort and posts 
   const post = fakeFetch({ ok: true, detail: "aborted run 13" });
   await mount(13, { post: post.fetchImpl });
   await press("Abort");
-  const abortDialog = screen.getByRole("dialog", { name: "Abort run 13?" });
+  const abortDialog = screen.getByRole("alertdialog", { name: "Abort run 13?" });
   expect(within(abortDialog).queryByRole("checkbox")).toBeNull();
   await act(async () => void fireEvent.change(within(abortDialog).getByRole("textbox"), { target: { value: "superseded" } }));
   await press("Abort run", abortDialog);
@@ -194,7 +194,7 @@ test("a run parked on its pull request offers Abort alone, whose ticked Close PR
   await mount(14, { post: post.fetchImpl });
   expect(labels()).toEqual(["Abort"]);
   await press("Abort");
-  const abortDialog = screen.getByRole("dialog", { name: "Abort run 14?" });
+  const abortDialog = screen.getByRole("alertdialog", { name: "Abort run 14?" });
   const box = within(abortDialog).getByRole("checkbox", { name: "Close PR #530" }) as HTMLInputElement;
   expect(box.checked).toBe(false);
   await act(async () => void fireEvent.click(box));
@@ -220,10 +220,10 @@ test("navigating to a cached run closes Abort and requires a fresh reason for th
   await act(async () => void fireEvent.change(within(dialog()).getByRole("textbox"), { target: { value: "reason for twelve" } }));
   expect(within(dialog()).getByRole("button", { name: "Abort run" }).hasAttribute("disabled")).toBe(false);
   await navigate(13);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(post.seen).toEqual([]);
   await press("Abort");
-  const nextDialog = screen.getByRole("dialog", { name: "Abort run 13?" });
+  const nextDialog = screen.getByRole("alertdialog", { name: "Abort run 13?" });
   const reason = within(nextDialog).getByRole("textbox", { name: "Reason · saved with the run" });
   expect((reason as HTMLTextAreaElement).value).toBe("");
   expect(within(nextDialog).getByRole("button", { name: "Abort run" }).hasAttribute("disabled")).toBe(true);

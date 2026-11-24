@@ -83,7 +83,7 @@ test("restart confirmation explains the checkout and all root runs, focuses Keep
   const post = fakeFetch({ ok: true });
   await mount(source({ post: post.fetchImpl }));
   await press("Restart daemon");
-  const dialog = screen.getByRole("dialog", { name: "Restart writer-host" });
+  const dialog = screen.getByRole("alertdialog", { name: "Restart writer-host" });
   expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Keep running" }));
   expect(within(dialog).getByRole("heading", { name: "Restart the daemon on writer-host?" })).toBeTruthy();
   expect(dialog.textContent).toContain("The daemon finishes the requests it is answering, stops, and starts again on the checkout's build 0a1b2c3.");
@@ -91,7 +91,7 @@ test("restart confirmation explains the checkout and all root runs, focuses Keep
   expect(dialog.textContent).toContain("the supervisor and the sweep are not touched");
   expect(dialog.textContent).toContain("this console loses writer-host for up to 20s");
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(post.seen).toHaveLength(0);
 });
 
@@ -101,12 +101,12 @@ test("restart posts once with the bearer, remains restarting through failed and 
   const post = fakeFetch({ ok: true }, new Promise<void>((done) => { release = done; }));
   const view = await mount(source({ post: post.fetchImpl }));
   await press("Restart daemon");
-  await press("Restart daemon", screen.getByRole("dialog"));
+  await press("Restart daemon", screen.getByRole("alertdialog"));
   expect(post.seen).toEqual([{ url: `${ORIGIN}/actions/restart-daemon`, method: "POST", authorization: "Bearer restart-secret-8a71", body: {} }]);
-  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Restarting…" }).getAttribute("aria-busy")).toBe("true");
+  expect(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Restarting…" }).getAttribute("aria-busy")).toBe("true");
   await act(async () => release());
   await flush();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(within(card()).getByText(restarting)).toBeTruthy();
   expect(within(card()).getByRole("status").textContent).toBe("Restarting the daemon. Runs keep going; this card comes back when it answers.");
   for (const name of ["Run sweep", "Restart daemon"]) expect(within(card()).getByRole("button", { name }).hasAttribute("disabled")).toBe(true);
@@ -131,9 +131,9 @@ test("a refused restart keeps its ledger detail in the dialog without entering r
   const post = fakeFetch({ ok: false, detail });
   await mount(source({ post: post.fetchImpl }));
   await press("Restart daemon");
-  await press("Restart daemon", screen.getByRole("dialog"));
+  await press("Restart daemon", screen.getByRole("alertdialog"));
   expect(post.seen).toHaveLength(1);
-  expect(within(screen.getByRole("dialog", { name: "Restart writer-host" })).getByText(detail)).toBeTruthy();
+  expect(within(screen.getByRole("alertdialog", { name: "Restart writer-host" })).getByText(detail)).toBeTruthy();
   expect(within(card()).queryByText(restarting)).toBeNull();
   expect(within(card()).getByText("Healthy")).toBeTruthy();
 });
@@ -157,7 +157,7 @@ test("after sixty seconds without a new daemon the card returns to its last fail
   const post = fakeFetch({ ok: true });
   const view = await mount(source({ post: post.fetchImpl }));
   await press("Restart daemon");
-  await press("Restart daemon", screen.getByRole("dialog"));
+  await press("Restart daemon", screen.getByRole("alertdialog"));
   view.fail();
   await view.poll(NOW + 59_000);
   expect(within(card()).getByText(restarting)).toBeTruthy();

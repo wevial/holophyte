@@ -442,14 +442,14 @@ test("Stop asks for a reason, posts it once, closes on ok with focus on Stop and
   const { fetch, seen } = scoutFetch({ scouts: { 31: live }, stop: () => Response.json({ ok: true, detail: "stop requested for scout 31" }) });
   await mount("#/scouts/demo/31", fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
-  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Stop scout 31?" });
   const confirm = within(dialog).getByRole("button", { name: "Stop scout" });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
   await click(confirm);
   const posts = seen.filter((request) => request.method === "POST");
   expect(posts.map((post) => [post.url, post.body])).toEqual([[`${DEMO}/actions/scout-stop`, { scout: 31, note: "wrong project" }]]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(toast()).toBe("Stop sent to scout 31.");
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Stop" }));
 });
@@ -462,7 +462,7 @@ test("a sent stop that ends the scout puts focus on the title once Stop is gone"
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies, stop }).fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
-  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Stop scout 31?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
   await click(within(dialog).getByRole("button", { name: "Stop scout" }));
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -473,12 +473,12 @@ test("a refused stop reads inside the dialog, and Escape closes it with focus ba
   const stop = () => Response.json({ ok: false, detail: "scout 31 runs on another-host" });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live }, stop }).fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
-  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Stop scout 31?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
   await click(within(dialog).getByRole("button", { name: "Stop scout" }));
-  expect(within(screen.getByRole("dialog", { name: "Stop scout 31?" })).getByRole("alert").textContent).toBe("scout 31 runs on another-host");
+  expect(within(screen.getByRole("alertdialog", { name: "Stop scout 31?" })).getByRole("alert").textContent).toBe("scout 31 runs on another-host");
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Stop" }));
 });
 

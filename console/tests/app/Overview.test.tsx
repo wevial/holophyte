@@ -282,12 +282,29 @@ test("the Overview's three column containers hold now, landed and the log in ord
   const landed = column("landed");
   expect(regionsIn(landed)).toEqual(["Merged today"]);
   const week = within(landed).getByRole("heading", { name: "This week" });
-  expect(within(landed).getByRole("region", { name: "Merged today" }).compareDocumentPosition(week) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const mergedToday = within(landed).getByRole("region", { name: "Merged today" });
+  expect(week.compareDocumentPosition(mergedToday) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(within(column("log")).getByRole("complementary", { name: "Today" })).toBeTruthy();
 
   const grid = classes(columns[0]!.parentElement);
   expect(grid).toContain(threeColumns);
   expect(grid.filter((name) => name.includes("1.15fr"))).toEqual([threeColumns]);
+});
+
+test("below 1680px, landed dissolves so Merged today stays in the first column under Waiting and This week stays in the second column above the Today log", async () => {
+  await mount("#/", fleet({ items: [ciPark], runs: threeRuns, shipped: [merged(11, "DEMO-11", NOW - 20 * MINUTE)] }, { items: [prPark] }));
+  const landed = column("landed");
+  const log = column("log");
+  const weekWrap = within(landed).getByRole("heading", { name: "This week" }).closest("[data-week]")!.parentElement!;
+  const mergedWrap = within(landed).getByRole("region", { name: "Merged today" }).parentElement!;
+  expect([...landed.children]).toEqual([weekWrap, mergedWrap]);
+
+  expect(classes(landed)).toEqual(expect.arrayContaining(["contents", "min-[1680px]:col-start-2", "min-[1680px]:flex", "min-[1680px]:flex-col", "min-[1680px]:gap-10"]));
+  expect(classes(column("now"))).toEqual(expect.arrayContaining(["col-start-1", "row-start-1"]));
+  expect(classes(mergedWrap)).toEqual(expect.arrayContaining(["col-start-1", "row-start-2", "mt-10", "min-[1680px]:mt-0"]));
+  expect(classes(weekWrap)).toEqual(expect.arrayContaining(["col-start-2", "row-span-full", "min-[1200px]:sticky", "min-[1200px]:block", "min-[1680px]:static"]));
+  expect(classes(weekWrap)).not.toContain("mt-10");
+  expect(classes(log)).toEqual(expect.arrayContaining(["col-start-2", "row-span-full", "pt-[calc(var(--week-bars-height,0px)+2rem)]", "min-[1680px]:col-start-3", "min-[1680px]:pt-0"]));
 });
 
 test("when someone is needed, Needs you sits in the first column above Running", async () => {
