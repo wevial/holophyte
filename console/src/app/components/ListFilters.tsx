@@ -232,7 +232,7 @@ const toolPopover = definePrimitive({
     context.onDestroy(() => cancelRefocus());
     return createPopup(context, {
       preset: popoverPreset,
-      behavior: { dismissOnFocusLoss: !!context.options().dismissOnFocusLoss, blur: "never" },
+      behavior: { dismissOnFocusLoss: !!context.options().dismissOnFocusLoss, blur: context.options().dismissOnFocusLoss ? "always" : "never" },
       rules: (core) => ({
         // Keep the sheet in the page's stacking context so modal overlays cover it.
         bind: () => ({ inline: true }),
@@ -279,13 +279,14 @@ const { Trigger: ToolTrigger, Content: ToolContent } = createParts(toolPopover, 
 
 /** A trigger over a dialog named `label`: Escape and outside presses close it
  *  and return focus to the trigger, focus moving out closes it only with
- *  `dismissOnFocusLoss`, and `hidden` closes it. */
+ *  `dismissOnFocusLoss`, `inPane` keeps it inside its scrolling pane, and
+ *  `hidden` closes it. */
 export function ToolPopover({
   label, hidden = false, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
-  dismissOnFocusLoss, sideOffset = GAP, width, contentRef, className, onOpenChange, children,
+  dismissOnFocusLoss, inPane = false, sideOffset = GAP, width, contentRef, className, onOpenChange, children,
 }: {
   label: string; hidden?: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
-  triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; sideOffset?: number;
+  triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; inPane?: boolean; sideOffset?: number;
   width: number; contentRef?: RefObject<HTMLDivElement | null>; className: string;
   onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
 }) {
@@ -294,13 +295,13 @@ export function ToolPopover({
     if (hidden) handle.api.close();
   }, [hidden, handle]);
   return usePart(handle, "root", {}, {
-    className: "shrink-0",
+    className: inPane ? "relative shrink-0" : "shrink-0",
     children: (
       <>
         <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
         <ToolContent ref={contentRef} aria-label={label} side="bottom" align="end" sideOffset={sideOffset} collisionPadding={EDGE}
           style={{ zIndex: 20, width: `min(${width}px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
-          className={`fixed z-20 overflow-y-auto outline-none ${className}`}>
+          className={`${inPane ? "absolute!" : "fixed"} z-20 overflow-y-auto outline-none ${className}`}>
           {typeof children === "function" ? children(() => void handle.api.close({ reason: "close-press" })) : children}
         </ToolContent>
       </>
@@ -536,6 +537,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
       <ToolPopover
         label="Custom range"
         hidden={hidden}
+        inPane
         triggerLabel="Custom range"
         triggerTitle="Custom range"
         triggerPressed={custom}
@@ -596,6 +598,7 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
     <ToolPopover
       label="Range"
       hidden={hidden}
+      inPane
       triggerLabel={`Range: ${picked?.name ?? dayRangeLabel(from, to)}`}
       triggerTitle={picked?.name ?? "Custom range"}
       trigger={
@@ -615,8 +618,9 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
             deselectable
             value={picked?.value ?? null}
             onValueChange={(next, details) => {
+              const value = next ?? picked?.value;
               if (next == null) details.cancel();
-              else write({ range: next === fallback ? undefined : next, from: undefined, to: undefined });
+              if (value != null) write({ range: value === fallback ? undefined : value, from: undefined, to: undefined });
               close();
             }}
             className="flex flex-col outline-none"

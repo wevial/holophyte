@@ -318,6 +318,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
     <ToolPopover
       label="Range choices"
       dismissOnFocusLoss
+      inPane
       sideOffset={4}
       onOpenChange={(open) => { if (open) setDraft({ from: search.from ?? "", to: search.to ?? "" }); }}
       triggerLabel="Range"
@@ -339,8 +340,9 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
             deselectable
             value={custom ? null : preset.value}
             onValueChange={(next, details) => {
+              const value = next ?? (custom ? undefined : preset.value);
               if (next == null) details.cancel();
-              else choose({ range: next === DEFAULT_RANGE ? undefined : next, from: undefined, to: undefined });
+              if (value != null) choose({ range: value === DEFAULT_RANGE ? undefined : value, from: undefined, to: undefined });
               close();
             }}
             className="flex flex-col outline-none"
@@ -349,7 +351,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
               <ListboxItem
                 key={each.value}
                 value={each.value}
-                className="flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button px-2 text-left font-sans text-[13px] text-ink-2 outline-none hover:bg-hover hover:text-ink data-selected:bg-hover data-selected:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+                className="flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-left font-sans text-[13px] text-ink-2 outline-none hover:bg-hover hover:text-ink data-selected:bg-hover data-selected:font-medium data-selected:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-2 focus-visible:outline-focus"
               >
                 {each.label}
                 <ListboxItemIndicator className="ml-auto inline-flex items-center justify-center">

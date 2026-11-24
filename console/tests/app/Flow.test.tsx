@@ -107,6 +107,19 @@ test("picking Last 90 days asks for 90 days in weekly buckets and checks it in t
   expect(new URLSearchParams(window.location.hash.split("?")[1]).get("range")).toBe("90d");
 });
 
+test("reselecting the active default preset clears a retired range from the address", async () => {
+  await mount("#/flow");
+  window.location.hash = "#/flow?range=6w";
+  await act(async () => void window.dispatchEvent(new PopStateEvent("popstate")));
+  await flush();
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).get("range")).toBe("6w");
+  openRange();
+  fireEvent.click(choices().getByRole("option", { name: "Last 30 days" }));
+  await flush();
+  expect(screen.queryByRole("dialog", { name: "Range choices" })).toBeNull();
+  expect(new URLSearchParams(window.location.hash.split("?")[1]).has("range")).toBe(false);
+});
+
 test("each trend's change reads against the day before over Last 7 days and against the week before over Last 90 days", async () => {
   for (const [hash, before] of [["#/flow?range=7d", " vs the day before"], ["#/flow?range=90d", " vs the week before"]]) {
     await mount(hash);

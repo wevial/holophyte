@@ -266,13 +266,17 @@ test("a run started before yesterday names its date with its clock, and yesterda
 
 test("Escape and a press outside close the Range popover and give focus back to its button", async () => {
   await mount("#/runs", countedFleet().fetchImpl);
-  (await openRange()).getByLabelText("From").focus();
-  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  const from = (await openRange()).getByLabelText("From");
+  act(() => from.focus());
+  expect(document.activeElement).toBe(from);
+  await act(async () => void fireEvent.keyDown(from, { key: "Escape" }));
   expect(rangeDialog()).toBeNull();
   expect(rangeButton().getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(rangeButton());
 
-  (await openRange()).getByRole("option", { name: "Today" }).focus();
+  const today = (await openRange()).getByRole("option", { name: "Today" });
+  act(() => today.focus());
+  expect(document.activeElement).toBe(today);
   await act(async () => void fireEvent.pointerDown(screen.getByRole("heading", { level: 1, name: "Runs" })));
   expect(rangeDialog()).toBeNull();
   expect(document.activeElement).toBe(rangeButton());
@@ -440,6 +444,16 @@ test("ArrowDown in the Range dialog moves focus from 7 days to 30 days without w
   await act(async () => void fireEvent.keyDown(thirty, { key: "Enter" }));
   await settleAll();
   expect(hashSearch().get("range")).toBe("30d");
+  expect(rangeDialog()).toBeNull();
+  expect(document.activeElement).toBe(rangeButton());
+});
+
+test("reselecting the active Range preset still writes it, resetting page 2 to page 1", async () => {
+  await mount("#/runs?range=30d&page=2", fleet({ rows: runs("DEMO", 100, 60) }, { rows: [] }).fetchImpl);
+  expect(hashSearch().get("page")).toBe("2");
+  await press((await openRange()).getByRole("option", { name: "30 days" }));
+  expect(hashSearch().get("range")).toBe("30d");
+  expect(hashSearch().has("page")).toBe(false);
   expect(rangeDialog()).toBeNull();
   expect(document.activeElement).toBe(rangeButton());
 });
