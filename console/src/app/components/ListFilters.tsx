@@ -4,11 +4,12 @@ import { createPopup, definePrimitive, popupContent, popupState, popupTrigger } 
 import { popoverPreset } from "@ui-sdk/core/popover";
 import { Checkbox, CheckboxGroup, CheckboxIndicator } from "@ui-sdk/react/checkbox";
 import { Listbox, ListboxItem, ListboxItemIndicator } from "@ui-sdk/react/listbox";
-import { createParts, usePart, usePrimitive } from "@ui-sdk/react/primitive";
+import { createParts, mergeProps, usePart, usePrimitive } from "@ui-sdk/react/primitive";
 import { Radio, RadioGroup, RadioIndicator } from "@ui-sdk/react/radio";
 import { Toggle, ToggleGroup } from "@ui-sdk/react/toggle";
 import { dayStart } from "../history";
 import { Btn } from "./Btn";
+import { Hint } from "./Hint";
 import { Picker, type PickerOption as FilterOption } from "./Picker";
 import { Segmented } from "./Segmented";
 
@@ -112,9 +113,18 @@ export function SearchToggle({ label }: { label: string }) {
   }, [shown]);
   if (!shown) {
     return (
-      <button ref={button} type="button" aria-label={label} title="Search" onClick={() => setOpened(true)} className={TOOL}>
-        <SearchIcon />
-      </button>
+      <Hint tip="Search" side="bottom">
+        {(trigger) => (
+          <button
+            {...mergeProps(trigger, { ref: button, onClick: () => setOpened(true) })}
+            type="button"
+            aria-label={label}
+            className={TOOL}
+          >
+            <SearchIcon />
+          </button>
+        )}
+      </Hint>
     );
   }
   return (
@@ -243,7 +253,7 @@ const toolPopover = definePrimitive({
           const onKey = (event: KeyboardEvent) => {
             if (event.key !== "Escape" || !event.defaultPrevented || event.isComposing) return;
             const dialog = event.target instanceof Element ? event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]') : null;
-            if (dialog && dialog !== core.element("content")) return;
+            if (dialog) return;
             core.control.hide({ reason: "escape-key", event, focus: true });
           };
           document.addEventListener("keydown", onKey);
@@ -282,10 +292,10 @@ const { Trigger: ToolTrigger, Content: ToolContent } = createParts(toolPopover, 
  *  `dismissOnFocusLoss`, `inPane` keeps it inside its scrolling pane, and
  *  `hidden` closes it. */
 export function ToolPopover({
-  label, hidden = false, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
+  label, hidden = false, trigger, triggerLabel, triggerTip, triggerClassName = TOOL, triggerPressed,
   dismissOnFocusLoss, inPane = false, sideOffset = GAP, width, contentRef, className, onOpenChange, children,
 }: {
-  label: string; hidden?: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
+  label: string; hidden?: boolean; trigger: ReactNode; triggerLabel: string; triggerTip?: string;
   triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; inPane?: boolean; sideOffset?: number;
   width: number; contentRef?: RefObject<HTMLDivElement | null>; className: string;
   onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
@@ -294,11 +304,14 @@ export function ToolPopover({
   useEffect(() => {
     if (hidden) handle.api.close();
   }, [hidden, handle]);
+  const button = (props?: Record<string, unknown>) => (
+    <ToolTrigger {...props} aria-label={triggerLabel} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
+  );
   return usePart(handle, "root", {}, {
     className: inPane ? "relative shrink-0" : "shrink-0",
     children: (
       <>
-        <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
+        {triggerTip ? <Hint tip={triggerTip} side="bottom">{button}</Hint> : button()}
         <ToolContent ref={contentRef} aria-label={label} side="bottom" align="end" sideOffset={sideOffset} collisionPadding={EDGE}
           style={{ zIndex: 20, width: `min(${width}px, var(--available-width, calc(100vw - ${2 * EDGE}px)))`, maxWidth: "var(--available-width)", maxHeight: "var(--available-height)" }}
           className={`${inPane ? "absolute!" : "fixed"} z-20 overflow-y-auto outline-none ${className}`}>
@@ -382,10 +395,14 @@ function MenuSorting({ sorting }: { sorting: SortSection }) {
         <ToggleGroup value={[sorting.order]} deselectable={false} onValueChange={([next]) => { if (next) sorting.onOrder(next); }}
           render={({ role: _role, ...props }) => <span {...props} />} className="ml-auto inline-flex gap-0.5">
           {sorting.orders.map((order) => (
-            <Toggle key={order.value} value={order.value} aria-label={order.label} title={order.label}
-              className="inline-grid size-[22px] cursor-pointer place-items-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
-              <OrderArrow down={order.value === "desc"} />
-            </Toggle>
+            <Hint key={order.value} tip={order.label}>
+              {(trigger) => (
+                <Toggle {...trigger} value={order.value} aria-label={order.label}
+                  className="inline-grid size-[22px] cursor-pointer place-items-center rounded-[5px] text-ink-3 hover:bg-hover hover:text-ink aria-pressed:bg-selected aria-pressed:text-ink">
+                  <OrderArrow down={order.value === "desc"} />
+                </Toggle>
+              )}
+            </Hint>
           ))}
         </ToggleGroup>
       </legend>
@@ -457,7 +474,7 @@ export function FilterPopover({ label, sections, hidden, sorting, extra }: {
       hidden={hidden}
       onOpenChange={setOpen}
       triggerLabel={count > 0 ? `${label}, ${on}` : label}
-      triggerTitle={label}
+      triggerTip={label}
       trigger={<><ToolFilterIcon />{count > 0 && <i data-filter-dot aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-accent shadow-[0_0_0_2px_var(--canvas)]" />}</>}
       contentRef={sheet}
       width={600}
@@ -539,7 +556,7 @@ export function RangeButtons({ label, presets, fallback, hidden }: {
         hidden={hidden}
         inPane
         triggerLabel="Custom range"
-        triggerTitle="Custom range"
+        triggerTip="Custom range"
         triggerPressed={custom}
         triggerClassName={`${TOOL} aria-pressed:bg-selected aria-pressed:text-ink`}
         trigger={
@@ -600,7 +617,7 @@ export function RangePopover({ presets, fallback, hidden, now }: { presets: read
       hidden={hidden}
       inPane
       triggerLabel={`Range: ${picked?.name ?? dayRangeLabel(from, to)}`}
-      triggerTitle={picked?.name ?? "Custom range"}
+      triggerTip={picked?.name ?? "Custom range"}
       trigger={
         <>
           <ToolCalendarIcon />

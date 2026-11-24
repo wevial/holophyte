@@ -1550,6 +1550,7 @@ with the page's quiet count and its icon tools at the right over optional tabs, 
 `console/src/app/components/Picker.tsx` is the shared Picker in place of a native select,
 a filled button reading the current option that opens a listbox with arrow keys, Enter and Escape; and
 `console/src/app/components/ScoutLaunch.tsx` is its New scout form, posting `POST /actions/scout`.
+`console/src/app/components/Hint.tsx` is the console's shared hover hint, showing on pointer hover and keyboard focus over its trigger.
 At 1400px and wider, which `useWide()` in `console/src/app/viewport.ts` reads, the Scouts page puts the list
 beside `console/src/app/components/ScoutPane.tsx`, which draws the scout its `scout` search selects with the
 same header and body as its page, or the New scout form, each list row reading the scout's title.
