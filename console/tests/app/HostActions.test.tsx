@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, jest, test } from "bun:test";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { ACTIONS_OFF } from "../../src/lib/actions";
 import type { HostStatus, Status } from "../../src/lib/contract.gen";
@@ -346,6 +347,25 @@ test("forgetting tokens for two hosts keeps Undo working on both toasts when exp
   expect(toasts()).toEqual([]);
 });
 
+test("keyboard activation of Save token announces the toast politely and keeps focus on the pressed control", async () => {
+  const user = userEvent.setup();
+  await mount();
+  const field = within(card()).getByLabelText("Serve token for writer-host", { selector: "input" });
+  await act(async () => void fireEvent.change(field, { target: { value: "abc123" } }));
+  const save = within(card()).getByRole("button", { name: "Save token" });
+  save.focus();
+  expect(document.activeElement).toBe(save);
+  await user.keyboard("{Enter}");
+  await flush();
+  expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("abc123");
+  expect(toast()).toBe(savedToast);
+  await waitFor(() =>
+    expect(screen.getAllByRole("status").find((region) => region.getAttribute("aria-live") === "polite")?.textContent).toBe(savedToast),
+  );
+  expect(save.isConnected).toBe(true);
+  expect(document.activeElement).toBe(save);
+});
+
 test("Undo on a paused Forget toast does not overwrite a replacement token saved in another tab", async () => {
   storeToken(ADDRESS, "old-token");
   await mount();
@@ -363,6 +383,34 @@ test("Undo on a paused Forget toast does not overwrite a replacement token saved
     await act(async () => void window.dispatchEvent(new Event("focus")));
     await act(async () => void fireEvent.click(within(toasts()[0]!).getByRole("button", { name: "Undo" })));
     expect(localStorage.getItem(tokenKey(ADDRESS))).toBe("other-tab-token");
+    expect(toasts()).toEqual([]);
+  } finally {
+    cleanup();
+    jest.advanceTimersByTime(0);
+    jest.useRealTimers();
+  }
+});
+
+test("Undo on a paused Forget toast does not restore a superseded token after another tab saves and forgets a replacement", async () => {
+  storeToken(ADDRESS, "original-token");
+  await mount();
+  jest.useFakeTimers();
+  try {
+    await act(async () => void fireEvent.click(within(card()).getByRole("button", { name: "Forget" })));
+    expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
+    expect(toasts()).toHaveLength(1);
+    await act(async () => {
+      window.dispatchEvent(new Event("blur"));
+      jest.advanceTimersByTime(10_000);
+    });
+    expect(toasts()).toHaveLength(1);
+    localStorage.setItem(tokenKey(ADDRESS), "replacement-token");
+    window.dispatchEvent(new StorageEvent("storage", { key: tokenKey(ADDRESS), oldValue: null, newValue: "replacement-token", storageArea: localStorage }));
+    localStorage.removeItem(tokenKey(ADDRESS));
+    window.dispatchEvent(new StorageEvent("storage", { key: tokenKey(ADDRESS), oldValue: "replacement-token", newValue: null, storageArea: localStorage }));
+    await act(async () => void window.dispatchEvent(new Event("focus")));
+    await act(async () => void fireEvent.click(within(toasts()[0]!).getByRole("button", { name: "Undo" })));
+    expect(localStorage.getItem(tokenKey(ADDRESS))).toBeNull();
     expect(toasts()).toEqual([]);
   } finally {
     cleanup();
