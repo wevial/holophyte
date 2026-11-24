@@ -111,9 +111,11 @@ test("a card's click opens its peek with key, icon-only Expand and Close, title 
   expect(fact("Run").querySelector("[data-peek-run-state]")!.textContent).toBe("implementing");
   expect(cardLink("DEMO-3").hasAttribute("data-open")).toBe(true);
 
+  await act(async () => cardLink("DEMO-2").focus());
+  expect(document.activeElement === cardLink("DEMO-2")).toBe(true);
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(document.activeElement).toBe(within(screen.getByRole("dialog", { name: "DEMO-2 title" })).getByRole("button", { name: "Close preview" }));
+  expect(document.activeElement === within(screen.getByRole("dialog", { name: "DEMO-2 title" })).getByRole("button", { name: "Close preview" })).toBe(true);
   expect(fact("Run").textContent).toBe("none yet");
   expect(fact("Time box").textContent).toBe("none");
   expect(cardLink("DEMO-2").hasAttribute("data-open")).toBe(true);

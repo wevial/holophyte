@@ -95,6 +95,7 @@ function drawerTipChange(drawerOpen: boolean, closeDrawer: () => void): TipChang
   if (!drawerOpen) return undefined;
   return (open, details) => {
     if (open || details.reason !== "escape-key") return;
+    details.event?.stopImmediatePropagation();
     if (document.querySelector(`#${DRAWER_ID} [role="dialog"][data-open]`)) return;
     const modals = document.querySelectorAll('[aria-modal="true"]');
     if (modals.length === 1 && modals[0]?.id === DRAWER_ID) closeDrawer();
@@ -642,8 +643,11 @@ export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose:
       modal={open}
       side="left"
       persistentElements={["[data-title-bar]"]}
-      onOpenChange={(next) => {
-        if (!next) onClose();
+      onOpenChange={(next, details) => {
+        if (next) return;
+        // Stop Escape before underlying document fallback listeners run when focus is on the persistent title bar.
+        if (details.reason === "escape-key") details.event?.stopImmediatePropagation();
+        onClose();
       }}
     >
       <DrawerBackdrop className="fixed inset-x-0 top-[30px] bottom-0 z-50 bg-scrim" />

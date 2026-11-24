@@ -1788,6 +1788,38 @@ test("at 390px hovering Home while the drawer is open still lets the first Escap
   });
 });
 
+test("at 390px over an open Filter and sort, Escape from the title bar's home link closes the drawer alone and returns focus to the panel button", async () => {
+  await atWidth(390, async () => {
+    await mount("#/runs");
+    const filterButton = screen.getByRole("button", { name: /^Filter and sort/ });
+    await act(async () => {
+      fireEvent.pointerDown(filterButton, { button: 0 });
+      fireEvent.pointerUp(filterButton, { button: 0 });
+      fireEvent.click(filterButton);
+    });
+    const filters = () => screen.queryByRole("dialog", { name: "Filter and sort" });
+    expect(filters() !== null).toBe(true);
+
+    for (const withTooltip of [false, true]) {
+      await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "\\", ctrlKey: true }));
+      expect(drawer() !== null).toBe(true);
+      if (withTooltip) {
+        await keyboardFocus(homeLink());
+        expect(tooltip()?.textContent).toBe("holophyte");
+      } else {
+        await act(async () => homeLink().focus());
+        expect(tooltip() === null).toBe(true);
+      }
+      expect(document.activeElement === homeLink()).toBe(true);
+      await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+      expect(drawer() === null).toBe(true);
+      expect(openSidebar().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement === openSidebar()).toBe(true);
+      expect(filters() !== null).toBe(true);
+    }
+  });
+});
+
 test("at 390px over an open Filter and sort, Escape closes the drawer's project switcher alone, then the drawer, leaving Filter and sort open", async () => {
   await atWidth(390, async () => {
     await mount("#/runs");
