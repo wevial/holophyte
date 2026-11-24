@@ -1,8 +1,10 @@
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ScoutRoute, ScoutRow } from "../../lib/contract.gen";
 import type { useAction } from "../actions";
 import { aboutWords, defaultPicks, sentence, useScoutRoutes, wholeIn, type ScoutPicks, type ScoutsSearch } from "../scouts";
 import { Btn } from "./Btn";
+import { Hint } from "./Hint";
 import { FoldChevron } from "./icons";
 import { Picker, type PickerOption } from "./Picker";
 import { CloseGlyph } from "./ScoutThread";
@@ -50,15 +52,18 @@ function AboutLine({ about, onRemove }: { about: string; onRemove: () => void })
   return (
     <div className="mb-2 flex items-center gap-2">
       <p data-about className="m-0 min-w-0 font-sans text-[13px] [overflow-wrap:anywhere] text-ink-2">About {words}</p>
-      <button
-        type="button"
-        aria-label={`Remove ${words}`}
-        title={`Remove ${words}`}
-        onClick={onRemove}
-        className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none"
-      >
-        <CloseGlyph />
-      </button>
+      <Hint tip={`Remove ${words}`}>
+        {(trigger) => (
+          <button
+            {...mergeProps(trigger, { onClick: onRemove })}
+            type="button"
+            aria-label={`Remove ${words}`}
+            className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-ink-2 transition-colors duration-150 hover:bg-hover hover:text-ink motion-reduce:transition-none"
+          >
+            <CloseGlyph />
+          </button>
+        )}
+      </Hint>
     </div>
   );
 }
