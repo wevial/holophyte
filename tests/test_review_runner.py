@@ -910,7 +910,7 @@ class ReviewMemoryTests(unittest.TestCase):
         config.write_text("[agents]\n" + agents)
         return holophyte.config.project.Project.locate(self.repo)
 
-    def docker_run_argv(self, project, *, role="review", fallback=False):
+    def container_turn(self, project, *, role="review", fallback=False):
         from holophyte.agents import roles
 
         self.log.unlink(missing_ok=True)
@@ -919,27 +919,20 @@ class ReviewMemoryTests(unittest.TestCase):
             self.base, self.candidate, None, None, fallback,
         )
         lines = self.log.read_text().splitlines()
-        runs = [line.split() for line in lines if line.startswith("run ")]
-        self.assertEqual(len(runs), 1, lines)
+        (run,) = [line.split() for line in lines if line.startswith("run ")]
         (model,) = [line.split()[-2] for line in lines
                     if "model_reasoning_effort=" in line]
-        return runs[0], model
-
-    @staticmethod
-    def memory_flags(argv: list[str]) -> list[str]:
-        docker_flags = argv[:argv.index(review_runner.IMAGE)]
-        return [
-            arg for arg in docker_flags
-            if arg in ("--memory", "-m")
-            or arg.startswith(("--memory=", "-m="))
-        ]
+        flags = [arg for arg in run[:run.index(review_runner.IMAGE)]
+                 if arg in ("--memory", "-m")
+                 or arg.startswith(("--memory=", "-m="))]
+        return flags, model
 
     def test_container_review_turns_pass_default_or_configured_memory_cap(self):
         default_project = self.configure("")
         for role in ("review", "adversary"):
             with self.subTest(config="default", role=role):
-                argv, _ = self.docker_run_argv(default_project, role=role)
-                self.assertEqual(self.memory_flags(argv), ["--memory=4g"])
+                flags, _ = self.container_turn(default_project, role=role)
+                self.assertEqual(flags, ["--memory=4g"])
         self.assertEqual(
             [arg for arg in review_runner.hardening_flags(1000, 1000)
              if arg.startswith("--memory")],
@@ -955,19 +948,19 @@ class ReviewMemoryTests(unittest.TestCase):
             for fallback, model in ((False, review_runner.MODEL),
                                     (True, "gpt-5.6-sol")):
                 with self.subTest(role=role, fallback=fallback):
-                    argv, actual_model = self.docker_run_argv(
-                        configured_project, role=role, fallback=fallback)
-                    self.assertEqual(self.memory_flags(argv), ["--memory=6g"])
-                    self.assertEqual(actual_model, model)
+                    self.assertEqual(
+                        self.container_turn(
+                            configured_project, role=role, fallback=fallback),
+                        (["--memory=6g"], model),
+                    )
 
     def test_invalid_review_memory_and_reviewer_beside_it_fail_config_check(self):
         from holophyte.config.checks import check_config
 
         for bad in ('"0g"', '"4"', '"4gb"', '4', '""'):
             with self.subTest(bad=bad):
-                project = self.configure(f"review_memory = {bad}\n")
                 with self.assertRaises(SystemExit) as raised:
-                    check_config(project)
+                    check_config(self.configure(f"review_memory = {bad}\n"))
                 message = str(raised.exception)
                 self.assertIn("[agents] review_memory", message)
                 self.assertNotIn("unknown key", message)
@@ -976,9 +969,8 @@ class ReviewMemoryTests(unittest.TestCase):
             with self.subTest(good=good):
                 check_config(self.configure(f"review_memory = {good}\n"))
 
-        beside = self.configure('reviewer = "sh -c"\nreview_memory = "6g"\n')
         with self.assertRaises(SystemExit) as raised:
-            check_config(beside)
+            check_config(self.configure('reviewer = "sh -c"\nreview_memory = "6g"\n'))
         message = str(raised.exception)
         self.assertRegex(
             message, r"\[agents\] review_memory beside \[agents\] reviewer")
@@ -987,12 +979,9 @@ class ReviewMemoryTests(unittest.TestCase):
 
 class RealDockerMemoryCapTests(unittest.TestCase):
     def test_hardening_flags_memory_cap_reaches_the_container_cgroup(self):
-        docker = shutil.which("docker")
-        if not docker:
-            self.skipTest("docker is not on PATH")
         try:
             inspect = subprocess.run(
-                [docker, "image", "inspect", review_runner.IMAGE],
+                ["docker", "image", "inspect", review_runner.IMAGE],
                 capture_output=True, text=True, timeout=15,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
@@ -1003,7 +992,7 @@ class RealDockerMemoryCapTests(unittest.TestCase):
             )
         result = subprocess.run(
             [
-                docker, "run", "--rm", "--pull=never",
+                "docker", "run", "--rm", "--pull=never",
                 *review_runner.hardening_flags(os.getuid(), os.getgid(), "3g"),
                 review_runner.IMAGE,
                 "cat", "/sys/fs/cgroup/memory.max",
