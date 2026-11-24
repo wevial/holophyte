@@ -882,53 +882,25 @@ class VisualEvidencePromptTests(unittest.TestCase):
         self.assertIn('counts against the candidate', brief)
 
 
-DOCKER_ARGV_SHIM = """#!{python}
-import json, os, sys
-args = sys.argv[1:]
-if args[0] == "inspect":
-    sys.exit(1)
-if args[0] != "run":
-    sys.exit(0)
-with open(os.environ["HOLOPHYTE_DOCKER_ARGV"], "a") as log:
-    log.write(json.dumps(args) + "\\n")
-print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
-for item in ({{"type": "command_execution", "exit_code": 0}},
-             {{"type": "agent_message", "text": "VERDICT: APPROVE"}}):
-    print(json.dumps({{"type": "item.completed", "item": item}}))
-"""
-
-
 class ReviewMemoryTests(unittest.TestCase):
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.repo = self.root / "repo"
         self.base, self.candidate = two_commit_repo(self.repo)
-        bin_dir = self.root / "bin"
-        bin_dir.mkdir()
-        for name, body in (
-            ("docker", DOCKER_ARGV_SHIM),
-            ("codex", "#!/bin/sh\nexit 0\n"),
-            ("codex-code-mode-host", "#!/bin/sh\nexit 0\n"),
-        ):
-            script = bin_dir / name
-            script.write_text(body.format(python=sys.executable))
-            script.chmod(0o755)
+        bin_dir, env = docker_shim(self.root)
+        (bin_dir / "docker").write_text(IMAGE_SHIM)
+        images = self.root / "docker.images"
+        images.write_text(f"{review_runner.IMAGE}\n")
         (self.root / "auth.json").write_text("{}")
-        self.argv_log = self.root / "docker-argv"
-        env = patch.dict(os.environ, {
+        self.log = Path(env["HOLOPHYTE_DOCKER_LOG"])
+        self.enterContext(patch.dict(os.environ, {
+            **env,
             "HOLOPHYTE_HOME": str(self.root / "home"),
-            "HOLOPHYTE_DOCKER_ARGV": str(self.argv_log),
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
-        })
-        env.start()
-        self.addCleanup(env.stop)
+            "HOLOPHYTE_DOCKER_IMAGES": str(images),
+        }))
         for attr, value in (("SCRATCH_ROOT", self.root / "reviews"),
                             ("CODEX_AUTH", self.root / "auth.json")):
-            patcher = patch.object(review_runner, attr, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+            self.enterContext(patch.object(review_runner, attr, value))
 
     def configure(self, agents: str):
         import holophyte.config.project
@@ -941,14 +913,17 @@ class ReviewMemoryTests(unittest.TestCase):
     def docker_run_argv(self, project, *, role="review", fallback=False):
         from holophyte.agents import roles
 
-        self.argv_log.unlink(missing_ok=True)
+        self.log.unlink(missing_ok=True)
         roles.container_review(
             project, role, "judge the candidate", self.repo,
             self.base, self.candidate, None, None, fallback,
         )
-        runs = self.argv_log.read_text().splitlines()
-        self.assertEqual(len(runs), 1, runs)
-        return json.loads(runs[0])
+        lines = self.log.read_text().splitlines()
+        runs = [line.split() for line in lines if line.startswith("run ")]
+        self.assertEqual(len(runs), 1, lines)
+        (model,) = [line.split()[-2] for line in lines
+                    if "model_reasoning_effort=" in line]
+        return runs[0], model
 
     @staticmethod
     def memory_flags(argv: list[str]) -> list[str]:
@@ -963,7 +938,7 @@ class ReviewMemoryTests(unittest.TestCase):
         default_project = self.configure("")
         for role in ("review", "adversary"):
             with self.subTest(config="default", role=role):
-                argv = self.docker_run_argv(default_project, role=role)
+                argv, _ = self.docker_run_argv(default_project, role=role)
                 self.assertEqual(self.memory_flags(argv), ["--memory=4g"])
         self.assertEqual(
             [arg for arg in review_runner.hardening_flags(1000, 1000)
@@ -980,10 +955,10 @@ class ReviewMemoryTests(unittest.TestCase):
             for fallback, model in ((False, review_runner.MODEL),
                                     (True, "gpt-5.6-sol")):
                 with self.subTest(role=role, fallback=fallback):
-                    argv = self.docker_run_argv(
+                    argv, actual_model = self.docker_run_argv(
                         configured_project, role=role, fallback=fallback)
                     self.assertEqual(self.memory_flags(argv), ["--memory=6g"])
-                    self.assertEqual(argv[-2], model)
+                    self.assertEqual(actual_model, model)
 
     def test_invalid_review_memory_and_reviewer_beside_it_fail_config_check(self):
         from holophyte.config.checks import check_config
