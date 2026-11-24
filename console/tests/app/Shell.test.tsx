@@ -210,6 +210,20 @@ test("the fold button folds the sidebar to icons, keeps link names and survives 
   }
 });
 
+const tooltip = () => screen.queryByRole("tooltip");
+const keyboardFocus = (link: HTMLElement) => act(async () => {
+  fireEvent.keyDown(document.body, { key: "Tab" });
+  link.focus();
+});
+const pointerOver = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+};
+const pointerAway = async (link: HTMLElement) => {
+  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+};
+
 const themeGroup = () => screen.getByRole("group", { name: "Theme" });
 const pressed = () => within(themeGroup()).getAllByRole("button").filter((button) => button.getAttribute("aria-pressed") === "true").map((button) => button.getAttribute("aria-label"));
 
@@ -217,9 +231,18 @@ test("the theme group's Dawn, Night and System buttons stamp and store the choic
   await mount("#/");
   const buttons = within(themeGroup()).getAllByRole("button");
   expect(buttons.map((button) => button.getAttribute("aria-label"))).toEqual(["Dawn", "Night", "System"]);
-  expect(buttons.map((button) => button.getAttribute("title"))).toEqual(["Dawn", "Night", "System"]);
+  expect(buttons.map((button) => button.hasAttribute("title"))).toEqual([false, false, false]);
+  expect(buttons.map((button) => button.hasAttribute("aria-describedby"))).toEqual([false, false, false]);
   expect(buttons.map((button) => button.textContent)).toEqual(["", "", ""]);
   expect(buttons.map((button) => button.getAttribute("aria-pressed"))).toEqual(["false", "false", "true"]);
+  const night = within(themeGroup()).getByRole("button", { name: "Night" });
+  expect(tooltip()).toBeNull();
+  await pointerOver(night);
+  expect(screen.getByRole("tooltip").textContent).toBe("Night");
+  expect(night.hasAttribute("aria-describedby")).toBe(false);
+  await pointerAway(night);
+  expect(tooltip()).toBeNull();
+
   const choose = (name: string) => fireEvent.click(within(themeGroup()).getByRole("button", { name }));
 
   choose("Dawn");
@@ -273,20 +296,6 @@ test("a stored Night presses Night, and with nothing stored System stays pressed
     happyDOM.setViewport({ width: 1024 });
   }
 });
-
-const tooltip = () => screen.queryByRole("tooltip");
-const keyboardFocus = (link: HTMLElement) => act(async () => {
-  fireEvent.keyDown(document.body, { key: "Tab" });
-  link.focus();
-});
-const pointerOver = async (link: HTMLElement) => {
-  await act(async () => void fireEvent.pointerEnter(link, { pointerType: "mouse" }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 400)));
-};
-const pointerAway = async (link: HTMLElement) => {
-  await act(async () => void fireEvent.pointerLeave(link, { pointerType: "mouse", clientX: 900, clientY: 900 }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
-};
 
 const connectionDot = () => screen.getByRole("complementary", { name: "Console" }).querySelector<HTMLElement>("[data-connection]")!;
 const breathes = () => connectionDot().querySelector(".state-pulse") != null;
@@ -784,6 +793,187 @@ test("expanded, no page link carries a tooltip on focus or hover, and the curren
   await pointerOver(findings);
   expect(tooltip()).toBeNull();
   expect(pages().filter((link) => link.hasAttribute("aria-describedby"))).toEqual([]);
+});
+
+test("folded, the project switcher's tooltip names the current project on hover without a title attribute, and stays hidden while unfolded", async () => {
+  await mount("#/runs?project=demo");
+  const switcher = screen.getByRole("button", { name: /Switch project$/ });
+  expect(switcher.hasAttribute("title")).toBe(false);
+  await pointerOver(switcher);
+  expect(tooltip()).toBeNull();
+  await pointerAway(switcher);
+
+  fireEvent.click(toggle());
+  expect(switcher.hasAttribute("title")).toBe(false);
+  expect(switcher.hasAttribute("aria-describedby")).toBe(false);
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+  expect(switcher.hasAttribute("aria-describedby")).toBe(false);
+  await pointerAway(switcher);
+  expect(tooltip()).toBeNull();
+
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+  fireEvent.click(switcher);
+  await act(settle);
+  expect(screen.getByRole("dialog", { name: "Switch project" })).toBeTruthy();
+  expect(tooltip()).toBeNull();
+});
+
+test("folded, the project switcher's tooltip stays hidden while its dialog is open and resumes once it closes", async () => {
+  localStorage.setItem("holophyte.next.rail", "folded");
+  await mount("#/runs?project=demo");
+  const switcher = screen.getByRole("button", { name: /Switch project$/ });
+  fireEvent.click(switcher);
+  await act(settle);
+  const dialog = screen.getByRole("dialog", { name: "Switch project" });
+  await pointerAway(switcher);
+  await pointerOver(switcher);
+  expect(tooltip()).toBeNull();
+
+  const find = within(dialog).getByRole("combobox");
+  fireEvent.keyDown(find, { key: "Escape" });
+  await act(settle);
+  expect(screen.queryByRole("dialog", { name: "Switch project" })).toBeNull();
+  await pointerAway(switcher);
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+});
+
+test("unfolding while the folded project switcher's tooltip is open clears it so refolding does not reopen it", async () => {
+  localStorage.setItem("holophyte.next.rail", "folded");
+  await mount("#/runs?project=demo");
+  const switcher = screen.getByRole("button", { name: /Switch project$/ });
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+
+  fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+  expect(tooltip()).toBeNull();
+  await pointerAway(switcher);
+  fireEvent.keyDown(document, { key: "\\", ctrlKey: true });
+  expect(tooltip()).toBeNull();
+
+  await pointerOver(switcher);
+  expect(screen.getByRole("tooltip").textContent).toBe("demo");
+});
+
+const placeBox = (el: HTMLElement, rect: DOMRect) => {
+  el.getBoundingClientRect = () => rect;
+  el.getClientRects = () => [rect] as unknown as DOMRectList;
+};
+const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+
+async function atViewport(width: number, height: number, check: () => Promise<void>) {
+  const prevWidth = Object.getOwnPropertyDescriptor(document.documentElement, "clientWidth");
+  const prevHeight = Object.getOwnPropertyDescriptor(document.documentElement, "clientHeight");
+  Object.defineProperty(document.documentElement, "clientWidth", { configurable: true, value: width });
+  Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: height });
+  try {
+    await atWidth(width, check);
+  } finally {
+    if (prevWidth) Object.defineProperty(document.documentElement, "clientWidth", prevWidth);
+    else delete (document.documentElement as { clientWidth?: number }).clientWidth;
+    if (prevHeight) Object.defineProperty(document.documentElement, "clientHeight", prevHeight);
+    else delete (document.documentElement as { clientHeight?: number }).clientHeight;
+  }
+}
+
+test("folded, the project switcher's tooltip constrains a long project label to the available width at 720px and lets it wrap", async () => {
+  const longName = `project_${"a".repeat(118)}`;
+  expect(longName).toHaveLength(126);
+  const longDaemon = peersFetch(ORIGIN, {
+    [ORIGIN]: { status: statusOf(`/srv/dev/${longName}`), attention: attentionOf([], `/srv/dev/${longName}`) },
+  });
+  await atViewport(720, 800, async () => {
+    localStorage.setItem("holophyte.next.rail", "folded");
+    await mount(`#/runs?project=${longName}`, longDaemon);
+    const switcher = screen.getByRole("button", { name: /Switch project$/ });
+    placeBox(switcher, new DOMRect(6, 42, 44, 44));
+    await pointerOver(switcher);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe(longName);
+    expect(tip.getAttribute("data-side")).toBe("right");
+    expect(parseFloat(tip.style.left)).toBe(60);
+    expect(parseFloat(tip.style.getPropertyValue("--available-width"))).toBe(652);
+    expect(tip.classList.contains("whitespace-nowrap")).toBe(false);
+    expect(tip.classList.contains("[overflow-wrap:anywhere]")).toBe(true);
+    expect([...tip.classList].some((name) => name.startsWith("max-w-") && name.includes("--available-width"))).toBe(true);
+  });
+});
+
+test("the title bar's holophyte mark has no title attribute and shows a holophyte tooltip on keyboard focus", async () => {
+  await atViewport(1280, 800, async () => {
+    await mount("#/");
+    const mark = homeLink();
+    const switcher = screen.getByRole("button", { name: /Switch project$/ });
+    const markRect = new DOMRect(44, 3, 78, 24);
+    const switcherRect = new DOMRect(8, 30, 216, 32);
+    placeBox(mark, markRect);
+    placeBox(switcher, switcherRect);
+    for (const el of document.querySelectorAll<HTMLElement>('[role="tooltip"]')) {
+      if (el.textContent !== "holophyte") continue;
+      Object.defineProperty(el, "offsetWidth", { configurable: true, value: 78 });
+      Object.defineProperty(el, "offsetHeight", { configurable: true, value: 28 });
+      el.getBoundingClientRect = () => new DOMRect(parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0, 78, 28);
+    }
+    expect(mark.hasAttribute("title")).toBe(false);
+    expect(mark.hasAttribute("aria-describedby")).toBe(false);
+    expect(tooltip()).toBeNull();
+    await keyboardFocus(mark);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe("holophyte");
+    expect(tip.getAttribute("data-side")).toBe("right");
+    expect(tip.getAttribute("data-align")).toBe("center");
+    expect(parseFloat(tip.style.left) - markRect.right).toBe(10);
+    expect(overlaps(tip.getBoundingClientRect(), switcherRect)).toBe(false);
+    expect(mark.hasAttribute("aria-describedby")).toBe(false);
+    await act(async () => mark.blur());
+    expect(tooltip()).toBeNull();
+  });
+});
+
+test("in the macOS app the holophyte mark's tooltip sits to the right of Next, clear of Back, Next and the expanded project switcher", async () => {
+  localStorage.setItem(APP_SHELL_KEY, "macos");
+  await atViewport(1280, 800, async () => {
+    await mountAt("#/");
+    const mark = homeLink();
+    const back = historyButton("Back");
+    const next = historyButton("Next");
+    const switcher = screen.getByRole("button", { name: /Switch project$/ });
+    const markRect = new DOMRect(108, 3, 78, 24);
+    const backRect = new DOMRect(194, 3, 24, 24);
+    const nextRect = new DOMRect(226, 3, 24, 24);
+    const switcherRect = new DOMRect(8, 30, 216, 32);
+    placeBox(mark, markRect);
+    placeBox(back, backRect);
+    placeBox(next, nextRect);
+    placeBox(switcher, switcherRect);
+
+    for (const el of document.querySelectorAll<HTMLElement>('[role="tooltip"]')) {
+      if (el.textContent !== "holophyte") continue;
+      Object.defineProperty(el, "offsetWidth", { configurable: true, value: 78 });
+      Object.defineProperty(el, "offsetHeight", { configurable: true, value: 28 });
+      el.getBoundingClientRect = () => new DOMRect(parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0, 78, 28);
+    }
+
+    await pointerOver(mark);
+    const tip = screen.getByRole("tooltip");
+    expect(tip.textContent).toBe("holophyte");
+    expect(tip.getAttribute("data-side")).toBe("right");
+    expect(parseFloat(tip.style.left) - nextRect.right).toBe(10);
+    const tipRect = tip.getBoundingClientRect();
+    expect(overlaps(tipRect, backRect)).toBe(false);
+    expect(overlaps(tipRect, nextRect)).toBe(false);
+    expect(overlaps(tipRect, switcherRect)).toBe(false);
+    expect(mark.hasAttribute("aria-describedby")).toBe(false);
+
+    await act(async () => void fireEvent.pointerLeave(mark, { pointerType: "mouse", clientX: 116, clientY: 46 }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(tooltip()).toBeNull();
+    fireEvent.click(switcher);
+    await act(settle);
+    expect(screen.getByRole("dialog", { name: "Switch project" })).toBeTruthy();
+  });
 });
 
 test("each page's heading section opens on the title row's padding", async () => {

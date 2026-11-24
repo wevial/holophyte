@@ -1,6 +1,7 @@
-import { useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useContext, useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
+import { mergeProps } from "@ui-sdk/react/primitive";
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
@@ -32,7 +33,7 @@ import {
   TicketsIcon,
   TurnArrow,
 } from "./icons";
-import { ProjectSwitcher } from "./ProjectSwitcher";
+import { ProjectSwitcher, SIDEBAR_TIP } from "./ProjectSwitcher";
 import { SettingsNav } from "./SettingsNav";
 import { plainTitle, TitleText } from "./TitleText";
 import { trap } from "./trap";
@@ -74,8 +75,6 @@ function writeFolded(folded: boolean, key = RAIL_KEY): void {
 
 const FOOT_ICON = "relative flex size-7 shrink-0 items-center justify-center rounded-[6px]";
 
-const TIP = "z-50 flex items-center gap-2 rounded-[6px] border border-rule-2 bg-raised px-2.5 py-1 text-[12px] font-medium whitespace-nowrap text-ink shadow-card";
-
 type Connection = "live" | "stale" | "down";
 
 const CONNECTION_FILL: Record<Connection, string> = { live: "fill-live", stale: "fill-ask", down: "fill-bad" };
@@ -92,7 +91,7 @@ function FootTip({ tip, folded, children }: { tip: string; folded: boolean; chil
   return (
     <Tooltip delay={300}>
       <TooltipTrigger render={({ type: _button, "aria-describedby": _same, ...trigger }) => <>{children(trigger)}</>} />
-      <TooltipContent side={folded ? "right" : "top"} sideOffset={folded ? 10 : 8} className={TIP}>
+      <TooltipContent side={folded ? "right" : "top"} sideOffset={folded ? 10 : 8} className={SIDEBAR_TIP}>
         {tip}
       </TooltipContent>
     </Tooltip>
@@ -114,17 +113,21 @@ function ThemeGroup({ folded }: { folded: boolean }) {
       className={`flex shrink-0 gap-0.5 ${folded ? "flex-col" : ""}`}
     >
       {THEME_CHOICES.map((choice) => (
-        <button
-          key={choice.theme}
-          type="button"
-          aria-label={choice.name}
-          title={choice.name}
-          aria-pressed={choice.theme === theme}
-          onClick={() => setTheme(choice.theme)}
-          className={`${FOOT_ICON} ${choice.theme === theme ? "bg-selected text-ink" : "text-ink-3 hover:bg-hover hover:text-ink"}`}
-        >
-          {choice.icon}
-        </button>
+        <FootTip key={choice.theme} tip={choice.name} folded={folded}>
+          {(trigger) => (
+            <button
+              {...mergeProps(trigger, {
+                type: "button",
+                "aria-label": choice.name,
+                "aria-pressed": choice.theme === theme,
+                onClick: () => setTheme(choice.theme),
+                className: `${FOOT_ICON} ${choice.theme === theme ? "bg-selected text-ink" : "text-ink-3 hover:bg-hover hover:text-ink"}`,
+              })}
+            >
+              {choice.icon}
+            </button>
+          )}
+        </FootTip>
       ))}
     </div>
   );
@@ -198,7 +201,7 @@ function PageLink({
         )}
       />
       {folded && (
-        <TooltipContent side="right" sideOffset={10} className={TIP}>
+        <TooltipContent side="right" sideOffset={10} className={SIDEBAR_TIP}>
           {label}
           {badge > 0 && <span className="font-mono text-ink-3"> {badge}</span>}
         </TooltipContent>
@@ -409,10 +412,25 @@ function useHistoryNav(bound: boolean) {
 
 const TITLE_BUTTON = "flex size-6 shrink-0 items-center justify-center rounded-[6px] text-ink-3 hover:bg-hover hover:text-ink";
 
-function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; shortcut: string; enabled: boolean; go: () => void; next?: boolean }) {
+function HistoryButton({
+  name,
+  shortcut,
+  enabled,
+  go,
+  next,
+  buttonRef,
+}: {
+  name: string;
+  shortcut: string;
+  enabled: boolean;
+  go: () => void;
+  next?: boolean;
+  buttonRef?: Ref<HTMLButtonElement>;
+}) {
   return (
     <Tooltip delay={300} shortcut={shortcut}>
       <TooltipTrigger
+        ref={buttonRef}
         aria-label={name}
         disabled={!enabled}
         onClick={go}
@@ -420,7 +438,7 @@ function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; sh
       >
         <TurnArrow next={next} />
       </TooltipTrigger>
-      <TooltipContent side="bottom" align="start" sideOffset={6} className={TIP}>
+      <TooltipContent side="bottom" align="start" sideOffset={6} className={SIDEBAR_TIP}>
         {name}
         <TooltipShortcut className="font-mono text-ink-3" />
       </TooltipContent>
@@ -430,6 +448,7 @@ function HistoryButton({ name, shortcut, enabled, go, next }: { name: string; sh
 
 export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: SidebarFold) {
   const [macApp] = useState(inMacApp);
+  const [nextButton, setNextButton] = useState<HTMLButtonElement | null>(null);
   const nav = useHistoryNav(macApp);
   const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
   return (
@@ -446,28 +465,43 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
           >
             <PanelLeftIcon />
           </TooltipTrigger>
-          <TooltipContent side="bottom" align="start" sideOffset={6} className={TIP}>
+          <TooltipContent side="bottom" align="start" sideOffset={6} className={SIDEBAR_TIP}>
             {toggleName}
             <TooltipShortcut className="font-mono text-ink-3" />
           </TooltipContent>
         </Tooltip>
       )}
-      <Link
-        to="/"
-        search={keepScope}
-        aria-label="holophyte"
-        title="holophyte"
-        className={`flex h-6 items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-ink [&_svg]:size-4 ${macApp ? APP_NO_DRAG : ""}`}
-      >
-        <Mark />
-        <span aria-hidden="true" className="leading-none [text-box:trim-both_cap_alphabetic]">
+      <Tooltip delay={300}>
+        <TooltipTrigger
+          render={({ type: _button, "aria-describedby": _same, ...trigger }) => (
+            <Link
+              {...trigger}
+              to="/"
+              search={keepScope}
+              aria-label="holophyte"
+              className={`flex h-6 items-center gap-1.5 text-[13px] font-semibold tracking-[-0.01em] text-ink [&_svg]:size-4 ${macApp ? APP_NO_DRAG : ""}`}
+            >
+              <Mark />
+              <span aria-hidden="true" className="leading-none [text-box:trim-both_cap_alphabetic]">
+                holophyte
+              </span>
+            </Link>
+          )}
+        />
+        <TooltipContent
+          side="right"
+          sideOffset={10}
+          collisionPadding={1}
+          anchor={macApp ? nextButton : undefined}
+          className={SIDEBAR_TIP}
+        >
           holophyte
-        </span>
-      </Link>
+        </TooltipContent>
+      </Tooltip>
       {macApp && (
         <>
           <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} />
-          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next />
+          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next buttonRef={setNextButton} />
         </>
       )}
     </div>
