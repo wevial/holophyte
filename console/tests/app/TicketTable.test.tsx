@@ -215,22 +215,19 @@ test("with a storage that throws, pressing Table still draws the table", async (
 
 test("pressing a row's ⋯ and one of its items opens no peek, and pressing another row's ⋯ switches menus in one press", async () => {
   const user = userEvent.setup();
+  const click = (target: Element) => user.click(target).then(() => act(settle));
   await mount("#/tickets?project=demo", seeded);
   await press("Table");
-  await user.click(screen.getByRole("button", { name: "More for DEMO-3" }));
-  await act(settle);
+  await click(screen.getByRole("button", { name: "More for DEMO-3" }));
   const menu = screen.getByRole("menu", { name: "More for DEMO-3" });
   expect(peek()).toBeNull();
-  await user.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
-  await act(settle);
+  await click(within(menu).getByRole("menuitem", { name: "Copy link" }));
   expect(screen.queryByRole("menu")).toBeNull();
   expect(peek()).toBeNull();
 
-  await user.click(screen.getByRole("button", { name: "More for DEMO-3" }));
-  await act(settle);
+  await click(screen.getByRole("button", { name: "More for DEMO-3" }));
   expect(screen.getByRole("menu", { name: "More for DEMO-3" })).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "More for DEMO-2" }));
-  await act(settle);
+  await click(screen.getByRole("button", { name: "More for DEMO-2" }));
   expect(screen.queryByRole("menu", { name: "More for DEMO-3" })).toBeNull();
   expect(screen.getByRole("menu", { name: "More for DEMO-2" })).toBeTruthy();
   expect(screen.getAllByRole("menu")).toHaveLength(1);
