@@ -39,16 +39,12 @@ const isText = (item: Evidence): item is TextEvidence => "text" in item;
 
 function FileItem({ item, base }: { item: FileEvidence; base: string }) {
   const place = `${item.file}:${item.line}`;
-  if (item.verified) {
-    const span = (props?: Record<string, unknown>) => (
-      <span {...props} data-file className={`${MONO} text-ink underline underline-offset-2`}>{place}</span>
-    );
-    return base === "" ? span() : <Hint tip={`at base ${base}`} describe>{span}</Hint>;
-  }
-  const span = (props?: Record<string, unknown>) => (
-    <span {...props} data-file data-unverified className={`${MONO} text-warn-ink`}>? {place} unverified</span>
-  );
-  return item.why ? <Hint tip={item.why} describe>{span}</Hint> : span();
+  const tip = item.verified ? (base ? `at base ${base}` : null) : item.why;
+  const span = (props?: Record<string, unknown>) =>
+    item.verified
+      ? <span {...props} data-file className={`${MONO} text-ink underline underline-offset-2`}>{place}</span>
+      : <span {...props} data-file data-unverified className={`${MONO} text-warn-ink`}>? {place} unverified</span>;
+  return tip ? <Hint tip={tip} describe>{span}</Hint> : span();
 }
 
 function UrlItem({ url }: { url: string }) {

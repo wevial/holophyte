@@ -111,6 +111,8 @@ function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }
   const took = state === "queued" || row.elapsed_ms == null ? DASH : formatSettled(row.elapsed_ms);
   const outcome = scoutOutcome(row);
   const empty = outcome.kind === "counts" ? outcome.parts.length === 0 : outcome.text === "";
+  const failed = outcome.kind === "failed";
+  const facts = `${row.kind} · ${took} · ${dayTime(row.started_ms ?? row.created_ms)}${empty ? "" : " · "}`;
   return (
     <li data-row data-scout={row.id} aria-current={current ? "page" : undefined} className="border-b border-rule-2 py-px last:border-b-0">
       <Link
@@ -122,18 +124,9 @@ function ScoutListItem({ row, current }: { row: ScoutListRow; current: boolean }
         <span className="mt-[2px] self-start"><StateDot state={SCOUT_DOTS[state]} label={state} hideWord /></span>
         <span className="flex min-w-0 flex-col gap-[5px]">
           <span data-cell="title" className="line-clamp-2 font-sans text-[14px] font-semibold leading-[1.3] text-ink">{row.title}</span>
-          <span data-scout-row-facts className={`font-sans text-[12.5px] leading-[1.4] text-ink-3 ${outcome.kind === "failed" ? "flex min-w-0 items-baseline overflow-hidden whitespace-nowrap" : "[overflow-wrap:anywhere]"}`}>
-            {outcome.kind === "failed" ? (
-              <>
-                <span className="shrink-0 whitespace-pre">{row.kind}{" · "}{took}{" · "}{dayTime(row.started_ms ?? row.created_ms)}{!empty && " · "}</span>
-                {!empty && <Outcome outcome={outcome} />}
-              </>
-            ) : (
-              <>
-                {row.kind}{" · "}{took}{" · "}{dayTime(row.started_ms ?? row.created_ms)}
-                {!empty && <>{" · "}<Outcome outcome={outcome} /></>}
-              </>
-            )}
+          <span data-scout-row-facts className={`font-sans text-[12.5px] leading-[1.4] text-ink-3 ${failed ? "flex min-w-0 items-baseline overflow-hidden whitespace-nowrap" : "[overflow-wrap:anywhere]"}`}>
+            {failed ? <span className="shrink-0 whitespace-pre">{facts}</span> : facts}
+            {!empty && <Outcome outcome={outcome} />}
           </span>
         </span>
       </Link>
