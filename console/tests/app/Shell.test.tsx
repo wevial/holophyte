@@ -1558,17 +1558,17 @@ test("at 390px the open drawer, laid under the title bar that stays while the pa
       fireEvent.pointerUp(target, { button: 0 });
       fireEvent.click(target);
     };
+    const backdrop = () => document.querySelector<HTMLElement>('[data-slot="drawer-backdrop"]')!;
     const closes: [string, () => void][] = [
       ["link", () => fireEvent.click(within(drawer()!).getByRole("link", { name: "Runs" }))],
-      ["scrim", () => press(document.querySelector<HTMLElement>('[data-slot="drawer-backdrop"]')!)],
+      ["scrim", () => press(backdrop())],
       ["escape", () => fireEvent.keyDown(document.activeElement!, { key: "Escape" })],
       ["panel button", () => press(openSidebar())],
     ];
     for (const [way, close] of closes) {
       await act(async () => void fireEvent.click(openSidebar()));
       expect(drawer()).not.toBeNull();
-      const backdrop = document.querySelector<HTMLElement>('[data-slot="drawer-backdrop"]')!;
-      expect(backdrop.classList.contains("top-[30px]")).toBe(true);
+      expect(backdrop().classList.contains("top-[30px]")).toBe(true);
       expect(drawer()!.classList.contains("mt-[30px]")).toBe(true);
       expect(drawer()!.contains(titleBar())).toBe(false);
       expect([titleBar().parentElement!.classList.contains("overflow-hidden"), screen.getByRole("main").classList.contains("overflow-y-auto")]).toEqual([true, true]);
