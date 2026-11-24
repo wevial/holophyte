@@ -93,14 +93,18 @@ export function Tickets() {
   const opener = peek == null ? null : cardElementId(peek.card);
   useEffect(() => {
     if (opener == null) return;
+    // On the root element so target and body Escape handlers run first, and
+    // before the SDK's document listener prevents default on a non-modal peek.
     const shut = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+      if (document.querySelector('[aria-modal="true"], [data-slot$="-content"][data-open]:not([data-peek]):not([data-slot="tooltip-content"])')) return;
+      if (document.querySelector("[data-peek]")?.contains(document.activeElement)) return;
       event.preventDefault();
       setOpenId(null);
       document.getElementById(opener)?.focus();
     };
-    document.addEventListener("keydown", shut);
-    return () => document.removeEventListener("keydown", shut);
+    document.documentElement.addEventListener("keydown", shut);
+    return () => document.documentElement.removeEventListener("keydown", shut);
   }, [opener]);
   const closePeek = () => {
     setOpenId(null);

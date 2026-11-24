@@ -1,8 +1,8 @@
-import { useContext, useEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useContext, useEffect, useInsertionEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
 import { Link, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
+import { Drawer, DrawerBackdrop, DrawerContent } from "@ui-sdk/react/drawer";
 import { mergeProps } from "@ui-sdk/react/primitive";
-import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from "@ui-sdk/react/tooltip";
+import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger, type TooltipProps } from "@ui-sdk/react/tooltip";
 import { useTheme } from "../appearance";
 import type { Theme } from "../../lib/theme";
 import { SWEEP_OK } from "../../lib/hosts";
@@ -36,7 +36,6 @@ import {
 import { ProjectSwitcher, SIDEBAR_TIP } from "./ProjectSwitcher";
 import { SettingsNav } from "./SettingsNav";
 import { plainTitle, TitleText } from "./TitleText";
-import { trap } from "./trap";
 import { useSidebarWidth } from "../viewport";
 
 const RAIL_KEY = "holophyte.next.rail";
@@ -87,9 +86,95 @@ function connectionOf(hosts: Parameters<typeof footerLine>[0], footer: FooterLin
   return hosts.every(fine) ? "live" : "stale";
 }
 
-function FootTip({ tip, folded, children }: { tip: string; folded: boolean; children: (trigger: Record<string, unknown>) => ReactNode }) {
+const DRAWER_ID = "sidebar-drawer";
+
+let closeWatcherHolds = 0;
+let hadCloseWatcher = false;
+let savedCloseWatcher: unknown;
+
+function holdCloseWatcher(): () => void {
+  const host = globalThis as { CloseWatcher?: unknown };
+  if (closeWatcherHolds === 0) {
+    hadCloseWatcher = "CloseWatcher" in host;
+    savedCloseWatcher = host.CloseWatcher;
+    if (hadCloseWatcher) host.CloseWatcher = undefined;
+  }
+  closeWatcherHolds += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    closeWatcherHolds -= 1;
+    if (closeWatcherHolds > 0) return;
+    if (hadCloseWatcher) host.CloseWatcher = savedCloseWatcher;
+    hadCloseWatcher = false;
+    savedCloseWatcher = undefined;
+  };
+}
+
+function HoldCloseWatcher({ active, hold }: { active: boolean; hold: () => void }) {
+  useLayoutEffect(() => {
+    if (active) hold();
+  }, [active, hold]);
+  return null;
+}
+
+// Suppresses UI SDK's Android CloseWatcher during attach/open so system Back stays on browser history.
+export function useNoCloseWatcher(active: boolean) {
+  const release = useRef<(() => void) | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const hold = useCallback(() => {
+    release.current ??= holdCloseWatcher();
+  }, []);
+  const drop = useCallback(() => {
+    release.current?.();
+    release.current = null;
+  }, []);
+  useInsertionEffect(() => {
+    if (active) hold();
+    return drop;
+  }, [active, hold, drop]);
+  useLayoutEffect(() => {
+    drop();
+    return drop;
+  }, [active, drop]);
+  const contentRef = useCallback(
+    (el: HTMLElement | null) => {
+      if (el != null && activeRef.current) hold();
+    },
+    [hold],
+  );
+  return { before: <HoldCloseWatcher active={active} hold={hold} />, contentRef };
+}
+
+type TipChange = TooltipProps["onOpenChange"];
+
+// A tooltip layers above the modal drawer; Escape on it must still close the drawer unless an inner dialog is open.
+function drawerTipChange(drawerOpen: boolean, closeDrawer: () => void): TipChange {
+  if (!drawerOpen) return undefined;
+  return (open, details) => {
+    if (open || details.reason !== "escape-key") return;
+    details.event?.stopImmediatePropagation();
+    if (document.querySelector(`#${DRAWER_ID} [role="dialog"][data-open]`)) return;
+    const modals = document.querySelectorAll('[aria-modal="true"]');
+    if (modals.length === 1 && modals[0]?.id === DRAWER_ID) closeDrawer();
+  };
+}
+
+function FootTip({
+  tip,
+  folded,
+  onTipChange,
+  children,
+}: {
+  tip: string;
+  folded: boolean;
+  onTipChange?: TipChange;
+  children: (trigger: Record<string, unknown>) => ReactNode;
+}) {
   return (
-    <Tooltip delay={300}>
+    <Tooltip delay={300} onOpenChange={onTipChange}>
       <TooltipTrigger render={({ type: _button, "aria-describedby": _same, ...trigger }) => <>{children(trigger)}</>} />
       <TooltipContent side={folded ? "right" : "top"} sideOffset={folded ? 10 : 8} className={SIDEBAR_TIP}>
         {tip}
@@ -104,7 +189,7 @@ const THEME_CHOICES: { theme: Theme; name: string; icon: ReactNode }[] = [
   { theme: "system", name: "System", icon: <SystemIcon /> },
 ];
 
-function ThemeGroup({ folded }: { folded: boolean }) {
+function ThemeGroup({ folded, onTipChange }: { folded: boolean; onTipChange?: TipChange }) {
   const { theme, setTheme } = useTheme();
   return (
     <div
@@ -113,7 +198,7 @@ function ThemeGroup({ folded }: { folded: boolean }) {
       className={`flex shrink-0 gap-0.5 ${folded ? "flex-col" : ""}`}
     >
       {THEME_CHOICES.map((choice) => (
-        <FootTip key={choice.theme} tip={choice.name} folded={folded}>
+        <FootTip key={choice.theme} tip={choice.name} folded={folded} onTipChange={onTipChange}>
           {(trigger) => (
             <button
               {...mergeProps(trigger, {
@@ -419,6 +504,7 @@ function HistoryButton({
   go,
   next,
   buttonRef,
+  onTipChange,
 }: {
   name: string;
   shortcut: string;
@@ -426,9 +512,10 @@ function HistoryButton({
   go: () => void;
   next?: boolean;
   buttonRef?: Ref<HTMLButtonElement>;
+  onTipChange?: TipChange;
 }) {
   return (
-    <Tooltip delay={300} shortcut={shortcut}>
+    <Tooltip delay={300} shortcut={shortcut} onOpenChange={onTipChange}>
       <TooltipTrigger
         ref={buttonRef}
         aria-label={name}
@@ -446,20 +533,22 @@ function HistoryButton({
   );
 }
 
-export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: SidebarFold) {
+export function TitleBar({ folded, foldable, fold, narrow, drawer, closeDrawer, toggleRef }: SidebarFold) {
   const [macApp] = useState(inMacApp);
   const [nextButton, setNextButton] = useState<HTMLButtonElement | null>(null);
   const nav = useHistoryNav(macApp);
   const toggleName = narrow ? (drawer ? "Close sidebar" : "Open sidebar") : folded ? "Expand sidebar" : "Collapse sidebar";
+  const onTipChange = drawerTipChange(drawer, closeDrawer);
   return (
     <div data-title-bar="" className={`flex h-[30px] shrink-0 items-center gap-2 ${macApp ? `pl-[76px] ${APP_DRAG}` : "pl-3"}`}>
       {foldable && (
-        <Tooltip delay={300} shortcut={"mod+\\"}>
+        <Tooltip delay={300} shortcut={"mod+\\"} onOpenChange={onTipChange}>
           <TooltipTrigger
             ref={toggleRef}
+            data-sidebar-toggle=""
             aria-label={toggleName}
             aria-expanded={narrow ? drawer : !folded}
-            aria-controls={drawer ? "sidebar-drawer" : undefined}
+            aria-controls={drawer ? DRAWER_ID : undefined}
             onClick={fold}
             className={`${TITLE_BUTTON} ${macApp ? APP_NO_DRAG : ""}`}
           >
@@ -471,7 +560,7 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
           </TooltipContent>
         </Tooltip>
       )}
-      <Tooltip delay={300}>
+      <Tooltip delay={300} onOpenChange={onTipChange}>
         <TooltipTrigger
           render={({ type: _button, "aria-describedby": _same, ...trigger }) => (
             <Link
@@ -500,15 +589,15 @@ export function TitleBar({ folded, foldable, fold, narrow, drawer, toggleRef }: 
       </Tooltip>
       {macApp && (
         <>
-          <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} />
-          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next buttonRef={setNextButton} />
+          <HistoryButton name="Back" shortcut="mod+[" enabled={nav.canBack} go={nav.back} onTipChange={onTipChange} />
+          <HistoryButton name="Next" shortcut="mod+]" enabled={nav.canForward} go={nav.forward} next buttonRef={setNextButton} onTipChange={onTipChange} />
         </>
       )}
     </div>
   );
 }
 
-export function Sidebar({ folded, back }: { folded: boolean; back: string | null }) {
+export function Sidebar({ folded, back, onTipChange }: { folded: boolean; back: string | null; onTipChange?: TipChange }) {
   const { hosts, now } = useConsolePeers();
   const { project } = useSearch({ from: "__root__" });
   const deps = useContext(PollDepsContext);
@@ -535,7 +624,7 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
   const connection = connectionOf(hosts, footer);
 
   const dot = (
-    <FootTip tip={polled} folded={folded}>
+    <FootTip tip={polled} folded={folded} onTipChange={onTipChange}>
       {(trigger) => (
         <span
           {...trigger}
@@ -554,7 +643,7 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
   );
 
   const settings = (
-    <FootTip tip="Settings" folded={folded}>
+    <FootTip tip="Settings" folded={folded} onTipChange={onTipChange}>
       {(trigger) => (
         <Link
           {...trigger}
@@ -600,57 +689,77 @@ export function Sidebar({ folded, back }: { folded: boolean; back: string | null
 
       <footer className={`mt-auto flex gap-0.5 py-3 ${folded ? "flex-col items-center px-1.5" : "items-center px-3"}`}>
         {dot}
-        <ThemeGroup folded={folded} />
+        <ThemeGroup folded={folded} onTipChange={onTipChange} />
         {settings}
       </footer>
     </aside>
   );
 }
 
-const inPopup = (target: EventTarget | null, drawer: HTMLElement | null) => {
-  const popup = target instanceof Element ? target.closest('[role="dialog"]') : null;
-  return popup != null && popup !== drawer && drawer?.contains(popup) === true;
-};
-
 export function SidebarDrawer({ open, onClose, back }: { open: boolean; onClose: () => void; back: string | null }) {
-  const box = useRef<HTMLDivElement>(null);
-  const live = useRef(onClose);
-  live.current = onClose;
-  useEffect(() => {
-    if (!open) return;
-    box.current?.focus();
-    const keep = (event: KeyboardEvent) => {
-      if (inPopup(event.target, box.current)) return;
-      trap(event, box.current, () => live.current());
-      if (event.key === "Escape") event.stopPropagation();
+  const { before, contentRef: holdWatcherRef } = useNoCloseWatcher(open);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const setContentRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      contentRef.current = el;
+      holdWatcherRef(el);
+    },
+    [holdWatcherRef],
+  );
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    // Block non-touch pointerdown before the drawer's pointer driver so mouse drags stay no-ops while touch swipes still work.
+    const stopDirect = (event: PointerEvent) => {
+      if (event.pointerType !== "touch" && event.target === content) event.stopPropagation();
     };
-    document.addEventListener("keydown", keep, true);
-    return () => document.removeEventListener("keydown", keep, true);
-  }, [open]);
-  return createPortal(
-    <div
-      hidden={!open}
-      onKeyDown={(event) => {
-        if (!event.metaKey && !event.ctrlKey) event.stopPropagation();
-      }}
-      className="fixed inset-x-0 top-[30px] bottom-0 z-50"
-    >
-      <div data-scrim aria-hidden="true" onClick={onClose} className="absolute inset-0 bg-scrim" />
-      <div
-        ref={box}
-        id="sidebar-drawer"
-        role={open ? "dialog" : undefined}
-        aria-modal={open ? "true" : undefined}
-        aria-label={open ? "Sidebar" : undefined}
-        tabIndex={-1}
-        onClick={(event) => {
-          if ((event.target as Element).closest("a[href]")) onClose();
+    const stopInside = (event: PointerEvent) => {
+      if (event.pointerType !== "touch") event.stopPropagation();
+    };
+    const viewport = content.parentElement;
+    const surface = content.firstElementChild instanceof HTMLElement ? content.firstElementChild : null;
+    viewport?.addEventListener("pointerdown", stopDirect, true);
+    surface?.addEventListener("pointerdown", stopInside);
+    return () => {
+      viewport?.removeEventListener("pointerdown", stopDirect, true);
+      surface?.removeEventListener("pointerdown", stopInside);
+    };
+  }, []);
+  return (
+    <>
+      {before}
+      <Drawer
+        open={open}
+        modal={open}
+        side="left"
+        persistentElements={["[data-title-bar]"]}
+        onOpenChange={(next, details) => {
+          if (next) return;
+          // Stop Escape before underlying document fallback listeners run when focus is on the persistent title bar.
+          if (details.reason === "escape-key") details.event?.stopImmediatePropagation();
+          onClose();
         }}
-        className="absolute inset-y-0 left-0 flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
       >
-        <Sidebar folded={false} back={back} />
-      </div>
-    </div>,
-    document.body,
+        <DrawerBackdrop className="fixed inset-x-0 top-[30px] bottom-0 z-50 bg-scrim" />
+        <DrawerContent
+          ref={setContentRef}
+          id={DRAWER_ID}
+          aria-label="Sidebar"
+          keepMounted
+          initialFocus="content"
+          finalFocus="[data-sidebar-toggle]"
+          onKeyDown={(event) => {
+            // Stop non-modifier keys before page shortcuts such as `/`, leaving Escape to the drawer's layer.
+            if (event.key !== "Escape" && !event.metaKey && !event.ctrlKey) event.stopPropagation();
+          }}
+          onClick={(event) => {
+            if ((event.target as Element).closest("a[href]")) onClose();
+          }}
+          className="mt-[30px] flex w-[85%] bg-raised text-ink outline-none shadow-[0_0_0_1px_var(--hair-2),0_10px_28px_light-dark(rgba(29,24,43,.12),rgba(0,0,0,.35))]"
+        >
+          <Sidebar folded={false} back={back} onTipChange={drawerTipChange(open, onClose)} />
+        </DrawerContent>
+      </Drawer>
+    </>
   );
 }

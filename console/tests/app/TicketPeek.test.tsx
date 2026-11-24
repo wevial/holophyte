@@ -93,6 +93,7 @@ test("a card's click opens its peek with key, icon-only Expand and Close, title 
   await act(async () => void fireEvent.click(cardLink("DEMO-3")));
 
   const dialog = screen.getByRole("dialog", { name: "DEMO-3 title" });
+  expect(dialog.getAttribute("aria-modal")).not.toBe("true");
   expect(dialog.querySelector("[data-peek-key]")!.textContent).toBe("DEMO-3");
   const expand = within(dialog).getByRole("link", { name: "Expand to the full ticket page" });
   const close = within(dialog).getByRole("button", { name: "Close preview" });
@@ -110,9 +111,11 @@ test("a card's click opens its peek with key, icon-only Expand and Close, title 
   expect(fact("Run").querySelector("[data-peek-run-state]")!.textContent).toBe("implementing");
   expect(cardLink("DEMO-3").hasAttribute("data-open")).toBe(true);
 
+  await act(async () => cardLink("DEMO-2").focus());
+  expect(document.activeElement === cardLink("DEMO-2")).toBe(true);
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  expect(screen.getByRole("dialog", { name: "DEMO-2 title" })).toBeTruthy();
+  expect(document.activeElement === within(screen.getByRole("dialog", { name: "DEMO-2 title" })).getByRole("button", { name: "Close preview" })).toBe(true);
   expect(fact("Run").textContent).toBe("none yet");
   expect(fact("Time box").textContent).toBe("none");
   expect(cardLink("DEMO-2").hasAttribute("data-open")).toBe(true);
@@ -166,18 +169,34 @@ test("Esc or Close preview shuts the peek and puts focus back on the card that o
   expect(document.activeElement).toBe(cardLink("DEMO-2"));
 
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
+  await act(async () => cardLink("DEMO-3").focus());
+  await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
+  expect(peek()).toBeNull();
+  expect(document.activeElement).toBe(cardLink("DEMO-2"));
+
+  await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   await act(async () => void fireEvent.click(screen.getByRole("button", { name: "Close preview" })));
   expect(peek()).toBeNull();
   expect(document.activeElement).toBe(cardLink("DEMO-2"));
 });
 
-test("Esc another handler already took leaves the peek open", async () => {
+test("Esc another handler already took leaves the peek open, inside the peek or on the board", async () => {
   await mount("#/tickets");
   await act(async () => void fireEvent.click(cardLink("DEMO-2")));
   const taken = (event: Event) => event.preventDefault();
   document.activeElement!.addEventListener("keydown", taken);
   await act(async () => void fireEvent.keyDown(document.activeElement!, { key: "Escape" }));
-  expect(peek()).not.toBeNull();
+  expect(peek() !== null).toBe(true);
+
+  const search = screen.getByRole<HTMLInputElement>("searchbox", { name: "Search tickets" });
+  await act(async () => search.focus());
+  await act(async () => void fireEvent.change(search, { target: { value: "DEMO-2" } }));
+  expect(document.activeElement === search && search.value === "DEMO-2").toBe(true);
+  await act(async () => void fireEvent.keyDown(search, { key: "Escape" }));
+  await act(settle);
+  expect(search.value).toBe("");
+  expect(peek() !== null).toBe(true);
+  expect(document.activeElement === search).toBe(true);
 });
 
 test("a Ctrl click on a card opens no peek and leaves the click's default to the browser", async () => {
@@ -242,7 +261,7 @@ test("a failed ticket's peek asks first under a Needs you heading with one Reque
   expect(within(box).queryByRole("link", { name: "Open run" })).toBeNull();
 });
 
-test("a taken Requeue posts the ticket once and swaps the box for the toast's sentence", async () => {
+test("a taken Requeue posts the ticket once, swaps the box for the toast's sentence and keeps it across a card swap", async () => {
   const action = fakeFetch({ ok: true, detail: "requeued" });
   await peekAt("DEMO-11", action.fetchImpl);
   await press(within(askBox()!).getByRole("button", { name: "Requeue" }));
@@ -252,6 +271,12 @@ test("a taken Requeue posts the ticket once and swaps the box for the toast's se
   expect(askBox()).toBeNull();
   expect(peek()!.querySelector("[data-peek-acted]")!.textContent).toBe("Requeued DEMO-11.");
   expect(toast()).toBe("Requeued DEMO-11.");
+
+  await act(async () => void fireEvent.click(cardLink("DEMO-3")));
+  expect(document.activeElement).toBe(within(peek()!).getByRole("button", { name: "Close preview" }));
+  await act(async () => void fireEvent.click(cardLink("DEMO-11")));
+  expect(askBox()).toBeNull();
+  expect(peek()!.querySelector("[data-peek-acted]")!.textContent).toBe("Requeued DEMO-11.");
 });
 
 test("a refused Requeue keeps the box and its form, shows the daemon's detail and enables Requeue again", async () => {
@@ -285,4 +310,36 @@ test("Esc on the peek's merge dialog shuts the dialog alone and puts focus back 
   expect(screen.queryByRole("alertdialog", { name: "Merge PR #42?" })).toBeNull();
   expect(screen.getByRole("dialog", { name: "DEMO-9 title" })).toBeTruthy();
   expect(document.activeElement).toBe(within(askBox()!).getByRole("button", { name: "Merge" }));
+});
+
+test("on Android Chrome opening a ticket peek registers no CloseWatcher, while a confirm opened from it still sees CloseWatcher", async () => {
+  const host = globalThis as { CloseWatcher?: unknown };
+  const hadWatcher = "CloseWatcher" in host;
+  const previousWatcher = host.CloseWatcher;
+  const previousUa = Object.getOwnPropertyDescriptor(navigator, "userAgent");
+  const created: unknown[] = [];
+  class FakeCloseWatcher extends EventTarget {
+    constructor() {
+      super();
+      created.push(this);
+    }
+    destroy() {}
+  }
+  host.CloseWatcher = FakeCloseWatcher;
+  Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (Linux; Android 14; Pixel 7) Chrome/126.0.0.0 Mobile Safari/537.36" });
+  try {
+    await peekAt("DEMO-9", fakeFetch({ ok: true, detail: "approved" }).fetchImpl);
+    expect(peek()).not.toBeNull();
+    expect(created).toHaveLength(0);
+    expect(host.CloseWatcher).toBe(FakeCloseWatcher);
+
+    await press(within(askBox()!).getByRole("button", { name: "Merge" }));
+    expect(screen.getByRole("alertdialog", { name: "Merge PR #42?" })).toBeTruthy();
+    expect(created).toHaveLength(1);
+  } finally {
+    if (hadWatcher) host.CloseWatcher = previousWatcher;
+    else delete host.CloseWatcher;
+    if (previousUa) Object.defineProperty(navigator, "userAgent", previousUa);
+    else delete (navigator as { userAgent?: string }).userAgent;
+  }
 });
