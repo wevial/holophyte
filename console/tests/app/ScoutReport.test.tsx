@@ -144,24 +144,17 @@ test("a verified citation is described by its base and an unverified one by its 
   await mount(31);
   const f3 = findingRows()[2]!;
   await openCitations(f3);
-  const verified = within(f3).getByText("lotuspod/digest.py:57");
-  const unverified = within(f3).getByText("? lotuspod/digest.py:301 unverified");
-  expect(verified.getAttribute("title")).toBeNull();
-  expect(verified.getAttribute("tabindex")).toBeNull();
-  expect(within(f3).getByRole("generic", { description: "at base a41c9e2" })).toBe(verified);
-  expect(unverified.getAttribute("title")).toBeNull();
-  expect(unverified.getAttribute("tabindex")).toBeNull();
-  expect(within(f3).getByRole("generic", { description: WHY })).toBe(unverified);
   expect(screen.queryByRole("tooltip")).toBeNull();
-
-  await act(async () => void fireEvent.pointerEnter(verified, { pointerType: "mouse" }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe("at base a41c9e2");
-
-  await act(async () => void fireEvent.pointerLeave(verified, { pointerType: "mouse", clientX: 900, clientY: 900 }));
-  await act(async () => void fireEvent.pointerEnter(unverified, { pointerType: "mouse" }));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.getByRole("tooltip").textContent).toBe(WHY);
+  for (const [label, tip] of [["lotuspod/digest.py:57", "at base a41c9e2"], ["? lotuspod/digest.py:301 unverified", WHY]] as const) {
+    const citation = within(f3).getByText(label);
+    expect(citation.getAttribute("title")).toBeNull();
+    expect(citation.getAttribute("tabindex")).toBeNull();
+    expect(within(f3).getByRole("generic", { description: tip })).toBe(citation);
+    await act(async () => void fireEvent.pointerEnter(citation, { pointerType: "mouse" }));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
+    expect(screen.getByRole("tooltip").textContent).toBe(tip);
+    await act(async () => void fireEvent.pointerLeave(citation, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+  }
 });
 
 test("a command chip opens its command and output under the finding and closes again", async () => {
