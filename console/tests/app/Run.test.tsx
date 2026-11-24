@@ -80,7 +80,13 @@ const runs: Record<number, RunDetail> = {
     ],
   },
   56: {
-    ...detail(56, "DEMO-56", { phase: "merge_gate", max_rounds: 3 }, [{ ...passed, round: 1 }, reviewRound(2, "pass", 41, 43), reviewRound(3, "pass", 46, 48), reviewRound(4, "pass", 51, 53)]),
+    ...detail(56, "DEMO-56", { phase: "merge_gate", max_rounds: 3 }, [
+      { ...passed, round: 1 },
+      reviewRound(2, "pass", 41, 43),
+      reviewRound(3, "pass", 46, 48),
+      reviewRound(4, "pass", 51, 53),
+      reviewRound(5, "pass", 56, 58),
+    ]),
     events: [{ at: STARTED + 40 * MINUTE, kind: "babysit_step", summary: "covering_review" }],
   },
   57: {
@@ -362,6 +368,19 @@ test("a reviewing run whose round under way has no row yet shows that round as a
   expect(rounds.getAllByRole("img", { name: "unused round" })).toHaveLength(3);
 });
 
+function scrollTarget(mark: Element): Element {
+  const scrolled: Element[] = [];
+  const scroll = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
+  try {
+    fireEvent.click(mark);
+  } finally {
+    Element.prototype.scrollIntoView = scroll;
+  }
+  expect(scrolled).toHaveLength(1);
+  return scrolled[0]!;
+}
+
 test("a review mark, its round recorded or still under way, scrolls to its own round in Progress", async () => {
   for (const [run, name, round] of [
     [51, "Round 2: changes requested", "Round 2"],
@@ -370,17 +389,9 @@ test("a review mark, its round recorded or still under way, scrolls to its own r
     [54, "Round 3: changes requested", "Review threads"],
   ] as const) {
     await mount(`#/runs/demo/${run}`);
-    const scrolled: Element[] = [];
-    const scroll = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
-    try {
-      fireEvent.click(screen.getByRole("link", { name }));
-    } finally {
-      Element.prototype.scrollIntoView = scroll;
-    }
-    expect(scrolled).toHaveLength(1);
-    expect(screen.getByRole("region", { name: "Progress" }).contains(scrolled[0]!)).toBe(true);
-    expect(scrolled[0]!.querySelector("[data-group-title]")!.textContent).toStartWith(round);
+    const target = scrollTarget(screen.getByRole("link", { name }));
+    expect(screen.getByRole("region", { name: "Progress" }).contains(target)).toBe(true);
+    expect(target.querySelector("[data-group-title]")!.textContent).toStartWith(round);
     cleanup();
   }
 });
@@ -392,14 +403,31 @@ test("a covering review under way links its mark to its round's covering review 
   expect(target?.getAttribute("data-group")).toBe("covering_review");
 });
 
-test("a covering review retried twice shows its three rounds under Merge gate, each linked to its own covering review in Progress", async () => {
+test("a covering review retried three times shows its four rounds under Merge gate, each linked to and scrolling to its own covering review in Progress", async () => {
   await mount("#/runs/demo/56");
-  expect(markNames("Review rounds")).toEqual(["Round 1: pass"]);
+  const list = within(screen.getByRole("region", { name: "Progress" })).getByRole("list", { name: "Run activity" });
+  const reviewMarks = within(screen.getByRole("group", { name: "Review rounds" })).getAllByRole("link");
+  expect(reviewMarks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 1: pass"]);
   const rechecks = within(screen.getByRole("group", { name: "Merge gate rounds" })).getAllByRole("link");
-  expect(rechecks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 2: pass", "Round 3: pass", "Round 4: pass"]);
-  const targets = rechecks.map((mark) => document.getElementById(mark.getAttribute("href")!.slice(1)));
-  expect(targets.map((target) => target?.getAttribute("data-group"))).toEqual(["covering_review", "covering_review", "covering_review"]);
-  expect(new Set(targets).size).toBe(3);
+  expect(rechecks.map((mark) => mark.getAttribute("aria-label"))).toEqual(["Round 2: pass", "Round 3: pass", "Round 4: pass", "Round 5: pass"]);
+
+  const expected = [
+    [reviewMarks[0]!, "round-1", "round", "Round 1"],
+    [rechecks[0]!, "round-2", "covering_review", "Covering review · round 2"],
+    [rechecks[1]!, "round-3", "covering_review", "Covering review · round 3"],
+    [rechecks[2]!, "round-4", "covering_review", "Covering review · round 4"],
+    [rechecks[3]!, "round-5", "covering_review", "Covering review · round 5"],
+  ] as const;
+  const targets = expected.map(([mark, id, kind, title]) => {
+    expect(mark.getAttribute("href")).toBe(`#${id}`);
+    const target = scrollTarget(mark);
+    expect(target).toBe(document.getElementById(id)!);
+    expect(target.parentElement).toBe(list);
+    expect(target.getAttribute("data-group")).toBe(kind);
+    expect(target.querySelector("[data-group-title]")!.textContent).toStartWith(title);
+    return target;
+  });
+  expect(new Set(targets).size).toBe(5);
 });
 
 test("an approved covering review still reviewing, with no later review begun, adds no round and keeps Merge gate current", async () => {

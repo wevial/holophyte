@@ -1,10 +1,11 @@
 import { useContext, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Listbox, ListboxItem, ListboxItemIndicator } from "@ui-sdk/react/listbox";
 import type { Flow } from "../../lib/contract.gen";
 import { projectName } from "../../lib/derive";
 import { BarChart, Change, LineChart, Sparkline, type TrendNumber } from "../components/FlowCharts";
 import { DropIcon } from "../components/icons";
-import { dayRangeLabel, usePopover } from "../components/ListFilters";
+import { dayRangeLabel, ToolPopover } from "../components/ListFilters";
 import { PageHeader } from "../components/PageHeader";
 import { Picker } from "../components/Picker";
 import {
@@ -294,57 +295,71 @@ function Phases({ phases }: { phases: FlowNumbers["phases"] }) {
   );
 }
 
-function CheckMark({ on }: { on: boolean }) {
+function CheckMark() {
   return (
     <svg aria-hidden="true" viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
-      className={`ml-auto size-3.5 shrink-0 text-accent ${on ? "" : "invisible"}`}>
+      className="size-3.5 shrink-0 text-accent">
       <path d="m3.5 8.5 3 3 6-7" />
     </svg>
   );
 }
 
 function RangeControl({ search, choose }: { search: FlowSearch; choose: (change: FlowSearch) => void }) {
-  const { open, setOpen, close, box, button } = usePopover(false);
   const [draft, setDraft] = useState({ from: "", to: "" });
   const custom = search.from != null && search.to != null;
   const preset = presetOf(search.range);
   const field = "h-[30px] w-36 min-w-0 rounded-button border-0 bg-selected px-2 font-mono text-[12.5px] text-ink [color-scheme:inherit] focus:outline-2 focus:outline-offset-1 focus:outline-focus";
-  const toggle = () => {
-    setDraft({ from: search.from ?? "", to: search.to ?? "" });
-    setOpen(!open);
-  };
   const pickDay = (change: Partial<typeof draft>) => {
     const next = { ...draft, ...change };
     setDraft(next);
     if (endedRange(next.from || undefined, next.to || undefined)) choose({ range: undefined, from: next.from, to: next.to });
   };
   return (
-    <div ref={box} className="relative" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-    }}>
-      <button ref={button} type="button" aria-label="Range" aria-haspopup="true" aria-expanded={open} onClick={toggle}
-        className="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-        {custom ? dayRangeLabel(search.from, search.to) : preset.label}
-        <span className="flex text-ink-3"><DropIcon /></span>
-      </button>
-      {open && (
-        <div role="group" aria-label="Range choices" className={`absolute top-full right-0 z-20 mt-1 flex w-[220px] flex-col gap-1 p-1 ${MENU}`}>
-          <div className="flex flex-col">
-            {RANGES.map((each) => {
-              const on = !custom && preset === each;
-              return (
-                <button key={each.value} type="button" aria-pressed={on}
-                  onClick={() => {
-                    choose({ range: each.value === DEFAULT_RANGE ? undefined : each.value, from: undefined, to: undefined });
-                    close();
-                  }}
-                  className="flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button px-2 text-left font-sans text-[13px] text-ink-2 hover:bg-hover hover:text-ink aria-pressed:bg-hover aria-pressed:text-ink">
-                  {each.label}
-                  <CheckMark on={on} />
-                </button>
-              );
-            })}
-          </div>
+    <ToolPopover
+      label="Range choices"
+      dismissOnFocusLoss
+      inPane
+      sideOffset={4}
+      onOpenChange={(open) => { if (open) setDraft({ from: search.from ?? "", to: search.to ?? "" }); }}
+      triggerLabel="Range"
+      triggerClassName="inline-flex min-h-[30px] cursor-pointer items-center gap-2 rounded-button bg-selected py-1.5 pr-2 pl-2.5 text-left font-sans text-[13px] leading-[1.25] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      trigger={
+        <>
+          {custom ? dayRangeLabel(search.from, search.to) : preset.label}
+          <span className="flex text-ink-3"><DropIcon /></span>
+        </>
+      }
+      width={220}
+      className={`flex flex-col gap-1 p-1 ${MENU}`}
+    >
+      {(close) => (
+        <>
+          <Listbox
+            aria-label="Range"
+            activation="manual"
+            deselectable
+            value={custom ? null : preset.value}
+            onValueChange={(next, details) => {
+              const value = next ?? (custom ? undefined : preset.value);
+              if (next == null) details.cancel();
+              if (value != null) choose({ range: value === DEFAULT_RANGE ? undefined : value, from: undefined, to: undefined });
+              close();
+            }}
+            className="flex flex-col outline-none"
+          >
+            {RANGES.map((each) => (
+              <ListboxItem
+                key={each.value}
+                value={each.value}
+                className="flex h-[26px] cursor-pointer items-center gap-2 rounded-button px-2 text-left font-sans text-[13px] text-ink-2 outline-none hover:bg-hover hover:text-ink data-selected:bg-hover data-selected:font-medium data-selected:text-ink focus-visible:bg-hover focus-visible:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                {each.label}
+                <ListboxItemIndicator className="ml-auto inline-flex items-center justify-center">
+                  <CheckMark />
+                </ListboxItemIndicator>
+              </ListboxItem>
+            ))}
+          </Listbox>
           <div className="flex flex-col gap-1.5 border-t border-hair px-2 pt-2 pb-1.5 font-sans text-[12px] text-ink-3">
             <label className="flex items-center justify-between gap-3">
               From
@@ -356,9 +371,9 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
             </label>
             <span className="leading-[1.5]">Whole days back from To, one to 182; To is a past day.</span>
           </div>
-        </div>
+        </>
       )}
-    </div>
+    </ToolPopover>
   );
 }
 
