@@ -100,6 +100,7 @@ interface Daemon {
   scouts?: Record<number, ScoutDetail>;
   actions?: boolean;
   stop?: () => Response;
+  aside?: (body: { item: number; aside: boolean }) => Response;
   list?: ScoutRow[];
 }
 
@@ -116,6 +117,7 @@ function scoutFetch(daemon: Daemon) {
     }
     if (url === `${DEMO}/scouts`) return Response.json({ ...servedScouts, scouts: daemon.list ?? [] });
     if (url === `${DEMO}/actions/scout-stop` && daemon.stop) return daemon.stop();
+    if (url === `${DEMO}/actions/scout-set-aside` && daemon.aside) return daemon.aside(JSON.parse(init!.body as string));
     const answer = await polls(url);
     if (!url.endsWith("/status")) return answer;
     return Response.json({ ...(await answer.json()), actions: daemon.actions ?? true });
@@ -442,14 +444,14 @@ test("Stop asks for a reason, posts it once, closes on ok with focus on Stop and
   const { fetch, seen } = scoutFetch({ scouts: { 31: live }, stop: () => Response.json({ ok: true, detail: "stop requested for scout 31" }) });
   await mount("#/scouts/demo/31", fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
-  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Stop scout 31?" });
   const confirm = within(dialog).getByRole("button", { name: "Stop scout" });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
   await click(confirm);
   const posts = seen.filter((request) => request.method === "POST");
   expect(posts.map((post) => [post.url, post.body])).toEqual([[`${DEMO}/actions/scout-stop`, { scout: 31, note: "wrong project" }]]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(toast()).toBe("Stop sent to scout 31.");
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Stop" }));
 });
@@ -462,7 +464,7 @@ test("a sent stop that ends the scout puts focus on the title once Stop is gone"
   };
   await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies, stop }).fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
-  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Stop scout 31?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
   await click(within(dialog).getByRole("button", { name: "Stop scout" }));
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
@@ -473,12 +475,12 @@ test("a refused stop reads inside the dialog, and Escape closes it with focus ba
   const stop = () => Response.json({ ok: false, detail: "scout 31 runs on another-host" });
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: live }, stop }).fetch);
   await click(screen.getByRole("button", { name: "Stop" }));
-  const dialog = screen.getByRole("dialog", { name: "Stop scout 31?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Stop scout 31?" });
   await act(async () => void fireEvent.change(within(dialog).getByRole("textbox"), { target: { value: "wrong project" } }));
   await click(within(dialog).getByRole("button", { name: "Stop scout" }));
-  expect(within(screen.getByRole("dialog", { name: "Stop scout 31?" })).getByRole("alert").textContent).toBe("scout 31 runs on another-host");
+  expect(within(screen.getByRole("alertdialog", { name: "Stop scout 31?" })).getByRole("alert").textContent).toBe("scout 31 runs on another-host");
   await act(async () => void fireEvent.keyDown(document, { key: "Escape" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Stop" }));
 });
 
@@ -530,16 +532,28 @@ test("a done scout with items to file reads its title, meta line and lead, then 
   expect(screen.queryByRole("region", { name: "Summary" })).toBeNull();
 });
 
-test("the Scout document tablist opens on Decide with its count in its own element, and ArrowRight selects Write-up and focuses it", async () => {
+test("the Scout document tablist opens on Decide with its count in its own element, and arrows, Home and End move selection, focus and roving tabindex", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
   const list = screen.getByRole("tablist", { name: "Scout document" });
-  expect(within(list).getAllByRole("tab").map((tab) => tab.firstChild!.textContent).slice(0, 4)).toEqual(["Decide", "Write-up", "Findings", "Activity"]);
+  const allTabs = within(list).getAllByRole("tab");
+  expect(allTabs.map((tab) => tab.firstChild!.textContent).slice(0, 4)).toEqual(["Decide", "Write-up", "Findings", "Activity"]);
   const decide = within(list).getByRole("tab", { selected: true });
-  expect([decide.firstChild!.textContent, decide.querySelector("[data-tab-count]")!.textContent]).toEqual(["Decide", "2"]);
-  await act(async () => void fireEvent.keyDown(decide, { key: "ArrowRight" }));
-  await settled();
   const writeup = within(list).getByRole("tab", { name: "Write-up" });
-  expect([writeup.getAttribute("aria-selected"), document.activeElement === writeup]).toEqual(["true", true]);
+  const last = allTabs.at(-1)!;
+  const roving = (selected: HTMLElement) => {
+    expect(selected.getAttribute("aria-selected")).toBe("true");
+    expect(allTabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(allTabs.map((tab) => (tab === selected ? "0" : "-1")));
+  };
+  expect([decide.firstChild!.textContent, decide.querySelector("[data-tab-count]")!.textContent]).toEqual(["Decide", "2"]);
+  roving(decide);
+  let active = decide;
+  for (const [key, next] of [["ArrowLeft", last], ["Home", decide], ["End", last], ["Home", decide], ["ArrowRight", writeup]] as const) {
+    await act(async () => void fireEvent.keyDown(active, { key }));
+    await settled();
+    roving(next);
+    expect(document.activeElement).toBe(next);
+    active = next;
+  }
 });
 
 test("the Progress heading reads live beside it while the scout runs, and the run's span once it is done", async () => {
@@ -563,12 +577,19 @@ test("an open wave's helpers read their mode as a tag before route, time and tok
     .toEqual([null, null, null, null, null, ...Array.from({ length: 5 }, () => ["", true])]);
 });
 
-test("choosing Write-up, Findings then Activity shows the write-up, the findings then the activity groups below the same head and lead", async () => {
+test("choosing Write-up, Findings then Activity shows the write-up, the findings then the activity groups below the same head and lead, keeping other panels hidden in the page", async () => {
   await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: writtenUp } }).fetch);
   await click(screen.getByRole("tab", { name: "Write-up" }));
   expect(within(shown()).getAllByRole("heading").map((heading) => [heading.textContent, heading.nextElementSibling!.textContent]))
     .toEqual(WRITEUP.map((section) => [section.heading, section.text]));
-  await click(screen.getByRole("tab", { name: "Findings 4" }));
+  const findingsTab = screen.getByRole("tab", { name: "Findings 4" });
+  await click(findingsTab);
+  const panel = screen.getByRole("tabpanel", { name: "Findings 4" });
+  expect(findingsTab.id).not.toBe("");
+  expect(panel.getAttribute("aria-labelledby")).toBe(findingsTab.id);
+  const allPanels = screen.getAllByRole("tabpanel", { hidden: true });
+  expect(allPanels).toHaveLength(screen.getAllByRole("tab").length);
+  expect(allPanels.filter((each) => !each.hidden)).toEqual([panel]);
   expect(within(within(shown()).getByRole("list", { name: "Findings" })).getAllByRole("listitem")).toHaveLength(4);
   expect(within(shown()).queryByText(WRITEUP[0]!.heading)).toBeNull();
   await showActivity();
@@ -576,6 +597,98 @@ test("choosing Write-up, Findings then Activity shows the write-up, the findings
   expect(within(shown()).getByRole("list", { name: "Scout activity" }).children).toHaveLength(5);
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(TITLE);
   expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent).toBe(HEADLINE);
+});
+
+function oneOpenScout() {
+  const oneOpen = writtenUp.actions.filter((item) => item.kind !== "revise" && item.ticket == null && item.set_aside_ms == null).slice(0, 1);
+  const bodies: Record<number, ScoutDetail> = { 31: { ...writtenUp, actions: oneOpen } };
+  const aside = ({ item, aside: setAside }: { item: number; aside: boolean }) => {
+    const set_aside_ms = setAside ? at(11, 59) : null;
+    bodies[31] = { ...bodies[31]!, actions: bodies[31]!.actions.map((each) => (each.position === item ? { ...each, set_aside_ms } : each)) };
+    return Response.json({ ok: true, scout: 31, item, set_aside_ms, detail: "done" });
+  };
+  return scoutFetch({ scouts: bodies, aside }).fetch;
+}
+
+test("clicking the opening Decide tab keeps it selected and shows Undo after setting aside the last open item", async () => {
+  await mount("#/scouts/demo/31", oneOpenScout());
+  const decideTab = screen.getByRole("tab", { name: "Decide 1" });
+  expect(decideTab.getAttribute("aria-selected")).toBe("true");
+  await click(decideTab);
+  await click(within(shown()).getByRole("button", { name: "Not now" }));
+  expect(screen.getByRole("tab", { name: "Decide" }).getAttribute("aria-selected")).toBe("true");
+  expect(within(shown()).getByRole("button", { name: "Undo" })).toBeTruthy();
+});
+
+test("pressing Home on the opening Decide tab keeps it selected and shows Undo after setting aside the last open item, while Tab leaves it unchosen", async () => {
+  await mount("#/scouts/demo/31", oneOpenScout());
+  let decideTab = screen.getByRole("tab", { name: "Decide 1" });
+  expect(decideTab.getAttribute("aria-selected")).toBe("true");
+  decideTab.focus();
+  expect(document.activeElement).toBe(decideTab);
+  await act(async () => void fireEvent.keyDown(decideTab, { key: "Tab" }));
+  await settled();
+  await click(within(shown()).getByRole("button", { name: "Not now" }));
+  expect(screen.getByRole("tab", { name: "Write-up" }).getAttribute("aria-selected")).toBe("true");
+  cleanup();
+  await mount("#/scouts/demo/31", oneOpenScout());
+  decideTab = screen.getByRole("tab", { name: "Decide 1" });
+  expect(decideTab.getAttribute("aria-selected")).toBe("true");
+  decideTab.focus();
+  expect(document.activeElement).toBe(decideTab);
+  await act(async () => void fireEvent.keyDown(decideTab, { key: "Home" }));
+  await settled();
+  await click(within(shown()).getByRole("button", { name: "Not now" }));
+  expect(screen.getByRole("tab", { name: "Decide" }).getAttribute("aria-selected")).toBe("true");
+  expect(within(shown()).getByRole("button", { name: "Undo" })).toBeTruthy();
+});
+
+test("pressing End on a focused Activity tab selects it after a scout update adds Write-up and shifts the opening selection", async () => {
+  happyDOM.setViewport({ width: 1800, height: 900 });
+  const bodies: Record<number, ScoutDetail> = { 31: live };
+  const queries = await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies }).fetch);
+  const activityTab = screen.getByRole("tab", { name: "Activity" });
+  expect(screen.getAllByRole("tab")).toEqual([activityTab]);
+  activityTab.focus();
+  expect(document.activeElement).toBe(activityTab);
+  bodies[31] = { ...writtenUp, actions: [] };
+  await act(async () => {
+    await queries.refetchQueries();
+  });
+  await settled();
+  expect(tabs()).toEqual([["Write-up", "true"], ["Findings 4", "false"], ["Activity", "false"]]);
+  expect(document.activeElement).toBe(activityTab);
+  await act(async () => void fireEvent.keyDown(activityTab, { key: "End" }));
+  await settled();
+  expect(tabs()).toEqual([["Write-up", "false"], ["Findings 4", "false"], ["Activity", "true"]]);
+  expect(screen.getByRole("tabpanel", { name: "Activity" })).toBe(shown());
+  expect(activityTab.getAttribute("tabindex")).toBe("0");
+  expect(document.activeElement).toBe(activityTab);
+});
+
+test("leaving a live Activity panel hides it immediately while its running pulse animates", async () => {
+  const followUp: ScoutDetail = {
+    ...writtenUp,
+    scout: { ...writtenUp.scout, phase: "swarming", ended_ms: null },
+    actions: [],
+  };
+  const infinite = { effect: { getComputedTiming: () => ({ endTime: Number.POSITIVE_INFINITY, localTime: 0 }) }, finished: new Promise<void>(() => {}) };
+  const animations = spyOn(Element.prototype, "getAnimations").mockImplementation(function (this: Element) {
+    return this.querySelector(".state-pulse") ? [infinite as unknown as Animation] : [];
+  });
+  try {
+    await mount("#/scouts/demo/31", scoutFetch({ scouts: { 31: followUp } }).fetch);
+    await showActivity();
+    expect(shown().querySelector(".state-pulse")).toBeTruthy();
+    const findingsTab = screen.getByRole("tab", { name: "Findings 4" });
+    act(() => void fireEvent.click(findingsTab));
+    const panels = screen.getAllByRole("tabpanel", { hidden: true });
+    expect(panels).toHaveLength(screen.getAllByRole("tab").length);
+    expect(panels.filter((panel) => !panel.hidden).map((panel) => panel.getAttribute("aria-labelledby"))).toEqual([findingsTab.id]);
+    await settled();
+  } finally {
+    animations.mockRestore();
+  }
 });
 
 test("a report with no write-up and nothing to file opens on Findings with no Decide or Write-up tab", async () => {
@@ -702,7 +815,7 @@ test("a scout with no thread has no chat drawer, Chat button or Chat tab", async
   }
 });
 
-test("a draft and its Steer mode survive folding and reopening the chat and crossing the chat's breakpoint", async () => {
+test("a draft and its Steer mode survive folding and reopening the chat, crossing the chat's breakpoint and switching tabs", async () => {
   let width = 1800;
   const listeners = new Set<() => void>();
   const media = spyOn(window, "matchMedia").mockImplementation((query: string) => ({
@@ -727,8 +840,17 @@ test("a draft and its Steer mode survive folding and reopening the chat and cros
     await settled();
     expect(chat()).toBeNull();
     await click(screen.getByRole("tab", { name: "Chat · 2" }));
-    expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(note());
-    expect(note().value).toBe("Check the digest too");
+    const composerInTab = note();
+    expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(composerInTab);
+    expect(composerInTab.value).toBe("Check the digest too");
+    await act(async () => void fireEvent.change(composerInTab, { target: { value: "Check the digest and the sweep" } }));
+    await click(screen.getByRole("tab", { name: "Findings 4" }));
+    expect(screen.getByRole("tabpanel", { name: "Findings 4" })).toBe(shown());
+    expect(within(shown()).queryByRole("textbox", { name: "Note to the scout" })).toBeNull();
+    await click(screen.getByRole("tab", { name: "Chat · 2" }));
+    expect(screen.getByRole("tabpanel", { name: "Chat · 2" })).toBe(shown());
+    expect(within(shown()).getByRole("textbox", { name: "Note to the scout" })).toBe(composerInTab);
+    expect(composerInTab.value).toBe("Check the digest and the sweep");
   } finally {
     media.mockRestore();
   }

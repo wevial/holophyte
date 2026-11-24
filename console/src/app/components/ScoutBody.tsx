@@ -1,4 +1,5 @@
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "@ui-sdk/react/tabs";
 import type { ScoutDetail } from "../../lib/contract.gen";
 import { formatSpan } from "../../lib/format";
 import { numberFindings, type ScoutPage } from "../scout";
@@ -139,9 +140,7 @@ export function ScoutBody({ page, project, composeRef }: { page: Shown; project:
 
 export type TabId = "decide" | "writeup" | "findings" | "activity" | "chat";
 
-const TAB = "group inline-flex h-7 cursor-pointer items-center gap-[7px] rounded-[6px] border-0 px-2.5 font-sans text-[13px] font-medium leading-none";
-const TAB_ON = "bg-selected text-ink";
-const TAB_OFF = "bg-transparent text-ink-2 hover:text-ink";
+const TAB = "group inline-flex h-7 cursor-pointer items-center gap-[7px] rounded-[6px] border-0 bg-transparent px-2.5 font-sans text-[13px] font-medium leading-none text-ink-2 hover:text-ink data-selected:bg-selected data-selected:text-ink";
 
 /** Spaces the Thread as a chat: its own heading kept for readers only, under the slot's title. */
 export const CHAT_SLOT = "[&>div>section]:mt-0 [&>div>section>h2]:sr-only";
@@ -161,7 +160,6 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
 }) {
   const { detail, base } = page;
   const { scout } = detail;
-  const prefix = useId();
   const writeup = newestReport(detail)?.writeup ?? [];
   const open = toFile(detail.actions);
   const tabs: { id: TabId; label: string; count?: number; className?: string; body: ReactNode }[] = [
@@ -179,38 +177,49 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
       id: "chat" as const, label: "Chat ·", count: chat.count, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
+  const changedBy = useRef<Event | null>(null);
+  const wasPrevented = useRef(false);
   const opening = open > 0 ? tabs[0]! : tabs.find((tab) => tab.id !== "decide")!;
   const current = tabs.find((tab) => tab.id === chosen) ?? opening;
-  const tabRefs = useRef(new Map<TabId, HTMLButtonElement>());
-  const onKeyDown = (event: KeyboardEvent) => {
-    const at = tabs.indexOf(current);
-    const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1 }[event.key];
-    if (to == null) return;
-    event.preventDefault();
-    const next = tabs[(to + tabs.length) % tabs.length]!;
-    onChoose(next.id);
-    tabRefs.current.get(next.id)?.focus();
-  };
   return (
-    <>
-      <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2">
-        <div role="tablist" aria-label="Scout document" onKeyDown={onKeyDown} className="flex flex-wrap gap-0.5">
+    <Tabs<TabId> value={current.id} onValueChange={(value, details) => {
+      changedBy.current = details.event ?? null;
+      if (value) onChoose(value);
+    }}>
+      {/* SDK skips onValueChange when a click repeats the selection or a navigation key lands on the selected or focused tab. */}
+      <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2"
+        onKeyDownCapture={(event) => {
+          wasPrevented.current = event.isDefaultPrevented();
+          changedBy.current = null;
+        }}
+        onKeyDown={(event) => {
+          if (!wasPrevented.current && event.isDefaultPrevented() && changedBy.current !== event.nativeEvent) {
+            const elements = Array.from(event.currentTarget.querySelectorAll('[role="tab"]'));
+            const target = event.target instanceof Element ? elements.indexOf(event.target) : -1;
+            if (target !== -1) {
+              const active = document.activeElement instanceof Element ? elements.indexOf(document.activeElement) : -1;
+              const landed = tabs[active !== -1 ? active : target];
+              if (landed) onChoose(landed.id);
+            }
+          }
+          changedBy.current = null;
+        }}>
+        <TabsList aria-label="Scout document" className="flex flex-wrap gap-0.5">
           {tabs.map((tab) => (
-            <button key={tab.id} ref={(node) => void (node ? tabRefs.current.set(tab.id, node) : tabRefs.current.delete(tab.id))}
-              type="button" role="tab" id={`${prefix}-${tab.id}-tab`} aria-controls={`${prefix}-${tab.id}`} aria-selected={tab === current}
-              tabIndex={tab === current ? 0 : -1} onClick={() => onChoose(tab.id)} className={`${TAB} ${tab === current ? TAB_ON : TAB_OFF} ${tab.className ?? ""}`}>
+            <TabsTab key={tab.id} value={tab.id} onClick={tab.id === current.id ? () => onChoose(tab.id) : undefined}
+              className={tab.className ? `${TAB} ${tab.className}` : TAB}>
               {tab.label}
-              {tab.count != null && <> <span data-tab-count className="font-mono text-[12px] font-normal text-ink-3 group-aria-selected:text-ink-2">{tab.count}</span></>}
-            </button>
+              {tab.count != null && <> <span data-tab-count className="font-mono text-[12px] font-normal text-ink-3 group-data-selected:text-ink-2">{tab.count}</span></>}
+            </TabsTab>
           ))}
-        </div>
+        </TabsList>
       </div>
       {tabs.map((tab) => (
-        <div key={tab.id} role="tabpanel" id={`${prefix}-${tab.id}`} aria-labelledby={`${prefix}-${tab.id}-tab`} tabIndex={0} hidden={tab !== current}
-          className="pt-5 [&>:first-child]:mt-0">
+        // Hide non-current panels on the first frame so descendant animations cannot delay panel exit.
+        <TabsPanel key={tab.id} value={tab.id} keepMounted hidden={tab !== current} className="pt-5 [&>:first-child]:mt-0">
           {tab.body}
-        </div>
+        </TabsPanel>
       ))}
-    </>
+    </Tabs>
   );
 }

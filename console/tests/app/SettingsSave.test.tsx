@@ -55,7 +55,7 @@ async function mount(options: { status?: number; error?: string; configEdit?: bo
 function edit() { fireEvent.click(screen.getByRole("button", { name: "One more worker" })); }
 const saveButton = () => within(unsaved()!).getByRole("button", { name: "Save" }) as HTMLButtonElement;
 function review() { fireEvent.click(saveButton()); }
-const dialog = () => screen.getByRole("dialog", { name: "Save these changes?" });
+const dialog = () => screen.getByRole("alertdialog", { name: "Save these changes?" });
 const unsaved = () => screen.queryByRole("region", { name: "Unsaved changes" });
 async function save() {
   fireEvent.click(within(dialog()).getByRole("button", { name: "Save" }));
@@ -81,7 +81,7 @@ test("review lists the old and new TOML lines in order and Keep editing preserve
   expect(confirm.getByText("Applies at the next loop start.")).toBeTruthy();
   expect(confirm.getByText("Runs in flight keep the settings they started with.")).toBeTruthy();
   fireEvent.click(confirm.getByRole("button", { name: "Keep editing" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(unsaved()?.textContent).toContain("1 change");
   expect(source.writes).toHaveLength(0);
 });
@@ -110,7 +110,7 @@ test("save sends one revision-checked patch, re-reads config, clears the draft a
   expect(JSON.parse(String(source.writes[0]!.body))).toEqual({ patch: { "loop.workers": 3 } });
   expect(source.reads()).toBeGreaterThan(reads);
   expect(unsaved()).toBeNull();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   const banner = screen.getAllByRole("status").find((item) => item.textContent?.includes("Saved config.toml at revision"));
   expect(banner).toBeTruthy();
   expect(banner!.textContent).toContain("Saved config.toml at revision 92b73d4.");
@@ -158,7 +158,7 @@ test.each([false, true])("a completed save does not restore discarded fields wit
   await act(async () => { window.history.back(); await settle(); });
   expect(screen.getByText("No host is available for other.")).toBeTruthy();
   await act(async () => { window.history.forward(); await settle(); });
-  expect(screen.queryByRole("dialog") === null).toBe(true);
+  expect(screen.queryByRole("alertdialog") === null).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   expect(unsaved()).toBeNull();
   if (newDraft) fireEvent.click(screen.getByRole("button", { name: "Human" }));
@@ -190,7 +190,7 @@ test("a named refusal closes the dialog and places the daemon sentence under Wor
   const source = await mount({ status: 400, error: refusal });
   const reads = source.reads();
   edit(); review(); await save();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(within(screen.getByRole("group", { name: "Workers" })).getByRole("alert").textContent).toBe(refusal);
   expect(unsaved()).toBeTruthy();
   expect(source.reads()).toBeGreaterThan(reads);

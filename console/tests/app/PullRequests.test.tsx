@@ -249,7 +249,7 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
       fireEvent.click(within(row()).getByRole("button", { name: "Mark ready for review" }));
       await settle();
     });
-    const confirm = within(screen.getByRole("dialog", { name: "Mark #45 ready for review?" }));
+    const confirm = within(screen.getByRole("alertdialog", { name: "Mark #45 ready for review?" }));
     expect(confirm.getByText("Review bots and the full checks start on GitHub.")).toBeTruthy();
     await act(async () => {
       fireEvent.click(confirm.getByRole("button", { name: "Mark ready for review" }));
@@ -264,13 +264,13 @@ test("Mark ready for review confirms, posts the run and toasts on a draft with a
   const posts = seen.filter((request) => request.method === "POST");
   expect(posts.map(({ url, body }) => ({ url, body }))).toEqual([{ url: `${DEMO}/actions/mark-ready`, body: { run: 12 } }]);
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Marked #45 ready for review.");
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   unmount();
 
   await mount({ items: [draftPark], actions: true, readyRuns: [], markReady: { ok: false, detail: "run 12 is not a draft held for review" } });
   await openRow(12);
   await markReady();
-  expect(within(screen.getByRole("dialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
+  expect(within(screen.getByRole("alertdialog")).getByRole("alert").textContent).toBe("run 12 is not a draft held for review");
   expect(waits()).toEqual([["Draft · 1h", "1h"]]);
 });
 
@@ -285,7 +285,7 @@ test("an ok Mark ready turns #45's Waiting row On CI at once, and the read after
     await settle();
   });
   await act(async () => {
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark ready for review" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Mark ready for review" }));
     await settle();
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
@@ -318,7 +318,7 @@ const TOKEN = "tok-478";
 const detailButton = (name: string) => within(rows()[0]!.querySelector<HTMLElement>("[data-pr-detail]")!).queryByRole("button", { name });
 const pressMerge = async (name: string) => {
   await act(async () => {
-    fireEvent.click(name === "Merge" ? detailButton("Merge")! : within(screen.getByRole("dialog")).getByRole("button", { name }));
+    fireEvent.click(name === "Merge" ? detailButton("Merge")! : within(screen.getByRole("alertdialog")).getByRole("button", { name }));
     await settle();
   });
   for (let round = 0; round < 2; round += 1) await act(settle);
@@ -331,12 +331,12 @@ test("an opened ready-to-merge row leads with Merge, whose confirmed dialog post
   expect(detailButton("Merge")!.dataset.variant).toBe("primary");
   expect(within(rows()[0]!).getByRole("link", { name: "Open PR to review" }).dataset.variant).toBe("quiet");
   await pressMerge("Merge");
-  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Merge PR #42?" });
   const safe = within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li");
   expect([...safe].map((fact) => fact.textContent)).toEqual(ready.facts.map((fact) => fact.detail));
   expect(dialog.textContent).toContain("The console cannot undo a merge");
   fireEvent.keyDown(within(dialog).getByRole("button", { name: "Cancel" }), { key: "Escape" });
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(seen.filter((request) => request.method === "POST")).toEqual([]);
   await pressMerge("Merge");
   await pressMerge("Merge PR #42");
@@ -344,7 +344,7 @@ test("an opened ready-to-merge row leads with Merge, whose confirmed dialog post
   expect(posts.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
     { url: `${DEMO}/actions/merge`, body: { run: 9 }, authorization: `Bearer ${TOKEN}` },
   ]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Approved PR #42. The loop merges it on its next claim.");
 });
 
@@ -353,7 +353,7 @@ test("a refused merge keeps the row's dialog open with the daemon's reason and i
   await openRow(9);
   await pressMerge("Merge");
   await pressMerge("Merge PR #42");
-  const dialog = screen.getByRole("dialog", { name: "Merge PR #42?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Merge PR #42?" });
   expect(within(dialog).getByRole("alert").textContent).toBe("GitHub's review decision is REVIEW_REQUIRED");
   const confirm = within(dialog).getByRole("button", { name: "Merge PR #42" });
   expect(confirm.hasAttribute("disabled")).toBe(false);
@@ -422,7 +422,7 @@ test("Merge without review confirms over the readiness facts with the review fac
   const seen = await mount({ items: [readyPark], actions: true, answers: bypassAnswer });
   await openRow(9);
   await pressBypass();
-  const dialog = screen.getByRole("dialog", { name: "Merge PR #42 without its review?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Merge PR #42 without its review?" });
   const safe = [...within(dialog).getByRole("list", { name: "Why it is safe" }).querySelectorAll("li")];
   expect(safe.map((fact) => fact.textContent)).toEqual(bypassable.facts.map((fact) => fact.detail));
   const icons = safe.map((fact) => fact.querySelector("svg")!.getAttribute("class") ?? "");
@@ -430,7 +430,7 @@ test("Merge without review confirms over the readiness facts with the review fac
   expect(dialog.textContent).toContain("The console cannot undo a merge");
   expect(within(dialog).getByRole("button", { name: "Merge PR #42" }).dataset.variant).toBe("danger-fill");
   fireEvent.keyDown(within(dialog).getByRole("button", { name: "Cancel" }), { key: "Escape" });
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(seen.filter((request) => request.method === "POST")).toEqual([]);
   await pressBypass();
   await pressMerge("Merge PR #42");
@@ -438,7 +438,7 @@ test("Merge without review confirms over the readiness facts with the review fac
   expect(posts.map(({ url, body, authorization }) => ({ url, body, authorization }))).toEqual([
     { url: `${DEMO}/actions/merge`, body: { run: 9, bypass_review: true }, authorization: `Bearer ${TOKEN}` },
   ]);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("alertdialog")).toBeNull();
   expect(document.querySelector("[data-toast]")?.textContent).toBe("Approved PR #42 without its review. The loop merges it on its next claim.");
 });
 
@@ -448,7 +448,7 @@ test("a refused bypass merge keeps its dialog open with the daemon's detail and 
   await openRow(9);
   await pressBypass();
   await pressMerge("Merge PR #42");
-  const dialog = screen.getByRole("dialog", { name: "Merge PR #42 without its review?" });
+  const dialog = screen.getByRole("alertdialog", { name: "Merge PR #42 without its review?" });
   expect(within(dialog).getByRole("alert").textContent).toBe(detail);
   expect(within(dialog).getByRole("button", { name: "Merge PR #42" }).hasAttribute("disabled")).toBe(false);
   expect(document.querySelector("[data-toast]")?.textContent ?? "").toBe("");
@@ -570,12 +570,21 @@ test("a tile opens its item in a lightbox that Left and Right step through scree
   expect((within(dialog()!).getByRole("button", { name: "Previous" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
+async function waitInert(element: HTMLElement) {
+  for (let attempt = 0; attempt < 25 && element.closest("[inert]") == null; attempt += 1) {
+    await act(() => new Promise<void>((resolve) => setTimeout(resolve, 10)));
+  }
+  expect(element.closest("[inert]")).not.toBeNull();
+}
+
 test("the lightbox keeps focus inside, and Esc or Close returns it to the tile of the item shown last", async () => {
   await openMedia("02 custom slot");
   await press("ArrowRight");
   expect(dialog()!.getAttribute("aria-label")).toBe("Screenshot 3 of 4");
+  await waitInert(tile("03 saved document"));
   await press("Escape");
   expect(dialog()).toBeNull();
+  expect(tile("03 saved document").closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(tile("03 saved document"));
 
   await act(async () => {
@@ -588,12 +597,28 @@ test("the lightbox keeps focus inside, and Esc or Close returns it to the tile o
   expect(document.activeElement).toBe(within(dialog()!).getByRole("button", { name: "Next" }));
   await press("Tab");
   expect(document.activeElement).toBe(close);
+  await waitInert(tile("01 split view"));
   await act(async () => {
     fireEvent.click(close);
     await settle();
   });
   expect(dialog()).toBeNull();
+  expect(tile("01 split view").closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(tile("01 split view"));
+});
+
+test("pressing the dimmed page beside the lightbox leaves it open", async () => {
+  await openMedia("02 custom slot");
+  const backdrop = document.querySelector<HTMLElement>('[data-slot="dialog-backdrop"]');
+  expect(backdrop).toBeTruthy();
+  await waitInert(tile("02 custom slot"));
+  await act(async () => {
+    fireEvent.pointerDown(backdrop!, { button: 0 });
+    fireEvent.pointerUp(backdrop!, { button: 0 });
+    fireEvent.click(backdrop!);
+    await settle();
+  });
+  expect(screen.getByRole("dialog", { name: "Screenshot 2 of 4" })).toBeTruthy();
 });
 
 test("a poll that leaves the row no media closes the lightbox onto Open run, and returning media does not reopen it", async () => {
@@ -605,6 +630,7 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
     await settle();
   });
   expect(dialog()).not.toBeNull();
+  await waitInert(within(rows()[0]!).getByRole("link", { name: "Open run" }));
   const pr = item.pr as { screenshots: unknown[]; videos: unknown[] };
   const repoll = async () => {
     await act(async () => {
@@ -618,6 +644,7 @@ test("a poll that leaves the row no media closes the lightbox onto Open run, and
   await repoll();
   expect(dialog()).toBeNull();
   expect(tileNames(rows()[0]!)).toEqual([]);
+  expect(within(rows()[0]!).getByRole("link", { name: "Open run" }).closest("[inert]")).toBeNull();
   expect(document.activeElement).toBe(within(rows()[0]!).getByRole("link", { name: "Open run" }));
 
   pr.screenshots = SHOTS;
