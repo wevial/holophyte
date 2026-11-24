@@ -18,6 +18,13 @@ function MergedPr({ url, sha }: { url: string; sha: string | null }) {
   return sha ? <Hint tip={sha} describe>{link}</Hint> : link();
 }
 
+function ProjectDot({ project, colour }: { project: string; colour: string | undefined }) {
+  const dot = (trigger?: Record<string, unknown>) => (
+    <span {...trigger} role="img" aria-label={project} className="block size-1.5 rounded-full bg-ink-3" style={{ background: colour }} />
+  );
+  return project ? <Hint tip={project}>{dot}</Hint> : dot();
+}
+
 /** Today's merges as hairline rows, newest first, each with its project's dot. */
 export function MergedToday({ rows, colours }: { rows: ShippedRow[]; colours: Map<string, string> }) {
   return (
@@ -34,11 +41,7 @@ export function MergedToday({ rows, colours }: { rows: ShippedRow[]; colours: Ma
             <TitleText>{row.title ?? row.ticket}</TitleText>
           </span>
           <span className="flex items-center gap-3 whitespace-nowrap">
-            <Hint tip={row.project}>
-              {(trigger) => (
-                <span {...trigger} role="img" aria-label={row.project} className="block size-1.5 rounded-full bg-ink-3" style={{ background: colours.get(row.project) }} />
-              )}
-            </Hint>
+            <ProjectDot project={row.project} colour={colours.get(row.project)} />
             {row.pr_url ? <MergedPr url={row.pr_url} sha={row.merge_sha} /> : <Sha row={row} />}
             <time>{formatClock(row.ended_ms)}</time>
           </span>

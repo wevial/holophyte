@@ -67,13 +67,15 @@ test("the console's Archivo request covers weight 220 and width 125", async () =
   expect(range.wdth[1]).toBeGreaterThanOrEqual(125);
 });
 
+const tooltip = () => screen.queryByRole("tooltip")?.textContent ?? null;
+
 test("the glyph counts are images labelled with the running, pull request, queued and merged today counts", async () => {
   const merges = Array.from({ length: 25 }, (_, index) => merged(100 + index, `DEMO-${100 + index}`, NOW - (index + 1) * 10 * MINUTE));
   await mount("#/", fleet({ items: [ciPark], runs: threeRuns, shipped: merges }, { items: [prPark] }));
   for (const name of ["3 running", "2 waiting on a pull request", "0 queued", "25 merged today"]) {
     const glyph = screen.getByRole("img", { name });
     expect([glyph.getAttribute("title"), glyph.getAttribute("aria-describedby"), glyph.getAttribute("tabindex")]).toEqual([null, null, null]);
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(tooltip()).toBeNull();
 
     await act(async () => void fireEvent.pointerEnter(glyph, { pointerType: "mouse" }));
     await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
@@ -81,7 +83,7 @@ test("the glyph counts are images labelled with the running, pull request, queue
 
     await act(async () => void fireEvent.pointerLeave(glyph, { pointerType: "mouse", clientX: 900, clientY: 900 }));
     await act(settle);
-    expect(screen.queryByRole("tooltip")).toBeNull();
+    expect(tooltip()).toBeNull();
   }
   expect(within(screen.getByRole("region", { name: "Waiting" })).getAllByRole("listitem")).toHaveLength(2);
 });
@@ -101,7 +103,7 @@ test("Merged today's project dot and Today's log link show their hints as toolti
   expect(screen.getByRole("tooltip").textContent).toBe("demo");
   await act(async () => void fireEvent.pointerLeave(dot, { pointerType: "mouse", clientX: 900, clientY: 900 }));
   await act(settle);
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
 
   const pr = within(first!).getByRole("link", { name: "#11" });
   expect(pr.getAttribute("title")).toBeNull();
@@ -114,7 +116,7 @@ test("Merged today's project dot and Today's log link show their hints as toolti
   });
   expect(screen.getByRole("tooltip").textContent).toBe(sha);
   await act(async () => pr.blur());
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
 
   const plainPr = within(second!).getByRole("link", { name: "#12" });
   expect([plainPr.getAttribute("title"), plainPr.getAttribute("aria-describedby")]).toEqual([null, null]);
@@ -122,7 +124,7 @@ test("Merged today's project dot and Today's log link show their hints as toolti
     fireEvent.keyDown(document.body, { key: "Tab" });
     plainPr.focus();
   });
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
   await act(async () => plainPr.blur());
 
   const filterLog = screen.getByRole("link", { name: "Filter Today's log" });
@@ -133,7 +135,7 @@ test("Merged today's project dot and Today's log link show their hints as toolti
   });
   expect(screen.getByRole("tooltip").textContent).toBe("Filter Today's log");
   await act(async () => filterLog.blur());
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
 });
 
 test("a merge from a peer whose status failed keeps its project dot without opening an empty tooltip", async () => {
@@ -147,7 +149,7 @@ test("a merge from a peer whose status failed keeps its project dot without open
 
   await act(async () => void fireEvent.pointerEnter(dot, { pointerType: "mouse" }));
   await act(() => new Promise((resolve) => setTimeout(resolve, 200)));
-  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(tooltip()).toBeNull();
 });
 
 test("with five merges today, Merged today lists the three newest and a 2 more link to Runs filtered to merged runs started today", async () => {
