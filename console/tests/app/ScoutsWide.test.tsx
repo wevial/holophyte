@@ -269,10 +269,21 @@ test("a failed row in the wide scout list shows the cut reason, described by the
     expect(tip.classList.contains("overflow-y-auto")).toBe(true);
     expect(tip.className).toContain("max-h-[var(--available-height");
     expect(link.contains(tip)).toBe(false);
+    expect(failed.contains(tip)).toBe(true);
+    expect(link.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(failed).getByRole("link", { name: closedLinkName })).toBe(link);
     expect(within(failed).getByRole("generic", { description: long })).toBe(cut);
+    await act(async () => void fireEvent.mouseDown(tip));
+    expect(tip.getAttribute("tabindex")).toBeNull();
     await click(tip);
     expect(path()).toBe("#/scouts");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    await act(async () => tip.focus());
+    expect(document.activeElement).not.toBe(tip);
+    await act(async () => void fireEvent.pointerLeave(tip, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   } finally {
     if (showPopover) Object.defineProperty(HTMLElement.prototype, "showPopover", showPopover);
     else delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover;

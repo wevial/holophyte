@@ -221,10 +221,21 @@ test("a failed row shows at most 160 characters of its reason, the whole line in
     expect(tip.classList.contains("whitespace-normal!")).toBe(true);
     expect(tip.className).toContain("max-h-[var(--available-height");
     expect(link.contains(tip)).toBe(false);
+    expect(row41.contains(tip)).toBe(true);
+    expect(link.compareDocumentPosition(tip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(row41).getByRole("link", { name: closedLinkName })).toBe(link);
     expect(within(row41).getByRole("generic", { description: long })).toBe(cut);
+    await act(async () => void fireEvent.mouseDown(tip));
+    expect(tip.getAttribute("tabindex")).toBeNull();
     await click(tip);
     expect(window.location.hash).toBe("#/scouts?project=demo");
+    await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+    expect(tip.getAttribute("tabindex")).toBe("-1");
+    await act(async () => tip.focus());
+    expect(document.activeElement).not.toBe(tip);
+    await act(async () => void fireEvent.pointerLeave(tip, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
     expect(readRow(40).reason).toBe(short);
     expect(readRow(40).text).not.toContain("…");
   } finally {

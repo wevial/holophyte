@@ -160,7 +160,17 @@ test("a verified citation is described by its base and an unverified one by its 
     expect(popup.getAttribute("tabindex")).toBe(wrapped ? "-1" : null);
     expect(popup.classList.contains("overflow-y-auto")).toBe(wrapped);
     expect(popup.classList.contains("leading-[1.35]!")).toBe(wrapped);
+    if (wrapped) {
+      await act(async () => void fireEvent.mouseDown(popup));
+      expect(popup.getAttribute("tabindex")).toBeNull();
+      await act(() => new Promise((resolve) => setTimeout(resolve, 10)));
+      expect(popup.getAttribute("tabindex")).toBe("-1");
+      await act(async () => popup.focus());
+      expect(document.activeElement).not.toBe(popup);
+    }
     await act(async () => void fireEvent.pointerLeave(citation, { pointerType: "mouse", clientX: 900, clientY: 900 }));
+    await act(settle);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   }
 });
 
