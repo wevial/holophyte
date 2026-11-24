@@ -886,10 +886,8 @@ class VisualEvidencePromptTests(unittest.TestCase):
 DOCKER_ARGV_SHIM = """#!{python}
 import json, os, sys
 args = sys.argv[1:]
-if args[:1] == ["inspect"]:
-    sys.exit(1)
 if args[:1] != ["run"]:
-    sys.exit(0)
+    sys.exit(1 if args[:1] == ["inspect"] else 0)
 with open(os.environ["HOLOPHYTE_DOCKER_LOG"], "a") as log:
     log.write(json.dumps(args) + "\\n")
 print("PREFLIGHT_OK candidate=shim", file=sys.stderr, flush=True)
@@ -934,9 +932,8 @@ class ReviewMemoryTests(unittest.TestCase):
         auth.write_text("{}")
         argv_log = Path(env["HOLOPHYTE_DOCKER_LOG"])
         self.enterContext(patch.dict(os.environ, env))
-        for attr, value in (("SCRATCH_ROOT", self.root / "reviews"),
-                            ("CODEX_AUTH", auth)):
-            self.enterContext(patch.object(review_runner, attr, value))
+        self.enterContext(patch.multiple(
+            review_runner, SCRATCH_ROOT=self.root / "reviews", CODEX_AUTH=auth))
 
         fallback_cfg = ('review_fallback_model = "gpt-5.6-sol"\n'
                         'review_fallback_effort = "medium"\n')
@@ -953,8 +950,7 @@ class ReviewMemoryTests(unittest.TestCase):
                 roles.container_review(
                     self.configure(mem + route), role, "judge the candidate",
                     self.repo, base, candidate, None, None, fallback)
-                (run,) = [json.loads(line)
-                          for line in argv_log.read_text().splitlines()]
+                (run,) = map(json.loads, argv_log.read_text().splitlines())
                 docker_flags = run[:run.index(review_runner.IMAGE)]
                 shell = run.index("/bin/sh")
                 self.assertEqual(self._memory_flags(docker_flags), [flag])
