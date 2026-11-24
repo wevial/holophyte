@@ -1137,7 +1137,6 @@ body {
 [data-slot="toast-region"] {
   --toast-gap: 10px;
   --toast-peek: 10px;
-  position: fixed;
   bottom: calc(24px + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px));
   inset-inline-end: calc(24px + env(safe-area-inset-right, 0px));
   width: min(480px, calc(100vw - 48px));
@@ -1149,12 +1148,6 @@ body {
 [data-slot="toast-region"][role="region"][data-expanded] {
   height: calc(var(--toast-stack-height, 0px) + max(0, var(--toast-count, 1) - 1) * var(--toast-gap));
   pointer-events: auto;
-}
-
-[data-slot="toast-list"] {
-  margin: 0;
-  padding: 0;
-  list-style: none;
 }
 
 [data-slot="toast"] {
