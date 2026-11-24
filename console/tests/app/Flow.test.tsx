@@ -226,22 +226,18 @@ test("a host's answer whose days end before today is left out of All projects, y
 const QUIET = { merged: 0, interventions: 0, working: 0, waiting: 0 };
 const HIGH_WAIT = { merged: 2, interventions: 1, working: 1, waiting: 3 };
 const LOW_WAIT = { merged: 4, interventions: 2, working: 3, waiting: 1 };
+const SIXTH_QUIET = [LOW_WAIT, HIGH_WAIT, LOW_WAIT, HIGH_WAIT, HIGH_WAIT, QUIET, LOW_WAIT];
 
 function dailyFlow(specs: (typeof QUIET)[]): Flow {
   const now = Date.now();
-  return {
-    now,
-    buckets: specs.map((spec, index) => ({
-      start_ms: daysBack(specs.length - 1 - index, now),
-      merged: spec.merged,
-      rounds_median: spec.merged > 0 ? 2 : null,
-      interventions: spec.interventions,
-      hours: { working: spec.working, waiting: spec.waiting, operator: 0 },
-    })),
-    phases: { working: 1 },
-    waits: NO_WAITS,
-    reverted: { count: 0, merged: specs.reduce((sum, spec) => sum + spec.merged, 0) },
-  };
+  const buckets = specs.map(({ merged, interventions, working, waiting }, index) => ({
+    start_ms: daysBack(specs.length - 1 - index, now),
+    merged,
+    rounds_median: null,
+    interventions,
+    hours: { working, waiting, operator: 0 },
+  }));
+  return { now, buckets, phases: {}, waits: NO_WAITS, reverted: null };
 }
 
 const shortDay = (startMs: number) => new Date(startMs).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -250,16 +246,6 @@ function fillCoversX(path: Element, x: number): boolean {
   const xs = [...(path.getAttribute("d") ?? "").matchAll(/(-?[\d.]+)\s+(-?[\d.]+)/g)].map((match) => Number(match[1]));
   return xs.length > 0 && Math.min(...xs) <= x && x <= Math.max(...xs);
 }
-
-const SIXTH_QUIET: (typeof QUIET)[] = [
-  { merged: 2, interventions: 1, working: 3, waiting: 1 },
-  { merged: 3, interventions: 2, working: 2, waiting: 2 },
-  { merged: 1, interventions: 1, working: 2, waiting: 3 },
-  { merged: 4, interventions: 3, working: 3, waiting: 1 },
-  HIGH_WAIT,
-  QUIET,
-  LOW_WAIT,
-];
 
 async function checkBridgedRatio(days: (typeof QUIET)[], quiet: number[], points: string[], [from, to]: [number, number]) {
   const flow = dailyFlow(days);
@@ -313,10 +299,6 @@ test("with the sixth of seven days quiet, the ratio charts read it as no data wi
 test("when a ratio series has only two known days separated by multiple quiet days, one dashed bridge joins them with no point, tooltip or fill on the quiet days", async () => {
   for (const { title, chart, fills } of await checkBridgedRatio([QUIET, HIGH_WAIT, QUIET, QUIET, QUIET, LOW_WAIT, QUIET], [0, 2, 3, 4, 6], ["1", "5"], [1, 5])) {
     expect(chart.querySelector("[data-tooltip]"), title).toBeNull();
-    for (const quietIndex of [0, 2, 3, 4, 6]) {
-      const quietX = ((quietIndex + 0.5) / 7) * 100;
-      expect(fills.some((fill) => fillCoversX(fill, quietX)), `${title} fill at ${quietIndex}`).toBe(false);
-    }
     expect(fills, title).toHaveLength(0);
   }
 });

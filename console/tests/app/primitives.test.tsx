@@ -204,7 +204,7 @@ test("a bucket with no merges keeps its real interventions count while ratio ser
   const weeks = [1, 0, 0, 1].map((merged, index) => ({
     start_ms: SIX_WEEKS[index]!,
     merged,
-    rounds_median: merged > 0 ? 2 : null,
+    rounds_median: null,
     interventions: [2, 3, 0, 1][index]!,
     hours: { working: 1, waiting: 1, operator: 0 },
   }));
