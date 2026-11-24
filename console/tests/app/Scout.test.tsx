@@ -599,7 +599,7 @@ test("choosing Write-up, Findings then Activity shows the write-up, the findings
   expect(within(screen.getByRole("region", { name: "Verdict" })).getByRole("status").textContent).toBe(HEADLINE);
 });
 
-test("clicking the opening Decide tab keeps it selected and shows Undo after setting aside the last open item", async () => {
+function oneOpenScout() {
   const oneOpen = writtenUp.actions.filter((item) => item.kind !== "revise" && item.ticket == null && item.set_aside_ms == null).slice(0, 1);
   const bodies: Record<number, ScoutDetail> = { 31: { ...writtenUp, actions: oneOpen } };
   const aside = ({ item, aside: setAside }: { item: number; aside: boolean }) => {
@@ -607,10 +607,37 @@ test("clicking the opening Decide tab keeps it selected and shows Undo after set
     bodies[31] = { ...bodies[31]!, actions: bodies[31]!.actions.map((each) => (each.position === item ? { ...each, set_aside_ms } : each)) };
     return Response.json({ ok: true, scout: 31, item, set_aside_ms, detail: "done" });
   };
-  await mount("#/scouts/demo/31", scoutFetch({ scouts: bodies, aside }).fetch);
+  return scoutFetch({ scouts: bodies, aside }).fetch;
+}
+
+test("clicking the opening Decide tab keeps it selected and shows Undo after setting aside the last open item", async () => {
+  await mount("#/scouts/demo/31", oneOpenScout());
   const decideTab = screen.getByRole("tab", { name: "Decide 1" });
   expect(decideTab.getAttribute("aria-selected")).toBe("true");
   await click(decideTab);
+  await click(within(shown()).getByRole("button", { name: "Not now" }));
+  expect(screen.getByRole("tab", { name: "Decide" }).getAttribute("aria-selected")).toBe("true");
+  expect(within(shown()).getByRole("button", { name: "Undo" })).toBeTruthy();
+});
+
+test("pressing Home on the opening Decide tab keeps it selected and shows Undo after setting aside the last open item, while Tab leaves it unchosen", async () => {
+  await mount("#/scouts/demo/31", oneOpenScout());
+  let decideTab = screen.getByRole("tab", { name: "Decide 1" });
+  expect(decideTab.getAttribute("aria-selected")).toBe("true");
+  decideTab.focus();
+  expect(document.activeElement).toBe(decideTab);
+  await act(async () => void fireEvent.keyDown(decideTab, { key: "Tab" }));
+  await settled();
+  await click(within(shown()).getByRole("button", { name: "Not now" }));
+  expect(screen.getByRole("tab", { name: "Write-up" }).getAttribute("aria-selected")).toBe("true");
+  cleanup();
+  await mount("#/scouts/demo/31", oneOpenScout());
+  decideTab = screen.getByRole("tab", { name: "Decide 1" });
+  expect(decideTab.getAttribute("aria-selected")).toBe("true");
+  decideTab.focus();
+  expect(document.activeElement).toBe(decideTab);
+  await act(async () => void fireEvent.keyDown(decideTab, { key: "Home" }));
+  await settled();
   await click(within(shown()).getByRole("button", { name: "Not now" }));
   expect(screen.getByRole("tab", { name: "Decide" }).getAttribute("aria-selected")).toBe("true");
   expect(within(shown()).getByRole("button", { name: "Undo" })).toBeTruthy();

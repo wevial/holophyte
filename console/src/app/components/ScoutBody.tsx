@@ -177,14 +177,27 @@ export function ScoutDocument({ page, project, chat, chosen, onChoose }: {
       id: "chat" as const, label: "Chat ·", count: chat.count, className: CHAT_TAB, body: <div ref={chat.slot} className={CHAT_SLOT} />,
     }] : []),
   ];
+  const changedBy = useRef<Event | null>(null);
+  const wasPrevented = useRef(false);
   const opening = open > 0 ? tabs[0]! : tabs.find((tab) => tab.id !== "decide")!;
   const current = tabs.find((tab) => tab.id === chosen) ?? opening;
   return (
-    <Tabs<TabId> value={current.id} onValueChange={(value) => { if (value) onChoose(value); }}>
-      <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2">
+    <Tabs<TabId> value={current.id} onValueChange={(value, details) => {
+      changedBy.current = details.event ?? null;
+      if (value) onChoose(value);
+    }}>
+      {/* SDK skips onValueChange when a click or navigation key lands on the current tab; record those explicit choices. */}
+      <div data-scout-tabbar className="sticky top-0 z-[1] bg-paper py-2"
+        onKeyDownCapture={(event) => {
+          wasPrevented.current = event.isDefaultPrevented();
+          changedBy.current = null;
+        }}
+        onKeyDown={(event) => {
+          if (!wasPrevented.current && event.isDefaultPrevented() && changedBy.current !== event.nativeEvent) onChoose(current.id);
+          changedBy.current = null;
+        }}>
         <TabsList aria-label="Scout document" className="flex flex-wrap gap-0.5">
           {tabs.map((tab) => (
-            // SDK skips onValueChange for a repeated value; record an explicit click on the current tab.
             <TabsTab key={tab.id} value={tab.id} onClick={tab.id === current.id ? () => onChoose(tab.id) : undefined}
               className={tab.className ? `${TAB} ${tab.className}` : TAB}>
               {tab.label}
