@@ -317,7 +317,6 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
   return (
     <ToolPopover
       label="Range choices"
-      hidden={false}
       dismissOnFocusLoss
       sideOffset={4}
       onOpenChange={(open) => {
@@ -347,7 +346,7 @@ function RangeControl({ search, choose }: { search: FlowSearch; choose: (change:
                 close();
                 return;
               }
-              choose({ range: next === DEFAULT_RANGE ? undefined : (next as FlowRange), from: undefined, to: undefined });
+              choose({ range: next === DEFAULT_RANGE ? undefined : next, from: undefined, to: undefined });
               close();
             }}
             className="flex flex-col outline-none"

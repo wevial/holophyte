@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { createPopup, definePrimitive, popupContent, popupState, popupTrigger, type Align, type Side } from "@ui-sdk/core";
+import { createPopup, definePrimitive, popupContent, popupState, popupTrigger } from "@ui-sdk/core";
 import { popoverPreset } from "@ui-sdk/core/popover";
 import { Checkbox, CheckboxGroup, CheckboxIndicator } from "@ui-sdk/react/checkbox";
 import { Listbox, ListboxItem, ListboxItemIndicator } from "@ui-sdk/react/listbox";
@@ -281,14 +281,13 @@ const { Trigger: ToolTrigger, Content: ToolContent } = createParts(toolPopover, 
  *  and return focus to the trigger, focus moving out closes it only with
  *  `dismissOnFocusLoss`, and `hidden` closes it. */
 export function ToolPopover({
-  label, hidden, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
-  dismissOnFocusLoss = false, side = "bottom", align = "end", sideOffset = GAP, collisionPadding = EDGE,
-  contentRef, className, style, onOpenChange, children,
+  label, hidden = false, trigger, triggerLabel, triggerTitle, triggerClassName = TOOL, triggerPressed,
+  dismissOnFocusLoss, sideOffset = GAP, contentRef, className, style, onOpenChange, children,
 }: {
-  label: string; hidden: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
-  triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; side?: Side; align?: Align;
-  sideOffset?: number; collisionPadding?: number; contentRef?: RefObject<HTMLDivElement | null>; className?: string;
-  style?: CSSProperties; onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
+  label: string; hidden?: boolean; trigger: ReactNode; triggerLabel: string; triggerTitle?: string;
+  triggerClassName?: string; triggerPressed?: boolean; dismissOnFocusLoss?: boolean; sideOffset?: number;
+  contentRef?: RefObject<HTMLDivElement | null>; className?: string; style?: CSSProperties;
+  onOpenChange?: (open: boolean) => void; children: ReactNode | ((close: () => void) => ReactNode);
 }) {
   const handle = usePrimitive(toolPopover, { dismissOnFocusLoss, onOpenChange });
   useEffect(() => {
@@ -299,7 +298,7 @@ export function ToolPopover({
     children: (
       <>
         <ToolTrigger aria-label={triggerLabel} title={triggerTitle} aria-pressed={triggerPressed} className={triggerClassName}>{trigger}</ToolTrigger>
-        <ToolContent ref={contentRef} aria-label={label} side={side} align={align} sideOffset={sideOffset} collisionPadding={collisionPadding} style={{ zIndex: 20, ...style }} className={className}>
+        <ToolContent ref={contentRef} aria-label={label} side="bottom" align="end" sideOffset={sideOffset} collisionPadding={EDGE} style={{ zIndex: 20, ...style }} className={className}>
           {typeof children === "function" ? children(() => void handle.api.close({ reason: "close-press" })) : children}
         </ToolContent>
       </>
