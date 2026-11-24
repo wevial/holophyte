@@ -252,8 +252,7 @@ const toolPopover = definePrimitive({
           cancelRefocus();
           const onKey = (event: KeyboardEvent) => {
             if (event.key !== "Escape" || !event.defaultPrevented || event.isComposing) return;
-            const dialog = event.target instanceof Element ? event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]') : null;
-            if (dialog) return;
+            if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="alertdialog"], [role="listbox"], [role="menu"]')) return;
             core.control.hide({ reason: "escape-key", event, focus: true });
           };
           document.addEventListener("keydown", onKey);
