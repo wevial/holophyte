@@ -132,7 +132,6 @@ export function TicketPeek({
       key={card.id}
       open
       modal={false}
-      closeOnOutsidePress={false}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
